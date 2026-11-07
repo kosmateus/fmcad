@@ -155,6 +155,8 @@ test(
       "dist/src/dist/composition/document-publication.js",
       "dist/src/dist/composition/batch-atomic.js",
       "dist/src/dist/composition/batch.js",
+      "dist/src/dist/core/application/cad/atomic-receipt.js",
+      "dist/src/dist/core/application/cad/atomic-receipt.d.ts",
       "dist/src/dist/node-adapters/persistence/batch-journal.js",
       "dist/src/dist/node-adapters/persistence/operation-journal.js",
       "dist/src/dist/python/document-probe.js",

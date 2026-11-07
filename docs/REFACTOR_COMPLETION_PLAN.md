@@ -321,3 +321,11 @@ historical null-selector batch bindings and omitted selectors in typed requests.
 The current behavior safely refuses reuse without SDK calls. Completing that
 compatibility requires exact request/owner checks and explicit historical tests;
 do not relax the hash guard or start a fresh mutation to make replay pass.
+
+[Stage 4k](REFACTOR_STAGE_4K.md) fixes a post-baseline receipt ownership defect:
+self-consistent atomic journals were accepted without matching their request and
+resolved document to the owning job. Paired archived-reader tests demonstrate the
+failure, including two owners exchanging journals. The typed validator rejects
+foreign receipts without replaying mutations. CI also includes the existing
+stage-owner integration suite. This does not close the stage 4j compatibility gap
+or the remaining runtime/mock coverage work.

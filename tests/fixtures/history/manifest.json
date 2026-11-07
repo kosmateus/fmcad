@@ -64,5 +64,17 @@
     "sourcePath": "src/batch.js",
     "file": "batch-9799.js.txt",
     "sha256": "e88b323aa88dab551aed576ac09c75395301e429f12597a5eee8d4a392e43c53"
+  },
+  {
+    "revision": "42fe75cf484df4808592fc35c9a6c5cf0abdbeef",
+    "sourcePath": "src/composition/stage-dependencies.js",
+    "file": "stage-dependencies-42fe.js.txt",
+    "sha256": "70d05408e2e4230666faca86a6568c31ae7aced59d54e8831886f79bc2b930f8"
+  },
+  {
+    "revision": "b50f2280217759894534e8dab61abc58a2fbe138",
+    "sourcePath": "src/composition/stage-dependencies.js",
+    "file": "stage-dependencies-b50f.js.txt",
+    "sha256": "4b923dc42c63cbe8e5a609a797e036bbacb6299a1d21c12f8c77158a65d3169e"
   }
 ]
