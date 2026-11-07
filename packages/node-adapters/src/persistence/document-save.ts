@@ -10,7 +10,7 @@ import type {
 
 export interface SaveJournalRecords {
   hash(value: unknown): string;
-  read(directory: string, binding: SaveBinding): Promise<SaveRecord[]>;
+  read(directory: string, binding: SaveBinding): Promise<unknown[]>;
   write(
     directory: string,
     binding: SaveBinding,
@@ -157,7 +157,7 @@ export async function openSaveJournal(
     },
   };
 }
-function validate(records: SaveRecord[]): SaveRecord[] {
+function validate(records: unknown[]): SaveRecord[] {
   const states = new Set([
     "submit_uncertain",
     "accepted",
@@ -169,15 +169,21 @@ function validate(records: SaveRecord[]): SaveRecord[] {
     "noop",
   ]);
   for (const record of records) {
-    const raw = record as SaveRecord & { operation?: unknown };
+    const raw = record as {
+      operation?: unknown;
+      result?: { status?: unknown };
+    };
     if (
       raw.operation !== "document.save.once" ||
       !raw.result ||
+      typeof raw.result.status !== "string" ||
       !states.has(raw.result.status)
     )
       throw new Error(
         "document save receipt state is corrupt or belongs to another operation",
       );
   }
-  return records;
+  // The operation owns this existing status check. The shared journal validates
+  // only sequence and binding; it must not assert a document-save result type.
+  return records as SaveRecord[];
 }

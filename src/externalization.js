@@ -1,6 +1,6 @@
 const { hash } = require('./engineering-common');
 const { publishComplete } = require('./publish');
-const { readOperationJournal, writeOperationRecord } = require('./batch-atomic');
+const { readOperationJournal, writeOperationRecord } = require('./dist/node-adapters/persistence/operation-journal');
 const { openExternalizationJournal } = require('./dist/node-adapters/persistence/externalization');
 const { initial, slot, completeMigration, phaseOrder } = require('./dist/core/application/documents/externalization');
 

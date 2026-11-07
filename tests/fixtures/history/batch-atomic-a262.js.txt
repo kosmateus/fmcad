@@ -1,0 +1,553 @@
+const fsSync = require('node:fs');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { randomBytes } = require('node:crypto');
+const { pythonValue } = require('./python');
+const { publishComplete } = require('./publish');
+const { redactDiagnostic } = require('./diagnostics');
+const { hash, clone, resolveReferences } = require('./batch');
+const { localOperations } = require('./engineering-local');
+
+const own = (value, key) => Object.hasOwn(value, key);
+const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const sameJson = (left, right) => hash(left) === hash(right);
+const isLocal = (operation) => own(localOperations, operation);
+
+// External-effect operations (save/export/document lifecycle/docops) cannot be
+// transacted; they are rejected inside an atomic batch, never silently dropped.
+const NON_TRANSACTIONAL_EXACT = ['document.clear', 'document.save_as', 'shot.pack', 'texture.heightmap',
+  'motion.sample', 'animation.joints', 'animation.export', 'explode.render'];
+function isTransactional(operation, catalog) {
+  const spec = object(catalog) && own(catalog, operation) ? catalog[operation] : null;
+  if (spec?.nonTransactional === true || spec?.batchAllowed === false) return false;
+  if (/^(export\.|checkpoint\.(create|open)|import\.)/.test(operation)) return false;
+  return !NON_TRANSACTIONAL_EXACT.includes(operation);
+}
+
+// Test-only deterministic fault injection (contract §8.4). Gated behind the
+// FMCAD_TEST_ATOMIC_FAULT environment variable; never active in production.
+// The injected operation '__test.fault' is absent from every catalog, so normal
+// batch validation can never produce it — only this gate can, and only when the
+// caller explicitly sets the flag. There is no public "break the model" command.
+function injectTestFault(steps) {
+  const spec = process.env.FMCAD_TEST_ATOMIC_FAULT;
+  if (!spec) return steps;
+  const match = /^(after_mutation|before_ref_publish|final_validation)(?::(\d+))?$/.exec(String(spec).trim());
+  if (!match) {
+    throw new Error('FMCAD_TEST_ATOMIC_FAULT must be <phase>[:<afterIndex>] with phase ' +
+      'in after_mutation | before_ref_publish | final_validation');
+  }
+  const phase = match[1];
+  const afterIndex = match[2] === undefined ? steps.length - 1 : Number(match[2]);
+  if (afterIndex < -1 || afterIndex >= steps.length) {
+    throw new Error('FMCAD_TEST_ATOMIC_FAULT afterIndex is out of range for the current batch');
+  }
+  const fault = { id: '__test_fault', operation: '__test.fault', data: { phase } };
+  return [...steps.slice(0, afterIndex + 1), fault, ...steps.slice(afterIndex + 1)];
+}
+
+function buildAtomicSource() {
+  const dir = path.join(__dirname, '..', 'assets', 'cad');
+  const files = ['core.py', ...fsSync.readdirSync(dir).filter((f) => f.endsWith('.py') && f !== 'core.py').sort()];
+  return files.map((f) => fsSync.readFileSync(path.join(dir, f), 'utf8')).join('\n\n');
+}
+
+function buildAtomicScript(args) {
+  return buildAtomicSource() + `
+
+_ATOMIC_REQUEST = ${pythonValue(args)}
+
+def run(_context: str):
+    import json
+    import adsk.core
+    result = execute(_ATOMIC_REQUEST)
+    print('FMCAD_RESULT ' + json.dumps(result, allow_nan=False))
+`;
+}
+
+async function callAtomic(client, args, readOnly = false) {
+  const script = buildAtomicScript(args);
+  const out = await client.callTool({ featureType: 'script', object: { script, ...(readOnly ? { readOnly: true } : {}) } });
+  const text = out.text || '';
+  const resultLine = text.split(/\r?\n/).find((line) => line.startsWith('FMCAD_RESULT '));
+  if (out.failed || !resultLine) throw new Error(`Atomic batch ${args.operation} failed; ${text}`);
+  return JSON.parse(resultLine.slice('FMCAD_RESULT '.length));
+}
+
+async function callAtomicWithinBudget(client, args, readOnly, deadline, reserveMs = 5000) {
+  const remaining = Math.floor(deadline - performance.now() - reserveMs);
+  if (remaining < 1) {
+    const error = new Error('RPC not submitted: insufficient batch budget after native-finalize reserve');
+    error.code = 'FMCAD_BATCH_BUDGET_EXHAUSTED';
+    throw error;
+  }
+  const server = client.server;
+  const configured = server.timeoutMs ?? 180000;
+  const previous = server.timeoutMs;
+  server.timeoutMs = Math.min(configured, remaining);
+  try { return await callAtomic(client, args, readOnly); }
+  finally {
+    if (previous === undefined) delete server.timeoutMs;
+    else server.timeoutMs = previous;
+  }
+}
+
+async function readAtomicReceipt(reportPath) {
+  if (typeof reportPath !== 'string' || !reportPath.trim()) throw new Error('reportPath must be a nonempty directory');
+  const dir = path.resolve(reportPath);
+  const names = (await fs.readdir(dir)).filter(name => /^\d{8}\.json$/.test(name)).sort();
+  if (!names.length || names.some((name, i) => name !== `${String(i).padStart(8, '0')}.json`)) {
+    throw new Error('Missing or incomplete atomic journal; outcome unknown');
+  }
+  const records = [];
+  for (const name of names) records.push(JSON.parse(await fs.readFile(path.join(dir, name), 'utf8')));
+  const first = records[0];
+  const stable = value => JSON.stringify([value?.runId, value?.requestHash, value?.commandId,
+    value?.documentIdentity?.expected, value?.atomic?.backend, value?.sessionNonce]);
+  let resolvedIdentity = null;
+  let identityHistoryValid = true;
+  for (const record of records) {
+    const resolved = record?.documentIdentity?.resolved;
+    if (resolvedIdentity && !sameJson(resolved, resolvedIdentity)) identityHistoryValid = false;
+    if (!resolvedIdentity && resolved) resolvedIdentity = resolved;
+    if (resolvedIdentity && !resolved) identityHistoryValid = false;
+  }
+  if (!first || first.version !== 2 || first.operation !== 'batch.run' || !first.commandId ||
+      !first.sessionNonce || !first.requestHash || first.atomic?.effective !== true ||
+      first.atomic?.backend !== 'addin' || !/^fmcad_atomic_[0-9a-f]{32}$/.test(first.commandId) ||
+      !/^[0-9a-f]{32}$/.test(first.sessionNonce) ||
+      hash({ request: first.request, context: first.context }) !== first.requestHash ||
+      !identityHistoryValid || records.some((record, index) => stable(record) !== stable(first) || record.sequence !== index ||
+        hash({ request: record.request, context: record.context }) !== record.requestHash)) {
+    throw new Error('Atomic journal identity/sequence mismatch; outcome unknown');
+  }
+  return { dir, report: records.at(-1), records };
+}
+
+function atomicRpcArgs(report, operation, data) {
+  const context = report.context ?? {};
+  return { operation, commandId: report.commandId, runId: report.runId,
+    requestHash: report.requestHash, sessionNonce: report.sessionNonce,
+    backend: report.atomic.backend, doc: context.doc, component: context.component ?? null,
+    projectId: context.projectId ?? null, docId: context.docId ?? null,
+    docFileId: context.docFileId ?? null, documentIdentity: report.documentIdentity,
+    ...(data === undefined ? {} : { data }) };
+}
+
+async function reconcileAtomicBatch(client, reportPath, observe = []) {
+  if (!Array.isArray(observe) || observe.length > 100) throw new Error('observe must be an array of at most 100 read operations');
+  const { report } = await readAtomicReceipt(reportPath);
+  if (!report.documentIdentity?.resolved) {
+    return { operation: 'batch.reconcile', runId: report.runId, outcome: 'rejected', status: 'not_submitted',
+      nativeOutcome: null, receiptOutcome: 'rejected', observation: { status: 'not_started' },
+      candidates: report.identityResolution?.candidates ?? [],
+      unavailableEvidence: report.identityResolution?.unavailableEvidence ?? ['atomic submit was not durably authorized'] };
+  }
+  if (client?.capabilities && client.capabilities.atomicBatch !== true) {
+    const receiptOutcome = ['committed', 'aborted'].includes(report.outcome) ? report.outcome : null;
+    return { operation: 'batch.reconcile', outcome: receiptOutcome ?? 'unknown', status: 'unavailable',
+      receiptOutcome, nativeOutcome: null, observation: { status: 'unsupported_backend' },
+      candidates: [], unavailableEvidence: ['backend does not support atomic batch holder inspection'] };
+  }
+  for (const request of observe) {
+    if (!object(request) || typeof request.operation !== 'string' || !object(request.data) ||
+        observeCatalogReadOnly(request.operation) !== true) throw new Error('observe permits existing read-only CAD handlers only');
+  }
+  const observation = await callAtomic(client, atomicRpcArgs(report, 'atomic_status'), true);
+  const liveIdentity = observation.identity;
+  const expectedIdentity = { commandId: report.commandId, runId: report.runId,
+    requestHash: report.requestHash, backend: report.atomic.backend,
+    sessionNonce: report.sessionNonce, documentIdentity: report.documentIdentity,
+    resolvedIdentity: report.documentIdentity.resolved };
+  if (observation.status === 'unavailable') {
+    const receiptOutcome = ['committed', 'aborted'].includes(report.outcome) ? report.outcome : null;
+    return { operation: 'batch.reconcile', outcome: receiptOutcome ?? 'unknown', status: 'unavailable',
+      nativeOutcome: null, receiptOutcome, observation: { status: 'unavailable', destroyed: false },
+      candidates: [], unavailableEvidence: ['live holder receipt'] };
+  }
+  if (observation.status === 'identity_mismatch') {
+    return { operation: 'batch.reconcile', outcome: 'unknown', status: 'identity_mismatch', nativeOutcome: null,
+      observation: { status: 'identity_mismatch' }, candidates: observation.candidates ?? [],
+      unavailableEvidence: observation.unavailableEvidence ?? ['resolved document identity changed'] };
+  }
+  if (!liveIdentity || !sameJson(liveIdentity, expectedIdentity)) {
+    return { operation: 'batch.reconcile', outcome: 'unknown', status: 'identity_mismatch',
+      nativeOutcome: null, observation: { status: 'identity_mismatch' }, candidates: [liveIdentity].filter(Boolean),
+      unavailableEvidence: ['live holder identity does not match durable journal'] };
+  }
+  if (observation.ambiguous === true) {
+    return { operation: 'batch.reconcile', outcome: 'unknown', status: 'ambiguous', nativeOutcome: null,
+      observation: { status: 'ambiguous' }, candidates: observation.candidates ?? [],
+      unavailableEvidence: observation.unavailableEvidence ?? [] };
+  }
+  if (['committed', 'aborted'].includes(report.outcome) &&
+      ['committed', 'aborted'].includes(observation.outcome) && report.outcome !== observation.outcome) {
+    return { operation: 'batch.reconcile', runId: report.runId, outcome: 'unknown', status: 'receipt_mismatch',
+      receiptOutcome: report.outcome, nativeOutcome: observation.outcome,
+      observation: { status: observation.status, destroyed: observation.destroyed === true },
+      candidates: [], unavailableEvidence: ['durable report and live native outcome disagree'] };
+  }
+  const observed = [];
+  if (observe.length) {
+    const result = await callAtomic(client, { ...atomicRpcArgs(report, 'atomic_observe', observe),
+      readOnlyOperations: readOnlyOperationNames }, true);
+    if (result.status !== 'observed' || !sameJson(result.identity, expectedIdentity)) {
+      return { operation: 'batch.reconcile', outcome: 'unknown', status: result.status || 'unknown',
+        nativeOutcome: null, observation: { status: result.status || 'unknown' },
+        candidates: result.candidates ?? [], unavailableEvidence: result.unavailableEvidence ?? [] };
+    }
+    observed.push(...(result.results ?? []));
+  }
+  return { operation: 'batch.reconcile', runId: report.runId, requestHash: report.requestHash,
+    outcome: report.outcome === 'committed' || report.outcome === 'aborted' ? report.outcome : 'unknown',
+    nativeOutcome: observation.destroyed === true ? observation.outcome ?? 'unknown' : null,
+    observation: { status: observation.status, destroyed: observation.destroyed === true,
+      completed: observation.completed === true, cleanupCompleted: observation.cleanupCompleted === true },
+    observed, candidates: observation.candidates ?? [], unavailableEvidence: observation.unavailableEvidence ?? [] };
+}
+
+let observeCatalogReadOnly = () => false;
+let readOnlyOperationNames = [];
+function setObserveReadOnlyCatalog(catalog) {
+  observeCatalogReadOnly = operation => catalog?.[operation]?.readOnly === true;
+  readOnlyOperationNames = Object.keys(catalog ?? {}).filter(operation => catalog[operation]?.readOnly === true &&
+    catalog[operation]?.nodeOnly !== true && catalog[operation]?.offline !== true);
+}
+
+async function finalizeAtomicBatch(client, reportPath) {
+  const { dir, report } = await readAtomicReceipt(reportPath);
+  if (!report.documentIdentity?.resolved) {
+    return { operation: 'batch.finalize', outcome: report.outcome === 'rejected' ? 'rejected' : 'unknown',
+      status: 'blocked', cleanupCompleted: false, unavailableEvidence: ['atomic command identity was never resolved'] };
+  }
+  if (report.journal?.event === 'finalize_ack' && report.cleanupCompleted === true &&
+      ['committed', 'aborted'].includes(report.outcome)) {
+    return { operation: 'batch.finalize', outcome: report.outcome, status: 'already_finalized', cleanupCompleted: true };
+  }
+  if (client?.capabilities && client.capabilities.atomicBatch !== true) {
+    throw new Error('batch finalize requires the addin atomicBatch capability; no native request sent');
+  }
+  let lock;
+  try { lock = await fs.open(path.join(dir, 'run.lock'), 'wx', 0o600); }
+  catch (error) {
+    if (error.code === 'EEXIST') throw new Error('Batch writer lock exists; finalize refused without lock theft');
+    throw error;
+  }
+  let preserveLock = false;
+  try {
+    const observation = await callAtomic(client, atomicRpcArgs(report, 'atomic_status'), true);
+    if (!observation.identity || !sameJson(observation.identity, {
+      commandId: report.commandId, runId: report.runId, requestHash: report.requestHash,
+      backend: report.atomic.backend, sessionNonce: report.sessionNonce,
+      documentIdentity: report.documentIdentity, resolvedIdentity: report.documentIdentity.resolved })) {
+      return { operation: 'batch.finalize', outcome: 'unknown', status: 'identity_mismatch', cleanupCompleted: false };
+    }
+    if (observation.ambiguous || observation.status === 'identity_mismatch' ||
+        !['completed', 'terminated'].includes(observation.status) ||
+        observation.destroyed !== true || observation.idle !== true) {
+      return { operation: 'batch.finalize', outcome: 'unknown', status: observation.ambiguous ? 'ambiguous' : 'blocked',
+        cleanupCompleted: false, candidates: observation.candidates ?? [], unavailableEvidence: observation.unavailableEvidence ?? [] };
+    }
+    if (['committed', 'aborted'].includes(report.outcome) &&
+        ['committed', 'aborted'].includes(observation.outcome) && report.outcome !== observation.outcome) {
+      return { operation: 'batch.finalize', outcome: 'unknown', status: 'receipt_mismatch',
+        cleanupCompleted: false, receiptOutcome: report.outcome, nativeOutcome: observation.outcome };
+    }
+    if (report.journal?.event === 'finalize_ack' && observation.cleanupCompleted === true &&
+        report.journal.nativeOutcome === observation.outcome) {
+      return { operation: 'batch.finalize', outcome: report.outcome, status: 'already_finalized', cleanupCompleted: true };
+    }
+    const receipt = await callAtomic(client, atomicRpcArgs(report, 'atomic_finalize'), false);
+    if (receipt.cleanupCompleted !== true || !sameJson(receipt.identity, {
+      commandId: report.commandId, runId: report.runId, requestHash: report.requestHash,
+      backend: report.atomic.backend, sessionNonce: report.sessionNonce,
+      documentIdentity: report.documentIdentity, resolvedIdentity: report.documentIdentity.resolved })) {
+      return { operation: 'batch.finalize', outcome: 'unknown', status: receipt.status || 'unknown', cleanupCompleted: false };
+    }
+    if (report.outcome === 'committed' && receipt.outcome !== 'committed') {
+      return { operation: 'batch.finalize', outcome: 'committed', status: 'receipt_mismatch', cleanupCompleted: true };
+    }
+    if (['committed', 'aborted'].includes(receipt.outcome)) {
+      report.outcome = receipt.outcome;
+      report.status = receipt.outcome === 'committed' ? 'success' : 'failed';
+      report.success = receipt.outcome === 'committed';
+      report.cleanupCompleted = true;
+      report.rollbackVerified = receipt.rollbackVerified === true;
+      report.rollback = receipt.rollback ?? null;
+      if (receipt.outcome === 'committed') {
+        report.steps = report.steps.map(step => ({ ...step, status: 'success',
+          ...(receipt.results?.[step.id] ? { output: receipt.results[step.id] } : {}) }));
+      } else {
+        const failedIndex = report.steps.findIndex(step => step.id === receipt.errorStep);
+        report.steps = report.steps.map((step, index) => ({ ...step,
+          status: index === failedIndex ? 'failed' : failedIndex < 0 || index < failedIndex ? 'success' : 'skipped',
+          ...(index === failedIndex && receipt.error ? { error: { message: receipt.error } } : {}),
+          ...(index < failedIndex ? { mutationStatus: report.rollbackVerified ? 'rolled_back' : 'unknown' } : {}) }));
+      }
+      report.journal = { event: 'finalize_ack', at: new Date().toISOString(), runId: report.runId,
+        requestHash: report.requestHash, commandId: report.commandId, documentIdentity: report.documentIdentity,
+        backend: report.atomic.backend, sessionNonce: report.sessionNonce, nativeOutcome: receipt.outcome };
+      const sequence = report.sequence + 1;
+      report.sequence = sequence;
+      report.updatedAt = new Date().toISOString();
+      try {
+        await publishComplete(path.join(dir, `${String(sequence).padStart(8, '0')}.json`), JSON.stringify(report, null, 2) + '\n');
+      } catch (error) {
+        preserveLock = receipt.outcome === 'committed';
+        return { operation: 'batch.finalize', outcome: receipt.outcome,
+          status: 'publication_failed', cleanupCompleted: true,
+          publication: { status: 'failed', message: redactDiagnostic(error.message, client?.server) } };
+      }
+    }
+    return { operation: 'batch.finalize', outcome: receipt.outcome ?? report.outcome ?? 'unknown',
+      status: 'finalized', cleanupCompleted: true, nativeOutcome: receipt.outcome ?? 'unknown' };
+  } finally {
+    await lock.close();
+    if (!preserveLock) await fs.unlink(path.join(dir, 'run.lock'));
+  }
+}
+
+function finalizeReport(report, final, validation) {
+  report.terminationReason = final.terminationReason ?? null;
+  report.rollbackVerified = final.rollbackVerified === true;
+  report.rollback = final.rollback ?? null;
+  report.outcome = final.outcome ?? 'unknown';
+  report.errorStep = final.errorStep ?? null;
+  if (final.error) report.error = { message: final.error };
+  if (final.outcome === 'committed') {
+    report.success = true;
+    report.status = 'success';
+    report.created = final.created ?? [];
+    try { report.exports = resolveReferences(validation.exports, final.results ?? {}); }
+    catch (error) {
+      report.publication = { status: 'failed', message: redactDiagnostic(error.message) };
+    }
+    for (const step of report.steps) {
+      step.status = 'success';
+      if (final.results?.[step.id]) step.output = final.results[step.id];
+    }
+  } else if (final.outcome === 'aborted') {
+    report.success = false;
+    report.status = 'failed';
+    const errorIndex = validation.operations.findIndex((step) => step.id === final.errorStep);
+    report.steps.forEach((step, index) => {
+      if (index === errorIndex) { step.status = 'failed'; if (final.error) step.error = { message: final.error }; }
+      else if (errorIndex === -1 || index < errorIndex) {
+        step.status = 'success';
+        step.mutationStatus = report.rollbackVerified ? 'rolled_back' : 'unknown';
+      }
+      else step.status = 'skipped';
+    });
+  } else {
+    report.success = false;
+    report.status = 'unknown';
+    report.outcome = 'unknown';
+    report.steps.forEach((step) => { step.status = 'unknown'; });
+  }
+}
+
+async function runAtomicBatch(client, data, context = {}, executeCad, catalog, validation) {
+  const started = performance.now();
+  if (!context.doc) throw new Error('Atomic batch run requires an explicit context.doc');
+  const request = clone(data);
+  delete request.mode;
+  delete request.reportPath;
+  request.atomic = true; // Normalize the effective mode into replay identity.
+  const executionContext = clone(context);
+  const requestHash = hash({ request, context: executionContext });
+  const reportPath = path.resolve(data.reportPath || path.join('.fmcad-batch', data.runId));
+  let preserveLock = false;
+  const backend = client?.capabilities?.backend ?? 'mcp';
+  const atomicSupported = client?.capabilities?.atomicBatch === true;
+
+  // Preflight rejection before any report directory or model mutation.
+  const reasons = [];
+  if (data.recipe !== undefined) reasons.push('Atomic batches do not support definition.recipe metadata');
+  if (!atomicSupported) reasons.push('Atomic batch execution is unsupported on the ' + backend +
+    ' backend (no atomicBatch capability); select --backend addin or use atomic: false for per-step execution.');
+  for (const step of validation.operations) {
+    if (isLocal(step.operation)) reasons.push(`Step ${step.id}: local/node-only operation cannot run inside a Fusion command transaction`);
+    else if (!isTransactional(step.operation, catalog)) reasons.push(`Step ${step.id}: ${step.operation} is an external-effect operation (save/export/document lifecycle) and cannot be transacted`);
+  }
+  if (reasons.length) {
+    return { operation: 'batch.run', runId: data.runId, success: false, status: 'failed', outcome: 'rejected',
+      atomic: { requested: own(data, 'atomic') ? data.atomic : undefined, effective: true, supported: atomicSupported, backend },
+      errors: reasons, reportPath, mutated: false,
+      steps: validation.operations.map((step) => ({ id: step.id, operation: step.operation, status: 'skipped' })) };
+  }
+
+  // Test-only fault step (gated; identity-stable when the flag is unset).
+  const steps = injectTestFault(validation.operations);
+
+  await fs.mkdir(reportPath, { recursive: true });
+  const lockPath = path.join(reportPath, 'run.lock');
+  const lock = await fs.open(lockPath, 'wx', 0o600).catch((error) => {
+    if (error.code === 'EEXIST') throw new Error('Run is locked; inspect operator/model state before removing a stale lock');
+    throw error;
+  });
+
+  const commandId = 'fmcad_atomic_' + randomBytes(16).toString('hex');
+  const sessionNonce = randomBytes(16).toString('hex');
+  const base = { commandId, runId: data.runId, doc: executionContext.doc,
+    component: executionContext.component ?? null, projectId: executionContext.projectId ?? null,
+    docId: executionContext.docId ?? null, docFileId: executionContext.docFileId ?? null,
+    requestHash, backend, sessionNonce };
+
+  const report = { version: 2, success: false, operation: 'batch.run', runId: data.runId, requestHash, request,
+    context: executionContext, status: 'running', outcome: 'unknown', createdAt: new Date().toISOString(),
+    reportPath, atomic: { ...(own(data, 'atomic') ? { requested: data.atomic } : {}), effective: true, supported: true, backend },
+    commandId, sessionNonce, session: { backend, nonce: sessionNonce },
+    documentIdentity: { expected: { fileId: executionContext.docFileId ?? null,
+      creationId: executionContext.docId ?? null, name: executionContext.doc }, resolved: null,
+      assertionsOnly: true },
+    terminationReason: null, rollbackVerified: false, errorStep: null,
+    steps: validation.operations.map((step) => ({ id: step.id, operation: step.operation, status: 'pending' })) };
+
+  let sequence = 0;
+  async function persist() {
+    report.sequence = sequence;
+    report.updatedAt = new Date().toISOString();
+    report.elapsedMs = performance.now() - started;
+    const target = path.join(reportPath, `${String(sequence).padStart(8, '0')}.json`);
+    await publishComplete(target, JSON.stringify(report, null, 2) + '\n');
+    sequence++;
+  }
+
+  async function journal(event, fields = {}) {
+    report.journal = { event, at: new Date().toISOString(), commandId, runId: data.runId,
+      requestHash, documentIdentity: report.documentIdentity, backend, sessionNonce, ...fields };
+    await persist();
+  }
+
+  try {
+    if ((await fs.readdir(reportPath)).some((name) => name !== 'run.lock')) {
+      throw new Error('Atomic run report already exists; inspect before rerunning (no automatic replay)');
+    }
+    let state;
+    const budget = validation.plan.timeBudgetMs ?? 180000;
+    const deadline = started + budget;
+    if (performance.now() >= deadline) {
+      report.status = 'failed'; report.outcome = 'rejected'; report.mutated = false;
+      report.error = { code: 'FMCAD_BATCH_BUDGET_EXHAUSTED', message: 'Deadline reached before atomic submit; no request was sent.' };
+      report.steps.forEach((step) => { step.status = 'skipped'; });
+      await journal('not_submitted');
+      return report;
+    }
+    // Durable intent precedes every RPC; if publication fails, do not send.
+    await journal('identity_resolution_uncertain');
+    let resolved;
+    try {
+      resolved = await callAtomicWithinBudget(client, { ...base, operation: 'atomic_resolve', documentIdentity: report.documentIdentity }, true, deadline);
+    } catch (error) {
+      const notSubmitted = ['FMCAD_BATCH_BUDGET_EXHAUSTED', 'FMCAD_RPC_NOT_SUBMITTED_BUDGET'].includes(error?.code);
+      report.status = 'failed'; report.outcome = 'rejected'; report.mutated = false;
+      report.error = { message: redactDiagnostic(error?.message || error, client?.server) };
+      if (notSubmitted) report.steps.forEach((step) => { step.status = 'skipped'; });
+      await journal(notSubmitted ? 'not_submitted' : 'identity_unavailable', { error: report.error });
+      return report;
+    }
+    if (resolved.status !== 'resolved' || !object(resolved.resolvedIdentity)) {
+      report.status = 'failed'; report.outcome = 'rejected'; report.mutated = false;
+      report.identityResolution = { status: resolved.status, candidates: resolved.candidates ?? [],
+        unavailableEvidence: resolved.unavailableEvidence ?? [] };
+      await journal(resolved.status === 'ambiguous' ? 'identity_ambiguous' : 'identity_unavailable');
+      return report;
+    }
+    report.documentIdentity.resolved = resolved.resolvedIdentity;
+    base.documentIdentity = report.documentIdentity;
+    await journal('submit_uncertain');
+    try {
+      const testFault = steps.some((step) => step.id === '__test_fault' && step.operation === '__test.fault');
+      state = await callAtomicWithinBudget(client, { ...base, operation: 'atomic_start', steps,
+        ...(testFault ? { testFault: true } : {}) }, false, deadline);
+    } catch (error) {
+      const notSubmitted = ['FMCAD_BATCH_BUDGET_EXHAUSTED', 'FMCAD_RPC_NOT_SUBMITTED_BUDGET'].includes(error?.code);
+      report.status = notSubmitted ? 'failed' : 'unknown';
+      report.outcome = notSubmitted ? 'rejected' : 'unknown';
+      if (notSubmitted) report.mutated = false;
+      report.error = { message: redactDiagnostic(error?.message || error, client?.server) };
+      report.steps.forEach((step) => { step.status = 'unknown'; });
+      try { await journal(notSubmitted ? 'not_submitted' : 'submit_unknown', { error: report.error }); } catch (publicationError) {
+        report.publication = { status: 'failed', message: redactDiagnostic(publicationError.message, client?.server) };
+      }
+      return report;
+    }
+    let final = null;
+    while (performance.now() < deadline) {
+      let status;
+      try { status = await callAtomicWithinBudget(client, { ...base, operation: 'atomic_status' }, true, deadline); }
+      catch (error) {
+        report.status = 'unknown'; report.outcome = 'unknown';
+        report.error = { message: redactDiagnostic(error?.message || error, client?.server) };
+        report.steps.forEach((step) => { step.status = 'unknown'; });
+        try { await journal('status_unknown', { error: report.error }); } catch (publicationError) {
+          report.publication = { status: 'failed', message: redactDiagnostic(publicationError.message, client?.server) };
+        }
+        return report;
+      }
+      if (status.destroyed === true) {
+        try { final = await callAtomicWithinBudget(client, { ...base, operation: 'atomic_finalize' }, false, deadline); }
+        catch (error) {
+          report.status = 'unknown'; report.outcome = 'unknown';
+          report.error = { message: redactDiagnostic(error?.message || error, client?.server) };
+          report.steps.forEach((step) => { step.status = 'unknown'; });
+          try { await journal('finalize_unknown', { error: report.error, observedDestroyed: true }); } catch (publicationError) {
+            report.publication = { status: 'failed', message: redactDiagnostic(publicationError.message, client?.server) };
+          }
+          return report;
+        }
+        // Finalize is deferred while the command context is still busy (e.g. a
+        // preempting command owns the host); retry within the same budget so
+        // cleanup + rollback measurement complete at the safe post-destroy moment.
+        if (final.status !== 'cleanup_pending') break;
+        final = null;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    if (!final) {
+      report.status = 'unknown'; report.outcome = 'unknown';
+      report.error = { message: 'Atomic batch did not finalize within budget; command outcome unknown; inspect the model, never replay' };
+      report.steps.forEach((step) => { step.status = 'unknown'; });
+      await persist();
+      return report;
+    }
+    finalizeReport(report, final, validation);
+    try { await journal('finalized', { nativeOutcome: final.outcome ?? 'unknown' }); }
+    catch (error) {
+      if (final.outcome !== 'committed') throw error;
+      report.publication = { status: 'failed', message: redactDiagnostic(error.message, client?.server) };
+      preserveLock = true;
+    }
+    return report;
+  } finally {
+    await lock.close();
+    if (!preserveLock) await fs.unlink(lockPath);
+  }
+}
+
+// External-effect owners use the same numbered, immutable publication primitive
+// and identity checks as batch recovery; they do not inherit atomic outcomes.
+async function readOperationJournal(directory, binding, io = fs) {
+  let names;
+  try { names = (await io.readdir(directory)).filter(name => /^\d{8}\.json$/.test(name)).sort(); }
+  catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+  const records = [];
+  for (let index = 0; index < names.length; index++) {
+    if (names[index] !== String(index).padStart(8, '0') + '.json') throw new Error('Operation journal sequence gap; outcome unknown');
+    const record = JSON.parse(await io.readFile(path.join(directory, names[index]), 'utf8'));
+    if (record.sequence !== index || !sameJson(record.binding, binding)) throw new Error('Operation journal identity mismatch; no replay');
+    records.push(record);
+  }
+  return records;
+}
+
+async function writeOperationRecord(directory, binding, sequence, value, io = fs) {
+  await io.mkdir(directory, { recursive: true, mode: 0o700 });
+  const record = { ...value, sequence, binding, at: new Date().toISOString() };
+  await publishComplete(path.join(directory, String(sequence).padStart(8, '0') + '.json'),
+    JSON.stringify(record) + '\n', io);
+  return record;
+}
+
+module.exports = { readOperationJournal, writeOperationRecord, runAtomicBatch, buildAtomicScript, isTransactional, injectTestFault,
+  readAtomicReceipt, reconcileAtomicBatch, finalizeAtomicBatch, setObserveReadOnlyCatalog };

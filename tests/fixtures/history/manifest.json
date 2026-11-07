@@ -46,5 +46,17 @@
     "sourcePath": "src/document-publication.js",
     "file": "document-publication-a9cf.js.txt",
     "sha256": "fad99597538d2e6ef8ad3e177be1642b6277e2c94bbf30839d42a46a2d82ae44"
+  },
+  {
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "src/batch-atomic.js",
+    "file": "batch-atomic-a262.js.txt",
+    "sha256": "adadf24c51bb9efe6c9c61b28e9a831015168c7979e86fce09c3ba301132439a"
+  },
+  {
+    "revision": "e92a0ee0133c8dccd93fe9157044668cbfcbd33c",
+    "sourcePath": "src/batch-atomic.js",
+    "file": "batch-atomic-e92a.js.txt",
+    "sha256": "09119531542c440a8e89d45c6a8dabb3acf44ca7ee747ea977b55c9f4e992d0d"
   }
 ]
