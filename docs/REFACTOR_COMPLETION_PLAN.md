@@ -267,3 +267,9 @@ composition root, with catalog-wide preview parity and exact native-call checks.
 The public CAD JavaScript file is now a compatibility facade. Remaining specialist
 services, model contracts and the six separately reproduced verification gaps in
 that stage remain part of the completion scope.
+
+[Stage 4f](REFACTOR_STAGE_4F.md) corrects the selection-store error classification:
+missing inode-verification evidence now fails explicitly instead of masquerading
+as a missing artifact. Historical fault comparisons attribute this to the reader
+and store introduced after the pre-refactor reference. Genuine absence and all
+ownership checks retain their existing behavior.
