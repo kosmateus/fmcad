@@ -35,7 +35,8 @@
     "src/entrypoints/queue-cli.ts",
     "src/entrypoints/queue-connection.ts",
     "src/entrypoints/queue-preflight.ts",
-    "src/composition/execution-worker.ts"
+    "src/composition/execution-worker.ts",
+    "src/composition/batch-atomic.ts"
   ],
   "references": [
     {

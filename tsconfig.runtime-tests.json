@@ -54,7 +54,8 @@
     "tests/run-script-migration.test.ts",
     "tests/live-suite-inventory.test.ts",
     "tests/artifact-read-evidence.test.ts",
-    "tests/operation-journal-migration.test.ts"
+    "tests/operation-journal-migration.test.ts",
+    "tests/atomic-adapter-migration.test.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]
 }

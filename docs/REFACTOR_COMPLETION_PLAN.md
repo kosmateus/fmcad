@@ -309,3 +309,8 @@ baseline hashes remain unchanged. PRs #13–#15 passed their full CI and are mer
 with the same fault cases run against pre-refactor, pre-extraction and typed
 implementations. Batch orchestration remains in scope. PRs #16–#17 are merged
 after their full 20-job CI runs passed.
+
+[Stage 4i](REFACTOR_STAGE_4I.md) migrates atomic batch composition and closes the
+inherited first-result parsing defect in all four atomic phases. Shared historical
+tests justify rejection before submission and unknown outcomes after submission;
+they retain exact physical call counts and ordinary completion behavior.
