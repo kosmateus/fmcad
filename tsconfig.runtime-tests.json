@@ -45,7 +45,10 @@
     "tests/legacy-cloud-admission.test.ts",
     "tests/box-admission.test.ts",
     "tests/fixtures/checker-cleanup.cts",
-    "tests/control-center-locales.test.ts"
+    "tests/control-center-locales.test.ts",
+    "tests/cad-dispatch.test.ts",
+    "tests/cad-preparation.test.ts",
+    "tests/document-publication-migration.test.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]
 }

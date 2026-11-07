@@ -1,18 +1,40 @@
-"use strict";
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const current = require("../src/cad");
-const previous = require("./fixtures/historical-module.cjs")(
+import test from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import { createRequire } from "node:module";
+import type {
+  CadContext,
+  CadData,
+  CadOutput,
+} from "../packages/core/src/application/cad/contracts.js";
+import type { CadClient } from "../src/composition/cad-execution.js";
+const root = path.resolve(__dirname, "../..");
+const load = createRequire(path.join(root, "package.json"));
+const historical = load("./tests/fixtures/historical-module.cjs") as (
+  revision: string,
+  source: string,
+) => unknown;
+type CadApi = typeof import("../src/composition/cad-execution.js");
+const current = load("./src/cad.js") as CadApi;
+const previous = historical(
   "5292078741b417d6e921d3252a8bf19b3f0cc15b",
   "src/cad.js",
-);
-const fakeWsl = require("./fixtures/fake-wsl-platform.cjs");
+) as CadApi;
+const fakeWsl = load(
+  "./tests/fixtures/fake-wsl-platform.cjs",
+) as () => () => void;
 
-async function observation(api, client, operation, data, context) {
+async function observation(
+  api: CadApi,
+  client: CadClient,
+  operation: string,
+  data: CadData,
+  context: CadContext,
+): Promise<{ result: CadOutput } | { error: string }> {
   try {
     return { result: await api.executeCad(client, operation, data, context) };
   } catch (error) {
-    return { error: error.message };
+    return { error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -50,9 +72,9 @@ test("all catalog previews retain historical outcomes without submitting SDK wor
       context,
     );
     assert.deepEqual(after, before, operation);
-    if (after.result) {
+    if ("result" in after) {
       successes++;
-      assert.notEqual(after.result.mutation, true, operation);
+      assert.notEqual(after.result["mutation"], true, operation);
     }
   }
   assert.ok(
@@ -69,17 +91,17 @@ test("public read and mutation routes retain exact one-call artifacts and owners
     "entity.attribute.set",
     "shape.box",
   ]) {
-    const data = structuredClone(current.catalog[operation].example);
-    if (operation === "document.clear") data.dryRun = true;
+    const data = structuredClone(current.catalog[operation]!.example);
+    if (operation === "document.clear") data["dryRun"] = true;
     const context = {
       doc: "Owned",
       docId: "owned-id",
       docFileId: "owned-file",
       projectId: "owned-project",
     };
-    const traces = [];
+    const traces: Parameters<CadClient["callTool"]>[][] = [];
     for (const api of [previous, current]) {
-      const calls = [];
+      const calls: Parameters<CadClient["callTool"]>[] = [];
       const reply = {
         success: true,
         operation,
@@ -87,7 +109,7 @@ test("public read and mutation routes retain exact one-call artifacts and owners
       };
       const result = await api.executeCad(
         {
-          async callTool(...args) {
+          async callTool(...args: Parameters<CadClient["callTool"]>) {
             calls.push(args);
             return {
               failed: false,
@@ -101,6 +123,7 @@ test("public read and mutation routes retain exact one-call artifacts and owners
       );
       assert.deepEqual(result, reply);
       assert.equal(calls.length, 1);
+      assert.ok(calls[0]);
       assert.equal(calls[0][1], "fusion_mcp_execute");
       assert.equal(
         calls[0][0].object.readOnly,
@@ -116,7 +139,7 @@ test("public read and mutation routes retain exact one-call artifacts and owners
 
 test("offline capability discovery retains its result without a backend", async () => {
   const operation = "capabilities.inspect";
-  const data = { ...current.catalog[operation].example };
+  const data = { ...current.catalog[operation]!.example };
   assert.deepEqual(
     await current.executeCad(null, operation, data, {}),
     await previous.executeCad(null, operation, data, {}),

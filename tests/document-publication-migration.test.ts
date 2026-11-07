@@ -1,14 +1,26 @@
-"use strict";
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs/promises");
-const os = require("node:os");
-const path = require("node:path");
-const current = require("../src/document-publication");
-const previous = require("./fixtures/historical-module.cjs")(
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+import type {
+  CadContext,
+  CadData,
+} from "../packages/core/src/application/cad/contracts.js";
+import type { SaveBinding } from "../packages/core/src/application/documents/save.js";
+const root = path.resolve(__dirname, "../..");
+const load = createRequire(path.join(root, "package.json"));
+type Publication = typeof import("../src/composition/document-publication.js");
+const current = load("./src/document-publication.js") as Publication;
+const historical = load("./tests/fixtures/historical-module.cjs") as (
+  revision: string,
+  source: string,
+) => unknown;
+const previous = historical(
   "a9cf665303cec7f3676416de7291f391c60cd897",
   "src/document-publication.js",
-);
+) as Publication;
 
 for (const expected of ["complete", "noop", "unknown"]) {
   test(`publication retains ${expected} evidence, stage binding and one submission`, async (t) => {
@@ -22,12 +34,12 @@ for (const expected of ["complete", "noop", "unknown"]) {
       docFileId: "file",
       projectId: "project",
     };
-    const results = [];
+    const results: unknown[] = [];
     for (const [name, api] of [
       ["previous", previous],
       ["current", current],
-    ]) {
-      const trace = [];
+    ] as const) {
+      const trace: Record<string, unknown>[] = [];
       let reads = 0,
         saves = 0;
       const data = {
@@ -42,7 +54,12 @@ for (const expected of ["complete", "noop", "unknown"]) {
         timeBudgetMs: 50,
       };
       const client = { fixture: name };
-      const execute = async (actualClient, operation, payload, target) => {
+      const execute = async (
+        actualClient: typeof client,
+        operation: string,
+        payload: CadData,
+        target: CadContext,
+      ) => {
         assert.equal(actualClient, client);
         assert.deepEqual(target, context);
         trace.push({ operation, payload, target });
@@ -64,9 +81,9 @@ for (const expected of ["complete", "noop", "unknown"]) {
           };
         }
         assert.equal(operation, "document.save_native");
-        assert.equal(payload.creationId, "creation");
-        assert.equal(payload.fileId, "file");
-        assert.equal(payload.version, 3);
+        assert.equal(payload["creationId"], "creation");
+        assert.equal(payload["fileId"], "file");
+        assert.equal(payload["version"], 3);
         saves++;
         if (expected === "unknown") throw new Error("reply lost after submit");
         return {
@@ -78,11 +95,11 @@ for (const expected of ["complete", "noop", "unknown"]) {
         now: () => 0,
         sleep: async () => {},
         stages: {
-          plan(binding) {
+          plan(binding: SaveBinding) {
             trace.push({ stage: "plan", binding });
             return "planned";
           },
-          started(binding) {
+          started(binding: SaveBinding) {
             trace.push({ stage: "started", binding });
             return "started";
           },
