@@ -553,9 +553,16 @@
       "compatibility": "assets/inspect.py",
       "units": [
         {
+          "id": "legacy-document",
+          "path": "runtime/python/fmcad/adapters/fusion/legacy_document.py",
+          "dependencies": []
+        },
+        {
           "id": "legacy-inspect",
           "path": "runtime/python/fmcad/adapters/fusion/legacy_inspect.py",
-          "dependencies": []
+          "dependencies": [
+            "legacy-document"
+          ]
         }
       ]
     },

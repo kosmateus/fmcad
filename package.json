@@ -46,7 +46,7 @@
     "test:scenarios:live": "node dist/tests/scenarios/cli.js --backend fusion --profile broker",
     "typecheck:simulator": "node node_modules/basedpyright/index.js --outputjson -p tests/support/fusion-simulator/pyrightconfig.json",
     "build:docs": "node scripts/generate-help-audit.js --write-only",
-    "test:regressions": "node --experimental-strip-types --test --test-concurrency=1 tests/adsk-refresh.test.js tests/contracts/refactor-baseline.test.ts tests/audit-response-protocol.test.js tests/retained-origin-ui-guard.test.js dist/tests/legacy-inspect-admission.test.js dist/tests/legacy-parameters-admission.test.js dist/tests/control-center-locales.test.js"
+    "test:regressions": "node --experimental-strip-types --test --test-concurrency=1 tests/adsk-refresh.test.js tests/contracts/refactor-baseline.test.ts tests/audit-response-protocol.test.js tests/retained-origin-ui-guard.test.js dist/tests/legacy-inspect-admission.test.js dist/tests/legacy-parameters-admission.test.js dist/tests/legacy-document-admission.test.js dist/tests/control-center-locales.test.js"
   },
   "bin": {
     "fmcad": "dist/bin/fmcad.js",

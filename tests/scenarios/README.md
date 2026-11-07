@@ -1,8 +1,9 @@
 # Shared Fusion scenarios
 
-`cases.ts` supplies the same steps and assertions to real Fusion and the partial
-Python model. The scope is document lifecycle, saved-file lifecycle and literal length user
-parameters, including ownership under interleaving. It does not replace the
+The scenario case modules supply the same steps and assertions to real Fusion and the partial
+Python model. The scope includes document and saved-file lifecycle, numeric
+parameters, simple construction planes, component trees and display units,
+including ownership under interleaving. It does not replace the
 existing CAD/live suites or qualify geometry, cloud storage or rendering.
 
 ## Build and checks
@@ -55,9 +56,10 @@ at most two scenarios based on CPU availability. Each slot covers setup, steps
 and cleanup. `--owners N` sets the number of parameter scenarios, in addition
 to one lifecycle scenario. Run one coordinator per Fusion instance.
 
-`--suite all` is the default and runs foundation, saved and parameter scenarios. Use
+`--suite all` is the default and runs foundation, saved, parameter and document scenarios. Use
 `--suite foundation` for historical unsaved/export behavior or `--suite saved`
-for the save/close/delete lifecycle. The model supplies a dedicated fixture
+for the save/close/delete lifecycle, `--suite parameters` for parameter contracts
+or `--suite documents` for planes, components and units. The model supplies a dedicated fixture
 folder. Native saved scenarios require exact project/folder IDs; the runner never
 chooses a live folder by name or creates one implicitly. Native runs are deferred
 until the refactor is complete.

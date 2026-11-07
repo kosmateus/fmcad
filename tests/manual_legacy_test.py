@@ -9,6 +9,11 @@ import unittest
 from unittest.mock import patch
 
 
+def migrated_legacy(name):
+    root = Path(__file__).resolve().parents[1] / 'runtime/python/fmcad/adapters/fusion'
+    return (root / 'legacy_document.py').read_text() + '\n' + (root / name).read_text()
+
+
 class LegacyManualContracts(unittest.TestCase):
     def setUp(self):
         self.app = types.SimpleNamespace(data=types.SimpleNamespace(), documents=[], activeProduct=None, activeDocument=None)
@@ -29,7 +34,8 @@ class LegacyManualContracts(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         file = (root / 'runtime/python/fmcad/adapters/fusion/legacy_parameters.py'
                 if name == 'legacy_parameters.py' else root / 'assets' / name)
-        exec(compile(file.read_text(), str(file), 'exec'), namespace)
+        source = migrated_legacy(name) if name == 'legacy_parameters.py' else file.read_text()
+        exec(compile(source, str(file), 'exec'), namespace)
         return namespace
 
     def output(self, function, *args):
@@ -163,7 +169,7 @@ class LegacyManualContracts(unittest.TestCase):
         entry = next(item for item in manifest if item['file'] == 'inspect-a262.py.txt')
         frozen = (directory / entry['file']).read_bytes()
         self.assertEqual(hashlib.sha256(frozen).hexdigest(), entry['sha256'])
-        sources = [frozen.decode(), (directory.parents[2] / 'runtime/python/fmcad/adapters/fusion/legacy_inspect.py').read_text()]
+        sources = [frozen.decode(), migrated_legacy('legacy_inspect.py')]
         cases = [
             ('stats', ['Model'], 'DOC name=Model\nBODIES=1 FEATURES=2 SKETCHES=3 USER_PARAMS=4 PLANES=5\nDONE\n'),
             ('bbox', ['Model'], 'DOC name=Model\nBODY name=Body min=(0.00,0.00,0.00) max=(10.00,20.00,30.00) size=(10.0 x 20.0 x 30.0) mm\nDONE\n'),
@@ -205,7 +211,7 @@ class LegacyManualContracts(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         sources = [
             (root / 'tests/fixtures/history/inspect-a262.py.txt').read_text(),
-            (root / 'runtime/python/fmcad/adapters/fusion/legacy_inspect.py').read_text(),
+            migrated_legacy('legacy_inspect.py'),
         ]
         for mode in ('duplicate-name', 'activate-false', 'activate-wrong-document'):
             for operation, args in [('units', ['cm', 'Model']), ('rollback', ['1', 'Model'])]:

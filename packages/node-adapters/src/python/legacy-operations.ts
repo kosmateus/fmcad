@@ -62,33 +62,39 @@ function scriptFileForOp(op: string) {
     op === "units"
   )
     return "inspect.py";
-  if (op === "comp_list" || op === "comp_add") return "component.py";
   if (op === "upload") return "upload.py";
   return "fusion_data_manager.py";
 }
 
 export function prepareOpScript(op: string, args: readonly string[]) {
   const paths = resolveRuntimePaths({ anchor: __filename });
-  if (op.startsWith("param_") && Object.hasOwn(OPS, op)) {
-    const filename = "fmcad/adapters/fusion/legacy_parameters.py";
-    const source = fs
-      .readFileSync(path.join(paths.runtime, filename), "utf8")
-      .replace('OP = "help"', () => "OP = " + pythonLiteral(op))
-      .replace(
-        "ARGS: list[str] = []",
-        () => "ARGS: list[str] = " + pythonLiteral(args),
-      );
-    return preparePythonArtifact(
-      [
-        {
-          id: "legacy-parameters",
-          filename: "runtime/python/" + filename,
-          source,
-          role: "wrapper",
-        },
-      ],
-      { request: { op, args } },
-    );
+  const standalone = Object.hasOwn(OPS, op)
+    ? op.startsWith("param_")
+      ? "parameters"
+      : op.startsWith("plane_")
+        ? "planes"
+        : op.startsWith("comp_")
+          ? "components"
+          : undefined
+    : undefined;
+  if (standalone) {
+    const units = ["document", standalone].map((family, index): SourceInput => {
+      const filename = "fmcad/adapters/fusion/legacy_" + family + ".py";
+      const source = fs
+        .readFileSync(path.join(paths.runtime, filename), "utf8")
+        .replace('OP = "help"', () => "OP = " + pythonLiteral(op))
+        .replace(
+          "ARGS: list[str] = []",
+          () => "ARGS: list[str] = " + pythonLiteral(args),
+        );
+      return {
+        id: "legacy-" + family,
+        filename: "runtime/python/" + filename,
+        source,
+        role: index === 0 ? "runtime" : "wrapper",
+      };
+    });
+    return preparePythonArtifact(units, { request: { op, args } });
   }
   const family = (
     { "inspect.py": "legacy-inspect", "upload.py": "legacy-upload" } as Record<

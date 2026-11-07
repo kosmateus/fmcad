@@ -10,15 +10,23 @@ import sys
 from pathlib import Path
 
 METHODS: dict[str, dict[str, list[str]]] = {
-    "core": {"Application": ["get"], "Documents": ["add"], "Document": ["activate", "close", "saveAs", "save"],
+    "core": {"Point3D": ["create", "asArray"], "Vector3D": ["create", "asArray"],
+             "Plane": ["create"], "Matrix3D": ["create", "asArray"],
+             "Application": ["get"], "Documents": ["add"], "Document": ["activate", "close", "saveAs", "save"],
              "Products": ["itemByProductType"], "ValueInput": ["createByString", "createByReal"],
              "Data": ["findFileById"], "DataProjects": ["itemById"], "DataFolders": ["itemById", "add"],
              "DataFiles": ["itemById"], "DataFile": ["deleteMe"]},
-    "fusion": {"UserParameter": ["deleteMe"], "UserParameters": ["add", "itemByName"], "ExportManager": ["createFusionArchiveExportOptions", "execute"],
+    "fusion": {"ConstructionPlane": ["deleteMe"], "ConstructionPlanes": ["createInput", "add", "itemByName"],
+               "ConstructionPlaneInput": ["setByOffset", "setByTwoPlanes", "setByAngle"],
+               "Occurrences": ["addNewComponent"],
+               "UserParameter": ["deleteMe"], "UserParameters": ["add", "itemByName"], "ExportManager": ["createFusionArchiveExportOptions", "execute"],
                "Design": ["cast"]},
 }
 
 PARAMETER_PROPERTIES = ["name", "expression", "value", "unit", "comment"]
+PROPERTIES = [("fusion", "Parameter", "fusion", "UserParameter", PARAMETER_PROPERTIES),
+              ("fusion", "FusionUnitsManager", "fusion", "FusionUnitsManager", ["distanceDisplayUnits"]),
+              ("core", "UnitsManager", "fusion", "FusionUnitsManager", ["defaultLengthUnits"])]
 
 
 def property_accessors(file: Path, cls: str, name: str) -> list[ast.FunctionDef]:
@@ -50,12 +58,13 @@ def main(snapshot: Path) -> None:
                     raise ValueError(f"Call shape differs: {module}.{cls}.{name}: {shape(expected)} != {shape(actual)}")
                 supported += 1
     accessors = 0
-    for name in PARAMETER_PROPERTIES:
-        expected = property_accessors(snapshot / "adsk/fusion.py", "Parameter", name)
-        actual = property_accessors(Path(__file__).parent / "adsk/fusion.py", "UserParameter", name)
-        if not actual or [shape(fn) for fn in actual] != [shape(fn) for fn in expected]:
-            raise ValueError("Parameter property accessor differs: " + name)
-        accessors += len(actual)
+    for upstream_module, upstream_class, model_module, model_class, names in PROPERTIES:
+        for name in names:
+            expected = property_accessors(snapshot / "adsk" / (upstream_module + ".py"), upstream_class, name)
+            actual = property_accessors(Path(__file__).parent / "adsk" / (model_module + ".py"), model_class, name)
+            if not actual or [shape(fn) for fn in actual] != [shape(fn) for fn in expected]:
+                raise ValueError("Property accessor differs: " + model_class + "." + name)
+            accessors += len(actual)
     print(f"Verified {supported} method and {accessors} property accessor shapes against {snapshot.name}; behavior still requires live qualification")
 
 

@@ -1,9 +1,13 @@
 """Analytical length parameters only; no BRep/constraint solver is implied."""
 from __future__ import annotations
 
+import hashlib
 import json
+import uuid
+import math
 import re
 from pathlib import Path
+from typing import ClassVar
 
 from . import core
 from ._expressions import UNITS, Quantity, evaluate
@@ -178,17 +182,267 @@ class ExportManager(core.Base):
         return True
 
 
-class Timeline:
-    count: int = 0
-    markerPosition: int = 0
+class DistanceUnits:
+    MillimeterDistanceUnits: ClassVar[int] = 0
+    CentimeterDistanceUnits: ClassVar[int] = 1
+    MeterDistanceUnits: ClassVar[int] = 2
+    InchDistanceUnits: ClassVar[int] = 3
+    FootDistanceUnits: ClassVar[int] = 4
+    YardDistanceUnits: ClassVar[int] = 5
+
+
+class FusionUnitsManager(core.UnitsManager):
+    def __init__(self, doc: core.Document) -> None:
+        self.model_doc: core.Document = doc
+        self.model_distance: int = DistanceUnits.MillimeterDistanceUnits
+
+    @property
+    def distanceDisplayUnits(self) -> int:
+        return self.model_distance
+
+    @distanceDisplayUnits.setter
+    def distanceDisplayUnits(self, value: int) -> None:
+        if value not in (0, 1, 2, 3, 4, 5):
+            raise NotImplementedError("Display unit is not modeled")
+        self.model_distance = value
+        self.model_doc.isModified = True
+
+    @property
+    def defaultLengthUnits(self) -> str:
+        return {0: "mm", 1: "cm", 2: "m", 3: "in", 4: "ft", 5: "yd"}[self.model_distance]
+
+
+class FeatureHealthStates:
+    HealthyFeatureHealthState: ClassVar[int] = 0
+
+
+class TimelineObject(core.Base):
+    def __init__(self, entity: ConstructionPlane | Occurrence) -> None:
+        self.entity: ConstructionPlane | Occurrence = entity
+        self.healthState: int = FeatureHealthStates.HealthyFeatureHealthState
+        self.errorOrWarningMessage: str = ""
+
+    @property
+    def name(self) -> str:
+        return self.entity.name
+
+
+class Timeline(core.Collection[TimelineObject]):
+    @property
+    def markerPosition(self) -> int:
+        return self.count
+
+    @markerPosition.setter
+    def markerPosition(self, value: int) -> None:
+        if value < 0 or value > self.count:
+            raise ValueError("Timeline marker out of range")
+        if value != self.count:
+            raise NotImplementedError("Rollback of native features is not modeled")
+
+
+class ConstructionAxis(core.Base):
+    def __init__(self, direction: core.Vector3D) -> None:
+        self.model_direction: core.Vector3D = direction
+
+
+class ConstructionPlane(core.Base):
+    def __init__(self, owner: Component, geometry: core.Plane, name: str, origin: bool = False) -> None:
+        self.parentComponent: Component = owner
+        self.geometry: core.Plane = geometry
+        self.name: str = name
+        self.isValid: bool = True
+        self.model_origin: bool = origin
+        self.model_dependencies: list[ConstructionPlane] = []
+
+    def deleteMe(self) -> bool:
+        if not self.isValid or self.model_origin:
+            return False
+        planes = self.parentComponent.constructionPlanes
+        if any(self in p.model_dependencies for p in planes):
+            raise NotImplementedError("Cascading plane deletion is not modeled")
+        planes.values.remove(self)
+        timeline = self.parentComponent.model_design.timeline
+        timeline.values[:] = [item for item in timeline if item.entity is not self]
+        self.isValid = False
+        self.parentComponent.model_design.model_doc.isModified = True
+        return True
+
+
+def _literal(value: core.ValueInput, units: str) -> float:
+    def unsupported(name: str) -> Quantity:
+        raise NotImplementedError("Parameter-driven plane regeneration is not modeled: " + name)
+    if isinstance(value.value, str):
+        return evaluate(value.value, units, unsupported).value
+    if not math.isfinite(value.value):
+        raise ValueError("Non-finite plane input")
+    return value.value
+
+
+class ConstructionPlaneInput(core.Base):
+    def __init__(self, component: Component) -> None:
+        self.model_component: Component = component
+        self.model_geometry: core.Plane | None = None
+        self.model_dependencies: list[ConstructionPlane] = []
+
+    def model_plane(self, entity: core.Base) -> ConstructionPlane:
+        if (not isinstance(entity, ConstructionPlane) or not entity.isValid
+                or entity.parentComponent is not self.model_component):
+            raise NotImplementedError("Only owned construction planes are modeled")
+        return entity
+
+    def setByOffset(self, planarEntity: core.Base, offset: core.ValueInput) -> bool:
+        plane = self.model_plane(planarEntity)
+        distance = _literal(offset, "cm")
+        origin, normal = plane.geometry.origin, plane.geometry.normal
+        self.model_geometry = core.Plane(core.Point3D(origin.x + normal.x * distance,
+            origin.y + normal.y * distance, origin.z + normal.z * distance), normal)
+        self.model_dependencies = [plane]
+        return True
+
+    def setByTwoPlanes(self, planarEntityOne: core.Base, planarEntityTwo: core.Base) -> bool:
+        first, second = self.model_plane(planarEntityOne), self.model_plane(planarEntityTwo)
+        a, b = first.geometry, second.geometry
+        if any(abs(x-y) > 1e-9 for x, y in zip(a.normal.asArray(), b.normal.asArray())):
+            raise NotImplementedError("Only parallel midplanes are modeled")
+        displacement = [y-x for x, y in zip(a.origin.asArray(), b.origin.asArray())]
+        if abs(sum(x*y for x,y in zip(displacement, a.normal.asArray()))) < 1e-9:
+            return False
+        self.model_geometry = core.Plane(core.Point3D((a.origin.x+b.origin.x)/2,
+            (a.origin.y+b.origin.y)/2, (a.origin.z+b.origin.z)/2), a.normal)
+        self.model_dependencies = [first, second]
+        return True
+
+    def setByAngle(self, linearEntity: core.Base, angle: core.ValueInput, planarEntity: core.Base) -> bool:
+        plane = self.model_plane(planarEntity)
+        if not isinstance(linearEntity, ConstructionAxis):
+            raise NotImplementedError("Only construction axes are modeled")
+        origin = plane.geometry.origin
+        if any(abs(x) > 1e-9 for x in origin.asArray()):
+            raise NotImplementedError("Only planes through the origin support modeled angle input")
+        axis, n = linearEntity.model_direction, plane.geometry.normal
+        dot = axis.x*n.x + axis.y*n.y + axis.z*n.z
+        if abs(dot) > 1e-9:
+            return False
+        theta = _literal(angle, "rad")
+        c, sine = math.cos(theta), math.sin(theta)
+        normal = core.Vector3D(n.x*c+(axis.y*n.z-axis.z*n.y)*sine,
+            n.y*c+(axis.z*n.x-axis.x*n.z)*sine, n.z*c+(axis.x*n.y-axis.y*n.x)*sine)
+        self.model_geometry = core.Plane(origin, normal)
+        self.model_dependencies = [plane]
+        return True
+
+
+class ConstructionPlanes(core.Collection[ConstructionPlane]):
+    def __init__(self, component: Component) -> None:
+        super().__init__()
+        self.component: Component = component
+
+    def createInput(self, occurrenceForCreation: Occurrence | None = None) -> ConstructionPlaneInput:
+        if occurrenceForCreation is not None:
+            raise NotImplementedError("Cross-component plane creation is not modeled")
+        return ConstructionPlaneInput(self.component)
+
+    def add(self, input: ConstructionPlaneInput) -> ConstructionPlane | None:
+        if input.model_component is not self.component or input.model_geometry is None:
+            return None
+        plane = ConstructionPlane(self.component, input.model_geometry, "Plane" + str(self.count+1))
+        plane.model_dependencies = list(input.model_dependencies)
+        self.values.append(plane)
+        self.component.model_design.timeline.values.append(TimelineObject(plane))
+        self.component.model_design.model_doc.isModified = True
+        return plane
+
+    def itemByName(self, name: str) -> ConstructionPlane | None:
+        return next((p for p in self if p.name == name), None)
+
+
+class Occurrence(core.Base):
+    def __init__(self, component: Component) -> None:
+        self.component: Component = component
+
+    @property
+    def name(self) -> str:
+        return self.component.name + ":1"
+
+
+class Occurrences(core.Collection[Occurrence]):
+    def __init__(self, component: Component) -> None:
+        super().__init__()
+        self.model_component: Component = component
+
+    def addNewComponent(self, transform: core.Matrix3D) -> Occurrence:
+        if transform.asArray() != core.Matrix3D.create().asArray():
+            raise NotImplementedError("Only identity component placement is modeled")
+        design = self.model_component.model_design
+        component = Component(design, "Component" + str(design.allComponents.count))
+        occurrence = Occurrence(component)
+        self.values.append(occurrence)
+        design.allComponents.values.append(component)
+        design.timeline.values.append(TimelineObject(occurrence))
+        design.model_doc.isModified = True
+        return occurrence
+
+
+class Features(core.Collection[object]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.deriveFeatures: core.Collection[object] = core.Collection()
+
+
+class Component(core.Base):
+    def __init__(self, design: Design, name: str | None = None) -> None:
+        self.model_design: Design = design
+        self.model_name: str | None = name
+        self.model_id: str = str(uuid.uuid4())
+        self.occurrences: Occurrences = Occurrences(self)
+        self.constructionPlanes: ConstructionPlanes = ConstructionPlanes(self)
+        self.bRepBodies: core.Collection[object] = core.Collection()
+        self.features: Features = Features()
+        self.sketches: core.Collection[object] = core.Collection()
+        self.xYConstructionPlane: ConstructionPlane = ConstructionPlane(self,
+            core.Plane(core.Point3D(0, 0, 0), core.Vector3D(0, 0, 1)), "XY", True)
+        self.xZConstructionPlane: ConstructionPlane = ConstructionPlane(self,
+            core.Plane(core.Point3D(0, 0, 0), core.Vector3D(0, 1, 0)), "XZ", True)
+        self.yZConstructionPlane: ConstructionPlane = ConstructionPlane(self,
+            core.Plane(core.Point3D(0, 0, 0), core.Vector3D(1, 0, 0)), "YZ", True)
+        self.xConstructionAxis: ConstructionAxis = ConstructionAxis(core.Vector3D(1, 0, 0))
+        self.yConstructionAxis: ConstructionAxis = ConstructionAxis(core.Vector3D(0, 1, 0))
+        self.zConstructionAxis: ConstructionAxis = ConstructionAxis(core.Vector3D(0, 0, 1))
+
+    @property
+    def id(self) -> str:
+        return self.model_id
+
+    @property
+    def revisionId(self) -> str:
+        # Stable readback; modeled edits change the broker's optimistic snapshot.
+        state = dict(name=self.name,
+            units=self.model_design.unitsManager.defaultLengthUnits,
+            planes=[dict(name=p.name, origin=p.geometry.origin.asArray(),
+                         normal=p.geometry.normal.asArray()) for p in self.constructionPlanes],
+            occurrences=[dict(id=o.component.id, name=o.component.name) for o in self.occurrences])
+        return hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest()
+
+    @property
+    def name(self) -> str:
+        return self.model_design.model_doc.name if self.model_name is None else self.model_name
+
+    @name.setter
+    def name(self, value: str) -> None:
+        self.model_name = value
+        self.model_design.model_doc.isModified = True
 
 
 class Design(core.Product):
     def __init__(self, doc: core.Document) -> None:
+        self.model_doc: core.Document = doc
         self.userParameters: UserParameters = UserParameters(doc)
         self.allParameters: UserParameters = self.userParameters
-        self.allComponents: core.Collection[object] = core.Collection()
+        self.allComponents: core.Collection[Component] = core.Collection()
         self.timeline: Timeline = Timeline()
+        self.unitsManager: FusionUnitsManager = FusionUnitsManager(doc)
+        self.rootComponent: Component = Component(self)
+        self.allComponents.values.append(self.rootComponent)
         self.exportManager: ExportManager = ExportManager(doc, self.userParameters)
 
     @staticmethod

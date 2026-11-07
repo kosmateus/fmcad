@@ -120,6 +120,15 @@ const inventory: readonly DocumentIoFamily[] = Object.freeze(
         family: `legacy-${family}`,
         compatibility: `assets/${family}.py`,
         units: [
+          ...(family === "inspect"
+            ? [
+                {
+                  id: "legacy-document",
+                  path: "runtime/python/fmcad/adapters/fusion/legacy_document.py",
+                  dependencies: [],
+                },
+              ]
+            : []),
           ...(family === "review"
             ? [
                 {
@@ -140,7 +149,9 @@ const inventory: readonly DocumentIoFamily[] = Object.freeze(
             dependencies:
               family === "review"
                 ? ["capture-integrity", "docio-review-rules"]
-                : [],
+                : family === "inspect"
+                  ? ["legacy-document"]
+                  : [],
           },
         ],
       }),
