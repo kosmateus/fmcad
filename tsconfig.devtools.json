@@ -8,5 +8,13 @@
     "noEmitOnError": true,
     "incremental": false
   },
-  "include": ["scripts/devtools/**/*.ts"]
+  "include": ["scripts/devtools/**/*.ts"],
+  "references": [
+    {
+      "path": "./packages/node-adapters"
+    },
+    {
+      "path": "./packages/control-center"
+    }
+  ]
 }
