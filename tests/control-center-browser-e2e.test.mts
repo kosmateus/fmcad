@@ -827,7 +827,7 @@ test(
       page,
       (query) =>
         query.collection === "agents" &&
-        query.scope?.projectId === projectId &&
+        query.scope?.kind === "global" &&
         query.filters?.presence?.any?.includes("unknown") === true &&
         query.filters.presence.any.includes("active") === false,
     );

@@ -74,7 +74,7 @@ The browser matrix also exposed an existing filter-test race (unchanged from
 `a80b775`): the historical agent was already visible before selecting the history
 filter. Waiting for that row did not establish that the asynchronous filtered
 response had rendered, so an immediate count sometimes still included the active
-agent. The test now observes the project-scoped presence-filter request and waits
+agent. The test now observes the global presence-filter request and waits
 for the active row to detach before retaining the same zero-count assertion and
 historical-row check. No production filter or expected result changes.
 
