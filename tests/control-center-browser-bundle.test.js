@@ -136,7 +136,7 @@ function checkBrowserEsmGraph(assetRoot) {
     { cwd: repository, encoding: "utf8", timeout: 30000 },
   );
   assert.equal(result.status, 0, result.stderr + result.stdout);
-  assert.match(result.stdout, /"modules":8/);
+  assert.match(result.stdout, /"modules":14/);
 }
 
 test("browser build emits standalone ESM and a hash-bound static allowlist", async (t) => {
@@ -155,10 +155,13 @@ test("browser build emits standalone ESM and a hash-bound static allowlist", asy
   assert.equal(manifest.entrypoint, "/assets/control-center/web/index.js");
   // The agents/projects feature added a browser module and a runtime route contract.
   // Both are emitted by the browser build and must be in the exact server allowlist.
-  assert.equal(manifest.assets.length, 19);
+  assert.equal(manifest.assets.length, 26);
   for (const file of [
     "web/agents-projects.js",
     "contracts/project-actions.js",
+    "web/locale-runtime.js",
+    "web/locale-selector.js",
+    "assets/locale-selector.css",
   ]) {
     assert.ok(
       manifest.assets.some((asset) => asset.file === file),
@@ -194,23 +197,56 @@ test("browser build emits standalone ESM and a hash-bound static allowlist", asy
     "api.js",
     "app.js",
     "index.js",
+    "locale-catalogs.js",
+    "locale-runtime.js",
+    "locale-selector.js",
+    "locale-system-controls.js",
+    "locale-system-view.js",
+    "locale-web-ui.js",
     "read-model.js",
     "select-controls.js",
     "table-model.js",
   ]);
   for (const file of sourceFiles) {
     const source = fs.readFileSync(path.join(assetRoot, "web", file), "utf8");
-    assert.doesNotMatch(
-      source,
-      /\brequire\s*\(|\bprocess\s*\.|from\s*["']node:/,
+    // Catalog keys such as "system.process.panel" are data, not Node APIs.
+    // Inspect executable syntax so those keys do not mask real API access.
+    const ts = require("typescript");
+    const syntax = ts.createSourceFile(
       file,
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.JS,
     );
+    const inspect = (node) => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression))
+        assert.notEqual(node.expression.text, "require", file);
+      if (
+        (ts.isPropertyAccessExpression(node) ||
+          ts.isElementAccessExpression(node)) &&
+        ts.isIdentifier(node.expression)
+      )
+        assert.notEqual(node.expression.text, "process", file);
+      if (
+        ts.isImportDeclaration(node) &&
+        ts.isStringLiteral(node.moduleSpecifier)
+      )
+        assert.ok(!node.moduleSpecifier.text.startsWith("node:"), file);
+      ts.forEachChild(node, inspect);
+    };
+    inspect(syntax);
     assert.doesNotMatch(
       source,
       /FmcadDemo|completed-project-demo|snapshotMode|Math\.random/,
       file,
     );
-    assert.doesNotMatch(source, /https?:\/\//, file);
+    // SVG namespace identifies a local DOM element; it is not a network resource.
+    assert.doesNotMatch(
+      source.replaceAll("http://www.w3.org/2000/svg", ""),
+      /https?:\/\//,
+      file,
+    );
   }
   const html = fs.readFileSync(path.join(assetRoot, "index.html"), "utf8");
   assert.match(html, /src="\/assets\/control-center\/web\/index\.js"/);
@@ -509,10 +545,13 @@ test(
       runtimeBuild.fingerprint,
     );
     const assets = installedResolver.loadConsoleHttpAssets(installedDist);
-    assert.equal(assets.length, 19);
+    assert.equal(assets.length, 26);
     for (const module of [
       "web/agents-projects.js",
       "contracts/project-actions.js",
+      "web/locale-runtime.js",
+      "web/locale-selector.js",
+      "assets/locale-selector.css",
     ])
       assert.ok(
         assets.some(

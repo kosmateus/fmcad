@@ -37,7 +37,10 @@
     "tests/fixed-import-checker.test.ts",
     "tests/fixed-native-program-source.test.ts",
     "tests/control-center-production-runtime.test.ts",
-    "tests/mcp-console-start.test.ts"
+    "tests/mcp-console-start.test.ts",
+    "tests/fixtures/historical-module.cts",
+    "tests/legacy-inspect-admission.test.ts",
+    "tests/control-center-locales.test.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]
 }

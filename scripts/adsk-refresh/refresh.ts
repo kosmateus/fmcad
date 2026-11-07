@@ -40,12 +40,16 @@ const maxFile = 8 * 1024 * 1024;
 const maxTotal = 24 * 1024 * 1024;
 export const network: Source = {
   async get(url, limit) {
+    const token = process.env["GITHUB_TOKEN"];
+    const authenticated =
+      new URL(url).origin === "https://api.github.com" && Boolean(token);
     const response = await fetch(url, {
       signal: AbortSignal.timeout(30_000),
       redirect: "error",
       headers: {
         "User-Agent": "fmcad-adsk-refresh",
         Accept: "application/vnd.github+json",
+        ...(authenticated ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
     if (!response.ok || !response.body)

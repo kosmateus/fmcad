@@ -69,7 +69,11 @@ test("legacy fixture consumers receive emitted CJS from canonical CTS, not handw
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const compiled = path.join(root, "dist/tests/fixtures");
   fs.mkdirSync(compiled, { recursive: true });
-  const names = ["closed-scratch-artifacts.cjs", "closed-epoch-successor.cjs"];
+  const names = [
+    "closed-scratch-artifacts.cjs",
+    "closed-epoch-successor.cjs",
+    "historical-module.cjs",
+  ];
   for (const filename of names)
     fs.writeFileSync(
       path.join(compiled, filename),

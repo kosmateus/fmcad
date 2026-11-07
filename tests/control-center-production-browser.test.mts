@@ -97,7 +97,8 @@ test(
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
-      if (message.type() === "error") errors.push(message.text());
+      if (message.type() === "error")
+        errors.push(`${message.text()} ${message.location().url}`);
     });
     await page.goto(`http://localhost:${port}/`);
     await page
@@ -110,9 +111,16 @@ test(
       await page
         .locator(`aside [data-action="scope"][data-id="${projectId}"]`)
         .click();
-      await page
-        .locator(`[data-action="task"][data-id="task-${projectId}"]`)
-        .waitFor();
+      // A matching row already exists in the global view. Wait for the
+      // complete scoped result, including removal of the other project's row.
+      await page.waitForFunction((expected) => {
+        const rows = [...document.querySelectorAll('[data-action="task"]')];
+        return (
+          rows.length === 1 &&
+          rows[0]?.getAttribute("data-id") === `task-${expected}` &&
+          rows[0]?.getAttribute("data-project") === expected
+        );
+      }, projectId);
       const rows = await page
         .locator('[data-action="task"]')
         .evaluateAll((elements) =>

@@ -1033,7 +1033,10 @@ test(
     await page.getByRole("dialog", { name: "Pomoc i skróty" }).waitFor({
       state: "detached",
     });
-    await page.getByRole("button", { name: "Ustawienia", exact: true }).click();
+    await page
+      .locator(".topbar")
+      .getByRole("button", { name: "Ustawienia", exact: true })
+      .click();
     await page
       .getByRole("combobox", { name: /Odstęp między aktualizacjami widoku:/ })
       .click();
@@ -1049,7 +1052,10 @@ test(
       .waitFor({ state: "detached" });
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Przegląd globalny" }).waitFor();
-    await page.getByRole("button", { name: "Ustawienia", exact: true }).click();
+    await page
+      .locator(".topbar")
+      .getByRole("button", { name: "Ustawienia", exact: true })
+      .click();
     assert.match(
       (await page
         .getByRole("combobox", { name: /Odstęp między aktualizacjami widoku:/ })
@@ -1121,7 +1127,10 @@ test(
     ).length;
     await page.getByRole("button", { name: "Zamroź podgląd" }).click();
     await page.getByText("Podgląd zamrożony.").waitFor();
-    await page.getByRole("button", { name: "Wznów podgląd" }).click();
+    await page
+      .locator(".heading-actions")
+      .getByRole("button", { name: "Wznów podgląd" })
+      .click();
     const refreshRequest = page.waitForRequest(
       (request) => request.url().includes("/api/v1/console/snapshot"),
       { timeout: 10_000 },
@@ -1262,8 +1271,11 @@ test(
       new URL(failedSnapshotRequest.url()).pathname,
       "/api/v1/console/snapshot",
     );
+    // The error can also appear in an empty table, but retained rows hide that
+    // duplicate. Assert the persistent status notice for either table state.
     await page
-      .getByText("Nie można połączyć się z lokalnym panelem.")
+      .locator('.notice[role="status"]')
+      .filter({ hasText: "Nie można połączyć się z lokalnym panelem." })
       .waitFor();
     assert.ok(
       expectedNetworkFailures.some((request) =>

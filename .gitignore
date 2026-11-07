@@ -81,3 +81,5 @@ tests/partition-bench-*/
 # Rebuilt from the CLI command catalog by npm run build:docs.
 /docs/COMMAND_REFERENCE.md
 /docs/COMMAND_COVERAGE.md
+
+/tests/fixtures/historical-module.cjs

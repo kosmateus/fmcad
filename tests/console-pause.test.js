@@ -78,7 +78,7 @@ test('real broker control drains a physical RPC, keeps queued work and resumes t
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpi-'));
   const { serve } = require('../src/queue-broker');
   const { request } = require('../src/queue-connection');
-  const identity = { pid: 91, birth: 'fake:91', version: 'fake', activeCommand: 'SelectCommand', documents: [] };
+  const identity = { pid: 91, birth: 'fake:91', version: 'fake', activeCommand: 'SelectCommand', documents: [], documentState: { status: 'unavailable' } };
   let finishPing, sent = 0, productScripts = 0;
   const {createBrokerTransport} = require('../src/dist/fusion-transport/broker');
   const physical = createBrokerTransport({url:'http://queue.invalid',tool:'fusion_mcp_execute',timeoutMs:30000},
@@ -104,7 +104,7 @@ test('real broker control drains a physical RPC, keeps queued work and resumes t
       return { status: 200, raw: JSON.stringify({ jsonrpc: '2.0', id: payload.id,
         result: script ? { content: [{ type: 'text', text: 'FMCAD_QUEUE_INSTANCE ' + JSON.stringify(identity) }] } : {} }) };
     };
-  const broker = await serve({ backend: 'mcp', timeoutMs: 30000 }, { dir, confirmOwnership: true, createBackend: () => physical, pollMs: 5 });
+  const broker = await serve({ backend: 'mcp', timeoutMs: 30000 }, { dir, confirmOwnership: true, createBackend: () => physical, nativePath: file => file, pollMs: 5 });
   t.after(async () => { await broker.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   const auth = { clientId: 'control-test', clientToken: 'private-control' };
   await request(dir, { action: 'register', ...auth });
@@ -143,13 +143,14 @@ test('real broker control drains a physical RPC, keeps queued work and resumes t
   }
   const rejected = await call('result', { jobId: stale.id });
   assert.equal(rejected.job.state, 'failed');
-  // A generated legacy command may now fail real static analysis before it
-  // becomes SDK-ready. That refusal must also preserve the original no-send fence.
-  assert.ok(['DOCUMENT_STATE_UNAVAILABLE', 'DOCUMENT_BASELINE_REQUIRED', 'PYTHON_CHECK_REJECTED'].includes(rejected.job.code));
-  if (rejected.job.code === 'PYTHON_CHECK_REJECTED') {
-    assert.notEqual(rejected.execution.pythonCheck.status, 'passed');
-    assert.equal(rejected.job.operationResult.executionOutcome, 'not_started');
-  }
+  // Static admission is now covered by the real strict inspection gate. This
+  // scenario must reach the stale-document guard after resume, never pass merely
+  // because a generated program fails to typecheck before that guard is exercised.
+  // Resume may invalidate preparation first (DOCUMENT_CHANGED); if preparation
+  // finishes afterward, the fresh probe reports the explicitly unavailable target.
+  // Both are document fences. Checker failures are no longer accepted here.
+  assert.ok(['DOCUMENT_CHANGED', 'DOCUMENT_STATE_UNAVAILABLE'].includes(rejected.job.code), JSON.stringify(rejected));
+  assert.equal(rejected.job.operationResult.executionOutcome, 'not_started');
   assert.equal(productScripts, 0, 'Unversioned queued context must be refreshed before original execution');
   assert.equal(sent, 2);
 });

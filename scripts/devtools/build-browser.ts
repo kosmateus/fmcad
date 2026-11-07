@@ -222,6 +222,14 @@ export function buildBrowserAssets(
       "/assets/control-center/assets/favicon.svg",
     ),
   );
+  assets.push(
+    copyAndDescribe(
+      outputRoot,
+      "locale-selector.css",
+      "assets/locale-selector.css",
+      "/assets/control-center/assets/locale-selector.css",
+    ),
+  );
   const highlightBytes = copyFile(
     path.join(sourceWeb, "vendor/highlight.min.js"),
     path.join(outputRoot, "assets/vendor/highlight.min.js"),

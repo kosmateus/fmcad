@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { pythonValue, preparePythonArtifact } = require('./python');
+const { pythonValue, pythonLiteral, preparePythonArtifact } = require('./python');
 
 const OPS = {
   projects: 0,
@@ -51,8 +51,8 @@ function prepareOpScript(op, args) {
     const { documentIoFamilyUnits } = require('./dist/python/document-io-manifest');
     const units = documentIoFamilyUnits(paths.runtime, family).map((unit, index, all) => ({ ...unit,
       role: index === all.length - 1 ? 'wrapper' : 'runtime',
-      source: unit.source.replace('OP = "help"', () => 'OP = ' + pythonValue(op))
-        .replace('ARGS = []', () => 'ARGS = ' + pythonValue(args)) }));
+      source: unit.source.replace('OP = "help"', () => 'OP = ' + pythonLiteral(op))
+        .replace(/ARGS(?:: list\[str\])? = \[\]/, () => 'ARGS: list[str] = ' + pythonLiteral(args)) }));
     return preparePythonArtifact(units, { request: { op, args } });
   }
   const file = path.join(paths.assets, scriptFileForOp(op));

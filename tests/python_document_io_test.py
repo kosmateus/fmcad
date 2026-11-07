@@ -434,6 +434,15 @@ class RuntimeInventoryTests(unittest.TestCase):
                     # Master now sorts retained component/parameter/reference
                     # records deterministically and keys recursion by captured identity.
                     continue
+                if family == 'legacy-inspect':
+                    import hashlib
+                    reviewed = json.loads((ROOT / 'tests/fixtures/legacy-inspect-typing.json').read_text())
+                    allowed = reviewed['definitions'].get(name)
+                    if allowed:
+                        self.assertTrue(reviewed['reason'])
+                        self.assertEqual(hashlib.sha256(original_nodes[name].encode()).hexdigest(), allowed['before'], name)
+                        self.assertEqual(hashlib.sha256(current_nodes[name].encode()).hexdigest(), allowed['after'], name)
+                        continue
                 self.assertEqual(current_nodes[name], original_nodes[name], (family, name))
 
     def test_clean_rules_import_without_sdk_filesystem_or_processes(self):
