@@ -22,5 +22,17 @@
     "sourcePath": "src/run.js",
     "file": "run-d496.js.txt",
     "sha256": "b055c2144b88d7b03d6079d472cdaa9541c8f8322ceafbf3990347b2419ccb34"
+  },
+  {
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "src/cad.js",
+    "file": "cad-a262.js.txt",
+    "sha256": "bdd0f1d6dc2e3981b83755c51cddfada8e258f834ac4fc51c110d6cf8844e58c"
+  },
+  {
+    "revision": "5292078741b417d6e921d3252a8bf19b3f0cc15b",
+    "sourcePath": "src/cad.js",
+    "file": "cad-5292.js.txt",
+    "sha256": "5677e713d8b58294d874cf01b736f034cf8b6695c5101efc3401d8bf21dd91bc"
   }
 ]

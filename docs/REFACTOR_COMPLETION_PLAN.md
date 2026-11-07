@@ -228,3 +228,9 @@ The [live suite inventory](REFACTOR_LIVE_INVENTORY.md) classifies all 36 current
 suite/helper files, links their reference relation and records the remaining
 contracts. CI checks inventory completeness; `run-live --list` reports the gaps
 offline. Existing legacy `all` registration does not qualify concurrent isolation.
+
+[Stage 4b](REFACTOR_STAGE_4B.md) migrates reference/externalization native action
+adapters and fixes inherited ambiguous response handling. Exactly one structured
+result is required; uncertain post-submit outcomes remain unknown without replay.
+The existing nested workflow test keeps its expected outcome after its stale
+request parser is repaired.
