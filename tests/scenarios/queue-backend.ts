@@ -61,8 +61,12 @@ export class QueueScenarioBackend implements ScenarioBackend {
     const argv = [
       "run",
       filename,
+      ...(request.helpers ? ["--helpers", request.helpers] : []),
       ...(request.target
         ? ["--doc", request.target.name, "--doc-id", request.target.creationId]
+        : []),
+      ...(request.target?.file
+        ? ["--doc-file-id", request.target.file.fileId]
         : []),
     ];
     const job = await client.submit({

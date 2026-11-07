@@ -147,13 +147,15 @@
       "id": "entity-attributes",
       "source": "tests/live-entity-attributes.js",
       "runner": "standalone",
-      "model": "pending",
+      "model": "partial",
       "scope": "Entity identity, attributes and selection behavior",
       "prerequisites": "Installed matching broker and an isolated owned fixture",
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [
+        "attributes"
+      ]
     },
     {
       "id": "extended",

@@ -31,6 +31,56 @@ class Base:
     pass
 
 
+class Attribute(Base):
+    def __init__(self, collection: Attributes, group: str, name: str, value: str) -> None:
+        self.model_collection: Attributes = collection
+        self.groupName: str = group
+        self.name: str = name
+        self.model_value: str = value
+
+    @property
+    def value(self) -> str:
+        return self.model_value
+
+    @value.setter
+    def value(self, value: str) -> None:
+        self.model_collection.model_validate_value(value)
+        self.model_value = value
+        self.model_collection.model_document.isModified = True
+
+
+class Attributes(Collection[Attribute]):
+    def __init__(self, document: Document) -> None:
+        super().__init__()
+        self.model_document: Document = document
+
+    @staticmethod
+    def model_validate_value(value: str) -> None:
+        if len(value.encode("utf-8")) > 2097152:
+            raise ValueError("Attribute exceeds the modeled UTF-8 byte limit")
+
+    def itemByName(self, groupName: str, name: str) -> Attribute | None:
+        return next((a for a in self.values if (a.groupName, a.name) == (groupName, name)), None)
+
+    def add(self, groupName: str, name: str, value: str) -> Attribute:
+        if not groupName.strip() or not name.strip():
+            raise ValueError("An attribute needs a nonempty group and name")
+        self.model_validate_value(value)
+        previous = self.itemByName(groupName, name)
+        if previous is not None:
+            previous.value = value
+            return previous
+        attribute = Attribute(self, groupName, name, value)
+        self.values.append(attribute)
+        self.model_document.isModified = True
+        return attribute
+
+    def itemsByGroup(self, groupName: str) -> list[Attribute]:
+        if not groupName.strip():
+            raise ValueError("Empty attribute group")
+        return [a for a in self.values if a.groupName == groupName]
+
+
 class Point3D(Base):
     def __init__(self, x: float, y: float, z: float) -> None:
         if not all(math.isfinite(v) for v in (x, y, z)):
@@ -359,7 +409,7 @@ class Application(Base):
     _instance: ClassVar[Application | None] = None
 
     def __init__(self) -> None:
-        self.version: str = "fmcad-simulator-v6-not-Fusion"
+        self.version: str = "fmcad-simulator-v7-not-Fusion"
         self.activeDocument: Document | None = None
         self.documents: Documents = Documents(self)
         self.userInterface: UserInterface = UserInterface()

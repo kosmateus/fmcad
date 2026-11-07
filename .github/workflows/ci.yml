@@ -3,6 +3,7 @@ name: CI
 on:
   pull_request:
   push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -37,8 +38,8 @@ jobs:
       - run: npm run test:scenarios:unit
       - run: npm run typecheck:simulator
       - run: node dist/tests/scenarios/verify-api.js
-      - run: npm run test:scenarios:component -- --protocol mcp --owners 2
-      - run: npm run test:scenarios:component -- --protocol addin --owners 2
+      - run: npm run test:scenarios:component -- --protocol mcp --owners 2 --suite foundation
+      - run: npm run test:scenarios:component -- --protocol addin --owners 2 --suite foundation
       - run: npm run test:prepare-offline
       - run: timeout --signal=TERM --kill-after=15s 15m npm run test:contracts
 
@@ -95,7 +96,8 @@ jobs:
       fail-fast: false
       matrix:
         protocol: [mcp, addin]
-        suite: [foundation, saved, parameters, documents, cloud, boxes]
+        suite:
+          [foundation, saved, parameters, documents, cloud, boxes, attributes]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -106,7 +108,7 @@ jobs:
       - run: npm run build
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      - run: timeout --signal=TERM --kill-after=15s 12m npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite }} --concurrency 10 --owners ${{ matrix.suite == 'saved' && 2 || 10 }}
+      - run: timeout --signal=TERM --kill-after=15s 12m npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite }} --concurrency 10 --owners ${{ (matrix.suite == 'saved' || matrix.suite == 'attributes') && 2 || 10 }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -8,6 +8,11 @@ import path from "node:path";
 import type { createPythonChecker } from "../../packages/node-adapters/src/python/checker";
 import type { preparePythonArtifact } from "../../packages/node-adapters/src/python/artifact";
 import type {
+  pythonUnitContexts,
+  pythonArtifactManifest,
+  retainPythonOrigin,
+} from "../../packages/node-adapters/src/python/context-binding";
+import type {
   Execution,
   Owner,
   Protocol,
@@ -25,6 +30,9 @@ interface PythonResult {
 interface PythonTools {
   createPythonChecker: typeof createPythonChecker;
   preparePythonArtifact: typeof preparePythonArtifact;
+  pythonUnitContexts: typeof pythonUnitContexts;
+  pythonArtifactManifest: typeof pythonArtifactManifest;
+  retainPythonOrigin: typeof retainPythonOrigin;
 }
 export class PythonSimulator {
   readonly instanceId = randomUUID();
@@ -119,11 +127,39 @@ export const simulatorCapabilities = new Set([
   "document-units",
   "cloud-inventory",
   "rectangular-extrusion",
+  "body-attributes",
 ]);
 export const simulatorFolder = Object.freeze({
   projectId: "sim-project:fixtures",
   folderId: "sim-folder:fixtures",
 });
+
+/** Preserve runtime provenance by using the public cad-v1 preparation path. */
+export function prepareScenarioHelpers(root: string, request: ScriptRequest) {
+  if (!request.helpers) return undefined;
+  if (!request.target) throw new Error("Helpers require an owned document");
+  const file = path.join(
+    request.directory,
+    `helpers-${request.requestId.split(":").at(-1)}.py`,
+  );
+  fs.writeFileSync(file, request.source, { flag: "wx" });
+  const { prepareRunScript } = createRequire(path.join(root, "package.json"))(
+    "./src/run",
+  ) as ReturnType<
+    typeof import("../../packages/node-adapters/src/python/run-script").createRunScriptAdapter
+  >;
+  return prepareRunScript(
+    file,
+    undefined,
+    false,
+    request.target.name,
+    {
+      docId: request.target.creationId,
+      ...(request.target.file ? { docFileId: request.target.file.fileId } : {}),
+    },
+    request.helpers,
+  );
+}
 
 /** Component profile only. It is explicitly NOT evidence that broker/IPC admission passed. */
 export class CheckedSimulatorBackend implements ScenarioBackend {
@@ -138,7 +174,7 @@ export class CheckedSimulatorBackend implements ScenarioBackend {
   constructor(
     readonly model: PythonSimulator,
     readonly protocol: Protocol,
-    root: string,
+    readonly root: string,
     temporaryRoot: string,
   ) {
     this.identity = "component:" + protocol + ":" + model.instanceId;
@@ -184,14 +220,23 @@ export class CheckedSimulatorBackend implements ScenarioBackend {
       return result;
     };
     // The add-in executes code directly; the official backend calls the run entrypoint.
+    const prepared = prepareScenarioHelpers(this.root, request);
     const source =
-      request.source + (this.protocol === "addin" ? '\nrun("")\n' : "");
-    const artifact = this.#python.preparePythonArtifact([
+      (prepared?.script ?? request.source) +
+      (this.protocol === "addin" ? '\nrun("")\n' : "");
+    const wire = this.#python.preparePythonArtifact([
       { id: "scenario", filename: "scenario.py", role: "user", source },
     ]);
+    const artifact = prepared
+      ? this.#python.retainPythonOrigin(
+          wire,
+          this.#python.pythonArtifactManifest(prepared),
+        )
+      : wire;
     const check = await this.#checker.check({
       artifact,
-      context: { kind: "raw" },
+      context: { kind: prepared ? "bundle" : "raw" },
+      unitContexts: this.#python.pythonUnitContexts(artifact),
     });
     if (check.status !== "passed")
       return retain({

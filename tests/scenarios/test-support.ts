@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import path from "node:path";
 import type { ScenarioBackend, Execution, Protocol } from "./contracts";
-import { PythonSimulator, simulatorCapabilities } from "./simulator";
+import {
+  PythonSimulator,
+  simulatorCapabilities,
+  prepareScenarioHelpers,
+} from "./simulator";
 import * as programs from "./programs";
 const root = path.resolve(__dirname, "../../..");
 export async function fixture(t: TestContext, protocol: Protocol = "mcp") {
@@ -26,7 +30,8 @@ export async function fixture(t: TestContext, protocol: Protocol = "mcp") {
     fusionPath: (local) => local,
     async execute(request) {
       const source =
-        request.source + (protocol === "addin" ? '\nrun("")\n' : "");
+        (prepareScenarioHelpers(root, request)?.script ?? request.source) +
+        (protocol === "addin" ? '\nrun("")\n' : "");
       const result = await model.execute(source, protocol === "mcp");
       const execution: Execution = {
         requestId: request.requestId,

@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 import hashlib
 import json
+import uuid
 from typing import TYPE_CHECKING, ClassVar
 
 from . import core
@@ -162,6 +163,10 @@ class BRepBody(core.Base):
         self.boundingBox: core.BoundingBox3D = bounds
         self.name: str = "Body" + str(feature.model_component.bRepBodies.count + 1)
         self.isVisible: bool = True
+        self.objectType: str = "adsk::fusion::BRepBody"
+        self.parentComponent: fusion.Component = feature.model_component
+        self.entityToken: str = "model-body:" + str(uuid.uuid4())
+        self.attributes: core.Attributes = core.Attributes(self.parentComponent.model_design.model_doc)
 
     @property
     def physicalProperties(self) -> PhysicalProperties:
@@ -171,7 +176,8 @@ class BRepBody(core.Base):
     @property
     def revisionId(self) -> str:
         return hashlib.sha256(json.dumps([self.boundingBox.minPoint.asArray(),
-            self.boundingBox.maxPoint.asArray()]).encode()).hexdigest()
+            self.boundingBox.maxPoint.asArray(),
+            sorted((a.groupName, a.name, a.value) for a in self.attributes)]).encode()).hexdigest()
 
     @property
     def model_active(self) -> bool:
