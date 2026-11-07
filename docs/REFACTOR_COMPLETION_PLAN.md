@@ -300,3 +300,7 @@ regression runs after runtime commit `165585e` and the merges of PRs #11 and #12
 [Stage 5c](REFACTOR_STAGE_5C.md) applies the same compiler-only test boundary to
 public CAD and private native-action result comparisons. Their 31 historical and
 negative cases retain exact outcomes, timeout restoration and one-call semantics.
+
+[Stage 5d](REFACTOR_STAGE_5D.md) compiles the remaining new historical-evidence
+tests for run scripts, suite inventory and artifact reads. Their expectations and
+baseline hashes remain unchanged. PRs #13–#15 passed their full CI and are merged.
