@@ -1,7 +1,7 @@
 # Partial Fusion test model
 
-Model version 1 implements document identity/lifecycle, literal length user parameters,
-and a **test state export**. The exported `.f3d` fixture contains a JSON marker
+Model version 2 implements document identity/lifecycle, literal length user parameters,
+saved-file identity and deletion, and a **test state export**. The exported `.f3d` fixture contains a JSON marker
 `nativeF3d: false`; it is not a native Fusion archive and must not be imported into Fusion.
 Native export/import assertions require `native-f3d`, which this model does not advertise.
 
@@ -15,5 +15,15 @@ Signatures are checked against the verified Autodesk snapshot selected by
 Parameter units and owner isolation follow `tests/live-normal-multidocument.ts`;
 the unsaved-document export precondition still requires live qualification.
 
-No geometry kernel, cloud DataFile, parameter expression engine, camera or UI event
-simulation is provided. This directory is test-only and excluded from the published package.
+The saved-file model has one configured project/root folder. Save acceptance,
+completion and deletion visibility are separate states. Progress advances between
+SDK requests, independently of scenario names. An unmodified save is a no-op;
+modified saves retain the file ID and increment the version. Open, incomplete or
+read-only files cannot be deleted. Delayed visibility is a conservative test
+assumption, not a claim about measured Fusion cloud timing.
+
+Model controls such as `advance_model`, `save_delay_steps`, `delete_delay_steps`
+and operation counters are used only by model/fault tests. Shared scenarios use
+only the pinned Autodesk interface. The model has no network cloud service,
+geometry kernel, expression dependency engine, camera or UI event simulation.
+It is test-only and excluded from the published package.

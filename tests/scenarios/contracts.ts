@@ -7,6 +7,15 @@ export interface Owner {
 export interface Document {
   readonly creationId: string;
   readonly name: string;
+  readonly file?: SavedFile;
+}
+export interface FixtureFolder {
+  readonly projectId: string;
+  readonly folderId: string;
+}
+export interface SavedFile extends FixtureFolder {
+  readonly fileId: string;
+  readonly version: number;
 }
 export interface ScriptRequest {
   readonly owner: Owner;

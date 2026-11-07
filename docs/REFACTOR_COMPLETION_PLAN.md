@@ -1,169 +1,197 @@
-# Plan dokończenia refaktoru fmcad
+# fmcad refactor completion plan
 
-Stan odniesienia: GitHub `a80b7753e47b8260c2de362b6c4fad04025ab1b2`,
-pełne archiwum projektu i pierwsza dostawa opisana w
-[REFACTOR_STAGE_1.md](REFACTOR_STAGE_1.md). Keychain został celowo usunięty;
-nie przywracamy implementacji ani testów.
+Reference: GitHub `a80b7753e47b8260c2de362b6c4fad04025ab1b2` and the original
+archive, including Git history, worktrees and Beads. Keychain was deliberately
+removed; neither its implementation nor its tests will be restored.
 
-Postęp etapu 2: [izolacja dokumentów i odzyskiwanie cleanup — 2a](REFACTOR_STAGE_2A.md)
-wprowadza blokadę obcego celu i wyniku, powiązane receipts oraz naprawę
-niejednoznacznego wyboru i aktywacji w inspection. Cykl zapisanego pliku i
-kwalifikacja native pozostają w etapie 2b.
+Stage 1 and stage 2a are merged into `main`. Their evidence is recorded in
+[stage 1](REFACTOR_STAGE_1.md) and [stage 2a](REFACTOR_STAGE_2A.md).
+Saved-file support and cleanup recovery are implemented in
+[stage 2b](REFACTOR_STAGE_2B.md).
 
-## Punkt odniesienia i zakres dowodów
+## Delivery order
 
-Referencją sprzed migracji TypeScript jest
-`a26222ff617b0e9597b2a91b50474bdca8d0a0ce`. Pierwszy etap migracji narzędzi
-TypeScript zaczyna się później, w `8b0be07`. Usunięcie Keychain (`46a1ff2`)
-poprzedza tę referencję. Archiwum zachowuje historię, worktree i Beads; nie należy
-wgrywać go jako zawartości repozytorium.
+Finish every part of the refactor that can be implemented and checked with the
+mock backend, production checker and real broker. Native Fusion testing is a
+single final qualification stage after the refactor, as requested by the owner.
+It does not block intermediate implementation or merging verified changes.
 
-Poniższe porównanie dotyczy źródeł i asercji. Nie zastępuje ponownego wykonania
-na Fusion. Zamrożony baseline zawiera 15 wybranych obserwacji, a nie pełną
-kwalifikację live. Raport odzyskiwania odpowiedzi z 23 października potwierdza
-dwa przebiegi na Fusion, lecz nie dowodzi przejścia wszystkich suite na tym SHA.
-Pozostałe raporty mają również przerwane przebiegi lub niepełną identyfikację
-wersji. W tym środowisku nie ma działającego natywnego Fusion.
+Every delivery must pass the complete CI matrix before merging to `main`.
+Keep PR descriptions and commit messages short; put detailed evidence here or
+in the corresponding stage document. Do not upload the archive's Git directory,
+worktrees, generated reports or unrelated Beads data as repository source.
 
-| Historyczny zestaw                | Zachowanie podlegające ochronie                                                                                                                                                | Zmiana w obecnych testach                                                                               |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `live-legacy.js`                  | Własność dokumentu; CRUD parametrów i płaszczyzn; komponenty; cm/mm/in; pudełko 10 mm, stats/bbox/bodies; rollback; PNG/eksport; zachowanie cudzych dokumentów                 | Plik identyczny bajtowo z referencją                                                                    |
-| `live-cad.js`                     | Regeneracja wymiarów, bryły, otwory/pattern/fillet; definicje i wystąpienia; pomiary; odrzucenie błędnych lub niejednoznacznych danych bez nowych encji; timeline i checkpoint | Plik identyczny bajtowo                                                                                 |
-| `live-extended.js`                | Sweep/loft/shell/chamfer/combine/split/draft; pattern/mirror; joint; clearance/interference; batch z nieudaną bramką; visibility, kamera i cleanup                             | Plik identyczny bajtowo                                                                                 |
-| `live-feature-modes.js`           | Warianty extrude, hole, sweep i loft; wymiary, objętość, granice i zdrowie historii                                                                                            | Plik identyczny bajtowo                                                                                 |
-| `live-motion-animation.js`        | Limity joint przed zmianą pozy; pięć klatek; workspace/storyboard; odrzucenie pustego play; przywrócenie workspace                                                             | Plik identyczny bajtowo                                                                                 |
-| `live-definitions.js`             | Literalne definicje; idempotencja runId bez ponownych mutacji; stop po błędzie check; liczbowe rozmiary; odrzucenie składni                                                    | Zmieniono zwalnianie adaptera na `disposeBackend`; asercje zachowania pozostały                         |
-| `live-style-save.js`              | Materiał/appearance i ich kaskada; walidacja refs; masa; status niezapisanego dokumentu; lokalny roundtrip                                                                     | Dostosowano separator generowanego typowanego requestu; asercje pozostały                               |
-| Runner i `helpers/live-broker.js` | Identyfikacja klienta, kolejność, własność, settlement i brak replay wyniku unknown                                                                                            | Zmieniona infrastruktura; obecny runner wymaga wspólnego brokera, ma limit współbieżności i hash źródeł |
+A green mock run proves only its declared model behavior. Keep a separate list of
+assumptions for native qualification; do not silently turn unsupported behavior
+or an unexecuted live case into a pass.
 
-Późniejsze testy obejmują między innymi wielodokumentowość, import danych,
-odzyskiwanie odpowiedzi, operacje szkicu, hierarchię komponentów, atrybuty,
-eksporty, bryły/powierzchnie, style, motion i analitykę. Obecne `run-live all`
-nie rejestruje wszystkich tych plików: trzeba rozliczyć każdy jako wymagany
-scenariusz, profil specjalny albo jawnie nieobsługiwaną możliwość. Istnienie
-pliku i zielony test jego źródła nie są wynikiem live.
+## Historical reference and evidence
 
-## Broker: co jest ustalone, a co wymaga dowodu
+The pre-TypeScript reference is `a26222ff617b0e9597b2a91b50474bdca8d0a0ce`.
+The tool migration starts later at `8b0be07`. Keychain removal (`46a1ff2`)
+predates the reference. The complete archive remains available locally.
 
-| Problem                                                                                 | Ustalenie                                                                                                                                      | Następny dowód / oczekiwany wynik                                                                                                                      |
-| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Scheduling, pauza i własność sekwencji                                                  | Te same trzy testy kolejki przechodzą na referencji i obecnym kodzie                                                                           | Nie jest to regresja wykazana tymi scenariuszami. Osobno badać rzeczywistą ścieżkę transportu i dokumentu                                              |
-| Retained origin / strażnik UI                                                           | Sparowane testy reprodukują odrzucenie historycznego checkera `f708256` i poprawny wynik obecnego kodu                                         | Regresja późniejszej migracji, a nie zachowanie referencji `a26222f`; zachować rzeczywisty checker                                                     |
-| Protokół odpowiedzi audytu                                                              | Siedem przypadków porównuje zachowany kod `843ce0d` z aktualnym                                                                                | Brak/niekońcowa odpowiedź nie oznacza sukcesu; nie ponawiać mutacji                                                                                    |
-| Strict `stats` i pozostałe inspection                                                   | Programy wymagały typowanych granic SDK; pierwsza dostawa sprawdza pięć operacji prawdziwym checkerem i osiem przypadków starego/nowego Python | Wynik i efekty pozostają zgodne; odrzucenie checkera nie może zaliczać testu ochrony dokumentu                                                         |
-| Test pauzy przy zmianie kontekstu                                                       | Dawna akceptacja `PYTHON_CHECK_REJECTED` maskowała brak dowodu dotarcia do strażnika dokumentu                                                 | Po resume dopuszczalne są invalidated preparation albo unavailable target, oba z `not_started` i zerem wysłań operacji                                 |
-| Timeout catalog worker                                                                  | Test używał podmiany loadera modułów; zastąpiono ją wspieranym adapterem ścieżek, bez wydłużania deadline                                      | Przejście CI nie dowodzi przyczyny każdego historycznego timeoutu; zachować diagnostykę ostatniego job i liczby wywołań                                |
-| Publiczny run z doc-id (`69j.2`)                                                        | Archiwalny wpis otwarty jest starszy od poprawki `8b2c237`                                                                                     | Rozliczyć exact installed path przed zamknięciem zadania; nie implementować poprawki drugi raz                                                         |
-| Pierwszy dokument o tej samej nazwie, ignorowany wynik activate, zero po błędzie volume | Zachowania obecne już w historycznym inspection                                                                                                | Etap 2a dodaje sparowane negatywy i odrzuca niejednoznaczny cel oraz błędną aktywację. Pozostaje jawny unknown/error zamiast fałszywego pomiaru volume |
+The comparison below concerns source and assertions, not a new native run.
+The frozen baseline covers 15 selected observations. An October 23 response
+recovery report records two Fusion runs, but does not establish that every live
+suite passed at this exact SHA. Other reports include interrupted runs or lack
+complete version identification. Native Fusion is unavailable in this environment.
 
-Dla nierozstrzygniętych problemów potrzebne są oba SHA uruchomione na tej samej
-wersji Fusion i API, te same wejścia i asercje, logi brokera oraz receipts z
-requestId, creationId, file/version ID, liczbą wywołań i rezultatem cleanup.
-Nie zmieniamy oczekiwania testu tylko dlatego, że obecny kod zwraca inny wynik.
-Dokładne cztery wyjątki baseline pierwszej dostawy mają osobne uzasadnienia
-w `tests/fixtures/refactor-baseline/migration-allowances.json`; brak efektu,
-inna tożsamość lub liczba wywołań pozostają błędami.
+| Historical suite                    | Behavior to preserve                                                                                                                                          | Changes during the refactor                                                                                          |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `live-legacy.js`                    | Document ownership; parameter and plane CRUD; components; cm/mm/in; a 10 mm box, stats/bbox/bodies; rollback; PNG/export; preservation of other documents     | Byte-identical to the reference                                                                                      |
+| `live-cad.js`                       | Dimension regeneration; bodies, holes/patterns/fillets; definitions and occurrences; measurements; rejection without extra entities; timeline and checkpoints | Byte-identical                                                                                                       |
+| `live-extended.js`                  | Sweep/loft/shell/chamfer/combine/split/draft; patterns/mirrors; joints; clearance/interference; failed batch checks; visibility, camera and cleanup           | Byte-identical                                                                                                       |
+| `live-feature-modes.js`             | Extrude, hole, sweep and loft variants; dimensions, volumes, bounds and timeline health                                                                       | Byte-identical                                                                                                       |
+| `live-motion-animation.js`          | Joint limits before posing; five frames; workspace/storyboard; rejection of empty play; workspace restoration                                                 | Byte-identical                                                                                                       |
+| `live-definitions.js`               | Literal definitions; runId idempotency without repeated mutations; stop after a failed check; numeric dimensions; syntax rejection                            | Adapter disposal changed to `disposeBackend`; behavioral assertions retained                                         |
+| `live-style-save.js`                | Material/appearance precedence; reference validation; mass; unsaved document status; local roundtrip                                                          | Generated typed-request separator changed; behavioral assertions retained                                            |
+| Runner and `helpers/live-broker.js` | Client identity, ordering, ownership, settlement and no replay of unknown outcomes                                                                            | Infrastructure changed; the current runner requires a shared broker and records concurrency limits and source hashes |
 
-## Backend testowy i wspólne scenariusze
+Later tests cover multiple documents, data imports, response recovery, sketch
+operations, component hierarchy, attributes, exports, solids/surfaces, styles,
+motion and analytics. `run-live all` does not register every existing suite.
+Classify each file as a required shared scenario, a special profile or an
+explicit unsupported capability. A test of generated source is not a live result.
 
-Kierunek jest uzasadniony i częściowo już zaimplementowany w `tests/scenarios`.
-Rozwijamy ten moduł, zamiast budować drugi framework. Interfejs jest sprawdzany
-z przypiętym Autodesk FusionAPIReference
-`07814d19ac63bb3ff0d55e3d35517cf3a71bad8c` i snapshotem
+## Broker findings
+
+| Problem                                     | Evidence                                                                                                                                                                  | Required behavior or remaining check                                                                                                                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Scheduling, pause and sequence ownership    | The same three queue tests pass on the reference and current code                                                                                                         | These cases do not demonstrate a migration regression. Keep separate transport and document tests                                                      |
+| Retained origin / UI guard                  | Paired tests reproduce rejection by historical checker `f708256` and acceptance by the current checker                                                                    | A later migration regression, not behavior of `a26222f`; retain the real checker                                                                       |
+| Audit response protocol                     | Seven cases compare retained code from `843ce0d` with current code                                                                                                        | Missing/nonterminal output must not imply success or permit mutation replay                                                                            |
+| Strict inspection                           | All five generated operations now pass the real checker; eight ordinary historical Python cases retain behavior                                                           | Preserve results and effects. Checker rejection must not count as a passed document guard                                                              |
+| Pause after context changes                 | Historical acceptance of `PYTHON_CHECK_REJECTED` hid whether the document guard was reached                                                                               | After resume, preparation may be invalidated or the target unavailable; require `not_started` and zero operation submissions                           |
+| Catalog worker timeout                      | Replaced module-loader substitution with the supported path adapter. CI also exposed a test observation budget that incorrectly combined separate local and SDK deadlines | Observe both production budgets without changing them; retain final job state and physical call counts. This does not explain every historical timeout |
+| Public run with doc-id (`69j.2`)            | The archived open task predates fix `8b2c237`                                                                                                                             | Verify the installed path before closing the task; do not implement the same fix twice                                                                 |
+| Duplicate names and failed/wrong activation | Six paired negative cases reproduce unsafe historical behavior; stage 2a rejects it before mutation                                                                       | Require one exact target and successful activation of the same creationId                                                                              |
+| Volume read errors reported as zero         | Already present in historical inspection                                                                                                                                  | Introduce an explicit unavailable/error measurement contract and tests; do not call a failed read a zero-volume body                                   |
+
+Unresolved historical attribution needs both SHAs run with identical inputs,
+Fusion/API versions and assertions, plus broker logs and receipts containing
+requestId, creationId, file/version identity, physical call counts and cleanup.
+Until that final qualification, mark the attribution as unresolved.
+
+Do not change expected results merely to fit current output. The four stage-1
+baseline exceptions are justified individually in
+`tests/fixtures/refactor-baseline/migration-allowances.json`. Wrong effects,
+identities or call counts remain failures.
+
+## Test backend and shared scenarios
+
+Extend `tests/support/fusion-simulator` and `tests/scenarios`; do not create a
+second competing test framework. The pinned Autodesk FusionAPIReference commit
+is `07814d19ac63bb3ff0d55e3d35517cf3a71bad8c`, with snapshot
 `83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179`.
-Typy określają sygnatury, nullability i kolekcje; semantykę bierzemy z historycznych
-asercji oraz pomiarów Fusion. Definicje API nie są implementacją kernela CAD.
+Check implemented call shapes against these definitions. Derive semantics from
+historical assertions and later tests, recording any assumption separately.
+Types alone do not define a CAD kernel.
 
-Scenariusz zawiera jedną funkcję kroków i asercji. Backend dostarcza tylko wykonanie,
-mapowanie plików, capabilities i wynik transportu. Nie może zmieniać wartości
-oczekiwanych, tolerancji ani pomijać kroków. Brak wymaganej capability daje jawne
-unsupported, które nie zalicza wymaganego profilu. Model uruchamiamy zarówno
-komponentowo, jak i przez prawdziwy broker dla MCP i addin.
+Each scenario has one implementation of its steps and assertions. Backends supply
+execution, environment identifiers, path mapping, capabilities and transport
+results. They cannot change expected values, tolerances or skip scenario steps.
+A missing required capability is explicit unsupported status and fails the
+required profile. Run the model both directly through production Python admission
+and through the real broker over MCP and addin.
 
-Obecne wspólne przypadki obejmują dokument i literalne parametry długości:
-te same nazwy parametrów, inne wartości dla właścicieli, mm na wejściu i cm w API,
-tolerancja `1e-9`, odczyt creationId i wartości po przeplataniu. Dalej przenosimy
-CRUD parametrów/units/timeline, szkice/komponenty/atrybuty i import/export.
-Operacje geometryczne otrzymują tylko jawnie ograniczony model; natywnej
-poprawności geometrii nie zastępuje zgodność objętości ani sfabrykowany F3D.
+Expand coverage in this order:
 
-Na Fusion trzeba sprawdzić: aktywację i lifetime uchwytów, null/false/error SDK,
-jednostki i regenerację, timeline/health, tożsamość po reopen, zapis i usunięcie
-chmurowe, eksport/import, binding encji, zachowanie po utracie odpowiedzi,
-rendering oraz rzeczywiste bryły/pozy i tolerancje. Aktualny eksport modelu to
-JSON stanu testowego oznaczony jako taki, nie plik Fusion.
+1. Document identity, saved file lifecycle, partial failure and recovery.
+2. Parameter CRUD, literal units, timeline boundaries and invalid inputs.
+3. Sketch/component/attribute operations and import/export contracts.
+4. Remaining API families, preserving each historical success and failure case.
+5. Geometry, motion and rendering only to the extent supported by an explicit
+   analytical model; retain native-only assertions for final qualification.
 
-## Izolacja, cleanup i limity
+Current parameter cases use the same name with different values across owners,
+mm input and cm API values, a `1e-9` tolerance and readback after interleaving.
+Saved fixtures must distinguish acceptance from cloud completion and deletion
+acceptance from observed absence. Model exports contain marked JSON test state,
+not genuine F3D bytes.
 
-Każdy scenariusz ma własne runId/scenarioId/clientId, requestId, creationId,
-plik i katalog raportów. Operacja w tej samej turze SDK weryfikuje tożsamość
-i aktywuje dokładny własny dokument. Sama zgodność nazwy nie wystarcza.
-Dzisiejszy runner tworzy niezapisany dokument i lokalny eksport; to nie zamyka
-wymagania zapisanego pliku Fusion. Etap 2 musi dodać pełny cykl zapisu,
-potwierdzenia file/version ID, close oraz usunięcia własnego pliku i potwierdzenia
-nieobecności. Testowy projekt/folder Fusion musi być wskazany przed native run.
+Native assumptions to verify at the end: activation and handle lifetime;
+null/false/error behavior; units and regeneration; timeline/health; identity
+across reopen; cloud save/version/delete visibility; entity binding; lost replies;
+native export/import; geometry, poses, rendering and numerical tolerances.
 
-Cleanup działa w `finally` także po błędzie setup, operacji i asercji; jego błąd
-nie może zastąpić pierwotnego błędu. Slot współbieżności jest zajęty do końca
-sprzątania. Po nieustalonym wyniku najpierw rozliczamy pierwotny request i receipt,
-bez replay; cleanup odroczony daje niezaliczony raport i manifest odzyskiwania.
-Po zabiciu procesu cleanup wykonuje recovery z tego manifestu. Przed i po zestawie
-porównujemy inwentarz cudzych dokumentów i odtwarzamy aktywny dokument, jeśli
-wciąż istnieje i można go bezpiecznie przywrócić.
+## Isolation, cleanup and concurrency
 
-Limit jest konfigurowalny: Fusion domyślnie 10; model domyślnie
-`min(2, availableParallelism)`. Po pomiarze RSS i budżetu pamięci kontenera:
-`max(1, min(CPU, floor(memoryBudget / workerPeakRSS)))`. Nie używamy wolnej pamięci
-hosta jako budżetu kontenera. Broker ma obecnie do czterech workerów przygotowania
-offline oraz pojedynczą kolejkę fizycznego SDK. Test ma dowieść nakładania się
-przygotowań przy `max SDK in flight = 1`, także podczas pause/resume i cleanup.
+Each scenario owns a runId/scenarioId/clientId, request IDs, document creationId,
+file identity and report directory. The operation selects and activates that exact
+document in the same SDK call. A name alone is insufficient. Unsaved-document
+cases remain explicit tests of the historical unsaved/export behavior; saved-file
+cases must exercise save, exact file/version binding, close, deletion and absence.
 
-Obecne różne wartości parametru wykrywają pomylenie aktywnego dokumentu. Dodajemy
-deterministyczny test, który celowo podmienia target/receipt scenariusza A na B:
-A ma zostać odrzucony przed mutacją, a niezależny odczyt B ma potwierdzić brak
-zmiany. Pokryć równe nazwy, zmianę aktywnego dokumentu między prepare/execute,
-zamknięcie i reopen, oba transporty oraz właściciela cleanup.
+Cleanup runs after setup, operation and assertion failures. Preserve the primary
+error separately from cleanup errors. Keep the concurrency slot until cleanup
+settles. Unknown outcomes require recovery of the original result; never replay
+a possibly completed mutation. Deferred cleanup fails the scenario and leaves a
+recovery manifest. Recovery must not turn unexecuted assertions into a pass.
 
-## Etapy, zależności i odbiór
+Compare other documents and configured-folder files before and after a run.
+Restore the original active document where it still exists. Recovery after a
+process restart must also restore coordinator state safely. Reject foreign
+creation/save receipts and foreign file versions before destructive operations.
 
-| Etap                             | Zakres                                                                                                                                                                                          | Zależności                                            | Dowód zakończenia                                                                                                                                                                             |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 — wykonywana dostawa           | Przenośne dowody historyczne; dokładne wyjątki baseline; strict inspection; regresje brokera; odtworzenie brakującego locale runtime z archiwum i testów przeglądarki; stabilny build definicji | Archiwum i aktualny GitHub                            | Wszystkie zadania CI zielone dla tego samego SHA, Node 22.13/24, Python, Playwright i oba transporty. Szczegóły w REFACTOR_STAGE_1.md; bez deklaracji native PASS                             |
-| 2 — własność plików i broker     | Pełny cykl własnego zapisanego pliku, close/delete, recovery; test celowego obcego celu; duplicate names/failed activation; równoległe offline i pojedynczy SDK                                 | 1; testowy folder Fusion dla części native            | Fault injection na każdym kroku; cleanup po błędzie operacji/asercji; brak pozostawionych własnych plików po rozliczeniu; cudze dokumenty bez zmian; limity 1/2/10 i oba protokoły            |
-| 3 — kontrakty backendów          | Rozszerzenie istniejącego modelu i wspólnych scenariuszy według tabeli historycznych asercji i nowszych testów                                                                                  | 2; przypięte definicje Autodesk                       | Te same kroki/wyniki w modelu i Fusion dla każdej deklarowanej capability; jawna lista niezweryfikowanych semantyk; regresje negatywne                                                        |
-| 4 — reszta migracji runtime      | Pozostałe źródłowe JS usług, entrypointów i adapterów; reszta rodzin Python; wygaszenie fasad przejściowych; granice core/ports/adapters                                                        | 1, 2 i kontrakt danej rodziny z 3                     | Małe dostawy po rodzinie, strict typy bez obchodzenia admission, zgodność CLI/SDK/receipts, brak starej ścieżki w installed package; naprawy błędów już przeniesionego kodu z osobną regresją |
-| 5 — live coverage i Beads        | Inwentarz wszystkich metod i testów; rejestracja nowszych suite; rozliczenie 69j/cb4/e4m oraz duplikatów                                                                                        | 2–4; może być opracowywany równolegle dokumentacyjnie | Każda metoda ma test efektu/readback i negatyw albo jawny brak; `all` uruchamia cały wymagany profil; task closed wymaga wskazanego SHA i dowodu                                              |
-| 6 — Control Center i dystrybucja | Pozostałe System/global controls, rzeczywista telemetry/history, agenci/projekty, log retention, wycofanie demo/TUI, kompletność lokalizacji i assetów                                          | 1; stabilne kontrakty brokera z 2/4                   | Playwright na rzeczywistym składzie SQLite/broker, brak błędów konsoli i zasobów, instalacja spakowanego artefaktu, testy lokalizacji i dispose, pomiar kosztów runtime                       |
-| 7 — kwalifikacja końcowa         | Zainstalowana paczka, obie ścieżki transportu, cały profil live, restart/utrata odpowiedzi, saved fixtures, natywna geometria/motion i panel                                                    | 2–6; dostęp do Fusion i własnych fixtures             | Raport SHA + wersje Fusion/API + wejścia/asercje + receipts + cleanup; każdy wymagany przypadek PASS, bez traktowania blocked/unsupported/NOTRUN jako sukcesu                                 |
+Concurrency is configurable. Native Fusion defaults to 10 scenarios. The model
+defaults to `min(2, availableParallelism)` until measured worker RSS and container
+memory budgets justify a different limit. With measurements, use
+`max(1, min(CPU, floor(memoryBudget / workerPeakRSS)))`; host free memory is not a
+container budget.
 
-Bezpieczna jednostka następnej iteracji to etap 2 ograniczony do lifecycle,
-tożsamości i fault injection. Nie łączymy jej z migracją całej geometrii ani
-wszystkich adapterów. Pierwszą dostawę wybrano dlatego, że niesprawdzony strict
-inspection, historyczne commity nieobecne w świeżym checkout i niepełne testy
-przeglądarki uniemożliwiały wiarygodną ocenę kolejnych zmian. Zabezpieczenia
-ograniczają ryzyko fałszywie zielonego testu, utraty parity i ukrycia błędu brokera.
+The broker supports up to four offline preparation workers and one physical SDK
+queue. Tests must prove overlapping offline work with `max SDK in flight = 1`,
+including pause/resume, cancellation and cleanup. Exercise limits 1, 2 and 10.
 
-## Rozliczenie zakresu z archiwalnego Beads
+Use deterministic misrouting tests: substitute scenario B's target or receipt
+into A, reject A before mutation, then read B independently and verify no change.
+Include duplicate names, active-document changes between preparation/execution,
+close/reopen, both transports and cleanup ownership.
 
-Archiwum ma 150 zadań: 104 zamknięte i 46 pozostałych. Statusy są historyczne,
-nie stanowią dowodu ukończenia. Otwarte `69j.2` i część prac UI są przykładem
-koniecznej weryfikacji względem kodu. Nie przenosimy mechanicznie statusów.
+## Stages and completion criteria
 
-- Etapy 2–5: `69j`, `69j.2`, `cb4`, `cb4.2`, `cb4.4`–`cb4.8`, `e4m`,
+| Stage                            | Scope                                                                                                                                                           | Dependencies                                                            | Completion evidence                                                                                                                                                     |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 — completed                    | Portable historical fixtures, exact baseline exceptions, strict inspection, broker regressions, restored translations, browser checks and API download handling | Archive and current repository                                          | Full CI passed for the same SHA on Node 22.13/24, Python, Chromium and both transports; merged in PR #1                                                                 |
+| 2a — completed                   | Immutable document ownership, request-bound receipts, deferred cleanup without replay, duplicate-name and activation fixes                                      | 1                                                                       | Paired historical cases, fault injection, full CI and both broker profiles; merged in PR #2                                                                             |
+| 2b — implemented                 | Saved-file model and shared lifecycle; exact file/version ownership; async completion; close/delete/absence; recovery; foreign file preservation                | 2a and pinned Autodesk definitions                                      | Fault injection at every lifecycle boundary; no retained owned files after settled cleanup; other files unchanged; both protocols and configurable concurrency          |
+| 3 — backend contracts            | Extend the model and shared scenarios using the historical/later assertion inventory                                                                            | 2b for saved fixtures; each capability may proceed independently        | Every declared capability has matching shared steps and expected results; negative tests; explicit native assumptions. Native execution is deferred to 7                |
+| 4 — remaining runtime migration  | Remaining service/entrypoint/adapter JavaScript and Python families; transitional facades; core/ports/adapters boundaries; defects in already migrated code     | 1, 2 and the relevant contract from 3                                   | Small family-sized deliveries, strict types without admission bypasses, CLI/SDK/receipt parity, installed-package tests, no obsolete execution path                     |
+| 5 — coverage and Beads           | Inventory all methods/tests; register later suites; reconcile `69j`, `cb4`, `e4m` and duplicates                                                                | 2–4; inventory work can proceed earlier                                 | Each method has effects/readback and negative coverage or a documented gap. `all` includes every required supported profile. Native tasks remain awaiting qualification |
+| 6 — Control Center and packaging | Remaining system/global controls; real telemetry/history; agents/projects; retention; demo/TUI retirement; translations and assets                              | 1 and stable broker contracts from 2/4                                  | Chromium against real SQLite/broker composition; no console/resource errors; packaged installation; disposal/localization checks and runtime cost measurements          |
+| 7 — final native qualification   | Installed package; both transports; full live profile; restart/lost reply; saved fixtures; native geometry/motion and UI                                        | Offline refactor complete; access to Fusion and dedicated test fixtures | SHA, Fusion/API versions, inputs/assertions, receipts and cleanup recorded; every required case passes. Blocked/unsupported/not-run is never counted as pass            |
+
+The current safe delivery combines saved-file lifecycle, fault injection and the
+model operations required by those scenarios. Continue with the next contract
+family and its migration after this delivery passes CI. Native availability is
+not a reason to stop the mock-backed refactor.
+
+Stage 1 came first because unchecked inspection typing, inaccessible historical
+commits in fresh checkouts and incomplete browser coverage made further changes
+hard to assess. These checks reduce false-green tests, lost behavioral parity
+and hidden broker defects.
+
+## Archived Beads scope
+
+The archive contains 150 tasks: 104 closed and 46 remaining. Historical task
+status is not proof of implementation. Open `69j.2` and several UI tasks already
+have later code changes; reconcile them against source and evidence.
+
+- Stages 2–5: `69j`, `69j.2`, `cb4`, `cb4.2`, `cb4.4`–`cb4.8`, `e4m`,
   `e4m.2`, `hex-integration`.
-- Etap 6: `control-center`, `control-center.1`, `locale-catalogs`,
+- Stage 6: `control-center`, `control-center.1`, `locale-catalogs`,
   `locale-selection`, `web-system-controls`, `web-agents-projects`, `web-bundle`,
   `web-operational-views`, `web-telemetry`, `browser-console`, `log-retention`.
-- Etap 7 i jego prerequisites: `isc`, `dru`, `dru.2`, `dru.2.5`, `dru.2.6`,
+- Stage 7 and prerequisites: `isc`, `dru`, `dru.2`, `dru.2.5`, `dru.2.6`,
   `native-drive-test`, `live-acceptance`, `hex-integration.2`.
-- Osobny zakres funkcjonalny do rozliczenia po refaktorze, a istniejące części
-  do ochrony w etapach 3–5: `brep-baselines`, `capture-integrity`,
-  `selection-rules`, `semantic-model-state`, `attachment-check`, `channel-check`,
-  `geometry-evidence`, `regional-contacts`, `adaptive-clearance`,
-  `invariants-parameters`, `native-interfaces`, `native-route-check`,
-  `qualified-recipes`, `rework-plan`, `verify-saved-model`. Nowe możliwości z tych
-  zadań wymagają własnych etapów implementacji i kwalifikacji; nie są automatycznie
-  ukończone przez zmianę języka lub przejście obecnego CI.
+- Separate feature scope, with existing behavior protected during stages 3–5:
+  `brep-baselines`, `capture-integrity`, `selection-rules`, `semantic-model-state`,
+  `attachment-check`, `channel-check`, `geometry-evidence`, `regional-contacts`,
+  `adaptive-clearance`, `invariants-parameters`, `native-interfaces`,
+  `native-route-check`, `qualified-recipes`, `rework-plan`, `verify-saved-model`.
+  New features need their own implementation and qualification; language migration
+  or current CI alone does not complete them.
 
-Wszystkie powyższe identyfikatory mają prefiks `fmcad-`. Podział zachowuje cały
-nierozliczony backlog i oddziela dokończenie refaktoru od dodawania możliwości.
+All identifiers have the `fmcad-` prefix. This mapping retains the outstanding
+backlog while distinguishing refactor work from new features.

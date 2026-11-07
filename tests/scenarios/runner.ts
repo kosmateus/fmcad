@@ -1,14 +1,32 @@
 import * as fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Document, Execution, Owner, ScenarioBackend } from "./contracts";
+import type {
+  Document,
+  Execution,
+  FixtureFolder,
+  Owner,
+  ScenarioBackend,
+} from "./contracts";
 import { record, text } from "./contracts";
 import * as programs from "./programs";
 import { boundedMap, concurrencyLimit, defaultConcurrency } from "./scheduling";
+import * as savedPrograms from "./saved-programs";
+import {
+  cleanupSavedFile,
+  observeSavedFile,
+  recoveredFile,
+  resultValue,
+  saveIntent,
+  UnsettledCloudOperation,
+  SavedEvidenceError,
+} from "./saved-files";
+import { auditRecovery } from "./recovery-audit";
 
 export interface Scenario {
   readonly id: string;
   readonly requires: readonly string[];
+  readonly fixture?: FixtureFolder;
   run(session: ScenarioSession): Promise<void>;
 }
 export interface ScenarioReport {
@@ -18,6 +36,7 @@ export interface ScenarioReport {
   readonly qualification: ScenarioBackend["qualification"];
   readonly protocol: ScenarioBackend["protocol"];
   readonly backendIdentity: string;
+  readonly fixture?: FixtureFolder;
   status: "running" | "passed" | "failed" | "unsupported";
   cleanup: "pending" | "complete" | "deferred" | "failed" | "not-created";
   document?: Document;
@@ -69,10 +88,12 @@ export class ScenarioSession {
     owner: Owner,
     readonly directory: string,
     readonly signal?: AbortSignal,
+    fixture?: FixtureFolder,
+    restored?: ScenarioReport,
   ) {
-    fs.mkdirSync(directory, { recursive: false, mode: 0o700 });
+    if (!restored) fs.mkdirSync(directory, { recursive: false, mode: 0o700 });
     this.file = path.join(directory, "fixture.f3d");
-    this.report = {
+    this.report = restored ?? {
       owner: Object.freeze({ ...owner }),
       directory,
       mode: backend.mode,
@@ -82,7 +103,10 @@ export class ScenarioSession {
       status: "running",
       cleanup: "not-created",
       requests: [],
+      ...(fixture ? { fixture: Object.freeze({ ...fixture }) } : {}),
     };
+    this.#document = restored?.document;
+    this.#sequence = restored?.requests.length ?? 0;
     this.persist();
   }
   get document(): Document {
@@ -98,7 +122,18 @@ export class ScenarioSession {
     target: Document = this.document,
   ): Promise<Record<string, unknown>> {
     this.signal?.throwIfAborted();
-    if (["create", "export", "cleanup"].includes(phase))
+    if (
+      [
+        "create",
+        "export",
+        "cleanup",
+        "save",
+        "save-observe",
+        "cleanup-close",
+        "cleanup-delete",
+        "cleanup-observe",
+      ].includes(phase)
+    )
       throw new Error("Lifecycle phases are owned by the runner");
     const owned = this.document;
     if (target.creationId !== owned.creationId || target.name !== owned.name)
@@ -109,6 +144,7 @@ export class ScenarioSession {
     phase: string,
     source: string | ((requestId: string) => string),
     target?: Document,
+    routeTarget = true,
   ): Promise<Record<string, unknown>> {
     if (this.#uncertain)
       throw new Error(
@@ -125,7 +161,7 @@ export class ScenarioSession {
         requestId,
         source: typeof source === "string" ? source : source(requestId),
         directory: this.directory,
-        ...(target ? { target } : {}),
+        ...(target && routeTarget ? { target } : {}),
       });
     } catch (error) {
       this.#uncertain = true; // A transport exception never proves not-started.
@@ -206,6 +242,63 @@ export class ScenarioSession {
     );
     if (!fs.statSync(this.file).isFile())
       throw new Error("Fixture export did not produce a local file");
+    if (this.report.fixture) {
+      this.signal?.throwIfAborted();
+      const folder = this.report.fixture;
+      await this.#dispatch(
+        "save",
+        (requestId) =>
+          savedPrograms.save(
+            this.document,
+            folder,
+            this.report.owner,
+            requestId,
+            this.backend.fusionPath(
+              path.join(this.directory, "save-intent.json"),
+            ),
+          ),
+        this.document,
+      );
+      try {
+        const intent = saveIntent(
+          this.directory,
+          this.document,
+          this.report.owner,
+          this.report.requests,
+        );
+        if (
+          !intent ||
+          intent.projectId !== folder.projectId ||
+          intent.folderId !== folder.folderId
+        )
+          throw new Error("Configured and accepted fixture folders differ");
+      } catch (error) {
+        this.#uncertain = true;
+        throw error;
+      }
+      // Acceptance is deliberately separate from cloud completion.
+      let file;
+      try {
+        file = await observeSavedFile(
+          this.document,
+          folder,
+          this.#dispatch.bind(this),
+          false,
+        );
+      } catch (error) {
+        if (
+          error instanceof SavedEvidenceError ||
+          error instanceof UnsettledCloudOperation
+        )
+          this.#uncertain = true;
+        throw error;
+      }
+      if (!file) throw new Error("Saved fixture has no file identity");
+      this.#document = Object.freeze({ ...this.document, file });
+      this.report.document = this.#document;
+      this.persist();
+      this.signal?.throwIfAborted();
+    }
   }
   async cleanup(): Promise<void> {
     if (this.report.cleanup === "complete") return;
@@ -233,6 +326,61 @@ export class ScenarioSession {
       return;
     }
     if (this.#document) {
+      try {
+        const folder = saveIntent(
+          this.directory,
+          this.#document,
+          this.report.owner,
+          this.report.requests,
+        );
+        if (folder && !this.#document.file) {
+          const accepted = resultValue(
+            this.report.requests.find((entry) => entry.phase === "save"),
+          );
+          const file = await observeSavedFile(
+            this.#document,
+            folder,
+            this.#dispatch.bind(this),
+            accepted?.["accepted"] !== true,
+          );
+          if (file) {
+            this.#document = Object.freeze({ ...this.#document, file });
+            this.report.document = this.#document;
+            this.persist();
+          }
+        }
+        if (this.#document.file) {
+          await cleanupSavedFile(
+            this.#document,
+            this.report.requests,
+            this.#dispatch.bind(this),
+          );
+          fs.rmSync(this.file, { force: true });
+          this.report.cleanup = "complete";
+          this.persist();
+          return;
+        }
+      } catch (error) {
+        this.report.cleanup =
+          this.#uncertain ||
+          error instanceof UnsettledCloudOperation ||
+          error instanceof SavedEvidenceError
+            ? "deferred"
+            : "failed";
+        throw error;
+      }
+      const prior = resultValue(
+        this.report.requests.findLast((entry) => entry.phase === "cleanup"),
+      );
+      if (
+        prior?.["closed"] === true &&
+        prior["creationId"] === this.#document.creationId
+      ) {
+        fs.rmSync(this.file, { force: true });
+        this.report.cleanup = "complete";
+        this.persist();
+        return;
+      }
       let result: Record<string, unknown>;
       try {
         result = await this.#dispatch(
@@ -264,7 +412,13 @@ export async function runScenario(
   directory: string,
   signal?: AbortSignal,
 ): Promise<ScenarioReport> {
-  const session = new ScenarioSession(backend, owner, directory, signal);
+  const session = new ScenarioSession(
+    backend,
+    owner,
+    directory,
+    signal,
+    scenario.fixture,
+  );
   if (
     scenario.requires.some(
       (capability) => !backend.capabilities.has(capability),
@@ -366,6 +520,36 @@ export async function runScenarios(
     hasSupported && !signal?.aborted
       ? await observation("before", programs.snapshot())
       : undefined;
+  const folders = [
+    ...new Map(
+      scenarios
+        .filter(
+          (s) =>
+            s.fixture && s.requires.every((c) => backend.capabilities.has(c)),
+        )
+        .map((s) => [JSON.stringify(s.fixture), s.fixture!]),
+    ).values(),
+  ];
+  const cloudBefore: Record<string, unknown>[] = [];
+  if (before) {
+    for (const [index, folder] of folders.entries())
+      cloudBefore.push(
+        await observation(
+          "files-before-" + index,
+          savedPrograms.inventory(folder),
+        ),
+      );
+  }
+  persist(path.join(runRoot, "index.json"), {
+    runId,
+    mode: backend.mode,
+    qualification: backend.qualification,
+    protocol: backend.protocol,
+    before,
+    cloudBefore,
+    scenarioIds: scenarios.map((s) => s.id),
+    status: "running",
+  });
   const reports = await boundedMap(scenarios, concurrency, async (scenario) => {
     const owner = {
       runId,
@@ -404,6 +588,30 @@ export async function runScenarios(
         throw new Error(
           "Original documents changed or scenario documents remain after cleanup",
         );
+      const files = (value: Record<string, unknown>): string => {
+        if (!Array.isArray(value["files"]))
+          throw new Error("Missing fixture folder inventory");
+        return JSON.stringify(
+          value["files"]
+            .map(record)
+            .map((file) => ({
+              fileId: text(file["fileId"]),
+              name: text(file["name"]),
+              version: file["version"],
+            }))
+            .sort((a, b) => a.fileId.localeCompare(b.fileId)),
+        );
+      };
+      for (const [index, folder] of folders.entries()) {
+        const afterFiles = await observation(
+          "files-after-" + index,
+          savedPrograms.inventory(folder),
+        );
+        if (files(cloudBefore[index]!) !== files(afterFiles))
+          throw new Error(
+            "Original cloud files changed or scenario files remain after cleanup",
+          );
+      }
       if (typeof before["active"] === "string")
         await observation("restore", programs.restoreActive(before["active"]));
     }
@@ -424,6 +632,8 @@ export async function runScenarios(
     qualification: backend.qualification,
     protocol: backend.protocol,
     before,
+    cloudBefore,
+    scenarioIds: scenarios.map((s) => s.id),
     auditError,
     reports,
   });
@@ -505,7 +715,7 @@ export async function resumeCleanup(
   const created = record(
     JSON.parse(text(lines[0]).slice(programs.marker.length)) as unknown,
   );
-  const document = creationProof(created, owner, creation[0].requestId);
+  let document = creationProof(created, owner, creation[0].requestId);
   if (fs.existsSync(path.join(directory, "creation.json"))) {
     const durable = creationProof(
       readCreation(directory),
@@ -515,8 +725,13 @@ export async function resumeCleanup(
     if (durable.creationId !== document.creationId)
       throw new Error("Original and durable creation identities differ");
   }
+  const folder = saveIntent(directory, document, owner, recovered);
+  if (folder) {
+    const saved = recoveredFile(document, folder, recovered);
+    if (saved) document = Object.freeze({ ...document, file: saved });
+  }
   const report: ScenarioReport = {
-    owner,
+    owner: Object.freeze(owner),
     directory,
     mode: backend.mode,
     qualification: backend.qualification,
@@ -526,79 +741,27 @@ export async function resumeCleanup(
     cleanup: "pending",
     document,
     requests: recovered,
+    ...(folder ? { fixture: folder } : {}),
     error:
       typeof raw["error"] === "string"
         ? raw["error"]
         : "Recovered cleanup; scenario assertions were not rerun",
   };
-  const priorCleanup = recovered.at(-1);
-  if (
-    priorCleanup?.phase === "cleanup" &&
-    priorCleanup.result?.state === "succeeded"
-  ) {
-    const markers = priorCleanup.result.stdout
-      .split(/\r?\n/)
-      .filter((line) => line.startsWith(programs.marker));
-    if (markers.length === 1) {
-      const proof = record(
-        JSON.parse(text(markers[0]).slice(programs.marker.length)) as unknown,
-      );
-      if (
-        proof["closed"] === true &&
-        proof["creationId"] === document.creationId
-      ) {
-        fs.rmSync(path.join(directory, "fixture.f3d"), { force: true });
-        report.cleanup = "complete";
-        persist(file, report);
-        return report;
-      }
-    }
-  }
-  const requestId = owner.clientId + ":cleanup-" + randomUUID();
-  const entry: ScenarioReport["requests"][number] = {
-    requestId,
-    phase: "cleanup",
-  };
-  report.requests.push(entry);
-  persist(file, report);
+  const session = new ScenarioSession(
+    backend,
+    owner,
+    directory,
+    undefined,
+    folder,
+    report,
+  );
   try {
-    const result = await backend.execute({
-      owner,
-      requestId,
-      directory,
-      target: document,
-      source: programs.close(document),
-    });
-    entry.result = result;
-    if (
-      result.requestId !== requestId ||
-      !result.sdkSettled ||
-      result.state === "unknown"
-    ) {
-      report.cleanup = "deferred";
-      throw new Error(
-        "Cleanup did not settle; recover its original result before continuing",
-      );
-    }
-    if (result.state !== "succeeded")
-      throw new Error(result.error || "Cleanup failed");
-    const values = result.stdout
-      .split(/\r?\n/)
-      .filter((line) => line.startsWith(programs.marker));
-    if (values.length !== 1) throw new Error("Missing cleanup proof");
-    const proof = record(
-      JSON.parse(text(values[0]).slice(programs.marker.length)) as unknown,
-    );
-    if (proof["closed"] !== true || proof["creationId"] !== document.creationId)
-      throw new Error("Mismatched cleanup proof");
-    fs.rmSync(path.join(directory, "fixture.f3d"), { force: true });
-    report.cleanup = "complete";
+    await session.cleanup();
   } catch (error) {
-    if (!entry.result || report.cleanup === "deferred")
-      report.cleanup = "deferred";
-    else report.cleanup = "failed";
+    if (report.cleanup !== "deferred") report.cleanup = "failed";
     report.cleanupError = errorText(error);
   }
-  persist(file, report);
+  session.persist();
+  if (report.cleanup === "complete") await auditRecovery(backend, report);
   return report;
 }
