@@ -61,6 +61,7 @@ async function syntheticChild(root: string, upgrade: boolean): Promise<void> {
         dir: string;
         confirmOwnership: boolean;
         autoReconcile: boolean;
+        nativePath(file: string): string;
         createBackend(): unknown;
       },
     ): Promise<unknown>;
@@ -69,6 +70,7 @@ async function syntheticChild(root: string, upgrade: boolean): Promise<void> {
     dir: f.dir,
     confirmOwnership: true,
     autoReconcile: false,
+    nativePath: (file) => file,
     createBackend: () => ({
       server: { timeoutMs: 1000 },
       _parse: (text: string): unknown => JSON.parse(text),
@@ -186,7 +188,9 @@ if (
         : "FAKE broker reopens owner-released normal admission, preserves history and matches lost-ACK input",
       { timeout: 30000 },
       (t) => {
-        const root = fs.mkdtempSync(path.join(tmpdir(), "normal-epoch-broker-"));
+        const root = fs.mkdtempSync(
+          path.join(tmpdir(), "normal-epoch-broker-"),
+        );
         t.after(() => fs.rmSync(root, { recursive: true, force: true }));
         const result = spawnSync(
           process.execPath,

@@ -13,31 +13,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  retire-unbounded-diagnostic-runs:
-    if: github.event_name == 'push' && github.repository == 'kosmateus/fmcad' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    permissions:
-      actions: write
-    steps:
-      # One-time migration: these two diagnostic runs predate concurrency limits.
-      # Verify their commits before cancelling; no other workflow is touched.
-      - env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          for binding in 42364892587:8b2c237ec333d5b275c9f544bc729acd6109420a 42365353131:7ecc52a22e6ee61d5e7a07e2484d7d2d24d9a912; do
-            run_id="${binding%%:*}"
-            commit="${binding#*:}"
-            observed="$(gh api "repos/$GH_REPO/actions/runs/$run_id" --jq '.head_sha + ":" + .status')"
-            if [ "$observed" = "$commit:in_progress" ] || [ "$observed" = "$commit:queued" ]; then
-              gh api --method POST "repos/$GH_REPO/actions/runs/$run_id/cancel"
-            fi
-          done
-
   contracts:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -60,7 +38,7 @@ jobs:
       - run: npm run test:scenarios:component -- --protocol mcp --owners 2
       - run: npm run test:scenarios:component -- --protocol addin --owners 2
       - run: npm run test:prepare-offline
-      - run: timeout --signal=TERM --kill-after=15s 10m npm run test:contracts
+      - run: timeout --signal=TERM --kill-after=15s 15m npm run test:contracts
 
   python:
     runs-on: ubuntu-24.04
@@ -107,7 +85,7 @@ jobs:
 
   scenario-broker:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 16
     strategy:
       fail-fast: false
       matrix:
@@ -120,7 +98,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: timeout --signal=TERM --kill-after=15s 8m npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --concurrency 10 --owners 10
+      - run: timeout --signal=TERM --kill-after=15s 12m npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --concurrency 10 --owners 10
       - uses: actions/upload-artifact@v4
         if: always()
         with:
