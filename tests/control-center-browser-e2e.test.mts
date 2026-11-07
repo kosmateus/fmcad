@@ -26,6 +26,7 @@ interface CapturedQuery {
     readonly source?: string;
     readonly level?: string;
     readonly clientId?: { readonly any?: readonly string[] };
+    readonly presence?: { readonly any?: readonly string[] };
     readonly state?: { readonly any?: readonly string[] };
     readonly label?: { readonly contains?: string };
     readonly executionMs?: {
@@ -819,7 +820,20 @@ test(
     await page.getByRole("heading", { name: "Agenci i ich praca" }).waitFor();
     await page.getByText("E2E Active Agent").waitFor();
     assert.match(await page.locator("#app").innerText(), /Potwierdzone/);
+    // Both agents are already visible in the unfiltered table. The historical
+    // row alone cannot prove that the asynchronous filter response rendered.
+    await page.getByText("E2E Historical Agent").waitFor();
+    const historicalAgentsRequest = waitForQuery(
+      page,
+      (query) =>
+        query.collection === "agents" &&
+        query.scope?.kind === "global" &&
+        query.filters?.presence?.any?.includes("unknown") === true &&
+        query.filters.presence.any.includes("active") === false,
+    );
     await page.getByRole("button", { name: /Historia i nieznane/ }).click();
+    await historicalAgentsRequest;
+    await page.getByText("E2E Active Agent").waitFor({ state: "detached" });
     await page.getByText("E2E Historical Agent").waitFor();
     assert.equal(await page.getByText("E2E Active Agent").count(), 0);
     record(

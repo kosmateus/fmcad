@@ -23,18 +23,28 @@ def _design(doc_name: str) -> "adsk.fusion.Design | None":
     if not doc_name:
         _err("document commands require a document name")
         return None
-    for d in app.documents:
-        if d.name.lower() == doc_name.lower():
-            d.activate()
-            design_cast = cast("Callable[[object], adsk.fusion.Design | None]", getattr(adsk.fusion.Design, "cast"))
-            design = design_cast(app.activeProduct)
-            if design is None:
-                _err("document is not a design: " + doc_name)
-                return None
-            print("DOC name=" + d.name)
-            return design
-    _err("document not open: " + doc_name)
-    return None
+    matches = [d for d in app.documents if d.name.lower() == doc_name.lower()]
+    if not matches:
+        _err("document not open: " + doc_name)
+        return None
+    if len(matches) != 1:
+        _err("document name is ambiguous: " + doc_name)
+        return None
+    doc = matches[0]
+    if not doc.activate():
+        _err("document activation failed: " + doc_name)
+        return None
+    active = cast("adsk.core.Document | None", app.activeDocument)
+    if active is None or active.creationId != doc.creationId:
+        _err("active document identity changed: " + doc_name)
+        return None
+    design_cast = cast("Callable[[object], adsk.fusion.Design | None]", getattr(adsk.fusion.Design, "cast"))
+    design = design_cast(app.activeProduct)
+    if design is None:
+        _err("document is not a design: " + doc_name)
+        return None
+    print("DOC name=" + doc.name)
+    return design
 
 
 def cmd_stats(data: object, doc_name: str) -> None:

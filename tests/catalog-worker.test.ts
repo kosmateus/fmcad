@@ -213,7 +213,12 @@ Module._load = function(name, parent, ...rest) {
           timeoutMs: localPhaseTimeoutMs,
         },
       });
-      const deadline = Date.now() + localPhaseTimeoutMs + 10_000;
+      // PhasedWorkers has one local budget (prepare + publish); QueueState grants
+      // a separate SDK budget only after readiness. A single 180s wall clock
+      // incorrectly charged local preparation against that later SDK budget.
+      // Keep both broker budgets and this test's 420s outer bound unchanged.
+      const settlementBudgetMs = 2 * localPhaseTimeoutMs + 10_000;
+      const deadline = Date.now() + settlementBudgetMs;
       let lastResult: QueueJobResult | undefined;
       while (Date.now() < deadline) {
         const value = await request<QueueJobResult>(dir, {
@@ -231,7 +236,7 @@ Module._load = function(name, parent, ...rest) {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
       assert.fail(
-        `Typed catalog worker did not settle within ${localPhaseTimeoutMs} ms; physical calls=${calls}; last result=${JSON.stringify(lastResult)}`,
+        `Typed catalog worker did not settle within ${settlementBudgetMs} ms (separate ${localPhaseTimeoutMs} ms local and SDK budgets); physical calls=${calls}; last result=${JSON.stringify(lastResult)}`,
       );
     }
     const completed = await submit(input.argv);

@@ -61,6 +61,13 @@ call. Cleanup closes only that document without saving, then removes its export.
 Reports and source hashes are retained under `.test-artifacts/scenarios/`.
 The model's `.f3d` is marked JSON test state, not a native archive.
 
+Scenario steps may address only the session's immutable owned document. The
+runner reserves create/export/cleanup phases, validates the document identity in
+successful results, and binds creation receipts to the client and original
+request. Returned and durable creation identities must agree before any step.
+These checks complement the in-SDK and broker guards; arbitrary scenario Python
+is trusted code, not a sandbox.
+
 ## Failure and recovery
 
 An operation or assertion failure still runs cleanup after known settlement.
