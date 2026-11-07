@@ -40,5 +40,11 @@
     "sourcePath": "packages/node-adapters/src/persistence/records.ts",
     "file": "records-04fa.ts.txt",
     "sha256": "7a3073f634c1f541fb46d4603c8ce74d251d14469f25d283fbbb9ee0f9241bad"
+  },
+  {
+    "revision": "a9cf665303cec7f3676416de7291f391c60cd897",
+    "sourcePath": "src/document-publication.js",
+    "file": "document-publication-a9cf.js.txt",
+    "sha256": "fad99597538d2e6ef8ad3e177be1642b6277e2c94bbf30839d42a46a2d82ae44"
   }
 ]

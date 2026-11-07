@@ -285,3 +285,8 @@ passed. PR #11's native-timeout test failed once; its unchanged job is being
 rechecked. The test also exists before the refactor, but the failed run did not
 retain enough job/trace evidence to attribute the timeout. Do not call that
 failure resolved solely from another successful run.
+
+[Stage 4g](REFACTOR_STAGE_4G.md) migrates the document-publication adapter. Paired
+tests retain exact stage binding, saved-file identity, acceptance/publication
+separation and receipt-only replay. The shared atomic journal codec and remaining
+specialist services still need migration.
