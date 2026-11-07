@@ -41,7 +41,7 @@ The fixture archive, rather than a current test result, is the provenance source
 | [`response-recovery`](../tests/live-response-recovery.ts) | standalone | pending | later | Accepted response loss, original receipt recovery and no mutation replay |
 | [`rpc-recovery`](../tests/live-rpc-recovery.js) | standalone | pending | changed | RPC reply loss, broker settlement and original result recovery |
 | [`shape-native-solids`](../tests/live-shape-native-solids.js) | standalone | pending | later | Native solid creation and geometric properties |
-| [`sketch-operations`](../tests/live-sketch-operations.ts) | standalone | pending | later | Sketch creation, curves, dimensions, constraints, edits and readback |
+| [`sketch-operations`](../tests/live-sketch-operations.ts) | standalone | partial | later | Sketch creation, curves, dimensions, constraints, edits and readback |
 | [`style-save`](../tests/live-style-save.js) | all | pending | changed | Style precedence, mass, unsaved state and local archive roundtrip |
 | [`thicken-slot-pattern`](../tests/live-thicken-slot-pattern.js) | standalone | pending | later | Thicken, slots and pattern geometry with rejected inputs |
 | [`thread-method`](../tests/live-thread-method.js) | standalone | pending | later | Thread selection, creation and native feature readback |
@@ -75,5 +75,7 @@ unmigrated suites or treat their current presence in `all` as proof of safe conc
 The `sketches` shared family covers the historical CAD suite's rectangle setup,
 four named edge references and one profile, with coordinate readback and owner
 isolation. Revolve, driving dimensions and regeneration are still pending. The
-later `sketch-operations` suite's nine target operations remain pending; basic
+later `sketch-operations` suite now has a bounded root-XY coordinate-check case.
+Its dimensions, mirrors, offsets, patterns, projections, transformations and solver
+checks remain pending; basic
 fixture creation alone does not qualify those operations.

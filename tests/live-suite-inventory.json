@@ -365,13 +365,13 @@
       "id": "sketch-operations",
       "source": "tests/live-sketch-operations.ts",
       "runner": "standalone",
-      "model": "pending",
+      "model": "partial",
       "scope": "Sketch creation, curves, dimensions, constraints, edits and readback",
       "prerequisites": "Installed matching broker and an isolated owned fixture",
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": []
+      "sharedScenarios": ["sketches"]
     },
     {
       "id": "style-save",
