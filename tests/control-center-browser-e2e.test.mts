@@ -1176,6 +1176,27 @@ test(
       (await page.locator("aside.sidebar").getAttribute("class")) ?? "",
       /open/,
     );
+    // Visually hidden absolute labels must stay inside the table's scroll container.
+    // The document remains narrow while every table column remains reachable.
+    const tableScroll = await page
+      .locator(".table-wrap")
+      .first()
+      .evaluate((element) => {
+        const original = element.scrollLeft;
+        element.scrollLeft = element.scrollWidth;
+        const reached = element.scrollLeft;
+        element.scrollLeft = original;
+        return {
+          reached,
+          scrollWidth: element.scrollWidth,
+          clientWidth: element.clientWidth,
+        };
+      });
+    assert.ok(tableScroll.scrollWidth > tableScroll.clientWidth);
+    assert.ok(
+      tableScroll.reached > 0,
+      "Mobile table columns must remain scrollable",
+    );
     mobileLayout = await page.evaluate(() => {
       const viewport = document.documentElement.clientWidth;
       const overflowers = [...document.querySelectorAll("body *")]

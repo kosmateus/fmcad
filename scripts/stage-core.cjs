@@ -75,6 +75,22 @@ for (const name of fs.readdirSync(path.join(root, 'src/dist/node-adapters/execut
     .replaceAll('require("../python/', 'require("../../python/'));
 }
 
+// The installed console uses these adapters without private workspace packages.
+fs.cpSync(path.join(root, 'packages/node-adapters/dist/control-center'), path.join(root, 'src/dist/node-adapters/control-center'), { recursive: true });
+for (const name of ['control-center', 'telemetry', 'persistence']) {
+  const rewrite = directory => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) rewrite(file);
+      else if (entry.isFile() && entry.name.endsWith('.js')) {
+        const core = path.relative(directory, path.join(root, 'src/dist/core')).split(path.sep).join('/');
+        fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replaceAll('require("@fmcad/core")', `require("${core}")`));
+      }
+    }
+  };
+  rewrite(path.join(root, 'src/dist/node-adapters', name));
+}
+
 // Public library declarations close over the staged core, never repository TS
 // sources or private workspace package names. Source-tree entrypoints and npm
 // consumers share this same generated boundary and declaration providers.
@@ -86,6 +102,8 @@ for (const name of ['api', 'composition', 'entrypoints']) {
     if (!/\.(js|d\.ts)$/.test(file)) continue;
     fs.writeFileSync(path.join(target, file), fs.readFileSync(path.join(source, file), 'utf8')
       .replaceAll('../../packages/core/src', '../core')
+      .replaceAll('../../packages/control-center/src', '../control-center')
+      .replaceAll('../../packages/node-adapters/src', '../node-adapters')
       .replace(/require\("\.\.\/(catalog|queue-[^"/]+)([^"\n]*)"\)/g, 'require("../../$1$2")'));
   }
 }

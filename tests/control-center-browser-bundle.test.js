@@ -522,6 +522,37 @@ test(
     checkBrowserEsmGraph(path.join(installedDist, "assets/control-center"));
 
     const port = await availablePort();
+    const { createControlCenterComposition } = require(
+      path.join(installedDist, "src/dist/composition/control-center.js"),
+    );
+    const composition = createControlCenterComposition(
+      {
+        port,
+        installationRoot: installedDist,
+        stateDirectory: path.join(directory, "console-state"),
+        buildIdentity: runtimeBuild.fingerprint,
+        protocolVersion: 1,
+        instanceNonce: "d".repeat(64),
+      },
+      {
+        registry: {
+          filePath: path.join(directory, "console-data/projects.json"),
+        },
+        queueDirectory: path.join(directory, "absent-queue"),
+        openCodePresenceDirectory: path.join(directory, "absent-presence"),
+      },
+    );
+    t.after(() => composition.close());
+    const principal = await composition.resolvePrincipal({
+      subject: "installed-fixture",
+      createdAt: Date.now(),
+    });
+    const snapshot = await composition.query.snapshot(
+      { kind: "global" },
+      principal,
+    );
+    assert.ok(snapshot.snapshotToken, JSON.stringify(snapshot));
+    assert.equal(snapshot.scope.kind, "global");
     const server = installedServerFactory.createControlCenterHttpServer({
       identity: {
         port,
@@ -532,27 +563,9 @@ test(
         instanceNonce: "d".repeat(64),
         probeSecret: "e".repeat(64),
       },
-      assets,
-      query: {
-        snapshot: async () => {
-          throw new Error("not used by static resource smoke test");
-        },
-        query: async () => {
-          throw new Error("not used by static resource smoke test");
-        },
-        detail: async () => {
-          throw new Error("not used by static resource smoke test");
-        },
-        export: async () => {
-          throw new Error("not used by static resource smoke test");
-        },
-        subscribe: () => null,
-      },
-      resolvePrincipal: () => ({
-        subject: "installed-fixture",
-        projectIds: [],
-        globalRead: true,
-      }),
+      assets: composition.assets,
+      query: composition.query,
+      resolvePrincipal: composition.resolvePrincipal,
     });
     await server.start();
     t.after(() => server.close());

@@ -60,7 +60,9 @@ export interface ConsoleTelemetryReadPorts {
     projectDirectory: string,
   ) => ConsoleTelemetryRead<PresenceTelemetryRead>;
   readonly globalPresence?: () => ConsoleTelemetryRead<GlobalPresenceTelemetryRead>;
-  readonly systemMetrics: () => ConsoleTelemetryRead<unknown>;
+  readonly systemMetrics: (
+    projectDirectory?: string | null,
+  ) => ConsoleTelemetryRead<unknown>;
   readonly panelProcess?: () => unknown;
   readonly workerIdentity: (jobId: string) => unknown;
   /** Reads only receipts already written by preflight/postflight; never sends RPC. */
@@ -476,7 +478,7 @@ export function createConsoleTelemetryReadAdapter(
             : presence.status,
         ),
       } as const;
-      const system = ports.systemMetrics();
+      const system = ports.systemMetrics(projectDirectory);
       const lock = projectScope
         ? ports.locks(projectDirectory!)
         : (ports.globalLocks?.() ?? {

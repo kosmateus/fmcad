@@ -124,6 +124,7 @@ export interface McpStdioDependencies {
   QueueClient?: QueueClientConstructor;
   createFmcad?(options: FmcadOptions): FmcadServices;
   createTelemetry?(): McpStdioTelemetry;
+  ensureWeb?(configuration: FmcadConfiguration): Promise<void>;
   onOwnedResult?: OwnedMcpResultReporter;
   stdin?: Readable;
   stdout?: StdioWritable;
@@ -363,6 +364,45 @@ export function startStdio(
     diagnostic: (message) =>
       runtimeModules.diagnostics.redactDiagnostic(message, config ?? {}),
   });
+  // Only the default process root starts the installed companion service.
+  // Injected transports keep their explicit dependencies; tests can supply this port.
+  const injectedRuntime = Boolean(
+    dependencies.loadConfig ||
+    dependencies.QueueClient ||
+    dependencies.createFmcad ||
+    dependencies.stdin ||
+    dependencies.stdout ||
+    dependencies.stderr ||
+    dependencies.onOwnedResult,
+  );
+  const ensureWeb =
+    dependencies.ensureWeb ??
+    (!injectedRuntime
+      ? async (cfg: FmcadConfiguration) => {
+          const consoleRuntime = runtimeRequire(
+            "../composition/control-center.js",
+          ) as {
+            ensureControlCenter(port: number): Promise<void>;
+          };
+          await consoleRuntime.ensureControlCenter(cfg.controlCenter.port);
+        }
+      : undefined);
+  if (ensureWeb) {
+    const reportConsoleFailure = (): void => {
+      try {
+        stderr.write(
+          "fmcad: Control Center unavailable; MCP remains available.\n",
+        );
+      } catch {
+        /* Diagnostics cannot interrupt CAD or write to MCP stdout. */
+      }
+    };
+    try {
+      void ensureWeb(configuration()).catch(reportConsoleFailure);
+    } catch {
+      reportConsoleFailure();
+    }
+  }
   let telemetry: McpStdioTelemetry | undefined;
   try {
     telemetry = dependencies.createTelemetry?.();

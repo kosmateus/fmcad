@@ -247,7 +247,7 @@ export function readProjectClientPresenceRecords(
 /** OpenCode presence remains optional and source-scoped; absent is not zero AI agents. */
 export function readOpenCodePresenceRecords(
   directoryInput: string,
-  projectDirectory: string,
+  projectDirectory: string | readonly string[],
   options: PassiveCollectorOptions = {},
 ): PassiveTelemetryRead<readonly unknown[]> {
   const now = options.now ?? Date.now;
@@ -258,7 +258,12 @@ export function readOpenCodePresenceRecords(
       "OpenCode presence record bound must be a positive integer",
     );
   const directory = path.resolve(directoryInput);
-  const targetProject = path.resolve(projectDirectory);
+  const targetProjects = new Set(
+    (typeof projectDirectory === "string"
+      ? [projectDirectory]
+      : projectDirectory
+    ).map((project) => path.resolve(project)),
+  );
   try {
     if (!checkedDirectory(directory))
       return result(
@@ -301,7 +306,7 @@ export function readOpenCodePresenceRecords(
         return (
           !!row &&
           typeof row["project"] === "string" &&
-          path.resolve(row["project"]) === targetProject
+          targetProjects.has(path.resolve(row["project"]))
         );
       });
       if (sessions.length) records.push({ ...record, sessions });

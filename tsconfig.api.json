@@ -33,5 +33,15 @@
     "src/entrypoints/queue-preflight.ts",
     "src/composition/execution-worker.ts"
   ],
-  "references": [{ "path": "./packages/core" }]
+  "references": [
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/control-center"
+    },
+    {
+      "path": "./packages/node-adapters"
+    }
+  ]
 }

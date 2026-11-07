@@ -4,8 +4,9 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
 
-test("installed root stages the trusted service entrypoint and verified static composition", async () => {
+test("installed root stages the trusted service entrypoint and verified static composition", async (t) => {
   const installation = path.join(__dirname, "..", "dist");
   for (const relative of [
     "src/dist/control-center/resources/static-assets.js",
@@ -22,14 +23,24 @@ test("installed root stages the trusted service entrypoint and verified static c
   const rootComposition = require(
     path.join(installation, "src/dist/composition/control-center.js"),
   );
-  const composition = rootComposition.createControlCenterComposition({
-    port: 4748,
-    installationRoot: installation,
-    stateDirectory: path.join(installation, "fixture-state"),
-    buildIdentity: "a".repeat(64),
-    protocolVersion: 1,
-    instanceNonce: "b".repeat(64),
-  });
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-root-read-model-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const composition = rootComposition.createControlCenterComposition(
+    {
+      port: 4748,
+      installationRoot: installation,
+      stateDirectory: path.join(installation, "fixture-state"),
+      buildIdentity: "a".repeat(64),
+      protocolVersion: 1,
+      instanceNonce: "b".repeat(64),
+    },
+    {
+      registry: { filePath: path.join(root, "registry", "projects.json") },
+      queueDirectory: path.join(root, "queue"),
+      openCodePresenceDirectory: path.join(root, "presence"),
+    },
+  );
+  t.after(() => composition.close());
   assert.equal(composition.assets.length, 19);
   for (const module of [
     "web/agents-projects.js",
@@ -46,13 +57,19 @@ test("installed root stages the trusted service entrypoint and verified static c
       (asset) => asset.path === "/assets/control-center/web/index.js",
     ),
   );
-  assert.throws(
-    () =>
-      composition.resolvePrincipal({
-        id: "fixture-session",
-        csrfToken: "c".repeat(64),
-      }),
-    { code: "PRINCIPAL_UNAVAILABLE" },
+  const principal = await composition.resolvePrincipal({
+    subject: "fixture-session",
+    createdAt: Date.now(),
+  });
+  assert.deepEqual(principal.projectIds, []);
+  assert.equal(principal.globalRead, true);
+  const snapshot = await composition.query.snapshot(
+    { kind: "global" },
+    principal,
   );
+  assert.equal(snapshot.scope.kind, "global");
+  assert.ok(snapshot.snapshotToken);
+  assert.equal(fs.existsSync(path.join(root, "registry")), false);
+  assert.equal(fs.existsSync(path.join(root, "queue")), false);
   await composition.close();
 });

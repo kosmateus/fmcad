@@ -121,3 +121,115 @@ test(
     assert.match(html, /\/assets\/control-center\/web\/index\.js/);
   },
 );
+
+test(
+  "standalone MCP automatically starts the installed console and keeps stdout framed",
+  { timeout: 25000 },
+  async (t) => {
+    const { spawn } = require("node:child_process");
+    const { once } = require("node:events");
+    const {
+      processBirthIdentity,
+      processIsAlive,
+    } = require("../dist/src/dist/control-center/server/identity.js");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-mcp-console-"));
+    const port = await unusedPort();
+    const dataHome = path.join(root, "data");
+    const stateHome = path.join(root, "state");
+    const configFile = path.join(root, "config.json");
+    const discoveryFile = path.join(
+      dataHome,
+      "fmcad/control-center/service.json",
+    );
+    fs.writeFileSync(
+      configFile,
+      JSON.stringify({
+        backend: "addin",
+        routing: "queue",
+        controlCenter: { port },
+        queue: { autoStart: false },
+      }),
+    );
+    const child = spawn(
+      process.execPath,
+      [path.resolve(__dirname, "../dist/bin/fmcad-mcp.js")],
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          FMCAD_CONFIG: configFile,
+          FMCAD_CONTROL_CENTER_PORT: String(port),
+          XDG_CONFIG_HOME: path.join(root, "config"),
+          XDG_DATA_HOME: dataHome,
+          XDG_STATE_HOME: stateHome,
+          XDG_CACHE_HOME: path.join(root, "cache"),
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    let output = "";
+    let diagnostics = "";
+    child.stdout.on("data", (chunk) => {
+      output += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      diagnostics += chunk.toString();
+    });
+    const closed = once(child, "close");
+    let service;
+    t.after(async () => {
+      if (child.exitCode === null && child.signalCode === null)
+        child.kill("SIGTERM");
+      await closed;
+      if (!service && fs.existsSync(discoveryFile))
+        service = JSON.parse(fs.readFileSync(discoveryFile, "utf8"));
+      if (
+        service &&
+        processBirthIdentity(service.pid) === service.processBirth
+      ) {
+        process.kill(service.pid, "SIGTERM");
+        const deadline = Date.now() + 5000;
+        while (
+          processIsAlive(service.pid, service.processBirth) &&
+          Date.now() < deadline
+        )
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        assert.equal(processIsAlive(service.pid, service.processBirth), false);
+      }
+      fs.rmSync(root, { recursive: true, force: true });
+    });
+    child.stdin.write(
+      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }) + "\n",
+    );
+    const deadline = Date.now() + 15000;
+    while (
+      (!output.includes("\n") || !fs.existsSync(discoveryFile)) &&
+      Date.now() < deadline
+    ) {
+      assert.equal(child.exitCode, null, diagnostics);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.deepEqual(JSON.parse(output), { jsonrpc: "2.0", id: 1, result: {} });
+    assert.ok(fs.existsSync(discoveryFile), diagnostics);
+    service = JSON.parse(fs.readFileSync(discoveryFile, "utf8"));
+    assert.equal(service.port, port);
+    const response = await fetch(`http://localhost:${port}/`);
+    assert.equal(response.status, 200);
+    const cookie = response.headers.get("set-cookie").split(";", 1)[0];
+    const snapshot = await fetch(
+      `http://localhost:${port}/api/v1/console/snapshot?scope=global`,
+      { headers: { Cookie: cookie } },
+    );
+    assert.equal(snapshot.status, 200);
+    const value = await snapshot.json();
+    assert.ok(value.snapshotToken, JSON.stringify(value));
+    assert.equal(value.scope.kind, "global");
+    assert.equal(
+      fs.existsSync(path.join(stateHome, "fmcad/queue/broker.lock")),
+      false,
+    );
+    child.stdin.end();
+    const [code] = await closed;
+    assert.equal(code, 0, diagnostics);
+  },
+);

@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import path from "node:path";
 import { createFmcad, createCatalogServices } from "../api";
 import type {
   Dependencies,
@@ -54,35 +53,10 @@ export function dependencies(): Dependencies {
   };
   deps.ensureWeb = async () => {
     const cfg = deps.config(process.cwd(), {});
-    const runtimePaths = runtimeRequire("../config-platform/runtime-paths") as {
-      resolveRuntimePaths(options: { anchor: string }): {
-        installation: string;
-      };
-      runtimeBuildIdentity(paths: { installation: string }): string;
+    const consoleRuntime = runtimeRequire("../composition/control-center") as {
+      ensureControlCenter(port: number): Promise<void>;
     };
-    const paths = runtimePaths.resolveRuntimePaths({ anchor: __filename });
-    const controlCenter = runtimeRequire("../control-center/server") as {
-      ensureService(options: {
-        port: number;
-        installationRoot: string;
-        buildIdentity: string;
-        processEntrypoint: string;
-        compositionModule: string;
-      }): Promise<unknown>;
-    };
-    await controlCenter.ensureService({
-      port: cfg.controlCenter.port,
-      installationRoot: paths.installation,
-      buildIdentity: runtimePaths.runtimeBuildIdentity(paths),
-      processEntrypoint: path.join(
-        paths.installation,
-        "src/dist/control-center/server/process-main.js",
-      ),
-      compositionModule: path.join(
-        paths.installation,
-        "src/dist/composition/control-center.js",
-      ),
-    });
+    await consoleRuntime.ensureControlCenter(cfg.controlCenter.port);
   };
   return deps;
 }

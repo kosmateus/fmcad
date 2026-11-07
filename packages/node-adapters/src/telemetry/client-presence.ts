@@ -42,6 +42,17 @@ export interface ClientPresencePolicy {
   ) => ClientPresenceSummary[];
 }
 
+export function clientProcessAlive(identity: {
+  readonly pid: number;
+  readonly birth: string;
+}): boolean | null {
+  try {
+    return priorProcessAlive(identity);
+  } catch {
+    return null;
+  }
+}
+
 interface PresenceFileData {
   readonly version?: unknown;
   readonly project?: unknown;

@@ -1,0 +1,81 @@
+import assert from "node:assert/strict";
+import path from "node:path";
+import { PassThrough } from "node:stream";
+import { test } from "node:test";
+import type { FmcadConfiguration } from "../packages/core/dist/domain/config.js";
+
+const { startStdio } = require(
+  path.join(process.cwd(), "dist/src/dist/entrypoints/mcp-stdio.js"),
+) as typeof import("../dist/library-build/src/entrypoints/mcp-stdio.js");
+const config: FmcadConfiguration = {
+  backend: "addin",
+  url: "http://127.0.0.1:8765/mcp",
+  headers: {},
+  timeoutMs: 1000,
+  tool: "execute_python",
+  transport: "node",
+  protocolVersion: "2025-11-25",
+  routing: "queue",
+  queue: { autoStart: false },
+  controlCenter: { port: 4748 },
+};
+
+test(
+  "MCP starts its companion once without waiting for console readiness",
+  { timeout: 2000 },
+  async () => {
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    let output = "";
+    let diagnostics = "";
+    stdout.on("data", (chunk: Buffer) => {
+      output += chunk.toString();
+    });
+    stderr.on("data", (chunk: Buffer) => {
+      diagnostics += chunk.toString();
+    });
+    let rejectStartup!: (reason: Error) => void;
+    let calls = 0;
+    const runtime = startStdio([], {
+      stdin,
+      stdout,
+      stderr,
+      loadConfig: () => ({ cfg: config }),
+      ensureWeb: (cfg) => {
+        calls++;
+        assert.equal(cfg.controlCenter.port, 4748);
+        return new Promise<void>((_resolve, reject) => {
+          rejectStartup = reject;
+        });
+      },
+      QueueClient: class {
+        constructor() {
+          assert.fail("Local ping must not create a broker client");
+        }
+      },
+    });
+    assert.ok(runtime);
+    stdin.end(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }) + "\n");
+    await runtime.closed;
+    assert.equal(calls, 1);
+    assert.deepEqual(JSON.parse(output), { jsonrpc: "2.0", id: 1, result: {} });
+    assert.equal(diagnostics, "");
+    rejectStartup(new Error("private history path and service details"));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(
+      diagnostics,
+      "fmcad: Control Center unavailable; MCP remains available.\n",
+    );
+  },
+);
+
+test("MCP help never starts the console or reads user configuration", () => {
+  const stdout = new PassThrough();
+  const result = startStdio(["--help"], {
+    stdout,
+    loadConfig: () => assert.fail("Help must not read configuration"),
+    ensureWeb: () => assert.fail("Help must not start a service"),
+  });
+  assert.equal(result, undefined);
+});
