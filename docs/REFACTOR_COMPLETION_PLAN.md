@@ -335,3 +335,13 @@ reference and profile checks from the pre-refactor CAD suite. It also exercises
 foreign sketch tokens, failure cleanup and bounded expression evaluation. This is
 partial CAD coverage; driving dimensions, revolve/regeneration and the later
 sketch-operation suite remain open. The expanded CI matrix has 22 required jobs.
+
+[Stage 4l](REFACTOR_STAGE_4L.md) extracts document save-stage policy into the typed
+core and compiles its existing integration test. Paired historical checks also
+close a missing-journal case that could allow a physical save after its stage
+intent disappeared. This preserves receipt bytes and does not add mutation replay.
+
+[Stage 4m](REFACTOR_STAGE_4M.md) moves execution clock/timer adapters to TypeScript,
+with paired pre-refactor pause and RPC-budget scenarios. It also corrects private
+workspace imports in installed worker declarations. Production deadlines remain
+unchanged; the previously intermittent native-action timeout is still unresolved.
