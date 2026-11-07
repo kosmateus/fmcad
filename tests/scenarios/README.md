@@ -55,7 +55,7 @@ at most two scenarios based on CPU availability. Each slot covers setup, steps
 and cleanup. `--owners N` sets the number of parameter scenarios, in addition
 to one lifecycle scenario. Run one coordinator per Fusion instance.
 
-`--suite all` is the default and runs foundation and saved variants. Use
+`--suite all` is the default and runs foundation, saved and parameter scenarios. Use
 `--suite foundation` for historical unsaved/export behavior or `--suite saved`
 for the save/close/delete lifecycle. The model supplies a dedicated fixture
 folder. Native saved scenarios require exact project/folder IDs; the runner never

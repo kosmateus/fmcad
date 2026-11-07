@@ -1,7 +1,6 @@
 import adsk.core
 import adsk.fusion
 import json
-import re
 
 OP = "help"
 ARGS = []
@@ -20,11 +19,6 @@ USAGE = [
     "file_editability",
     "file_editability_list [project]",
     "tree <project> [folder_path]",
-    "param_list",
-    "param_add <name> <expression> [unit] [comment]",
-    "param_set <name> <expression>",
-    "param_rename <name> <new_name>",
-    "param_delete <name>",
     "plane_list",
     "plane_add <name> offset <ref> <distance>",
     "plane_add <name> mid <ref1> <ref2>",
@@ -372,9 +366,6 @@ def cmd_tree(data, project_name, path):
     print("DONE")
 
 
-KNOWN_UNITS = ["mm", "cm", "m", "in", "ft", "yd", "deg", "rad"]
-
-
 def _design(doc_name):
     app = adsk.core.Application.get()
     if not doc_name:
@@ -391,93 +382,6 @@ def _design(doc_name):
             return design
     _err("document not open: " + doc_name)
     return None
-
-
-def _find_param(design, name):
-    for p in design.userParameters:
-        if p.name == name:
-            return p
-    return None
-
-
-def _resolve_unit(design, expression):
-    tokens = [t for t in re.split(r"[^A-Za-z0-9_]+", expression) if t]
-    for t in tokens:
-        p = _find_param(design, t)
-        if p is not None:
-            return str(p.unit)
-    for t in reversed(tokens):
-        if t in KNOWN_UNITS:
-            return t
-    return ""
-
-
-def cmd_param_list(data, doc_name):
-    design = _design(doc_name)
-    if design is None:
-        return
-    for p in design.userParameters:
-        print("PARAM name=" + p.name + " expr=" + str(p.expression) + " unit=" + str(p.unit) + " comment=" + str(p.comment))
-    print("DONE")
-
-
-def cmd_param_add(data, name, expression, unit, comment, doc_name):
-    design = _design(doc_name)
-    if design is None:
-        return
-    if _find_param(design, name) is not None:
-        print("EXISTS name=" + name)
-        print("DONE")
-        return
-    if not unit:
-        unit = _resolve_unit(design, expression)
-    p = design.userParameters.add(name, adsk.core.ValueInput.createByString(expression), unit, comment)
-    if p is None:
-        _err("param_add " + name)
-        return
-    print("CREATED_PARAM name=" + p.name + " expr=" + str(p.expression) + " unit=" + str(p.unit))
-    print("DONE")
-
-
-def cmd_param_set(data, name, expression, doc_name):
-    design = _design(doc_name)
-    if design is None:
-        return
-    p = _find_param(design, name)
-    if p is None:
-        _err("parameter not found: " + name)
-        return
-    p.expression = expression
-    print("UPDATED_PARAM name=" + p.name + " expr=" + str(p.expression) + " unit=" + str(p.unit))
-    print("DONE")
-
-
-def cmd_param_rename(data, name, new_name, doc_name):
-    design = _design(doc_name)
-    if design is None:
-        return
-    p = _find_param(design, name)
-    if p is None:
-        _err("parameter not found: " + name)
-        return
-    p.name = new_name
-    print("RENAMED_PARAM new=" + p.name)
-    print("DONE")
-
-
-def cmd_param_delete(data, name, doc_name):
-    design = _design(doc_name)
-    if design is None:
-        return
-    p = _find_param(design, name)
-    if p is None:
-        _err("parameter not found: " + name)
-        return
-    if p.deleteMe():
-        print("DELETED_PARAM name=" + name)
-    else:
-        _err("param_delete " + name)
-    print("DONE")
 
 
 def _root(doc_name):
@@ -643,16 +547,6 @@ def run(_context: str):
         cmd_file_editability_list(data, ARGS[0] if ARGS else None)
     elif OP == "tree":
         cmd_tree(data, ARGS[0], ARGS[1] if len(ARGS) > 1 else "")
-    elif OP == "param_list":
-        cmd_param_list(data, ARGS[0] if len(ARGS) > 0 else "")
-    elif OP == "param_add":
-        cmd_param_add(data, ARGS[0], ARGS[1], ARGS[2] if len(ARGS) > 2 else "", ARGS[3] if len(ARGS) > 3 else "", ARGS[4] if len(ARGS) > 4 else "")
-    elif OP == "param_set":
-        cmd_param_set(data, ARGS[0], ARGS[1], ARGS[2] if len(ARGS) > 2 else "")
-    elif OP == "param_rename":
-        cmd_param_rename(data, ARGS[0], ARGS[1], ARGS[2] if len(ARGS) > 2 else "")
-    elif OP == "param_delete":
-        cmd_param_delete(data, ARGS[0], ARGS[1] if len(ARGS) > 1 else "")
     elif OP == "plane_list":
         cmd_plane_list(data, ARGS[0] if len(ARGS) > 0 else "")
     elif OP == "plane_add":

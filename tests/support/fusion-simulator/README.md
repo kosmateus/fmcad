@@ -1,6 +1,6 @@
 # Partial Fusion test model
 
-Model version 2 implements document identity/lifecycle, literal length user parameters,
+Model version 3 implements document identity/lifecycle, numeric user-parameter CRUD,
 saved-file identity and deletion, and a **test state export**. The exported `.f3d` fixture contains a JSON marker
 `nativeF3d: false`; it is not a native Fusion archive and must not be imported into Fusion.
 Native export/import assertions require `native-f3d`, which this model does not advertise.
@@ -25,5 +25,14 @@ assumption, not a claim about measured Fusion cloud timing.
 Model controls such as `advance_model`, `save_delay_steps`, `delete_delay_steps`
 and operation counters are used only by model/fault tests. Shared scenarios use
 only the pinned Autodesk interface. The model has no network cloud service,
-geometry kernel, expression dependency engine, camera or UI event simulation.
+geometry kernel, feature/constraint regeneration, camera or UI event simulation.
 It is test-only and excluded from the published package.
+
+Numeric parameters support explicit length/angle units, scalar values, bounded
+arithmetic and parameter references. Updates reject cycles and incompatible
+dimensions before changing the observed state. Rename updates references; delete
+deliberately retains a referenced parameter while returning true, exercising the
+bug documented in the pinned API reference. The production command must verify
+absence. Text parameters, implicit display units and other Fusion expression
+syntax remain unsupported. Shared scenarios and historical comparisons are in
+`tests/scenarios/parameter-cases.ts` and `parameters.test.ts`.
