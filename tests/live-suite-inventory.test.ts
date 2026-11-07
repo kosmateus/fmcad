@@ -1,18 +1,41 @@
-"use strict";
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const { createHash } = require("node:crypto");
-const { spawnSync } = require("node:child_process");
-const inventory = require("./live-suite-inventory.json");
-const runner = require("./run-live");
-const root = path.resolve(__dirname, "..");
-
+import test from "node:test";
+import type { TestContext } from "node:test";
+import assert from "node:assert/strict";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+const root = path.resolve(__dirname, "../..");
+const load = createRequire(path.join(root, "package.json"));
+import fs from "node:fs";
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+interface Entry {
+  id: string;
+  source: string;
+  runner: "all" | "scoped" | "standalone" | "helper";
+  model: "partial" | "pending" | "native-only" | "helper";
+  scope: string;
+  prerequisites: string;
+  baseline:
+    | { kind: "later" }
+    | { kind: "unchanged" | "changed"; path: string; sha256: string };
+  sharedScenarios: string[];
+}
+const inventory = load("./tests/live-suite-inventory.json") as {
+  baselineCommit: string;
+  entries: Entry[];
+};
+const runner = load("./tests/run-live.js") as {
+  suites: string[];
+  scopedSuites: string[];
+};
+const testsDirectory = path.join(root, "tests");
+const { parse } = load(
+  "./dist/tests/scenarios/cli.js",
+) as typeof import("./scenarios/cli.js");
 test("every live suite and helper has one explicit coverage classification", () => {
   const sources = fs
-    .readdirSync(__dirname)
+    .readdirSync(testsDirectory)
     .filter(
       (name) => /^live-.+\.(?:js|ts)$/.test(name) && !name.includes(".test."),
     )
@@ -47,7 +70,7 @@ test("inventory distinguishes runner registration from pending shared coverage",
   for (const [classification, names] of [
     ["all", runner.suites],
     ["scoped", runner.scopedSuites],
-  ]) {
+  ] as const) {
     assert.deepEqual(
       inventory.entries
         .filter((entry) => entry.runner === classification)
@@ -60,10 +83,7 @@ test("inventory distinguishes runner registration from pending shared coverage",
     (entry) => entry.model === "partial",
   )) {
     for (const suite of entry.sharedScenarios) {
-      const options = require("../dist/tests/scenarios/cli").parse([
-        "--suite",
-        suite,
-      ]);
+      const options = parse(["--suite", suite]);
       assert.equal(options.suite, suite);
     }
   }
@@ -91,18 +111,18 @@ test("historical byte identity claims retain their archived hashes", () => {
   }
 });
 
-test("listing coverage is offline and cannot be combined with execution", (t) => {
+test("listing coverage is offline and cannot be combined with execution", (t: TestContext) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "live-inventory-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const env = {
-    PATH: process.env.PATH,
+    PATH: process.env["PATH"],
     HOME: home,
     FMCAD_CONFIG: path.join(home, "missing.json"),
   };
-  const launch = (args) =>
+  const launch = (args: string[]) =>
     spawnSync(
       process.execPath,
-      [path.join(__dirname, "run-live.js"), ...args],
+      [path.join(testsDirectory, "run-live.js"), ...args],
       {
         cwd: home,
         env,

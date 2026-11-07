@@ -1,17 +1,26 @@
-"use strict";
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const { createHash } = require("node:crypto");
-const current = require("../src/run");
-const previous = require("./fixtures/historical-module.cjs")(
+import test from "node:test";
+import type { TestContext } from "node:test";
+import assert from "node:assert/strict";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+const root = path.resolve(__dirname, "../..");
+const load = createRequire(path.join(root, "package.json"));
+import fs from "node:fs";
+import { createHash } from "node:crypto";
+import type { AsyncLocalStorage } from "node:async_hooks";
+type RunApi = typeof import("../src/composition/run.js");
+type RunArguments = Parameters<RunApi["prepareRunScript"]>;
+const current = load("./src/run.js") as RunApi;
+const historical = load("./tests/fixtures/historical-module.cjs") as (
+  revision: string,
+  source: string,
+) => unknown;
+const previous = historical(
   "d496c734d63661f2f131b6797ce171e9373a58f4",
   "src/run.js",
-);
-
-function fixture(t) {
+) as RunApi;
+function fixture(t: TestContext) {
   const directory = fs.mkdtempSync(
     path.join(os.tmpdir(), "run migration żółć "),
   );
@@ -23,7 +32,7 @@ function fixture(t) {
   return { directory, file, source };
 }
 
-for (const [label, identity, helper, operations] of [
+const cases: [string, RunArguments[4], RunArguments[5], RunArguments[6]][] = [
   ["plain", {}, undefined, []],
   ["creation ID", { docId: "creation-A" }, undefined, []],
   ["file ID", { docFileId: "urn:file:A" }, undefined, []],
@@ -40,10 +49,11 @@ for (const [label, identity, helper, operations] of [
     "cad-v1",
     ["body.list"],
   ],
-]) {
+];
+for (const [label, identity, helper, operations] of cases) {
   test(`run migration preserves complete ${label} artifacts and raw provenance`, (t) => {
     const f = fixture(t);
-    const args = [
+    const args: RunArguments = [
       f.file,
       { text: "Zażółć 🧪 $&", yes: true, value: null },
       true,
@@ -55,7 +65,9 @@ for (const [label, identity, helper, operations] of [
     ];
     const before = {},
       after = {};
-    const context = require("../src/invocation").context;
+    const { context } = load("./src/invocation.js") as {
+      context: AsyncLocalStorage<Record<string, unknown>>;
+    };
     const historical = context.run(before, () =>
       previous.prepareRunScript(...args),
     );
@@ -100,10 +112,11 @@ test("script search, listing, validation and missing-slot failures retain their 
     "nonexistent-script-93848",
     path.join(f.directory, "missing.py"),
   ]) {
-    let expected;
+    let expected: string | undefined;
     try {
       previous.resolveScript(name, { config });
     } catch (error) {
+      assert.ok(error instanceof Error);
       expected = error.message;
     }
     assert.throws(() => current.resolveScript(name, { config }), {
@@ -114,11 +127,12 @@ test("script search, listing, validation and missing-slot failures retain their 
     [f.file, [], false, undefined, { docId: "id" }],
     [f.file, [], false, "Model", {}, "unknown"],
     [f.file, [], false, "Model", {}, "cad-v1"],
-  ]) {
-    let expected;
+  ] as RunArguments[]) {
+    let expected: string | undefined;
     try {
       previous.prepareRunScript(...args);
     } catch (error) {
+      assert.ok(error instanceof Error);
       expected = error.message;
     }
     assert.equal(typeof expected, "string");
@@ -130,11 +144,12 @@ test("script search, listing, validation and missing-slot failures retain their 
   for (const args of [
     [f.file, [], true],
     [f.file, [], false, "Model"],
-  ]) {
-    let expected;
+  ] as RunArguments[]) {
+    let expected: string | undefined;
     try {
       previous.prepareRunScript(...args);
     } catch (error) {
+      assert.ok(error instanceof Error);
       expected = error.message;
     }
     assert.throws(() => current.prepareRunScript(...args), {
@@ -153,7 +168,7 @@ test("both versions reject changed or unpinned queued source before preparing an
       else process.env[key] = original[index];
     }),
   );
-  process.env.FMCAD_QUEUE_WORKER_JOB = "run-migration";
+  process.env["FMCAD_QUEUE_WORKER_JOB"] = "run-migration";
   const pin = [
     {
       path: f.file,
@@ -161,7 +176,7 @@ test("both versions reject changed or unpinned queued source before preparing an
     },
   ];
   for (const api of [previous, current]) {
-    process.env.FMCAD_QUEUE_INPUT_FILES = JSON.stringify(pin);
+    process.env["FMCAD_QUEUE_INPUT_FILES"] = JSON.stringify(pin);
     fs.writeFileSync(f.file, f.source);
     assert.equal(api.prepareRunScript(f.file, [], false).script, f.source);
     fs.writeFileSync(f.file, f.source + "# changed after queue acceptance\n");
@@ -169,7 +184,7 @@ test("both versions reject changed or unpinned queued source before preparing an
       code: "INPUT_CHANGED",
     });
     fs.writeFileSync(f.file, f.source);
-    process.env.FMCAD_QUEUE_INPUT_FILES = "[]";
+    process.env["FMCAD_QUEUE_INPUT_FILES"] = "[]";
     assert.throws(() => api.prepareRunScript(f.file, [], false), {
       code: "INPUT_CHANGED",
     });
@@ -178,8 +193,12 @@ test("both versions reject changed or unpinned queued source before preparing an
 
 test("source verification and preparation use the same read even if the file changes", (t) => {
   const f = fixture(t);
-  let observed, verified;
-  const api = require("../src/dist/python/run-script").createRunScriptAdapter({
+  let observed: Buffer | undefined;
+  let verified: string | undefined;
+  const { createRunScriptAdapter } = load(
+    "./src/dist/python/run-script.js",
+  ) as typeof import("../packages/node-adapters/src/python/run-script.js");
+  const api = createRunScriptAdapter({
     observeSource(filename, bytes) {
       assert.equal(filename, f.file);
       observed = bytes;
