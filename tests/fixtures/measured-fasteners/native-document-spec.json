@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "fmcad.measured-fasteners.synthetic.v1",
+  "execution": "specification-only; do not create or execute in Fusion without explicit user approval",
+  "units": "mm",
+  "frame": {"space": "component local", "component": "MF_Root"},
+  "tolerance": {"axisOffset": 0.05, "axisAngleDegrees": 1.0, "minimumEngagement": 4.0},
+  "baseGeometry": {
+    "screw": {
+      "component": "MF_Screw",
+      "axis": {"name": "MF_ScrewAxis", "origin": [0, 0, 0], "direction": [0, 0, 1]},
+      "headBearing": {"name": "MF_ScrewHeadBearing", "point": [0, 0, 0]},
+      "tip": {"name": "MF_ScrewTip", "point": [0, 0, 10]},
+      "threadStart": {"name": "MF_ScrewThreadStart", "point": [0, 0, 4]},
+      "threadEnd": {"name": "MF_ScrewThreadEnd", "point": [0, 0, 10]}
+    },
+    "receptacle": {
+      "component": "MF_Receptacle",
+      "kind": "blind",
+      "axis": {"name": "MF_HoleAxis", "origin": [0, 0, 0], "direction": [0, 0, 1]},
+      "threadStart": {"name": "MF_HoleThreadStart", "point": [0, 0, 5]},
+      "threadEnd": {"name": "MF_HoleThreadEnd", "point": [0, 0, 13]},
+      "bottom": {"name": "MF_HoleBottom", "point": [0, 0, 13]}
+    },
+    "layers": [
+      {"id": "bracket", "component": "MF_Bracket", "start": [0, 0, 0], "end": [0, 0, 5]}
+    ],
+    "tool": {
+      "diameter": 4,
+      "length": 30,
+      "entry": {"point": [0, 0, 20], "direction": [0, 0, -1]},
+      "nativeObstacle": {"name": "MF_ToolWall", "bounds": {"min": [-1, -1, 7], "max": [1, 1, 9]}}
+    }
+  },
+  "cases": {
+    "baseline": {"expected": {"engagement": 5, "protrusion": 5, "bottomClearance": 3, "aligned": true}},
+    "rotatedOccurrence": {
+      "transform": {"rotationRows": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]], "translation": [27, -4, 9]},
+      "expected": {"engagement": 5, "protrusion": 5, "bottomClearance": 3, "aligned": true}
+    },
+    "blindHoleBottoming": {
+      "set": {"receptacle.bottom.point": [0, 0, 8]},
+      "legacyEvidence": {"screw.length": 12, "screw.threadLength": 10, "stack.thickness": 5, "receptacle.depth": 8},
+      "expected": {"nativeBottoming": "fail", "legacyBottoming": "pass"}
+    },
+    "shortBoltDeepReceptacle": {
+      "set": {"screw.tip.point": [0, 0, 8], "screw.threadEnd.point": [0, 0, 8]},
+      "expected": {"engagement": 3, "minimumEngagement": 4, "status": "fail"}
+    },
+    "misalignedAxes": {
+      "set": {"receptacle.axis.origin": [0.2, 0, 0]},
+      "expected": {"axisOffset": 0.2, "maximumAxisOffset": 0.05, "status": "fail"}
+    },
+    "toolObstacle": {"expected": {"toolAccess": "blocked", "obstacle": "MF_ToolWall"}},
+    "missingNativeRead": {
+      "omitReference": "MF_HoleThreadEnd",
+      "expected": {"nativeEngagement": "unknown", "declaredEvidenceFallback": false}
+    }
+  },
+  "restoreRequirements": [
+    "Use a disposable synthetic document; do not modify a user's existing design.",
+    "Record and restore the original active document, open-document set, selection, viewport and timeline state.",
+    "Confirm no persistent geometry, component, file or timeline changes remain after teardown."
+  ]
+}

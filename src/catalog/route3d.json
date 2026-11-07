@@ -1,0 +1,72 @@
+{
+  "route.create3d": {
+    "summary": "Numerically solve a 3D centerline through waypoints with end tangents and a transport frame; report arc length, min bend radius, self-contact and clearances.",
+    "required": ["waypoints"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "waypoints": [["0 mm", "0 mm", "0 mm"], ["0 mm", "10 mm", "10 mm"], ["0 mm", "0 mm", "20 mm"]], "up": [0, 0, 1]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "waypoints": "Array of at least two [x,y,z] length-expression waypoints.",
+      "interpolation": "spline (default, Catmull-Rom through all waypoints) or polyline.",
+      "endTangents": "Optional {start:[dx,dy,dz],end:[dx,dy,dz]} requested end tangents; reported against the computed tangent.",
+      "up": "Transport-frame up direction, default [0,0,1]; stable through inflections.",
+      "bendConstraints": "Optional {minRadius:length} declared bend limit.",
+      "twist": "Optional total twist angle.",
+      "obstacles": "Optional array of {point:[x,y,z]} clearance obstacles.",
+      "minimumClearance": "Nonnegative clearance expression, default 0 mm.",
+      "normalSections": "Optional array of {station:length} stations for normal-section reports.",
+      "section": "Optional native profile ref for a sweep (existing shape.route path mode; not generated here).",
+      "frame": "Optional frame label.",
+      "representation": "recipe (default); native persistent 3D path is a declared gap."
+    },
+    "limitations": ["No unstable Frenet frame; bend radius is the local circumradius of sample triples and inflections are handled. AWG does not define insulation diameter; declare the section/envelope explicitly.", "Endpoints alone do not define a flexible route; waypoints/constraints are explicit. Native 3D sweep generation reuses shape.route existing-path mode and is not created here."]
+  },
+  "route.inspect": {
+    "summary": "Inspect a route from waypoints or an explicit centerline: arc length, min neutral-axis bend radius, transport frames, self-contact and clearances.",
+    "required": [], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "waypoints": [["0 mm", "0 mm", "0 mm"], ["0 mm", "10 mm", "0 mm"], ["10 mm", "10 mm", "0 mm"]]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "waypoints": "Array of [x,y,z] waypoints (exclusive with centerline).",
+      "centerline": "Explicit array of [x,y,z] sample points (exclusive with waypoints).",
+      "interpolation": "spline (default) or polyline when waypoints are supplied.",
+      "up": "Transport-frame up direction, default [0,0,1].",
+      "obstacles": "Optional array of {point:[x,y,z]} obstacles.",
+      "minimumClearance": "Nonnegative clearance expression, default 0 mm.",
+      "normalSections": "Optional array of {station:length} stations.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Bend radius is numerically sampled, not an analytic exactness guarantee; the centerline is a recipe/numerical model, not a native parametric path."]
+  },
+  "route.cut-list": {
+    "summary": "Compute cut lengths under the explicit interpretation cutLength = L * allowanceFactor + 2 * serviceTail (1.1*L + 2*15 mm default), never double-adding a modeled tail.",
+    "required": ["length"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "length": "100 mm", "allowanceFactor": 1.1, "serviceTail": "15 mm"},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "length": "Positive neutral-axis length expression L.",
+      "allowanceFactor": "Finite factor >= 1.0, default 1.1.",
+      "serviceTail": "Nonnegative per-end service tail length, default 15 mm.",
+      "serviceTailModeled": "Boolean, default false; true means the tail is already in L and is not added again.",
+      "pieces": "Positive integer piece count, default 1.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Cut length is a declared interpretation, not a durability or cycle-life claim. Service tail is added exactly once; set serviceTailModeled:true when it is already modeled."]
+  },
+  "route.motion-states": {
+    "summary": "Report route state at the cartesian product of PAN/TILT extremes, preserving neutral-axis length and classifying each state as set, numerically-solved or native-dependent.",
+    "required": ["length"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "length": "100 mm", "pan": {"min": "-45 deg", "max": "45 deg"}, "tilt": {"min": "-30 deg", "max": "30 deg"}, "minBendRadius": "5 mm"},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "length": "Positive neutral-axis length L, preserved across every pose.",
+      "pan": "{min,max} angular range expressions.",
+      "tilt": "{min,max} angular range expressions.",
+      "poses": "Explicit array of {pan,tilt,bendRadius?} poses (exclusive with pan/tilt ranges).",
+      "minBendRadius": "Optional declared tightest bend radius the route can achieve.",
+      "state": "set, numerically-solved (default) or native-dependent.",
+      "representation": "recipe (default).",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["The PAN x TILT product is evaluated at extremes, not a synchronous diagonal track. Required bend radius is a numerical upper-bound model of the swept articulation; no cycle-life or durability claim is made without a cycle test."]
+  }
+}

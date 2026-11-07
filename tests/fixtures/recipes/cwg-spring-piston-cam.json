@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "runId": "cwg-spring-piston-cam",
+  "maxExpansion": 100,
+  "operations": [
+    {"id": "spring", "operation": "shape.spring", "data": {"schemaVersion": 1, "frame": "component", "name": "PistonSpring", "wireDiameter": "0.5 mm", "meanDiameter": "8 mm", "activeCoils": 6, "totalCoils": 8, "freeLength": "35 mm", "endStyle": "ground", "hand": "right"}},
+    {"id": "springEval", "operation": "spring.evaluate", "data": {"schemaVersion": 1, "frame": "component", "wireDiameter": "0.5 mm", "meanDiameter": "8 mm", "activeCoils": 6, "totalCoils": 8, "freeLength": "35 mm", "shearModulus": "77000 N/mm^2", "installedLength": "27 mm", "compressedLength": "17 mm"}},
+    {"id": "camProfile", "operation": "cam.profile", "data": {"schemaVersion": 1, "frame": "component", "baseRadius": "15 mm", "rollerRadius": "5 mm", "rise": {"law": "halfCosine", "lift": "10 mm", "angle": "240 deg"}, "followerLine": [0, 1, 0], "phase": "0 deg", "direction": "ccw"}},
+    {"id": "camEval", "operation": "cam.evaluate", "data": {"schemaVersion": 1, "frame": "component", "baseRadius": "15 mm", "rollerRadius": "5 mm", "rise": {"law": "halfCosine", "lift": "10 mm", "angle": "240 deg"}, "maximumPressureAngle": "12 deg", "minimumCurvatureRadius": "10 mm"}},
+    {"id": "cycle", "operation": "cam.cycle-check", "data": {"schemaVersion": 1, "frame": "component", "baseRadius": "15 mm", "rollerRadius": "5 mm", "rise": {"law": "halfCosine", "lift": "10 mm", "angle": "240 deg"}, "followerLine": [0, 1, 0], "phase": "0 deg", "direction": "ccw", "returnLaw": "spring-return", "dwell": {}}},
+    {"id": "couple", "operation": "mechanism.couple", "data": {"schemaVersion": 1, "frame": "component", "coupling": {"type": "screw", "lead": "4 mm", "zeroPhase": "0 deg"}, "driverRange": {"from": "0 deg", "to": "360 deg"}, "samples": 8}},
+    {"id": "stop", "operation": "mechanism.stop-check", "data": {"schemaVersion": 1, "frame": "component", "coupling": {"type": "screw", "lead": "4 mm"}, "limits": {"working": {"min": "0 deg", "max": "540 deg"}, "program": {"max": "540 deg"}, "hard": {"max": "630 deg"}}, "stopSurfaces": [{"clearance": "0.2 mm"}], "driverValue": "360 deg", "drivenValue": "4 mm"}},
+    {"id": "health", "operation": "history.check", "data": {}}
+  ],
+  "outputs": {
+    "spring": {"$ref": "spring.result.geometry"},
+    "springRate": {"$ref": "springEval.result.stiffness"},
+    "pitchProfile": {"$ref": "camProfile.result.pitchProfile"},
+    "workingProfile": {"$ref": "camProfile.result.workingProfile"},
+    "maxPressureAngle": {"$ref": "camEval.result.maxPressureAngle"},
+    "cycle": {"$ref": "cycle.result.unresolvedIntervals"}
+  }
+}

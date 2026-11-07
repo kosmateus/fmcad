@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "format": "Independent CLI cases, not a batch. Replace reference placeholders with native fixture outputs.",
+  "cases": [
+    {"id":"reflected","operation":"occurrence.transform","data":{"schemaVersion":1,"occurrence":"GM04Parent:1","placement":{"matrix":[-1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],"translationUnits":"mm"}},"expect":"Reject before mutation: reflection"},
+    {"id":"scaled","operation":"occurrence.transform","data":{"occurrence":"GM04Parent:1","placement":{"matrix":[2,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],"translationUnits":"mm"}},"expect":"Reject before mutation: non-rigid"},
+    {"id":"wrong-unit","operation":"datum.transform","data":{"from":"root","to":"root","points":[["1 deg","0 mm","0 mm"]]},"expect":"Reject incompatible length expression"},
+    {"id":"negative-proportion","operation":"datum.plane-on-path","data":{"name":"GM04InvalidNegative","path":{"curves":[{"token":"REPLACE_CURVE_TOKEN"}]},"position":{"mode":"proportional","value":"-0.001"}},"expect":"Reject; plane count unchanged"},
+    {"id":"past-end","operation":"datum.plane-on-path","data":{"name":"GM04InvalidPastEnd","path":{"curves":[{"token":"REPLACE_CURVE_TOKEN"}]},"position":{"mode":"length","value":"1000000 mm"}},"expect":"Reject rather than native endpoint clamp; plane count unchanged"},
+    {"id":"snapshot-required","operation":"datum.axis","data":{"name":"GM04InvalidAxis","mode":"frame","frame":{"component":"root","datum":"GM04Target"}},"expect":"Reject before helpers"},
+    {"id":"duplicate-frame","operation":"datum.frame","data":{"schemaVersion":1,"name":"GM04Target","origin":["0 mm","0 mm","0 mm"],"xAxis":[1,0,0],"yAxis":[0,1,0]},"expect":"Reject existing frame; original matrix unchanged"},
+    {"id":"axis-vector","operation":"joint.revolute","data":{"name":"GM04InvalidJoint","occurrenceOne":"GM04Base:1","occurrenceTwo":"GM04Parent:1+GM04Child:1","point":"origin","axis":[1,0,0]},"expect":"Reject vector overload; native joint count unchanged"},
+    {"id":"bad-limits","operation":"joint.slider","data":{"name":"GM04InvalidLimits","occurrenceOne":"GM04Base:1","occurrenceTwo":"GM04Slider:1","frame":{"component":"root","datum":"GM04Target"},"associativity":"snapshot","confirm":true,"limits":{"slide":{"minimumValue":"20 mm","maximumValue":"10 mm"}}},"expect":"Reject before helper geometry or joint creation"}
+  ]
+}

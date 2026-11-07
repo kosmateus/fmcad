@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "fixture": "cwg-pcb05",
+  "governance": "X-14",
+  "specRef": "FMCAD_GENERIC_METHODS_SPEC.md §6 PCB05/PCB02",
+  "source": "Cat Water Gun/docs/drawings/ITEM_CATALOG.json PCB05/PCB02",
+  "status": "OPEN",
+  "pcb05": {
+    "name": "SENSOR_FLEX",
+    "thickness": "0.15 mm",
+    "rigidDescription": "FR4 / copper / components (rigid stackup)",
+    "flexDescription": "branched flex with 4 rigid stiffener islands 8x8; flat envelope 250x35",
+    "branchedOutline": true,
+    "rigidIslands": 4,
+    "stackup": null,
+    "outlineResolution": "OPEN"
+  },
+  "pcb02": {
+    "name": "HEAD_PCB",
+    "thickness": "1.0 mm",
+    "outline": "50(Y) x 44(Z), corners R2",
+    "localZones": [
+      { "reserve": "20x18x4", "note": "connector reserve taller than the 1.0 mm general envelope", "status": "OPEN" }
+    ]
+  }
+}

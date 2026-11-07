@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "gc-gear-pair-v1",
+  "family": "gearPair",
+  "identity": "offline:generic-controls/gear-pair",
+  "control": {
+    "centerDistanceToleranceMm": 0.05
+  },
+  "readPaths": [
+    "gearA.moduleMm",
+    "gearA.teeth",
+    "gearB.moduleMm",
+    "gearB.teeth",
+    "centerDistanceMm"
+  ],
+  "cases": [
+    {
+      "id": "nominal",
+      "identity": "offline:generic-controls/gear-pair/nominal",
+      "variant": "good",
+      "measurements": {
+        "gearA": { "moduleMm": 1.0, "teeth": 20 },
+        "gearB": { "moduleMm": 1.0, "teeth": 40 },
+        "centerDistanceMm": 30.0
+      },
+      "expected": {
+        "status": "pass",
+        "failedChecks": []
+      }
+    },
+    {
+      "id": "over-spaced",
+      "identity": "offline:generic-controls/gear-pair/over-spaced",
+      "variant": "bad",
+      "measurements": {
+        "gearA": { "moduleMm": 1.0, "teeth": 20 },
+        "gearB": { "moduleMm": 1.0, "teeth": 40 },
+        "centerDistanceMm": 31.0
+      },
+      "expected": {
+        "status": "fail",
+        "failedChecks": [
+          "gear-center-distance"
+        ]
+      }
+    },
+    {
+      "id": "module-mismatch",
+      "identity": "offline:generic-controls/gear-pair/module-mismatch",
+      "variant": "bad",
+      "measurements": {
+        "gearA": { "moduleMm": 1.0, "teeth": 20 },
+        "gearB": { "moduleMm": 1.25, "teeth": 40 },
+        "centerDistanceMm": 30.0
+      },
+      "expected": {
+        "status": "fail",
+        "failedChecks": [
+          "gear-module"
+        ]
+      }
+    }
+  ]
+}

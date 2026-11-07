@@ -1,0 +1,58 @@
+{
+  "origin": {
+    "kind": "projection-of-owned-result",
+    "originalJobId": "0d1a1dee-a0b8-4bb4-a171-352da73e17cd",
+    "originalRequestId": "gm12-spring-b486113e-2d64-478b-bb0e-93c2c347713c",
+    "originalReportSha256": "903cb345b6196968ab81361fd9f6ff9e9dad4c475d4596c8c3922f7b171bf17c",
+    "fixedSourceSha256": "4fe6d983b7a22b85d8cda44265038bad9f3599721fe5321e128a421575e1c7d2"
+  },
+  "receipt": {
+    "state": "succeeded",
+    "executionOutcome": "succeeded",
+    "sdkSettled": true
+  },
+  "envelope": {
+    "success": true,
+    "modelUnchanged": true,
+    "nativeGeometry": false,
+    "operations": [
+      "curve.helix",
+      "shape.spring",
+      "spring.evaluate",
+      "spring.configure"
+    ],
+    "results": {
+      "curve.helix": {
+        "operation": "curve.helix",
+        "status": "pass",
+        "success": true,
+        "documentIdentity": { "creationId": "saved-scratch" }
+      },
+      "shape.spring": {
+        "operation": "shape.spring",
+        "status": "pass",
+        "success": true,
+        "representation": "recipe",
+        "nativeCoil": false,
+        "documentIdentity": { "creationId": "saved-scratch" }
+      },
+      "spring.evaluate": {
+        "operation": "spring.evaluate",
+        "status": "pass",
+        "success": true,
+        "documentIdentity": { "creationId": "saved-scratch" }
+      },
+      "spring.configure": {
+        "operation": "spring.configure",
+        "status": "pass",
+        "success": true,
+        "checks": [
+          { "check": "material-volume", "status": "pass" },
+          { "check": "guide-rod", "status": "pass" },
+          { "check": "slenderness", "status": "unknown" }
+        ],
+        "documentIdentity": { "creationId": "saved-scratch" }
+      }
+    }
+  }
+}

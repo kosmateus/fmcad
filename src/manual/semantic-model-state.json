@@ -1,0 +1,148 @@
+{
+  "frame.context_audit": {
+    "sections": [
+      {
+        "title": "Independent observations and coordinates",
+        "text": "Pin the exact document using --doc-id or --doc-file-id. Supply an explicit body ref and the full root-qualified occurrence path as instance segments; use [] only for a body owned by the root component. datumToRoot is row-major with column vectors and cm translation, and datumSource must identify an independent source/version. Do not derive the datum input from the proxy transform under test."
+      },
+      {
+        "title": "Transform and BRep evidence",
+        "text": "The audit observes the nativeObject transform2 chain separately from root.allOccurrences proxy transform2. A root-qualified proxy already includes its parents and is not multiplied by them again. Up to 16 native/proxy BRep vertex pairs are checked in cm. Reflection, scale and independent frame/witness mismatches fail; missing point witnesses remain partial evidence."
+      },
+      {
+        "title": "Verification boundary",
+        "text": "Even a passing audit is sampled, not exact BRep equivalence. Offline SDK doubles are not native Fusion qualification. The dedicated scratch qualification and restore have not been run; see docs/SEMANTIC_MODEL_STATE.md."
+      },
+      {
+        "title": "Return Contract",
+        "text": "The CAD result envelope contains result:{schemaVersion:2,operation:'frame.context_audit',status,precision:'sampled',exactBRepEquivalence:false,failures,observation,nativeToRoot,witnessCount,tolerances,limitations}. status is fail for non-rigid/mismatched transforms or witness points, partial when no independent BRep witnesses were supplied, and pass only when the supplied frames and all sampled witnesses agree. This is sampled evidence, not exact geometry equivalence."
+      },
+      {
+        "title": "Python helper",
+        "text": "FMCAD.frame_context_audit(data) calls the same read-only catalog handler from a helper script and records one helper call. It does not make the supplied datum independent; the caller must provide its provenance."
+      }
+    ],
+    "examples": [
+      {
+        "label": "Audit a nested body with an independent analytic placement",
+        "data": {
+          "ref": {"kind": "body", "name": "Housing"},
+          "sourceId": "housing-definition-v3",
+          "instance": ["Root:1", "Housing:2"],
+          "datumToRoot": [1, 0, 0, 10, 0, 1, 0, 20, 0, 0, 1, 30, 0, 0, 0, 1],
+          "datumSource": {"kind": "fixture-analytic-placement", "version": 1}
+        },
+        "requires": "Use the actual occurrence path and exact document identity; replace the example body and independent transform/provenance.",
+        "output": "Reports separate nativeToRoot and root proxy observations, source/document version, visibility and sampled BRep witness result."
+      }
+    ],
+    "audit": {
+      "sources": [
+        "runtime/python/fmcad/domain/semantic_model_state.py",
+        "runtime/python/fmcad/adapters/fusion/semantic_model_state.py",
+        "runtime/python/fmcad/application/semantic_model_state.py",
+        "src/catalog/semantic-model-state.js"
+      ],
+      "verified": [
+        "Catalog, CLI and MCP expose the same pinned read-only Python operation",
+        "Root-qualified proxy transform2 is compared without double-parent multiplication",
+        "Native, proxy, datum and BRep witness values are independent observations"
+      ],
+      "tests": [
+        "tests/semantic-model-state-e2e.test.js",
+        "tests/semantic_model_state_test.py"
+      ],
+      "gaps": ["Native Fusion qualification and complete scratch restore require separate authorization."],
+      "bugs": []
+    }
+  },
+  "snapshot.capture_v2": {
+    "sections": [
+      {
+        "title": "Explicit coverage and identity",
+        "text": "Pin the saved document and pass scope.kind=explicit-bindings with its creationId, fileId and version. Each binding assigns a stable role and sourceId to one reference and a full root-qualified instance path. Repeated instances of one definition remain distinct. Up to 256 bindings are accepted."
+      },
+      {
+        "title": "Inline snapshot, no store",
+        "text": "The result is snapshot schemaVersion 2 with status/coverage partial and observational precision, geometry summaries, pose, sorted attributes, topology counts, visibility, source/document versions and diagnostic tokens. It is returned inline; there is no global snapshot store. Tokens are not semantic identity. Snapshot v1 remains unchanged."
+      },
+      {
+        "title": "Verification boundary",
+        "text": "Bounds and topology counts are compact observations, not exact shape or topology equivalence. Use the result as a caller-owned baseline with explicit scope, not as proof that unobserved entities are unchanged. See docs/SEMANTIC_MODEL_STATE.md."
+      },
+      {
+        "title": "Return Contract",
+        "text": "The CAD result envelope contains result:{schemaVersion:2,status:'partial',coverage:'partial',precision:'observational',scope,entities,exactBRepEquivalence:false}. Each entity records the explicit role/source/instance binding plus available geometry, pose, attributes, topology, visibility and diagnostic tokens; missing/unsupported observations remain absent or null, not inferred equal. The snapshot is returned inline and is not stored durably."
+      },
+      {
+        "title": "Python helper",
+        "text": "FMCAD.snapshot_capture_v2(data) invokes the same read-only handler. Keep the returned object in caller-owned state if a later diff is needed; no persistent snapshot artifact is created."
+      }
+    ],
+    "examples": [
+      {
+        "label": "Capture two semantic instances and one root body",
+        "data": {
+          "scope": {"kind": "explicit-bindings", "document": {"creationId": "creation-1", "fileId": "file-1", "version": 3}},
+          "bindings": [
+            {"role": "drive-body", "sourceId": "motor-definition", "ref": {"kind": "body", "name": "Drive"}, "instance": ["Root:1", "Motor:2"]},
+            {"role": "root-bracket", "sourceId": "root-definition", "ref": {"kind": "body", "name": "Bracket"}, "instance": []}
+          ]
+        },
+        "requires": "Substitute current reference names and exact saved target identity.",
+        "output": "Returns {schemaVersion:2, status:'partial', coverage:'partial', precision:'observational', scope, entities, exactBRepEquivalence:false}."
+      }
+    ],
+    "audit": {
+      "sources": ["runtime/python/fmcad/adapters/fusion/semantic_model_state.py", "runtime/python/fmcad/domain/semantic_model_state.py"],
+      "verified": ["Root and nested instances are explicit", "Identity does not depend on volatile tokens", "No global store"],
+      "tests": ["tests/semantic-model-state-e2e.test.js", "tests/semantic_model_state_test.py"],
+      "gaps": ["Native geometry and visibility semantics require authorized Fusion qualification."],
+      "bugs": []
+    }
+  },
+  "snapshot.diff_v2": {
+    "sections": [
+      {
+        "title": "Order-independent semantic comparison",
+        "text": "Pass two caller-owned v2 snapshots. Rows are matched by (role, complete instance path), never by array order or entity token. Added/removed slots, changed source/document version, duplicates and scope drift are visible. Missing observation channels yield partial, not pass."
+      },
+      {
+        "title": "Channels and precision",
+        "text": "Changes are reported independently for geometry, pose, attributes, topology and visibility. Per-channel positive finite absolute tolerances default to 1e-7. Snapshot equality does not prove exact BRep equivalence; topology is represented by counts, and geometry is a summary."
+      },
+      {
+        "title": "Allowed movement",
+        "text": "allowedMovedSubtrees accepts nonempty arrays of exact root-qualified path segments. A listed subtree allows only pose changes at that occurrence and descendants. It does not authorize geometry, identity, attributes, topology or visibility changes, and does not check a specific requested transform delta."
+      },
+      {
+        "title": "Return Contract",
+        "text": "The CAD result envelope contains result:{schemaVersion:2,operation:'snapshot.diff_v2',status,precision:'observational',coverage:'partial',exactBRepEquivalence:false,changes,duplicates,missingObservations,scopeChanged,scope,allowedMovedSubtrees,tolerances,limitations}. status is fail for scope/identity/unauthorized changes, partial when observation channels are missing, and pass only when supplied observations agree within declared tolerances. Equal summaries do not prove exact BRep equivalence."
+      },
+      {
+        "title": "Python helper and verification boundary",
+        "text": "FMCAD.snapshot_diff_v2(data) runs the same read-only comparison. Passing means only that the supplied observations agree within declared tolerances and coverage; native Fusion qualification and restore are separate and remain pending."
+      }
+    ],
+    "examples": [
+      {
+        "label": "Allow pose changes under one assembly instance only",
+        "data": {
+          "before": {"schemaVersion": 2, "status": "partial", "coverage": "partial", "precision": "observational", "exactBRepEquivalence": false, "scope": {"kind": "explicit-bindings", "document": {"creationId": "creation-1", "fileId": "file-1", "version": 3}}, "entities": []},
+          "after": {"schemaVersion": 2, "status": "partial", "coverage": "partial", "precision": "observational", "exactBRepEquivalence": false, "scope": {"kind": "explicit-bindings", "document": {"creationId": "creation-1", "fileId": "file-1", "version": 3}}, "entities": []},
+          "allowedMovedSubtrees": [["Root:1", "Motor:2"]],
+          "tolerances": {"geometry": 1e-7, "pose": 1e-7}
+        },
+        "requires": "Use exact snapshots from the same document and scope; provide the real moved subtree path.",
+        "output": "Every difference includes its identity, channel and allowed flag; unauthorized changes fail."
+      }
+    ],
+    "audit": {
+      "sources": ["runtime/python/fmcad/domain/semantic_model_state.py", "packages/core/src/domain/semantic-model-state.ts"],
+      "verified": ["Reorder is stable", "Repeated instances remain separate", "Allowed movement is pose-only and path-qualified"],
+      "tests": ["tests/semantic-model-state-e2e.test.js", "tests/semantic_model_state_test.py"],
+      "gaps": ["Native Fusion qualification and exact BRep equivalence are not claimed."],
+      "bugs": []
+    }
+  }
+}

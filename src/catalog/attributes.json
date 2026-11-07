@@ -1,0 +1,56 @@
+{
+  "entity.attribute.set": {
+    "summary": "Store a namespaced string attribute (group + name + value) on an entity and return the actual owning resource identity.",
+    "required": [
+      "ref",
+      "group",
+      "name",
+      "value"
+    ],
+    "example": {
+      "ref": {
+        "kind": "body",
+        "token": "body-token"
+      },
+      "group": "fmcad.metadata",
+      "name": "source",
+      "value": "STEP import"
+    },
+    "readOnly": false,
+    "limitations": [
+      "Values are strings bounded by the Fusion attribute API; larger payloads must be split. Attributes persist on the next save; this operation does not save. Reusing an existing group/name updates it in place."
+    ],
+    "inputs": {
+      "ref": "Required resolvable entity with attributes (component/body/face/occurrence/parameter).",
+      "group": "Required nonempty namespace string.",
+      "name": "Required nonempty attribute name within the group.",
+      "value": "Required string value."
+    },
+    "envelope": true
+  },
+  "entity.attribute.get": {
+    "summary": "Read a namespaced attribute (or every attribute in a group) and return the actual owning resource identity.",
+    "required": [
+      "ref",
+      "group"
+    ],
+    "example": {
+      "ref": {
+        "kind": "body",
+        "token": "body-token"
+      },
+      "group": "fmcad.metadata",
+      "name": "source"
+    },
+    "readOnly": true,
+    "envelope": true,
+    "limitations": [
+      "Reads the named group only; other namespaces are not enumerated. The returned resourceIdentity is the actual owning entity reference, not a display-name guess."
+    ],
+    "inputs": {
+      "ref": "Required resolvable entity with attributes.",
+      "group": "Required nonempty namespace string.",
+      "name": "Optional attribute name; omit to list the whole group."
+    }
+  }
+}

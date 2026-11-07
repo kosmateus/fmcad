@@ -1,0 +1,151 @@
+{
+  "model": {
+    "_model_enum": [
+      "0bf8470c5ea4ab4ced98d16fd12ae9897872c26418a2bc9f345846b2bea85950"
+    ],
+    "_model_extrude_profile_plane": [
+      "6dc3696366b1050959daec062086bbb023fd7be635ef9b0d76356ca57b9ade37"
+    ],
+    "_model_path": [
+      "5c7583f237a8ff4b942685bddded7ede07f0f2b4f9bc4d784fe8f04894a44007"
+    ],
+    "_model_resolve": [
+      "6d920081aad1e8df7bc801cb2a3b7dbfb710a2431ccf0e2fd35ad07b9bd1f4cf"
+    ],
+    "model_feature": [
+      "bbd81c0aceeabddbe514a89c05473e5da5e083e2998a717534c085c2cb2e7a57"
+    ],
+    "model_path_create": [
+      "2dc0d95ca6ca39605eb2da28bc7c1436eb895d3861ba7c6ff4fcbdced7c773d1"
+    ],
+    "model_sketch_check": [
+      "911235d1e252279a4b0d1600136dc6f6ef113c4fecb6c207d9a327c7c5cb41cc"
+    ],
+    "model_sketch_constrain": [
+      "550e0c84901cda95f616ecf98f51a1ef4d3e308c8c71fbe80627f77345328b27"
+    ],
+    "model_sketch_create": [
+      "75cf78e392dc18304206a4c0618d44bb31b385934b64f0e41cab218c5bb95e24"
+    ],
+    "model_sketch_dimension": [
+      "7e5822fd1a93a65d7f93a1953891a8523373eaa83ed3b5b6ec55f738913c68ca"
+    ],
+    "model_sketch_edit": [
+      "50b43ef2cc838576c447ae090431f535c310072aca03f4e8944fbed083fa2bd0"
+    ],
+    "model_sketch_mirror": [
+      "61babe97b060831f0f8671f9931ef96bd6559bbcb8eeee8fe251fea3b2675708"
+    ],
+    "model_sketch_offset": [
+      "1ffff80f7ce62bfbfc0ed735ae2f0b656def4ecce21ae064e1bc90921a45aa14"
+    ],
+    "model_sketch_pattern": [
+      "61b1bbd56d4c986dc088edc2f439115b0e66a931f4f587fb4716746d31ac596a"
+    ],
+    "model_sketch_project": [
+      "beaacbdd43e2fc544ebbc4659d211de28803ac2a4d41263b19ed25b3a7c561e2"
+    ]
+  },
+  "feature": {
+    "_feature_apply_extent": [
+      "8c38de3250216fdafeb18b31f2c4099a2bc147d3a95e17fdd123761d89c8de8a"
+    ],
+    "_feature_bindings": [
+      "f7dee30026e3161da6c044f3e078d6531b234df065ab7f6d1df9179fdab36ab7"
+    ],
+    "_feature_cast": [
+      "59e83474789d5192ba5474aea010ebfea13f60461630d19ec52c8a86ac15c5e0"
+    ],
+    "_feature_chamfer_bindings": [
+      "23256fa72e87a266e8e4bec208c56c840597a0e6b170e1198f46bb5a5184a0bd"
+    ],
+    "_feature_contract": [
+      "667c8453f438163c85be4eb4b2c7691289dc91311338dbdce3f8fcdd206f49e4"
+    ],
+    "_feature_downstream": [
+      "4589d97dad4421bee0769220120117be0463b9e20b00449c93ad9bed9ca79017"
+    ],
+    "_feature_edge_set_parameters": [
+      "cfde9207a06e7920ca45b2dd0b7a77304da1f00261e0b977943db0d6f40fefcc"
+    ],
+    "_feature_extent_plan": [
+      "f700c5ca88f352196133ecc0e4a2451b5d3e5594dd18c50c39bab5d73e2c2d5b"
+    ],
+    "_feature_extent_summary": [
+      "84b6a6490b112de66a179d478197b803287904f7e332883a553c709186690392"
+    ],
+    "_feature_extrude_bindings": [
+      "72481ec79568b51b6aea2a7b130fb73fb82c42f00eb35700342d90552a10d48f"
+    ],
+    "_feature_fillet_bindings": [
+      "097a20d19cd7a7cfa35e5c270c7a0d37050426e8fe170e5f9ae48781de0e5111"
+    ],
+    "_feature_hole_bindings": [
+      "b4ac48c5f79fba163e5c5c02891ec554d15f957214e0c212165a89f42a506920"
+    ],
+    "_feature_hole_position_snapshot": [
+      "529ae25a1f37f8907d56cbf35c066a1495891526271f66e07fd323af31dc893f"
+    ],
+    "_feature_misc_bindings": [
+      "5f7df4ae7cc14ac103c494098d38a439a81a6b1cc1bf13e9f4024b69f34a0b83"
+    ],
+    "_feature_native_apply": [
+      "c3eded5b13be95e93a2b2d4f680d86eab004b8eadedd2c7d8526315dc62b2272"
+    ],
+    "_feature_native_edit": [
+      "3a70e96bc4578c6e2bd49ee4aaefc2ce499e82ecdb92ccb63620896dee224503"
+    ],
+    "_feature_edit": [
+      "566129eaa00c88213bddd75d1956055e0a6b77f981046f8940f7c39fefda4e69"
+    ],
+    "_feature_native_collection": [
+      "c1c9017061b2662e1695e637f27df88506d788c7ac019f48f840e1ae4943774c"
+    ],
+    "_feature_native_enum": [
+      "6290207e4e3991d16b77431e1fbe83a1a60453fe9133e2c3e1eaf23596e08ad1"
+    ],
+    "_feature_native_path": [
+      "5d931015a89fcb068f9f5c599d7d8580448a4b1fc73146bb07bbe8210ac37ee9"
+    ],
+    "_feature_native_plan": [
+      "d24ab48afc3ca2a26aaf43f688ba4bcc43425da4d00a49a75c86c70c7b693d41"
+    ],
+    "_feature_native_read": [
+      "0dc0d72813f774d11dd6127cc1e14a60d240e49abfaa91a9ec1e8033637616d1"
+    ],
+    "_feature_native_value": [
+      "3f00e76403942838b84674f939b3d242b416be55a019e98de6e88a6e3415d756"
+    ],
+    "_feature_operation_pose_snapshot": [
+      "cb58cd9b0b55456a3a091b17bb0d52024d3d598620ed1b0a89bc1ff66406b9f7"
+    ],
+    "_feature_parameter": [
+      "0c27ca35a61abc6ce8dff908960409ecbf9b77ed7eb4a915750da8ead62bfdf6"
+    ],
+    "_feature_revolve_bindings": [
+      "13ad30821902b98cbe5e90334fe18f8e7b31982e8ef81a4ebe985dce2969b165"
+    ],
+    "_feature_snapshot": [
+      "f67066474b70cbe5e2402d1d09b9528cb2e2e40e319164da48c69e1724e2ed90"
+    ],
+    "_feature_sweep_bindings": [
+      "a9d4ac56335e8787affab8cb8321b70ba5948327526f4a0c88959246094bac05"
+    ],
+    "_feature_target": [
+      "e3fdc819b8512159c1daacab0b44b1325f001ad1f5288e694bb2873f4dc456d0"
+    ],
+    "_feature_validate_hole_position": [
+      "d4c52e04f8289a48f16cf3cc130e42d8419baf46c2888e04631582f6327cd521"
+    ]
+  },
+  "datum": {
+    "_datum_path_position": [
+      "8b7d28f2b0a8816783b108ef808525a98967c3b9541b0365513e5fef16cbd2ab"
+    ]
+  },
+  "shapes": {
+    "_shapes_count": [
+      "d618a22713ec808d68ac0d1401fc8d5cdb5096ebfcdb22d31e8e70f7a6225b43"
+    ]
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "measure.draft": {
+    "summary": "Compute a signed draft map from declared face samples (point + normal) under each pull direction; a pull wall (normal near-perpendicular to pull) must meet minDraft. Positive draft alone never proves demoldability.",
+    "required": ["faces", "pullDirections"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "faces": [{"name": "wall", "point": ["0 mm", "0 mm", "10 mm"], "normal": [1, 0, 0]}], "pullDirections": [{"name": "eject", "axis": [0, 0, 1]}], "minDraft": "1 deg"},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "faces": "Nonempty array of {name?, point:[x,y,z], normal:[nx,ny,nz]} declared face samples (unit outward normal).",
+      "pullDirections": "Nonempty array of {name?, axis:[x,y,z]} or bare [x,y,z] unit pull/ejection directions.",
+      "minDraft": "Nonnegative angle, default 0 deg; pull walls must meet this magnitude.",
+      "pullWallWindow": "Nonnegative angle, default 30 deg; faces with |signedDraft| within this of parallel are pull walls.",
+      "draftTolerance": "Nonnegative angle, default 0.1 deg.",
+      "method": "analytic (default); native B-Rep ray sampling is gated and rejected.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Computed from declared face samples, not native B-Rep rays. Positive draft alone never proves demoldability; parting lines, slides and mold flow are not solved."]
+  },
+  "measure.wall-map": {
+    "summary": "Map wall thickness from declared wall samples with explicit material continuity; an opposite point behind a void is void-backed and never reported as material thickness.",
+    "required": ["samples"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "samples": [{"name": "shell", "point": ["0 mm", "0 mm", "0 mm"], "opposite": ["2 mm", "0 mm", "0 mm"], "continuity": "solid"}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "samples": "Nonempty array of {name?, point:[x,y,z], opposite?:[x,y,z] | thickness?:length, continuity?:solid|void} wall samples.",
+      "minThickness": "Nonnegative length, default 0 mm; solid samples thinner than this violate.",
+      "maxThickness": "Optional length; solid samples thicker than this violate.",
+      "method": "declared (default); native body ray sampling is gated and rejected.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Declared-sample wall thickness; native B-Rep ray sampling is gated. A void-backed opposite point is reported, not treated as material thickness. No mold-flow or CAE result is claimed."]
+  },
+  "undercut.check": {
+    "summary": "Detect directional undercuts: a face whose signed draft is more negative than the threshold locks the part in that pull direction.",
+    "required": ["faces", "pullDirections"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "faces": [{"name": "lip", "point": ["0 mm", "0 mm", "5 mm"], "normal": [0, 0, -1]}], "pullDirections": [{"name": "eject", "axis": [0, 0, 1]}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "faces": "Nonempty array of {name?, point:[x,y,z], normal:[nx,ny,nz]} declared face samples.",
+      "pullDirections": "Nonempty array of {name?, axis:[x,y,z]} or bare [x,y,z] unit pull directions.",
+      "undercutThreshold": "Nonnegative angle, default 3 deg; signed draft below -threshold is an undercut.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Directional undercut from declared face normals only; slides, side actions and multi-axis molds are not solved. Positive draft alone never proves demoldability."]
+  },
+  "manufacturing.zone": {
+    "summary": "Define and validate manufacturing zones (a-surface, fit, seal, optical, parting, gate, ejector, weld, custom) with protection defaults and process/material/sampling metadata.",
+    "required": ["zones"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "zones": [{"name": "seal-groove", "kind": "seal"}, {"name": "a-panel", "kind": "a-surface"}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "zones": "Nonempty array of {name, kind, protected?, pullDirections?, minThickness?, maxThickness?, minDraft?} zone descriptors.",
+      "process": "Optional process label (e.g. injection).",
+      "material": "Optional material label; absence produces a warning.",
+      "sampling": "Optional {method: declared|uniform|adaptive, tolerance?:length}; uniform/adaptive native sampling is gated.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Recipe zone metadata only; no native Fusion manufacturing feature is created. a-surface/seal/optical zones default to protected."]
+  },
+  "manufacturing.check": {
+    "summary": "Aggregate draft, wall-thickness and undercut checks against declared zones, and reject any global operation that touches a protected zone (seal, a-surface, optical).",
+    "required": ["zones", "faces", "walls", "pullDirections"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "zones": [{"name": "seal", "kind": "seal"}], "faces": [{"name": "wall", "point": ["0 mm", "0 mm", "10 mm"], "normal": [1, 0, 0]}], "walls": [{"name": "shell", "point": ["0 mm", "0 mm", "0 mm"], "opposite": ["2 mm", "0 mm", "0 mm"], "continuity": "solid"}], "pullDirections": [{"name": "eject", "axis": [0, 0, 1]}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "zones": "Nonempty array of zone descriptors (as manufacturing.zone).",
+      "faces": "Nonempty array of declared face samples.",
+      "walls": "Nonempty array of declared wall samples.",
+      "pullDirections": "Nonempty array of pull directions.",
+      "operations": "Optional array of {name?, touches:[zoneName,...]} global operations; touching a protected zone violates.",
+      "minDraft": "Optional minDraft for the draft check.",
+      "minThickness": "Optional minThickness for the wall check.",
+      "maxThickness": "Optional maxThickness for the wall check.",
+      "undercutThreshold": "Optional undercut threshold.",
+      "process": "Optional process label.",
+      "material": "Optional material label.",
+      "sampling": "Optional sampling descriptor.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Aggregates declared-sample checks only. No CAE/mold-flow claim. Declared face refs are snapshots and must be revalidated after topology change."]
+  }
+}

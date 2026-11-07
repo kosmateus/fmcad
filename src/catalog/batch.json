@@ -1,0 +1,57 @@
+{
+  "batch.validate": {
+    "batchMode": "validate",
+    "summary": "Validate an ordered CAD batch offline without contacting Fusion; reports the effective atomic mode.",
+    "required": ["operations", "runId"], "readOnly": true, "nodeOnly": true,
+    "example": {"runId": "example", "operations": [{"id": "section", "operation": "sketch.create", "data": {"name": "Section", "plane": "XY"}}]},
+    "inputs": {"timeBudgetMs":"Positive integer scheduling budget; scoped default 180000 ms, legacy unbounded. No remote cancellation.","formatVersion":"1 enables scoped definitions and loops.","definitions":"Named definition library; see definition expand.","inputs":"Named root input values.","outputs":"Named exported references.","maxExpansion":"Visited node budget 1..100000; default 10000.","recipe":"Optional durable {id,bindings}; see docs/DEFINITIONS.md.","operations": "Ordered leaf, use, repeat or forEach steps.", "runId": "Unique local run identity.", "parameters": "Optional literal values substituted through sole-key {$param: name} objects.", "reportPath": "Local report directory; unused in validation.", "mode": "Integrator sets validate.", "atomic": "Boolean, default true. Omitted or true selects atomic execution; only explicit false selects non-atomic. Invalid types (strings, numbers, arrays, objects) are rejected, never coerced."},
+    "limitations": ["Checks structure, catalog fields, IDs, references, cycles, and parameters only; no geometric or model-state validation.", "Reports the effective atomic mode and atomic capability (addin only) without contacting a backend; atomic execution is supported only on the addin backend, and mcp is rejected at run time."]
+  },
+  "batch.preview": {
+    "batchMode": "preview",
+    "summary": "Return the validated expanded batch without executing or writing reports; reports the effective atomic mode.",
+    "required": ["operations", "runId"], "readOnly": true, "nodeOnly": true,
+    "example": {"runId": "example", "operations": [{"id": "section", "operation": "sketch.create", "data": {"name": "Section", "plane": "XY"}}]},
+    "inputs": {"timeBudgetMs":"Positive integer scheduling budget; scoped default 180000 ms, legacy unbounded. No remote cancellation.","formatVersion":"1 enables scoped definitions and loops.","definitions":"Named definition library; see definition expand.","inputs":"Named root input values.","outputs":"Named exported references.","maxExpansion":"Visited node budget 1..100000; default 10000.","recipe":"Optional durable {id,bindings}; see docs/DEFINITIONS.md.","operations": "Ordered leaf, use, repeat or forEach steps; references remain symbolic.", "runId": "Run identity.", "parameters": "Optional literal substitutions.", "reportPath": "Unused in preview.", "mode": "Integrator sets preview.", "atomic": "Boolean, default true. Omitted or true selects atomic execution; only explicit false selects non-atomic. Invalid types are rejected, never coerced."},
+    "limitations": ["No Fusion calls, no mutation, no filesystem writes, and no output-path or geometry verification.", "Reports the effective atomic mode and atomic capability (addin only) without contacting a backend."]
+  },
+  "batch.run": {
+    "batchMode": "run", "summaryFlag": true,
+    "summary": "Execute an ordered batch atomically by default (one native command transaction), with an explicit atomic: false opt-out to the legacy per-step execution.",
+    "required": ["operations", "runId"], "readOnly": false, "nodeOnly": true,
+    "example": {"runId": "example", "reportPath": "./reports/example", "operations": [{"id": "section", "operation": "sketch.create", "onExisting": "reuse", "data": {"name": "Section", "plane": "XY"}}]},
+    "inputs": {"timeBudgetMs":"Positive integer scheduling budget; scoped default 180000 ms, legacy unbounded. No remote cancellation.","formatVersion":"1 enables scoped definitions and loops.","definitions":"Named definition library; see definition expand.","inputs":"Named root input values.","outputs":"Named exported references.","maxExpansion":"Visited node budget 1..100000; default 10000.","recipe":"Optional durable {id,bindings}; saved pinned document required. See docs/DEFINITIONS.md.","operations": "Ordered leaf, use, repeat or forEach steps. Leaf component overrides outer scope for this step; defaults do not inherit previous steps. onExisting error|reuse controls exact report replay only.", "runId": "Unique identity; defaults report directory to .fmcad-batch/runId.", "reportPath": "Local DIRECTORY containing immutable numbered JSON snapshots and an exclusive run.lock.", "parameters": "Optional literal substitutions.", "mode": "Integrator sets run; context.preview always forces offline preview.", "atomic": "Boolean, default true. Omitted or true selects the atomic command transaction; only explicit false selects non-atomic per-step execution. Invalid types are rejected, never coerced. The effective mode is part of the replay identity."},
+    "limitations": ["Atomic mode requires the addin backend (atomicBatch capability); the official mcp backend is rejected before any mutation with a specific reason, never silently downgraded. Save/export/document-lifecycle and local/node-only steps are rejected inside an atomic batch.", "Atomic reports distinguish committed/aborted/rejected/unknown and include terminationReason and rollbackVerified (distinct from the abort request). abortRequested does not imply verified revert; appearances/materials/attributes/transforms are undocumented for rollback.", "Explicit atomic: false preserves the legacy per-step semantics and marks the report non-atomic with no transactional protection. A timeout stays unknown with no automatic replay; a client timeout does not cancel the Fusion command."]
+  },
+  "batch.summary": {
+    "summary": "Read historical batch outcomes from the latest local numbered report; no model validation.",
+    "required": ["reportPath"], "readOnly": true, "nodeOnly": true, "requiresDoc": false, "offline": true, "textSummary": true,
+    "usage": "batch summary --report-path <DIR> [--step <N>] [--json]",
+    "example": {"reportPath": "./reports/example", "step": 1},
+    "inputs": {"reportPath": "Existing CLI-local report directory (required).", "step": "Optional 1-based step number; 0 and out-of-range values fail."},
+    "limitations": ["Historical reported outcomes only, never current model validation, replay or mutation. No document, config or backend access.", "Reads the highest numbered snapshot in contiguous history starting at 00000000.json; missing, incomplete or corrupt reports fail. Stale locks and temporary files are ignored, not removed. Running snapshots may contain pending steps.", "TEXT by default; --json returns the summary schema with historical:true, modelValidated:false and stored success/status. Failed history exits nonzero."]
+  },
+  "batch.reconcile": {
+    "summary": "Read-only inspection of a batch receipt and matching live holder; it never opens or activates a document.",
+    "required": ["reportPath"], "readOnly": true, "nodeOnly": true, "requiresDoc": false, "offline": false,
+    "usage": "batch reconcile --report-path <DIR> [--data '{\"operations\":[...]}'] [--json]",
+    "example": {"reportPath":"./reports/example", "operations":[]},
+    "inputs": {"reportPath":"Existing numbered atomic report directory.", "operations":"Optional array of at most 100 {operation,data} entries; existing read-only CAD handlers only.", "blockedJobId":"Optional exact needs_reconciliation job id for one broker-scoped atomic_status observation while that job blocks admission.", "commandId":"Required with blockedJobId; exact commandId from that atomic report.", "sessionNonce":"Required with blockedJobId; exact session nonce from that atomic report."},
+    "limitations": ["Observation only; no report writes, lock removal, activation, open, replay or recovery mutation. Outcome remains unknown without matching durable/native evidence."]
+  },
+  "batch.finalize": {
+    "summary": "Clean up this batch's native command after destroy, idle, and exact receipt/holder identity checks.",
+    "required": ["reportPath"], "readOnly": false, "nodeOnly": true, "requiresDoc": false, "offline": false,
+    "usage": "batch finalize --report-path <DIR> [--json]",
+    "example": {"reportPath":"./reports/example"},
+    "inputs": {"reportPath":"Existing numbered atomic report directory."},
+    "limitations": ["Only the exact owned command can be finalized. Does not open/activate documents, restart, cancel, replay, or remove another writer's lock; unknown remains unknown."]
+  },
+  "definition.instantiate": {
+    "summary": "Instantiate an ordered batch using literal JSON parameter substitution, without code evaluation.",
+    "required": ["operations", "runId"], "readOnly": false, "nodeOnly": true,
+    "example": {"runId": "definition-example", "parameters": {"name": "Section"}, "operations": [{"id": "section", "operation": "sketch.create", "data": {"name": {"$param": "name"}, "plane": "XY"}}]},
+    "inputs": {"timeBudgetMs":"Positive integer scheduling budget; scoped default 180000 ms, legacy unbounded. No remote cancellation.","formatVersion":"1 enables scoped definitions and loops.","definitions":"Named definition library; see definition expand.","inputs":"Named root input values.","outputs":"Named exported references.","maxExpansion":"Visited node budget 1..100000; default 10000.","recipe":"Optional durable {id,bindings}; saved pinned document required. See docs/DEFINITIONS.md.","operations": "Same leaf/use/repeat/forEach steps as batch.run.", "parameters": "Literal JSON values; no code evaluation or interpolation.", "runId": "Run identity.", "reportPath": "Local immutable snapshot directory.", "mode": "validate, preview, or run (default)."},
+    "limitations": ["Same persistence, replay, and failure limitations as batch.run (non-atomic per-step execution; the atomic default applies to batch.run/validate/preview). Definition expansion is not a CAD task planner."]
+  }
+}

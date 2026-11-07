@@ -1,0 +1,29 @@
+{
+  "formatVersion": 1,
+  "runId": "cwg-ring-pcb-optics",
+  "maxExpansion": 100,
+  "operations": [
+    {"id": "ring", "operation": "component.create", "data": {"name": "RingPCB"}},
+    {"id": "mount", "operation": "mount.create", "component": {"$ref": "ring.result.component"}, "data": {"schemaVersion": 1, "frame": "component", "name": "RingPcbMount", "scheme": "pin-slot", "pin": {"x": "0 mm", "y": "0 mm"}, "slot": {"x": "40 mm", "y": "0 mm"}, "holes": {"diameter": "3 mm", "clearance": "0.5 mm", "positions": [{"x": "10 mm", "y": "10 mm"}, {"x": "30 mm", "y": "10 mm"}, {"x": "10 mm", "y": "30 mm"}, {"x": "30 mm", "y": "30 mm"}]}, "boss": {"diameter": "6 mm", "height": "8 mm"}, "support": {"connector": true}, "material": "FR-4 + brass insert", "process": "injection molded"}},
+    {"id": "mountCheck", "operation": "mount.check", "component": {"$ref": "ring.result.component"}, "data": {"schemaVersion": 1, "frame": "component", "scheme": "pin-slot", "holes": [{"diameter": "3 mm", "clearance": "0.5 mm"}, {"diameter": "3 mm", "clearance": "0.5 mm"}, {"diameter": "3 mm", "clearance": "0.5 mm"}, {"diameter": "3 mm", "clearance": "0.5 mm"}], "connector": {"supported": true, "supportPresent": true}}},
+    {"id": "board", "operation": "pcb.check", "data": {"schemaVersion": 1, "frame": "component", "board": {"thickness": "1.6 mm", "outline": [["0 mm", "0 mm"], ["40 mm", "0 mm"], ["40 mm", "40 mm"], ["0 mm", "40 mm"]], "holes": [{"center": ["10 mm", "10 mm", "0 mm"], "type": "round", "diameter": "3 mm"}], "heightZones": [{"side": "top", "height": "5 mm"}, {"side": "bottom", "height": "3 mm"}]}}},
+    {"id": "port", "operation": "port.define", "data": {"schemaVersion": 1, "name": "USB-C", "frame": {"origin": ["0 mm", "0 mm", "0 mm"], "normal": [0, 0, 1], "pin1": ["1 mm", "0 mm", "0 mm"]}, "key": "usbc-k", "matingStroke": "6 mm"}},
+    {"id": "mate", "operation": "connector.mate-check", "expectFail": true, "data": {"schemaVersion": 1, "frame": "component", "connectors": [{"name": "POWER_M", "gender": "male", "pinCount": 4, "key": "4pin-k"}, {"name": "POWER_F", "gender": "female", "pinCount": 4, "key": "4pin-k"}, {"name": "DATA_F", "gender": "female", "pinCount": 4, "key": "4pin-k"}], "intendedPairs": [["POWER_M", "POWER_F"]], "forbiddenPairs": [["POWER_M", "DATA_F"]]}},
+    {"id": "fpc", "operation": "fpc.fold", "data": {"schemaVersion": 1, "frame": "component", "chain": [{"type": "line", "length": "10 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y"}, {"type": "line", "length": "10 mm"}], "outline": [["0 mm", "0 mm"], ["10 mm", "0 mm"], ["10 mm", "4 mm"], ["0 mm", "4 mm"]], "stackup": {"neutralLayer": 0.5}, "bendZones": [{"radius": "2 mm", "angle": "90 deg"}]}},
+    {"id": "pack", "operation": "pack.cross-section", "data": {"schemaVersion": 1, "frame": "component", "cavity": [["0 mm", "0 mm"], ["40 mm", "0 mm"], ["40 mm", "20 mm"], ["0 mm", "20 mm"]], "items": [{"center": ["5 mm", "5 mm", "0 mm"], "radius": "2 mm"}, {"center": ["20 mm", "5 mm", "0 mm"], "radius": "3 mm"}], "reserve": 0.3}},
+    {"id": "keepout", "operation": "keepout.check", "data": {"schemaVersion": 1, "frame": "component", "board": {"outline": [["0 mm", "0 mm"], ["40 mm", "0 mm"], ["40 mm", "40 mm"], ["0 mm", "40 mm"]]}, "keepouts": [{"name": "opticalWindow", "outline": [["30 mm", "30 mm"], ["38 mm", "30 mm"], ["38 mm", "38 mm"], ["30 mm", "38 mm"]]}]}},
+    {"id": "frustum", "operation": "optics.frustum", "data": {"schemaVersion": 1, "pupil": {"origin": ["0 mm", "0 mm", "0 mm"], "direction": [0, 0, 1], "up": [0, 1, 0]}, "fov": {"horizontal": "60 deg", "vertical": "40 deg"}, "ranges": {"near": "10 mm", "far": "100 mm"}, "window": {"distance": "50 mm", "width": "20 mm", "height": "20 mm"}}},
+    {"id": "coverage", "operation": "optics.coverage", "data": {"schemaVersion": 1, "sensors": [{"name": "camA", "pupil": {"origin": ["-20 mm", "0 mm", "30 mm"], "direction": [0.5, 0, -0.866], "up": [0, 1, 0]}, "fov": {"horizontal": "40 deg", "vertical": "30 deg"}, "ranges": {"near": "1 mm", "far": "100 mm"}}, {"name": "camB", "pupil": {"origin": ["20 mm", "0 mm", "30 mm"], "direction": [-0.5, 0, -0.866], "up": [0, 1, 0]}, "fov": {"horizontal": "40 deg", "vertical": "30 deg"}, "ranges": {"near": "1 mm", "far": "100 mm"}}], "targets": [{"name": "ringTarget", "origin": ["0 mm", "0 mm", "0 mm"], "normal": [0, 0, 1], "u": [1, 0, 0], "outline": [["-20 mm", "-20 mm"], ["20 mm", "-20 mm"], ["20 mm", "20 mm"], ["-20 mm", "20 mm"]]}]}},
+    {"id": "occlusion", "operation": "optics.occlusion", "data": {"schemaVersion": 1, "pupil": {"origin": ["0 mm", "0 mm", "0 mm"]}, "rays": [{"target": ["0 mm", "0 mm", "50 mm"]}, {"target": ["20 mm", "0 mm", "50 mm"]}], "obstacles": [{"name": "baffle", "kind": "baffle", "shape": {"type": "disk", "origin": ["0 mm", "0 mm", "25 mm"], "normal": [0, 0, 1], "radius": "4 mm"}}, {"name": "window", "kind": "window", "transmittance": 0.9, "shape": {"type": "disk", "origin": ["20 mm", "0 mm", "25 mm"], "normal": [0, 0, 1], "radius": "5 mm"}}], "policy": {"transparency": "declared"}}},
+    {"id": "alignment", "operation": "sensor.alignment-check", "data": {"schemaVersion": 1, "sensor": {"name": "ir", "origin": ["0 mm", "0 mm", "0 mm"], "axis": [0, 0, 1]}, "reference": {"name": "magnet", "origin": ["0 mm", "0 mm", "0 mm"], "axis": [0, 0, 1]}, "limits": {"angle": "5 deg", "offset": "0.5 mm", "gap": {"min": "0 mm", "max": "2 mm"}}}},
+    {"id": "health", "operation": "history.check", "data": {}}
+  ],
+  "outputs": {
+    "mount": {"$ref": "mount.result.scheme"},
+    "boardCheck": {"$ref": "board.result.status"},
+    "port": {"$ref": "port.result.name"},
+    "mateCheck": {"$ref": "mate.result.status"},
+    "fpc": {"$ref": "fpc.result.foldedCenterline"},
+    "coverage": {"$ref": "coverage.result.targets"}
+  }
+}

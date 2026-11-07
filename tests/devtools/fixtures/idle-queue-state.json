@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "paused": false,
+  "revision": 0,
+  "epoch": 0,
+  "blocked": null,
+  "active": null,
+  "lease": null,
+  "jobs": {},
+  "lastClient": null,
+  "controlRequests": {}
+}

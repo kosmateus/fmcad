@@ -1,0 +1,88 @@
+{
+  "capabilities.inspect": {
+    "sections": [
+      {
+        "title": "Offline Search And Inventory",
+        "text": "Search the registered operation catalog and the public cad-v1 helper facade with query text. Matching covers operation/method names, descriptions, inputs, examples, limitations and helper metadata; limit and offset provide stable pagination. The inventory is built from the same catalog contracts used by CLI and MCP, plus a helper index checked against assets/cad/helpers.py. It does not read Fusion configuration, contact Fusion, start a broker, or execute code. This discovery operation is standalone and is not a modeling-batch step."
+      },
+      {
+        "title": "Prerequisites, Evidence And Limits",
+        "text": "Each item reports its catalog service, required inputs, declared backend/SDK/cloud/document requirements, catalog contract version, and whether a target identity was inspected. readOnlyRequested is not readOnlyEnforced. Mutation/restoration is explicit when known and otherwise unknown; precision, coverage and runtime capability evidence stay unknown unless a specific result supplies evidence. The top-level inventory status 'pass' means only that the local catalog projection completed; it is not a model or geometry pass."
+      },
+      {
+        "title": "Cookbook Index And SDK Probe",
+        "text": "The cookbook array projects each matching operation's existing catalog example; it is not a second command list and examples may contain placeholders. Read the returned prerequisites and limitations before use. Native SDK probing is a separate explicit BrokerSdkProbePort call. No probe is run by inspect, help, command listing or MCP tools/list; this package exposes no direct-transport or Fusion-live probe path."
+      },
+      {
+        "title": "Return Contract",
+        "text": "Returns {success:true,status:'pass',schemaVersion:1,source:'catalog+cad-v1',query,totalMatches,offset,limit,nextOffset,items,cookbook,boundaries}. Item evidence.status, precision and coverage are 'unknown'; sdkProbe is 'not-run'. boundaries.inventoryCoverage is exact for registered catalog entries and public helper metadata only; modelValidation is 'not-performed'; nativeSdkProbe states that the separate broker port was not called."
+      }
+    ],
+    "examples": [
+      {
+        "label": "Find Methods For An Interference Problem",
+        "data": {"query": "interference", "limit": 5},
+        "requires": "No Fusion document, configuration, or broker. The query is local text search over catalog metadata.",
+        "output": "items lists matching operations/helpers with their declared prerequisites and limitations; cookbook contains catalog-owned examples for matching operations. No SDK probe is performed."
+      }
+    ],
+    "audit": {
+      "sources": [
+        "packages/core/src/catalog/capabilities.ts:inspectCapabilities",
+        "packages/core/src/catalog/capability-probe.ts:probeCapability",
+        "src/catalog/capabilities.json",
+        "assets/cad/helpers.py:FMCAD"
+      ],
+      "verified": [
+        "CLI/MCP projections use the registered capabilities.inspect contract",
+        "offline search and cookbook examples project from catalog declarations",
+        "helper index matches public cad-v1 facade methods",
+        "native SDK probe requires a distinct broker-bound port",
+        "unknown, partial, unsupported, missing, stale and blocked evidence cannot satisfy require_pass"
+      ],
+      "tests": ["tests/capabilities.test.js", "tests/helpers_test.py"],
+      "gaps": [],
+      "bugs": []
+    }
+  },
+  "capabilities.probe": {
+    "sections": [
+      {
+        "title": "Explicit Broker Probe",
+        "text": "This is a separate, explicit native SDK request. It accepts only a registered catalog capabilityId, a selected backend and a document target pinned by --doc-id or --doc-file-id. It dispatches only through the explicit BrokerSdkProbePort; a direct client/callTool fallback is rejected. Help, inspect, MCP tools/list and batch validation never call the port."
+      },
+      {
+        "title": "Evidence Boundaries",
+        "text": "The port returns status pass/fail/unknown/unsupported/missing/stale/blocked/partial, plus precision, coverage, build, identity, mutation, restoration and limitations. Only status pass is a probe pass; unknown, partial, unsupported, missing, stale, blocked and malformed evidence cannot be turned into a pass by a positive flag. A successful probe qualifies only the requested capability, backend/build and pinned identity; it is not a geometry or cloud-access proof."
+      },
+      {
+        "title": "Return Contract",
+        "text": "A registered SDK capability is returned as {success,status,operation,result}; result.source is 'broker-sdk-probe' and includes the capabilityId, backend, precision, coverage, build, identity, mutation, restoration and limitations. Unknown capabilityId returns status missing without a native call. A catalogued operation with sdk:'none' returns unsupported without a native call. Missing document pins or broker port are errors before SDK submission."
+      }
+    ],
+    "examples": [
+      {
+        "label": "Probe A Catalogued Clearance Operation",
+        "argv": ["capabilities", "probe", "--doc", "Model", "--doc-id", "DISCOVER_CREATION_ID", "--data", "{\"capabilityId\":\"clearance.grid\"}"],
+        "requires": "A broker-routed, pinned document identity and an explicitly composed broker SDK probe port. Do not use an unpinned or user document for native validation.",
+        "output": "The result reports the port's actual status/precision/coverage; unsupported or unresolved evidence is never a pass. The example is documented only and was not executed against Fusion."
+      }
+    ],
+    "audit": {
+      "sources": [
+        "packages/core/src/catalog/capability-probe.ts:probeCapability",
+        "src/catalog/index.js:executeCapability",
+        "src/catalog/capabilities.json:capabilities.probe"
+      ],
+      "verified": [
+        "registered SDK targets only; unknown and sdk:none targets make no native call",
+        "probe requires a pinned document identity",
+        "direct transport without the broker probe port is rejected",
+        "help, tool listing and inspect never invoke the probe port"
+      ],
+      "tests": ["tests/capabilities.test.js", "tests/cad.test.js", "tests/mcp-catalog.test.js"],
+      "gaps": [],
+      "bugs": []
+    }
+  }
+}

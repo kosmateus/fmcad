@@ -1,0 +1,50 @@
+{
+  "check.set": {
+    "summary": "Evaluate a set of checks with scalar/vector/count/Boolean predicates, dependency ordering and distinct outcomes (pass/fail/error/missing/stale/skipped); scalar measurements reuse the existing check engine.",
+    "required": ["checks"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "checks": [{"id": "od", "predicate": {"kind": "scalar", "actual": {"value": 25.0}, "expected": {"min": 24.0, "max": 26.0}}, "source": {"path": "drawing", "status": "CONFIRMED"}}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "checks": "Nonempty array of check items {id, predicate:{kind, measurement?|actual?, expected?, tolerance?}, dependsOn?:[id], source?, supplierApproval?, externalResult?}.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Scalar predicates with a measurement reuse the existing check handler; vector/count/Boolean use declared values. An execution error stops dependent sequence and skips downstream items. A source marked ESTIMATED/OPEN is stale, not CONFIRMED."]
+  },
+  "evidence.package": {
+    "summary": "Build a manifest of declared model/drawing/image/film evidence with completeness, staleness and missing kinds; no files are read or written.",
+    "required": ["evidence"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "evidence": [{"id": "housing-drawing", "kind": "drawing", "path": "drawings/housing.svg", "revision": "B", "source": {"path": "drawings", "revision": "B", "status": "CONFIRMED"}}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "evidence": "Nonempty array of evidence items {id, kind:model|drawing|image|film, path, revision?, source?, supplierApproval?, gate?, hash?}.",
+      "requested": "Optional array of kinds to include; defaults to all four kinds.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["The manifest lists declared paths, revisions and gates; no files are read, written or verified."]
+  },
+  "evidence.check": {
+    "summary": "Check declared evidence for completeness (against required ids/kinds), staleness (ESTIMATED/OPEN source, revision mismatch, missing supplier approval) and missing evidence; missing is unresolved, not a failed test.",
+    "required": ["evidence"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "evidence": [{"id": "proto-film", "kind": "film", "path": "evidence/proto.mp4", "gate": "G7", "supplierApproval": {"supplier": "molder", "approved": true}}], "required": ["film"]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "evidence": "Nonempty array of evidence items (as evidence.package).",
+      "required": "Optional array of required kinds (model/drawing/image/film) and/or evidence ids.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Completeness is checked against declared ids/kinds; a missing entry is unresolved evidence, not a failed test."]
+  },
+  "deliver": {
+    "summary": "Acceptance composition: run check.set and evidence checks over a required checklist and compose a manifest; any fail/blocked/unknown returns success false. An empty required checklist is an error.",
+    "required": ["checks"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "checks": [{"id": "od", "predicate": {"kind": "scalar", "actual": {"value": 25.0}, "expected": {"min": 24.0, "max": 26.0}}}], "gate": "G7"},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "checks": "Nonempty required checklist (as check.set); an empty array is an error, never acceptance.",
+      "evidence": "Optional array of evidence items (as evidence.package).",
+      "gate": "Optional release gate label.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["deliver composes existing checks and evidence; it does not write duplicate exports or add unrequested formats. Acceptance means the declared checklist and evidence passed; it never certifies the model itself."]
+  }
+}

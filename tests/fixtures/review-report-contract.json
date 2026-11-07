@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "operation": "review",
+  "status": "captured",
+  "requiresVisualReview": true,
+  "restoration": "restored",
+  "identityFields": [
+    "creationId",
+    "fileId",
+    "isModified",
+    "isSaved",
+    "name",
+    "version"
+  ],
+  "views": [
+    "front",
+    "back",
+    "left",
+    "right",
+    "top",
+    "bottom",
+    "iso-top-left",
+    "iso-bottom-right"
+  ]
+}

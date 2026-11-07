@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "fixture": "cwg-dock-ambiguity",
+  "governance": "X-12",
+  "specRef": "FMCAD_GENERIC_METHODS_SPEC.md §6 P107/P057/P109",
+  "source": "Cat Water Gun/docs/drawings/ITEM_CATALOG.json",
+  "status": "OPEN",
+  "ambiguity": {
+    "description": "P107 (fixed_dock_carrier) names P057 as the mated dock half, while P109 (base_dock_valve_body) describes itself as the base half mounted floating in P107. The fixed-half vs floating-base direction is unresolved.",
+    "reason": "The fixed vs floating dock half direction is not determined by the source data and must not be silently assigned."
+  },
+  "items": {
+    "P107": { "name": "fixed_dock_carrier", "role": "carrier", "mateRef": "P057", "floatTravel": { "value": "0.5 mm", "axis": "Y/Z" } },
+    "P057": { "name": "tank_dock_valve_body", "role": "tank-side valve", "mateRef": "P109" },
+    "P109": { "name": "base_dock_valve_body", "role": "base-side valve", "mateRef": "P107", "loc": "stała połowa dock, pływająco w P107" }
+  },
+  "candidateDirections": [
+    { "fixed": "P057", "floating": "P109", "basis": "P107 interface names P057 as the mated half" },
+    { "fixed": "P109", "floating": "P057", "basis": "P109 loc describes itself as the fixed half floating in P107" }
+  ]
+}

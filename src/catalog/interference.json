@@ -1,0 +1,36 @@
+{
+  "clearance.grid": {
+    "summary": "Clearance/interference audit over instance or pair sets with include/exclude, expected contacts carrying a cause and allowed range, optional broad-phase pruning, optional Cartesian joint ranges and an explicit sample x pair budget. Joint sampling moves live joint positions and restores/readbacks them.",
+    "required": ["schemaVersion", "frame"], "readOnly": false, "envelope": true,
+    "example": {"schemaVersion": 1, "frame": "component", "pairs": [{"a": {"token": "body-a"}, "b": {"token": "body-b"}}], "minimum": "0.2 mm", "expectedContacts": [{"a": {"token": "body-a"}, "b": {"token": "body-b"}, "cause": "seal face", "clearance": {"min": "0 mm", "max": "0.05 mm"}}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.", "frame": "Required component.",
+      "pairs": "Either an array of {a,b} solid-body refs, or instances (below).",
+      "instances": "Either an array of at least two occurrence/body refs; all unordered pairs are generated.",
+      "include": "Optional array of pair ids to keep.", "exclude": "Optional array of pair ids to drop.",
+      "expectedContacts": "Optional array of {a,b,cause,clearance:{min,max}}; these carry a reason and allowed range and are never deleted wholesale.",
+      "joints": "Optional array of {joint, rotation?|slide?:{from,to}} Cartesian ranges; sampled as a product, not a synchronous diagonal.",
+      "samples": "Optional integer 2..10000 per joint, default 5.",
+      "minimum": "Optional clearance expression, default 0 mm.", "volumeTolerance": "Optional overlap expression, default 0 mm^3.",
+      "budget": "Optional {maxChecks}; the sample x pair product above the budget is reported without testing.",
+       "broadPhase": "Optional boolean; prune non-overlapping instance AABBs via measure.bounds. Rejected before any pair measurement when joints are sampled or evaluated minimum is positive.",
+      "tolerance": "Optional tolerance for expected-contact range comparison."
+    },
+    "limitations": ["Unsigned distance is not penetration depth; a failed Boolean is not an empty intersection.", "Coverage is sampled; dense grids do not prove continuous no-collision.", "Joint sampling moves live joint positions and restores/readbacks each original value; restore failure is reported, not silently accepted.", "broadPhase is rejected before measurements when joints are sampled or evaluated minimum is positive; the current AABB prune is not proven safe for those cases."]
+  },
+  "motion.envelope": {
+    "summary": "Compute a motion envelope for a moving body over a translation or rotation range: sampled envelope, conservative bounded envelope, and (only with an explicit certifiedPath coverage proof) a certified path.",
+    "required": ["schemaVersion", "frame", "motion"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "frame": "component", "motion": {"type": "translation", "axis": [1, 0, 0], "from": "0 mm", "to": "20 mm"}, "bounds": {"min": [0, 0, 0], "max": [10, 10, 10]}, "representation": "conservative"},
+    "inputs": {
+      "schemaVersion": "Required integer 1.", "frame": "Required component.",
+      "motion": "Required {type:translation|rotation, axis?, from, to}. translation uses length expressions along the axis; rotation uses angle expressions about the axis.",
+      "moving": "Optional body/occurrence ref; mutually exclusive with explicit bounds.",
+      "bounds": "Optional explicit {min:[x,y,z], max:[x,y,z]} length expressions.",
+      "samples": "Optional integer 2..100000, default 16.",
+      "representation": "sampled (default), conservative or certified.",
+      "certifiedPath": "Optional coverage proof for certified representation; without it continuousVerified stays false."
+    },
+    "limitations": ["Sampled and conservative envelopes bound the swept AABB, not a collision certificate.", "Continuous no-collision requires the certified path coverage proof; a dense grid or sum of sampled bodies does not suffice."]
+  }
+}

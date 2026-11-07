@@ -1,0 +1,42 @@
+{
+  "route.create3d": {
+    "sections": [
+      {"title": "Inputs And Centerline", "text": "waypoints required array of at least two [x,y,z] length-expression points. interpolation spline (default, Catmull-Rom interpolating every waypoint) or polyline. endTangents optional {start:[dx,dy,dz],end:[dx,dy,dz]} requested tangents reported against the computed tangent. up optional transport-frame reference direction default [0,0,1]. bendConstraints optional {minRadius}. twist optional angle. obstacles optional {point:[...]} array with minimumClearance. normalSections optional {station} array. section optional native profile for a sweep via existing shape.route path mode (not generated). schemaVersion required 1. The centerline is numerically solved and interpolates inflections; bend radius is the local circumradius, so no unstable Frenet frame is used."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'route.create3d',status,success,documentIdentity,units:{length:'cm',angle:'rad'},frame,associativity:'snapshot',method,limitations,provenance,centerline:[xyz],interpolation,arcLength,minBendRadius,normalSections:[{station,position}],frames:[{position,tangent,normal,binormal}],selfClearance,clearances,endTangents,routeState,state,twist}. state is set when endTangents were supplied, otherwise numerically-solved. Executor created:[]; read-only."}
+    ],
+    "examples": [
+      {"label": "Spatial S-Curve Route", "data": {"schemaVersion": 1, "waypoints": [["0 mm", "0 mm", "0 mm"], ["0 mm", "10 mm", "10 mm"], ["0 mm", "0 mm", "20 mm"]], "up": [0, 0, 1]}, "requires": "Open Design document; three non-collinear 3D waypoints with an inflection.", "output": "result.arcLength is the sampled neutral-axis length in cm and result.minBendRadius is finite; result.frames use the declared up vector."}
+    ],
+    "audit": {"sources": ["assets/cad/route3d.py: route_create3d, _route_geometry, _sample_centerline, _transport_frames, _circumradius"], "verified": ["Catmull-Rom through waypoints including inflection", "circumradius bend radius (no Frenet)", "up-projected transport frame", "self-contact and obstacle clearance", "explicit route state"], "tests": ["tests/route3d_test.py", "tests/route3d.test.js"], "gaps": [], "bugs": []}
+  },
+  "route.inspect": {
+    "sections": [
+      {"title": "Inputs And Inspection", "text": "waypoints or centerline required (exclusive); waypoints use interpolation spline (default) or polyline, centerline is an explicit array of sample points. up optional transport direction default [0,0,1]. obstacles optional {point:[...]} array with minimumClearance; normalSections optional {station} array. schemaVersion required 1. Bend radius is the local circumradius of sample triples, stable through inflections."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'route.inspect',status,success,documentIdentity,units,frame,associativity:'snapshot',method,limitations,provenance,arcLength,minBendRadius,bendRadii,frames,selfClearance,clearances,normalSections,routeState:'numerically-solved'}. Executor created:[]; read-only."}
+    ],
+    "examples": [
+      {"label": "Known Quarter-Arc Inspection", "data": {"schemaVersion": 1, "centerline": [["10 mm", "0 mm", "0 mm"], ["7.071 mm", "7.071 mm", "0 mm"], ["0 mm", "10 mm", "0 mm"]]}, "requires": "Open Design document; three points on a 10 mm-radius quarter circle.", "output": "result.minBendRadius is approximately 1 cm (the known arc radius)."}
+    ],
+    "audit": {"sources": ["assets/cad/route3d.py: route_inspect, _route_geometry, _bend_radii, _route_self_contact"], "verified": ["waypoint and explicit centerline modes", "known-arc circumradius", "self-contact and clearance", "read-only envelope"], "tests": ["tests/route3d_test.py", "tests/route3d.test.js"], "gaps": [], "bugs": []}
+  },
+  "route.cut-list": {
+    "sections": [
+      {"title": "Inputs And Interpretation", "text": "length required positive neutral-axis length L. allowanceFactor finite >=1.0 default 1.1. serviceTail nonnegative per-end length default 15 mm. serviceTailModeled boolean default false. pieces positive integer default 1. schemaVersion required 1. Cut length follows the explicit interpretation L*allowanceFactor + 2*serviceTail (1.1*L + 2*15 mm default); when serviceTailModeled is true the tail is not added again."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'route.cut-list',status,success,documentIdentity,units,frame,associativity:'snapshot',method,limitations,provenance,length,allowanceFactor,serviceTail,serviceTailModeled,pieces,cutLengthPerPiece,totalCutLength,interpretation,warnings}. Lengths are reported in mm. Executor created:[]; read-only. A warning is emitted, and the tail omitted, when serviceTailModeled is true."}
+    ],
+    "examples": [
+      {"label": "Explicit 1.1L Plus Two Tails", "data": {"schemaVersion": 1, "length": "100 mm", "allowanceFactor": 1.1, "serviceTail": "15 mm"}, "requires": "Open Design document; L is 100 mm with a 10 percent allowance and a 15 mm service tail at each end.", "output": "result.cutLengthPerPiece is 140 mm (1.1*100 + 2*15) and result.interpretation states the formula."}
+    ],
+    "audit": {"sources": ["assets/cad/route3d.py: route_cut_list"], "verified": ["1.1*L + 2*15 mm interpretation", "no double-add when serviceTailModeled", "piece division and totals", "read-only envelope"], "tests": ["tests/route3d_test.py", "tests/route3d.test.js"], "gaps": [], "bugs": []}
+  },
+  "route.motion-states": {
+    "sections": [
+      {"title": "Inputs And Poses", "text": "length required positive neutral-axis length L, preserved across every pose. pan {min,max} and tilt {min,max} angular ranges, or poses explicit array of {pan,tilt,bendRadius?}. minBendRadius optional declared tightest bend radius. state set, numerically-solved (default) or native-dependent. representation recipe. schemaVersion required 1. The PAN x TILT product is evaluated at the four extremes, not a synchronous diagonal track."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'route.motion-states',status,success,documentIdentity,units,frame,associativity:'snapshot',method,limitations,provenance,states:[{pan,tilt,length,lengthPreserved,requiredBendRadius,fits,state}],length,lengthPreserved,declaredState,minBendRadius,extremeCoverage}. requiredBendRadius is a numerical model of the swept articulation; fits is true when minBendRadius is unset or achievable. Executor created:[]; read-only."}
+    ],
+    "examples": [
+      {"label": "All PAN TILT Extremes", "data": {"schemaVersion": 1, "length": "100 mm", "pan": {"min": "-45 deg", "max": "45 deg"}, "tilt": {"min": "-30 deg", "max": "30 deg"}, "minBendRadius": "5 mm"}, "requires": "Open Design document; the route must bend through the four extreme PAN/TILT corners without exceeding a 5 mm radius.", "output": "result.states has four rows (the PAN x TILT product) and every state.lengthPreserved is true."}
+    ],
+    "audit": {"sources": ["assets/cad/route3d.py: route_motion_states, _pose_required_radius"], "verified": ["cartesian PAN x TILT product", "length preservation", "set/numerically-solved/native-dependent state", "read-only envelope"], "tests": ["tests/route3d_test.py", "tests/route3d.test.js"], "gaps": [], "bugs": []}
+  }
+}

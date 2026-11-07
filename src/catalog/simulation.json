@@ -1,0 +1,7 @@
+{
+  "simulation.capabilities": {
+    "summary": "Read-only module/class metadata discovery. Reports module availability, preview evidence, stable FEAsolve unavailable in the supported profile, and entitlement notChecked.",
+    "required": [], "example": {}, "readOnly": true, "inputs": {},
+    "limitations": ["Imports adsk.sim but never instantiates or invokes Simulation/Study objects. Runtime class docs supplement the known September 2026 SDK preview specification; missing docs never imply stability.", "No Simulations.get: it can create a product. No study writes, mesh, solve, results, workspace activation or licensing checks.", "Simulation/Study preview APIs are documented as unsuitable for distributed programs. Module presence is not solver support. Native command examples are returned, not executed."]
+  }
+}

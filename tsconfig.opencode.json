@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "declaration": true,
+    "rootDir": ".",
+    "outDir": "dist/opencode-build"
+  },
+  "include": [
+    "packages/opencode-adapter/src/**/*.ts",
+    "src/composition/opencode.ts",
+    "src/entrypoints/opencode.mts"
+  ]
+}

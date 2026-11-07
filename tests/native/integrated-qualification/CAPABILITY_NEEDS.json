@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "status": "input-for-separate-owner-approval-not-a-grant",
+  "authorityRule": "Never reuse the one-scratch first-smoke grant, adopt a user/recovered document, broaden a runner flag, or dispatch an operation not explicitly approved for the exact test project/document.",
+  "completedFirstSmoke": {
+    "entrypoint": "tests/native/integrated-qualification/first_smoke.js",
+    "documents": 1,
+    "savedDataFile": false,
+    "documentFence": ["epochId", "name", "creationId", "fileId:null", "registered clientId"],
+    "operations": ["sketch.create", "sketch.geometry", "sketch.inspect", "model.extrude", "entity.inspect", "measure.volume"],
+    "cleanup": "Original owner closes only the exact unsaved isolated-epoch scratch with the creation target/observer pins and one stable cleanup requestId."
+  },
+  "pendingFeatures": [
+    {
+      "feature": "brep-baselines",
+      "minimumDocuments": 1,
+      "savedDataFile": true,
+      "testProject": "A pre-existing dedicated private Fusion project, selected explicitly; do not create a cloud project or use a user/recovered design.",
+      "documentFence": ["projectId", "fileId", "version", "name", "creationId", "owner clientId"],
+      "publicOperations": ["document.save_as", "document.status", "document.save.once", "document.save.observe", "measure.baseline.capture", "measure.baseline.inspect", "measure.baseline.compare", "sketch.create", "sketch.geometry", "sketch.inspect", "model.extrude", "entity.inspect", "measure.volume"],
+      "otherRequiredCapability": "Broker-owned durable exact-BRep artifact staging/inspection. Exact serializer unsupported must remain unsupported; never substitute mesh.",
+      "fixtureMinimum": "Two explicitly role-pinned native solid bodies in the dedicated saved DataFile, with equal-volume/different-shape and changed-pose controls; keep each baseline capture and compare on exact project/file/version lineage.",
+      "disposition": "Saved test DataFile cannot use close-isolated-scratch. Require a separate owner-approved archive/delete/retention procedure; do not auto-delete or close it."
+    },
+    {
+      "feature": "capture-integrity",
+      "minimumDocuments": 3,
+      "savedDataFile": false,
+      "testProject": "Private evidence/output root only; no existing Fusion document may be adopted.",
+      "documentFence": ["registered clientId", "Fusion session", "separate creation receipt/name/creationId for BLANK, ASYMMETRIC and SYMMETRIC", "exact document inventory before/after each review", "private outputRoot"],
+      "publicOperations": ["shot.pack", "document.status", "sketch.create", "sketch.geometry", "model.extrude", "entity.inspect", "measure.volume"],
+      "otherRequiredCapability": "Three-document fresh-scratch lifecycle with independently fenced creation and owner cleanup, plus the separately exposed ReviewServices/review route. The accepted runner currently creates docs through direct documents.add, submits Python using fmcad run, invokes shot.pack, and uses review CLI. Those routes are not part of the one-scratch typed epoch allowance; do not smuggle them through fmcad_execute.",
+      "fixtureMinimum": "Exactly three independently proven-new unsaved documents: zero-body BLANK, one asymmetric solid, and one symmetric solid. Capture all generated images/reports only in the owned private evidence directory.",
+      "disposition": "Close only those three exact newly created unsaved documents after terminal capture/review and restoration receipts; unknown capture or close outcome stops without another document operation."
+    },
+    {
+      "feature": "selection-rules",
+      "minimumDocuments": 1,
+      "savedDataFile": true,
+      "testProject": "A dedicated private project with an explicitly selected newly authored test DataFile; no user or recovered DataFile.",
+      "documentFence": ["projectId", "fileId", "version", "name", "creationId", "exact owner clientId", "occurrence-qualified component/face refs"],
+      "publicOperations": ["document.save_as", "document.status", "document.save.once", "document.save.observe", "selection.rule.define", "selection.rule.inspect", "selection.rule.resolve", "selection.rule.check", "entity.list", "entity.inspect", "sketch.create", "sketch.geometry", "model.extrude"],
+      "otherRequiredCapability": "A separately approved fixture edit scope for reorder, repeated instances, face split, face merge and delete, plus durable owner-bound rule artifact write/reread. The current isolated scratch grant does not include these edits or save/publication.",
+      "fixtureMinimum": "One newly created private DataFile with exact semantic face and occurrence paths; run the six existing acceptance cases. Split/merge/delete and save-version drift must be separate explicitly enumerated typed operations, not a broad native sweep.",
+      "disposition": "Persist artifact under this exact project/DataFile identity. Save-version changes require their own save receipt and later observe receipt; close/delete the saved design only under a separate owner-approved retention procedure."
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "curve.helix": {
+    "sections": [
+      {"title":"GM12 Helix Generation","text":"Generates a real helical centerline from a radius and either pitch (optionally with turns) or turns+height. hand right/left, startPhase an angular expression, tolerance a positive curve tolerance (default 0.01 mm). An optional section profile ref sweeps the generated helix. The result is a sampled helix plus fitted NURBS recipe, never a native Coil; native persistent 3D helical path insertion is a declared gap."},
+      {"title":"Return Contract","text":"result has schemaVersion:1, success/status/operation/documentIdentity, units:{length:cm,angle:rad}, frame:{space:component}, associativity:recipeRegeneration, radius/pitch/turns/height/hand/startPhase, arcLength, curvature, curvatureRadius, samplePoints, representation:recipe (or blocked for representation:native) and provenance:GM12."}
+    ],
+    "examples": [
+      {"label":"Right-handed helix with pitch and turns","data":{"schemaVersion":1,"frame":"component","radius":"4 mm","pitch":"5.75 mm","turns":8,"hand":"right","startPhase":"0 deg","tolerance":"0.01 mm"},"requires":"A selected component; no existing geometry.","output":"result.arcLength is turns * sqrt(pitch^2 + (2*pi*radius)^2); result.samplePoints feed visualization."}
+    ],
+    "audit":{"sources":["assets/cad/spring.py:curve_helix,_helix_curve,_helix_parameters"],"verified":["Pitch vs turns+height exclusivity","Hand, phase and tolerance validation","Recipe representation, native Coil never claimed"],"tests":["tests/spring_test.py","tests/spring.test.js"],"gaps":[],"bugs":["Native persistent 3D helical path insertion not exposed by installed SDK"]}
+  },
+  "shape.spring": {
+    "sections": [
+      {"title":"GM12 Spring Geometry","text":"Composes a helical centerline with a wire section. wireDiameter and meanDiameter are length expressions with meanDiameter > wireDiameter; activeCoils drives stiffness, totalCoils drives mass and solid height; freeLength must exceed solid height. endStyle plain/ground/open; ground/plain ends are recipe representations only — no native end-coil geometry is cut or generated (declared native Coil gap). Returns wire length, mass, solid height and stiffness alongside the generated geometry."},
+      {"title":"Return Contract","text":"result has schemaVersion:1, geometry refs, outerDiameter/innerDiameter, wireLength, mass, volume, solidHeight, solidHeightMargin, pitch, stiffness, endStyle, representation:recipe and assumptions. associativity:recipeRegeneration."}
+    ],
+    "examples": [
+      {"label":"Ground compression spring","data":{"schemaVersion":1,"frame":"component","name":"Spring","wireDiameter":"0.5 mm","meanDiameter":"8 mm","activeCoils":6,"totalCoils":8,"freeLength":"35 mm","endStyle":"ground","hand":"right"},"requires":"A selected component; no existing geometry.","output":"result.stiffness uses active coils; result.solidHeight is totalCoils * wireDiameter."}
+    ],
+    "audit":{"sources":["assets/cad/spring.py:shape_spring,_spring_geometry"],"verified":["Diameter ordering and solid height","Active vs total coil split for stiffness/mass","Ground/plain ends are recipe representations, not native geometry"],"tests":["tests/spring_test.py","tests/spring.test.js"],"gaps":[],"bugs":["Ground-end geometry and the wire-section sweep are declared native gaps (no persistent native helical path)"]}
+  },
+  "spring.evaluate": {
+    "sections": [
+      {"title":"GM12 Spring Evaluation","text":"Read-only engineering evaluation. k = G*d^4/(8*D^3*n) with n the active coils; solid height = totalCoils * wireDiameter; mass uses total coils and wire length. installedLength and compressedLength (or deflection) produce forces; energy follows from the linear law. shearModulus and density accept unit-bearing pressure/density quantities."},
+      {"title":"Return Contract","text":"result has schemaVersion:1, stiffness:{value,units:N/mm}, wireLength, mass, solidHeight, solidHeightMargin, freeLength, installedLength, compressedLength, pitch, forces[] and model assumptions. status pass."}
+    ],
+    "examples": [
+      {"label":"P054 spring stiffness and forces","data":{"schemaVersion":1,"frame":"component","wireDiameter":"0.5 mm","meanDiameter":"8 mm","activeCoils":6,"totalCoils":8,"freeLength":"35 mm","shearModulus":"77000 N/mm^2","density":"7850 kg/m^3","installedLength":"27 mm","compressedLength":"17 mm"},"requires":"A selected component; read-only.","output":"result.stiffness.value is approximately 0.195821 N/mm for these inputs."}
+    ],
+    "audit":{"sources":["assets/cad/spring.py:spring_evaluate,_spring_geometry"],"verified":["P054 fixture stiffness/force/energy reproduction","Active vs total coil semantics","Unit-bearing shear modulus and density"],"tests":["tests/spring_test.py","tests/spring.test.js"],"gaps":[],"bugs":["Linear model only; no buckling or fatigue"]}
+  },
+  "spring.configure": {
+    "sections": [
+      {"title":"GM12 Spring Configuration","text":"Read-only configuration check for installed/compressed state, guide clearance and material-volume conservation. A compressedLength below solid height fails (material volume would change silently). A guide {kind:rod|tube,diameter} checks rod/tube clearance; a freeLength/meanDiameter slenderness above 4 is reported as unknown."},
+      {"title":"Return Contract","text":"result has schemaVersion:1, configuredState (solidHeight, solidHeightMargin, installed/compressed length) and checks[]. status pass or fail."}
+    ],
+    "examples": [
+      {"label":"Compressed state with guide rod","data":{"schemaVersion":1,"frame":"component","wireDiameter":"0.5 mm","meanDiameter":"8 mm","activeCoils":6,"totalCoils":8,"freeLength":"35 mm","shearModulus":"77000 N/mm^2","installedLength":"27 mm","compressedLength":"17 mm","guide":{"kind":"rod","diameter":"7.4 mm"}},"requires":"A selected component; read-only.","output":"result.checks include material-volume and guide-rod with margins."}
+    ],
+    "audit":{"sources":["assets/cad/spring.py:spring_configure,_spring_geometry"],"verified":["Compressed below solid height fails","Guide rod/tube clearance","Slenderness unknown reporting"],"tests":["tests/spring_test.py","tests/spring.test.js"],"gaps":[],"bugs":["No buckling/fatigue/lateral-stability certification"]}
+  }
+}

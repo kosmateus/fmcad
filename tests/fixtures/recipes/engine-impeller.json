@@ -1,0 +1,25 @@
+{
+  "formatVersion": 1,
+  "runId": "engine-vane-impeller-insulator",
+  "maxExpansion": 100,
+  "operations": [
+    {"id": "vaneSketch", "operation": "sketch.create", "data": {"name": "VaneProfile", "plane": "XZ"}},
+    {"id": "vaneData", "operation": "sketch.profile-file", "data": {"schemaVersion": 1, "sketch": {"$ref": "vaneSketch.result.sketch"}, "frame": "sketch", "columns": {"x": "x", "y": "y"}, "units": {"length": "mm"}, "plane": "sketchXY", "closed": true, "interpolation": "spline", "records": [{"x": 10, "y": 0}, {"x": 14, "y": 3}, {"x": 22, "y": 9}, {"x": 32, "y": 14}, {"x": 40, "y": 12}, {"x": 10, "y": 0}]}},
+    {"id": "vaneCheck", "operation": "curve.inspect", "data": {"schemaVersion": 1, "sketch": {"$ref": "vaneSketch.result.sketch"}, "frame": "sketch", "entities": {"$ref": "vaneData.result.entities"}}},
+    {"id": "hub", "operation": "shape.cylinder", "data": {"name": "Hub", "radius": "10 mm", "height": "15 mm"}},
+    {"id": "impeller", "operation": "shape.impeller", "data": {"name": "Impeller", "hub": {"diameter": "20 mm", "height": "15 mm"}, "blade": {"thickness": "1 mm", "outerRadius": "40 mm", "sweep": "60 deg", "height": "15 mm"}, "count": 6}},
+    {"id": "shroud", "operation": "model.revolve", "data": {"name": "Shroud", "profile": {"kind": "profile", "sketch": {"$ref": "vaneSketch.result.sketch"}}, "axis": "Z", "angle": "360 deg", "solid": false}},
+    {"id": "surfaceCheck", "operation": "surface.check", "data": {"schemaVersion": 1, "frame": "component", "bodies": [{"$ref": "shroud.result.bodies.0"}]}},
+    {"id": "channel", "operation": "measure.region", "data": {"region": {"type": "cylinder", "origin": ["0 mm", "0 mm", "0 mm"], "direction": [0, 0, 1], "radius": "40 mm", "height": "15 mm"}, "occupants": [{"point": ["20 mm", "0 mm", "7.5 mm"]}], "limits": {"min": "0 mm", "max": "5 mm"}}},
+    {"id": "insulatorSketch", "operation": "sketch.build", "data": {"name": "InsulatorProfile", "geometry": [{"type": "circle", "name": "outerRing", "center": ["-4 mm", "0 mm", "0 mm"], "radius": "12 mm"}, {"type": "circle", "name": "innerRing", "center": ["-4 mm", "0 mm", "0 mm"], "radius": "8 mm"}]}},
+    {"id": "insulator", "operation": "model.extrude", "data": {"name": "Insulator", "profile": {"kind": "profile", "sketch": {"$ref": "insulatorSketch.result.sketch"}, "loopCount": 2}, "distance": "6 mm", "operation": "newBody"}},
+    {"id": "health", "operation": "history.check", "data": {}}
+  ],
+  "outputs": {
+    "impellerBody": {"$ref": "impeller.result.hub.bodies.0"},
+    "hubBody": {"$ref": "hub.result.bodies.0"},
+    "shroudSurface": {"$ref": "shroud.result.bodies.0"},
+    "insulatorBody": {"$ref": "insulator.result.bodies.0"},
+    "vaneProfile": {"$ref": "vaneData.result.entities"}
+  }
+}

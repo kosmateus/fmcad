@@ -1,0 +1,69 @@
+{
+  "optics.frustum": {
+    "summary": "Build a rectangular pyramidal frustum from an optical pupil/datum, full HFOV/VFOV, roll and near/far ranges, and clip it against a declared window whose edge limits the cone.",
+    "required": ["pupil", "fov", "ranges"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "pupil": {"origin": ["0 mm", "0 mm", "0 mm"], "direction": [0, 0, 1], "up": [0, 1, 0]},
+      "fov": {"horizontal": "60 deg", "vertical": "40 deg"}, "ranges": {"near": "10 mm", "far": "100 mm"},
+      "window": {"distance": "50 mm", "width": "20 mm", "height": "20 mm"}},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "pupil": "Object {origin, direction, up?}: optical pupil/datum; direction is the optical axis, up sets roll (horizontal axis).",
+      "fov": "Object {horizontal, vertical} full HFOV/VFOV angle expressions.",
+      "ranges": "Object {near, far} clip distances along the optical axis; 0 < near < far.",
+      "window": "Optional {distance, width, height} rectangular aperture centered on the axis; an edge smaller than the FOV cross-section limits the cone.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["The frustum is a rectangular pyramid; it is not a lens prescription and no focus, flare or image-quality property is computed. Roll beyond the declared up vector is not inferred."]
+  },
+  "optics.coverage": {
+    "summary": "Compute the geometric union of several sensor frusta over a planar target and report dead zones and near-field gaps; FOV angle sums are not treated as no-dead-zone evidence.",
+    "required": ["sensors", "targets"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1,
+      "sensors": [{"name": "camA", "pupil": {"origin": ["-20 mm", "0 mm", "30 mm"], "direction": [0.5, 0, -0.866], "up": [0, 1, 0]}, "fov": {"horizontal": "40 deg", "vertical": "30 deg"}, "ranges": {"near": "1 mm", "far": "100 mm"}},
+        {"name": "camB", "pupil": {"origin": ["20 mm", "0 mm", "30 mm"], "direction": [-0.5, 0, -0.866], "up": [0, 1, 0]}, "fov": {"horizontal": "40 deg", "vertical": "30 deg"}, "ranges": {"near": "1 mm", "far": "100 mm"}}],
+      "targets": [{"name": "board", "origin": ["0 mm", "0 mm", "0 mm"], "normal": [0, 0, 1], "u": [1, 0, 0],
+        "outline": [["-30 mm", "-30 mm"], ["30 mm", "-30 mm"], ["30 mm", "30 mm"], ["-30 mm", "30 mm"]]}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "sensors": "Nonempty array of {name?, pupil:{origin,direction,up?}, fov:{horizontal,vertical}, ranges:{near?,far?}}.",
+      "targets": "Nonempty array of {name?, origin, normal, u, outline:[[x,y],...]}; outline is a polygon in the target plane (basis u, v = normal x u).",
+      "samplingBudget": "Positive integer grid budget for union-area estimation, default 100000.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Coverage is a deterministic grid estimate of the geometric union, not an exact analytic union and not a photometric/MTF result. A surface that is transparent in a render has no physical optical property unless a transparency policy declares it."]
+  },
+  "optics.occlusion": {
+    "summary": "Trace rays from a pupil against opaque obstacles, transparent windows (only when a transparency policy declares them) and line-of-sight baffles.",
+    "required": ["pupil", "rays"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "pupil": {"origin": ["0 mm", "0 mm", "0 mm"]},
+      "rays": [{"target": ["0 mm", "0 mm", "50 mm"]}, {"target": ["20 mm", "0 mm", "50 mm"]}],
+      "obstacles": [{"name": "baffle", "kind": "baffle", "shape": {"type": "disk", "origin": ["0 mm", "0 mm", "25 mm"], "normal": [0, 0, 1], "radius": "4 mm"}},
+        {"name": "window", "kind": "window", "transmittance": 0.9, "shape": {"type": "disk", "origin": ["20 mm", "0 mm", "25 mm"], "normal": [0, 0, 1], "radius": "8 mm"}}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "pupil": "Object {origin} ray origin (the optical pupil).",
+      "rays": "Nonempty array of {direction:[unit]} (infinite ray) or {target:[x,y,z]} (ray to a point) descriptors.",
+      "obstacles": "Array of {name?, kind:opaque|baffle|window, shape:{type:box|disk|polygon,...}, transmittance?}; window without transmittance is opaque unless policy.transparentByDefault.",
+      "policy": "Object {transparentByDefault?:false}: a render-transparent surface has no physical optical property unless declared.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Line-of-sight is geometric ray casting; it is not a flare/stray-light simulation and makes no focus or imaging claim. Transparent windows pass rays only when their transparency is explicitly declared."]
+  },
+  "sensor.alignment-check": {
+    "summary": "Compare a sensor axis to a reference axis with gap/offset/angle limits and forbidden-material zones; a geometric axis, never a magnetic-field claim.",
+    "required": ["sensor", "reference", "limits"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1,
+      "sensor": {"name": "ir", "origin": ["0 mm", "0 mm", "0 mm"], "axis": [0, 0, 1]},
+      "reference": {"name": "magnet", "origin": ["0 mm", "0 mm", "0 mm"], "axis": [0, 0, 1]},
+      "limits": {"angle": "5 deg", "offset": "0.5 mm", "gap": {"min": "0 mm", "max": "2 mm"}}},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "sensor": "Object {name?, origin, axis}: sensor position and optical/mechanical axis.",
+      "reference": "Object {name?, origin, axis}: reference axis (a magnet axis is a geometric axis, not a field claim).",
+      "limits": "Object {angle, offset, gap?:{min?,max?}}: angle and offset limits plus optional axial gap bounds.",
+      "forbiddenZones": "Array of {name?, type:box, min, max} forbidden-material zones the sensor axis must not enter.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Alignment is a geometric axis comparison; no magnetic-field, RF or electrical property is computed or claimed."]
+  }
+}

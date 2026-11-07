@@ -1,0 +1,17 @@
+{
+  "inspect.pack": {
+    "batchAllowed": false,
+    "summary": "Compose bounded inspection-safe readonly services in one pinned CAD invocation, reporting partial and unsupported reads explicitly.",
+    "required": ["reads"],
+    "readOnly": true,
+    "example": {"reads": [{"id": "bodies", "operation": "entity.list", "data": {"kind": "body"}, "fields": ["entities"]}], "maxItems": 20, "maxBytes": 65536},
+    "inputs": {
+      "reads": "1..100 distinct {id,operation,data,fields?}. fields selects 1..32 top-level result keys. Only catalog inspectionSafe readonly Python services execute; other operations return unsupported.",
+      "maxItems": "Maximum entries per array/object, integer 1..1000, default 100.",
+      "maxDepth": "Maximum result depth, integer 1..16, default 8.",
+      "maxStringBytes": "Maximum UTF-8 bytes per string, integer 16..8192, default 2048.",
+      "maxBytes": "Maximum serialized result bytes, integer 1024..1048576, default 65536. Status rows may be omitted with omittedReads under tiny budgets."
+    },
+    "limitations": ["Implementation checkpoint: the current shared strict checker rejects the actual full generated runtime, even with verified SDK definitions. A positive pack admission is not yet delivered; fake composition tests do not establish a working checked execution path.", "Shares the canonical catalog inventory, handler registry, CadContext and prepared-artifact bundler; never runs Node coordinators, recursive packs or mutations.", "Bounds output, not the work of existing native inspection services. A projection is not a geometry pass. Missing fields, truncation, unsupported services and individual errors remain explicit; later reads continue.", "One SDK turn through the existing broker, with unchanged identity, source hashes and checker admission. No live Fusion qualification or performance guarantee."]
+  }
+}

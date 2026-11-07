@@ -1,0 +1,32 @@
+{
+  "cam.profile": {
+    "sections": [
+      {"title":"GM14 Cam Profile","text":"Computes the pitch and roller working profiles from a rise law (halfCosine or samples) plus baseRadius and rollerRadius. The working profile is a normal offset by the roller radius, never a radial substitution. followerLine is the follower direction (default +Y); phase rotates the profile to align the follower. The rise-only CWG source stays open; release/dwell are unresolved and never closed by a chord or replaced by an eccentric."},
+      {"title":"Return Contract","text":"result has schemaVersion:1, pitchProfile and workingProfile point arrays, rollerRadius, normalOffset, maxPressureAngle (deg), minPitchCurvatureRadius (mm), followerLine, phase, direction, resolvedIntervals, unresolvedIntervals and contact/separation notes."}
+    ],
+    "examples": [
+      {"label":"Half-cosine rise with R5 roller","data":{"schemaVersion":1,"frame":"component","baseRadius":"15 mm","rollerRadius":"5 mm","rise":{"law":"halfCosine","lift":"10 mm","angle":"240 deg"},"followerLine":[0,1,0],"phase":"0 deg","direction":"ccw"},"requires":"A selected component; read-only.","output":"result.maxPressureAngle is about 10.96 deg and result.minPitchCurvatureRadius about 18.33 mm for these inputs."}
+    ],
+    "audit":{"sources":["assets/cad/cam.py:cam_profile,_cam_compute,_cam_rise"],"verified":["Half-cosine rise reproduction","Normal offset (not radial) working profile","Rise-only source stays open"],"tests":["tests/cam_test.py","tests/cam.test.js"],"gaps":[],"bugs":["Drop edge and dynamics remain blocked"]}
+  },
+  "cam.evaluate": {
+    "sections": [
+      {"title":"GM14 Cam Evaluation","text":"Evaluates pressure angle and pitch curvature against declared limits. minimumCurvatureRadius and maximumPressureAngle are optional; a missing limit is reported as notEvaluated, never as zero or pass. The rise-only CWG source is preserved without closure."},
+      {"title":"Return Contract","text":"result has schemaVersion:1, maxPressureAngle (deg), minPitchCurvatureRadius (mm) and checks[] (curvature, pressure-angle) with pass/fail/notEvaluated per declared limit."}
+    ],
+    "examples": [
+      {"label":"Check pressure angle and curvature","data":{"schemaVersion":1,"frame":"component","baseRadius":"15 mm","rollerRadius":"5 mm","rise":{"law":"halfCosine","lift":"10 mm","angle":"240 deg"},"maximumPressureAngle":"12 deg","minimumCurvatureRadius":"10 mm"},"requires":"A selected component; read-only.","output":"result.checks show pass for pressure-angle (10.96 < 12 deg) and curvature (18.33 > 10 mm)."}
+    ],
+    "audit":{"sources":["assets/cad/cam.py:cam_evaluate,_cam_compute"],"verified":["Declared-limit evaluation","notEvaluated for missing limits","Rise-only source preservation"],"tests":["tests/cam_test.py","tests/cam.test.js"],"gaps":[],"bugs":["Drop edge and dynamics remain blocked"]}
+  },
+  "cam.cycle-check": {
+    "sections": [
+      {"title":"GM14 Cam Cycle Resolution","text":"Resolves cam cycle intervals and flags unresolved dwell/release. The rise-only CWG source leaves release unresolved unless an explicit law (release, returnLaw) is supplied. No chord closure, eccentric substitution or forced bilateral follower coupling during release. Drop edge and dynamics remain blocked until properly defined."},
+      {"title":"Return Contract","text":"result has schemaVersion:1, resolvedIntervals, unresolvedIntervals, closure note, followerCoupling, dropEdgeDynamics and cycleStatus (pass when nothing unresolved, else unknown)."}
+    ],
+    "examples": [
+      {"label":"Rise with spring return","data":{"schemaVersion":1,"frame":"component","rise":{"law":"halfCosine","lift":"10 mm","angle":"240 deg"},"returnLaw":"spring-return"},"requires":"A selected component; read-only.","output":"result.cycleStatus is pass; release is resolved by the declared spring return law."}
+    ],
+    "audit":{"sources":["assets/cad/cam.py:cam_cycle_check"],"verified":["Unresolved release/dwell reported, never auto-closed","No forced bilateral follower coupling","Drop edge/dynamics blocked"],"tests":["tests/cam_test.py","tests/cam.test.js"],"gaps":[],"bugs":["Drop edge and dynamics remain blocked"]}
+  }
+}

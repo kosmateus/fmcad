@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "kind": "scoped-atomic-observer-production-e2e",
+  "approvedBase": {
+    "semanticIdentityCommit": "f6eea61d4753ac315587f8d3af61701a099e4c97",
+    "admissionPortTip": "8c7b7fdb97af29d58ac9c04feeb96031be25012d",
+    "readerAbiWireCommit": "cf56791b52fe5c2fca3cad663fe6a0629dbc4f5f",
+    "scopedPortImportCommit": "8aa30bf940c1799318f9e395b2400b665b5d43ad",
+    "approvedCompositionCommit": "c00b96c73bc04e5441dd950ed9da34137d208e64",
+    "portCommits": [
+      "2cd850a1d743631e23b1b6a06c38010a667d4885",
+      "0ee9a167bd52e588e820545e4d4aae530f71d914"
+    ]
+  },
+  "entrypoints": {
+    "broker": "src/queue-broker.js#executeAtomicObservation",
+    "readerBuilder": "src/atomic-workflow-observation.js#prepareAtomicStatusScript",
+    "abiBuilder": "src/atomic-runtime-abi.js#buildAtomicRuntimeAbi",
+    "wireBuilder": "src/queue-atomic-wire.js#prepareAtomicObservationWire",
+    "productionAdmission": "src/queue-admission.js#createProductionQueueAdmission.checkPrepared",
+    "fixtureReader": "tests/fixtures/observer-python-literals.py",
+    "runProof": "tests/atomic-workflow-recovery.test.js#compositionProof",
+    "finalFence": [
+      "verifyAtomicObservationFence",
+      "assertAtomicObservationWire",
+      "queueAdmission.fencePrepared"
+    ]
+  },
+  "checker": "basedpyright@1.40.2",
+  "positive": {
+    "origins": ["typed", "raw"],
+    "status": "passed",
+    "physicalSenderCallsPerOrigin": 1
+  },
+  "negative": {
+    "modes": ["failed", "incomplete", "tool_error", "missing_checker", "final_byte_tamper"],
+    "physicalSenderCallsPerMode": 0
+  },
+  "qualification": {
+    "worktree": "/tmp/opencode/fmcad-qualified-c00b96c-p8n7utlr/source",
+    "result": "scoped-observer-approved-passed",
+    "approvedSourceCommit": "c00b96c73bc04e5441dd950ed9da34137d208e64",
+    "readerSourceApprovedCommit": "cf56791b52fe5c2fca3cad663fe6a0629dbc4f5f",
+    "buildHash": "2e1b3b7b1bb07c870d2aeb5a4e6afb552f41b4f78d8db408e8d2f2854b1b3fa7",
+    "checkerFingerprint": "6701389cf8c04aef9f0cfc7fc91f8b52c8a99e0baa3b03113e31e8ed3cfab692",
+    "sdkSnapshot": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+    "testNames": [
+      "observer fixture reads receipt metadata inside _qr_execute as literals without executing code",
+      "atomic observer E2E manifest keeps the isolated qualification composition explicit",
+      "broker runs one typed atomic_status observer through the existing gate and leaves the original job blocked"
+    ],
+    "qualificationReceipt": {
+      "path": "/tmp/opencode/fmcad-qualified-c00b96c-p8n7utlr/qualification.json",
+      "sha256": "92f916b14a87bde7464176ebe6b29c7442f73b6140aa094b72c2f3f8672f848e"
+    },
+    "approvalReceipt": {
+      "path": "/tmp/opencode/fmcad-qualified-c00b96c-p8n7utlr/approval.json",
+      "sha256": "a7569dab5ee127d47ba74f589286500c3c8ece40ff44ab7006c4a07763c77dc1"
+    },
+    "counts": {
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "contracts": 29,
+      "reader": 4,
+      "recovery": 11,
+      "installedAdmission": 7
+    },
+    "liveSdkCalls": 0,
+    "modelValidation": "not_performed",
+    "rollbackVerification": "not_performed",
+    "requiresRetestOnApprovedReaderCommit": false,
+    "additionalEntrypointAudit": {
+      "operation": "document.status",
+      "surface": "public library API through production broker",
+      "sourceCommit": "11b7788173dcdf7e2effc29c8f7953edfd4bedcb",
+      "relevantSourceUnchangedThrough": "c00b96c73bc04e5441dd950ed9da34137d208e64",
+      "status": "PYTHON_CHECK_REJECTED_before_sender",
+      "checkerStatus": "failed",
+      "diagnosticCount": 1315,
+      "diagnosticsByFile": {
+        "assets/cad/core.py": 1072,
+        "runtime/python/fmcad/domain/values.py": 80,
+        "runtime/python/fmcad/adapters/fusion/values.py": 35,
+        "runtime/python/fmcad/adapters/fusion/identity.py": 62,
+        "runtime/python/fmcad/adapters/fusion/document_snapshot.py": 25,
+        "<fmcad-wrapper>": 41
+      },
+      "diagnosticRules": ["reportAny", "reportUnknownParameterType", "reportUnknownArgumentType", "reportMissingParameterType"],
+      "dispatchEvidence": "worker reported PYTHON_CHECK_REJECTED; isolated queue has no RPC journal or remote receipt",
+      "guardPolicy": "do not bypass diagnostics, alter checker limits, or count ABI-pinned units as checked code",
+      "sourceOwner": "runtime Python source composition; typing .1 remains closed"
+    },
+    "previousUnapprovedWipSnapshotSha256": {
+      "packages/node-adapters/src/python/bundle.ts": "031e65d38bbc72a3faec602c9c4078b6c2b1e4a72b9fd1ec33c67f578ebbf44e",
+      "src/atomic-workflow-observation.js": "a6a9c5e98b35a96a660197452ca74725df3839303574ff726d3da56189964106",
+      "src/queue-atomic-wire.js": "76d16c46d3e8bf3faecf2bc7e31160e9e196f9e0bcf623503b9cc9f5411a2c37",
+      "src/queue-broker.js": "918457d7d7ad3b42fa3bb3e29083a8b20be2e07efbc15e34c66ed53d027b9fb4",
+      "src/atomic-runtime-abi.js": "b7fe976576a3c0a0f732a592ab383157008410904578d0af65b8e9090a671cf0",
+      "runtime/python/fmcad/adapters/fusion/atomic_status.py": "a99af6b34e6103e0b7b996e026f043721d15019bac228c23cf83215a1b52fe8a",
+      "runtime/python/fmcad/adapters/fusion/atomic_status_dispatch.py": "9bf541df008c97cd51afb70d8a2f7f4ec6c4aa68a317756629e5533204833861"
+    }
+  }
+}

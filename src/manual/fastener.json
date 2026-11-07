@@ -1,0 +1,124 @@
+{
+  "mount.create": {
+    "sections": [
+      {"title": "Mount Definition", "text": "scheme is pin-slot, two-pin or 2-2-2. pin and slot are {x,y} locating datum positions. holes is {diameter,clearance?,positions:[{x,y},...]}. boss {diameter,height} is a connector standoff; insert {type,outerDiameter,innerDiameter,length} is optional. material and process are provenance. The recipe creates the pin and slot locating datums and declares the clearance hole pattern and boss as feature prescriptions with a mate-fit analysis."},
+      {"title": "Return Contract", "text": "result = {schemaVersion:1, scheme, locatingDofConstrained, overConstrained, pin, slot, holes{diameter,clearance,positions}, boss, insert, material, process, recipe:mount, atomic:false, featurePlan, mateFit, checks, regeneration}. status is fail when the scheme over-constrains the PCB (every hole tight). Locating datums are created; holes/boss are declared feature prescriptions (recipeRegeneration)."}
+    ],
+    "examples": [
+      {"label": "Pin+slot PCB mount with connector standoff", "data": {"schemaVersion":1,"frame":"component","name":"PcbMount","scheme":"pin-slot","pin":{"x":"0 mm","y":"0 mm"},"slot":{"x":"40 mm","y":"0 mm"},"holes":{"diameter":"3 mm","clearance":"0.5 mm","positions":[{"x":"10 mm","y":"10 mm"},{"x":"30 mm","y":"10 mm"},{"x":"10 mm","y":"30 mm"},{"x":"30 mm","y":"30 mm"}]},"boss":{"diameter":"6 mm","height":"8 mm"},"support":{"connector":true},"material":"FR-4 + brass insert","process":"injection molded"}, "requires": "Native component; PcbMount and PcbMount__pin/__slot names unused.", "output": "result.locatingDofConstrained is 3 and result.overConstrained is false; result.pin and result.slot are datum refs."}
+    ],
+    "audit": {"sources": ["assets/cad/fastener.py:_mount_create,_locating_dof"], "verified": ["Pin+slot locates without over-constraining", "Connector standoff/boss support", "Locating datums created; holes/boss as declared prescriptions"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["Holes/boss are feature prescriptions, not live native features"]}
+  },
+  "mount.check": {
+    "sections": [
+      {"title": "Mount Mate-Fit Check", "text": "holes is an array of {diameter,clearance,x?,y?}. The check flags a PCB fixed through every hole (thermal over-constraint) and verifies connector support when connector.supported is true and a standoff/support is present."},
+      {"title": "Return Contract", "text": "result = {schemaVersion:1, scheme, overConstrained, locatingDofConstrained, holes, checks[]}. status is fail when over-constrained or a declared connector lacks support; connector support is notEvaluated when no connector is declared."}
+    ],
+    "examples": [
+      {"label": "Located PCB with clearance holes and connector support", "data": {"schemaVersion":1,"frame":"component","scheme":"pin-slot","holes":[{"diameter":"3 mm","clearance":"0.5 mm"},{"diameter":"3 mm","clearance":"0.5 mm"},{"diameter":"3 mm","clearance":"0.5 mm"},{"diameter":"3 mm","clearance":"0.5 mm"}],"connector":{"supported":true,"supportPresent":true}}, "requires": "Read-only; a selected component.", "output": "result.overConstrained is false and result.checks report pass for over-constraint and connector-support."}
+    ],
+    "audit": {"sources": ["assets/cad/fastener.py:_mount_check,_locating_dof"], "verified": ["Over-constraint detected when every hole is tight", "Connector support presence"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["Thermal/material behaviour needs declared data"]}
+  },
+  "fastener.stack": {
+    "sections": [
+      {"title": "Fastener Clamp Stack", "text": "screw has length and threadLength (positive, threadLength <= length). stack is an array of clamped parts with thickness. Engagement is threadLength minus the clamped stack. receptacle {kind:nut|tapped|insert, threadLength?, depth?} supplies the mating thread and (for blind tapped/insert) the bottoming depth. bottoming clearance is receptacle.depth minus the screw protrusion (length - clampedLength). torque is a declared datum, never derived from diameter. tool {diameter,recess?} checks access against the recess."},
+      {"title": "Return Contract", "text": "result = {schemaVersion:1, screw, clampedLength, parts, engagement, receptacle, bottoming, torque, torqueStatus, toolAccess, note}. status is fail when engagement is not positive. bottoming is null when no blind depth is declared; toolAccess is null when no tool is declared."}
+    ],
+    "examples": [
+      {"label": "M3 screw clamping 5.6 mm into an insert", "data": {"schemaVersion":1,"frame":"component","screw":{"length":"12 mm","threadLength":"10 mm","majorDiameter":"3 mm","pitch":"0.5 mm","headDiameter":"6 mm"},"stack":[{"id":"bracket","thickness":"4 mm"},{"id":"pcb","thickness":"1.6 mm"}],"receptacle":{"kind":"insert","depth":"8 mm"},"torque":"0.5 N*m","tool":{"diameter":"4 mm","recess":"5 mm"}}, "requires": "Read-only; a selected component.", "output": "result.clampedLength is 5.6 mm and result.engagement is 4.4 mm; result.bottoming.clearance is 1.6 mm (not bottomed)."}
+    ],
+    "audit": {"sources": ["assets/cad/fastener.py:_fastener_stack"], "verified": ["Engagement = threadLength - clamped stack", "Torque declared, never derived from diameter", "Bottoming from declared receptacle depth"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["Access reported only when tool declared"]}
+  },
+  "fastener.check": {
+    "sections": [
+      {"title": "Fastener Stack Validation", "text": "Validates engagement against a declared minimumEngagement, bottoming against the declared receptacle depth and tool access against the declared tool recess. Missing requirements are notEvaluated, never fabricated from diameter."},
+      {"title": "Return Contract", "text": "result = {schemaVersion:1, engagement, clampedLength, bottoming, toolAccess, checks[]}. status is fail when engagement is below the declared minimum, the screw bottoms out, or the tool does not fit the recess."}
+    ],
+    "examples": [
+      {"label": "Engagement and access check", "data": {"schemaVersion":1,"frame":"component","screw":{"length":"12 mm","threadLength":"10 mm"},"stack":[{"thickness":"4 mm"},{"thickness":"1.6 mm"}],"minimumEngagement":"4 mm","receptacle":{"kind":"insert","depth":"8 mm"},"tool":{"diameter":"4 mm","recess":"5 mm"}}, "requires": "Read-only; a selected component.", "output": "result.engagement is 4.4 mm (>= 4 mm) and result.checks report pass for engagement."}
+    ],
+    "audit": {"sources": ["assets/cad/fastener.py:_fastener_check,_fastener_stack"], "verified": ["Engagement against declared minimum", "Bottoming and access from declared data"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["No torque/fit derived from diameter"]}
+  },
+  "fastener.measured-check": {
+    "sections": [
+      {"title": "Native Fastener Measurement", "text": "Supply schemaVersion:1 and mode:native with native {schemaVersion:1,frame:{space,component},tolerance:{axisOffset,axisAngle,minimumEngagement?},screw:{axis?,headBearing?,tip?,threadStart?,threadEnd?},receptacle:{kind,axis?,threadStart?,threadEnd?,bottom?},layers?:[{id?,start?,end?}]}. Refs are existing native axis/edge and point/vertex refs resolved in one explicit assembly or component-local frame. Missing refs produce unknown coverage; they are never replaced by declared dimensions."},
+      {"title": "Measurements and Return Contract", "text": "Returns {schemaVersion:1,operation:'fastener.measured-check',mode:'native',status,frame,units,nativeMeasurements,declaredEvidence,toolAccess,checks,limitations}. Native axial thread-boundary overlap is not exact helical flank contact. Bottoming uses selected blind-hole bottom and screw tip; protrusion uses selected layer endpoints; alignment uses measured axis refs and declared tolerances. Each measurement identifies sourceRef, sourceVersion:1, document identity when available, frame and coverage."},
+      {"title": "Declared and Tool Evidence", "text": "Optional declaredEvidence is an unchanged fastener.stack/check request in its original component frame and units; it remains a separate comparison and is never substituted into native measurements. Tool access requires at least one selected native solid-body ref for a pass; selected obstacles are measured by conservative axis-aligned bounds and passed to the existing sampled tool.access implementation. This is not an exhaustive scene scan. Caller point/radius or box obstacles remain separately labeled declared evidence; neither coverage is a continuous collision proof."},
+      {"title": "Qualification Boundary", "text": "Mock/fake SDK tests verify the offline contract, not Fusion kernel semantics. Real synthetic-document positive/negative qualification and required restore remain blocked until explicit user approval."}
+    ],
+    "examples": [
+      {"label":"Native engagement plus separate legacy comparison","data":{"schemaVersion":1,"mode":"native","native":{"schemaVersion":1,"frame":{"space":"assembly","component":{"kind":"component","name":"root"}},"tolerance":{"axisOffset":"0.05 mm","axisAngle":"1 deg","minimumEngagement":"4 mm"},"screw":{"axis":{"kind":"axis","name":"ScrewAxis"},"headBearing":{"kind":"point","name":"HeadBearing"},"tip":{"kind":"point","name":"ScrewTip"},"threadStart":{"kind":"point","name":"ScrewThreadStart"},"threadEnd":{"kind":"point","name":"ScrewThreadEnd"}},"receptacle":{"kind":"blind","axis":{"kind":"axis","name":"HoleAxis"},"threadStart":{"kind":"point","name":"HoleThreadStart"},"threadEnd":{"kind":"point","name":"HoleThreadEnd"},"bottom":{"kind":"point","name":"HoleBottom"}},"layers":[{"id":"bracket","start":{"kind":"point","name":"StackNear"},"end":{"kind":"point","name":"StackFar"}}]},"declaredEvidence":{"operation":"fastener.check","schemaVersion":1,"frame":"component","screw":{"length":"12 mm","threadLength":"10 mm"},"stack":[{"id":"bracket","thickness":"5 mm"}],"minimumEngagement":"4 mm"}},"requires":"Read-only native references; selected document; occurrence-qualified refs for placed instances.","output":"result.nativeMeasurements.measurements.actualEngagement reports the native axial interval overlap in mm with provenance; result.declaredEvidence retains the independent legacy calculator result."}
+    ],
+    "audit": {"sources": ["runtime/python/fmcad/domain/measured_fasteners.py", "runtime/python/fmcad/adapters/fusion/measured_fasteners.py", "runtime/python/fmcad/application/measured_fasteners.py", "src/fastener.js"], "verified": ["Native interval/bottoming/alignment/protrusion evidence remains separate from declared legacy calculations", "Tool access delegates to existing sequence implementation", "CLI and MCP use the canonical prepared Python artifact"], "tests": ["tests/measured_fasteners_test.py", "tests/measured-fasteners-bundle.test.js", "tests/fastener.test.js"], "gaps": [], "bugs": ["Exact thread-flank engagement is not available; only selected axial boundary interval overlap is reported", "Real Fusion synthetic-document qualification and restoration require separate explicit consent"]}
+  },
+  "fastener.schedule": {
+    "sections": [
+      {"title": "Fastener Schedule", "text": "fasteners is an array of {id,torque?,process?,material?,vendor?,stack?,screw?}. The schedule reports declared torque/process/material per fastener and flags entries with missing data rather than fabricating torque or fit from diameter."},
+      {"title": "Return Contract", "text": "result = {schemaVersion:1, count, rows[], missingData[], note}. status is unknown when any fastener lacks torque, process or material (missingData lists those ids); otherwise pass."}
+    ],
+    "examples": [
+      {"label": "Complete two-fastener schedule", "data": {"schemaVersion":1,"frame":"component","fasteners":[{"id":"M3-01","torque":"0.5 N*m","process":"torque wrench","material":"A2-70","vendor":"VENDOR-A"},{"id":"M3-02","torque":"0.5 N*m","process":"torque wrench","material":"A2-70","vendor":"VENDOR-A"}]}, "requires": "Read-only; a selected component.", "output": "result.missingData is empty and result.status is pass."}
+    ],
+    "audit": {"sources": ["assets/cad/fastener.py:_fastener_schedule"], "verified": ["Missing torque/process/material reported, never fabricated"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["No torque/fit derived from diameter"]}
+  },
+  "bearing.stack-check": {
+    "sections": [
+      {"title": "Bearing Stack", "text": "rings {inner{bore?,width?},outer{od?,width?}}, journal (shaft diameter) and seat (housing bore) define the fits. fits {shaft,housing} are declared classes; shaftClearance/housingClearance are signed clearances (negative = interference). shoulder {inner?,outer?} selects the fixed ring. arrangement is fixed-floating, fixed-fixed or floating. No default preload is assumed; axial load chain runs through the fixed ring shoulder."},
+      {"title": "Return Contract", "text": "result = {schemaVersion:1, rings{innerBore,outerOd}, journal, seat, shaftFit, housingFit, radialInternalClearance, arrangement, fixedRing, preload, retainer, axialLoad, axialLoadChain, checks[]}. preload is 'none declared'. fixedRing is undeclared (unknown) when no shoulder is given."}
+    ],
+    "examples": [
+      {"label": "Fixed-floating pair with inner ring located", "data": {"schemaVersion":1,"frame":"component","rings":{"inner":{"bore":"10 mm"},"outer":{"od":"26 mm"}},"journal":"10 mm","seat":"26 mm","shaftClearance":"0.005 mm","housingClearance":"0.0 mm","shoulder":{"inner":true},"arrangement":"fixed-floating"}, "requires": "Read-only; a selected component.", "output": "result.fixedRing is inner and result.preload is 'none declared'."}
+    ],
+    "audit": {"sources": ["assets/cad/fastener.py:_bearing_stack"], "verified": ["Fixed/floating ring distinction", "No default preload", "Axial load chain through the fixed ring"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["No bearing life or stiffness claim"]}
+  },
+  "shaft.interface": {
+    "sections": [
+      {"title": "Shaft / Hub Interface", "text": "shaft {type:D-flat|keyed|round,d,flat?:{depth},key?:{width,height}} mates hub {bore,boreType?,splitClampGap?,shoulders?,retainer?}. A D-flat shaft must mate a D-flat bore, never a round hole; a keyed shaft must mate a keyed bore. splitClampGap must be positive when clamping. shoulders/retainer provide axial retention."},
+      {"title": "Return Contract", "text": "result = {schemaVersion:1, shaftType, matedFeatures[], seatedLength, checks[]}. status is fail when a D-flat/key mate is missing, the split-clamp gap is nonpositive, or axial retention is absent."}
+    ],
+    "examples": [
+      {"label": "D-flat shaft into a D-flat clamp hub", "data": {"schemaVersion":1,"frame":"component","shaft":{"type":"D-flat","d":"6 mm","flat":{"depth":"0.5 mm"}},"hub":{"bore":"6 mm","boreType":"D-flat","splitClampGap":"0.8 mm","shoulders":[{}]}}, "requires": "Read-only; a selected component.", "output": "result.matedFeatures includes the D-flat mate and result.checks report pass."}
+    ],
+    "audit": {"sources": ["assets/cad/fastener.py:_shaft_interface"], "verified": ["D-flat shaft requires a D-flat bore, not a round hole", "Split-clamp gap and axial retention"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["No torque transmission or strength claim"]}
+  },
+  "retention.bayonet": {
+    "sections": [
+      {"title": "Bayonet Retention", "text": "lugs {count,width,height} with an insertion stroke and rotation. capture {depth} retains axially; clearances {axial?,radial?} must be nonnegative. The assembly path is insert -> rotate -> capture and the unlock path is counter-rotate -> retract."},
+      {"title": "Return Contract", "text": "result = {schemaVersion:1, lugs, stroke, rotation, ramps, stops, capture, clearances, assemblyPath, unlockPath, checks[]}. status is fail when capture depth is not positive or the radial clearance is nonpositive."}
+    ],
+    "examples": [
+      {"label": "Three-lug bayonet with capture", "data": {"schemaVersion":1,"frame":"component","lugs":{"count":3,"width":"4 mm","height":"2 mm"},"stroke":"6 mm","rotation":"30 deg","capture":{"depth":"1.5 mm"},"clearances":{"radial":"0.2 mm"}}, "requires": "Read-only; a selected component.", "output": "result.assemblyPath is insert -> rotate -> capture and result.checks report pass."}
+    ],
+    "audit": {"sources": ["assets/cad/fastener.py:_retention_bayonet"], "verified": ["Assembly and unlock paths", "Axial capture depth"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["No retention force or release-safety certification"]}
+  },
+  "snap.define": {
+    "sections": [
+      {"title": "Snap Definition", "text": "geometry {length,width,thickness,engagementDepth,angle?} with a material {name,modulus?,yieldStrength?}. retention is an optional retention style. This is the shape definition; deflection/strain/force come from snap.evaluate with a declared modulus. No material default is assumed."},
+      {"title": "Return Contract", "text": "result = {schemaVersion:1, geometry, material, retention, shape, note}. A cantilever beam snap with rectangular section; dimensions in mm."}
+    ],
+    "examples": [
+      {"label": "ABS cantilever snap definition", "data": {"schemaVersion":1,"frame":"component","geometry":{"length":"10 mm","width":"4 mm","thickness":"1 mm","engagementDepth":"0.6 mm"},"material":{"name":"ABS","modulus":"2.1 GPa","yieldStrength":"40 MPa"}}, "requires": "Read-only; a selected component.", "output": "result.shape is a cantilever beam snap and result.material.modulus is 2.1 GPa."}
+    ],
+    "audit": {"sources": ["assets/cad/fastener.py:_snap_define"], "verified": ["Shape definition only; no material default"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["Deflection/strain/force evaluated separately"]}
+  },
+  "snap.evaluate": {
+    "sections": [
+      {"title": "Snap Beam Evaluation", "text": "Linear elastic small-deflection beam: deflection = P L^3 / (3 E I) for cantilever (192 E I for fixed-fixed), I = w t^3 / 12, strain = 3 t d / (2 L^2). material.modulus is required (MPa/GPa/N/mm^2); yieldStrength enables the strain check. The model scope is explicit; there is no fatigue-life claim."},
+      {"title": "Return Contract", "text": "result = {schemaVersion:1, support, stiffness (N/mm), engagementForce (N), deflection, strain, stress (MPa), model, scope, checks[]}. status is fail when stress exceeds the declared yield strength; without yieldStrength the strain check is notEvaluated."}
+    ],
+    "examples": [
+      {"label": "ABS cantilever 0.6 mm deflection", "data": {"schemaVersion":1,"frame":"component","geometry":{"length":"10 mm","width":"4 mm","thickness":"1 mm","engagementDepth":"0.6 mm","deflection":"0.6 mm"},"material":{"name":"ABS","modulus":"2.1 GPa","yieldStrength":"40 MPa"},"support":{"condition":"cantilever"}}, "requires": "Read-only; a selected component.", "output": "result.stiffness is about 3*2100*0.333/1000 N/mm and result.stress is about 3*2100*1*0.6/(2*100) MPa."}
+    ],
+    "audit": {"sources": ["assets/cad/fastener.py:_snap_evaluate,_pressure_mpa"], "verified": ["Cantilever beam deflection/strain/force", "Explicit model scope, no fatigue-life claim", "Material modulus/yield declared, never defaulted"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["No fatigue-life or large-deflection claim"]}
+  },
+  "shape.hose_barb": {
+    "sections": [
+      {"title": "Hose Barb", "text": "tubeId < tubeOd and 0 < bore <= tubeId. barbs is an array of {crest,root,length} with crest > root >= tubeOd. The recipe revolves a stepped closed profile about the hose axis (default X). Seating is checked as radial interference (crest - tubeId)/2 per barb; channel continuity requires a positive through-bore. Opposing barbs across a short hose are flagged as a declared collision risk."},
+      {"title": "Return Contract", "text": "result = {schemaVersion:1, feature, bodies, healthState, message, helpers, tubeId, tubeOd, bore, barbs[], clampZone, blend, seating[], opposingBarbCollision, checks[], recipe:hose-barb, atomic:false, regeneration}. status is fail when any barb has nonpositive interference or the channel is not continuous. Seating is geometric interference, not a leak-tightness proof."}
+    ],
+    "examples": [
+      {"label": "Two-barb hose fitting", "data": {"schemaVersion":1,"frame":"component","name":"Barb","tubeId":"4 mm","tubeOd":"6 mm","bore":"3 mm","barbs":[{"crest":"7 mm","root":"6 mm","length":"3 mm"},{"crest":"7 mm","root":"6 mm","length":"3 mm"}]}, "requires": "Native component; Barb and Barb__section names unused.", "output": "result.checks report pass for channel-continuity and each barb seating with 1.5 mm radial interference."}
+    ],
+    "audit": {"sources": ["assets/cad/fastener.py:_shape_hose_barb,_barb_profile_points"], "verified": ["Channel continuity", "Barb seating interference", "Stepped revolve profile"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["Seating is geometric interference, not leak-tightness"]}
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "fixtureId": "regional-geometry-v1",
+  "scope": "one-owned-unsaved-document; typed transactional operations only; no file/cloud/raw-script effects",
+  "operations": ["document.status", "entity.inspect", "entity.list", "geometry.compare-region", "measure.volume", "shape.box", "shape.cylinder", "shape.ring", "snapshot"],
+  "fixtures": [
+    { "label": "Before", "operation": "shape.box", "data": { "width": "10 mm", "depth": "10 mm", "height": "10 mm" } },
+    { "label": "After", "operation": "shape.box", "data": { "width": "20 mm", "depth": "10 mm", "height": "10 mm" } },
+    { "label": "EqualBefore", "operation": "shape.box", "data": { "width": "10 mm", "depth": "10 mm", "height": "4 mm" } },
+    { "label": "EqualAfter", "operation": "shape.box", "data": { "width": "20 mm", "depth": "5 mm", "height": "4 mm" } },
+    { "label": "HoleBefore", "operation": "shape.ring", "data": { "outerRadius": "5 mm", "innerRadius": "2 mm", "height": "5 mm" } },
+    { "label": "HoleAfter", "operation": "shape.cylinder", "data": { "radius": "5 mm", "height": "5 mm" } },
+    { "label": "HoleMask", "operation": "shape.cylinder", "data": { "radius": "2 mm", "height": "5 mm" } }
+  ],
+  "cases": [
+    { "name": "inside-mask-positive", "before": "Before", "after": "After", "allowed": { "include": ["After"] }, "expected": "pass" },
+    { "name": "outside-mask-negative", "before": "Before", "after": "After", "allowed": { "include": ["Before"] }, "expected": "fail" },
+    { "name": "equal-volume-outside-mask-negative", "before": "EqualBefore", "after": "EqualAfter", "allowed": { "include": ["EqualAfter"] }, "expected": "fail" },
+    { "name": "mask-union-exclusion-positive", "before": "Before", "after": "After", "allowed": { "include": ["After", "Before"], "exclude": ["Before"] }, "expected": "pass" },
+    { "name": "overlapping-mask-union-positive", "before": "Before", "after": "After", "allowed": { "include": ["After", "Before"] }, "expected": "pass" },
+    { "name": "excluded-mask-hole-negative", "before": "HoleBefore", "after": "HoleAfter", "allowed": { "include": ["HoleAfter"], "exclude": ["HoleMask"] }, "expected": "fail" },
+    { "name": "protected-region-precedence-negative", "before": "Before", "after": "After", "allowed": { "include": ["After"] }, "protected": { "include": ["After"], "exclude": ["Before"] }, "expected": "fail" }
+  ]
+}

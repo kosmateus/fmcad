@@ -1,0 +1,24 @@
+{
+  "entity.attribute.set": {
+    "sections": [
+      {"title": "Inputs And Discovery", "text": "Requires ref:resolvable entity with attributes (component/body/face/occurrence/parameter), group:nonempty namespace string, name:nonempty attribute name, value:string. Discover refs with entity.list/entity.find. The group is a caller-declared namespace; names must be unique within a group."},
+      {"title": "Safety And Semantics", "text": "Reusing an existing group/name updates it in place (Fusion Attributes.add semantics); the previous value is returned. Values are strings bounded by the Fusion attribute API; larger payloads must be split. Attributes persist on the next save; this operation does not save."},
+      {"title": "Return Contract", "text": "Enveloped result (schemaVersion 1): status:pass, operation:entity.attribute.set, documentIdentity:{creationId:string|null,name:string}, units:{}, frame:{space:component,component:reference}, associativity:durableAttribute, warnings:string[], method:string, limitations:string[], provenance:{requirement:GM29,source:docs/APPEARANCES.md}, affected:[{ref:reference,group:string,name:string,before:string|null,after:string}], result:{resourceIdentity:reference,group:string,name:string,value:string,previousValue:string|null,changed:boolean}. resourceIdentity is the actual owning entity reference, not a display-name guess."}
+    ],
+    "examples": [
+      {"label": "Tag a discovered body with source metadata", "data": {"ref": {"$ref": "bodies.result.entities.0"}, "group": "fmcad.metadata", "name": "source", "value": "STEP import"}, "requires": "Earlier bodies: entity.list {kind:body}; standalone substitute the actual ref.", "output": "result.changed=true on first write; result.resourceIdentity carries token/kind/name."}
+    ],
+    "audit": {"sources": ["assets/cad/attributes.py:entity_attribute_set,_attr_entity,_attr_check", "assets/cad/core.py:_cad_fields,CadContext.resolve,ref"], "verified": ["set/update semantics and previous-value reporting", "resourceIdentity resolution", "string value validation"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+  },
+  "entity.attribute.get": {
+    "sections": [
+      {"title": "Inputs And Discovery", "text": "Requires ref:resolvable entity with attributes and group:nonempty namespace string; optional name:string. Omitting name lists the whole group via Attributes.itemsByGroup; providing name reads exactly one attribute."},
+      {"title": "Safety And Semantics", "text": "Read-only. Reads the named group only; other namespaces are not enumerated. The returned resourceIdentity is the actual owning entity reference."},
+      {"title": "Return Contract", "text": "Enveloped result (schemaVersion 1): status:pass, operation:entity.attribute.get, documentIdentity, units:{}, frame, associativity:snapshot, warnings:string[], method, limitations, provenance, affected:[], result:{resourceIdentity:reference,group:string,attributes:[{name:string,value:string}],count:integer}."}
+    ],
+    "examples": [
+      {"label": "Read the source metadata group", "data": {"ref": {"$ref": "bodies.result.entities.0"}, "group": "fmcad.metadata"}, "requires": "Earlier bodies: entity.list {kind:body}; standalone substitute the actual ref.", "output": "result.attributes lists every name/value in the group; result.count matches."}
+    ],
+    "audit": {"sources": ["assets/cad/attributes.py:entity_attribute_get,_attr_entity", "assets/cad/core.py:_cad_fields,CadContext.resolve,ref"], "verified": ["single and whole-group read", "resourceIdentity resolution"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+  }
+}

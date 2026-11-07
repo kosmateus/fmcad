@@ -1,0 +1,30 @@
+{
+  "formatVersion": 1,
+  "runId": "cwg-skeleton-catalog",
+  "maxExpansion": 100,
+  "operations": [
+    {"id": "params", "operation": "param.import", "data": {"version": 1, "owner": "CWG", "revision": "r1", "records": [
+      {"name": "tankVolume", "expression": "250 cm^3", "unit": "cm^3", "status": "CONFIRMED", "source": "FLUID_ROUTING.md"},
+      {"name": "bodyHeight", "expression": "250 mm", "unit": "mm", "status": "ESTIMATED", "source": "MASTER_REFERENCE.md"},
+      {"name": "usbcPosition", "expression": "0 mm", "unit": "mm", "status": "ESTIMATED", "source": "WIRING_AND_FPC.md"}
+    ]}},
+    {"id": "catalog", "operation": "catalog.import", "data": {"version": 1, "owner": "CWG", "revision": "r1", "records": [
+      {"id": "P001", "name": "BodyBase", "kind": "part", "quantity": 1, "parent": null, "status": "CONFIRMED", "source": "MASTER_REFERENCE.md", "placement": {"frame": "parent", "translation": ["0 mm", "0 mm", "0 mm"], "rotation": [1, 0, 0, 0, 1, 0, 0, 0, 1]}},
+      {"id": "C003", "name": "COTS_Sensor", "kind": "purchased", "quantity": 1, "parent": null, "status": "ESTIMATED", "source": "Simplified COTS model", "placement": {"frame": "parent", "translation": ["0 mm", "0 mm", "20 mm"], "rotation": [1, 0, 0, 0, 1, 0, 0, 0, 1]}, "mass": {"value": 5, "unit": "g", "status": "ESTIMATED", "source": "Simplified COTS model"}}
+    ]}},
+    {"id": "skeleton", "operation": "datum.frame", "data": {"name": "CWG_Skeleton", "origin": ["0 mm", "0 mm", "0 mm"], "xAxis": [1, 0, 0], "yAxis": [0, 1, 0]}},
+    {"id": "mountPlane", "operation": "datum.plane", "data": {"name": "CWG_MountPlane", "mode": "frame", "frame": "component", "associativity": "snapshot"}},
+    {"id": "ledger", "operation": "catalog.check", "data": {"version": 1, "owner": "CWG", "revision": "r1", "records": [
+      {"id": "P001", "name": "BodyBase", "kind": "part", "quantity": 1, "parent": null, "status": "CONFIRMED", "source": "MASTER_REFERENCE.md", "placement": {"frame": "parent", "translation": ["0 mm", "0 mm", "0 mm"], "rotation": [1, 0, 0, 0, 1, 0, 0, 0, 1]}},
+      {"id": "C003", "name": "COTS_Sensor", "kind": "purchased", "quantity": 1, "parent": null, "status": "ESTIMATED", "source": "Simplified COTS model", "placement": {"frame": "parent", "translation": ["0 mm", "0 mm", "20 mm"], "rotation": [1, 0, 0, 0, 1, 0, 0, 0, 1]}, "mass": {"value": 5, "unit": "g", "status": "ESTIMATED", "source": "Simplified COTS model"}}
+    ]}},
+    {"id": "health", "operation": "history.check", "data": {}}
+  ],
+  "outputs": {
+    "skeleton": {"$ref": "skeleton.result.name"},
+    "mountPlane": {"$ref": "mountPlane.result.name"},
+    "params": {"$ref": "params.result.parameters"},
+    "catalog": {"$ref": "catalog.result.items"},
+    "ledger": {"$ref": "ledger.result.items"}
+  }
+}

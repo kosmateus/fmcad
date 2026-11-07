@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "fixtureId": "drive-precision-program-v1",
+  "kind": "fixed-run-v1",
+  "script": "assets/native-qualification/drive-precision.py",
+  "helperVersion": "cad-v1",
+  "scope": "one fresh owned unsaved two-component diagnostic assembly; stage-separated joint.drive reads; one zero restore after each of three fixed targets; stop after uncertain restore; no lifecycle/file/cloud effects",
+  "argumentKeys": ["approved", "creationId", "expectedFusionVersion", "fixturePrefix"],
+  "callerCleanupRequired": true
+}

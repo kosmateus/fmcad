@@ -1,0 +1,42 @@
+{
+  "formatVersion": 1,
+  "runId": "engine-can",
+  "maxExpansion": 100,
+  "parameters": {"bossHeight": "6 mm"},
+  "recipe": {
+    "id": "engine-can",
+    "bindings": [
+      {"parameter": "bossHeight", "input": "distance", "target": {"$ref": "seedBoss.outputs.feature"}, "role": "AlongDistance"}
+    ]
+  },
+  "definitions": {
+    "mountBoss": {
+      "revision": "1",
+      "parameters": {"name": "Boss", "center": ["0 mm", "0 mm", "0 mm"], "radius": "4 mm", "height": "6 mm"},
+      "operations": [
+        {"id": "section", "operation": "sketch.create", "data": {"name": {"$param": "name"}, "plane": "XY"}},
+        {"id": "rim", "operation": "sketch.geometry", "data": {"sketch": {"$ref": "section.result.sketch"}, "geometry": [{"type": "circle", "name": "rim", "center": {"$param": "center"}, "radius": {"$param": "radius"}}]}},
+        {"id": "boss", "operation": "model.extrude", "data": {"name": {"$param": "name"}, "profile": {"kind": "profile", "sketch": {"$ref": "section.result.sketch"}}, "distance": {"$param": "height"}, "operation": "newBody"}}
+      ],
+      "outputs": {"feature": {"$ref": "boss.result.feature"}, "body": {"$ref": "boss.result.bodies.0"}}
+    }
+  },
+  "operations": [
+    {"id": "part", "operation": "component.create", "data": {"name": "EngineCan"}},
+    {"id": "can", "operation": "shape.can", "component": {"$ref": "part.result.component"}, "data": {"name": "Can", "diameter": "40 mm", "height": "60 mm", "wallThickness": "1.5 mm", "opening": "top", "radii": ["2 mm", "1 mm"]}},
+    {"id": "rimScan", "operation": "entity.stats", "component": {"$ref": "part.result.component"}, "data": {"kind": "edge", "scope": {"body": {"$ref": "can.result.shell.bodies.0"}}, "filters": {"geometry": "circle"}, "expect": {"min": 1}, "groupBy": ["geometry", "radius"]}},
+    {"id": "round", "operation": "model.fillet", "component": {"$ref": "part.result.component"}, "data": {"name": "RimFillet", "radius": "1 mm", "tangentChain": false, "query": {"scope": {"body": {"$ref": "can.result.shell.bodies.0"}}, "filters": {"geometry": "circle", "radius": "20 mm", "level": {"axis": "y", "value": "60 mm"}}, "expect": 1}}},
+    {"id": "seedBoss", "use": "mountBoss", "component": {"$ref": "part.result.component"}, "parameters": {"name": "MountSeed", "center": ["16 mm", "0 mm", "0 mm"], "height": {"$param": "bossHeight"}}},
+    {"id": "bossPattern", "operation": "pattern.circular", "component": {"$ref": "part.result.component"}, "data": {"name": "MountPattern", "entities": [{"$ref": "seedBoss.outputs.feature"}], "axis": "Z", "quantity": 6, "angle": "360 deg"}},
+    {"id": "inspect", "operation": "feature.inspect", "component": {"$ref": "part.result.component"}, "data": {"feature": {"$ref": "can.result.shell.feature"}}},
+    {"id": "preview", "operation": "change.preview", "component": {"$ref": "part.result.component"}, "data": {"feature": {"$ref": "round.result.feature"}, "name": "RimFillet2"}},
+    {"id": "health", "operation": "history.check", "data": {}}
+  ],
+  "outputs": {
+    "canBody": {"$ref": "can.result.shell.bodies.0"},
+    "canFeature": {"$ref": "can.result.shell.feature"},
+    "mountSeed": {"$ref": "seedBoss.outputs.body"},
+    "mountPattern": {"$ref": "bossPattern.result.feature"},
+    "rimFillet": {"$ref": "round.result.feature"}
+  }
+}

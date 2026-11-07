@@ -1,0 +1,20 @@
+{
+  "runId": "n20-model-extrude-followup",
+  "atomic": false,
+  "timeBudgetMs": 120000,
+  "operations": [
+    {"id":"newBodySketchA","operation":"sketch.create","data":{"name":"N20_Followup_NewBodyA","plane":"XY"}},
+    {"id":"newBodyGeometryA","operation":"sketch.geometry","data":{"sketch":{"$ref":"newBodySketchA.result.sketch"},"geometry":[{"type":"rectangle","start":["40 mm","0 mm","0 mm"],"end":["42 mm","2 mm","0 mm"]}]}},
+    {"id":"newBodyProfileA","operation":"sketch.inspect","data":{"sketch":{"$ref":"newBodySketchA.result.sketch"}}},
+    {"id":"newBodySketchB","operation":"sketch.create","data":{"name":"N20_Followup_NewBodyB","plane":"XY"}},
+    {"id":"newBodyGeometryB","operation":"sketch.geometry","data":{"sketch":{"$ref":"newBodySketchB.result.sketch"},"geometry":[{"type":"rectangle","start":["50 mm","0 mm","0 mm"],"end":["52 mm","2 mm","0 mm"]}]}},
+    {"id":"newBodyProfileB","operation":"sketch.inspect","data":{"sketch":{"$ref":"newBodySketchB.result.sketch"}}},
+    {"id":"multiNewBody","operation":"model.extrude","data":{"name":"N20_Followup_Multi_NewBody","profiles":[{"$ref":"newBodyProfileA.result.profiles.0.ref"},{"$ref":"newBodyProfileB.result.profiles.0.ref"}],"distance":"3 mm","operation":"newBody"}},
+    {"id":"singleSketch","operation":"sketch.create","data":{"name":"N20_Followup_Single","plane":"XY"}},
+    {"id":"singleGeometry","operation":"sketch.geometry","data":{"sketch":{"$ref":"singleSketch.result.sketch"},"geometry":[{"type":"rectangle","start":["60 mm","0 mm","0 mm"],"end":["62 mm","2 mm","0 mm"]}]}},
+    {"id":"singleProfiles","operation":"sketch.inspect","data":{"sketch":{"$ref":"singleSketch.result.sketch"}}},
+    {"id":"singleExtrude","operation":"model.extrude","data":{"name":"N20_Followup_Single_Compatibility","profile":{"$ref":"singleProfiles.result.profiles.0.ref"},"distance":"4 mm","operation":"newBody"}},
+    {"id":"driverPerturbRestore","operation":"parameter.test","data":{"confirm":true,"cases":[{"id":"multi-profile-cut-depth","assign":[{"parameter":"N20_Depth","expression":"7 mm"}],"checks":[{"id":"changed-volume","measurement":{"operation":"measure.volume","data":{"ref":"root","units":"cm3"}},"min":"8.98 cm^3","max":"8.99 cm^3"}]}]}},
+    {"id":"restoredVolume","operation":"check","data":{"id":"driver-restored","measurement":{"operation":"measure.volume","data":{"ref":"root","units":"cm3"}},"expected":"9 cm^3","tolerance":"0.02 cm^3"}}
+  ]
+}

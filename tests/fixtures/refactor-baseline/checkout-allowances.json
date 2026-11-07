@@ -1,0 +1,13 @@
+[
+  {
+    "id": "cad.prepare",
+    "field": "artifacts",
+    "before": {
+      "status.py": "6167e4ef2eb547f1e5232afe7ccbaeabadd38eb8395cbbe01ee01984926a870a"
+    },
+    "after": {
+      "status.py": "5dfbfb021998069bbb63ed880978b24cb01c7429af78905e5e1c200c149e3dea"
+    },
+    "reason": "Verified checkout-only LF/CRLF byte difference between historical worktree and main checkout: generated sources compare equal after line-ending conversion. Explicit exact hashes, no normalization or semantic/scope/outcome exemption. fmcad-refactor-baseline integration."
+  }
+]

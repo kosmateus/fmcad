@@ -1,0 +1,32 @@
+{
+  "feature.inspect": {
+    "summary": "GM09 v1 feature inspection: actual structural roles, units and expressions, extent readback, ownership classification. Payloads without schemaVersion keep the legacy assembly contract.",
+    "required": ["feature"], "readOnly": true, "envelope": true, "featureRework": true,
+    "example": {"schemaVersion": 1, "frame": "component", "feature": {"token": "extrude-feature-token"}},
+    "inputs": {
+      "feature": "Unambiguous native feature ref in the selected component.",
+      "schemaVersion": "Optional integer 1 selecting the GM09 v1 contract; omitted keeps the legacy assembly contract.",
+      "frame": "Optional \"component\" (GM09 v1); features resolve in the selected component only. Omitted keeps the legacy assembly contract."
+    },
+    "limitations": ["See docs/FEATURE.md. Role readback covers extrude/revolve/hole/sweep structures; anything unevaluable is explicit unknown. Legacy payloads without schemaVersion keep the assembly feature contract."]
+  },
+  "feature.edit": {
+    "summary": "GM09 v1 feature edit: in-place native property edits, model parameter expressions and marker-restored extents; unsafe or unsupported properties fail explicitly. ExtrudeFeature operationChange is preserved. Legacy payloads without schemaVersion keep the legacy name/parameters contract.",
+    "required": ["feature"], "readOnly": false, "envelope": true, "featureRework": true,
+    "example": {"schemaVersion": 1, "frame": "component", "feature": {"token": "extrude-feature-token"}, "entries": [{"role": "startOffset", "expression": "2 mm"}, {"role": "distance", "expression": "10 mm"}]},
+    "inputs": {
+      "feature": "Unambiguous native feature ref in the selected component.",
+      "schemaVersion": "Optional integer 1 selecting the GM09 v1 contract; omitted keeps the legacy assembly contract.",
+      "frame": "Optional \"component\" (GM09 v1); features resolve in the selected component only. Omitted keeps the legacy assembly contract.",
+      "name": "Optional nonempty new feature name; collisions fail.",
+      "parameters": "Legacy contract only: object keyed by exact owned model parameter names to expression strings; mutually exclusive with the v1 entries/extent selectors.",
+      "entries": "Array of {name?, role?, expression}. Select exact owned ModelParameters by name; known feature-structure roles are listed by feature.inspect. Other directly owned ModelParameters of supported feature types remain role:unknown but are editable by exact name. Expressions are unit-checked; negative thicken thickness expressions select the opposite side where the feature supports signed thickness.",
+      "extent": "In-place extents: Extrude {mode:distance|throughAll|toEntity|symmetric|twoSides, distance?, distanceTwo?, startOffset?, taper?, taperTwo?, target?, offset?, direction:positive|negative, isFullLength?}; Revolve {mode:angle|twoSideAngle|toEntity, angle?,angleTwo?,target?,symmetric?}; Hole {mode:distance|throughAll|toEntity,distance?,target?,reverse?,matchShape?}. Modes have strict field combinations and owner-scoped native targets. Revolve two-sided to-entity extent is not exposed because the current SDK definition lacks stable readback for that mode.",
+      "operationChange": "In-place operation changes for ExtrudeFeature (newBody/join/cut) and SDK-declared RevolveFeature, SweepFeature, LoftFeature and ThickenFeature (newBody/join/cut/intersect). Mutually exclusive with name/entries/extent/nativeEdits. {expected:<current operation>,value:<target>,expectedResultBodyCount:integer>=1,participants?:[native body refs owned by selected component]}. newBody forbids participants; other operations require them. Non-Extrude changes require confirm:true. expected==value is a measured no-op. Requires history-end marker; identity/operation/body-count/health/pose and marker readback are reported.",
+      "nativeEdits": "Confirmed type-specific in-place reference/property edits; mutually exclusive with name/entries/extent/operationChange. Extrude/Revolve: profile, axis/profile. Fillet/Chamfer: existing edgeSets by index, edges and supported variant parameters/options; fullRoundFaceSets replaces face sets only on an existing full-round fillet. Hole: simple/counterbore/countersink and documented associative position modes. Circular/rectangular/path pattern: entities, axes/directions, symmetry, distance mode and path controls. Mirror: entities/plane. Shell: faces/bodies, thickness, tangent-chain/type. Sweep: profile/path/guide/orientation/direction flip. Loft: same-count sections/rails, end conditions, closed/merge/alignment. Thicken: faces/symmetry/type/chain. All selection refs are resolved and owner-checked before mutation; unsafe feature-type conversion (including sweep solidBody conversion) and cardinality changes reject.",
+      "preview": "Boolean; return the resolved plan without mutation (default false).",
+      "confirm": "Boolean true required for nativeEdits, hole type/position edits, and non-Extrude operationChange. Missing/false confirmation returns blocked without mutation."
+    },
+    "limitations": ["Non-atomic; failures never delete or rebuild features. Cross-component/proxy references are refused. Marker restore replays downstream history and is not rollback.", "Only documented current-build native setters and directly owned ModelParameters are edited. Unsafe conversion, unsupported variants/properties and cardinality changes reject. Inspect lists supported properties, exact parameter rows, and unsupported fields. Failed setters can leave partial state; no automatic undo/replay."]
+  }
+}

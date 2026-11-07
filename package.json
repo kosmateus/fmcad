@@ -1,0 +1,146 @@
+{
+  "name": "fmcad",
+  "version": "0.1.0",
+  "description": "Standalone API, CLI, MCP server, and optional OpenCode plugin for Autodesk Fusion.",
+  "license": "MIT",
+  "main": "./dist/src/dist/entrypoints/opencode.mjs",
+  "scripts": {
+    "build": "npm run build:code && node dist/scripts/adsk-refresh/cli.js --pinned scripts/adsk-refresh/api-lock.json dist/runtime/python/typing && node scripts/stage-core.cjs --identity-only",
+    "prepack": "npm run build",
+    "build:code": "tsc -b tsconfig.json && tsc -p scripts/adsk-refresh/tsconfig.json && tsc -p tsconfig.api.json && tsc -p tsconfig.devtools.json && node dist/scripts/devtools/stage-queue-runtime.js && node scripts/stage-core.cjs && node --test tests/devtools/*.test.js && npm run build:opencode && npm run build:console-browser && node scripts/stage-core.cjs --identity-only && tsc -p tsconfig.runtime-tests.json && node dist/scripts/devtools/stage-queue-runtime.js --tests && npm run build:docs",
+    "build:console-browser": "node packages/control-center/scripts/build-browser.cjs",
+    "build:opencode": "tsc -p tsconfig.opencode.json && node scripts/stage-opencode.cjs && node scripts/stage-core.cjs --identity-only",
+    "build:dev": "npm run build:code && node dist/scripts/adsk-refresh/cli.js --dev dist/runtime/python/typing && node scripts/stage-core.cjs --identity-only",
+    "test:adsk": "npm run build:code && node --test tests/adsk-refresh.test.js",
+    "build:clean": "tsc -b tsconfig.json --clean",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
+    "lint": "eslint \"packages/**/*.ts\" \"src/**/*.ts\" \"src/**/*.mts\" \"scripts/adsk-refresh/*.ts\"",
+    "format": "prettier --write --end-of-line auto package.json .github/workflows/ci.yml tsconfig.api.json tsconfig.runtime-tests.json src/composition/opencode.ts src/composition/control-center.ts packages/control-center/package.json packages/control-center/tsconfig.json packages/control-center/tsconfig.browser.json packages/control-center/scripts/build-browser.cjs \"packages/control-center/src/**/*.ts\" packages/opencode-adapter/src/shared/contracts.ts packages/opencode-adapter/src/shared/ensure-web.ts packages/opencode-adapter/src/v1/index.ts packages/opencode-adapter/src/v2/index.ts src/entrypoints/queue-autostart.ts src/entrypoints/queue-connection.ts src/entrypoints/queue-preflight.ts src/queue-autostart.js src/queue-connection.js src/queue-preflight.js tests/control-center-agents-projects.test.ts tests/control-center-test-support.ts tests/project-history-store.test.ts tests/control-center-browser-e2e.test.mts tests/control-center-browser-fixture.mts tests/catalog-worker.test.ts tests/fusion-transport-broker.test.ts tests/mcp-stdio-catalog-sharing.test.js tests/control-center-browser-bundle.test.js tests/control-center-root-composition.test.js tests/control-center-root-service.test.js tests/fixtures/fake-wsl-platform.cjs tests/mcp-owned-result-root.test.js tests/opencode-web-ensure.test.js tests/phased-queue.test.ts tests/queue-preflight.test.js tests/runtime-artifact.test.ts tests/runtime-test-environment.ts tests/live-data-import.ts tests/live-data-import-fixed.ts tests/live-import-receipts.ts tests/live-import-receipt.test.ts tests/fixed-import-checker.test.ts tests/fixed-native-program-source.test.ts",
+    "format:check": "prettier --check --end-of-line auto package.json .github/workflows/ci.yml tsconfig.api.json tsconfig.runtime-tests.json src/composition/opencode.ts src/composition/control-center.ts packages/control-center/package.json packages/control-center/tsconfig.json packages/control-center/tsconfig.browser.json packages/control-center/scripts/build-browser.cjs \"packages/control-center/src/**/*.ts\" packages/opencode-adapter/src/shared/contracts.ts packages/opencode-adapter/src/shared/ensure-web.ts packages/opencode-adapter/src/v1/index.ts packages/opencode-adapter/src/v2/index.ts src/entrypoints/queue-autostart.ts src/entrypoints/queue-connection.ts src/entrypoints/queue-preflight.ts src/queue-autostart.js src/queue-connection.js src/queue-preflight.js tests/control-center-agents-projects.test.ts tests/control-center-test-support.ts tests/project-history-store.test.ts tests/control-center-browser-e2e.test.mts tests/control-center-browser-fixture.mts tests/catalog-worker.test.ts tests/fusion-transport-broker.test.ts tests/mcp-stdio-catalog-sharing.test.js tests/control-center-browser-bundle.test.js tests/control-center-root-composition.test.js tests/control-center-root-service.test.js tests/fixtures/fake-wsl-platform.cjs tests/mcp-owned-result-root.test.js tests/opencode-web-ensure.test.js tests/phased-queue.test.ts tests/queue-preflight.test.js tests/runtime-artifact.test.ts tests/runtime-test-environment.ts tests/live-data-import.ts tests/live-data-import-fixed.ts tests/live-import-receipts.ts tests/live-import-receipt.test.ts tests/fixed-import-checker.test.ts tests/fixed-native-program-source.test.ts",
+    "test": "npm run build && npm run typecheck:tests && node --test tests/*.test.js && npm run test:control-center:projects && npm run test:response-recovery && npm run test:import-contracts && python3 -B -m unittest discover -s tests -p '*_test.py'",
+    "test:contracts": "node --test --test-concurrency=1 tests/broker-lifecycle.test.js tests/fusion-reset.test.js tests/console-services.test.js tests/console-telemetry.test.js tests/console-pause.test.js tests/stage-journal.test.js tests/queue-preflight.test.js tests/library-api.test.js tests/mcp-framing.test.js tests/mcp-owned-result-root.test.js tests/mcp-stdio-catalog-sharing.test.js tests/control-center-root-composition.test.js tests/control-center-root-service.test.js tests/control-center-browser-bundle.test.js tests/workspace-toolchain.test.js tests/phased-queue.test.js tests/catalog-worker.test.js tests/fusion-transport-broker.test.js tests/runtime-artifact.test.js && npm run test:response-recovery && npm run test:control-center:projects",
+    "test:control-center:projects": "node --test --test-concurrency=1 dist/tests/project-history-store.test.js dist/tests/control-center-agents-projects.test.js",
+    "test:control-center:e2e": "npm run build:code && npm run typecheck:tests && node --experimental-strip-types --test tests/control-center-browser-e2e.test.mts",
+    "test:workspace": "npm run build:code && npm run typecheck:tests && node --test tests/workspace-toolchain.test.js",
+    "test:python": "python3 -B -m unittest discover -s tests -p '*_test.py'",
+    "test:live": "node tests/run-live.js all",
+    "test:live:legacy": "node tests/run-live.js legacy",
+    "test:live:cad": "node tests/run-live.js cad",
+    "test:live:adapter": "node tests/run-live.js backend-adapter",
+    "test:live:extended": "node tests/run-live.js extended",
+    "test:live:definitions": "node tests/run-live.js definitions",
+    "test:live:data-import": "node tests/run-live.js data-import --run",
+    "test:live:feature-modes": "node tests/run-live.js feature-modes --run",
+    "test:live:styles": "node tests/run-live.js style-save --run",
+    "test:live:motion": "node tests/run-live.js motion-animation --run",
+    "test:live:stdio": "node tests/run-live.js mcp-stdio",
+    "test:live:gm12-spring": "node tests/run-live.js gm12-spring --run",
+    "test:response-recovery": "node --test dist/tests/queue-client-response-recovery.test.js dist/tests/normal-epoch-broker.test.js dist/tests/normal-epoch-admission.test.js dist/tests/queue-runtime-stage.test.js dist/tests/queue-cli-recovery-parity.test.js dist/tests/live-recovery-ports.test.js",
+    "test:native:multidocument": "node dist/tests/live-normal-multidocument.js --run",
+    "test:native:response-recovery": "node dist/tests/live-response-recovery.js --run",
+    "test:import-contracts": "node --test dist/tests/live-import-receipt.test.js dist/tests/fixed-native-program-source.test.js dist/tests/fixed-import-checker.test.js",
+    "test:scenarios:unit": "tsc -p tsconfig.runtime-tests.json && node --test dist/tests/scenarios/*.test.js",
+    "test:scenarios:component": "node dist/tests/scenarios/cli.js --backend simulator --profile component",
+    "test:scenarios:broker": "node dist/tests/scenarios/cli.js --backend simulator --profile broker",
+    "test:scenarios:live": "node dist/tests/scenarios/cli.js --backend fusion --profile broker",
+    "typecheck:simulator": "node node_modules/basedpyright/index.js --outputjson -p tests/support/fusion-simulator/pyrightconfig.json",
+    "build:docs": "node scripts/generate-help-audit.js --write-only"
+  },
+  "bin": {
+    "fmcad": "dist/bin/fmcad.js",
+    "fmcad-mcp": "dist/bin/fmcad-mcp.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/dist/entrypoints/opencode.d.mts",
+      "default": "./dist/src/dist/entrypoints/opencode.mjs"
+    },
+    "./server": {
+      "types": "./dist/src/dist/entrypoints/opencode.d.mts",
+      "default": "./dist/src/dist/entrypoints/opencode.mjs"
+    },
+    "./api": {
+      "types": "./dist/src/dist/api/index.d.ts",
+      "default": "./dist/src/dist/api/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "NOTICE.md",
+    "server.mjs",
+    "dist/bin",
+    "dist/src",
+    "dist/assets",
+    "dist/package.json",
+    "dist/runtime-build.json",
+    "dist/scripts/console-source-format.py",
+    "dist/scripts/console-source-requirements.txt",
+    "dist/runtime/python",
+    "docs/LIBRARY_API.md",
+    "docs/INSTALLATION.md",
+    "docs/MCP_APPLICATION.md",
+    "docs/MCP_STDIO_FRAMING.md",
+    "docs/OPENCODE_PLUGIN.md",
+    "docs/PYTHON_ADMISSION.md",
+    "docs/ISOLATED_SCRATCH_EPOCH.md",
+    "scripts/qualify-isolated-epoch.cjs",
+    "scripts/read-audit-response-proof.cjs",
+    "scripts/upgrade-epoch-checker.cjs",
+    "scripts/qualify-epoch-checker.cjs",
+    "docs/AUDIT_RESPONSE_RECOVERY.md",
+    "docs/QUIESCENT_EPOCH_CHECKER_UPGRADE.md",
+    "docs/DEAD_EPOCH_SUCCESSION.md",
+    "docs/SETTLED_EPOCH_UPGRADE.md",
+    "docs/NATIVE_FIXTURE_SCOPES.md",
+    "docs/RUNTIME_PATHS.md",
+    "docs/PROJECT_HISTORY_STORAGE.md"
+  ],
+  "engines": {
+    "node": ">=22.13.0 <23 || >=24.0.0 <25",
+    "opencode": ">=1.18.29 <2 || >=2.1.3 <3"
+  },
+  "workspaces": [
+    "packages/core",
+    "packages/node-adapters",
+    "packages/opencode-adapter",
+    "packages/control-center"
+  ],
+  "keywords": [
+    "fusion",
+    "autodesk",
+    "mcp",
+    "cli",
+    "cad"
+  ],
+  "dependencies": {
+    "basedpyright": "1.40.2",
+    "jsonc-parser": "3.3.1",
+    "terminal-kit": "3.1.4"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.18.29 <2",
+    "@opencode/plugin": ">=2.1.3 <3"
+  },
+  "peerDependenciesMeta": {
+    "@opencode-ai/plugin": {
+      "optional": true
+    },
+    "@opencode/plugin": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "1.18.29",
+    "@opencode/plugin": "2.1.3",
+    "@types/node": "24.19.2",
+    "eslint": "10.13.0",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import-x": "4.17.1",
+    "playwright": "1.56.1",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.0"
+  }
+}

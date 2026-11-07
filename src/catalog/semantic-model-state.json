@@ -1,0 +1,75 @@
+{
+  "frame.context_audit": {
+    "summary": "Independently audit datum, native occurrence chain, root-qualified proxy transform2, sampled BRep points, provenance and visibility.",
+    "required": ["ref", "sourceId", "instance", "datumToRoot", "datumSource"],
+    "inputs": {
+      "ref": "Body reference resolved in the pinned document.",
+      "sourceId": "Stable caller-owned identity of the source definition.",
+      "instance": "Full root-qualified occurrence path as string segments; [] is valid only for a root body.",
+      "datumToRoot": "Independent row-major 4x4 transform; column vectors, translation in cm. Do not copy the proxy transform under audit.",
+      "datumSource": "Independent observation provenance: {kind, version}.",
+      "lengthToleranceCm": "Optional positive translation/BRep point tolerance in cm (default 1e-7).",
+      "matrixTolerance": "Optional positive dimensionless matrix tolerance (default 1e-9)."
+    },
+    "example": {
+      "ref": {"kind": "body", "name": "Housing"},
+      "sourceId": "housing-definition-v3",
+      "instance": ["Root:1", "Housing:2"],
+      "datumToRoot": [1, 0, 0, 10, 0, 1, 0, 20, 0, 0, 1, 30, 0, 0, 0, 1],
+      "datumSource": {"kind": "fixture-analytic-placement", "version": 1}
+    },
+    "limitations": [
+      "The occurrence proxy transform2 is already root-qualified and is not multiplied by parent transforms again; nativeObject local transforms are observed separately.",
+      "BRep validation compares at most 16 independent vertex witnesses. A pass is sampled evidence, not exact BRep equivalence.",
+      "The caller must supply datumToRoot independently of the frame under audit; roundtrip consistency alone is not evidence.",
+      "Native Fusion qualification and scratch restoration have not been performed."
+    ],
+    "readOnly": true,
+    "documentPin": true
+  },
+  "snapshot.capture_v2": {
+    "summary": "Capture an inline semantic snapshot v2 for explicit role/source/instance bindings without writing a snapshot store.",
+    "required": ["scope", "bindings"],
+    "inputs": {
+      "scope": "{kind:'explicit-bindings', document:{creationId,fileId,version}} for the exactly pinned saved document.",
+      "bindings": "Up to 256 {role,sourceId,ref,instance} entries. Use complete root-qualified instance paths; [] selects a root body."
+    },
+    "example": {
+      "scope": {"kind": "explicit-bindings", "document": {"creationId": "creation-1", "fileId": "file-1", "version": 3}},
+      "bindings": [
+        {"role": "drive-body", "sourceId": "motor-definition", "ref": {"kind": "body", "name": "Drive"}, "instance": ["Root:1", "Motor:2"]},
+        {"role": "root-bracket", "sourceId": "root-definition", "ref": {"kind": "body", "name": "Bracket"}, "instance": []}
+      ]
+    },
+    "limitations": [
+      "Snapshot values are returned to the caller; no global or durable snapshot store is created.",
+      "Geometry summaries, topology counts and sampled observations do not prove exact BRep equivalence.",
+      "V1 snapshot behavior and output remain unchanged."
+    ],
+    "readOnly": true,
+    "documentPin": true
+  },
+  "snapshot.diff_v2": {
+    "summary": "Compare two inline semantic snapshots v2 by role/source/instance and geometry, pose, attributes, topology and visibility.",
+    "required": ["before", "after"],
+    "inputs": {
+      "before": "Semantic snapshot v2 with explicit observational precision, scope and entity observations.",
+      "after": "Semantic snapshot v2 with the same document/scope identity.",
+      "allowedMovedSubtrees": "Optional list of nonempty root-qualified occurrence paths; permits pose changes only for each exact subtree and descendants.",
+      "tolerances": "Optional positive finite absolute per-channel tolerances for geometry, pose, attributes, topology and visibility (default 1e-7)."
+    },
+    "example": {
+      "before": {"schemaVersion": 2, "status": "partial", "coverage": "partial", "precision": "observational", "exactBRepEquivalence": false, "scope": {"kind": "explicit-bindings", "document": {"creationId": "creation-1", "fileId": "file-1", "version": 3}}, "entities": []},
+      "after": {"schemaVersion": 2, "status": "partial", "coverage": "partial", "precision": "observational", "exactBRepEquivalence": false, "scope": {"kind": "explicit-bindings", "document": {"creationId": "creation-1", "fileId": "file-1", "version": 3}}, "entities": []},
+      "allowedMovedSubtrees": [["Root:1", "Motor:2"]],
+      "tolerances": {"geometry": 1e-7, "pose": 1e-7}
+    },
+    "limitations": [
+      "Order-independent identity is (role, complete instance path); source changes, missing roles and duplicates remain observable even if native tokens change.",
+      "Allowed movement applies only to pose, not identity, geometry, attributes, topology or visibility.",
+      "Results are observational and do not claim exact BRep equivalence or a specific authorized delta."
+    ],
+    "readOnly": true,
+    "documentPin": true
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "runId": "iw7_3_abort_fixture",
+  "atomic": true,
+  "operations": [
+    {
+      "id": "scratchMutation",
+      "operation": "component.create",
+      "onExisting": "error",
+      "data": { "name": "FMCAD_IW7_3_ABORT_FIXTURE" }
+    }
+  ]
+}

@@ -1,0 +1,158 @@
+{
+  "shape.box": {
+    "summary": "Create an origin-anchored, dimension-driven rectangular prism. Returns feature, bodies, healthState, message, helpers and recipe.",
+    "required": ["name", "width", "depth", "height"], "readOnly": false,
+    "example": {"name": "Block", "width": "40 mm", "depth": "20 mm", "height": "10 mm"},
+    "inputs": {"name": "Feature name; helper sketch is name__section.", "width": "Positive sketch-X length expression.", "depth": "Positive sketch-Y length expression.", "height": "Positive extrusion length expression along plane normal.", "plane": "Native construction plane reference, default XY."},
+    "limitations": ["New body only, local origin corner; use datums for placement. Component scope only. Dimensions retain expressions, not fixed geometry. Helper name collisions rejected. Multi-operation recipe is not atomic; kernel failures can leave helpers."]
+  },
+  "shape.cylinder": {
+    "summary": "Create an origin-centered radius-dimensioned cylinder. Returns model feature result plus helpers and recipe.",
+    "required": ["name", "radius", "height"], "readOnly": false,
+    "example": {"name": "Shaft", "radius": "shaft_diameter / 2", "height": "50 mm"},
+    "inputs": {"name": "Feature name; reserves name__section.", "radius": "Positive length expression retained as a driving radius dimension.", "height": "Positive extrusion length expression.", "plane": "Native construction plane reference, default XY."},
+    "limitations": ["New body only, centered at sketch origin. Component scope only. Recipe is not atomic. Plane faces and arbitrary center coordinates are unsupported; use datums."]
+  },
+  "shape.tube": {
+    "summary": "Extrude an expression-driven concentric annulus. Returns feature, bodies, healthState, message, helpers and recipe.",
+    "required": ["name", "outerRadius", "innerRadius", "height"], "readOnly": false,
+    "example": {"name": "Tube", "outerRadius": "25 mm", "innerRadius": "25 mm - wall", "height": "100 mm"},
+    "inputs": {"name": "Feature name; reserves name__section.", "outerRadius": "Positive outer radius expression.", "innerRadius": "Positive inner radius expression, strictly less than outerRadius.", "height": "Positive extrusion expression.", "plane": "Native construction plane reference, default XY."},
+    "limitations": ["New body only; circular tube centered on sketch origin. Selects the unique two-loop annular profile, never assumes a profile index. Component scope only; recipe is not atomic."]
+  },
+  "shape.ring": {
+    "summary": "Create a flat annular ring using two driving radii and an extrusion. Returns model result plus helpers and recipe.",
+    "required": ["name", "outerRadius", "innerRadius", "height"], "readOnly": false,
+    "example": {"name": "Washer", "outerRadius": "12 mm", "innerRadius": "5 mm", "height": "2 mm"},
+    "inputs": {"name": "Feature name; reserves name__section.", "outerRadius": "Positive outer radius expression.", "innerRadius": "Positive radius less than outerRadius.", "height": "Positive axial thickness expression.", "plane": "Native construction plane reference, default XY."},
+    "limitations": ["Same annular extrusion recipe as tube, not a torus. New body, component scope, origin-centered. Non-atomic."]
+  },
+  "shape.cone": {
+    "summary": "Loft two coaxial dimensioned circular sections on expression-offset planes. Returns feature result and three helper references.",
+    "required": ["name", "baseRadius", "topRadius", "height"], "readOnly": false,
+    "example": {"name": "Reducer", "baseRadius": "30 mm", "topRadius": "15 mm", "height": "40 mm"},
+    "inputs": {"name": "Feature name; reserves name__section, name__top and name__topPlane.", "baseRadius": "Positive base radius expression.", "topRadius": "Positive top radius expression.", "height": "Positive offset-plane expression.", "plane": "Native construction plane reference, default XY."},
+    "limitations": ["Truncated cone only; zero-radius apex rejected. Solid new body, not a hollow reducer. Local origin, component scope. Loft and helpers preserve parameter equations but recipe is not atomic."]
+  },
+  "shape.revolved_profile": {
+    "summary": "Revolve a supplied profile OR create a sketch from structured profileData with explicit driving dimensions/constraints and revolve it. Returns model result; generated mode also returns helpers, local refs, dependency scope and isFullyConstrained.",
+    "required": ["axis"], "readOnly": false,
+    "example": {
+      "name": "TurnedPart", "axis": "X", "angle": "360 deg",
+      "profileData": {
+        "plane": "XY",
+        "geometry": [
+          {"name": "cap", "type": "arc", "center": ["0 mm", "0 mm", "0 mm"], "start": ["10 mm", "0 mm", "0 mm"], "sweep": "180 deg"},
+          {"name": "base", "type": "line", "start": ["-10 mm", "0 mm", "0 mm"], "end": ["10 mm", "0 mm", "0 mm"]}
+        ],
+        "constraints": [
+          {"type": "coincident", "entities": ["cap.center", "origin"]},
+          {"type": "coincident", "entities": ["base.start", "cap.end"]},
+          {"type": "coincident", "entities": ["base.end", "cap.start"]},
+          {"type": "horizontal", "entities": ["base"]}
+        ],
+        "dimensions": [{"type": "radius", "entities": ["cap"], "expression": "10 mm"}]
+      }
+    },
+    "inputs": {
+      "profile": "Existing native closed profile reference, exclusive with profileData. Existing profile mode requires profile and axis, with optional name/angle/operation; previous usage remains supported.",
+      "profileData": "Generated mode requires name and profileData:{geometry:[...],plane?:XY,constraints?:[],dimensions?:[],profileIndex?:integer}. geometry entries require unique ASCII identifier name (origin reserved), type, and fields: line {start,end}; arc {center,start,sweep}; arc3 {start,through,end}; circle {center,radius}; spline {points:[...]}; point {point}. Every point is three length-expression strings in sketch-local XY (z must evaluate to zero). Optional construction boolean except on points. No fixed flag. Coordinates/radius/sweep initialize geometry only; use dimensions for retained equations. Names label returned refs, not aliases. Local selectors: name, name.start/end for lines/arcs, name.center for arcs/circles, name.fit0/fit1/... for spline fit points, origin. constraints entries {type,entities:[selectors]} support coincident, collinear, concentric, midpoint, parallel, perpendicular, horizontal, vertical, horizontalPoints, verticalPoints, tangent, smooth, equal, symmetry, using sketch.constrain ordering. dimensions entries {type,entities:[selectors],expression,text?:[three length expressions],orientation?:aligned|horizontal|vertical}. Supported driving dimensions: distance (two points), angle (two lines), radius/diameter (one arc/circle); orientation only for distance, default aligned; text defaults to [10 mm,10 mm,0 mm]. profileIndex is optional: omission requires exactly one resulting profile; explicit indices are topology-dependent.",
+      "axis": "Native existing axis or suitable line/edge reference in the selected component; not a local generated label.",
+      "angle": "Expression in (0,360 deg], default 360 deg, retained by the revolve feature.",
+      "name": "Required in profileData mode; reserves the feature name and name__section before any mutation. Optional in existing profile mode.",
+      "operation": "newBody (default), join, cut or intersect."
+    },
+    "limitations": ["Only generated geometry explicitly bound by dimensions/constraints remains dependent; input coordinates alone are not parameter links. Returns the actual sketch constraint state, never assumes full constraint. No automatic constraint inference or profile repair.", "Generated sketches require native construction planes and component scope. Geometry and solver-list schemas, expressions, local selector types and all generated names are prevalidated. Name collisions reject the request with no changes, never reuse a sketch or overwrite geometry.", "Solver inconsistency, closed-profile topology, self-intersection and kernel feasibility cannot be guaranteed before creation. Recipes are not atomic; failures can leave named helpers. Explicit profileIndex range is checked after sketch creation."]
+  },
+  "shape.bolt_circle": {
+    "summary": "Generate a parametric seed hole from pitch diameter and phase, then a native circular feature pattern; alternatively pattern explicit existing seed features. Returns model pattern result; generated mode adds seed result and helpers.",
+    "required": ["quantity"], "readOnly": false,
+    "example": {"name": "BoltCircle", "pitchDiameter": "60 mm", "quantity": 6, "phase": "30 deg", "diameter": "5 mm", "depth": "10 mm"},
+    "inputs": {
+      "name": "Required generated-mode pattern name. Reserves name, name__seed, name__section, name__center and name__center__x/y/z. Optional existing-feature pattern name.",
+      "pitchDiameter": "Generated mode: positive length expression. Requires name, pitchDiameter, quantity, diameter and depth; excludes entities, axis and angle. Seed lies at [pitchDiameter/2*cos(phase),pitchDiameter/2*sin(phase),0] in component coordinates, with those expressions stored in coordinate-datum plane parameters.",
+      "quantity": "Integer >=2 or existing unitless parameter expression evaluating to an integer >=2; includes the seed. Retained as a native pattern quantity expression when supplied as a parameter expression.",
+      "phase": "Generated mode only: angular expression measured counterclockwise from component +X, default 0 deg. Retained in seed-position equations; arbitrary signed angles allowed.",
+      "diameter": "Generated mode only: positive hole diameter expression passed to the native simple Hole feature.",
+      "depth": "Generated mode only: positive native hole-depth expression.",
+      "reverse": "Generated mode only: boolean, default false, reverses the native hole's default cut direction.",
+      "participants": "Generated mode only: optional nonempty array of native body refs limiting hole participants; resolved before creating helpers.",
+      "entities": "Alternative existing-seed mode: nonempty native feature reference array. Requires entities, axis and quantity; supports optional angle and name. Mutually exclusive with generated hole inputs.",
+      "axis": "Existing-seed mode only: native rotation axis reference. Generated mode always uses component Z through the origin.",
+      "angle": "Existing-seed mode only: positive total pattern angle <=360 deg, default 360 deg. Generated mode always uses a full 360 deg pattern."
+    },
+    "limitations": ["Generated mode is centered at component origin on XY, patterned around Z, and requires parametric history. Seed position comes from a linked projected coordinate datum, not evaluated fixed sketch coordinates; pitch, phase, diameter, depth and count dependencies are retained.", "Requires existing material for the hole to cut. Overlapping holes, material intersection and kernel feasibility are not predicted. No counterbore/countersink generation in this recipe; existing seed-feature mode can pattern such features.", "All reserved-name collisions and invalid inputs caught by preflight produce no changes. Multi-operation recipes are not atomic; kernel failures can leave helpers or a seed hole. No automatic overwrite or reuse."]
+  },
+  "shape.slot": {
+    "summary": "Generate a constrained closed stadium from overall length, width, center position and angle, then extrude it; alternatively extrude an existing profile. Returns model.extrude result; generated mode adds slotGeometry, helpers and dependency scope.",
+    "required": ["thickness"], "readOnly": false,
+    "example": {"name": "MountSlot", "length": "30 mm", "width": "6 mm", "position": ["10 mm", "-5 mm", "0 mm"], "angle": "30 deg", "thickness": "3 mm", "symmetric": true},
+    "inputs": {
+      "name": "Required generated-mode name; optional for the existing profile alternative. Generated mode reserves name, name__section, name__plane, name__start, name__end and each point's __x/__y/__z helper planes.",
+      "length": "Generated mode: overall stadium end-to-end length expression, strictly greater than width. Generated mode requires name, length, width and thickness, and excludes profile.",
+      "width": "Generated mode: positive diameter of both semicircular caps. A driving radial dimension on the start cap retains (width)/2; native stadium constraints maintain equal caps and tangent side lines.",
+      "position": "Generated mode only: three signed component-coordinate length expressions for stadium midpoint, default [0 mm,0 mm,0 mm]. Plane remains parallel to component XY; its Z offset is driven by position[2].",
+      "angle": "Generated mode only: signed angular expression from component +X toward +Y; default 0 deg. Cap centers are position +/- (length-width)/2*[cos(angle),sin(angle),0], retained as coordinate-datum equations, including zero and negative angle/coordinate cases.",
+      "profile": "Alternative existing-profile mode: native profile reference; requires profile and thickness, with optional name, operation and symmetric. Exclusive with length/width/position/angle. Existing arbitrary outlines are accepted as before.",
+      "thickness": "Positive extrusion length expression, retained by the native feature.",
+      "operation": "cut (default), newBody, join or intersect.",
+      "symmetric": "Boolean, default false; true means total symmetric thickness. False extrudes in the sketch's positive normal direction.",
+      "participants": "Generated mode only: optional nonempty native body-reference array for cut/intersect extrusion participantBodies. Do not combine with newBody/join: this conflict is rejected only after helpers and slot geometry have been created.",
+      "plane": "Generated mode only: native construction plane reference, default XY. A non-XY plane orients the generated slot section. Mutually exclusive with frame.",
+      "frame": "Generated mode only: named datum.frame or frame descriptor. Creates a native plane aligned to the frame and records cap-center coordinate datums in the frame-local plane. Mutually exclusive with a non-XY plane."
+    },
+     "limitations": ["Generated mode requires parametric history and a Fusion version exposing Sketch.addCenterToCenterSlot. The native builder seeds two cap arcs, two sides and a construction centerline without its optional width dimension. Explicit cap-center coincidence constraints link both arcs to projected coordinate datums, retaining length, position and angle equations; an explicit driving cap radius retains width/2. Seed coordinates are initial values only, not fixed geometry or regeneration by rescaling. Offline dependency tests do not certify Fusion solver regeneration or timeline health.", "Generated plane defaults to component XY with a signed parametric Z offset; a caller-selected native plane or an oriented frame plane is also supported. Degenerate length==width circles and width<=0 are rejected. No through-all extent.", "All generated names are reserved by preflight across native sketches, datums, features and bodies; collisions reject without changes. No overwrite/reuse. Multi-step kernel/solver failures and deferred participant/operation conflicts propagate and can leave partial helpers."]
+  },
+  "shape.slot_pattern": {
+    "summary": "Rectangularly pattern explicit slot seed features with expression-driven count and spacing. Returns pattern.rectangular result.",
+    "required": ["entities", "direction", "quantity", "distance"], "readOnly": false,
+    "example": {"entities": [{"token": "slot-cut-token"}], "direction": "X", "quantity": 4, "distance": "15 mm"},
+    "inputs": {"entities": "Nonempty native seed feature array.", "direction": "Native axis or linear geometry reference.", "quantity": "Integer >=2 or unitless parameter expression; includes seed.", "distance": "Positive length expression.", "distanceType": "spacing (default) or extent.", "name": "Optional pattern name."},
+    "limitations": ["One direction only. Create/dimension the seed slot first. No baked coordinate repetitions or automatic seed-outline generation."]
+  },
+  "shape.rib": {
+    "summary": "Create a profile-based prismatic rib by joining an expression-depth extrusion. Returns model.extrude result.",
+    "required": ["profile", "thickness"], "readOnly": false,
+    "example": {"profile": {"kind": "profile", "sketch": "RibSection", "index": 0}, "thickness": "3 mm", "symmetric": true},
+    "inputs": {"profile": "Native closed rib cross-section reference.", "thickness": "Positive extrusion length expression.", "symmetric": "Boolean; default false, true means total symmetric thickness.", "operation": "join (default), newBody, cut or intersect.", "name": "Optional feature name."},
+    "limitations": ["Closed-profile extrusion, not Fusion's open-curve Rib UI command. Does not auto-extend to surrounding faces. Seed sketch remains responsible for shape and position dependencies."]
+  },
+  "shape.web": {
+    "summary": "Create a profile-based planar web by joining a thickness-driven extrusion. Returns model.extrude result.",
+    "required": ["profile", "thickness"], "readOnly": false,
+    "example": {"profile": {"kind": "profile", "sketch": "WebSection", "index": 0}, "thickness": "2 mm", "symmetric": true},
+    "inputs": {"profile": "Native closed web cross-section reference.", "thickness": "Positive extrusion expression.", "symmetric": "Boolean; default false, true uses total thickness.", "operation": "join (default), newBody, cut or intersect.", "name": "Optional feature name."},
+    "limitations": ["Closed-profile web, not automatic face-to-face/open-curve web generation. Requires a suitably constrained seed sketch. Native selected-component inputs only."]
+  },
+  "shape.route": {
+    "summary": "Generate a line/arc or fitted-spline route from structured waypoints and explicit dimensions/constraints, then sweep an existing section; alternatively use an existing path. Generated result includes path, helpers, local refs and actual constraint state.",
+    "required": ["profile"], "readOnly": false,
+    "example": {
+      "name": "Duct", "profile": {"kind": "profile", "sketch": "DuctSection", "index": 0},
+      "plane": "XZ", "waypoints": [["0 mm", "0 mm", "0 mm"], ["0 mm", "40 mm", "0 mm"]],
+      "constraints": [{"type": "coincident", "entities": ["route0.start", "origin"]}, {"type": "vertical", "entities": ["route0"]}],
+      "dimensions": [{"type": "distance", "entities": ["route0.start", "route0.end"], "expression": "40 mm"}]
+    },
+    "inputs": {
+      "profile": "Existing native section profile reference in the selected component. Orient/place the section appropriately for the generated route; no section-placement inference.",
+      "name": "Required waypoint-mode name; reserves name and name__route before mutation. Optional with an existing path.",
+      "waypoints": "Generated mode: array of at least two [x,y,z] length-expression arrays in sketch-local XY; z must evaluate to zero. Requires name/profile/waypoints and excludes path. Initial coordinates alone do NOT create persistent equations. Use dimensions and constraints to drive route geometry.",
+      "plane": "Waypoint mode only: native construction plane reference, default XY; controls the sketch-local frame.",
+      "interpolation": "Waypoint mode only: segments (default) or spline. segments creates one named curve route0, route1, ... per pair of waypoints. spline creates one fitted spline named route0 through all waypoints and excludes segments.",
+      "segments": "Waypoint/segments mode only: optional array with exactly waypoints.length-1 entries. Each is {type:line} or {type:arc,through:[three length expressions]}; arc uses a real three-point arc between adjacent waypoints through the supplied point. Omitted means all lines. Consecutive curve endpoints receive coincident constraints automatically; do not duplicate these connections in constraints. Arc points must be noncollinear.",
+      "constraints": "Waypoint mode only: array of {type,entities:[local selectors]}. Same supported constraint types and ordering as shape.revolved_profile profileData.constraints. Selectors: routeN, routeN.start/end/center for appropriate line/arc points, origin, or route0.fit0/fit1/... for spline fit points. Curves are not fixed. Constraints can anchor, orient and connect geometry; no automatic tangent/elbow constraints are inferred.",
+      "dimensions": "Waypoint mode only: array of driving {type,entities:[local selectors],expression,text?:[length expressions],orientation?:aligned|horizontal|vertical}. distance needs two points, angle two lines, radius/diameter one arc. orientation is distance-only. Spline fit-point distances are supported, not spline curvature dimensions. Text defaults to [10 mm,10 mm,0 mm]. Only these explicit dimensions preserve parameter expressions from the input; raw waypoint and arc-through expressions only initialize geometry.",
+      "path": "Alternative existing-path mode: {curves:[refs],chain:none|connected|tangent}; automatic chaining takes one seed. Requires profile/path and excludes waypoint-mode fields. Existing path dependencies are preserved.",
+      "twist": "Optional native sweep twist expression.", "taper": "Optional native sweep taper expression.",
+      "operation": "newBody (default), join, cut or intersect."
+    },
+    "limitations": ["Generated route geometry is planar in a caller-selected construction plane. No general 3D waypoint solver, automatic fillets/elbows, bend-radius optimizer, collision avoidance or automatic profile positioning. Fitted splines are genuine SketchFittedSplines, not claimed to be automatically parameterized by their input point expressions.", "Returns isFullyConstrained from Fusion and an explicit partial-dependency description. Raw waypoint coordinates are initialization data only unless the user binds fit points/endpoints with dimensions and constraints. Name collisions are no-op errors, never implicit reuse or overwrite.", "Schemas, local selectors, dimensional expression validity, nonzero lines, noncollinear arc points and generated names are checked before mutation. Solver conflicts, path self-intersections and sweep feasibility remain kernel checks. Multi-step recipes are not atomic."]
+  },
+  "shape.helix": {
+    "summary": "Generate a real helical centerline (BRep recipe, never native Coil) with optional section sweep, or sweep a caller-supplied existing helical path.",
+    "required": [], "readOnly": false,
+    "example": {"schemaVersion": 1, "frame": "component", "radius": "4 mm", "pitch": "5.75 mm", "turns": 8, "hand": "right", "startPhase": "0 deg", "tolerance": "0.01 mm"},
+    "inputs": {"schemaVersion": "Required 1 in generated mode.", "frame": "Required component in generated mode.", "radius": "Generated mode: positive helix radius length expression. Requires schemaVersion/frame and excludes path/profile.", "axis": "Generated mode: optional axis {origin:[x,y,z],direction:[x,y,z]} or native axis/edge ref; default +Z at origin.", "pitch": "Generated mode: positive length expression; exclusive with height (height = pitch * turns).", "turns": "Generated mode: positive number of turns; required with height when pitch is omitted.", "height": "Generated mode: positive total axial length expression; exclusive with pitch.", "hand": "right (default) or left.", "startPhase": "Angular expression, default 0 deg.", "tolerance": "Positive curve tolerance length, default 0.01 mm.", "maxSamples": "Integer 4..100000, default 10000.", "representation": "recipe (default) or native (blocked without persistent helix API).", "section": "Generated mode: optional profile ref to sweep along the generated helix.", "profile": "Existing-path mode: native section profile reference; exclusive with generated inputs.", "path": "Existing-path mode: existing helical path descriptor {curves:[refs],chain?:none|connected|tangent}. Source geometry owns pitch/radius dependencies; the handler does not certify the path is helical.", "twist": "Existing-path mode: optional section twist expression, NOT helix turns or pitch.", "taper": "Existing-path mode: optional section taper expression.", "operation": "newBody (default), join, cut or intersect.", "name": "Optional feature name."},
+    "limitations": ["Generated mode returns a sampled helix plus fitted NURBS recipe, not a native Coil; native persistent 3D helical path insertion is a declared gap. The documented CoilFeatures collection exposes no add/createInput.", "Pitch and height are contradictory; supply pitch, or turns+height. Existing-path sweep remains implemented but does not certify a helical path. Recipes are not atomic."]
+  }
+}

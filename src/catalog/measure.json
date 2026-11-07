@@ -1,0 +1,178 @@
+{
+  "measure.diameter": {
+    "summary": "Measure exact analytic diameter, never bounding-box width.",
+    "required": ["ref"], "example": {"ref": {"kind": "face", "name": "cylinder_face"}}, "readOnly": true,
+    "limitations": ["Only analytic cylinder, circle, arc, or sphere geometry; not cones, ellipses, or arbitrary bodies.", "Refs support core component/occurrence qualification; proxies retain assembly context. All assembly measurements require root-context occurrences; use full paths rather than nested native occurrence tokens."],
+    "inputs": {"ref": "Core entity reference to analytic geometry.", "units": "Length output: mm (default), cm, m, in."}
+  },
+  "measure.radius": {
+    "summary": "Measure analytic cylinder, circle, arc, or sphere radius.",
+    "required": ["ref"], "example": {"ref": {"kind": "face", "name": "cylinder_face"}, "units": "cm"}, "readOnly": true,
+    "limitations": ["Does not infer radius from an envelope or fit arbitrary geometry; occurrence-qualified proxy refs are supported."],
+    "inputs": {"ref": "Core entity reference.", "units": "mm (default), cm, m, in."}
+  },
+  "measure.distance": {
+    "summary": "Measure minimum geometry distance or signed/unsigned directional point separation.",
+    "required": ["a", "b"], "example": {"a": "BodyA", "b": "BodyB", "mode": "minimum"}, "readOnly": true,
+    "limitations": ["Minimum distance is unsigned and is not a penetration depth or guaranteed nominal wall thickness.", "Mixed native component frames are rejected; use occurrence-qualified proxies. Minimum mode converts native child-component entities to proxies only when their component has exactly one root-context occurrence. Zero or multiple matches require occurrence-qualified refs with full paths. The scalar and closest points remain in the original reported frame; automatically proxied closest points are transformed back to component local. Explicit proxies retain assembly coordinates.", "projected/axial accept point refs or expression coordinate arrays only, not surfaces or cylinder axis gaps."],
+    "inputs": {"a": "First entity ref; projected/axial also allow [x,y,z] length expressions.", "b": "Second entity ref or projection point.", "mode": "minimum (default): closest geometry; projected: absolute dot product; axial: signed b-a dot direction.", "direction": "Required unitless nonzero 3-vector for projected/axial; forbidden for minimum.", "space": "Required for projected/axial: assembly or component local; forbidden for minimum. Must match resolved refs. Arrays use this frame (selected component for local).", "units": "mm (default), cm, m, in; also applies to closest-point coordinates."}
+  },
+  "measure.angle": {
+    "summary": "Measure angle between lines/planes or three points using Fusion MeasureManager.",
+    "required": ["a", "b"], "example": {"a": "X", "b": "Y", "units": "deg"}, "readOnly": true,
+    "limitations": ["Only point, linear, and planar entities supported by measureAngle; second point is apex in three-point mode.", "Refs must share a component-local frame or use assembly proxies; no implicit cross-component transforms. Native child-component entities are passed to MeasureManager as proxies in the same unique root-context occurrence. Zero or multiple matching occurrences require explicit occurrence-qualified refs with full paths. The angle and reported input context are unchanged by this rigid placement."],
+    "inputs": {"a": "First core entity ref.", "b": "Second core entity ref (apex if points).", "c": "Third point ref for three-point angles.", "units": "deg (default) or rad."}
+  },
+  "measure.length": {
+    "summary": "Measure finite edge or sketch curve arc length.",
+    "required": ["ref"], "example": {"ref": {"kind": "edge", "name": "straight_edge"}}, "readOnly": true,
+    "limitations": ["One BRepEdge or finite sketch curve with an API length property; not a path aggregate or infinite axis."],
+    "inputs": {"ref": "Core ref, including proxy refs; sketch curves can be selected by token.", "units": "mm (default), cm, m, in."}
+  },
+  "measure.area": {
+    "summary": "Measure face/profile area or body/component/occurrence surface area.",
+    "required": ["ref"], "example": {"ref": "BodyA", "units": "mm2"}, "readOnly": true,
+    "limitations": ["Body/component area is total surface area, not cross-section area. Profiles and physical properties request HighCalculationAccuracy; not an exactness guarantee."],
+    "inputs": {"ref": "Face, profile, body, component, or occurrence core ref.", "units": "mm2 (default), cm2, m2."}
+  },
+  "measure.volume": {
+    "summary": "Measure body/component/occurrence volume in explicit units.",
+    "required": ["ref"], "example": {"ref": "BodyA"}, "readOnly": true,
+    "limitations": ["Uses high-accuracy Fusion physical properties, converting internal cm3. Surface bodies may have zero volume. Component definitions differ from occurrence instances."],
+    "inputs": {"ref": "Body, component, or occurrence core ref.", "units": "mm3 (default), cm3, m3."}
+  },
+  "measure.mass": {
+    "summary": "Measure physical-property mass from assigned Fusion materials.",
+    "required": ["ref"], "example": {"ref": "BodyA", "units": "kg"}, "readOnly": true,
+    "limitations": ["Uses assigned densities including default materials; does not independently verify density, manufacturing process, or material suitability."],
+    "inputs": {"ref": "Body, component, or occurrence core ref.", "units": "kg (default) or g."}
+  },
+  "measure.bounds": {
+    "summary": "Return geometric B-Rep axis-aligned bounds with min, max, size, and coordinate context.",
+    "required": ["ref"], "example": {"ref": "BodyA"}, "readOnly": true,
+    "limitations": ["Body bounds use preciseBoundingBox. Component bounds include direct bodies and recursive occurrence body proxies in the component frame; occurrence bounds include its recursive body proxies in assembly context. Root bounds count placed instances, not additional component definitions. Graphics, sketches, construction geometry, and meshes are excluded; hidden B-Rep bodies are included. Empty B-Rep geometry or invalid extents fail rather than returning infinite bounds.", "Face/edge refs use their B-Rep API boundingBox. AABB is orientation-dependent, not an analytic diameter or tight oriented envelope. Sketch-local bounds are deliberately excluded."],
+    "inputs": {"ref": "B-Rep body/face/edge, component, or occurrence core ref; occurrence qualification selects assembly context.", "units": "mm (default), cm, m, in."}
+  },
+  "measure.section": {
+    "summary": "Compute real body-plane intersection curves using temporary B-Rep geometry.",
+    "required": ["body", "plane"], "example": {"body": "BodyA", "plane": "XY", "mode": "curves"}, "readOnly": true,
+    "limitations": ["Only curves mode; no filled area, UI section feature, transparency manipulation, or persistent geometry.", "Null kernel result is reported as failure/no intersection ambiguity, never silently treated as a verified empty section.", "Curve serialization contains analytic descriptors where exposed, not complete NURBS control data. Coordinates/radii are labeled cm and angles rad; total lengths use requested units."],
+    "inputs": {"body": "Explicit body ref, native or occurrence-qualified proxy.", "plane": "Construction plane or planar face ref in the same coordinate context.", "mode": "curves only (default).", "units": "Intersection edge/total length: mm (default), cm, m, in."}
+  },
+  "measure.section-series": {
+    "summary": "Compute closed-loop areas and diameters at explicit body-plane stations.",
+    "required": ["body", "frame", "origin", "normal", "stations"],
+    "example": {"body": "BodyA", "frame": {"space": "assembly", "component": "root"}, "origin": ["0 mm", "0 mm", "0 mm"], "normal": [0, 0, 1], "stations": ["2 mm", "5 mm"]},
+    "readOnly": true,
+    "limitations": ["Coverage is only the requested discrete stations, not the continuous body or interval between stations. A series never independently certifies a pass.", "Each station needs native closed non-overlapping planar loops. Null/missing wires, open curves, invalid loops, incomplete loop coverage or kernel failures are unknown, never verified empty.", "Uses private temporary BRep copies in one explicitly declared frame and does not mutate document geometry. Precision is SDK-controlled and not certified exact; section area/equivalent-area diameter do not prove minimum wall or bore clearance.", "A synchronous kernel call cannot be interrupted by the best-effort time budget; no live Fusion qualification is implied."],
+    "inputs": {"body": "Explicit solid body reference in the declared frame.", "frame": "Exactly {space:'assembly'|'component local',component:componentRef}; must match the body coordinate context.", "origin": "Three explicit length expressions locating station zero in the declared frame.", "normal": "Three finite unitless numbers; normalized by the geometry API.", "stations": "Nonempty array of signed length expressions; each is an independent offset along normal.", "limits": "Optional limits object: stations<=256 (default 64), edges per station<=16384 (default 4096), kernelCalls<=4096 (default 512), bytes<=4194304 (default 1048576), timeMs<=120000 (default 30000). All are positive integers and the response fails closed when exceeded."}
+  },
+  "measure.witness-check": {
+    "summary": "Check a finite solid material or void witness with native Boolean volume evidence.",
+    "required": ["body", "witness", "frame", "expect", "volumeTolerance"],
+    "example": {"body": "BodyA", "witness": "RequiredMaterial", "frame": {"space": "assembly", "component": "root"}, "expect": "material", "volumeTolerance": "0.001 mm^3"},
+    "readOnly": true,
+    "limitations": ["Uses finite-solid Boolean evidence, never point samples. A set of contained sample points is not a witness proof.", "Material checks witness minus body; void checks witness intersect body. Only residual volume within the explicit tolerance passes; this is not a boundary/contact-clearance or topology proof.", "Invalid/failed Boolean results, nonfinite residuals and kernel failures are unknown, not empty or pass. Private temporary copies only; no document mutation.", "SDK kernel precision is not mathematically certified exact, and native Fusion qualification remains pending separate explicit consent."],
+    "inputs": {"body": "Explicit solid body whose material/void is being checked.", "witness": "Explicit finite positive-volume solid BRep region to check.", "frame": "Exactly {space:'assembly'|'component local',component:componentRef}; both bodies must resolve in this same frame.", "expect": "material: witness must be inside body; void: witness must be outside body.", "volumeTolerance": "Required nonnegative explicit volume expression; maximum allowed residual volume.", "limits": "Optional limits object: kernelCalls<=4096 (default 512), bytes<=4194304 (default 1048576), timeMs<=120000 (default 30000). All are positive integers; active SDK turns cannot be interrupted."}
+  },
+  "measure.thickness": {
+    "summary": "Measure analytic parallel-plane separation from normalized normals and origins, checking finite-face normal overlap.",
+    "required": ["a", "b"], "example": {"a": {"kind": "face", "name": "front_face"}, "b": {"kind": "face", "name": "back_face"}}, "readOnly": true,
+    "limitations": ["Faces must belong to the same body instance, be planar/parallel and have normal overlap. Does not prove solid material continuity between them. The finite-face overlap check uses assembly proxies for native child-component faces only when there is exactly one matching root-context occurrence; zero or multiple matches require explicit occurrence-qualified refs with full paths. Analytic plane distance and original input context are preserved; finite-face minimum distance is only the overlap guard.", "Global minimum wall, curved walls, and ray-sampled thickness are unsupported."],
+    "inputs": {"a": "First face core ref.", "b": "Second face core ref in same body/context.", "mode": "parallelPlanes only (default).", "tolerance": "Nonnegative length expression for overlap/coincidence checks; default 0.001 mm.", "angleTolerance": "Nonnegative angular expression below 90 deg; default 0.001 deg.", "units": "mm (default), cm, m, in."}
+  },
+  "measure.baseline.capture": {
+    "summary": "Capture a durable, owned baseline of exact solid BRep bodies by role.",
+    "required": ["bodies", "frame", "scope"], "example": {"bodies": [{"role": "housing", "body": {"kind": "body", "name": "Housing"}}], "frame": "component local", "scope": "durable"}, "readOnly": true, "nodeOnly": true, "documentPin": true,
+    "limitations": ["Exact temporary-BRep export/import is SDK-dependent; unavailable serializers return unsupported and never fall back to mesh.", "Requires the trusted broker-owned exact artifact staging binder and a saved, versioned DataFile. This captures geometry evidence; it does not prove native roundtrip until qualified in Fusion.", "Uses exact BRep booleans within explicit tolerances, not a proof of topology identity or physical/manufacturing acceptance."],
+    "inputs": {"bodies": "Nonempty array of {role,body} solid BRep refs; roles must be unique and explicit. Occurrence refs must pin a root-context occurrence/full path.", "frame": "Explicit coordinate frame string or {space,component} declaration matching all refs.", "scope": "Must be durable. Session-only object handles are not returned across SDK invocations.", "workBudgetMs": "Optional positive integer budget in milliseconds, at most 300000; cannot interrupt an active synchronous kernel operation."}
+  },
+  "measure.baseline.inspect": {
+    "summary": "Inspect an owned durable exact BRep baseline manifest and verify every payload checksum.",
+    "required": ["baseline"], "example": {"baseline": {"version": 1, "scope": "durable", "owner": "0000000000000000000000000000000000000000000000000000000000000000", "id": "example-baseline", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}}, "readOnly": true, "nodeOnly": true, "offline": true, "requiresDoc": false,
+    "limitations": ["Requires the trusted broker-owned artifact binder and exact SDK serializer. Does not compare against current geometry or establish native roundtrip correctness."],
+    "inputs": {"baseline": "Opaque durable baseline reference returned by measure.baseline.capture; do not edit or construct it manually.", "workBudgetMs": "Optional positive integer budget in milliseconds, at most 300000."}
+  },
+  "measure.baseline.compare": {
+    "summary": "Compare many current solid BRep bodies against an owned durable exact baseline.",
+    "required": ["baseline", "bodies", "tolerances"], "example": {"baseline": {"version": 1, "scope": "durable", "owner": "0000000000000000000000000000000000000000000000000000000000000000", "id": "example-baseline", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}, "bodies": [{"role": "housing", "body": {"kind": "body", "name": "Housing"}}], "tolerances": {"volume": "0.001 mm^3", "length": "0.001 mm", "angle": "0.001 deg"}}, "readOnly": true, "nodeOnly": true, "documentPin": true,
+    "limitations": ["Requires the trusted broker-owned exact artifact staging binder and a saved, versioned matching DataFile.", "Checks both A−B and B−A temporary solid differences and pose independently. Equal scalar volume is not equivalence. Kernel failures are unknown, not pass; tolerances are explicit.", "Exact method within tolerance is not a mathematical topology proof or native qualification."],
+    "inputs": {"baseline": "Opaque durable baseline reference from capture.", "bodies": "Current nonempty array of {role,body} solid refs; role and body/instance identity must match the baseline.", "tolerances": "Exactly {volume,length,angle}, each a nonnegative dimensional expression.", "workBudgetMs": "Optional positive integer budget in milliseconds, at most 300000; an active synchronous SDK call cannot be interrupted."}
+  },
+  "geometry.delta": {
+    "summary": "Compute finite added and removed solid geometry and test it against allowed/protected regions.",
+    "required": ["before", "after", "frame"],
+    "example": {"before": "BodyBefore", "after": "BodyAfter", "frame": {"space": "assembly", "component": "root"}, "allowed": {"include": ["AllowedRegion"], "exclude": ["Hole"]}},
+    "readOnly": true,
+    "limitations": ["Uses temporary solid BRep Boolean A−B and B−A; added and removed sets never cancel by scalar volume.", "Masks are actual finite solid unions with excluded solids; overlapping solids count once, holes/gaps remain uncovered, and protected regions fail even when they overlap allowed regions.", "Only positive-volume finite solid coverage is established. Zero-thickness face/edge changes, topology identity, manufacturability, and native Fusion qualification are not established.", "Kernel failure, stale/incomplete refs, invalid BReps, inconsistent partitions, or budget exhaustion are unknown, never an exact pass. SDK calls are indivisible and cannot be remotely cancelled."],
+    "inputs": {"before": "Explicit solid BRep body reference for the earlier state.", "after": "Explicit solid BRep body reference for the later state.", "frame": "Required {space:'assembly'|'component local',component:Ref}; every reference must resolve in this exact frame. Use occurrence-qualified proxies for placed instances.", "allowed": "Optional finite union mask {include:[solid refs],exclude?:[solid refs]}. Missing means empty; changes outside it fail. geometry.delta reports both differences regardless of control outcome.", "protected": "Optional finite union mask of forbidden solids, with optional exclusions. Any positive-volume added or removed overlap fails; protected takes precedence over allowed.", "operationBudget": "Optional positive port-turn budget, default 256, maximum 10000.", "timeBudgetMs": "Optional deadline, default 10000 ms, maximum 300000 ms; checked between indivisible SDK turns."}
+  },
+  "geometry.compare-region": {
+    "summary": "Require all finite solid changes to remain inside an allowed region and outside protected regions.",
+    "required": ["before", "after", "frame", "allowed"],
+    "example": {"before": "BodyBefore", "after": "BodyAfter", "frame": {"space": "assembly", "component": "root"}, "allowed": {"include": ["AllowedRegion"], "exclude": ["Hole"]}, "protected": {"include": ["KeepOut"]}},
+    "readOnly": true,
+    "limitations": ["Uses exact temporary solid BRep Booleans for added/removed finite sets and actual finite union masks; no points/rays/samples infer coverage.", "A positive finite change outside allowed or inside protected fails even if opposite-direction volume cancels. Zero-thickness changes, topology identity, and physical acceptance are outside this proof.", "Kernel failure, stale/incomplete refs, invalid BReps, inconsistent partitions, or budget exhaustion are unknown, never a sampled/exact pass. Native Fusion qualification remains separate."],
+    "inputs": {"before": "Explicit solid BRep body reference for the earlier state.", "after": "Explicit solid BRep body reference for the later state.", "frame": "Required {space:'assembly'|'component local',component:Ref}; all operands and masks must share it. Use occurrence-qualified proxies for exact placed instances.", "allowed": "Required finite mask {include:[solid refs],exclude?:[solid refs]}; interpreted as Union(include) − Union(exclude). Empty include allows no changes.", "protected": "Optional finite forbidden mask, interpreted independently as Union(include) − Union(exclude); protected wins over overlap with allowed.", "operationBudget": "Optional positive port-turn budget, default 256, maximum 10000.", "timeBudgetMs": "Optional deadline, default 10000 ms, maximum 300000 ms; kernel turns cannot be interrupted."}
+  },
+  "check": {
+    "summary": "Evaluate a scalar measurement against independently supplied dimensional acceptance bounds.",
+    "required": ["measurement"], "example": {"id": "OD", "source": "drawing", "measurement": {"operation": "measure.diameter", "data": {"ref": {"kind": "face", "name": "cylinder_face"}}}, "expected": "25 mm", "tolerance": "0.1 mm"}, "readOnly": true,
+    "limitations": ["Scalar measure operations only, excluding section/bounds. Requires min and/or max OR expected with optional tolerance (default zero); no implicit manufacturing tolerance. A passing check is not overall design acceptance."],
+    "inputs": {"measurement": "Object {operation, data}; operation is measure.diameter/radius/distance/angle/length/area/volume/mass/thickness.", "min": "Inclusive lower-bound expression with units or parameter reference.", "max": "Inclusive upper-bound expression.", "expected": "Target expression; mutually exclusive with min/max.", "tolerance": "Nonnegative expression in matching dimensions; default zero with expected.", "id": "User requirement identifier, returned as supplied.", "source": "User evidence/source label, not independently verified."}
+  },
+  "parameter.test": {
+    "summary": "Confirmed parameter perturbation with recompute, checks, timeline health, and finally restoration.",
+    "required": ["confirm"], "example": {"parameter": "width", "expressions": ["20 mm", "25 mm"], "confirm": true, "checks": []}, "readOnly": false,
+    "limitations": ["Legacy {parameter,expressions,checks} and v2 {cases} forms are mutually exclusive. V2 prevalidates every assignment and check before the first setter, then restores every assigned expression, recomputes, and compares timeline health after each case.", "V2 cases start from the original baseline. Restore failure stops later cases; primaryError and restoreErrors are separate. Budget exhaustion with required cases skipped is partial and never passed:true.", "timeBudgetMs schedules forward work only; the internal best-effort reserve is 1000 ms per case plus 250 ms per assignment, charged within that budget. A synchronous SDK call may return after its deadline; local finally still runs and reports budgetExceeded/actualElapsedMs. This estimate is not a transport-time guarantee.", "Mutates only local parameters synchronously; no save, upload, publication or asynchronous compensation. Not a transaction rollback; document may remain modified. Warnings fail sample health; text parameters are unsupported."],
+    "inputs": {"parameter": "Legacy form: existing numeric user/model parameter core ref.", "expressions": "Legacy form: nonempty array of compatible expression strings; dimensioned expressions require explicit units or parameter refs.", "cases": "V2 form: 1..1000 {id,assign:[{parameter,expression}],checks?} cases, total assignments <=10000. Each case returns to the original baseline.", "timeBudgetMs": "V2 scheduling budget, positive integer; default 180000 ms. Restoration reserve is internal, not caller-configurable.", "confirm": "Must be true; required before any mutation in either form.", "checks": "Existing scalar check payloads, legacy at the top level or per v2 case; default empty."}
+  },
+  "assembly.interference": {
+    "summary": "Compute solid overlap volume using temporary-body Boolean intersection.",
+    "required": ["a", "b"], "example": {"a": {"name": "Body", "occurrence": "PartA:1"}, "b": {"name": "Body", "occurrence": "PartB:1"}}, "readOnly": true,
+    "limitations": ["Two explicit solid body instances only; qualify refs with root-context occurrences (full paths for nested instances) for assembly placement. Nested native occurrence contexts are rejected. No live bodies added.", "Contact is zero clearance, not positive-volume interference. Kernel Boolean failure is an error, not a no-interference result. Volume mm3 and distance mm."],
+    "inputs": {"a": "First body core ref.", "b": "Second distinct body instance core ref.", "volumeTolerance": "Nonnegative overlap volume expression, default 0 mm^3. Does not classify intentional fits."}
+  },
+  "assembly.clearance": {
+    "summary": "Check solid overlap and minimum separation against a required clearance.",
+    "required": ["a", "b"], "example": {"a": "BodyA", "b": "BodyB", "minimum": "0.5 mm"}, "readOnly": true,
+    "limitations": ["Unsigned separation, not penetration depth or axial clearance; containment is checked by Boolean overlap first.", "Two solid body refs only in compatible contexts. Outputs distance mm, volume mm3. Contact passes only when minimum is zero and overlap is within volumeTolerance."],
+    "inputs": {"a": "First body core ref, occurrence qualification supported.", "b": "Second distinct body core ref.", "minimum": "Nonnegative length expression; default 0 mm.", "volumeTolerance": "Nonnegative allowed overlap volume expression; default 0 mm^3."}
+  },
+  "assembly.motion_check": {
+    "summary": "Check sampled translations of temporary solid geometry against explicit obstacles.",
+    "required": ["moving", "obstacles", "translations"], "example": {"moving": "BodyA", "obstacles": ["BodyB"], "translations": [["0 mm", "0 mm", "0 mm"], ["0 mm", "0 mm", "10 mm"]], "minimum": "0.5 mm"}, "readOnly": true,
+    "limitations": ["Only sampledTranslation: independent offsets from the original pose in reported component-local or proxy assembly context.", "No live transforms, joint solver, rotations, contact dynamics, or continuous collision proof; collisions between samples can be missed.", "Bodies must be solid. Outputs translation/distance mm and overlap volume mm3."],
+    "inputs": {"moving": "Explicit solid body core ref, occurrence qualification supported.", "obstacles": "Nonempty array of other solid body refs in compatible contexts.", "translations": "Nonempty array of [x,y,z] length expression offsets from original pose.", "minimum": "Optional nonnegative clearance expression, default 0 mm.", "volumeTolerance": "Allowed nonnegative overlap expression, default 0 mm^3.", "mode": "sampledTranslation only (default)."}
+  },
+  "audit": {
+    "summary": "Read full design counts, parameters, body envelopes, occurrences, and timeline health without activation.",
+    "required": [], "example": {}, "readOnly": true,
+    "limitations": ["Same payload as snapshot. Pure read: no recompute, document activation, camera change, tags, or files. Cached state may be stale.", "Counts distinguish definitions from occurrences; not full topology or an acceptance certification. Body volume mm3, bounds mm; transforms and parameter values explicitly label internal units."],
+    "inputs": {}
+  },
+  "snapshot": {
+    "summary": "Return serializable versioned observed design evidence for a later in-memory diff.",
+    "required": [], "example": {}, "readOnly": true,
+    "limitations": ["Not a saved document, transaction checkpoint, or full B-Rep geometry snapshot; no files written.", "Full-design scope includes definition counts, all parameters, occurrence transforms, body envelope/volume/topology counts, and timeline warnings; no activation/recompute. Units are explicit per measured field."],
+    "inputs": {}
+  },
+  "diff": {
+    "summary": "Compare prior snapshot JSON data with another snapshot or current observed state.",
+    "required": ["before"], "example": {"before": {"schema": "fmcad.measure.snapshot.v1", "document": {"name": "Example"}}, "after": {"schema": "fmcad.measure.snapshot.v1", "document": {"name": "Example"}}}, "readOnly": true,
+    "limitations": ["Exact structural comparison, array order significant; unstable entity tokens ignored. Not topology equivalence or tolerant geometric comparison.", "Accepts data, not filenames. Example shows minimal schema-tagged data; normally pass the complete snapshot result. No files read or written."],
+    "inputs": {"before": "Prior snapshot object with schema fmcad.measure.snapshot.v1; pass snapshot.result, not its executor envelope.", "after": "Optional snapshot object; omitted or null means current snapshot. Differences retain original field units."}
+  },
+  "status": {
+    "summary": "Return observed document modification state, counts, and timeline issues without claiming acceptance.",
+    "required": [], "example": {}, "readOnly": true,
+    "limitations": ["acceptance is always notEvaluated. noReportedIssues means cached timeline health only, not a verified design. No metadata writes or independent accepted status."],
+    "inputs": {}
+  },
+  "report": {
+    "summary": "Combine observed status with newly evaluated checks and explicitly unverified user metadata.",
+    "required": [], "example": {"checks": [{"measurement": {"operation": "measure.volume", "data": {"ref": "BodyA"}}, "min": "1 mm^3"}], "metadata": {"source": "user review"}}, "readOnly": true,
+    "limitations": ["checkOutcome covers only supplied checks; no checks means notEvaluated. Metadata remains unverified and cannot set independent acceptance status. No files, activation, or recompute."],
+    "inputs": {"checks": "Array of check input objects, evaluated now; default empty.", "metadata": "JSON object (not an array, scalar, or null), default {}, returned under userMetadata with metadataVerified:false, never treated as evidence of acceptance."}
+  }
+}

@@ -1,0 +1,169 @@
+{
+  "component.inspect": {
+    "summary": "Inspect a component definition and its native bodies/direct child occurrences. Returns component, bodies and occurrences.",
+    "required": [], "example": {"component": "root"}, "readOnly": true,
+    "inputs": {"component": "Unique component reference; defaults to the explicitly configured context component, or root when none is configured (not the UI selection)."},
+    "limitations": ["Definition inspection, not recursive assembly geometry. Does not activate or recompute."]
+  },
+  "component.create": {
+    "summary": "Create a component and occurrence directly under root. Returns component, occurrence, bodies and atomic:false.",
+    "required": ["name"], "example": {"name": "Bracket", "placement": {"translation": ["0 mm", "0 mm", "20 mm"]}}, "readOnly": false,
+    "inputs": {"name": "Nonempty component name, must not already exist.", "placement": "Optional absolute root-frame {translation:[three length expressions],axis:[three unitless numbers],angle:angle expression}. Axis and angle must appear together. Defaults to identity."},
+    "limitations": ["Root children only. Placement expressions are evaluated, not persistent equations. Parametric history must be at its end with no pending positions. No external file insertion, save or activation."]
+  },
+  "component.rename": {
+    "summary": "Rename a component definition; all linked occurrences reflect the change. Returns component and affectsAllInstances:true.",
+    "required": ["component", "name"], "example": {"component": "Bracket", "name": "MountBracket"}, "readOnly": false,
+    "inputs": {"component": "Unique component reference through core resolution.", "name": "Nonempty new definition name."},
+    "limitations": ["Not an occurrence-only label. References should use tokens after rename; duplicate display names remain ambiguous."]
+  },
+  "component.reparent": {
+    "summary": "Move an occurrence into a destination occurrence's component while preserving world pose. Returns the moved occurrence reference and affected paths.",
+    "required": ["occurrence", "target", "confirm"], "example": {"occurrence": "Bolt:1", "target": "Bracket:1", "confirm": true}, "readOnly": false,
+    "inputs": {"occurrence": "Native occurrence reference; direct root or nested (unambiguous root-context full path). External referenced occurrences and their ancestors are rejected.", "target": "Destination occurrence; its component becomes the parent. A repeated (multi-instance) destination requires sharedParentPolicy:allInstances.", "confirm": "Must be true; changes assembly hierarchy and may affect dependencies.", "sharedParentPolicy": "Optional; must be allInstances when the destination component is repeated. Nested reparent of a repeated source definition is rejected."},
+    "limitations": ["No root destination, external referenced occurrences/ancestors or component cycles. Repeated destination requires sharedParentPolicy:allInstances; every instance becomes a parent. World pose is preserved (moveToComponent) and read back. Requires end-of-history and no pending positions. Fusion failures propagate without rollback."]
+  },
+  "component.from_bodies": {
+    "summary": "Create a root child component and move explicit root bodies into it. Returns component, occurrence, moved bodies and atomic:false.",
+    "required": ["name", "bodies", "confirm"], "example": {"name": "Housing", "bodies": [{"token": "body-token"}], "confirm": true}, "readOnly": false,
+    "inputs": {"name": "New unique component name.", "bodies": "Nonempty array of distinct native root body references.", "confirm": "Must be true; bodies move, they are not copied.", "placement": "Optional absolute root-frame translation/axis/angle object as in component.create."},
+    "limitations": ["Only native root BRep bodies. Moves preserve assembly position. Does not reconstruct or relocate an entire original feature history. Non-atomic; later body moves may fail after component creation."]
+  },
+  "occurrence.add": {
+    "summary": "Instance an existing component or make an independent definition copy. Returns occurrence, component, copyMode and affected paths.",
+    "required": ["component", "copyMode"], "example": {"component": "Bolt", "copyMode": "linked", "placement": {"translation": ["20 mm", "0 mm", "0 mm"]}}, "readOnly": false,
+    "inputs": {"component": "Unique non-root component reference.", "copyMode": "Required explicit linked (addExistingComponent) or independent (addNewComponentCopy/Paste New).", "placement": "Optional absolute root-frame {translation:[length expressions],axis:[unitless numbers],angle:angle expression}; default identity.", "name": "Optional name of an independent component copy; forbidden for linked mode.", "destination": "Optional; 'root' (default) or an occurrence reference (direct root or nested full path). A repeated destination component requires sharedParentPolicy:allInstances; cycles are rejected.", "placementSpace": "Optional; only valid with placement and a non-root destination. root evaluates placement in the root frame; parent evaluates it in the destination parent-local frame. Required for nested placement.", "sharedParentPolicy": "Optional; must be allInstances when a linked destination parent is repeated (multi-instance)."},
+    "limitations": ["No external referenced component insertion. Destination may be root or a nested occurrence; placementSpace root|parent is required for nested placement. Placement expressions are not regenerated. Requires timeline end and no pending positions."]
+  },
+  "occurrence.duplicate": {
+    "summary": "Duplicate an occurrence with explicit linked versus independent semantics. Returns occurrence, component, copyMode and affected paths.",
+    "required": ["occurrence", "copyMode"], "example": {"occurrence": "Bolt:1", "copyMode": "independent", "name": "SpecialBolt"}, "readOnly": false,
+    "inputs": {"occurrence": "Native occurrence reference; direct root or nested (unambiguous root-context full path). External referenced occurrences and their ancestors are rejected.", "copyMode": "linked shares the definition; independent uses Paste New API to copy its own sketches/features.", "placement": "Optional absolute root-frame translation/axis/angle; omitted means copy source pose.", "name": "Optional independent-copy component name; prohibited in linked mode.", "destination": "Optional; 'root' (default) or an occurrence reference (direct root or nested full path). A repeated destination component requires sharedParentPolicy:allInstances; cycles are rejected.",       "placementSpace": "Optional; root|parent selects the coordinate frame a supplied placement is expressed in, and is required when placement is supplied with a non-root destination: root means root-frame (converted to the destination parent-local frame), parent means already in the destination parent-local frame.", "sharedParentPolicy": "Optional; must be allInstances when a linked destination parent is repeated (multi-instance)."},
+    "limitations": ["No external referenced source or destination. Nested destinations are resolved by unambiguous root-context path; placementSpace root|parent is required for nested placement. Without placement, a root duplicate copies the source transform2, while a nested duplicate converts the source world pose to the destination parent-local frame. Copy semantics are not inferred. Placement is a snapshot, not a parameter equation."]
+  },
+  "occurrence.transform": {
+    "summary": "Set an absolute root-frame occurrence transform and capture pending positions in parametric designs. Returns occurrence inspection, snapshot and relationship description.",
+    "required": ["occurrence", "placement"], "example": {"occurrence": "Bracket:1", "placement": {"translation": ["10 mm", "0 mm", "0 mm"], "axis": [0, 0, 1], "angle": "90 deg"}}, "readOnly": false,
+    "inputs": {"occurrence": "Ungrounded native direct root occurrence.", "placement": "Absolute {translation:[three length expressions],axis:[three finite unitless values],angle:angle expression}. Rotation is about root origin, then translation. Omitted translation is zero; axis/angle must be paired."},
+    "limitations": ["No body transforms, delta transforms, nested/proxy/external occurrences or persistent placement equations. Existing pending positions are rejected to avoid capturing unrelated work. End-of-history required. Joint solver may constrain placement; returned transform is actual API state."]
+  },
+  "occurrence.align": {
+    "summary": "Match a root occurrence's origin and axes to another occurrence once, with parametric position capture. Returns occurrence inspection and snapshot.",
+    "required": ["occurrence", "target"], "example": {"occurrence": "Bracket:1", "target": "Fixture:1"}, "readOnly": false,
+    "inputs": {"occurrence": "Ungrounded direct root occurrence to move.", "target": "Direct root occurrence whose transform is copied."},
+    "limitations": ["Origin-frame matching only, not face/edge alignment or a lasting joint. No nested/proxy/external occurrences. Existing pending positions rejected; timeline must be at end. Use joint commands for real relationships."]
+  },
+  "joint.rigid": {
+    "summary": "Create a rigid joint: default asBuilt preserves current placement; opt-in regular creates an associative root Joint with explicit origins and pose policy.",
+    "required": ["name", "occurrenceOne", "occurrenceTwo"], "example": {"name": "FixedMount", "occurrenceOne": "Base:1", "occurrenceTwo": "Bracket:1"}, "readOnly": false,
+    "inputs": {"name": "Nonempty unique joint name.", "occurrenceOne": "First distinct root-context occurrence reference; cannot be ancestor of occurrenceTwo.", "occurrenceTwo": "Second distinct root-context occurrence reference; cannot be ancestor of occurrenceOne.", "mode": "Optional asBuilt (default, legacy-compatible) or regular.", "confirm": "Required true in regular mode; optional true in asBuilt mode if supplied.", "originOne": "Regular only: {ref:JointOrigin} native to occurrenceOne's component, or {point,xAxis,zAxis} native SDK refs owned by that same input component.", "originTwo": "Regular only: matching JointOrigin or scoped point/axis refs owned by occurrenceTwo's component.", "posePolicy": "Regular only: preserve verifies all occurrence poses within declared tolerances; moveSecond permits movement only in occurrenceTwo's subtree.", "angle": "Regular only: angle expression, default 0 deg.", "offset": "Regular only: length expression, default 0 mm.", "isFlipped": "Regular only: boolean, default false.", "linearTolerance": "Regular only: required positive length tolerance for protected world-pose comparisons.", "angularTolerance": "Regular only: required positive angle tolerance for protected world-pose comparisons.", "groundingPolicy": "Regular only: only reject is accepted; grounded inputs are rejected and never automatically ungrounded."},
+    "limitations": ["As-built remains a pose-preserving AsBuiltJoint at current placement. Regular mode creates a native root Joint from explicit origins (an existing JointOrigin or native point/axis refs), may reposition only the declared second subtree under moveSecond, and retains a created joint for inspection if post-add pose/health validation fails; it never auto-ungrounds, deletes or replays. No external referenced occurrences. Return token references for later joint operations; core does not enumerate joints by name."]
+  },
+  "joint.revolute": {
+    "summary": "Create a real one-rotation-DOF as-built joint. Returns joint inspection, type and asBuilt:true.",
+    "required": ["name", "occurrenceOne", "occurrenceTwo", "point", "axis"], "example": {"name": "Hinge", "occurrenceOne": "Base:1", "occurrenceTwo": "Arm:1", "point": "origin", "axis": "Z"}, "readOnly": false,
+    "inputs": {"name": "Joint name.", "occurrenceOne": "First native direct root occurrence.", "occurrenceTwo": "Distinct native direct root occurrence.", "point": "ConstructionPoint, SketchPoint or BRepVertex native to root or in an explicit proxy context of one input occurrence. Bare origin always means the native root origin, regardless of selected component.", "axis": "X, Y or Z in the joint geometry frame; required, no inferred direction.", "limits": "Optional {rotation:{...}} using joint.limits fields; requires confirm:true. Prevalidated against input motion before add, then applied to the real created joint and read back. Native add does not reliably transfer input limits.", "confirm": "Must be true when limits are supplied."},
+    "limitations": ["As-built only; no repositioning. End-of-history and no pending positions required. No nested/external occurrences. Ground the intended base separately.", "Limits are evaluated doubles, not persistent parameter links. Actual created limits are read back. A mismatch reports the retained joint token, actual limits and non-atomic failure metadata; creation is not rolled back.", "Custom axis entities and raw vectors are not implemented. Installed API takes JointDirections plus a custom axis entity, not a Vector3D overload; rotationAxisVector is read-only."]
+  },
+  "joint.slider": {
+    "summary": "Create a real one-translation-DOF as-built joint. Returns joint inspection, type and asBuilt:true.",
+    "required": ["name", "occurrenceOne", "occurrenceTwo", "point", "axis"], "example": {"name": "Rail", "occurrenceOne": "Base:1", "occurrenceTwo": "Carriage:1", "point": "origin", "axis": "X"}, "readOnly": false,
+    "inputs": {"name": "Joint name.", "occurrenceOne": "First native direct root occurrence.", "occurrenceTwo": "Distinct native direct root occurrence.", "point": "Native root point/vertex or explicit point/vertex proxy belonging to one input occurrence. Bare origin always means native root origin.", "axis": "Required X, Y or Z in the joint geometry frame.", "limits": "Optional {slide:{...}} using joint.limits fields; prevalidated against input motion before add, then applied to the real created joint and read back.", "confirm": "Must be true when limits are supplied."},
+    "limitations": ["As-built only. No nested/external occurrences, custom axes or axis inference. Requires timeline end and no pending positions. Does not ground either part automatically.", "Limits are evaluated doubles, not persistent expressions. Created limits are read back; mismatch reports actual limits and retained joint token, not automatic deletion."]
+  },
+  "joint.cylindrical": {
+    "summary": "Create a real coaxial rotation-and-slide as-built joint. Returns joint inspection, type and asBuilt:true.",
+    "required": ["name", "occurrenceOne", "occurrenceTwo", "point", "axis"], "example": {"name": "ShaftGuide", "occurrenceOne": "Guide:1", "occurrenceTwo": "Shaft:1", "point": "origin", "axis": "Z"}, "readOnly": false,
+    "inputs": {"name": "Joint name.", "occurrenceOne": "First native direct root occurrence.", "occurrenceTwo": "Distinct native direct root occurrence.", "point": "Native root construction/sketch point or BRep vertex, or explicit proxy in one input occurrence. Bare origin always means native root origin.", "axis": "Required X, Y or Z in the joint geometry frame.", "limits": "Optional {rotation:{...},slide:{...}} using joint.limits fields. Both axes prevalidated against input motion before add, then applied to the real created joint and read back. Post-add failure retains the created reference; no automatic deletion.", "confirm": "Must be true when limits are supplied."},
+    "limitations": ["As-built only; preserves initial placement. No custom axes, axis inference, nested or external occurrences. Ground the base explicitly.", "Limits are evaluated doubles, not persistent parameter links. Creation readback mismatch reports actual limits and retained joint token; no automatic deletion or whole-operation rollback."]
+  },
+  "joint.inspect": {
+    "summary": "Read a real Joint/AsBuiltJoint, actual motion values and limits without mutation. Returns joint, motionType, occurrences, scope, units, limits and rotationValue/slideValue when available.",
+    "required": ["joint"], "example": {"joint": {"token": "joint-token"}}, "readOnly": true,
+    "inputs": {"joint": "Core-resolvable token reference to Joint or AsBuiltJoint; use returned tokens, not bare joint names."},
+    "limitations": ["limits.rotation/slide report actual minimumValue, maximumValue, restValue and all three is...ValueEnabled flags, including disabled stored values. Per-axis units are rad/cm. Values are doubles, not model parameter expressions; parametricExpressions:false.", "Native joint definitions and explicit occurrence proxies can be inspected. A null occurrence is preserved as null (for joints to root). No activation, animation, recompute, pending-position capture or selection changes. Joint names are not enumerated; use tokens."]
+  },
+  "joint.limits": {
+    "summary": "Set real joint limits after full prevalidation and explicit confirmation. Returns actual joint/motion/limit inspection. Use joint.inspect for read-only limits.",
+    "required": ["joint", "limits", "confirm"],
+    "example": {"joint": {"token": "joint-token"}, "confirm": true, "limits": {"rotation": {"minimumValue": "-45 deg", "maximumValue": "90 deg", "restValue": "0 deg", "isMinimumValueEnabled": true, "isMaximumValueEnabled": true, "isRestValueEnabled": false}}},
+    "readOnly": false,
+    "inputs": {"joint": "Native Joint/AsBuiltJoint token in this design. Component-native definitions are supported, including nested definitions, and affect all their instances. Proxy and external joint mutations are rejected.", "limits": "Nonempty object with rotation (revolute/cylindrical) and/or slide (slider/cylindrical). Each nonempty axis object accepts minimumValue, maximumValue, restValue as dimensional expression strings (explicit units or dimensional parameter references), and isMinimumValueEnabled, isMaximumValueEnabled, isRestValueEnabled as booleans. Omitted fields retain actual state; supplying a value does not implicitly enable it.", "confirm": "Must be true. Changes the real joint definition, not merely drive validation metadata."},
+    "limitations": ["Every supplied axis is validated before any writes. Values must be finite, stored minimum <= maximum, and an enabled or explicitly supplied rest must lie within enabled bounds. Irrelevant axes, unknown fields, empty edits and incompatible/unitless expressions are rejected. Requires timeline end and no pending positions.", "JointLimits properties are numeric doubles in rad/cm, not expression-owned ModelParameters. Expressions are evaluated once; no persistent parameter link is created. Neither this operation nor joint.drive creates parameter equations.", "Temporarily disables flags during assignments, then restores the requested flags and verifies readback. On failure attempts restoration of every edited axis and flag; raises an error containing original error, rollback.restored/errors, actual limits and atomic:false. Restoration can fail and is never claimed to be an atomic model/solver rollback.", "No custom axes, nested joint creation, motion animation or collision checking. Read-only inspection remains joint.inspect, not joint.limits without confirm."]
+  },
+  "joint.edit": {
+    "summary": "Rename or suppress/unsuppress an existing real joint. Returns current joint and motion inspection.",
+    "required": ["joint"], "example": {"joint": {"token": "joint-token"}, "name": "Hinge", "suppressed": false}, "readOnly": false,
+    "inputs": {"joint": "Joint/AsBuiltJoint token reference.", "name": "Optional nonempty new name.", "suppressed": "Optional boolean; requires parametric history. At least name or suppressed is required."},
+    "limitations": ["Native definitions in this design only; affects all instances. Proxy/external mutations rejected. No joint-type conversion, geometry replacement or offsets. Use joint.limits for confirmed limits editing. Does not fake editing by moving occurrences. Multiple edits are non-atomic."]
+  },
+  "joint.drive": {
+    "summary": "Set supported joint motion values after dimensional and limit validation; capture pending positions when applicable. Returns actual motion inspection and snapshot.",
+    "required": ["joint"], "example": {"joint": {"token": "joint-token"}, "rotation": "45 deg"}, "readOnly": false,
+    "inputs": {"joint": "Joint/AsBuiltJoint token reference.", "rotation": "Optional angular expression, only for motion exposing rotationValue.", "slide": "Optional length expression, only for motion exposing slideValue. Supply at least one motion value."},
+    "limitations": ["Native joint definitions in this design only, including nested component definitions; affects all instances. Proxy/external mutations rejected. Single motion state, not animation or collision checking. All supplied values are prevalidated against actual enabled minimum/maximum limits before writes. Returned motion values are actual API readback, not echoes of requested values.", "Values are evaluated doubles in rad/cm, not persistent equations. Requires no pending positions and timeline end; multi-DOF assignment is not atomic. Real solver behavior needs live verification; offline tests only verify the handler contract."]
+  },
+  "assembly.ground": {
+    "summary": "Ground an occurrence using the real isGrounded property. Returns occurrence and grounded state.",
+    "required": ["occurrence"], "example": {"occurrence": "Base:1"}, "readOnly": false,
+    "inputs": {"occurrence": "Direct root occurrence reference."},
+    "limitations": ["No nested/proxy/external occurrences. Requires timeline end and no pending positions. Grounding is not substituted for assembly joints."]
+  },
+  "assembly.unground": {
+    "summary": "Unground an occurrence. Returns occurrence and grounded state.",
+    "required": ["occurrence"], "example": {"occurrence": "Arm:1"}, "readOnly": false,
+    "inputs": {"occurrence": "Direct root occurrence reference."},
+    "limitations": ["No nested/proxy/external occurrences. Does not delete joints or rigid groups; those relationships can still constrain motion."]
+  },
+  "assembly.rigid_group": {
+    "summary": "Create a real RigidGroup from explicit occurrences. Returns rigidGroup reference.",
+    "required": ["occurrences"], "example": {"occurrences": ["Base:1", "Bracket:1"], "includeChildren": false, "name": "Mount"}, "readOnly": false,
+    "inputs": {"occurrences": "At least two distinct direct root occurrence references.", "includeChildren": "Boolean, default false, passed explicitly to RigidGroups.add.", "name": "Optional group name."},
+    "limitations": ["No nested/proxy/external seed occurrences. Requires timeline end and no pending positions. Does not ground the group or copy geometry."]
+  },
+  "assembly.parts": {
+    "summary": "Count component instances across all root occurrence paths. Returns parts rows and explicit scope description.",
+    "required": [], "example": {}, "readOnly": true, "inputs": {},
+    "limitations": ["Rows include component, quantity, occurrence refs and native bodyCount. Includes subassemblies, excludes root and uninstanced definitions. Not a flattened manufacturing BOM or material/part-number aggregation. Hidden occurrences are included."]
+  },
+  "feature.list": {
+    "summary": "List features in the selected component. Returns features as core inspection objects.",
+    "required": [], "example": {}, "readOnly": true, "inputs": {},
+    "limitations": ["Component.features only, not every sketch, construction datum, joint or timeline node. Does not recompute."]
+  },
+  "feature.suppress": {
+    "summary": "Suppress a parametric feature. Returns feature inspection and directly owned parameters.",
+    "required": ["feature"], "example": {"feature": {"token": "fillet-token"}}, "readOnly": false,
+    "inputs": {"feature": "Unique parametric feature reference."},
+    "limitations": ["Direct designs rejected. Dependent features may become unhealthy; use history.check afterward. No implicit deletion or suppression cascade."]
+  },
+  "feature.unsuppress": {
+    "summary": "Unsuppress a parametric feature. Returns feature inspection and directly owned parameters.",
+    "required": ["feature"], "example": {"feature": {"token": "fillet-token"}}, "readOnly": false,
+    "inputs": {"feature": "Unique parametric feature reference."},
+    "limitations": ["Direct designs rejected. Re-enabling may expose kernel errors; inspect history health. Does not unsuppress dependencies automatically."]
+  },
+  "feature.dependencies": {
+    "summary": "Report the available parameter-equation dependency graph through core param.dependencies. Returns parameters, coverage:partial and limitations.",
+    "required": [], "example": {"name": "wall"}, "readOnly": true,
+    "inputs": {"name": "Optional exact parameter name; omitted reports all design parameters."},
+    "limitations": ["Parameter graph only, not a complete feature/topology dependency DAG. Null lists mean that dependency direction is not exposed by the installed API. No inferred relationships from matching names or timeline order."]
+  },
+  "history.check": {
+    "summary": "Recursively read timeline health without recomputing or moving the marker; supports exact root, component-owner, or timeline-group scope.",
+    "required": [], "example": {}, "readOnly": true,
+    "inputs": {"scope": "Optional 'root' (default), {component:REF} exact owner, or {group:PATH} using current zero-based timeline indexes joined by /.", "recursive": "Optional boolean, default true. false leaves group children unvisited and cannot report healthy:true when any exist.", "allowSuppressed": "Optional array of explicit feature refs allowed to be suppressed; other suppressed leaves fail health."},
+    "limitations": ["Health reflects current computed state. Healthy is true only when every visited leaf is healthy, not rolled back, and either unsuppressed or explicitly listed in allowSuppressed.", "Timeline groups are recursively expanded when recursive:true. Duplicate native leaves are identified and counted once. Non-recursive group scopes are partial/unknown when children remain unvisited.", "No recompute, activation, marker movement, save, mutation or document.clear is performed."]
+  },
+  "history.recompute": {
+    "summary": "Explicitly run Design.computeAll and then report timeline health. Returns the same report as history.check with recomputed:true.",
+    "required": [], "example": {}, "readOnly": false, "inputs": {},
+    "limitations": ["computeAll completion does not imply healthy geometry; inspect healthy and individual messages. Does not save, activate, repair or move timeline markers. Timeline groups are not expanded."]
+  },
+  "change.preview": {
+    "summary": "Read-only validation/diff of a proposed feature name or owned model-parameter edit. Returns before/after parameter rows, proposedName, applied:false and scope.",
+    "required": ["feature"], "example": {"feature": {"token": "extrude-token"}, "parameters": {"d12": "5 mm"}}, "readOnly": true,
+    "inputs": {"feature": "Unique feature reference.", "name": "Optional proposed nonempty feature name.", "parameters": "Optional object of owned model parameter names to expressions; at least name or nonempty parameters is required."},
+    "limitations": ["Read-only scope is feature name/model parameter edits only, not arbitrary command preview. Resolves ownership and checks units without temporary parameters, mutation, recompute, activation or rollback. Does not predict geometry, collisions, cycles, dependent failures or atomicity."]
+  }
+}

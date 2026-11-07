@@ -1,0 +1,177 @@
+{
+  "entity.list": {
+    "inspectionSafe": true,
+    "summary": "List and describe entities in a component definition or occurrence context without activating the document.",
+    "required": [],
+    "example": {"kind": "body", "component": "root"},
+    "readOnly": true,
+    "limitations": ["Without kind, lists bodies, sketches, features and construction geometry in the selected component, not every face/edge/profile.", "Component, occurrence and parameter kinds list document-wide definitions/instances/parameters.", "Profile indices are not generated as implicit selection references; profile area uses Fusion default low accuracy (approximately +/- 1%)."],
+    "inputs": {
+      "kind": "Optional enum: component, occurrence, body, sketch, feature, face, edge, vertex, profile, plane, axis, point, parameter. Omit for primary component entities.",
+      "component": "Optional unique component reference; default is ctx.component. References are exact names or {token,kind,name,component,occurrence}. Tokens are opaque; name is only a display hint when token exists. Origin names: root, origin, XY, XZ, YZ, X, Y, Z.",
+      "occurrence": "Optional occurrence reference (exact name, full path, or token object). Produces assembly-context geometry proxies; must agree with component when both are supplied. Occurrence refs returned by the core also include path for nested-instance disambiguation."
+    }
+  },
+  "entity.inspect": {
+    "inspectionSafe": true,
+    "summary": "Resolve one unambiguous entity and report serializable references, geometry, dimensions and available state.",
+    "required": ["ref"],
+    "example": {"ref": {"kind": "profile", "sketch": "Section", "index": 1}},
+    "readOnly": true,
+    "limitations": ["Ambiguous names and split tokens raise errors rather than choosing the first result.", "A profile reference may use {kind:'profile',sketch:REF,index:INTEGER}; the zero-based index is only reported after explicit user selection. Alternatively loopCount selects exactly one profile by a positive loop count and cannot be combined with index. Omit both selectors only for a sketch with exactly one profile. Indices are not topology-stable.", "Analytic geometry has explicit type/coordinates; unsupported geometry types report their type without invented analytic properties. Lengths are cm and angles rad; profile bounds and centroid are in sketch space; default profile area accuracy is approximately +/- 1%."],
+    "inputs": {
+      "ref": "Required reference: exact name; origin root/origin/XY/XZ/YZ/X/Y/Z; {token,kind?,name?,component?,occurrence?,path?}; {kind?,name,component?,occurrence?}; or {kind:'profile',sketch:REF,index?:zero-based integer,loopCount?:positive integer,component?,occurrence?}. loopCount and index are exclusive; loopCount requires exactly one profile with that many loops. Accepted kind values: component, occurrence, body, sketch, feature, face, edge, vertex, profile, plane, axis, point, parameter. Named face/edge references normally use persistent aliases because Fusion topology lacks editable names. Returned occurrence refs carry path for token disambiguation. GM03 also accepts {query:Query,kind?:Kind}: the shared query-reference adapter requires exactly one result (default expect 1) and works in existing assignment/measurement/check refs. No first-match selection. See docs/ENTITY_QUERIES.md.",
+      "schemaVersion": "Optional integer 1.",
+      "frame": "Optional context (default), component, root, {occurrence:Ref}, {component:Ref}, {sketch:Ref}, or {datum:name,component?:Ref,occurrence?:Ref}. Native-to-root-to-output rigid transforms; lengths cm, angles rad. Root conversion of a repeated definition requires an explicit occurrence."
+    }
+  },
+  "entity.find": {
+    "inspectionSafe": true,
+    "summary": "Query current topology using analytic, interval, spatial and adjacency filters, expected counts and grouping.",
+    "required": [],
+    "example": {"kind": "body", "filters": {"attributes": [{"group": "CAT_GUARD", "name": "role", "value": "physical", "owner": "native"}]}, "unique": true},
+    "readOnly": true,
+    "limitations": ["Position means distance to the infinite plane, distance to the cylinder/infinite-line axis, or distance to the reported center/origin/point/start point for other supported types. It is not face containment or distance to the cylinder surface.", "Axes are unoriented: parallel and antiparallel both match. Missing requested analytic properties exclude a candidate. No tessellation, arbitrary surface recognition, or automatic topology choice.", "Attribute filters compare exact namespaced string values on the explicitly requested owner: nativeObject/native definition, contextual proxy, or owning occurrence. There is no owner fallback. Missing attributes/context exclude candidates. Occurrence-owned predicates require an explicit occurrence context, kind:occurrence, or instances:true.", "Without unique:true this returns all matches, including an empty list."],
+    "inputs": {
+      "kind": "Optional enum: component, occurrence, body, sketch, feature, face, edge, vertex, profile, plane, axis, point, parameter. Default face.",
+      "component": "Optional unique component name or reference; default selected component.",
+      "occurrence": "Optional occurrence name/full path/reference for assembly-space proxies; must agree with component.",
+      "schemaVersion": "Optional integer 1. Query results are snapshots; rerun after topology, pose or parameter changes.",
+      "scope": "Optional {component?:Ref,occurrence?:Ref,body?:Ref,feature?:Ref}; body/feature exclusive. Cannot combine with top-level component/occurrence. Feature face/edge/vertex scope uses currently surviving feature faces, body scope uses affected bodies.",
+      "instances": "Optional boolean false. True enumerates physical occurrences of the component, or the selected occurrence subtree; root includes direct root entities and all descendants. Repeated definitions retain separate full instance paths.",
+      "frame": "Optional context (default native component-local, proxy root), component, root, {occurrence:Ref}, {component:Ref}, {sketch:Ref}, or {datum:name,component?:Ref,occurrence?:Ref}. Explicit native-to-root-to-output rigid transformation; reflected/scaled frames rejected. Root conversion of ambiguous native definitions requires occurrence.",
+      "expect": "Optional nonnegative integer or {min?:integer,max?:integer}, inclusive. Default min 0 allows empty and multiple results; mismatch returns success:false/status:fail with all matches and ambiguity diagnostics. Exclusive with unique:true.",
+      "groupBy": "Optional distinct array of kind, geometry, component, occurrence, body, radius, length, axis, level. Exact-value grouping; axis is unoriented and rounded to 12 decimals. Level uses filters.level axis/at, otherwise Z bbox center. Each group has entities/count/statistics; missing values group as null.",
+      "filters": "Optional name, geometry (plane/cylinder/cone/sphere/torus/circle/ellipse/line/point/nurbsCurve/nurbsSurface), radius or length (length expression or inclusive {min?,max?}), axis (unitless nonzero vector), position (3 length expressions), bbox:{min:[3 expressions],max:[3 expressions],mode?:inside|intersects}, level:{axis:x|y|z,at?:min|max|center,value:expression|{min?,max?}}, adjacency:{kind:body|face|edge|vertex,filters?:nonrecursive filters,refs?:Ref[],expect?:count|{min?,max?}}, attributes:[{group,name,value,owner}]. Each attribute entry requires nonempty namespace group/name, exact string value (empty string is valid), and explicit owner: native (nativeObject/native definition, no proxy fallback), proxy (exact contextual proxy, nonmatch when no proxy context), or occurrence (candidate occurrence, or exact assemblyContext for a proxy, no native fallback). All predicates are ANDed; a missing attribute/context is a nonmatch. Proxy/occurrence owners require an occurrence scope, kind:occurrence, or instances:true; unavailable on component candidates. Adjacency has nonrecursive filters. Adjacency default min 1; same-kind adjacency shares boundary topology. tolerance defaults 0.001 mm; angleTolerance defaults 0.01 deg (0..90). Position uses analytic plane/axis/anchor distance, otherwise bbox center. AABB tests are conservative, not shape containment. All dimensional inputs use units or parameter expressions.",
+      "unique": "Optional boolean; true requires exactly one result and returns its description, otherwise returns entities and count."
+    }
+  },
+  "entity.alias": {
+    "summary": "Persist a user-specified alias in root-component attributes, preserving the target token and assembly context.",
+    "required": ["ref", "alias"],
+    "example": {"ref": {"kind": "body", "name": "BodyA"}, "alias": "mount_body"},
+    "readOnly": false,
+    "limitations": ["Aliases are document-wide user attributes, not geometry renames, and become persistent on the user's next document save. This operation does not save.", "Tokens can become stale or split after topology changes; aliases do not guarantee stable topology. Use confirm:true to replace a stale alias.", "Existing entity names can conflict with aliases and cause ambiguity; reserved origin names and the re: prefix are rejected."],
+    "inputs": {
+      "ref": "Required exact name or {token,kind?,component?,occurrence?} reference to an entity with an entity token; profile references with sketch and explicit index are also accepted.",
+      "alias": "Required nonempty document-wide name, excluding root, origin, XY, XZ, YZ, X, Y, Z and names starting re:.",
+      "confirm": "Optional boolean, must be exactly true to replace an existing different or stale alias. Reapplying an alias to the same resolved entity without confirm is a no-op."
+    }
+  },
+  "selection.inspect": {
+    "inspectionSafe": true,
+    "summary": "Inspect the current UI selection and selection points without changing selection or activating documents.",
+    "required": [],
+    "example": {},
+    "readOnly": true,
+    "limitations": ["The target document must already be active, otherwise an error is returned. Selection is UI-global, not a saved per-document selection set.", "Unsupported selected entity types can produce a serialization error instead of misleading text."],
+    "inputs": {}
+  },
+  "selection.highlight": {
+    "summary": "Highlight resolved entities by changing Fusion's active UI selection.",
+    "required": ["refs"],
+    "example": {"refs": ["mounting_face", "XY"], "replace": true},
+    "readOnly": false,
+    "limitations": ["Mutates UI selection and must run with readOnly:false. The target document must already be active; it is never activated automatically.", "All references are resolved before selection changes, but an API selection failure can leave a partially changed selection. No geometry, camera, or document-save changes are performed."],
+    "inputs": {
+      "refs": "Required array of entity references: exact names, aliases, origin names or {token,kind?,component?,occurrence?}. Empty array clears selection when replace is true.",
+      "replace": "Optional boolean, default true. True clears the selection before highlighting; false appends to the existing selection."
+    }
+  },
+  "param.apply": {
+    "summary": "Prevalidate a numeric user-parameter batch, order forward dependencies, and create or explicitly overwrite parameters with persistent metadata.",
+    "required": ["parameters"],
+    "example": {"parameters": [{"name": "wall", "expression": "3 mm", "unit": "mm", "comment": "Nominal wall", "metadata": {"source": "Approved drawing", "tolerance": "0.2 mm", "protected": true}}, {"name": "outside", "expression": "2 * wall + 40 mm", "unit": "mm"}, {"name": "count", "expression": 4, "unit": ""}], "overwrite": false},
+    "readOnly": false,
+    "limitations": ["Batch prevalidation checks expressions, forward references, cycles, units, overwrite policy and metadata before writes; Fusion API runtime failures are not transactionally rolled back and may leave partial changes (atomic:false).", "No-op equality preserves expression relationships: only whitespace-insensitive identical expressions, identical comments and metadata are no-ops. Equal evaluated numbers with different expressions still require overwrite:true.", "Model parameters, text parameters and unit changes are not supported. New names use ASCII identifiers; Fusion may impose additional reserved-name restrictions.", "Protection is stored on the parameter itself, independent of its name. Updating a protected parameter, including clearing protection, requires both overwrite:true and confirm:true. Tolerance and source are descriptive metadata, not enforced modeling bounds.", "Dependency expansion is for ordinary numeric parameter equations; it does not cover text expressions, external designs, configurations or every downstream feature constraint."],
+    "inputs": {
+      "parameters": "Required nonempty array of objects with only name, expression, unit, comment, metadata. name is an ASCII identifier; expression is a string with units or parameter references. Unitless finite numeric values are allowed only with unit:''; booleans are rejected. unit is required for new parameters (Fusion unit string such as mm, cm, in, deg, rad, kg, s, or empty for unitless) and defaults to the existing unit for updates. comment is optional text, preserved on update. metadata is an optional object containing protected (boolean), source (text), tolerance (nonnegative expression string compatible with parameter units, or null to clear it); omitted metadata keys are preserved. Forward batch references are supported in expression, not in metadata.tolerance validation; duplicate names and cycles are rejected.",
+      "overwrite": "Optional boolean, default false. Exactly true is required for any changed existing user parameter, including comment or metadata changes.",
+      "confirm": "Optional boolean. Exactly true is additionally required for changes to parameters whose existing metadata.protected is true."
+    }
+  },
+  "param.inspect": {
+    "summary": "Inspect numeric or text values, expressions, units, comments and parameter-attached source/tolerance/protection metadata.",
+    "required": [],
+    "example": {"names": ["wall", "outside"], "includeModel": false},
+    "readOnly": true,
+    "limitations": ["Numeric values are reported in Fusion internal units, not the displayed parameter unit. External referenced-design parameters are not included by design.allParameters.", "Source/tolerance/protection metadata is present only when attached by this core or compatible tooling."],
+    "inputs": {
+      "names": "Optional array of exact parameter names. Omit or null for all parameters in the chosen collection; [] returns none. Unknown names raise an error; duplicate requested names produce duplicate rows.",
+      "includeModel": "Optional boolean, default false. Exactly true includes model parameters in addition to user parameters."
+    }
+  },
+  "param.dependencies": {
+    "summary": "Report the parameter dependency graph exposed by the installed Fusion API, explicitly labeled partial coverage.",
+    "required": [],
+    "example": {"name": "wall"},
+    "readOnly": true,
+    "limitations": ["Coverage is always partial: this is a parameter-equation graph, not a complete feature/geometry/external-design impact analysis.", "Unavailable API dependency properties produce null lists, not a false claim of no dependencies. No recompute is performed."],
+    "inputs": {"name": "Optional exact user or model parameter name; omit to report all design parameters, excluding external referenced designs."}
+  },
+  "datum.plane": {
+    "summary": "Create a named offset, mid/bisector, or angled construction plane with expression-driven dimensions.",
+    "required": ["name"],
+    "example": {"name": "mount_plane", "mode": "offset", "plane": "XY", "offset": "25 mm"},
+    "readOnly": false,
+    "limitations": ["Creates in ctx.component and supplies ctx.occurrence as creation context when selected. Existing names are not overwritten.", "Mid mode follows Fusion's bisecting-plane behavior for nonparallel planes; coplanar planes are rejected by Fusion. Unsupported modes raise errors.", "Parametric behavior follows the existing component/design modeling mode; the core never switches designType. API failures may leave partial changes."],
+    "inputs": {
+      "name": "Required nonempty new plane name.",
+      "mode": "Optional enum offset (default), mid, angle.",
+      "plane": "Planar entity reference: origin XY/XZ/YZ, construction plane or planar face. Offset defaults to XY; angle requires this reference as its angular baseline.",
+      "offset": "Required in offset mode: signed length expression string with units or parameter reference.",
+      "plane1": "Required in mid mode: first planar face/construction plane reference.",
+      "plane2": "Required in mid mode: second planar face/construction plane reference.",
+      "axis": "Required in angle mode: linear edge, axis or line reference; origin X/Y/Z are accepted.",
+      "angle": "Required in angle mode: signed angle expression string, for example '30 deg' or an angle parameter."
+    }
+  },
+  "datum.axis": {
+    "summary": "Create a named associative axis from circular geometry, two planes, two points or an edge.",
+    "required": ["name", "mode"],
+    "example": {"name": "shaft_axis", "mode": "twoPlanes", "plane1": "XZ", "plane2": "YZ"},
+    "readOnly": false,
+    "limitations": ["Supported modes are circularFace, twoPlanes, twoPoints and edge only; free transient lines are not silently substituted for parametric axes.", "Parallel planes, coincident points or incompatible geometry fail explicitly through Fusion. Existing names are not overwritten.", "Creation occurrence is supplied when selected; associativity follows the existing design/component mode. No designType changes or automatic save."],
+    "inputs": {
+      "name": "Required nonempty new axis name.",
+      "mode": "Required enum circularFace, twoPlanes, twoPoints, edge.",
+      "face": "Required in circularFace mode: cylindrical, conical or toroidal BRep face reference.",
+      "plane1": "Required in twoPlanes mode: first plane/planar face reference.",
+      "plane2": "Required in twoPlanes mode: second nonparallel plane/planar face reference.",
+      "point1": "Required in twoPoints mode: first construction point, sketch point or BRep vertex reference.",
+      "point2": "Required in twoPoints mode: second distinct construction point, sketch point or BRep vertex reference.",
+      "edge": "Required in edge mode: linear/circular edge or supported sketch-curve reference. Sketch curves without a supported name lookup can be referenced by token."
+    }
+  },
+  "datum.point": {
+    "summary": "Create a named construction point from signed expression coordinates, three planes or an existing point/vertex.",
+    "required": ["name"],
+    "example": {"name": "mount_center", "mode": "coordinates", "point": ["10 mm", "-5 mm", "25 mm"]},
+    "readOnly": false,
+    "limitations": ["Coordinate mode uses three hidden, expression-driven offset planes and their intersection, rather than fragile unsigned sketch dimensions. It creates named helper planes name__x/name__y/name__z, reported in helpers, and preserves signed zero crossings in parametric designs.", "Coordinate expressions are local to the selected component, even when selected through an occurrence. Reference/threePlanes modes require native geometry owned by that component; cross-component/proxy inputs are explicitly rejected.", "Associativity depends on the existing component/design mode. No direct-mode switch, transient Point3D fallback or automatic save; Fusion failures may leave helper geometry."],
+    "inputs": {
+      "name": "Required nonempty new construction-point name; coordinate mode also reserves name__x/name__y/name__z in construction planes.",
+      "mode": "Optional enum coordinates (default), threePlanes, reference.",
+      "point": "Required in coordinates mode: [x,y,z], each a signed length expression string with explicit units or parameter reference, in component-local coordinates.",
+      "plane1": "Required in threePlanes mode: first native planar face or construction plane reference in selected component.",
+      "plane2": "Required in threePlanes mode: second native planar face or construction plane reference.",
+      "plane3": "Required in threePlanes mode: third native planar face or construction plane reference, giving one intersection point.",
+      "ref": "Required in reference mode: native sketch point or BRep vertex reference in selected component (the Fusion setByPoint API does not accept arbitrary datum-point types)."
+    }
+  },
+  "datum.frame": {
+    "summary": "Store a named right-handed component-local transform as explicit persistent metadata, not a native Fusion coordinate system.",
+    "required": ["name", "origin", "xAxis", "yAxis"],
+    "example": {"name": "mount_frame", "mode": "metadata", "origin": ["0 mm", "0 mm", "25 mm"], "xAxis": [1, 0, 0], "yAxis": [0, 1, 0]},
+    "readOnly": false,
+    "limitations": ["Representation is named transform metadata in component attributes, not a native coordinate-system feature or a modeling entity accepted by ctx.resolve. Fusion UserCoordinateSystem is preview-only and documented as unsuitable for distributed programs.", "The matrix is a numeric snapshot: origin expressions are recorded but are not regenerated when parameters change. Orientation vectors are numeric unitless directions.", "Frames use component-local coordinates, not occurrence-world coordinates. Attributes persist on the user's next save; this operation does not save. There is no dedicated frame read operation; reapplying identical inputs returns changed:false."],
+    "inputs": {
+      "name": "Required nonempty component-scoped frame name.",
+      "mode": "Optional enum metadata (only supported value, also default); other modes raise errors.",
+      "origin": "Required three component-local length expression strings [x,y,z], with explicit units or parameter references.",
+      "xAxis": "Required three finite unitless numbers defining a nonzero X direction; normalized before storage.",
+      "yAxis": "Required three finite unitless numbers defining a nonzero Y direction perpendicular to X within 1e-9 normalized dot product. Z is X cross Y.",
+      "confirm": "Optional boolean. Exactly true is required to replace different existing frame metadata; identical metadata is a no-op."
+    }
+  }
+}

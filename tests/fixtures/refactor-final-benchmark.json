@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "nodeEnv": "production",
+  "samples": 5,
+  "warmIterations": 5,
+  "clients": 4,
+  "protocolVersion": "2025-06-18",
+  "config": {
+    "backend": "mcp",
+    "routing": "queue",
+    "timeoutMs": 180000,
+    "queueAutoStart": false
+  },
+  "operations": [
+    "public-api-import",
+    "offline-cli-help",
+    "mcp-initialize",
+    "mcp-tools-list",
+    "cad-prepare-bundle",
+    "fake-queue-status"
+  ],
+  "excluded": [
+    "Fusion SDK",
+    "global broker and IPC",
+    "physical geometry",
+    "user project and .cad data"
+  ]
+}

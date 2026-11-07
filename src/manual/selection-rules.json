@@ -1,0 +1,226 @@
+{
+  "selection.rule.define": {
+    "sections": [
+      {
+        "title": "Scope and Persistence",
+        "text": "Define a reusable semantic entity query, not a saved native selection set. Explicitly scope every rule to component, occurrence, body, feature or instances:true and include an explicit expect cardinality. Filters use the same grammar as entity.find; exclusions are applied in the same query scope before the final count is checked. The returned artifact reference is project/document-owned and must be retained for later calls."
+      },
+      {
+        "title": "Resolution and Provenance",
+        "text": "Definition queries current Fusion topology through the existing entity resolver and stores rule version, project/document identity, exact saved source version, instance scope, predicates, expected count and previous references as provenance. References do not define matching or enable first-match resolution. Definition fails when the initial cardinality is unsatisfied."
+      },
+      {
+        "title": "Verification Boundary",
+        "text": "Native Fusion operations and token lineage are not qualified by offline tests. No live qualification or restore is implied; see docs/SELECTION_RULES.md and tests/fixtures/selection-rules-native.json."
+      },
+      {
+        "title": "Return Contract",
+        "text": "Returns {success,operation,result}. result contains schemaVersion:1, status:pass, ruleId, count, selected refs/entities, excludedCount, provenance, method, limitations, and artifact:{version,artifactId,projectId,documentFileId,documentCreationId,sha256}. The initial query must satisfy its explicit expected cardinality before an owned immutable manifest is written. Query/cardinality, owner-pin, or artifact-write errors fail the call; retain the exact artifact reference for later operations."
+      },
+      {
+        "title": "Python Helper Boundary",
+        "text": "FMCAD.selection_rule_define is available for inline helper-script composition and returns a manifest, but the in-Fusion Python helper has no ArtifactStore port and does not persist it. Use this catalog operation through CLI/MCP for durable project/document ownership."
+      }
+    ],
+    "examples": [
+      {
+        "label": "Define one scoped housing face",
+        "data": {
+          "ruleId": "housing-side",
+          "query": {
+            "kind": "face",
+            "scope": {
+              "body": {
+                "name": "Housing"
+              }
+            },
+            "filters": {
+              "geometry": "plane",
+              "axis": [1, 0, 0]
+            },
+            "expect": 1
+          },
+          "exclude": []
+        },
+        "requires": "Open and save the exact project document; replace Housing with an unambiguous discovered body reference. Pin with --doc-file-id.",
+        "output": "result.artifact is an opaque artifact ID plus project/document ownership and SHA-256. Keep it for later selection.rule.inspect/resolve/check calls."
+      }
+    ],
+    "audit": {
+      "sources": [
+        "runtime/python/fmcad/domain/selection_rules.py",
+        "runtime/python/fmcad/adapters/fusion/selection_rules.py",
+        "src/selection-rules.js",
+        "packages/node-adapters/src/persistence/artifact-store.ts"
+      ],
+      "verified": [
+        "Existing entity-query resolver is reused",
+        "Explicit scope and expected cardinality are required",
+        "Manifest is stored durably through the shared core ArtifactStore port"
+      ],
+      "tests": [
+        "tests/selection_rules_test.py",
+        "tests/selection-rules-store.test.js",
+        "tests/selection-rules-e2e.test.js"
+      ],
+      "gaps": [],
+      "bugs": []
+    }
+  },
+  "selection.rule.inspect": {
+    "sections": [
+      {
+        "title": "Inspect Without Querying Topology",
+        "text": "Load and validate the stored manifest's artifact hash and exact project/document ownership. The pinned --doc-file-id must match the stored DataFile. Inspection checks the current Fusion document identity but does not enumerate or resolve topology."
+      },
+      {
+        "title": "Return Contract",
+        "text": "Returns {success,operation,result}. For a valid stored artifact, result contains schemaVersion:1, status:pass, ruleId, revision, owner/source identity, instanceScope, expectedCardinality, lastResolution, provenance, limitations, and artifact (the exact original reference). A missing artifact returns success:false, result.status=missing, ruleId:null and the input artifact reference. Hash/owner/pin conflicts are errors; inspect never resolves topology or advances a baseline."
+      },
+      {
+        "title": "Python Helper Boundary",
+        "text": "FMCAD.selection_rule_inspect accepts an inline manifest during a helper run; it does not load or verify a durable artifact. Use this catalog operation through CLI/MCP for owned artifact inspection."
+      }
+    ],
+    "examples": [
+      {
+        "label": "Inspect the saved rule",
+        "data": {
+          "artifact": {
+            "version": 1,
+            "artifactId": "selection_artifact_1",
+            "projectId": "project_selection_1",
+            "documentFileId": "file_selection_1",
+            "documentCreationId": "creation_selection_1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "requires": "Use the exact artifact reference returned by selection.rule.define and the same saved document pin.",
+        "output": "Returns the stored rule version, predicate/scope, expected cardinality, source version and provenance. Missing artifacts report missing; another owner or a bad hash is rejected."
+      }
+    ],
+    "audit": {
+      "sources": [
+        "src/selection-rules.js",
+        "packages/node-adapters/src/persistence/selection-rules.ts",
+        "packages/node-adapters/src/persistence/artifact-store.ts"
+      ],
+      "verified": [
+        "Hash-checked artifact read",
+        "Project/document scope validation",
+        "Active document identity validation without topology enumeration"
+      ],
+      "tests": [
+        "tests/selection-rules-store.test.js",
+        "tests/selection-rules-e2e.test.js"
+      ],
+      "gaps": [],
+      "bugs": []
+    }
+  },
+  "selection.rule.resolve": {
+    "sections": [
+      {
+        "title": "Current Topology and Change Status",
+        "text": "Re-run the stored semantic query and exclusions against current native topology. Status is resolved, split, merge, missing, stale or ambiguous. A saved source-version change is stale even when filters still match. Only an unambiguous resolved query satisfying expected cardinality can advance the baseline, and it publishes a new immutable artifact reference. Historical tokens are compared only to report changes; they never choose or repair a current entity."
+      },
+      {
+        "title": "Failure Semantics",
+        "text": "On split/merge/missing/stale/ambiguous, success is false, the old artifact remains the baseline, and current candidates/change diagnostics are returned. Do not substitute a returned candidate or retry an uncertain backend turn as if it had not run."
+      },
+      {
+        "title": "Return Contract",
+        "text": "Returns {success,operation,result}; result includes schemaVersion:1, status:resolved|split|merge|missing|stale|ambiguous, passed, ruleId/revision, source and sourceChanged, expectedCardinality/count, current refs/entities, excludedCount, changes, provenance, limitations and artifact. success/passed are true only for one-to-one resolved topology at the unchanged saved source version with the full expected cardinality. Only resolved status may advance the baseline, and it returns the current artifact reference (a new immutable reference only when the manifest changed); all other statuses retain the original artifact and are non-passing."
+      },
+      {
+        "title": "Python Helper Boundary",
+        "text": "FMCAD.selection_rule_resolve accepts and returns an inline manifest in a helper run but does not persist a new baseline. Use this catalog operation through CLI/MCP for a durable updated artifact."
+      }
+    ],
+    "examples": [
+      {
+        "label": "Resolve from current topology",
+        "data": {
+          "artifact": {
+            "version": 1,
+            "artifactId": "selection_artifact_1",
+            "projectId": "project_selection_1",
+            "documentFileId": "file_selection_1",
+            "documentCreationId": "creation_selection_1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "requires": "Use the returned artifact reference, pin the exact document with --doc-file-id, and ensure the saved source version is unchanged.",
+        "output": "A resolved result returns current semantic refs and the current immutable artifact reference. Changed topology, changed source version or cardinality mismatch returns an explicit non-passing status."
+      }
+    ],
+    "audit": {
+      "sources": [
+        "runtime/python/fmcad/adapters/fusion/selection_rules.py",
+        "runtime/python/fmcad/domain/selection_rules.py",
+        "src/selection-rules.js"
+      ],
+      "verified": [
+        "Current query is rerun; previous refs never select or repair a result",
+        "Change statuses are explicit",
+        "Only resolved results advance persistent evidence"
+      ],
+      "tests": [
+        "tests/selection_rules_test.py",
+        "tests/selection-rules-e2e.test.js"
+      ],
+      "gaps": [],
+      "bugs": []
+    }
+  },
+  "selection.rule.check": {
+    "sections": [
+      {
+        "title": "Acceptance Check",
+        "text": "Run the same current-topology resolution and return a pass only for resolved status with explicit expected cardinality and unchanged saved document version. All other statuses are non-passing and retain the old manifest."
+      },
+      {
+        "title": "Return Contract",
+        "text": "Returns {success,operation,result}, where result contains schemaVersion:1, status:resolved|split|merge|missing|stale|ambiguous, passed, ruleId/revision, source and sourceChanged, expectedCardinality/count, current refs/entities, excludedCount, changes, provenance, limitations and artifact. Only status=resolved with passed=true succeeds; stale, split, merge, missing, ambiguous, or an ownership/hash error cannot pass or advance the artifact."
+      },
+      {
+        "title": "Python Helper Boundary",
+        "text": "FMCAD.selection_rule_check accepts an inline manifest in a helper run and returns the status without durable storage. Use this catalog operation through CLI/MCP for an owned artifact check."
+      }
+    ],
+    "examples": [
+      {
+        "label": "Require one current matching face",
+        "data": {
+          "artifact": {
+            "version": 1,
+            "artifactId": "selection_artifact_1",
+            "projectId": "project_selection_1",
+            "documentFileId": "file_selection_1",
+            "documentCreationId": "creation_selection_1",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "requires": "Use the stored artifact reference and the exact project/document pin.",
+        "output": "Only result.status=resolved and result.passed=true passes. This does not certify physical CAD quality or native geometry correctness."
+      }
+    ],
+    "audit": {
+      "sources": [
+        "runtime/python/fmcad/adapters/fusion/selection_rules.py",
+        "src/selection-rules.js"
+      ],
+      "verified": [
+        "Exact expected cardinality is mandatory",
+        "Ambiguous and stale results cannot pass",
+        "Successful changed baseline is stored through the shared ArtifactStore"
+      ],
+      "tests": [
+        "tests/selection_rules_test.py",
+        "tests/selection-rules-e2e.test.js"
+      ],
+      "gaps": [],
+      "bugs": []
+    }
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "runId": "selection-rules-native-qualification-v1",
+  "status": "prepared-not-run",
+  "requiresExplicitAuthorization": true,
+  "fixtureKind": "native-acceptance-plan",
+  "document": {
+    "name": "FMCAD_SelectionRules_Qualification",
+    "mustBeNewAndDisposable": true,
+    "saveBeforeRun": false,
+    "cleanup": "Discard the synthetic document after verifying unchanged pre-existing documents."
+  },
+  "cases": [
+    {
+      "id": "reorder",
+      "purpose": "Verify current predicate resolution is independent of native enumeration order.",
+      "setup": "Create two distinguishable planar faces and define one rule for each exact predicate.",
+      "action": "Reorder the native candidate collection through a supported model edit, then resolve both rules.",
+      "expectedStatus": "resolved",
+      "requiredEvidence": [
+        "same semantic face",
+        "same project/document/source provenance",
+        "no token-based target repair"
+      ]
+    },
+    {
+      "id": "repeated-identical-instances",
+      "purpose": "Ensure identical component definitions remain separated by exact occurrence scope.",
+      "setup": "Create two linked occurrences of one component containing an identical face and define one rule per occurrence.",
+      "action": "Resolve each rule after reversing occurrence enumeration order.",
+      "expectedStatus": "resolved",
+      "requiredEvidence": [
+        "each result remains in its original occurrence path",
+        "unscoped expected-one rule reports ambiguous"
+      ]
+    },
+    {
+      "id": "split",
+      "purpose": "Report native token lineage that maps one prior face to multiple current query matches.",
+      "setup": "Define an expected-one face rule on a disposable body.",
+      "action": "Split the selected face with a native Fusion feature and resolve the original manifest.",
+      "expectedStatus": "split",
+      "requiredEvidence": [
+        "all current predicate matches",
+        "split change record",
+        "manifest baseline not advanced"
+      ]
+    },
+    {
+      "id": "merge",
+      "purpose": "Report multiple prior face lineages that map to one current query match.",
+      "setup": "Define an expected-two face rule on two adjacent disposable faces.",
+      "action": "Merge the faces with a native Fusion feature and resolve the original manifest.",
+      "expectedStatus": "merge",
+      "requiredEvidence": [
+        "current query result",
+        "merge change record",
+        "manifest baseline not advanced"
+      ]
+    },
+    {
+      "id": "deleted-and-stale",
+      "purpose": "Fail closed on deleted native geometry and changed source document version.",
+      "setup": "Define a rule for one disposable face and retain the manifest outside the model.",
+      "action": "Delete the face, check for missing; separately change and save the source, check for stale.",
+      "expectedStatus": ["missing", "stale"],
+      "requiredEvidence": [
+        "no substituted entity",
+        "source version shown",
+        "failed checks do not advance the manifest"
+      ]
+    },
+    {
+      "id": "ownership-and-restore",
+      "purpose": "Reject another project/document and confirm the qualification leaves no edits in existing documents.",
+      "setup": "Retain a manifest owned by the disposable qualification document.",
+      "action": "Attempt resolution from a different document identity, then discard only the synthetic document.",
+      "expectedStatus": "ownership-conflict",
+      "requiredEvidence": [
+        "conflicting document is not queried",
+        "original open-document set and saved versions unchanged"
+      ]
+    }
+  ]
+}

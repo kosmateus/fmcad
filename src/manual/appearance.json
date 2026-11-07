@@ -1,0 +1,102 @@
+{
+  "appearance.create": {
+    "sections": [
+      {"title": "Inputs And Discovery", "text": "Requires nonempty name:string; optional id:exact appearance ID, library:exact loaded library ID, surfaceType:opaque|metal|transparent. Discover IDs with appearance.list {}; query a loaded library for foreign IDs. Passing id/library copies that appearance into the Design with the new name (Appearances.addByCopy); omitting id uses the preview Appearances.add when the SDK exposes it. New name must be unique among design appearances; a local ID/name collision is rejected, never assumed equivalent."},
+      {"title": "Safety And Semantics", "text": "The copy is design-local and its actual ID is authoritative, never assumed from the requested name. A library resource is never edited in place. No physical material, coating or mass is implied. No rollback; a runtime failure may leave the copy."},
+      {"title": "Return Contract", "text": "result:{created:{id:string,name:string},requested:{id:string|null,library:string|null},id:string,copiedFrom:string|null,properties:[{id:string,name:string,isReadOnly:boolean,type:string,units?:string,value:typed,hasConnectedTexture?:boolean,hasLimits?:boolean}],limitations:string[],affected:[{ref:{kind:appearance,id:string},before:null,after:{id:string,name:string}}]}. Wrapper:{success:boolean,operation:string,document:string,result:object,created:reference[]}."}
+    ],
+    "examples": [
+      {"label": "Copy a discovered library appearance", "data": {"name": "Custom Paint", "id": {"$ref": "styles.result.items.0.id"}, "library": {"$ref": "styles.result.library"}}, "requires": "Earlier styles: appearance.list {} returns a loaded library and items; standalone substitute actual id/library and a unique design name.", "output": "result.id is the actual local copy ID; reuse it without library on later assignments."},
+      {"label": "Copy a design-local appearance", "data": {"name": "Variant", "id": "appearance-id"}, "requires": "appearance-id from a prior appearance.list {}; unique new name in the design.", "output": "result.copiedFrom=appearance-id; created.id is the new local ID."}
+    ],
+    "audit": {"sources": ["assets/cad/appearance.py:appearance_create,_style_collection,_style_properties,_style_value", "assets/cad/core.py:_cad_fields,_cad_require_result,_cad_items,_cad_unique"], "verified": ["copy and neutral-add branches", "name/ID collision rejection and actual-ID return", "no library edit in place"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+  },
+  "appearance.edit": {
+    "sections": [
+      {"title": "Inputs And Discovery", "text": "Requires id:exact design-local appearance ID; optional name:string and properties:nonempty array of {id,value}. Discover IDs with appearance.list {}. Library appearances are rejected; copy first with appearance.create. property value types: FloatProperty finite number, IntegerProperty int, BooleanProperty bool, StringProperty string, ChoiceProperty choice name string, ColorProperty [r,g,b] or [r,g,b,a] integers 0..255."},
+      {"title": "Safety And Semantics", "text": "Only design-local resources are edited. Read-only properties are rejected. Setting a FloatProperty value removes any connected texture. name must remain unique. No rollback; a runtime failure may leave partial edits."},
+      {"title": "Return Contract", "text": "Enveloped result (schemaVersion 1): status:pass|fail, operation:appearance.edit, documentIdentity:{creationId:string|null,name:string}, units:{length:cm,angle:rad}, frame:{space:component,component:reference}, associativity:nativeProperty, warnings:string[], method:string, limitations:string[], provenance:{requirement:GM29,source:docs/APPEARANCES.md}, affected:[{ref:{kind:appearance,id:string},before:object,after:object}], result:{id:string,changed:boolean,changedFields:string[],propertyChanges:[{id:string,before:object,after:object}],before:object,after:object}."}
+    ],
+    "examples": [
+      {"label": "Rename and set roughness", "data": {"id": "appearance-id", "name": "Matte Red", "properties": [{"id": "surface_roughness", "value": 0.4}]}, "requires": "appearance-id is a design-local appearance from appearance.list {}; surface_roughness exists in its appearanceProperties.", "output": "result.changed=true; result.after.properties reflects the new value; propertyChanges[0].before/after are typed."}
+    ],
+    "audit": {"sources": ["assets/cad/appearance.py:appearance_edit,_style_edit,_style_apply_properties,_style_set_property,_style_prop_info", "assets/cad/core.py:_cad_fields"], "verified": ["typed property read/write", "read-only and library rejection", "before/after and collision handling"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+  },
+  "appearance.texture": {
+    "sections": [
+      {"title": "Inputs And Discovery", "text": "Requires id:design-local appearance ID and channel:color|normal|roughness; optional image:path string (empty disconnects), scaleX/scaleY:length expressions, rotation:angle expression, bump:boolean, lock:boolean (true makes scaleX/scaleY follow each other when only one is given). Use appearance.create to obtain a design-local appearance. The image path is on the Fusion host."},
+      {"title": "Safety And Semantics", "text": "colorTexture/normalTexture/roughnessTexture are preview setters; the image is embedded in the document but the returned path may differ after save/reopen. Real-world scale and bump are set through appearanceProperties only when a writable property exists; a missing property is a blocked sub-request, never silently ignored. Setting a texture on normal with bump:true selects a height-map bump."},
+      {"title": "Return Contract", "text": "Enveloped result (schemaVersion 1): status:pass|blocked, operation:appearance.texture, documentIdentity, units, frame, associativity:nativeProperty, warnings:string[], method, limitations, provenance, affected:[{ref:{kind:appearance,id:string},before:{channel:string,image:string},after:{channel:string,image:string}}], result:{id:string,channel:string,before:{channel:string,image:string},after:{channel:string,image:string},changed:string[],realWorldScale:{scaleX?:number,scaleY?:number},bump:boolean|null,rotation:number|null}."}
+    ],
+    "examples": [
+      {"label": "Connect a bump heightmap", "data": {"id": "appearance-id", "channel": "normal", "image": "C:/textures/height.png", "bump": true}, "requires": "appearance-id is design-local; height.png exists on the Fusion host.", "output": "result.after.image is the connected path; result.bump=true when bumpmap_Type is writable."}
+    ],
+    "audit": {"sources": ["assets/cad/appearance.py:appearance_texture,_appearance_texture_channels,_style_props_by_name", "assets/cad/core.py:_cad_fields,_cad_direction"], "verified": ["channel image connect/disconnect", "scale/bump/rotation via typed properties", "blocked sub-request reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+  },
+  "appearance.projection": {
+    "sections": [
+      {"title": "Inputs And Discovery", "text": "Requires id:design-local appearance ID; optional projection:automatic|planar|box|spherical|cylindrical. Omitting projection reads the current type. The projection is read/written through the appearance texture property (texture_ProjectionType)."},
+      {"title": "Safety And Semantics", "text": "Projection is a texture property, not a geometric projection frame. If the installed SDK exposes no writable projection property, a set request is blocked (status blocked), never silently substituted."},
+      {"title": "Return Contract", "text": "Enveloped result (schemaVersion 1): status:pass|blocked, operation:appearance.projection, documentIdentity, units, frame, associativity, warnings, method, limitations, provenance, affected:[{ref:{kind:appearance,id:string},before:value,after:value}], result:{id:string,projection:value,changed:boolean,requested?:string,before:value,after:value}."}
+    ],
+    "examples": [
+      {"label": "Set planar projection", "data": {"id": "appearance-id", "projection": "planar"}, "requires": "appearance-id is design-local and exposes a writable texture_ProjectionType.", "output": "result.after is the readback projection value; result.changed=true."}
+    ],
+    "audit": {"sources": ["assets/cad/appearance.py:appearance_projection,_PROJECTIONS,_style_props_by_name", "assets/cad/core.py:_cad_fields"], "verified": ["read and set branches", "invalid/blocked projection reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+  },
+  "appearance.assign-map": {
+    "sections": [
+      {"title": "Inputs And Discovery", "text": "Optional refs:nonempty array of Component/BRepBody/BRepFace/Occurrence refs (omit to map all bodies/components/faces/occurrences) and expected:map of {ref name -> expected appearance id}. Discover refs with entity.list/entity.find. Omitted refs map every discovered entity."},
+      {"title": "Safety And Semantics", "text": "Read-only. A face reads its body appearance and an occurrence reads its component definition. Equal IDs do not establish inheritance provenance. Mismatches are reported with expected/actual/resolvedExpected; a duplicate name is never assumed equivalent."},
+      {"title": "Return Contract", "text": "Enveloped result (schemaVersion 1): status:pass when no mismatches, fail otherwise, operation:appearance.assign-map, documentIdentity, units, frame, associativity:snapshot, warnings, method, limitations, provenance, affected:[], result:{kind:appearance,assignments:[{ref:reference,scope:instance|definition,definition:reference|null,assigned:{id:string,name:string}|null}],count:integer,expected:object|null,mismatches:[{ref:reference,expected:string,actual:string|null,resolvedExpected:string}],mismatchCount:integer}."}
+    ],
+    "examples": [
+      {"label": "Check body against expected appearance", "data": {"refs": [{"$ref": "bodies.result.entities.0"}], "expected": {"Body": "appearance-id"}}, "requires": "Earlier bodies: entity.list {kind:body}; appearance-id from appearance.list {}. Standalone substitute actual ref and expected id.", "output": "result.mismatchCount=0 when the body's appearance matches appearance-id; otherwise mismatches list the difference."}
+    ],
+    "audit": {"sources": ["assets/cad/appearance.py:_style_assign_map,_style_assignment_row,_style_resolve_refs", "assets/cad/core.py:CadContext._entities,ref,_cad_owner"], "verified": ["all target kinds and getter scoping", "expected vs actual mismatch reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+  },
+  "material.create": {
+    "sections": [
+      {"title": "Inputs And Discovery", "text": "Requires name:nonempty unique design name and id:exact material ID; optional library:exact loaded library ID. Discover with material.list {}. Copies the material into the Design with the new name (Materials.addByCopy). A local ID/name collision is rejected."},
+      {"title": "Safety And Semantics", "text": "Physical materials are copied, not created from scratch. The actual copy ID is authoritative. No density/mass/coating validation. A library material is never edited in place."},
+      {"title": "Return Contract", "text": "result:{created:{id:string,name:string},requested:{id:string,library:string|null},id:string,copiedFrom:string,properties:[...],limitations:string[],affected:[{ref:{kind:material,id:string},before:null,after:{id:string,name:string}}]}. Wrapper:{success,operation,document,result,created}."}
+    ],
+    "examples": [
+      {"label": "Copy a discovered library material", "data": {"name": "Custom ABS", "id": {"$ref": "materials.result.items.0.id"}, "library": {"$ref": "materials.result.library"}}, "requires": "Earlier materials: material.list {} returns a loaded library and items; standalone substitute actual id/library and a unique design name.", "output": "result.id is the actual local copy ID; reuse it without library on later assignments."}
+    ],
+    "audit": {"sources": ["assets/cad/appearance.py:material_create,_style_collection,_style_properties", "assets/cad/core.py:_cad_fields,_cad_require_result"], "verified": ["copy-only creation", "collision rejection and actual-ID return"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+  },
+  "material.edit": {
+    "sections": [
+      {"title": "Inputs And Discovery", "text": "Requires id:exact design-local material ID; optional name:string, description:string, properties:nonempty array of {id,value}. Discover IDs with material.list {}. Library materials are rejected; copy first with material.create. Typed property values follow the same rules as appearance.edit."},
+      {"title": "Safety And Semantics", "text": "Only design-local materials are edited. A missing density is reported, never replaced by a default. Physical material and visual appearance are separate. No rollback."},
+      {"title": "Return Contract", "text": "Enveloped result (schemaVersion 1): status:pass, operation:material.edit, documentIdentity, units:{length:cm,angle:rad}, frame, associativity:nativeProperty, warnings, method, limitations, provenance, affected:[{ref:{kind:material,id:string},before,after}], result:{id:string,changed:boolean,changedFields:string[],propertyChanges:[...],before:{id,name,description,properties},after:{id,name,description,properties}}."}
+    ],
+    "examples": [
+      {"label": "Set density", "data": {"id": "material-id", "properties": [{"id": "density", "value": 1.05}]}, "requires": "material-id is design-local and exposes a writable density property.", "output": "result.propertyChanges[0].after.value reflects the new density; a missing density property is reported, not defaulted."}
+    ],
+    "audit": {"sources": ["assets/cad/appearance.py:material_edit,_style_edit,_style_apply_properties", "assets/cad/core.py:_cad_fields"], "verified": ["typed property edit and description", "library rejection and missing-density reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+  },
+  "material.assign-map": {
+    "sections": [
+      {"title": "Inputs And Discovery", "text": "Optional refs:nonempty array and expected:map of {ref name -> expected material id}. Omit refs to map every discovered entity. A face reads its body material and an occurrence reads its component definition."},
+      {"title": "Safety And Semantics", "text": "Read-only. Equal IDs do not establish inheritance. No mass or density validation. Mismatches are reported explicitly."},
+      {"title": "Return Contract", "text": "Enveloped result (schemaVersion 1): status:pass|fail, operation:material.assign-map, documentIdentity, units, frame, associativity:snapshot, warnings, method, limitations, provenance, affected:[], result:{kind:material,assignments:[...],count:integer,expected:object|null,mismatches:[...],mismatchCount:integer}."}
+    ],
+    "examples": [
+      {"label": "Check body against expected material", "data": {"refs": [{"$ref": "bodies.result.entities.0"}], "expected": {"Body": "material-id"}}, "requires": "Earlier bodies: entity.list {kind:body}; material-id from material.list {}. Standalone substitute actual ref and expected id.", "output": "result.mismatchCount=0 when the body's material matches material-id."}
+    ],
+    "audit": {"sources": ["assets/cad/appearance.py:_style_assign_map,_style_assignment_row", "assets/cad/core.py:CadContext._entities,ref,_cad_owner"], "verified": ["getter scoping and mismatch reporting"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+  },
+  "styles.report": {
+    "sections": [
+      {"title": "Inputs And Discovery", "text": "Optional refs:nonempty array to scope the report; omit to map all bodies/components/faces/occurrences. The report aggregates appearance and material state per entity and scans design appearances/materials for duplicate names/IDs and missing densities."},
+      {"title": "Safety And Semantics", "text": "Read-only. A duplicate name/ID is reported, not assumed equivalent. A missing material density is reported, never replaced. Appearance and physical material are reported separately."},
+      {"title": "Return Contract", "text": "Enveloped result (schemaVersion 1): status:pass when no duplicate names, fail otherwise, operation:styles.report, documentIdentity, units, frame, associativity:snapshot, warnings:string[], method, limitations, provenance, affected:[], result:{styles:[{ref:reference,appearance:{id,name}|null,material:{id,name}|null}],count:integer,definitions:reference[],appearanceCount:integer,materialCount:integer,duplicateNames:{appearance:object,material:object},density:[{id,name,density:value,densityMissing:boolean}]}."}
+    ],
+    "examples": [
+      {"label": "Aggregate report over the design", "data": {}, "requires": "Scoped open Design; no mutation.", "output": "result.styles maps every discovered entity; result.duplicateNames and result.density report anomalies."}
+    ],
+    "audit": {"sources": ["assets/cad/appearance.py:styles_report,_style_report,_style_resolve_refs", "assets/cad/core.py:CadContext._entities,_cad_owner"], "verified": ["aggregate mapping and duplicate/missing-density detection"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+  }
+}

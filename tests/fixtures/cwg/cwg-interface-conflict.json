@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "fixture": "cwg-interface-conflict",
+  "governance": "X-11",
+  "specRef": "FMCAD_GENERIC_METHODS_SPEC.md §6 P037/P086/P098",
+  "source": "Cat Water Gun/docs/drawings/ITEM_CATALOG.json",
+  "status": "OPEN",
+  "conflict": {
+    "description": "P037 declares its smooth D6 journals run in P086 bushings, but P086 has ID3.05 (camshaft cross-section) while P098 (ID6.05) is the bushing allocated to the P037 journals. The interface cross-reference is inconsistent.",
+    "reason": "The declared interface reference (P037 -> P086) conflicts with the allocated bushing cross-section (P098 ID6.05); the conflict must be flagged, not silently re-mapped."
+  },
+  "items": {
+    "P037": { "name": "pan_counter_shaft", "journalDiameter": "6 mm", "interfaceRef": "P086" },
+    "P086": { "name": "shaft_bushing", "bore": "3.05 mm", "section": "camshaft journal" },
+    "P098": { "name": "pan_counter_bushing", "bore": "6.05 mm", "section": "journal D6", "allocation": "P037 journals" }
+  },
+  "fitStack": {
+    "declaredBushing": { "journal": "6 mm", "bore": "3.05 mm", "expectedClearance": ">= 0 mm" },
+    "allocatedBusining": { "journal": "6 mm", "bore": "6.05 mm", "expectedClearance": ">= 0 mm" }
+  }
+}

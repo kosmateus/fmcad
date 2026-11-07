@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "fixtureId": "data-import-program-v1",
+  "kind": "fixed-run-v1",
+  "script": "assets/native-qualification/data-import.py",
+  "helperVersion": "cad-v1",
+  "scope": "One exact owner-bound unsaved scratch; fixed successful param.import, inline catalog.import, placement.import and cots.replace records; generate and remove only one prefix-owned synthetic STEP file on the Fusion host; read back parameters, occurrences, placements, BRep body and volume. Preserve cots.replace material as unknown. Do not issue expected-throw negative calls through cad-v1 because helper receipts classify them as unknown. Caller closes/restores the exact scratch after validation.",
+  "argumentKeys": ["approved", "creationId", "expectedFusionVersion", "fixturePrefix"],
+  "callerCleanupRequired": true
+}

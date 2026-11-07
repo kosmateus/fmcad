@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "gc-branched-channel-v1",
+  "family": "branchedChannel",
+  "identity": "offline:generic-controls/branched-channel",
+  "control": {
+    "minimumClearanceMm": 1.5
+  },
+  "readPaths": [
+    "branches.inlet.connected",
+    "branches.inlet.minimumClearanceMm",
+    "branches.east.connected",
+    "branches.east.minimumClearanceMm",
+    "branches.west.connected",
+    "branches.west.minimumClearanceMm"
+  ],
+  "cases": [
+    {
+      "id": "nominal",
+      "identity": "offline:generic-controls/branched-channel/nominal",
+      "variant": "good",
+      "measurements": {
+        "branches": {
+          "inlet": { "connected": true, "minimumClearanceMm": 2.0 },
+          "east": { "connected": true, "minimumClearanceMm": 1.8 },
+          "west": { "connected": true, "minimumClearanceMm": 1.7 }
+        }
+      },
+      "expected": {
+        "status": "pass",
+        "failedChecks": []
+      }
+    },
+    {
+      "id": "disconnected-west",
+      "identity": "offline:generic-controls/branched-channel/disconnected-west",
+      "variant": "bad",
+      "measurements": {
+        "branches": {
+          "inlet": { "connected": true, "minimumClearanceMm": 2.0 },
+          "east": { "connected": true, "minimumClearanceMm": 1.8 },
+          "west": { "connected": false, "minimumClearanceMm": 1.7 }
+        }
+      },
+      "expected": {
+        "status": "fail",
+        "failedChecks": [
+          "west-connected"
+        ]
+      }
+    },
+    {
+      "id": "narrow-east",
+      "identity": "offline:generic-controls/branched-channel/narrow-east",
+      "variant": "bad",
+      "measurements": {
+        "branches": {
+          "inlet": { "connected": true, "minimumClearanceMm": 2.0 },
+          "east": { "connected": true, "minimumClearanceMm": 0.9 },
+          "west": { "connected": true, "minimumClearanceMm": 1.7 }
+        }
+      },
+      "expected": {
+        "status": "fail",
+        "failedChecks": [
+          "east-minimum-clearance"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "gc-enclosure-v1",
+  "family": "enclosure",
+  "identity": "offline:generic-controls/enclosure",
+  "control": {
+    "minimumWallMm": 1.5
+  },
+  "readPaths": [
+    "wallThicknessMm",
+    "seamConnected"
+  ],
+  "cases": [
+    {
+      "id": "nominal",
+      "identity": "offline:generic-controls/enclosure/nominal",
+      "variant": "good",
+      "measurements": {
+        "wallThicknessMm": 2.0,
+        "seamConnected": true
+      },
+      "expected": {
+        "status": "pass",
+        "failedChecks": []
+      }
+    },
+    {
+      "id": "thin-wall",
+      "identity": "offline:generic-controls/enclosure/thin-wall",
+      "variant": "bad",
+      "measurements": {
+        "wallThicknessMm": 0.8,
+        "seamConnected": true
+      },
+      "expected": {
+        "status": "fail",
+        "failedChecks": [
+          "minimum-wall"
+        ]
+      }
+    },
+    {
+      "id": "open-seam",
+      "identity": "offline:generic-controls/enclosure/open-seam",
+      "variant": "bad",
+      "measurements": {
+        "wallThicknessMm": 2.0,
+        "seamConnected": false
+      },
+      "expected": {
+        "status": "fail",
+        "failedChecks": [
+          "seam-connected"
+        ]
+      }
+    }
+  ]
+}

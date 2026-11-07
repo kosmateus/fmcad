@@ -1,0 +1,32 @@
+{
+  "sheet.bends": {
+    "sections": [
+      {"title": "Inputs And Bend Table", "text": "thickness required positive length. segments required nonempty array of {type:flat,length} and {type:bend,radius,angle,axis?,K?|allowance?}; every bend declares exactly one of K (K-factor in [0,1]) or allowance. fixedFace/reliefs/grain/process optional. representation external (default) or native; native is gated. schemaVersion required 1. Neutral radius is radius + K*thickness, or allowance/|angle| when an allowance is supplied; a bend missing both is rejected, so no allowance is guessed."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'sheet.bends',status,success,documentIdentity,units:{length:'cm',angle:'deg'},frame,associativity:'snapshot',method,limitations,provenance,bendTable:[{index,type,radius,angle,angleDeg,axis,K,allowance,neutralRadius,developedLength,direction}],bendCount,thickness,totalDevelopedLength,fixedFace,reliefs,grain,process}. Executor created:[]; read-only."}
+    ],
+    "examples": [
+      {"label": "Bend With K-Factor", "data": {"schemaVersion": 1, "thickness": "1 mm", "segments": [{"type": "flat", "length": "20 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y", "K": 0.5}, {"type": "flat", "length": "20 mm"}]}, "requires": "Open Design document; a 90-degree bend of radius 2 mm with K-factor 0.5 and thickness 1 mm.", "output": "result.bendTable[0].neutralRadius is 0.25 cm and developedLength is 0.25*pi/2 cm; result.bendCount is 1."}
+    ],
+    "audit": {"sources": ["assets/cad/sheetmetal.py: _sheet_bends, _parse_segments, _bend_allowance"], "verified": ["neutral radius from K-factor or allowance", "no guessed allowance", "bend direction sign", "read-only envelope"], "tests": ["tests/sheetmetal_test.py", "tests/sheetmetal.test.js"], "gaps": [], "bugs": []}
+  },
+  "sheet.form": {
+    "sections": [
+      {"title": "Inputs And Forming", "text": "thickness required; segments required flat/bend array. representation external (default) or native; native is reported blocked with nativeFlatPattern.available false, never faked as a static solid. schemaVersion required 1. The formed walk folds the neutral axis in 3D; the flat walk straightens bends, so developed and formed neutral lengths are identical and nothing is scaled. flat-to-formed correspondence is reported per segment."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'sheet.form',status,success,documentIdentity,units,frame,associativity:'snapshot',method,limitations,provenance,representation:'external',thickness,formedCenterline,formedMapping,flatCenterline,flatMapping,bendTable,totalDevelopedLength,correspondence,association,nativeFlatPattern}. representation native yields status blocked. Executor created:[]; read-only."}
+    ],
+    "examples": [
+      {"label": "Form A Sheet Bracket", "data": {"schemaVersion": 1, "thickness": "1 mm", "segments": [{"type": "flat", "length": "20 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y", "K": 0.5}, {"type": "flat", "length": "20 mm"}], "representation": "external"}, "requires": "Open Design document; a flat-bend-flat bracket with an explicit K-factor.", "output": "result.formedCenterline ends at [0, 0.25, 2.25] cm in the bend plane and result.totalDevelopedLength equals result.bendTable total; result.nativeFlatPattern.available is false."}
+    ],
+    "audit": {"sources": ["assets/cad/sheetmetal.py: _sheet_form, _formed_walk, _flat_walk, _sheet_representation"], "verified": ["neutral-axis folding", "developed equals formed neutral length", "native representation blocked not faked", "read-only envelope"], "tests": ["tests/sheetmetal_test.py", "tests/sheetmetal.test.js"], "gaps": [], "bugs": []}
+  },
+  "sheet.flat": {
+    "sections": [
+      {"title": "Inputs And Flattening", "text": "thickness required; segments required flat/bend array. representation external (default) or native (blocked). schemaVersion required 1. The flat walk lays bends out straight by their developed length; developed length equals formed neutral length with no scaling. flat-to-formed correspondence and bend directions are reported. Flat-pattern DXF/SVG export is a documented gap."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'sheet.flat',status,success,documentIdentity,units,frame,associativity:'snapshot',method,limitations,provenance,representation:'external',thickness,flatCenterline,flatMapping,formedCenterline,bendTable,totalDevelopedLength,developedEqualsFormedNeutral:true,scaled:false,correspondence,association}. Executor created:[]; read-only."}
+    ],
+    "examples": [
+      {"label": "Flatten With Explicit Allowance", "data": {"schemaVersion": 1, "thickness": "1 mm", "segments": [{"type": "flat", "length": "20 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y", "allowance": "3.9269908169872414 mm"}]}, "requires": "Open Design document; a 90-degree bend with a declared allowance equal to radius 2.5 mm times pi/2.", "output": "result.totalDevelopedLength is 2 cm + 0.39269908169872414 cm and result.scaled is false."}
+    ],
+    "audit": {"sources": ["assets/cad/sheetmetal.py: _sheet_flat, _flat_walk, _sheet_developed"], "verified": ["developed length from allowance", "no scaling", "read-only envelope"], "tests": ["tests/sheetmetal_test.py", "tests/sheetmetal.test.js"], "gaps": [], "bugs": []}
+  }
+}

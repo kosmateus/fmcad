@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "fixtureId": "measured-fasteners-program-v1",
+  "kind": "fixed-run-v1",
+  "script": "assets/native-qualification/measured-fasteners.py",
+  "helperVersion": "cad-v1",
+  "scope": "one proven-new unsaved owned document; fixed measured axial datum program only; no lifecycle, file or cloud effects",
+  "argumentKeys": ["approved", "creationId", "expectedFusionVersion", "fixturePrefix"],
+  "fixtureSource": "tests/native/integrated-qualification/measured_fasteners.py",
+  "callerCleanupRequired": true
+}

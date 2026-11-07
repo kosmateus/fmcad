@@ -1,0 +1,30 @@
+{
+  "formatVersion": 1,
+  "runId": "engine-materials-presentation",
+  "maxExpansion": 100,
+  "operations": [
+    {"id": "part", "operation": "component.create", "data": {"name": "Engine"}},
+    {"id": "body", "operation": "shape.cylinder", "component": {"$ref": "part.result.component"}, "data": {"name": "Rotor", "radius": "25 mm", "height": "40 mm"}},
+    {"id": "appearance", "operation": "appearance.create", "data": {"name": "MachinedSteel_Custom"}},
+    {"id": "assignAppearance", "operation": "appearance.assign", "data": {"refs": [{"$ref": "body.result.bodies.0"}], "id": {"$ref": "appearance.result.id"}}},
+    {"id": "materials", "operation": "material.list", "data": {}},
+    {"id": "material", "operation": "material.create", "data": {"name": "Aluminum6061_Custom", "id": {"$ref": "materials.result.items.0.id"}}},
+    {"id": "assignMaterial", "operation": "material.assign", "data": {"refs": [{"$ref": "body.result.bodies.0"}], "id": {"$ref": "material.result.id"}}},
+    {"id": "texture", "operation": "texture.heightmap", "data": {"path": "/tmp/knurl.png", "width": 256, "height": 256, "pattern": "grooves", "amplitude": 0.2, "period": 16, "tileable": true, "overwrite": true, "confirm": true}},
+    {"id": "styles", "operation": "styles.report", "expectFail": true, "data": {"refs": [{"$ref": "body.result.bodies.0"}]}},
+    {"id": "section", "operation": "section.view", "data": {"mode": "create", "name": "MidSection", "plane": "XZ"}},
+    {"id": "camera", "operation": "camera.set", "data": {"orientation": "iso-top-right", "fit": true}},
+    {"id": "shot", "operation": "shot.pack", "data": {"shots": [{"path": "/tmp/mid.png", "sections": [{"name": "MidSection", "isLightBulbOn": true}], "camera": {"orientation": "iso-top-right", "fit": true}}], "overwrite": true, "confirm": true}},
+    {"id": "volCheck", "operation": "check", "data": {"id": "rotor-volume", "source": "Engine spec", "measurement": {"operation": "measure.volume", "data": {"ref": {"$ref": "body.result.bodies.0"}}}, "min": "1 mm^3"}},
+    {"id": "final", "operation": "report", "data": {"checks": [{"id": "rotor-volume", "source": "Engine spec", "measurement": {"operation": "measure.volume", "data": {"ref": {"$ref": "body.result.bodies.0"}}}, "min": "1 mm^3"}], "metadata": {"pipeline": "appearance-material-texture-section-shot"}}},
+    {"id": "health", "operation": "history.check", "data": {}}
+  ],
+  "outputs": {
+    "body": {"$ref": "body.result.bodies.0"},
+    "appearance": {"$ref": "appearance.result.id"},
+    "material": {"$ref": "material.result.id"},
+    "heightmap": {"$ref": "texture.result.file.path"},
+    "section": {"$ref": "section.result.ref"},
+    "shot": {"$ref": "shot.result.images"}
+  }
+}

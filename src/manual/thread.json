@@ -1,0 +1,32 @@
+{
+  "thread.catalog": {
+    "sections": [
+      {"title":"GM13 Thread Catalog","text":"Lists and queries a curated ISO metric coarse table (M3..M24) with major/minor/pitch diameters and lead. lead = starts * pitch; turns-per-length is a separate quantity (1/lead). This is a curated subset, not the full installed Fusion thread table; exact native identifiers still need native discovery."},
+      {"title":"Return Contract","text":"result has schemaVersion:1, system, curated:true, entries[] (designation, majorDiameter, pitch, pitchDiameter, minorDiameter, starts, lead, hand) and a note about the curated subset. status pass."}
+    ],
+    "examples": [
+      {"label":"Query M10 coarse","data":{"schemaVersion":1,"frame":"component","system":"iso-metric-coarse","query":"M10"},"requires":"A selected component; read-only.","output":"result.entries has one entry with pitch 1.5 mm and lead 1.5 mm (single start)."}
+    ],
+    "audit":{"sources":["assets/cad/thread.py:thread_catalog"],"verified":["Curated ISO metric coarse subset","lead = starts * pitch"],"tests":["tests/thread_test.py","tests/thread.test.js"],"gaps":[],"bugs":["Curated subset only; full installed table not enumerated"]}
+  },
+  "thread.custom-profile": {
+    "sections": [
+      {"title":"GM13 Custom Thread Profile","text":"Defines and validates a custom (non-tabular) thread profile from majorDiameter, pitch, and either minorDiameter or pitchDiameter. starts gives lead = starts * pitch; hand right/left; flankAngle and rootShape describe the tooth. length, runout and clearance are optional. The result is a BRep recipe, never a visual texture."},
+      {"title":"Return Contract","text":"result has schemaVersion:1, profile (major/minor/pitch diameters, pitch, starts, lead, depth, turnsPerLength, flankAngle, rootShape, length, runout, clearance), representation:recipe and the explicit lead definition note."}
+    ],
+    "examples": [
+      {"label":"M10x1.5 custom profile","data":{"schemaVersion":1,"frame":"component","majorDiameter":"10 mm","pitch":"1.5 mm","starts":1,"hand":"right","flankAngle":"60 deg","rootShape":"flat","length":"20 mm","runout":"1.5 mm","clearance":"0.1 mm"},"requires":"A selected component; read-only.","output":"result.profile.lead is 1.5 mm and result.profile.depth is (major-minor)/2."}
+    ],
+    "audit":{"sources":["assets/cad/thread.py:thread_custom_profile,_thread_profile"],"verified":["lead = starts * pitch and diameter ordering","Custom profile is a recipe, never texturized","Hand/flank/root validation"],"tests":["tests/thread_test.py","tests/thread.test.js"],"gaps":[],"bugs":[]}
+  },
+  "thread.pair-check": {
+    "sections": [
+      {"title":"GM13 Thread Pair Check","text":"Checks an external (bolt) and internal (nut) thread pair: hand match, lead match (within tolerance), starts match, radial fit and positive engagement depth. lead equality alone is not enough; starts must also match. This is a geometric fit check, not a torque/preload or sealing certification."},
+      {"title":"Return Contract","text":"result has schemaVersion:1, external/internal profiles, checks[] (hand, lead, starts, radial-fit, engagement-depth), pairFit, engagementDepth and crossSection. status pass or fail."}
+    ],
+    "examples": [
+      {"label":"M10x1.5 RH bolt into nut","data":{"schemaVersion":1,"frame":"component","external":{"majorDiameter":"10 mm","minorDiameter":"8.16 mm","pitch":"1.5 mm","starts":1,"hand":"right"},"internal":{"majorDiameter":"10 mm","minorDiameter":"8.38 mm","pitch":"1.5 mm","starts":1,"hand":"right"}},"requires":"A selected component; read-only.","output":"result.pairFit is pass; result.engagementDepth is (external major - internal minor)/2."}
+    ],
+    "audit":{"sources":["assets/cad/thread.py:thread_pair_check,_thread_profile"],"verified":["Hand, lead and starts all match for engagement","Radial fit and engagement depth","No torque/preload claim"],"tests":["tests/thread_test.py","tests/thread.test.js"],"gaps":[],"bugs":[]}
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "operations": [
+    {"id":"sketch","operation":"sketch.create","data":{"name":"GM07_Profile","plane":"XY"}},
+    {"id":"cam","operation":"sketch.profile-file","data":{"schemaVersion":1,"sketch":"GM07_Profile","frame":"sketch","plane":"sketchXY","columns":{"x":"x","y":"y"},"units":{"length":"mm"},"closed":false,"interpolation":"spline","records":[{"x":0,"y":0},{"x":5,"y":2},{"x":10,"y":8},{"x":12,"y":12}]}},
+    {"id":"inspect","operation":"curve.inspect","data":{"schemaVersion":1,"sketch":"GM07_Profile","frame":"sketch","entities":{"$ref":"cam.result.entities"}}}
+  ]
+}

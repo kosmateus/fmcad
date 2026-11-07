@@ -1,0 +1,11 @@
+{
+  "autodeskProduct": "Fusion360",
+  "type": "script",
+  "id": "8ffab51e-a8ba-4e35-93f3-86cb6d8d7209",
+  "author": "fmcad diagnostics",
+  "description": {"": "Read-only native Python runner test. Records stream depth without changing streams or CAD."},
+  "version": "1.0.0",
+  "runOnStartup": false,
+  "supportedOS": "windows|mac",
+  "editEnabled": true
+}

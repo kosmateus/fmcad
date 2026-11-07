@@ -1,0 +1,41 @@
+{
+  "capabilities.inspect": {
+    "summary": "Search the registered fmcad operation catalog and cad-v1 helpers offline, with prerequisites, limitations and catalog examples.",
+    "usage": "capabilities inspect [--data '<object>'] [--json]",
+    "required": [],
+    "example": {"query": "interference", "limit": 10},
+    "readOnly": true,
+    "requiresDoc": false,
+    "nodeOnly": true,
+    "offline": true,
+    "batchAllowed": false,
+    "limitations": [
+      "This is an exact inventory of catalog registrations and documented cad-v1 helpers, not proof that a native SDK build or model can execute them.",
+      "Native SDK probing is a separate explicit broker-port operation; inspect, help, tool listing and search never trigger it.",
+      "Precision, coverage, mutation restoration and current document identity remain unknown unless a capability-specific result supplies evidence."
+    ],
+    "inputs": {
+      "query": "Optional problem or method text. Searches registered operation names, descriptions, inputs, examples, limitations and helper metadata; accented characters are normalized.",
+      "limit": "Optional page size from 1 to 100; defaults to 50.",
+      "offset": "Optional zero-based result offset; defaults to 0. nextOffset is null when the search is complete."
+    }
+  },
+  "capabilities.probe": {
+    "summary": "Explicitly request one read-only native SDK capability probe through the broker for a catalogued SDK operation and pinned document identity.",
+    "usage": "capabilities probe --data '<object>' --doc <name> (--doc-id <creationId> | --doc-file-id <cloudId>) [--json]",
+    "required": ["capabilityId"],
+    "example": {"capabilityId": "clearance.grid"},
+    "readOnly": true,
+    "requiresDoc": true,
+    "nodeOnly": true,
+    "batchAllowed": false,
+    "limitations": [
+      "The SDK probe is distinct from offline inspect and must receive the explicit broker SDK probe port; direct transport calls are rejected.",
+      "A result qualifies only the requested capability, selected backend/build and pinned document identity. It does not certify geometry, cloud access or other capabilities.",
+      "Unsupported, missing, stale, partial, blocked and unknown evidence remain non-passing; there is no fallback, automatic retry or replay."
+    ],
+    "inputs": {
+      "capabilityId": "Required registered catalog operation ID. Unregistered IDs return missing; catalog entries that require no SDK return unsupported without a native call."
+    }
+  }
+}

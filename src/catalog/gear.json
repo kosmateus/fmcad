@@ -1,0 +1,43 @@
+{
+  "shape.gear": {
+    "summary": "Generate a spur gear with locally computed involute flanks: a root disc, a sampled-involute tooth extruded and circular-patterned, plus optional bore/hub/key. Returns feature, bodies, healthState, message, diameters, toothCount, undercut and regeneration evidence.",
+    "required": ["name", "module", "teeth", "faceWidth"], "readOnly": false,
+    "example": {"name": "Gear", "module": "2 mm", "teeth": 20, "pressureAngle": "20 deg", "faceWidth": "10 mm"},
+    "inputs": {
+      "name": "Required feature name; reserves root/tooth/bore/hub/key helper names.",
+      "module": "Positive module length expression; pitch d = module*teeth.",
+      "teeth": "Positive integer tooth count; the circular pattern quantity.",
+      "pressureAngle": "Angular expression, default 20 deg; base diameter db = d*cos(pressureAngle).",
+      "faceWidth": "Positive extrusion length expression.",
+      "system": "metric (default, ha=1.0 hf=1.25) or short (ha=0.8 hf=1.0); explicit addendumCoefficient/dedendumCoefficient override.",
+      "addendumCoefficient": "Positive numeric addendum coefficient (da = m*(z+2*ha+2x)).",
+      "dedendumCoefficient": "Positive numeric dedendum coefficient (df = m*(z-2*hf+2x)).",
+      "profileShift": "Finite numeric profile shift coefficient x.",
+      "rootTreatment": "straight or trochoidal (default); trochoidal reports a root fillet radius of 0.38*module.",
+      "toothThicknessReduction": "Nonnegative length subtracted from the pitch tooth thickness.",
+      "backlashAllocation": "Nonnegative circular backlash length attributed to this gear.",
+      "bore": "Positive bore diameter; a native hole through the blank.",
+      "hub": "Descriptor {diameter,height}; a boss extruded onto the gear.",
+      "key": "Descriptor {width,depth}; a rectangular keyway cut through the face width.",
+      "plane": "Native construction plane, default XY; mutually exclusive with frame.",
+      "frame": "Named datum.frame or frame descriptor orienting the gear plane.",
+      "axis": "Pattern axis, default Z.",
+      "flankTolerance": "Positive length controlling involute sampling density, default 0.001 mm."
+    },
+    "limitations": ["The involute flank is a sampled chordal polyline (line segments whose sagitta stays below flankTolerance); tip and root radii are driving expressions but the flank is a recipeRegeneration snapshot. d=mz, db=d*cos(alpha), da=m(z+2ha+2x), df=m(z-2hf+2x) for the standard system.", "Undercut is detected when teeth fall below 2*(ha-x)/sin^2(alpha). The below-base-circle transition is a radial line (straight) or a reported root fillet (trochoidal), not a native trochoidal generator. Recipe is not atomic and requires component scope."]
+  },
+  "gear.pair-check": {
+    "summary": "Check a gear pair: signed ratio, center distance, phase, working pressure angle and total backlash over the tooth cycle. Read-only local involute model; no geometry mutation.",
+    "required": ["gear1", "gear2"], "readOnly": true, "envelope": true,
+    "example": {"gear1": {"module": "2 mm", "teeth": 20, "pressureAngle": "20 deg"}, "gear2": {"module": "2 mm", "teeth": 40, "pressureAngle": "20 deg"}, "external": true, "phase": 0},
+    "inputs": {
+      "gear1": "Gear descriptor {module,teeth,pressureAngle?,system?,profileShift?,backlashAllocation?,toothThicknessReduction?}.",
+      "gear2": "Second gear descriptor sharing the same module.",
+      "external": "Boolean, default true; false models internal gearing with a signed ratio.",
+      "centerDistance": "Optional operating center distance; computes the working pressure angle from the base diameters.",
+      "phase": "Finite numeric phase (radians), default 0.",
+      "schemaVersion": "Required integer 1."
+    },
+    "limitations": ["Ratio sign flips for internal gearing. Backlash is the sum of the two declared per-gear allocations and thickness reductions, not an unconditional split of one value. Working angle assumes involute contact at the declared center distance. Read-only; no document mutation and no native feature is created."]
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "explode.plan": {
+    "summary": "Compute a deterministic per-frame pose schedule and frame manifest from real occurrence refs, per-instance explosion axes/distances, ordered phases (cock/release/return), disconnection precedence, an easing law and timing/fps. Read-only: never mutates the document.",
+    "required": ["schemaVersion", "occurrences", "duration", "fps"],
+    "example": {
+      "schemaVersion": 1,
+      "occurrences": [
+        {"ref": {"token": "occ-cover"}, "axis": [0, 0, 1], "distance": "30 mm", "phase": "release", "label": "cover"},
+        {"ref": {"token": "occ-pcb"}, "axis": [0, 0, 1], "distance": "15 mm", "phase": "return", "label": "pcb"}
+      ],
+      "phases": ["cock", "release", "return"],
+      "duration": "2 s",
+      "fps": 30
+    },
+    "readOnly": true,
+    "envelope": true,
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "occurrences": "Nonempty array of {ref, axis:[x,y,z] unitless, distance:length-expression, phase?:name, label?:text}. A parent occurrence carries its nested content natively; instances are moved, never loose body copies.",
+      "phases": "Optional ordered array of phase names (equal time slices). Cock/release/return order is preserved. Unphased occurrences join the last phase.",
+      "disconnections": "Optional array of {name?, from:occurrence-ref, to:occurrence-ref}; 'from' must explode in an earlier phase than 'to'.",
+      "duration": "Required positive total duration in seconds (number or '<n> s'/'<n> ms').",
+      "fps": "Required positive integer frames per second.",
+      "easing": "Optional one of linear, smoothstep, easeIn, easeOut, easeInOut; default linear.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Deterministic interpolation of occurrence transforms, not a continuous collision or service-path proof. Native storyboard action authoring is separate and never claimed. Frame count is floor(duration*fps)+1; the last sampled time is floor(duration*fps)/fps."]
+  },
+  "explode.render": {
+    "summary": "Apply the explode.plan schedule by moving occurrence transforms (instances, not loose body copies), optionally capturing PNG frames, and restore the original transforms by default in finally. Restoration failure is reported separately and the original error is preserved.",
+    "required": ["schemaVersion", "occurrences", "duration", "fps", "confirm"],
+    "example": {
+      "schemaVersion": 1,
+      "occurrences": [
+        {"ref": {"token": "occ-cover"}, "axis": [0, 0, 1], "distance": "30 mm", "phase": "release", "label": "cover"}
+      ],
+      "phases": ["cock", "release", "return"],
+      "duration": "2 s",
+      "fps": 30,
+      "confirm": true
+    },
+    "readOnly": false,
+    "envelope": true,
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "occurrences": "Nonempty array of {ref, axis, distance, phase?, label?} as explode.plan.",
+      "phases": "Optional ordered phase names; unphased occurrences join the last phase.",
+      "disconnections": "Optional precedence edges from->to (from earlier phase than to).",
+      "duration": "Required positive total duration in seconds.",
+      "fps": "Required positive integer frames per second.",
+      "easing": "Optional easing law; default linear.",
+      "frame": "Optional frame label.",
+      "confirm": "Must be true; moves occurrence transforms.",
+      "restore": "Boolean, default true: restore original occurrence transforms in finally. False leaves the final exploded pose.",
+      "frameFiles": "Optional array of exactly frameCount nonexisting .png paths with existing parents; mutually exclusive with directory/prefix.",
+      "directory": "Optional existing output directory (creates prefix-000.png etc.); no overwrite, no directory creation.",
+      "prefix": "Optional filename prefix; requires directory; default 'frame'.",
+      "width": "Optional PNG width 32..4096, default 1280; requires frame targets.",
+      "height": "Optional PNG height 32..4096, default 720; requires frame targets."
+    },
+    "limitations": ["Restoration is not rollback; a restore failure is reported separately. Frame targets are native Fusion-machine paths. Completed frame exports remain on failure. No native storyboard action sequence is created."]
+  }
+}

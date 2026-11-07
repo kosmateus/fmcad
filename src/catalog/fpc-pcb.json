@@ -1,0 +1,110 @@
+{
+  "fpc.fold": {
+    "summary": "Fold a declared flex chain (rigid lines plus bend arcs) into 3D; neutral-axis length through each bend is radius*angle and is preserved, never scaled.",
+    "required": ["chain"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "chain": [{"type": "line", "length": "10 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y"}, {"type": "line", "length": "10 mm"}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "chain": "Nonempty array of {type:line,length} and {type:bend,radius,angle,axis?} objects defining the flex chain.",
+      "outline": "Optional flat polygon outline; arbitrary 2D outline folding is a documented gap.",
+      "stackup": "Optional {neutralLayerFraction} in [0,1], default 0.5.",
+      "rigidIslands": "Optional array of rigid-island descriptors.",
+      "stiffeners": "Optional array of stiffener descriptors.",
+      "bendZones": "Optional array of declared bend-zone descriptors.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["The whole outline is never treated as flexible; only declared bend zones bend. FPC folding is a recipe; native ECAD/flex is a separate gate. No scaling is applied to any length."]
+  },
+  "fpc.flatten": {
+    "summary": "Flatten a declared flex chain to its flat equivalent; neutral-axis length is preserved and bend arcs are straightened without scaling.",
+    "required": ["chain"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "chain": [{"type": "line", "length": "10 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y"}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "chain": "Nonempty array of {type:line,length} and {type:bend,radius,angle,axis?} objects.",
+      "outline": "Optional folded outline; full 2D outline flattening is a gap.",
+      "stackup": "Optional stackup descriptor.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Flat length equals folded neutral-axis length; the FPC is not scaled. Only declared bend zones contribute arc length."]
+  },
+  "pcb.mechanical-exchange": {
+    "summary": "Neutral PCB exchange reporting the explicit datum offset between a STEP center and a lens/pad datum and the outline diff, without conflating them.",
+    "required": ["source", "target"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "source": {"datum": {"name": "step-center", "type": "step-center", "origin": ["0 mm", "0 mm", "0 mm"]}}, "target": {"datum": {"name": "lens-datum", "type": "lens", "origin": ["2 mm", "1 mm", "0 mm"]}}},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "source": "PCB descriptor with datum {name,type,origin}; type is mechanical, step-center, lens or pad.",
+      "target": "PCB descriptor with datum {name,type,origin}.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["A STEP bounding-box center is a source of position, not a lens/pad datum; the offset is explicit and must not be silently adopted. The exchange reports a diff, not an accepted vendor STEP."]
+  },
+  "pcb.check": {
+    "summary": "Validate PCB thickness, holes/slots, both-side height zones, courtyards and copper keepouts against a declared board outline.",
+    "required": ["board"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "board": {"thickness": "1.6 mm", "outline": [["0 mm", "0 mm"], ["20 mm", "0 mm"], ["20 mm", "20 mm"], ["0 mm", "20 mm"]], "holes": [{"center": ["5 mm", "5 mm", "0 mm"], "type": "round", "diameter": "2 mm"}], "heightZones": [{"side": "top"}, {"side": "bottom"}]}},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "board": "Object with thickness (positive), outline (polygon), holes (round/slot), heightZones (top/bottom), courtyards, copperKeepouts.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Validates declared geometry, not native ECAD layer stackup. Height zones must be declared for both sides (top and bottom)."]
+  },
+  "port.define": {
+    "summary": "Define a connector port frame with origin, normal, pin1 and optional key, mating stroke and support zones.",
+    "required": ["name", "frame"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "name": "PWR", "frame": {"origin": ["0 mm", "0 mm", "0 mm"], "normal": [0, 0, 1], "pin1": ["1 mm", "0 mm", "0 mm"]}, "matingStroke": "5 mm"},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "name": "Port name.",
+      "frame": "Object with origin ([x,y,z]), normal (unit direction), and optional pin1 ([x,y,z]).",
+      "key": "Optional key descriptor.",
+      "matingStroke": "Optional nonnegative mating stroke length.",
+      "supportZones": "Optional array of support-zone descriptors."
+    },
+    "limitations": ["Metadata/recipe port definition; not a native ECAD connector feature."]
+  },
+  "connector.mate-check": {
+    "summary": "Check intended and forbidden connector pairs including poka-yoke: a forbidden pair that can reach seating position (shared key/shroud signature and pin count) is reported.",
+    "required": ["connectors", "intendedPairs"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "connectors": [{"name": "POWER_M", "gender": "male", "pinCount": 4, "key": "4pin-k"}, {"name": "POWER_F", "gender": "female", "pinCount": 4, "key": "4pin-k"}, {"name": "DATA_F", "gender": "female", "pinCount": 4, "key": "4pin-k"}], "intendedPairs": [["POWER_M", "POWER_F"]], "forbiddenPairs": [["POWER_M", "DATA_F"]]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "connectors": "Array of {name,gender,pinCount,key?,shroud?} descriptors.",
+      "intendedPairs": "Nonempty array of [maleName, femaleName] intended mates.",
+      "forbiddenPairs": "Array of [aName, bName] pairs that must not mate.",
+      "insertionOrientations": "Optional object mapping pair keys to allowed insertion orientations.",
+      "checkScope": "declared-pairs (default) or full.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Similar 4-pin power/data/encoder connectors are unsafe unless their key/shroud signatures differ; a physically possible wrong connection is detected, not assumed safe because each intended pair mates."]
+  },
+  "pack.cross-section": {
+    "summary": "Compute occupied-union area, free area and reserve (denominator = cavity area) with real outline shape fit, not just equal areas.",
+    "required": ["cavity", "items"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "cavity": [["0 mm", "0 mm"], ["10 mm", "0 mm"], ["10 mm", "10 mm"], ["0 mm", "10 mm"]], "items": [{"center": ["5 mm", "5 mm", "0 mm"], "radius": "2 mm"}], "reserve": 0.3},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "cavity": "Cavity outline polygon [x,y] points.",
+      "items": "Array of {center,radius} circles or {outline:polygon} polygons.",
+      "reserve": "Required free-area ratio in [0,1], default 0.3; denominator is cavity area.",
+      "samplingBudget": "Positive integer for union-area estimation, default 200000.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Free area alone does not prove routing; occupied-union area is a grid estimate. Shape fit requires every item to lie within the cavity; equal areas with mismatched shapes do not pass."]
+  },
+  "keepout.check": {
+    "summary": "Check copper keepouts and courtyards against a board outline and report keepout violations.",
+    "required": ["board", "keepouts"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "board": {"outline": [["0 mm", "0 mm"], ["20 mm", "0 mm"], ["20 mm", "20 mm"], ["0 mm", "20 mm"]]}, "keepouts": [{"name": "K1", "outline": [["2 mm", "2 mm"], ["8 mm", "2 mm"], ["8 mm", "8 mm"], ["2 mm", "8 mm"]]}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "board": "Object with outline polygon.",
+      "keepouts": "Array of {name?,outline,side?} copper-keepout polygons.",
+      "courtyards": "Optional array of courtyard descriptors.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Declared-geometry check; native ECAD keepout layers are a separate gate."]
+  }
+}

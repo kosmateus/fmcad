@@ -1,0 +1,102 @@
+{
+  "sketch.coordinate-check": {
+    "sections": [
+      {
+        "title": "Inputs And Safety",
+        "text": "Read-only snapshot of one native sketch. Supply schemaVersion:1, sketch, and explicit expectations selecting real SketchPoint/SketchCurve refs discovered from sketch.inspect. Each expectation asserts point, center, start, end, radius, or diameter; coordinates are unit-bearing expressions. frame is sketch(default), model, or world. Root-world checks for non-root sketches require an explicit occurrence. Optional featureBRep checks explicit BRep entity membership in a named feature's output bodies; it does not infer profile provenance. No solve, recompute, mutation, repair, restore action, or inferred occurrence is performed."
+      },
+      {
+        "title": "Return Contract",
+        "text": "Returns schemaVersion, operation, success/status, separate healthStatus and geometryStatus, analytic entity checks, optional featureBRep checks, documentIdentity, sketch ref, explicit frames/units, and snapshot associativity. Each point reports sketch/model/world, native worldGeometry, and model-to-sketch roundtrip comparisons. Unavailable requested properties remain unknown. Coordinate checks report precision:analytic; this certifies only requested numerical readbacks within tolerance, not the entire sketch or feature history."
+      }
+    ],
+    "examples": [
+      {
+        "label": "Check a discovered circular curve",
+        "data": {
+          "schemaVersion": 1,
+          "sketch": "Section",
+          "expectations": [
+            {
+              "entity": { "token": "discovered-curve-token" },
+              "center": ["0 cm", "0 cm", "0 cm"],
+              "diameter": "2 cm"
+            }
+          ]
+        },
+        "requires": "Section is a native root-component sketch, the token is a current curve ref from sketch.inspect, and the expected values were independently measured. Placeholder tokens are not real entity IDs.",
+        "output": "A healthy sketch with a shifted center or incorrect diameter reports healthStatus:pass and geometryStatus:fail; it does not alter the sketch."
+      }
+    ],
+    "audit": {
+      "sources": [
+        "runtime/python/fmcad/application/sketch_geometry_proof.py",
+        "runtime/python/fmcad/adapters/fusion/sketch_geometry_proof.py",
+        "packages/node-adapters/src/python/sketch-geometry-proof-public-routes.ts"
+      ],
+      "verified": [
+        "Explicit sketch/model/world coordinate and roundtrip comparisons",
+        "Requested native worldGeometry and explicit feature BRep readback",
+        "Health and geometry outcomes remain separate"
+      ],
+      "tests": [
+        "tests/sketch_geometry_proof_test.py",
+        "tests/sketch-geometry-proof-bundle.test.js",
+        "tests/typesgeometry/python_types_sketch_geometry_proof_test.py",
+        "tests/typesgeometry/sketch_geometry_proof_check.cjs"
+      ],
+      "gaps": [],
+      "bugs": []
+    }
+  },
+  "sketch.profile-query": {
+    "sections": [
+      {
+        "title": "Inputs And Selection",
+        "text": "Read-only query for one native sketch. Optional query criteria are conjunctive: index, area, centroid, contains, outerLoops, and innerLoops. Area and areaTolerance are positive finite numbers in cm². Optional expected counts cover profiles, loops, outerLoops, and innerLoops. Area and centroid are native high-accuracy integral readbacks; containment/topology use bounded evaluator strokes and the existing curve graph. Containment includes holes; tolerance-band points are unknown. The query never selects profiles.item(0): no match, ambiguous matches, missing topology, or unresolved candidates return no usable profile selector."
+      },
+      {
+        "title": "Evidence And Limits",
+        "text": "Returns separate healthStatus, geometryStatus, analytic native integral/topology evidence, and sampled topology/containment evidence. A passing sampled query has evidenceStatus:partial and precision:sampled. Branches, degeneracies, duplicate strokes, open loops and intersections fail sampled topology. Native area accuracy is SDK-controlled; strokes are not an exact continuous certificate and do not certify G1/G2, manufacturability, or physical correctness. No mutation or geometry repair occurs."
+      },
+      {
+        "title": "Return Contract",
+        "text": "Returns profiles/counts/candidate checks and selection diagnostics. The top-level profile selector is present only when all requested evidence, whole-sketch sampled topology and native profile topology/integrals pass, with exactly one complete candidate. Counts with missing topology remain unknown rather than zero. Coordinate and length tolerances are explicit length expressions; area and area tolerance are numeric cm² values."
+      }
+    ],
+    "examples": [
+      {
+        "label": "Find a profile with one hole",
+        "data": {
+          "schemaVersion": 1,
+          "sketch": "Section",
+          "query": { "area": 15, "outerLoops": 1, "innerLoops": 1 },
+          "expected": { "profiles": 1, "loops": 2 }
+        },
+        "requires": "Section is an existing sketch; compare the integral expectation against an independently calculated reference. The sample is documentation, not a discovered profile or live Fusion result.",
+        "output": "The query returns one selector only if native topology/integrals and bounded sampled checks are complete and the profile matches uniquely."
+      }
+    ],
+    "audit": {
+      "sources": [
+        "runtime/python/fmcad/application/sketch_geometry_proof.py",
+        "runtime/python/fmcad/adapters/fusion/sketch_geometry_proof.py",
+        "runtime/python/fmcad/adapters/fusion/geometry_curve.py",
+        "packages/node-adapters/src/python/sketch-geometry-proof-public-routes.ts"
+      ],
+      "verified": [
+        "Native area/centroid and outer/inner loop enumeration",
+        "Hole-aware sampled containment and unique profile selection",
+        "Reuse of existing curve loop graph without a second solver"
+      ],
+      "tests": [
+        "tests/sketch_geometry_proof_test.py",
+        "tests/sketch-geometry-proof-bundle.test.js",
+        "tests/typesgeometry/python_types_sketch_geometry_proof_test.py",
+        "tests/typesgeometry/sketch_geometry_proof_check.cjs"
+      ],
+      "gaps": [],
+      "bugs": []
+    }
+  }
+}

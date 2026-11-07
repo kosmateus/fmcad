@@ -1,0 +1,103 @@
+{
+  "selection.rule.define": {
+    "summary": "Define a versioned, project/document-owned native entity selection rule and persist its manifest in the shared artifact store.",
+    "required": ["ruleId", "query"],
+    "inputs": {
+      "schemaVersion": "Optional integer 1.",
+      "ruleId": "Stable caller-chosen identifier, 1..128 printable characters.",
+      "query": "Existing entity.find query filters with explicit kind, expected cardinality, and explicit component/occurrence/body/feature or instances:true scope. unique is not supported. The manifest pins project, saved document version and instance scope.",
+      "exclude": "Optional array of at most 64 entity.find filter objects, evaluated in the same kind/frame/instance scope before checking final expected cardinality."
+    },
+    "example": {
+      "ruleId": "outer-cylinder-faces",
+      "query": {
+        "kind": "face",
+        "scope": { "body": { "name": "Housing" } },
+        "filters": { "geometry": "cylinder", "radius": "12 mm" },
+        "expect": 1
+      },
+      "exclude": [{ "name": "InspectionOnly" }]
+    },
+    "limitations": [
+      "A definition is accepted only when the current native query and exclusions satisfy expected cardinality.",
+      "The result includes an opaque ArtifactStore reference; retain it for later inspect/resolve/check calls.",
+      "Native Fusion qualification has not been performed. Offline fake-backend tests do not establish native topology or restore behavior."
+    ],
+    "readOnly": false,
+    "nodeOnly": true,
+    "documentPin": true
+  },
+  "selection.rule.inspect": {
+    "summary": "Load an owned selection rule artifact and inspect its version, scope and resolver provenance without querying current topology.",
+    "required": ["artifact"],
+    "inputs": {
+      "artifact": "Opaque version-1 artifact reference returned by selection.rule.define or a successful resolve/check; it is bound to the exact project and DataFile ID."
+    },
+    "example": {
+      "artifact": {
+        "version": 1,
+        "artifactId": "selection_artifact_1",
+        "projectId": "project_selection_1",
+        "documentFileId": "file_selection_1",
+        "documentCreationId": "creation_selection_1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    "limitations": [
+      "The exact --doc-file-id pin must match the stored DataFile; project/document ownership and artifact hash are checked before return.",
+      "Inspection does not re-run predicates or validate current topology."
+    ],
+    "readOnly": true,
+    "nodeOnly": true,
+    "documentPin": true
+  },
+  "selection.rule.resolve": {
+    "summary": "Re-run a persisted selection rule against current native topology and report resolved, split, merge, missing, stale or ambiguous status.",
+    "required": ["artifact"],
+    "inputs": {
+      "artifact": "Opaque version-1 artifact reference returned by selection.rule.define or a successful resolve/check."
+    },
+    "example": {
+      "artifact": {
+        "version": 1,
+        "artifactId": "selection_artifact_1",
+        "projectId": "project_selection_1",
+        "documentFileId": "file_selection_1",
+        "documentCreationId": "creation_selection_1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    "limitations": [
+      "A changed saved source version is stale even if predicates still match; failed or changed-topology results do not advance the stored baseline.",
+      "Historical native references are provenance only. The operation re-runs entity.find and never chooses a first result or repairs a stale reference.",
+      "The exact --doc-file-id pin, stored project/document owner, and artifact hash are checked before native dispatch."
+    ],
+    "readOnly": false,
+    "nodeOnly": true,
+    "documentPin": true
+  },
+  "selection.rule.check": {
+    "summary": "Require a persisted selection rule to resolve unambiguously with its expected cardinality and unchanged saved source version.",
+    "required": ["artifact"],
+    "inputs": {
+      "artifact": "Opaque version-1 artifact reference returned by selection.rule.define or a successful resolve/check."
+    },
+    "example": {
+      "artifact": {
+        "version": 1,
+        "artifactId": "selection_artifact_1",
+        "projectId": "project_selection_1",
+        "documentFileId": "file_selection_1",
+        "documentCreationId": "creation_selection_1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    "limitations": [
+      "Only resolved status with the full expected cardinality passes. Split, merge, missing, stale and ambiguous remain failures.",
+      "No native Fusion qualification or physical CAD acceptance is implied."
+    ],
+    "readOnly": false,
+    "nodeOnly": true,
+    "documentPin": true
+  }
+}

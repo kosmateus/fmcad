@@ -1,0 +1,48 @@
+{
+  "operations": [
+    {
+      "id": "source",
+      "operation": "component.create",
+      "data": { "name": "IW71_Source" }
+    },
+    {
+      "id": "scope",
+      "operation": "component.create",
+      "data": { "name": "IW71_Scope" }
+    },
+    {
+      "id": "box",
+      "operation": "shape.box",
+      "component": { "$ref": "source.result.component" },
+      "data": { "name": "IW71_Box", "width": "10 mm", "depth": "20 mm", "height": "30 mm" }
+    },
+    {
+      "id": "instance",
+      "operation": "occurrence.add",
+      "component": { "$ref": "scope.result.component" },
+      "data": { "component": { "$ref": "source.result.component" }, "copyMode": "linked" }
+    },
+    {
+      "id": "measure",
+      "operation": "entity.stats",
+      "component": { "$ref": "source.result.component" },
+      "data": { "kind": "body", "expect": 1 }
+    },
+    {
+      "id": "bodyReadback",
+      "operation": "entity.inspect",
+      "data": { "ref": { "$ref": "box.result.bodies.0" } }
+    },
+    {
+      "id": "sourceReadback",
+      "operation": "component.inspect",
+      "data": { "component": { "$ref": "source.result.component" } }
+    },
+    {
+      "id": "scopeReadback",
+      "operation": "component.inspect",
+      "component": { "$ref": "scope.result.component" },
+      "data": {}
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "runId": "help-bracket-01",
+  "reportPath": "./reports/help-bracket-01",
+  "parameters": {"diameter": "40 mm"},
+  "operations": [
+    {"id": "part", "operation": "component.create", "onExisting": "reuse", "data": {"name": "HelpBracket"}},
+    {"id": "section", "operation": "sketch.create", "component": {"$ref": "part.result.component"}, "onExisting": "reuse", "data": {"name": "Section", "plane": "XY"}},
+    {"id": "rim", "operation": "sketch.geometry", "component": {"$ref": "part.result.component"}, "onExisting": "reuse", "data": {"sketch": {"$ref": "section.result.sketch"}, "geometry": [{"type": "circle", "name": "rim", "center": ["0 mm", "0 mm", "0 mm"], "radius": "20 mm"}]}},
+    {"id": "diameter", "operation": "sketch.dimension", "component": {"$ref": "part.result.component"}, "onExisting": "reuse", "data": {"sketch": {"$ref": "section.result.sketch"}, "type": "diameter", "entities": [{"$ref": "rim.result.refs.rim"}], "text": ["25 mm", "25 mm", "0 mm"], "expression": {"$param": "diameter"}}},
+    {"id": "base", "operation": "model.extrude", "component": {"$ref": "part.result.component"}, "onExisting": "reuse", "data": {"name": "Base", "profile": {"kind": "profile", "sketch": {"$ref": "section.result.sketch"}}, "distance": "10 mm", "operation": "newBody"}},
+    {"id": "inspect", "operation": "entity.inspect", "component": {"$ref": "part.result.component"}, "onExisting": "reuse", "data": {"ref": {"$ref": "base.result.bodies.0"}}}
+  ]
+}

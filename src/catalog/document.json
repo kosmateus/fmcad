@@ -1,0 +1,123 @@
+{
+  "document.clear": {
+    "batchAllowed": false,
+    "summary": "Clear supported test-design contents in place, retaining the cloud file; never saves.",
+    "usage": "document clear --doc <exact-open-name> --doc-file-id <DataFile.id> --file-id <same-DataFile.id> --confirm true [--dry-run true] [--json]",
+    "required": ["fileId", "confirm"],
+    "example": {"fileId": "DISCOVER_EXACT_DATAFILE_ID", "confirm": true},
+    "readOnly": false,
+    "inputs": {
+      "fileId": "Required exact saved DataFile.id, also required in invocation --doc-file-id; discover with document status. No version ID, name or fuzzy matching.",
+      "confirm": "Required strict boolean true, including dryRun. Authorizes destroying modified test-design contents without saving.",
+      "dryRun": "Optional strict boolean, default false. true performs the same read-only preflight and returns actual contents counts without activation or edits. Unlike --preview, reads Fusion."
+    },
+    "limitations": [
+      "Requires explicit --doc, matching --doc-file-id/data.fileId, saved valid complete writable DataFile, root scope/edit target and supported local parametric Design. Existing unsaved modifications are allowed.",
+      "Deletes the audited timeline from marker zero, then surviving canvases/custom graphics, dependent-first user parameters and all entity/Design/Document attributes (including aliases, frames and run markers). Counts span root and descendant component definitions; occurrences are counted separately.",
+      "Refuses before mutation: other products including CAM, references, configurations, direct/mesh/custom/unknown history, suppressed/rolled-back timeline, empty/nested groups, flat patterns, decals, PMI, custom coordinate systems, analyses, selection/contact sets, named views or unavailable/invalid audit data. Single-level groups and standalone BRep-only base features are audited; other base contents refuse. Supported history types are listed in docs/DOCUMENT_CLEAR.md.",
+      "Verifies every scoped count is zero and the same saved complete writable cloud identity remains. No autosave, cloud deletion, save-as, retry or rollback. SDK/readback failures propagate with possible partial unsaved changes; inspect before another command. Caller saves separately.",
+      "Not a new-document reset: retain root/origins, cloud identity/name/location/metadata/versions, units, materials, appearances, rules and view/render/preferences. No live Fusion certification. --preview remains outer-input-only and is not a contents audit. Modeling batches disallowed."
+    ]
+  },
+  "document.save_native": {
+    "internalOnly": true,
+    "batchAllowed": false,
+    "summary": "Internal single-save primitive used only by document.save.once.",
+    "required": ["requestId", "operationId", "projectId", "fileId", "creationId", "version", "description"],
+    "example": {"requestId":"REQ_ID","operationId":"OP_ID","projectId":"PROJECT_ID","fileId":"FILE_ID","creationId":"CREATION_ID","version":1,"description":"Authorized fmcad save OP_ID"},
+    "readOnly": false,
+    "inputs": {"requestId":"Internal request identity.","operationId":"Internal operation identity.","projectId":"Exact project ID.","fileId":"Exact DataFile ID.","creationId":"Exact document creation ID.","version":"Exact pre-save DataFile version.","description":"Native save description."},
+    "limitations": ["Not a public CLI operation. The public receipt-bound document.save.once coordinator is the only supported caller."]
+  },
+  "document.save.once": {
+    "nodeOnly": true,
+    "batchAllowed": false,
+    "summary": "Save the exact already-open saved document at most once, then observe cloud publication within a bounded budget.",
+    "usage": "document save once --doc <exact-open-name> --doc-id <creationId> --doc-file-id <fileId> --project-id <projectId> --data '<request>' [--json]",
+    "required": ["requestId", "operationId", "projectId", "fileId", "creationId", "expectedVersion", "reportPath", "confirm"],
+    "example": {"requestId":"save-request-01","operationId":"authorized-save-01","projectId":"PROJECT_ID","fileId":"FILE_ID","creationId":"CREATION_ID","expectedVersion":3,"reportPath":".fmcad-document-save","confirm":true},
+    "readOnly": false,
+    "requiresDoc": true,
+    "inputs": {
+      "requestId": "Required stable caller request ID, 1..128 letters/digits/underscore/hyphen; repeated invocation never resubmits the same save.",
+      "operationId": "Required nonempty caller operation identity bound into the immutable receipt.",
+      "projectId": "Required exact DataFile.parentProject.id; must match --project-id and the open document's current project.",
+      "fileId": "Required exact saved DataFile.id; must match --doc-file-id and the open document's current lineage.",
+      "creationId": "Required exact open document creationId; must match --doc-id.",
+      "expectedVersion": "Required positive baseline DataFile.versionNumber; any drift before submit refuses the save.",
+      "reportPath": "Required local durable receipt directory; save and later observe must use the same path.",
+      "confirm": "Required strict boolean true authorizing this one save of the exact already-open document.",
+      "description": "Optional save description; defaults to an fmcad request-bound description.",
+      "timeBudgetMs": "Optional bounded observation budget, positive integer 1..120000 ms; defaults to 30000. It never cancels the save RPC."
+    },
+    "limitations": [
+      "Existing saved document only: no first-save, save-as, file/folder creation, activation, open, close, cold reopen, or foreign-document access. A dirty target must already be active and Fusion idle at the mutation boundary.",
+      "Identity and version are checked read-only before the one save and again inside its native handler. A clean document returns status noop with unchanged version and no save call, even when the current DataFile is read-only or still cloud processing; cloudComplete reports the observed bit separately.",
+      "An immutable pre-submit receipt is published before the save RPC. Timeout/lost response becomes unknown and is never replayed; use document.save.observe for the original request.",
+      "status:accepted means the SDK boolean is true but no status read completed within budget; status:pending means status readback saw publication incomplete; status:complete requires the same file/project/creation lineage, a version newer than the baseline, saved and unmodified document state, and DataFile.isComplete true. Readback errors after submit remain unknown.",
+      "No default cold test, refresh/save-as fallback or other specialized workflow is invoked. This operation is separate from references.refresh, component.externalize and document.save_as."
+    ]
+  },
+  "document.save.observe": {
+    "nodeOnly": true,
+    "batchAllowed": false,
+    "summary": "Observe the durable receipt and current status of an original document.save.once request without submitting another save.",
+    "usage": "document save observe --doc <exact-open-name> --doc-id <creationId> --doc-file-id <fileId> --project-id <projectId> --data '<request>' [--json]",
+    "required": ["requestId", "operationId", "projectId", "fileId", "creationId", "expectedVersion", "reportPath"],
+    "example": {"requestId":"save-request-01","operationId":"authorized-save-01","projectId":"PROJECT_ID","fileId":"FILE_ID","creationId":"CREATION_ID","expectedVersion":3,"reportPath":".fmcad-document-save"},
+    "readOnly": true,
+    "requiresDoc": true,
+    "inputs": {
+      "requestId": "Required exact original request ID from document.save.once.",
+      "operationId": "Required exact original operation identity.",
+      "projectId": "Required exact original project ID; must match --project-id and the open target.",
+      "fileId": "Required exact original DataFile.id; must match --doc-file-id.",
+      "creationId": "Required exact original creationId; must match --doc-id.",
+      "expectedVersion": "Required original pre-save baseline version.",
+      "reportPath": "Required exact same local receipt directory used by document.save.once.",
+      "timeBudgetMs": "Optional bounded read-only observation budget, positive integer 1..120000 ms; defaults to 30000."
+    },
+    "limitations": [
+      "Never calls Document.save, saveAs, open, close, activation or cold reopen. It reads only the existing request receipt and exact currently open document status.",
+      "A missing receipt or interrupted submission lock returns unknown; corrupt/mismatched receipts and changed target identity refuse reconciliation. Unknown is not success and no retry is offered.",
+      "complete, pending, failed and unknown describe publication evidence only, not model geometry or application correctness."
+    ]
+  },
+  "document.status": {
+    "summary": "Read the explicitly scoped document's saved, modified and cloud processing status.",
+    "required": [],
+    "example": {},
+    "readOnly": true,
+    "limitations": [
+      "Snapshot only: no save, activation, refresh, polling, simulation changes or other mutations. saved means Document.isSaved, not durable cloud completion.",
+      "Returns name, creationId, saved, modified, fileId, fileName, version (DataFile.versionNumber), versionId, isComplete, folderId and projectId. Unavailable file metadata is null; API read errors propagate.",
+      "isComplete describes the currently observed DataFile, which can still be the original file immediately after save_as. Compare against the returned target and original IDs. creationId is not guaranteed unique across copies."
+    ],
+    "inputs": {}
+  },
+  "document.save_as": {
+    "batchAllowed": false,
+    "summary": "First-save or save a copy of the scoped document to an explicit existing cloud destination.",
+    "required": ["name", "project", "folder", "confirm"],
+    "example": {"name": "Housing", "project": "ProductProject", "folder": "Designs/Parts", "confirm": true},
+    "readOnly": false,
+    "limitations": [
+      "SDK saving is unsupported inside command-related events/command transactions. Invoke separately outside such a transaction; do not put save_as in an MCP command-event transaction or a modeling batch. The handler does not schedule, bypass or detect host transactions. SDK errors propagate.",
+      "Only accessible projects in Data.dataProjects (active hub). Exact case-sensitive project ID/name and child-folder name matching; all ambiguous matches rejected. No fuzzy search, automatic projects/folders, hub switching or default destination.",
+      "folder is a cloud-logical relative path, not a native filesystem path or folder ID. Empty string selects project root. No leading/trailing slash, empty segments, dot segments, backslashes, colons or control characters; no path normalization.",
+      "Rejects existing DataFile names case-insensitively across file types. Preflight is not an atomic cloud reservation: concurrent creation or stale SDK listings remain possible. No overwrite option or automatic retry.",
+      "For a saved document, confirm authorizes a new copy and the open document becoming that copy. Returns original/current identity snapshots and target IDs; does not close, reopen or separately save the original.",
+      "accepted reports the SDK boolean; pending remains true until readback identifies a different file at the exact target with saved=true, modified=false and isComplete=true. status is complete, pending or failed. A true boolean alone never establishes durable cloud completion. No waiting, event pumping or invented upload percentage; inspect status later. Readback errors after acceptance propagate and can leave an uncertain save; inspect before retrying."
+    ],
+    "inputs": {
+      "name": "Explicit nonempty document name, not a path. No edge whitespace, trailing dot, dot/dot-dot names, control characters or / \\ : * ? \" < > |. No extension is added or removed by this operation.",
+      "project": "Exact existing project ID or name in the active hub; matching more than one project, including ID/name collisions, is rejected.",
+      "folder": "Required existing relative folder path such as Designs/Parts; use the actual empty string for project root. Cloud logical, never native path-mapped.",
+      "expectedFolderId": "Optional exact SDK DataFolder.id pin. A different folder ID, including a replacement at the same logical path, refuses before saveAs. It does not create or discover a destination.",
+      "expectedProjectId": "Optional exact observed SDK DataProject.id pin in addition to the project name/ID selector. A different project refuses before saveAs. Manufacturing Data workspace IDs are not implicitly converted into SDK IDs.",
+      "confirm": "Required boolean true to authorize first save or a saved-document copy. Direct CLI --confirm true is parsed as boolean; JSON string true is not accepted.",
+      "description": "Optional document description string; omitted sends an empty string.",
+      "tag": "Optional document tag string; omitted sends an empty string."
+    }
+  }
+}

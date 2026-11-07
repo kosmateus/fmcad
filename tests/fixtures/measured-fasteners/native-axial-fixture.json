@@ -1,0 +1,28 @@
+{
+  "frame": {
+    "space": "assembly",
+    "component": {"kind": "component", "name": "root"}
+  },
+  "tolerance": {
+    "axisOffsetMm": 0.05,
+    "axisAngleRad": 0.017453292519943295,
+    "minimumEngagementMm": 4.0
+  },
+  "screw": {
+    "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]},
+    "headBearing": [0, 0, 0],
+    "tip": [0, 0, 10],
+    "threadStart": [0, 0, 4],
+    "threadEnd": [0, 0, 10]
+  },
+  "receptacle": {
+    "kind": "blind",
+    "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]},
+    "threadStart": [0, 0, 5],
+    "threadEnd": [0, 0, 13],
+    "bottom": [0, 0, 13]
+  },
+  "layers": [
+    {"id": "bracket", "start": [0, 0, 0], "end": [0, 0, 5]}
+  ]
+}

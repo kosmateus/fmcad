@@ -1,0 +1,37 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "composite": true,
+    "declaration": true,
+    "rootDir": ".",
+    "outDir": "dist/library-build"
+  },
+  "include": [
+    "src/queue-broker.ts",
+    "src/queue-broker-ports.ts",
+    "src/queue-broker-modules.ts",
+    "src/queue-client.ts",
+    "src/queue-closed-epoch-proof.ts",
+    "src/queue-isolated-epoch.ts",
+    "src/queue-scratch-control.ts",
+    "src/api/**/*.ts",
+    "src/composition/library*.ts",
+    "src/composition/control-center.ts",
+    "src/entrypoints/cli.ts",
+    "src/entrypoints/cli/**/*.ts",
+    "src/entrypoints/mcp.ts",
+    "src/entrypoints/mcp-framing.ts",
+    "src/entrypoints/mcp-stdio-transport.ts",
+    "src/entrypoints/mcp-stdio.ts",
+    "src/entrypoints/worker.ts",
+    "src/entrypoints/autostart-worker.ts",
+    "src/entrypoints/queue-autostart.ts",
+    "src/entrypoints/broker.ts",
+    "src/entrypoints/queue-cli.ts",
+    "src/entrypoints/queue-connection.ts",
+    "src/entrypoints/queue-preflight.ts",
+    "src/composition/execution-worker.ts"
+  ],
+  "references": [{ "path": "./packages/core" }]
+}

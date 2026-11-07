@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "scripts/devtools",
+    "outDir": "dist/scripts/devtools",
+    "types": ["node"],
+    "noPropertyAccessFromIndexSignature": false,
+    "noEmitOnError": true,
+    "incremental": false
+  },
+  "include": ["scripts/devtools/**/*.ts"]
+}

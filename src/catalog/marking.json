@@ -1,0 +1,31 @@
+{
+  "marking.create": {
+    "summary": "Evaluate marking descriptors (text/symbol/arrow) as annotation descriptors or gated emboss/engrave geometry recipes with source association, occupancy bounds and feasibility/position warnings; user content is preserved verbatim.",
+    "required": ["marks"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "marks": [{"id": "level-max", "kind": "text", "representation": "annotation", "content": "MAX", "position": ["0 mm", "20 mm", "0 mm"], "dimensions": {"height": "3 mm", "width": "8 mm"}, "font": "ISO3098", "source": {"item": "tank", "level": "max", "status": "CONFIRMED"}}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "marks": "Nonempty array of marking descriptors {id, kind:text|symbol|arrow, representation:annotation|emboss|engrave, position:[x,y,z], dimensions:{height,width?,stroke?}, content?, direction?, depth?, font?, source?, reference?, levelValue?, resolvedRepresentation?}.",
+      "zones": "Optional array of {name?, kind?, region:{min:[x,y,z],max:[x,y,z]}} zones; optical/seal/a-surface are protected no-mark zones.",
+      "keepouts": "Optional array of {name?, region:{min,max}} keepout regions.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["User text/symbol content is preserved verbatim; no translation is applied.", "Native emboss/engrave geometry authoring is gated and reported as notEvaluated, never silently replaced by an image.", "Occupancy is an axis-aligned box from declared dimensions; real glyph extents are not measured."]
+  },
+  "marking.check": {
+    "summary": "Verify markings: MIN/MAX derive from the computed liquid level, arrow directions from a defined flow, no mark in an optical/seal protected zone, and no implicit geometry-to-image substitution.",
+    "required": ["marks"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "marks": [{"id": "level-max", "kind": "text", "representation": "annotation", "content": "MAX", "position": ["0 mm", "20 mm", "0 mm"], "dimensions": {"height": "3 mm"}, "reference": {"kind": "liquid-level", "bound": "max"}, "levelValue": "20 mm"}], "levels": {"min": "0 mm", "max": "20 mm"}},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "marks": "Nonempty array of marking descriptors (as marking.create).",
+      "levels": "Optional {min, max, source?} computed liquid level; omitted levels make level-reference marks unevaluable.",
+      "flows": "Optional array of {id?, direction:[x,y,z]} defined flows for arrow direction matching.",
+      "zones": "Optional array of zone descriptors; optical/seal/a-surface are protected no-mark zones.",
+      "keepouts": "Optional array of keepout region descriptors.",
+      "tolerance": "Nonnegative length, default 0 mm, for MIN/MAX level matching.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["MIN/MAX derivation is verified against declared level values, not recomputed fluid geometry.", "Zone containment uses axis-aligned occupancy bounds, not native glyph outlines."]
+  }
+}

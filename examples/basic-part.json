@@ -1,0 +1,90 @@
+{
+  "runId": "basic-part-01",
+  "reportPath": ".fmcad-batch/basic-part-01",
+  "operations": [
+    {
+      "id": "parameters",
+      "operation": "param.apply",
+      "data": {
+        "parameters": [
+          { "name": "part_radius", "expression": "10 mm", "unit": "mm" },
+          { "name": "part_height", "expression": "12 mm", "unit": "mm" }
+        ]
+      }
+    },
+    {
+      "id": "section",
+      "operation": "sketch.create",
+      "data": { "name": "PartSection", "plane": "XY" }
+    },
+    {
+      "id": "circle",
+      "operation": "sketch.geometry",
+      "data": {
+        "sketch": { "$ref": "section.result.sketch" },
+        "geometry": [
+          {
+            "type": "circle",
+            "name": "rim",
+            "center": ["0 mm", "0 mm", "0 mm"],
+            "radius": "part_radius"
+          }
+        ]
+      }
+    },
+    {
+      "id": "radius",
+      "operation": "sketch.dimension",
+      "data": {
+        "sketch": { "$ref": "section.result.sketch" },
+        "type": "radius",
+        "entities": [{ "$ref": "circle.result.refs.rim" }],
+        "text": ["15 mm", "15 mm", "0 mm"],
+        "expression": "part_radius"
+      }
+    },
+    {
+      "id": "solid",
+      "operation": "model.extrude",
+      "data": {
+        "name": "PartExtrusion",
+        "profile": {
+          "kind": "profile",
+          "sketch": { "$ref": "section.result.sketch" }
+        },
+        "distance": "part_height",
+        "operation": "newBody"
+      }
+    },
+    {
+      "id": "feature",
+      "operation": "feature.inspect",
+      "data": { "feature": { "$ref": "solid.result.feature" } }
+    },
+    {
+      "id": "rebuild",
+      "operation": "history.recompute",
+      "data": {}
+    },
+    {
+      "id": "bounds",
+      "operation": "measure.bounds",
+      "data": { "ref": { "$ref": "solid.result.bodies.0" }, "units": "mm" }
+    },
+    {
+      "id": "volume",
+      "operation": "check",
+      "data": {
+        "id": "basic-part-volume",
+        "source": "Example acceptance interval for a radius 10 mm, height 12 mm cylinder",
+        "measurement": {
+          "operation": "measure.volume",
+          "data": { "ref": { "$ref": "solid.result.bodies.0" }, "units": "mm3" }
+        },
+        "min": "3769 mm^3",
+        "max": "3771 mm^3"
+      }
+    },
+    { "id": "audit", "operation": "audit", "data": {} }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "references.refresh": {
+    "summary": "Audit, plan, apply or inspect one pinned reachable reference graph with version, native Derive and cold-durability evidence.",
+    "usage": "references refresh --data '<object>' [--json]",
+    "required": ["schemaVersion", "root", "requestId", "reportPath"],
+    "example": {"schemaVersion":1,"phase":"audit","root":{"projectId":"PROJECT_ID","fileId":"ROOT_FILE_ID","version":7},"requestId":"audit-001","reportPath":"./references-audit"},
+    "readOnly": false,
+    "nodeOnly": true,
+    "requiresDoc": false,
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "phase": "audit (default), plan, apply or inspect. inspect reads only the local receipt/plan and never contacts Fusion.",
+      "root": "Required exact saved baseline {projectId,fileId,version}; never a name selector.",
+      "scopeFileId": "Optional file ID that must be proven reachable from the pinned root; work is limited to its reachable dependency subgraph.",
+      "policy": "audit defaults to preserve; plan requires preserve or latest explicitly. preserve retains the declared edge version and pins, not rewind/promote. latest snapshots exact per-edge targets at plan time. apply inherits the immutable plan.",
+      "pins": "Optional [{edgeId,sourceFileId,version}] for intentional per-edge version bindings. IDs must match proven forward edges; older-than-current targets are preserved or blocked, never restored by updater.",
+      "allowedProjectIds": "Optional unique exact project IDs; defaults to the pinned root project only.",
+      "lifecycle": "existingOnly (default) or openOwned. inspect always has zero lifecycle effects. audit/plan open/activate/close only request-owned clean editors when explicitly openOwned.",
+      "nativeFallback": "never (default) or qualifiedOnce. qualifiedOnce permits the immutable plan to select UpdateAllLatestCmd directly for a structurally qualified mixed owned-Derive/linked parent. A planned SDK-to-native escalation requires a known settled stale SDK result; unknown attempts never escalate.",
+      "durability": "cold (default for apply) or cloud. cloud requires cloud completion but returns coldVerified:false; cold requires openOwned and owned clean editors before any model mutation.",
+      "parameterBindings": "Optional explicit [{edgeId,sourceParameter,consumerAlias?,nativeDerivedParameter?}] map. Names are exact observations/caller mappings, not prefix/suffix rules.",
+      "callerNamespaces": "Optional opaque caller mapping to distinguish component, body, native occurrence and proxy metadata contexts; names and :n occurrence suffixes are not identity.",
+      "maxFiles": "Optional positive bounded reachable-document limit; omitted documents are reported, never silently dropped.",
+      "maxUpdates": "Optional positive bounded changed-document limit; settled continuations do not resave confirmed-current files.",
+      "timeBudgetMs": "Optional positive scheduling budget; limits starting further work and never cancels a running SDK call.",
+      "requestId": "Required immutable request/journal identity; a new request does not replay an earlier unknown apply.",
+      "planId": "Required for apply and optional for inspect; apply executes only this write-once local plan.",
+      "reportPath": "Required CLI-local journal directory; numbered write-once receipts are request-bound and must not be on a network filesystem.",
+      "confirm": "Apply only; strict true authorizes this one immutable plan. No per-file confirmations.",
+      "uiLeases": "Optional map keyed by exact fileId, supplying the existing .11 request-bound lease/target for a planned direct native route or qualified fallback. No lease is minted or widened here."
+    },
+    "limitations": [
+      "Non-atomic cross-file effects. Uses Document.documentReferences plus unsuppressed owned Derive features; childReferences is supplemental version evidence only after a proven forward edge. No reachability is inferred from cloud childReferences alone.",
+      "Dirty, old, duplicate, uneditable, unresolved, incomplete-cloud, conflicting-pin, cycle or unhealthy-history nodes block dependent parents and report independent work. Broken copied-feature context returns blocked repairRequired; equal cached BRep does not authorize reselect, repair or refresh. An explicitly mapped DerivedParameter value mismatch at an already-current target version is blocked as currentVersionBindingMismatch/repairRequired, not scheduled as another Update All. Diagnose it separately; neither current version flags nor successful computeAll prove correct derived values.",
+      "Document.updateAllReferences, DocumentReference.getLatestVersion, GetLatestCmd, GetAllLatestCmd and UpdateAllLatestCmd are distinct. Routine mixed-parent native escalation uses the shipped .11 one-shot watcher and only a request-bound lease; modal acceptance is not domain PASS. No selection/reselect or mass update across conflicting pins/out-of-scope edges.",
+      "Audit/plan are non-model-writing. Only explicitly openOwned may open/activate owned clean editors. Inspect has no Fusion calls/lifecycle. Apply rechecks identity, versions, command/UI, history, writability and health per action; saves changed same-lineage files only. Unknown submit/save remains unknown, with no replay, restore-save or retry until reconciled.",
+      "Getter errors such as InternalValidationError : doc remain diagnostics; they are neither corruption proof nor success. Bindings, internal/display parameter values and units, health, physical response, cloud completion and cold persistence are separate evidence. A green status/getter/current flag alone is insufficient.",
+      "No setSourceEntities, reselect, promote, alias freeze, Derive recreation, lineage replacement, source publication, repair algorithm, F3Z or same-name upload. Those are outside ordinary refresh; same-name upload creates a new file ID. DataFile.promote is only a separate explicit repair possibility after equivalence review, never automatic.",
+      "Native qualification is environment-specific. The historical SDK-only mixed-parent update left an owned Derive stale; actual UpdateAllLatestCmd worked in one qualified environment, while .11 later recorded UI-submitted attempts whose native poststate remained stale. Neither universal SDK failure nor universal UI success is claimed."
+    ]
+  }
+}

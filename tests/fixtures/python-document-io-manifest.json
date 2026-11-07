@@ -1,0 +1,585 @@
+{
+  "version": 1,
+  "families": [
+    {
+      "family": "animation",
+      "compatibility": "assets/cad/animation.py",
+      "units": [
+        {
+          "id": "docio-animation-rules",
+          "path": "runtime/python/fmcad/domain/animation.py",
+          "dependencies": []
+        },
+        {
+          "id": "animation",
+          "path": "runtime/python/fmcad/adapters/fusion/animation.py",
+          "dependencies": [
+            "core",
+            "docio-animation-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "animation2",
+      "compatibility": "assets/cad/animation2.py",
+      "units": [
+        {
+          "id": "docio-animation2-rules",
+          "path": "runtime/python/fmcad/domain/animation2.py",
+          "dependencies": []
+        },
+        {
+          "id": "animation2",
+          "path": "runtime/python/fmcad/adapters/fusion/animation2.py",
+          "dependencies": [
+            "core",
+            "docio-animation2-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "appearance",
+      "compatibility": "assets/cad/appearance.py",
+      "units": [
+        {
+          "id": "docio-appearance-rules",
+          "path": "runtime/python/fmcad/domain/appearance.py",
+          "dependencies": []
+        },
+        {
+          "id": "appearance",
+          "path": "runtime/python/fmcad/adapters/fusion/appearance.py",
+          "dependencies": [
+            "core",
+            "docio-appearance-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "atomic",
+      "compatibility": "assets/cad/atomic.py",
+      "units": [
+        {
+          "id": "atomic",
+          "path": "runtime/python/fmcad/adapters/fusion/atomic.py",
+          "dependencies": [
+            "core"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "attributes",
+      "compatibility": "assets/cad/attributes.py",
+      "units": [
+        {
+          "id": "attributes",
+          "path": "runtime/python/fmcad/adapters/fusion/attributes.py",
+          "dependencies": [
+            "core"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "cam",
+      "compatibility": "assets/cad/cam.py",
+      "units": [
+        {
+          "id": "docio-cam-rules",
+          "path": "runtime/python/fmcad/domain/cam.py",
+          "dependencies": []
+        },
+        {
+          "id": "cam",
+          "path": "runtime/python/fmcad/adapters/fusion/cam.py",
+          "dependencies": [
+            "core",
+            "docio-cam-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "checking",
+      "compatibility": "assets/cad/checking.py",
+      "units": [
+        {
+          "id": "docio-checking-rules",
+          "path": "runtime/python/fmcad/domain/checking.py",
+          "dependencies": []
+        },
+        {
+          "id": "docio-checking-usecase",
+          "path": "runtime/python/fmcad/application/checking.py",
+          "dependencies": [
+            "docio-checking-rules"
+          ]
+        },
+        {
+          "id": "checking",
+          "path": "runtime/python/fmcad/adapters/fusion/checking.py",
+          "dependencies": [
+            "core",
+            "docio-checking-rules",
+            "docio-checking-usecase"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "containment",
+      "compatibility": "assets/cad/containment.py",
+      "units": [
+        {
+          "id": "docio-containment-rules",
+          "path": "runtime/python/fmcad/domain/containment.py",
+          "dependencies": []
+        },
+        {
+          "id": "containment",
+          "path": "runtime/python/fmcad/adapters/fusion/containment.py",
+          "dependencies": [
+            "core",
+            "docio-containment-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "data_import",
+      "compatibility": "assets/cad/data_import.py",
+      "units": [
+        {
+          "id": "docio-data_import-rules",
+          "path": "runtime/python/fmcad/domain/data_import.py",
+          "dependencies": []
+        },
+        {
+          "id": "data_import",
+          "path": "runtime/python/fmcad/adapters/fusion/data_import.py",
+          "dependencies": [
+            "core",
+            "docio-data_import-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "dfm",
+      "compatibility": "assets/cad/dfm.py",
+      "units": [
+        {
+          "id": "docio-dfm-rules",
+          "path": "runtime/python/fmcad/domain/dfm.py",
+          "dependencies": []
+        },
+        {
+          "id": "dfm",
+          "path": "runtime/python/fmcad/adapters/fusion/dfm.py",
+          "dependencies": [
+            "core",
+            "docio-dfm-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "document",
+      "compatibility": "assets/cad/document.py",
+      "units": [
+        {
+          "id": "docio-document-rules",
+          "path": "runtime/python/fmcad/domain/document.py",
+          "dependencies": []
+        },
+        {
+          "id": "docio-document-usecase",
+          "path": "runtime/python/fmcad/application/document.py",
+          "dependencies": [
+            "docio-document-rules"
+          ]
+        },
+        {
+          "id": "document",
+          "path": "runtime/python/fmcad/adapters/fusion/document.py",
+          "dependencies": [
+            "core",
+            "docio-document-rules",
+            "docio-document-usecase"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "document_snapshot",
+      "compatibility": "assets/cad/document_snapshot.py",
+      "units": [
+        {
+          "id": "document_snapshot",
+          "path": "runtime/python/fmcad/adapters/fusion/document_snapshot.py",
+          "dependencies": [
+            "core"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "entity",
+      "compatibility": "assets/cad/entity.py",
+      "units": [
+        {
+          "id": "entity",
+          "path": "runtime/python/fmcad/adapters/fusion/entity.py",
+          "dependencies": [
+            "core"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "explode",
+      "compatibility": "assets/cad/explode.py",
+      "units": [
+        {
+          "id": "docio-explode-rules",
+          "path": "runtime/python/fmcad/domain/explode.py",
+          "dependencies": []
+        },
+        {
+          "id": "explode",
+          "path": "runtime/python/fmcad/adapters/fusion/explode.py",
+          "dependencies": [
+            "core",
+            "docio-explode-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "externalization",
+      "compatibility": "assets/cad/externalization.py",
+      "units": [
+        {
+          "id": "docio-externalization-rules",
+          "path": "runtime/python/fmcad/domain/externalization.py",
+          "dependencies": []
+        },
+        {
+          "id": "externalization",
+          "path": "runtime/python/fmcad/adapters/fusion/externalization.py",
+          "dependencies": [
+            "core",
+            "docio-externalization-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "fpc_pcb",
+      "compatibility": "assets/cad/fpc_pcb.py",
+      "units": [
+        {
+          "id": "docio-fpc_pcb-rules",
+          "path": "runtime/python/fmcad/domain/fpc_pcb.py",
+          "dependencies": []
+        },
+        {
+          "id": "fpc_pcb",
+          "path": "runtime/python/fmcad/adapters/fusion/fpc_pcb.py",
+          "dependencies": [
+            "core",
+            "docio-fpc_pcb-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "identity",
+      "compatibility": "assets/cad/identity.py",
+      "units": [
+        {
+          "id": "identity",
+          "path": "runtime/python/fmcad/adapters/fusion/identity.py",
+          "dependencies": [
+            "core"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "interference",
+      "compatibility": "assets/cad/interference.py",
+      "units": [
+        {
+          "id": "docio-interference-rules",
+          "path": "runtime/python/fmcad/domain/interference.py",
+          "dependencies": []
+        },
+        {
+          "id": "interference",
+          "path": "runtime/python/fmcad/adapters/fusion/interference.py",
+          "dependencies": [
+            "core",
+            "docio-interference-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "io",
+      "compatibility": "assets/cad/io.py",
+      "units": [
+        {
+          "id": "capture-integrity",
+          "path": "runtime/python/fmcad/domain/capture_integrity.py",
+          "dependencies": []
+        },
+        {
+          "id": "docio-io-rules",
+          "path": "runtime/python/fmcad/domain/io.py",
+          "dependencies": []
+        },
+        {
+          "id": "io",
+          "path": "runtime/python/fmcad/adapters/fusion/io.py",
+          "dependencies": [
+            "core",
+            "capture-integrity",
+            "docio-io-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "marking",
+      "compatibility": "assets/cad/marking.py",
+      "units": [
+        {
+          "id": "docio-marking-rules",
+          "path": "runtime/python/fmcad/domain/marking.py",
+          "dependencies": []
+        },
+        {
+          "id": "marking",
+          "path": "runtime/python/fmcad/adapters/fusion/marking.py",
+          "dependencies": [
+            "core",
+            "docio-marking-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "measure",
+      "compatibility": "assets/cad/measure.py",
+      "units": [
+        {
+          "id": "docio-measure-rules",
+          "path": "runtime/python/fmcad/domain/measure.py",
+          "dependencies": []
+        },
+        {
+          "id": "measure",
+          "path": "runtime/python/fmcad/adapters/fusion/measure.py",
+          "dependencies": [
+            "core",
+            "docio-measure-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "optics",
+      "compatibility": "assets/cad/optics.py",
+      "units": [
+        {
+          "id": "docio-optics-rules",
+          "path": "runtime/python/fmcad/domain/optics.py",
+          "dependencies": []
+        },
+        {
+          "id": "optics",
+          "path": "runtime/python/fmcad/adapters/fusion/optics.py",
+          "dependencies": [
+            "core",
+            "docio-optics-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "presentation",
+      "compatibility": "assets/cad/presentation.py",
+      "units": [
+        {
+          "id": "docio-presentation-rules",
+          "path": "runtime/python/fmcad/domain/presentation.py",
+          "dependencies": []
+        },
+        {
+          "id": "presentation",
+          "path": "runtime/python/fmcad/adapters/fusion/presentation.py",
+          "dependencies": [
+            "core",
+            "docio-presentation-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "reference",
+      "compatibility": "assets/cad/reference.py",
+      "units": [
+        {
+          "id": "reference",
+          "path": "runtime/python/fmcad/adapters/fusion/reference.py",
+          "dependencies": [
+            "core"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "references",
+      "compatibility": "assets/cad/references.py",
+      "units": [
+        {
+          "id": "docio-references-rules",
+          "path": "runtime/python/fmcad/domain/references.py",
+          "dependencies": []
+        },
+        {
+          "id": "references",
+          "path": "runtime/python/fmcad/adapters/fusion/references.py",
+          "dependencies": [
+            "core",
+            "docio-references-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "seal",
+      "compatibility": "assets/cad/seal.py",
+      "units": [
+        {
+          "id": "docio-seal-rules",
+          "path": "runtime/python/fmcad/domain/seal.py",
+          "dependencies": []
+        },
+        {
+          "id": "seal",
+          "path": "runtime/python/fmcad/adapters/fusion/seal.py",
+          "dependencies": [
+            "core",
+            "docio-seal-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "simulation",
+      "compatibility": "assets/cad/simulation.py",
+      "units": [
+        {
+          "id": "simulation",
+          "path": "runtime/python/fmcad/adapters/fusion/simulation.py",
+          "dependencies": [
+            "core"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "texture",
+      "compatibility": "assets/cad/texture.py",
+      "units": [
+        {
+          "id": "docio-texture-rules",
+          "path": "runtime/python/fmcad/domain/texture.py",
+          "dependencies": []
+        },
+        {
+          "id": "texture",
+          "path": "runtime/python/fmcad/adapters/fusion/texture.py",
+          "dependencies": [
+            "core",
+            "docio-texture-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "legacy-review",
+      "compatibility": "assets/review.py",
+      "units": [
+        {
+          "id": "capture-integrity",
+          "path": "runtime/python/fmcad/domain/capture_integrity.py",
+          "dependencies": []
+        },
+        {
+          "id": "docio-review-rules",
+          "path": "runtime/python/fmcad/domain/review.py",
+          "dependencies": []
+        },
+        {
+          "id": "legacy-review",
+          "path": "runtime/python/fmcad/adapters/fusion/legacy_review.py",
+          "dependencies": [
+            "capture-integrity",
+            "docio-review-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "family": "legacy-export",
+      "compatibility": "assets/export.py",
+      "units": [
+        {
+          "id": "legacy-export",
+          "path": "runtime/python/fmcad/adapters/fusion/legacy_export.py",
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "family": "legacy-inspect",
+      "compatibility": "assets/inspect.py",
+      "units": [
+        {
+          "id": "legacy-inspect",
+          "path": "runtime/python/fmcad/adapters/fusion/legacy_inspect.py",
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "family": "legacy-upload",
+      "compatibility": "assets/upload.py",
+      "units": [
+        {
+          "id": "legacy-upload",
+          "path": "runtime/python/fmcad/adapters/fusion/legacy_upload.py",
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "family": "legacy-queue_document",
+      "compatibility": "assets/queue_document.py",
+      "units": [
+        {
+          "id": "legacy-queue_document",
+          "path": "runtime/python/fmcad/adapters/fusion/legacy_queue_document.py",
+          "dependencies": []
+        }
+      ]
+    }
+  ]
+}

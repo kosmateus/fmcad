@@ -1,0 +1,47 @@
+{
+  "pose.save": {
+    "summary": "Save a named product state as a local attribute manifest: identity/revision, joint values, parameter values, visibility, fill state, spring state, route variant and service/disconnection flags. Explicitly not a native ConfigurationTable.",
+    "required": ["schemaVersion", "frame", "name"], "readOnly": false, "envelope": true,
+    "example": {"schemaVersion": 1, "frame": "component", "name": "Service", "revision": 1, "fillState": "EMPTY", "springState": "COCKED", "service": {"disconnections": ["tank-dock"]}},
+    "inputs": {
+      "schemaVersion": "Required integer 1.", "frame": "Required component.", "name": "Required nonempty pose name.",
+      "revision": "Optional positive integer, default 1; bumped automatically on update.",
+      "joints": "Optional array of {joint, rotation?|slide?} value expressions.",
+      "parameters": "Optional array of {name, expression}.",
+      "visibility": "Optional array of {ref, visible} boolean.",
+      "fillState": "Optional FULL or EMPTY; the liquid-mass effect is resolved by GM23, not recomputed here.",
+      "springState": "Optional FREE, COCKED or COMPRESSED; the force effect is resolved by GM12.",
+      "routeVariant": "Optional route variant name.", "service": "Optional {disconnections: string[]}.",
+      "onExisting": "error (default) or update; update requires confirm.", "confirm": "Required true for update."
+    },
+    "limitations": ["Local attribute manifest, not a native Fusion ConfigurationTable."]
+  },
+  "pose.apply": {
+    "summary": "Apply a saved pose and leave the requested state in place: drives joints (joint.drive), applies parameters (param.apply) and visibility; fill/spring/route/service states are manifest-carried.",
+    "required": ["schemaVersion", "frame", "name"], "readOnly": false, "envelope": true,
+    "example": {"schemaVersion": 1, "frame": "component", "name": "Service"},
+    "inputs": {"schemaVersion": "Required integer 1.", "frame": "Required component.", "name": "Required saved pose name."},
+    "limitations": ["apply leaves the requested state; there is no automatic restoration. Incompatible documents and stale refs are rejected before mutation."]
+  },
+  "pose.list": {
+    "summary": "List saved poses with name, revision, savedAt and document identity.",
+    "required": ["schemaVersion", "frame"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "frame": "component"},
+    "inputs": {"schemaVersion": "Required integer 1.", "frame": "Required component."},
+    "limitations": ["Read-only enumeration of the local manifest index."]
+  },
+  "pose.delete": {
+    "summary": "Delete a saved pose from the local manifest.",
+    "required": ["schemaVersion", "frame", "name", "confirm"], "readOnly": false, "envelope": true,
+    "example": {"schemaVersion": 1, "frame": "component", "name": "Service", "confirm": true},
+    "inputs": {"schemaVersion": "Required integer 1.", "frame": "Required component.", "name": "Required saved pose name.", "confirm": "Required true."},
+    "limitations": ["Deletes only the manifest record; no geometry is touched."]
+  },
+  "pose.evaluate": {
+    "summary": "Apply a pose temporarily and restore the previous state, reporting before/after/restoration; restoration failure is a separate error.",
+    "required": ["schemaVersion", "frame", "name"], "readOnly": false, "envelope": true,
+    "example": {"schemaVersion": 1, "frame": "component", "name": "Service"},
+    "inputs": {"schemaVersion": "Required integer 1.", "frame": "Required component.", "name": "Required saved pose name."},
+    "limitations": ["evaluate applies temporarily and restores; restoration failure is reported separately and does not guarantee the previous state was re-established."]
+  }
+}

@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx prettier --check --end-of-line auto .github/workflows/ci.yml
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck:tests
+      - run: npm run test:scenarios:unit
+      - run: npm run typecheck:simulator
+      - run: node dist/tests/scenarios/verify-api.js
+      - run: npm run test:scenarios:component -- --protocol mcp --owners 2
+      - run: npm run test:scenarios:component -- --protocol addin --owners 2
+      - run: npm run test:contracts
+      - run: npm run test:python
+
+  control-center-browser:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:control-center:e2e
+
+  scenario-broker:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        protocol: [mcp, addin]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --concurrency 10 --owners 10
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scenario-broker-${{ matrix.protocol }}
+          path: .test-artifacts/scenarios/
+          include-hidden-files: true

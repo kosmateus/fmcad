@@ -1,0 +1,3 @@
+-r image_trace_requirements.txt
+scipy>=1.10
+opencv-python-headless>=4.8

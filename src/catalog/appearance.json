@@ -1,0 +1,214 @@
+{
+  "appearance.create": {
+    "summary": "Create a design-local appearance by copying a library or design appearance (with a new name) or, when the installed SDK supports it, a neutral appearance. Returns the actual copy ID, never an assumed ID.",
+    "required": [
+      "name"
+    ],
+    "example": {
+      "name": "Custom Paint",
+      "id": "appearance-id",
+      "library": "loaded-library-id"
+    },
+    "readOnly": false,
+    "limitations": [
+      "Appearances.add is a preview feature; prefer copying an existing appearance by id. The copy is design-local and its actual ID is returned; a copied ID is never assumed unique. Appearance is visual only and independent from physical material."
+    ],
+    "inputs": {
+      "name": "Required nonempty new name; must be unique within the design appearances.",
+      "id": "Optional exact appearance ID to copy (from appearance.list).",
+      "library": "Optional loaded library ID containing the appearance; omit for design-local.",
+      "surfaceType": "Optional opaque/metal/transparent for a neutral add; ignored when copying by id."
+    }
+  },
+  "appearance.edit": {
+    "summary": "Edit a design-local appearance: rename it and set typed properties through appearanceProperties. Returns before/after typed properties.",
+    "required": [
+      "id"
+    ],
+    "example": {
+      "id": "appearance-id",
+      "name": "Matte Red",
+      "properties": [
+        {
+          "id": "surface_roughness",
+          "value": 0.4
+        }
+      ]
+    },
+    "readOnly": false,
+    "limitations": [
+      "Targets design-local appearances only; copy a library resource first with appearance.create. Typed properties are set via the concrete Property subclasses; read-only properties are rejected. Editing a property value removes any connected texture on a FloatProperty."
+    ],
+    "inputs": {
+      "id": "Required exact design-local appearance ID from appearance.list.",
+      "name": "Optional new unique name.",
+      "properties": "Optional nonempty array of {id, value}; value type must match the property (float/int/bool/string/choice/color)."
+    },
+    "envelope": true
+  },
+  "appearance.texture": {
+    "summary": "Connect or disconnect a texture image on an appearance channel (color/normal/roughness) and set real-world scale, bump type and rotation.",
+    "required": [
+      "id",
+      "channel"
+    ],
+    "example": {
+      "id": "appearance-id",
+      "channel": "normal",
+      "image": "C:/textures/height.png",
+      "bump": true
+    },
+    "readOnly": false,
+    "limitations": [
+      "colorTexture/normalTexture/roughnessTexture are preview features; the image is embedded in the document but the returned path may differ after save/reopen. Real-world scale and bump use appearanceProperties only when a writable property exists; otherwise those sub-fields are reported blocked, never silently ignored."
+    ],
+    "inputs": {
+      "id": "Required design-local appearance ID.",
+      "channel": "color, normal, or roughness.",
+      "image": "Optional path to the texture image; empty string disconnects it.",
+      "scaleX": "Optional real-world scale X length expression.",
+      "scaleY": "Optional real-world scale Y length expression.",
+      "rotation": "Optional angle expression.",
+      "bump": "Optional boolean; true selects height-map bump on the normal channel.",
+      "lock": "Optional boolean; true makes scaleX/scaleY follow each other when only one is given."
+    },
+    "envelope": true
+  },
+  "appearance.projection": {
+    "summary": "Read or set the texture projection type (automatic/planar/box/spherical/cylindrical) of a design-local appearance.",
+    "required": [
+      "id"
+    ],
+    "example": {
+      "id": "appearance-id",
+      "projection": "planar"
+    },
+    "readOnly": false,
+    "limitations": [
+      "Projection is a texture property, not a geometric projection frame. If the installed SDK exposes no writable texture_ProjectionType property, a set request is blocked."
+    ],
+    "inputs": {
+      "id": "Required design-local appearance ID.",
+      "projection": "automatic, planar, box, spherical, or cylindrical; omitted reads current."
+    },
+    "envelope": true
+  },
+  "appearance.assign-map": {
+    "summary": "Read the visual appearance assignment map across selected entities and optionally compare it against an expected physical appearance, returning mismatches.",
+    "required": [],
+    "example": {
+      "refs": [
+        {
+          "kind": "body",
+          "token": "body-token"
+        }
+      ],
+      "expected": {
+        "Body": "appearance-id"
+      }
+    },
+    "readOnly": true,
+    "envelope": true,
+    "limitations": [
+      "Read-only. A face reads its body appearance and an occurrence reads its component definition. Equal IDs do not establish inheritance provenance. A duplicate name/ID is a mismatch candidate, never assumed equivalent."
+    ],
+    "inputs": {
+      "refs": "Optional nonempty Component/BRepBody/BRepFace/Occurrence refs; omit to map all bodies/components/faces/occurrences.",
+      "expected": "Optional map of {ref name -> expected appearance id}; mismatches are reported.",
+      "library": "Optional library ID; not used for the read, kept for workflow symmetry."
+    }
+  },
+  "material.create": {
+    "summary": "Create a design-local physical material by copying a library or design material with a new name. Returns the actual copy ID.",
+    "required": [
+      "name",
+      "id"
+    ],
+    "example": {
+      "name": "Custom ABS",
+      "id": "material-id",
+      "library": "loaded-library-id"
+    },
+    "readOnly": false,
+    "limitations": [
+      "Physical materials can only be copied (Materials.addByCopy); there is no neutral add. The copy is design-local and the actual ID is returned. No density/mass validation is performed."
+    ],
+    "inputs": {
+      "name": "Required nonempty new name; must be unique within the design materials.",
+      "id": "Required exact material ID to copy (from material.list).",
+      "library": "Optional loaded library ID containing the material."
+    }
+  },
+  "material.edit": {
+    "summary": "Edit a design-local physical material: rename, set description and set typed physical properties through materialProperties.",
+    "required": [
+      "id"
+    ],
+    "example": {
+      "id": "material-id",
+      "name": "Custom ABS",
+      "properties": [
+        {
+          "id": "density",
+          "value": 1.05
+        }
+      ]
+    },
+    "readOnly": false,
+    "limitations": [
+      "Targets design-local materials only; copy a library resource first with material.create. A missing density is reported, never replaced by a default. Physical material is separate from visual appearance."
+    ],
+    "inputs": {
+      "id": "Required exact design-local material ID.",
+      "name": "Optional new unique name.",
+      "description": "Optional material description string.",
+      "properties": "Optional nonempty array of {id, value}; value type must match the property."
+    },
+    "envelope": true
+  },
+  "material.assign-map": {
+    "summary": "Read the physical material assignment map across selected entities and optionally compare it against expected materials, returning mismatches.",
+    "required": [],
+    "example": {
+      "refs": [
+        {
+          "kind": "body",
+          "token": "body-token"
+        }
+      ],
+      "expected": {
+        "Body": "material-id"
+      }
+    },
+    "readOnly": true,
+    "envelope": true,
+    "limitations": [
+      "Read-only. A face reads its body material and an occurrence reads its component definition. Equal IDs do not establish inheritance. No mass or density validation is performed."
+    ],
+    "inputs": {
+      "refs": "Optional nonempty Component/BRepBody/BRepFace/Occurrence refs; omit to map all.",
+      "expected": "Optional map of {ref name -> expected material id}; mismatches are reported.",
+      "library": "Optional library ID; not used for the read."
+    }
+  },
+  "styles.report": {
+    "summary": "Aggregate appearance and material states across definitions/instances/faces with duplicate name/ID and missing-density detection.",
+    "required": [],
+    "example": {
+      "refs": [
+        {
+          "kind": "body",
+          "token": "body-token"
+        }
+      ]
+    },
+    "readOnly": true,
+    "envelope": true,
+    "limitations": [
+      "Read-only. A duplicate name/ID is reported, not assumed equivalent. A missing material density is reported, never replaced. Appearance and physical material are reported separately."
+    ],
+    "inputs": {
+      "refs": "Optional nonempty refs to scope the report; omit to map all bodies/components/faces/occurrences."
+    }
+  }
+}

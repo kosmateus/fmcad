@@ -1,0 +1,1077 @@
+{
+  "source": "offline-fake-only",
+  "node": "v24.15.0",
+  "measuredAt": "2026-10-27T14:52:09.395Z",
+  "sourceRoot": "explicit-source-root",
+  "sourceRootBranch": "integration/generated-python-types",
+  "sourceRootCommit": "dc50a7909a6ce329a2f0513104bb15a0346543ba",
+  "checkerRoot": "official-checker-distribution",
+  "checkerCommit": "baf37fdf801bb0805e1a5aef0ef5f5d331364709",
+  "reads": 20,
+  "nativeRpcCount": null,
+  "nativeValidation": "not-performed",
+  "nativeLifecycle": "not-simulated",
+  "checkerControl": {
+    "status": "passed",
+    "diagnostics": [],
+    "reasons": [],
+    "provenance": {
+      "artifactHash": "2afcbbdb0e14a810f5733abf97df764d4a1840ea65f80a5956fe9dd73dcbe1ef",
+      "wireHash": "184a24d7311db407ba1e8152669d23719bc648a0a40e5bf69e3090233bce9f04",
+      "checker": "basedpyright",
+      "checkerVersion": "1.40.2",
+      "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+      "pythonVersion": "3.11",
+      "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+      "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+      "contextHash": "65e2e2ddf6094d981e952499b871883f5cc6e5912e6c7efe48477a8fc2399f9f",
+      "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+      "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+      "analysisHash": "42aab6665cdbb008bb6f959c4be3b201ce12b547e567384ea005775f1bfb3801",
+      "cache": "disabled"
+    }
+  },
+  "packDelivered": false,
+  "runtimeSources": [
+    {
+      "id": "values",
+      "filename": "runtime/python/fmcad/domain/values.py",
+      "sha256": "3f3e1377135bba9361be977d30e2e7a1be187f6727252221eca27c6b6e537d12"
+    },
+    {
+      "id": "fusion-values",
+      "filename": "runtime/python/fmcad/adapters/fusion/values.py",
+      "sha256": "a7b2115dc1eecef0370e5e7e62733c081697354c0e007dded698a294aeb4daaa"
+    },
+    {
+      "id": "core",
+      "filename": "assets/cad/core.py",
+      "sha256": "9fd50ff9d9df155de66da22d1d5e6e33ccff65da1a50db51cbe46f756fd2c72b"
+    },
+    {
+      "id": "inspection-domain",
+      "filename": "runtime/python/fmcad/domain/inspection.py",
+      "sha256": "bf5e677c645f43152a801925ac36353cb31c536375348e218f6031030f9f9caf"
+    },
+    {
+      "id": "inspection",
+      "filename": "runtime/python/fmcad/adapters/fusion/inspection.py",
+      "sha256": "7674b5c06f41bb81b22ff7eb7c83ae9887333eec54f36255b28afd345246fb9b"
+    },
+    {
+      "id": "docio-animation-rules",
+      "filename": "runtime/python/fmcad/domain/animation.py",
+      "sha256": "540204103f54da0cf5d923c02c49aa160951bd046df456bf5719a7351b16c8ec"
+    },
+    {
+      "id": "animation",
+      "filename": "runtime/python/fmcad/adapters/fusion/animation.py",
+      "sha256": "d549d02396538f9d8c095d23f464b87e3b6cac7ed8b434b1327fce25035fe729"
+    },
+    {
+      "id": "docio-animation2-rules",
+      "filename": "runtime/python/fmcad/domain/animation2.py",
+      "sha256": "16dca838d0853422312174f0e3d2b7d8ae19006bcedf077d282cb44ff14b00b4"
+    },
+    {
+      "id": "animation2",
+      "filename": "runtime/python/fmcad/adapters/fusion/animation2.py",
+      "sha256": "d2d17649fef97bbaf336bfac090f30b05e0010fd73cf068e3b401408c42e59b6"
+    },
+    {
+      "id": "docio-appearance-rules",
+      "filename": "runtime/python/fmcad/domain/appearance.py",
+      "sha256": "260b7cb92a414ff7c27a9e4ab21fd2ca4f0c49ac4f1da819034221dd84c7c6eb"
+    },
+    {
+      "id": "appearance",
+      "filename": "runtime/python/fmcad/adapters/fusion/appearance.py",
+      "sha256": "b8cc569a743f79b93c3099b88824fa833c7ba7b479fefb4bcf9ee8670607c498"
+    },
+    {
+      "id": "assembly-domain",
+      "filename": "runtime/python/fmcad/domain/assembly.py",
+      "sha256": "0f3942b41d7e2346ff9a152095b7aaff863b287f77526cc081f462a12d7c7485"
+    },
+    {
+      "id": "assembly-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/assembly.py",
+      "sha256": "ef93179e4686406f1c947467715fd7403e7c304b41683e07bf7fd1247ddf2a8c"
+    },
+    {
+      "id": "assembly",
+      "filename": "assets/cad/assembly.py",
+      "sha256": "277924d69ba9e6abcf5363d730cce4547decf210ce834bc271a8147d986b2f86"
+    },
+    {
+      "id": "atomic",
+      "filename": "runtime/python/fmcad/adapters/fusion/atomic.py",
+      "sha256": "b335046af820f9df4d3cb8014bd012f01711ef2677e9d67a75cff9c83e442651"
+    },
+    {
+      "id": "attributes",
+      "filename": "runtime/python/fmcad/adapters/fusion/attributes.py",
+      "sha256": "c81670fc721b414b4b9b952dc315b2eab15b23337fb0be2e600fc70d17bd4cc0"
+    },
+    {
+      "id": "docio-cam-rules",
+      "filename": "runtime/python/fmcad/domain/cam.py",
+      "sha256": "6a3c5d3e79f844a92d142c7277cb7fe8a5f277afd090af4748c9f8e57bfef254"
+    },
+    {
+      "id": "cam",
+      "filename": "runtime/python/fmcad/adapters/fusion/cam.py",
+      "sha256": "0e15727e7a9f06c8fb4d239b3fe95a4be022bda3db99de00bdfafbbc38575271"
+    },
+    {
+      "id": "docio-checking-rules",
+      "filename": "runtime/python/fmcad/domain/checking.py",
+      "sha256": "c7c3852b663c7e995e31942f01e61ceb0173053497d641686bdde2b09a808718"
+    },
+    {
+      "id": "docio-checking-usecase",
+      "filename": "runtime/python/fmcad/application/checking.py",
+      "sha256": "9aee4a393afd54ae07a432ce5ea66d5a2b70f25461532bc80f1b3e65b37340ca"
+    },
+    {
+      "id": "checking",
+      "filename": "runtime/python/fmcad/adapters/fusion/checking.py",
+      "sha256": "2175daff61e1527229a3274e9123f1dc8cae0d57be78e124873ffb072dc38c7e"
+    },
+    {
+      "id": "docio-containment-rules",
+      "filename": "runtime/python/fmcad/domain/containment.py",
+      "sha256": "7a2f2447280e9453e0eb2c0f7a292b2bdf4a28418b7079a8a1f333e049a919f2"
+    },
+    {
+      "id": "containment",
+      "filename": "runtime/python/fmcad/adapters/fusion/containment.py",
+      "sha256": "34bb7cc5410f2a99916efdedb7a091308304f050a30a581e30c6ded331521e0d"
+    },
+    {
+      "id": "geometry-curve-domain",
+      "filename": "runtime/python/fmcad/domain/geometry_curve.py",
+      "sha256": "43c9ea93b2c32fda74acf0890d3b18b146fbcad09a9d1d9b53f82bcf9623ea60"
+    },
+    {
+      "id": "geometry-curve-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/geometry_curve.py",
+      "sha256": "28a47a81130bd6386962492240352aceb43a250440cdc4fc472530da01a40d1b"
+    },
+    {
+      "id": "geometry-curve-application",
+      "filename": "runtime/python/fmcad/application/geometry_curve.py",
+      "sha256": "ddc93c0484d4c914a23e6f07efce89f36d72369e7b065590f752a67d2d9a47de"
+    },
+    {
+      "id": "curve",
+      "filename": "assets/cad/curve.py",
+      "sha256": "9c1c0c77ad84057a11ba0253e9792d9382c9aa9348b00c68cdc802f9b036f4a6"
+    },
+    {
+      "id": "docio-data_import-rules",
+      "filename": "runtime/python/fmcad/domain/data_import.py",
+      "sha256": "7194cbf3608fb2d3860d8feb0f80b21e329502c79f3bef0e483696f2ba618fcd"
+    },
+    {
+      "id": "data_import",
+      "filename": "runtime/python/fmcad/adapters/fusion/data_import.py",
+      "sha256": "c52bcac4dc2c320cc3669642f2ba7e38a03884648d95ce86be0a089aad8e9718"
+    },
+    {
+      "id": "geometry-datum-domain",
+      "filename": "runtime/python/fmcad/domain/geometry_datum.py",
+      "sha256": "92a8cbcf75fb5a948214712050a5b07078b0ddd68eecab84c8484dc759c0f6c6"
+    },
+    {
+      "id": "geometry-datum-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/geometry_datum.py",
+      "sha256": "cc89b74d79677a20688e6fd15ceb5fe6e95d81a62f7e57c8a8edb14327cd1a49"
+    },
+    {
+      "id": "geometry-datum-application",
+      "filename": "runtime/python/fmcad/application/geometry_datum.py",
+      "sha256": "ceee97c2d7a8142e84dc933b64bf65996d0c0f20edadc0c8c77eb813749f9cd1"
+    },
+    {
+      "id": "datum",
+      "filename": "assets/cad/datum.py",
+      "sha256": "d817f8ec60aaf1ea842a3ef3e270e899e8f01bf52400b14c339080a53af51027"
+    },
+    {
+      "id": "definitions-domain",
+      "filename": "runtime/python/fmcad/domain/definitions.py",
+      "sha256": "c12288e48d83edd6df7627efe2377191bc14460df885eff8a6de6cd145dfe746"
+    },
+    {
+      "id": "definitions-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/definitions.py",
+      "sha256": "324d7cf3afd9663d562717f3da6689640e21efb6f2aafb276e58f422bd15b136"
+    },
+    {
+      "id": "definitions",
+      "filename": "assets/cad/definitions.py",
+      "sha256": "78068003fd894ec822182aab88b38030218721ba9ded1a52648a428f3c5b27a3"
+    },
+    {
+      "id": "docio-dfm-rules",
+      "filename": "runtime/python/fmcad/domain/dfm.py",
+      "sha256": "55bbb64913d7e919cea91eb9c41bd936c4f14492971d701e83dc820f42b3928e"
+    },
+    {
+      "id": "dfm",
+      "filename": "runtime/python/fmcad/adapters/fusion/dfm.py",
+      "sha256": "f162102c0c3536af8c478aaca3a6f5b1e1971a769a81c91666f28d2331eb4409"
+    },
+    {
+      "id": "docio-document-rules",
+      "filename": "runtime/python/fmcad/domain/document.py",
+      "sha256": "369c04a6f563da6b05a9bbd3a76e2b04a603f864137d070dcaabc8de1d832087"
+    },
+    {
+      "id": "docio-document-usecase",
+      "filename": "runtime/python/fmcad/application/document.py",
+      "sha256": "8e3347d7c817ff17c20535b3c67b210c280adba92192734543a78f9e927266f2"
+    },
+    {
+      "id": "document",
+      "filename": "runtime/python/fmcad/adapters/fusion/document.py",
+      "sha256": "6bb9795aef431bb606b2dc5b353a6941b040aef5514d17579b51e18ca7e18823"
+    },
+    {
+      "id": "document_snapshot",
+      "filename": "runtime/python/fmcad/adapters/fusion/document_snapshot.py",
+      "sha256": "c56748328513597f34ae39278e57a6ba4cddb24e120ad547499cd754b3d79877"
+    },
+    {
+      "id": "entity",
+      "filename": "runtime/python/fmcad/adapters/fusion/entity.py",
+      "sha256": "da793f98fdaf10206789684826de29fd1811998d5674d694b292869f4dfa2307"
+    },
+    {
+      "id": "docio-explode-rules",
+      "filename": "runtime/python/fmcad/domain/explode.py",
+      "sha256": "f5963306a3848bed305a5af6ffd5c7e1955872af76537687086a5fb4b2b623d6"
+    },
+    {
+      "id": "explode",
+      "filename": "runtime/python/fmcad/adapters/fusion/explode.py",
+      "sha256": "055cd7dacdf9a5406c4394571165e1da666f6588e1e57db93fb8a53913deb95a"
+    },
+    {
+      "id": "docio-externalization-rules",
+      "filename": "runtime/python/fmcad/domain/externalization.py",
+      "sha256": "01e62d52f7107dc33c722857dbf2f666286a23148fed83824179fc6793e82eba"
+    },
+    {
+      "id": "externalization",
+      "filename": "runtime/python/fmcad/adapters/fusion/externalization.py",
+      "sha256": "9e5672fdc6c2843dc89812777a27831e242409b86816e933b7e67f776c62d755"
+    },
+    {
+      "id": "fastener-domain",
+      "filename": "runtime/python/fmcad/domain/fastener.py",
+      "sha256": "45b9d1a72779a6d007fc058b41eaf1ebce0059fb79601ef29562e265960a3105"
+    },
+    {
+      "id": "fastener-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/fastener.py",
+      "sha256": "27d49de224f60a77d1a9044bf60198261094052432213826756079780a328ec7"
+    },
+    {
+      "id": "fastener",
+      "filename": "assets/cad/fastener.py",
+      "sha256": "5e958ca1689a747022f7a50252a7ce395b337f24b5c656d2fdbeac2522c3a19d"
+    },
+    {
+      "id": "geometry-feature-domain",
+      "filename": "runtime/python/fmcad/domain/geometry_feature.py",
+      "sha256": "f3ccc759aa2bf01896458b43cce77073a8beb80c7a9d9eaae9e366e3b229a613"
+    },
+    {
+      "id": "geometry-feature-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/geometry_feature.py",
+      "sha256": "6c3050a94fbdd3e4201aab878a638e38b68551eccefc77b9c70b0025eb10cd0c"
+    },
+    {
+      "id": "geometry-feature-application",
+      "filename": "runtime/python/fmcad/application/geometry_feature.py",
+      "sha256": "71292f858e143e05d9f6863dc615963ed8fd214473f574b805713ffbfa464f6c"
+    },
+    {
+      "id": "feature",
+      "filename": "assets/cad/feature.py",
+      "sha256": "558d3a3f2342c31e3cd626f203aee5ed11c7042d263299566d93d0b9054c4eef"
+    },
+    {
+      "id": "docio-fpc_pcb-rules",
+      "filename": "runtime/python/fmcad/domain/fpc_pcb.py",
+      "sha256": "4bc1484ea113a4d0536105f3378b922f3faadcddf1aa427a5ea92abff76ef6ad"
+    },
+    {
+      "id": "fpc_pcb",
+      "filename": "runtime/python/fmcad/adapters/fusion/fpc_pcb.py",
+      "sha256": "3494f15175d8aba0e3077c0287f0ddeeb7bad4f38ce33e1c571b9504d00c3943"
+    },
+    {
+      "id": "gear-domain",
+      "filename": "runtime/python/fmcad/domain/gear.py",
+      "sha256": "924879d426ddd2652f2301e5f58c8c93d8a566afd3f06021091581ffc726b1c8"
+    },
+    {
+      "id": "gear-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/gear.py",
+      "sha256": "09c381a775da232d7636b27c1a154feec0eb2720b7fef39b217ab10f4d436d76"
+    },
+    {
+      "id": "gear",
+      "filename": "assets/cad/gear.py",
+      "sha256": "393407bce43c51a2fcd152aba3f70b76061adcf5cdc13c9a872674f749874444"
+    },
+    {
+      "id": "helpers",
+      "filename": "assets/cad/helpers.py",
+      "sha256": "a203a4574535cc3260020c6d11fc041493aea6ae3bacfddd49aff347ad594976"
+    },
+    {
+      "id": "identity",
+      "filename": "runtime/python/fmcad/adapters/fusion/identity.py",
+      "sha256": "e938f98d73b9121e97e3bb55257c970b794bce986c9e83f1d209ee11e23134a5"
+    },
+    {
+      "id": "docio-interference-rules",
+      "filename": "runtime/python/fmcad/domain/interference.py",
+      "sha256": "c5ecfb274b790f9520bb2a694dc5e6761d0c3e0e513f9f3c968a3ad58eb4feaf"
+    },
+    {
+      "id": "interference",
+      "filename": "runtime/python/fmcad/adapters/fusion/interference.py",
+      "sha256": "f318d2ac5c2027c182f0533b3eaa7a362994f320e235affe787b39eabd76d89f"
+    },
+    {
+      "id": "docio-io-rules",
+      "filename": "runtime/python/fmcad/domain/io.py",
+      "sha256": "b868393fbda6b4b56f022f0ea3d94fb7d34c28da6fde4e0831e935e5d90f27c4"
+    },
+    {
+      "id": "io",
+      "filename": "runtime/python/fmcad/adapters/fusion/io.py",
+      "sha256": "1b8d10b70e3078c93358d96271d862e968b9fd6861c75b43d5e222da2fb8505c"
+    },
+    {
+      "id": "docio-marking-rules",
+      "filename": "runtime/python/fmcad/domain/marking.py",
+      "sha256": "aff6f8e82792a5d7f7cc08194c5f1980bfb7d390a122541b267abdd92cc3a068"
+    },
+    {
+      "id": "marking",
+      "filename": "runtime/python/fmcad/adapters/fusion/marking.py",
+      "sha256": "9d81fb32df21f194a3feca0022ed73fe922eed250c6882998e29999e29b5de9d"
+    },
+    {
+      "id": "docio-measure-rules",
+      "filename": "runtime/python/fmcad/domain/measure.py",
+      "sha256": "79bb19c9f559ef794fc0bd6e5498f4b8cff80dbb1a9bc79b5e2cb28546ced5c4"
+    },
+    {
+      "id": "measure",
+      "filename": "runtime/python/fmcad/adapters/fusion/measure.py",
+      "sha256": "4fcd3c16a94919b9bd8557911969bf2eda8c77aa9221f538df832f5871db9dbd"
+    },
+    {
+      "id": "mechanism-domain",
+      "filename": "runtime/python/fmcad/domain/mechanism.py",
+      "sha256": "b15b168de9183a5eb83207c7ae0b74fde15a9516e5e912ad2a265f7477b4d90c"
+    },
+    {
+      "id": "mechanism-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/mechanism.py",
+      "sha256": "22154d5ed921aa507ef36cf6bffa39643e724ad7c7d2c0045cc5cf075137bec4"
+    },
+    {
+      "id": "mechanism",
+      "filename": "assets/cad/mechanism.py",
+      "sha256": "61ded87ccc00488f88ed2cf374623d520c4c8a24707bbb2fc859743836ab3e41"
+    },
+    {
+      "id": "geometry-model-domain",
+      "filename": "runtime/python/fmcad/domain/geometry_model.py",
+      "sha256": "587202ac898e4bad5442138fdbde1ecdf3d34a5602356f1bed219ff321b6e686"
+    },
+    {
+      "id": "geometry-model-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/geometry_model.py",
+      "sha256": "d3a98bcbdc1cc642a3850ab2b294fd4fcf28867eb163ca7aab3f2687bb3248bc"
+    },
+    {
+      "id": "geometry-model-application",
+      "filename": "runtime/python/fmcad/application/geometry_model.py",
+      "sha256": "b0ba2e68c9e6bbab6fbb3d2f958addaa8d021edffa073b46c20e02aeb02195bf"
+    },
+    {
+      "id": "model",
+      "filename": "assets/cad/model.py",
+      "sha256": "f5f31af8d1e135380047eb3b3fe04c5ae856c364134fd1bd1db8486579a2056e"
+    },
+    {
+      "id": "docio-optics-rules",
+      "filename": "runtime/python/fmcad/domain/optics.py",
+      "sha256": "0a091352232f520af44806db2807c205d2cc048a567880b97cd1110dd0e7fc37"
+    },
+    {
+      "id": "optics",
+      "filename": "runtime/python/fmcad/adapters/fusion/optics.py",
+      "sha256": "3bef79fc60778a547885c95a1b19504be3b40e1f61c5c4ad6bd4f0bb04c0b9c2"
+    },
+    {
+      "id": "pose-domain",
+      "filename": "runtime/python/fmcad/domain/pose.py",
+      "sha256": "75fbd67cf363f142684ac70584650fc4d37ec4730c312e07a7ea30405f7423e6"
+    },
+    {
+      "id": "pose-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/pose.py",
+      "sha256": "11847acc495e40499825ccd72ce023baa37f70b68308a5f5fb82fb4152117946"
+    },
+    {
+      "id": "pose",
+      "filename": "assets/cad/pose.py",
+      "sha256": "706cfdeb03e653f8110ac40220b3e4e1d10f593d6db61577a8bf9585d24b17b0"
+    },
+    {
+      "id": "docio-presentation-rules",
+      "filename": "runtime/python/fmcad/domain/presentation.py",
+      "sha256": "580c7f34e359df862c489bcbae5e6fd7a81ef114d63963d669c73fc3e676f5e2"
+    },
+    {
+      "id": "presentation",
+      "filename": "runtime/python/fmcad/adapters/fusion/presentation.py",
+      "sha256": "8d0faf0b5cb29b765c271dac05544810eb3a310fc52784d6ba00e22703fa749c"
+    },
+    {
+      "id": "reference",
+      "filename": "runtime/python/fmcad/adapters/fusion/reference.py",
+      "sha256": "b4300aeca9a920c8c1626f75cc478fd94d6a993ce61ca52124a11bdf7e8ce1ce"
+    },
+    {
+      "id": "docio-references-rules",
+      "filename": "runtime/python/fmcad/domain/references.py",
+      "sha256": "aff480495681d767dd9a7eb32f78a1506b08b4db48875db9a59249e55e8478ef"
+    },
+    {
+      "id": "references",
+      "filename": "runtime/python/fmcad/adapters/fusion/references.py",
+      "sha256": "7169801cf4a4b1649cfc628339a0abe0e8b15e24b4cbb8e89ea1d4d9ea0ae664"
+    },
+    {
+      "id": "route3d-domain",
+      "filename": "runtime/python/fmcad/domain/route3d.py",
+      "sha256": "2f57c16d871b4c4fcb50166adaa694d3b432627aaeda5c9f69ec45ad5ee2262e"
+    },
+    {
+      "id": "route3d-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/route3d.py",
+      "sha256": "2539f9b87d953a818b2a7eccebd686dc309c1462e7d62641bf472bdcf4fd99d4"
+    },
+    {
+      "id": "route3d",
+      "filename": "assets/cad/route3d.py",
+      "sha256": "d90efbfe1d01acc9fea6c888184cb390f6665139cadde1c63517a71bf3deaeaf"
+    },
+    {
+      "id": "docio-seal-rules",
+      "filename": "runtime/python/fmcad/domain/seal.py",
+      "sha256": "e7c5fb035d1a22dc7df017d41584f0855255e04c8cf03df7677901b45e8dd25a"
+    },
+    {
+      "id": "seal",
+      "filename": "runtime/python/fmcad/adapters/fusion/seal.py",
+      "sha256": "fbfdc51d9054306a1b3d5a22f6d4431be8f59aaea11cfb8c4e27e9aa508d42e7"
+    },
+    {
+      "id": "sequence-domain",
+      "filename": "runtime/python/fmcad/domain/sequence.py",
+      "sha256": "f2c353c1fdcb31c60e55cd508ce6ceca83fdac474375d5f0531db7d52516c399"
+    },
+    {
+      "id": "sequence-application",
+      "filename": "runtime/python/fmcad/application/sequence.py",
+      "sha256": "821ac11f49e1531160f7621c570873bee8cf04a4c4d5b593d7682ce03f2c7842"
+    },
+    {
+      "id": "sequence-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/sequence.py",
+      "sha256": "8a8972cd4a5361f31a976375232c6c45abee428de52eb912446efe40d4132e42"
+    },
+    {
+      "id": "sequence",
+      "filename": "assets/cad/sequence.py",
+      "sha256": "3ee47bdca6cb76fe3e32a435560a54e43d6adafd4c2dbbd0c36c8811edff7e4e"
+    },
+    {
+      "id": "geometry-shapes-domain",
+      "filename": "runtime/python/fmcad/domain/geometry_shapes.py",
+      "sha256": "b09fdb918b4a00cb426321b22c5e5a81f7c07fa568062ca15a50b0207aa04588"
+    },
+    {
+      "id": "geometry-shapes-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/geometry_shapes.py",
+      "sha256": "659e66e1a1052422852693bfdd3e755ce5b096d41e831a7a6bf46ebca56b171d"
+    },
+    {
+      "id": "geometry-shapes-application",
+      "filename": "runtime/python/fmcad/application/geometry_shapes.py",
+      "sha256": "4f9160b2f1594b40b40400d214df4143d833405b6721cbcb6a89f73e64123062"
+    },
+    {
+      "id": "shapes",
+      "filename": "assets/cad/shapes.py",
+      "sha256": "ebe846c72da8db7b300ede815f78073451e0d7c3722995834cc17d99646373ee"
+    },
+    {
+      "id": "sheetmetal-domain",
+      "filename": "runtime/python/fmcad/domain/sheetmetal.py",
+      "sha256": "f245d95375968a2642b8cd8f7d2d6a10c9a7d73b8856b50513bc7b387118a83a"
+    },
+    {
+      "id": "sheetmetal-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/sheetmetal.py",
+      "sha256": "814c6fbc15b8445bbac8c1c7968027802770c64b706984a757a27979f47e7e38"
+    },
+    {
+      "id": "sheetmetal",
+      "filename": "assets/cad/sheetmetal.py",
+      "sha256": "b4148bb41bc2a75c646cffc8451a8b131f85aaa4c2a83667acdc5f7757dc5dfc"
+    },
+    {
+      "id": "simulation",
+      "filename": "runtime/python/fmcad/adapters/fusion/simulation.py",
+      "sha256": "72a9eb72079dbd1a3dc2223f46a0cffaa0143d18c298cef986812463127ee408"
+    },
+    {
+      "id": "geometry-sketch-domain",
+      "filename": "runtime/python/fmcad/domain/geometry_sketch.py",
+      "sha256": "f5eff911b97813c2a04d790f8e03806773673835e0dd56185a3782e2ad1c138e"
+    },
+    {
+      "id": "geometry-sketch-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/geometry_sketch.py",
+      "sha256": "27a3eb493eebf28f78728f3d982e3635138843696f79be23b74f48a4667b77c2"
+    },
+    {
+      "id": "geometry-sketch-application",
+      "filename": "runtime/python/fmcad/application/geometry_sketch.py",
+      "sha256": "071e06ee579dc2cd5d5a054493a51b38bff92a77221324050b3550a7f4e2660d"
+    },
+    {
+      "id": "sketch",
+      "filename": "assets/cad/sketch.py",
+      "sha256": "b7dde9aaa0f2a1a8e8d287b67e8624a783af0c7ba78615f6d834fcd836176eae"
+    },
+    {
+      "id": "geometry-sketch_plan-domain",
+      "filename": "runtime/python/fmcad/domain/geometry_sketch_plan.py",
+      "sha256": "9f0254f156f6c3e935e1de0c6ff82af06285c6024219b4911f4e57d933771a99"
+    },
+    {
+      "id": "geometry-sketch_plan-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/geometry_sketch_plan.py",
+      "sha256": "1ee5c596cf86e587fedf70df36f5a7f1389d394abae8d661ef06d66588cbca79"
+    },
+    {
+      "id": "geometry-sketch_plan-application",
+      "filename": "runtime/python/fmcad/application/geometry_sketch_plan.py",
+      "sha256": "107afaf9c964d6e55d900c23d09f7e12973d34f632ae3c01a7b22f4623268217"
+    },
+    {
+      "id": "sketch_plan",
+      "filename": "assets/cad/sketch_plan.py",
+      "sha256": "b5985901b008472201a4c11a55a3b8db4223ef9e47d0a3be7dd11073cab820e3"
+    },
+    {
+      "id": "spring-domain",
+      "filename": "runtime/python/fmcad/domain/spring.py",
+      "sha256": "e5bab21a17f620851e50fcbe403fa11a910289d4f134f33307ec22417dbf0f08"
+    },
+    {
+      "id": "spring-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/spring.py",
+      "sha256": "9314e052861667fa72025cbd4bbe25e03ed7d0205675c18fced114d7e57816e5"
+    },
+    {
+      "id": "spring",
+      "filename": "assets/cad/spring.py",
+      "sha256": "2ee67038d5e11765f1b65b401b3a7f83da1bdf56d1021eb9b8e936909009257b"
+    },
+    {
+      "id": "geometry-surface-domain",
+      "filename": "runtime/python/fmcad/domain/geometry_surface.py",
+      "sha256": "e3bf70fcdf4825d270decbffd2c3cfeb204ce672a31eb563fdfb77a4c341b0c4"
+    },
+    {
+      "id": "geometry-surface-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/geometry_surface.py",
+      "sha256": "6983538e04f549aeade432a5f46fd85479953fba47e6d1b51fd10fdac7b4edf5"
+    },
+    {
+      "id": "geometry-surface-application",
+      "filename": "runtime/python/fmcad/application/geometry_surface.py",
+      "sha256": "ee33ddc7a373be36e4bf001cc17b27efb279d0b354d510eb971281c53bfc45e0"
+    },
+    {
+      "id": "surface",
+      "filename": "assets/cad/surface.py",
+      "sha256": "52112e23400258c133d761cadb901f0b52cc00d5d6f1d1fcef368a7162d69b2e"
+    },
+    {
+      "id": "docio-texture-rules",
+      "filename": "runtime/python/fmcad/domain/texture.py",
+      "sha256": "211f3113e41b133da61ffa78116faf28f11072986a6fc285eb9c4e9c731b1622"
+    },
+    {
+      "id": "texture",
+      "filename": "runtime/python/fmcad/adapters/fusion/texture.py",
+      "sha256": "6b4d828bf1f46c080844040c5425d5e41b1ce9398218abe98dd2aab731541585"
+    },
+    {
+      "id": "thread-domain",
+      "filename": "runtime/python/fmcad/domain/thread.py",
+      "sha256": "057c99ccb95dede8dd6bee52461cdc2724c0b40c6c93e221a8191202add6acfe"
+    },
+    {
+      "id": "thread-fusion",
+      "filename": "runtime/python/fmcad/adapters/fusion/thread.py",
+      "sha256": "bfed9c21992b8bd10055cdcfb32a26f33fbb2954457271de3888d84d63fd67ae"
+    },
+    {
+      "id": "thread",
+      "filename": "assets/cad/thread.py",
+      "sha256": "0e4f7f3fc69bd2609256999b47edf2f04cda8670ea36eb9c08b52a127c7b4494"
+    }
+  ],
+  "scope": "Real generated wrappers, source/identity hashes and real checker calls. Fake SDK dispatch comparison is NOT broker admission; nonpassing checker reports prohibit native dispatch. Batch measures one atomic_start payload, excluding resolve/poll/finalize RPCs.",
+  "preparation": {
+    "individual": {
+      "preparedArtifacts": 20,
+      "scriptBytes": 41266908,
+      "prepareAndVerifyMs": 11454.677758000002,
+      "warmPrepareAndVerifyMs": 11521.910498000001,
+      "checkerMs": 446863.75966000004,
+      "checkerInvocations": 20,
+      "checkerStatuses": [
+        "tool_error",
+        "passed",
+        "passed",
+        "tool_error",
+        "passed",
+        "passed",
+        "passed",
+        "tool_error",
+        "passed",
+        "passed",
+        "passed",
+        "tool_error",
+        "passed",
+        "passed",
+        "passed",
+        "passed",
+        "passed",
+        "passed",
+        "passed",
+        "passed"
+      ],
+      "checkerReasons": [
+        "Error: Checker exit: null \n<--- Last few GCs --->\n\n[3835852:0xab33000]    14680 ms: Mark-Compact 537.0 (613.8) -> 434.0 (575.6) MB, pooled: 0 MB, 156.73 / 0.00 ms  (average mu = 0.478, current mu = 0.468) allocation failure; scavenge might not succeed\n[3835852:0xab33000]    14908 ms: Mark-Compact (reduce) 539.4 (634.6) -> 506.5 (513.6) MB, pooled: 0 MB, 70.33 / 0.00 ms  (+ 5.7 ms in 773 steps since start of marking, biggest step 0.2 ms, walltime since start of marking 213 ms) (average mu = 0.564, curre\nFATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory\n----- Native stack trace -----\n\n 1: 0x73f8c4 node::OOMErrorHandler(char const*, v8::OOMDetails const&) [/home/kamil/.nvm/versions/node/v24.15.0/bin/node]\n 2: 0xc06f90  [/home/kamil/.nvm/versions/node/v24.15.0/bin/node]\n 3: 0xc0707f  [/home/kamil/.nvm/versions/node/v24.15.0/bin/node]\n 4: 0xeaa885  [/home/kamil/.nvm/versions/node/v24.15.0/bin/node]\n 5: 0xebc1ec  [/home/kamil/.nvm/versions/node/v24.15.0/bin/node]\n 6: 0xdf2778  [/home/kamil/.nvm/versions/node/v24.15.0/bin/node]\n 7: 0x135e76e  [/home/kamil/.nvm/versions/node/v24.15.0/bin/node]\n 8: 0x1a689b6  [/home/kamil/.nvm/versions/node/v24.15.0/bin/node]\n",
+        "Error: Checker process: memory limit exceeded"
+      ],
+      "checkerProvenance": [
+        {
+          "artifactHash": "8b10718208c54da6b123eb468a48a86ad284ad6f59d9b6dc9e07b242dfaa6255",
+          "wireHash": "6a274868bee006a37043664371be7e2c7f6ad102d71f5af8fbdfc77cb6cb15f1",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "ac641e7ef53398ea3941b872a3d23b05a6141daeba6c8635ec243e286e888fe6",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "cca23bbeeb1bb626f6c6071079b93d0e6a3ceee158bbad3396742b212ff5b619",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "63a24688aadacf228452b588da92e04cccf63de657751438479b9cb6a7a389d5",
+          "wireHash": "507b858cee9a9be734c907347f608272d16d00d7a75144140c3d3ea6f2445346",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "690a2adc75638b61e486ed0be35b98a567c17929426341def931122a1a4e1eef",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "bde4825cf92bbce48c60d4d72e5aa2da4bfffb587a38bb72ca9ded1bfc7b3001",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "41d9f04ef597b79138b812782b062664df0711f21e0da93458f21ef81729be6c",
+          "wireHash": "e93dbc688bc3df89d36b500a1c75ecee61d0b390c39b7d0c95d41411ea5446f3",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "5e07859cf6fba8bce3b6713729b4e0688e306176021b733510398a5f3f24cfdc",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "0fa0390faadeaaafce3ae0ed15fda74402c1569a59611139752224daf0540b85",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "7fb6a34f973c1a53c179aa445b690c8d5e0d5dffe1ea3b6bc3cea435cdc22673",
+          "wireHash": "786b828e7c78bf17b4fb34694e662d0b4d9d289c89e6721f6c6515a093575a3f",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "7a107ffb9877705df9b993255bcacb89dfcba0cfad7de252c5a8c815750c0534",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "365116f72b17457c657a111d63c229772c23b83251b2656e7b7b12b595dfb90b",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "050abb91b501378c0068f0a3886891890ddae46566ebb50d574f29281cc55a99",
+          "wireHash": "2ba729e4f1511865d9e9aa9779e5c4eec4c5e5c9b29e27fa20449927513b1505",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "d5f17cb145ad6a51a5273cfa8c4778c503bccd7114993d1b559f495614a6c14a",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "7ebe0bbc4dc33377c7a644330a43076284077c544259aa51407b6fcf62432f98",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "ccf7c436231d3468b03cfcfea3ea9a5edde2824252cb441d4215869b04e66862",
+          "wireHash": "068fbe282eb17c4e2550511f99ce8d73fbeb3dade8b670cd4f81829830c1942d",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "3bd05a42d96428854d1b8eb1fac172e555c256dd3449c635b28dcf3ecf51eb3f",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "90ffdbcf26f6a9a437d5fabffb94b5fde1e043f9d205bd6e380333aa604ec153",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "083d23051543205742286bb03ddd2f3cd1124a7338dbf2d63de46ac9410aa316",
+          "wireHash": "b76c5b6254707011c12dbf0d1bcd1bfc63e5e177e20e2a625d4d74206233186d",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "b10ce5654df711a6f58c7b64564b1693600e18c9a4d76f32f6c05f0a0e33fa5b",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "7a9c3b68385326f16e1ee071eb3c484c168e0d7eb8f97abfa5103306349c8002",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "7c328bff236e9b706404f080f780f019219a9dc5f82478b410ceb1d38bf3fb32",
+          "wireHash": "a9ae87f35eea7bce37b2d93247dd2f70806ba649a36f028d558e03b2a9a4b619",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "e25d7e230f8e12a4dd43acdd1d4bce603eb067219c5a9094c65748fa4bd38d35",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "e9b546bddb3482badad7e2f93670a55e7d7c3f36d01cde44e23426d568ceada2",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "07753a22f92780cd0b5571c0fc5f422b56fc8f9c34aa4e176792af88285d64c0",
+          "wireHash": "dad4df3acb81209c6dae9bb4932c636e26b98ee73171e13d31a96645c51f1edd",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "1172e3c331aa2e5730081335c89372a86386e808bfde53f2fcc631dcb1e4c6d4",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "47ba1eab6f898274694be0c3a7f0c80880ae92e1e8523a0b4e83166801705a7c",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "3c1d9ff25045c35bc0144d26732684705322ed932e24db7cae955f8d52f55f44",
+          "wireHash": "a8b3ed05057d27e7ba70baa3b9ec8e7e4a91068854e08dba05115b954771ad9f",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "f88b2a9bee705017493db107b0c3710848323146bcc06facda4a5907db5fd80c",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "2c803f27c5e03ba90331f965c92ba7040b62600be2786d2b8e76510d4bb5f3b4",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "8b10718208c54da6b123eb468a48a86ad284ad6f59d9b6dc9e07b242dfaa6255",
+          "wireHash": "6a274868bee006a37043664371be7e2c7f6ad102d71f5af8fbdfc77cb6cb15f1",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "ac641e7ef53398ea3941b872a3d23b05a6141daeba6c8635ec243e286e888fe6",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "cca23bbeeb1bb626f6c6071079b93d0e6a3ceee158bbad3396742b212ff5b619",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "63a24688aadacf228452b588da92e04cccf63de657751438479b9cb6a7a389d5",
+          "wireHash": "507b858cee9a9be734c907347f608272d16d00d7a75144140c3d3ea6f2445346",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "690a2adc75638b61e486ed0be35b98a567c17929426341def931122a1a4e1eef",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "bde4825cf92bbce48c60d4d72e5aa2da4bfffb587a38bb72ca9ded1bfc7b3001",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "41d9f04ef597b79138b812782b062664df0711f21e0da93458f21ef81729be6c",
+          "wireHash": "e93dbc688bc3df89d36b500a1c75ecee61d0b390c39b7d0c95d41411ea5446f3",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "5e07859cf6fba8bce3b6713729b4e0688e306176021b733510398a5f3f24cfdc",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "0fa0390faadeaaafce3ae0ed15fda74402c1569a59611139752224daf0540b85",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "7fb6a34f973c1a53c179aa445b690c8d5e0d5dffe1ea3b6bc3cea435cdc22673",
+          "wireHash": "786b828e7c78bf17b4fb34694e662d0b4d9d289c89e6721f6c6515a093575a3f",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "7a107ffb9877705df9b993255bcacb89dfcba0cfad7de252c5a8c815750c0534",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "365116f72b17457c657a111d63c229772c23b83251b2656e7b7b12b595dfb90b",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "050abb91b501378c0068f0a3886891890ddae46566ebb50d574f29281cc55a99",
+          "wireHash": "2ba729e4f1511865d9e9aa9779e5c4eec4c5e5c9b29e27fa20449927513b1505",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "d5f17cb145ad6a51a5273cfa8c4778c503bccd7114993d1b559f495614a6c14a",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "7ebe0bbc4dc33377c7a644330a43076284077c544259aa51407b6fcf62432f98",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "ccf7c436231d3468b03cfcfea3ea9a5edde2824252cb441d4215869b04e66862",
+          "wireHash": "068fbe282eb17c4e2550511f99ce8d73fbeb3dade8b670cd4f81829830c1942d",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "3bd05a42d96428854d1b8eb1fac172e555c256dd3449c635b28dcf3ecf51eb3f",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "90ffdbcf26f6a9a437d5fabffb94b5fde1e043f9d205bd6e380333aa604ec153",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "083d23051543205742286bb03ddd2f3cd1124a7338dbf2d63de46ac9410aa316",
+          "wireHash": "b76c5b6254707011c12dbf0d1bcd1bfc63e5e177e20e2a625d4d74206233186d",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "b10ce5654df711a6f58c7b64564b1693600e18c9a4d76f32f6c05f0a0e33fa5b",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "7a9c3b68385326f16e1ee071eb3c484c168e0d7eb8f97abfa5103306349c8002",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "7c328bff236e9b706404f080f780f019219a9dc5f82478b410ceb1d38bf3fb32",
+          "wireHash": "a9ae87f35eea7bce37b2d93247dd2f70806ba649a36f028d558e03b2a9a4b619",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "e25d7e230f8e12a4dd43acdd1d4bce603eb067219c5a9094c65748fa4bd38d35",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "e9b546bddb3482badad7e2f93670a55e7d7c3f36d01cde44e23426d568ceada2",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "07753a22f92780cd0b5571c0fc5f422b56fc8f9c34aa4e176792af88285d64c0",
+          "wireHash": "dad4df3acb81209c6dae9bb4932c636e26b98ee73171e13d31a96645c51f1edd",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "1172e3c331aa2e5730081335c89372a86386e808bfde53f2fcc631dcb1e4c6d4",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "47ba1eab6f898274694be0c3a7f0c80880ae92e1e8523a0b4e83166801705a7c",
+          "cache": "disabled"
+        },
+        {
+          "artifactHash": "3c1d9ff25045c35bc0144d26732684705322ed932e24db7cae955f8d52f55f44",
+          "wireHash": "a8b3ed05057d27e7ba70baa3b9ec8e7e4a91068854e08dba05115b954771ad9f",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "f88b2a9bee705017493db107b0c3710848323146bcc06facda4a5907db5fd80c",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "2c803f27c5e03ba90331f965c92ba7040b62600be2786d2b8e76510d4bb5f3b4",
+          "cache": "disabled"
+        }
+      ],
+      "nativeAdmissionEligible": false
+    },
+    "batch": {
+      "preparedArtifacts": 1,
+      "scriptBytes": 2062879,
+      "prepareAndVerifyMs": 531.8551819999993,
+      "warmPrepareAndVerifyMs": 539.9270450000004,
+      "checkerMs": 22621.660482000036,
+      "checkerInvocations": 1,
+      "checkerStatuses": ["incomplete"],
+      "checkerReasons": ["<fmcad-artifact>: reportAny"],
+      "checkerProvenance": [
+        {
+          "artifactHash": "1f9b205fed743801f29b08a59ac275d7f24d6894a9e4035f94c0d10f7fd78f70",
+          "wireHash": "63dbc00c54ac9c64a60dece909416ab8a5d7874280b132c23f3c9fd62aa97e32",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "791c3a9b22574b7f87e48a192437eb613a8084bb672a1757dc8ef810043df00e",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "b60cf47f6e68337e67c4203c44eed6eb8329dd158cda1cc10a10086d5cb51940",
+          "cache": "disabled"
+        }
+      ],
+      "nativeAdmissionEligible": false
+    },
+    "pack": {
+      "preparedArtifacts": 1,
+      "scriptBytes": 2064993,
+      "prepareAndVerifyMs": 596.7761329999994,
+      "warmPrepareAndVerifyMs": 572.2630229999995,
+      "checkerMs": 23135.388966,
+      "checkerInvocations": 1,
+      "checkerStatuses": ["passed"],
+      "checkerReasons": [],
+      "checkerProvenance": [
+        {
+          "artifactHash": "4ae1617ed7391d70b0a75b14f4684a06622e3c476f61bdc2ff9abfb24e54c2a0",
+          "wireHash": "67ef8295f4415dab20279d709f38b859bf64de125eb5313cb0e9989d26f88da1",
+          "checker": "basedpyright",
+          "checkerVersion": "1.40.2",
+          "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+          "pythonVersion": "3.11",
+          "pythonInterpreterVersion": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          "contextHash": "5697ee3a0cd48317cbe832afaf2a5174654643db4cac19e97236ce2ccab4e0fa",
+          "configHash": "55a27b08604c29c08bb14354948ca59010452b533542a5379ae203a438c88b54",
+          "typingHash": "561f46ce8fcca1492cc8956f6f769204012d1c753031f5d60f51a7fe4f04d71e",
+          "analysisHash": "a18ee6bbc3c9efd6044b8f1312095d84dcf3465a077f0c4ed2483eb8c2d9ea10",
+          "cache": "disabled"
+        }
+      ],
+      "nativeAdmissionEligible": true
+    }
+  },
+  "fake": {
+    "individual": {
+      "fakeRpcCount": 20,
+      "fakeRequestBytes": 42886448,
+      "fakeResponseBytes": 15560,
+      "inventoryTraversals": 20,
+      "readDispatches": 20,
+      "identityChecks": 20,
+      "equivalentResultBytes": 11280
+    },
+    "batch": {
+      "fakeRpcCount": 1,
+      "fakeRequestBytes": 2144417,
+      "fakeResponseBytes": 11307,
+      "inventoryTraversals": 20,
+      "readDispatches": 20,
+      "identityChecks": 1,
+      "equivalentResultBytes": 11280
+    },
+    "pack": {
+      "fakeRpcCount": 1,
+      "fakeRequestBytes": 2146268,
+      "fakeResponseBytes": 13071,
+      "inventoryTraversals": 10,
+      "readDispatches": 20,
+      "identityChecks": 1,
+      "equivalentResultBytes": 11280
+    }
+  }
+}

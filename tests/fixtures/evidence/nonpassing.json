@@ -1,0 +1,21 @@
+[
+  {"name": "unknown", "result": {"passed": true, "status": "unknown"}},
+  {"name": "partial", "result": {"passed": true, "status": "partial"}},
+  {"name": "unsupported", "result": {"passed": true, "status": "unsupported"}},
+  {"name": "missing", "result": {"passed": true, "status": "missing"}},
+  {"name": "stale", "result": {"passed": true, "status": "stale"}},
+  {"name": "blocked", "result": {"passed": true, "status": "blocked"}},
+  {"name": "unavailable", "result": {"passed": true, "status": "unavailable"}},
+  {"name": "null status", "result": {"passed": true, "status": null}},
+  {"name": "sampled pass", "result": {"passed": true, "status": "pass", "sampledPassed": true}},
+  {"name": "partial coverage", "result": {"passed": true, "coverage": "partial"}},
+  {"name": "unsupported evidence status", "result": {"passed": true, "evidenceStatus": "unsupported"}},
+  {"name": "unknown check outcome", "result": {"passed": true, "checkOutcome": "unknown"}},
+  {"name": "unrestored", "result": {"passed": true, "restored": false}},
+  {"name": "unresolved status", "result": {"passed": true, "status": "unresolved"}},
+  {"name": "sampled coverage", "result": {"passed": true, "coverage": "sampled"}},
+  {"name": "unsupported precision", "result": {"passed": true, "precision": "unsupported"}},
+  {"name": "sampled failure", "result": {"passed": true, "sampledPassed": false}},
+  {"name": "unsupported flag", "result": {"passed": true, "unsupported": true}},
+  {"name": "supported false", "result": {"passed": true, "supported": false}}
+]

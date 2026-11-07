@@ -1,0 +1,66 @@
+{
+  "sketch.coordinate-check": {
+    "summary": "Compare explicit sketch-local, model, and world coordinates with native sketch geometry and optionally read back a feature-owned BRep.",
+    "required": ["schemaVersion", "sketch", "expectations"],
+    "readOnly": true,
+    "example": {
+      "schemaVersion": 1,
+      "sketch": "Section",
+      "expectations": [
+        {
+          "entity": { "token": "discovered-curve-token" },
+          "center": ["0 cm", "0 cm", "0 cm"],
+          "diameter": "2 cm"
+        }
+      ]
+    },
+    "inputs": {
+      "schemaVersion": "Integer 1.",
+      "sketch": "Native sketch reference in the selected component.",
+      "expectations": "Nonempty array of {entity, frame?, point?, center?, start?, end?, radius?, diameter?}. Entity is an explicit sketch point/curve reference. Point asserts SketchPoint.geometry; center asserts the analytic curve center; start/end assert defining SketchPoints. Coordinates and dimensions are unit-bearing expressions. frame is sketch(default), model, or world.",
+      "tolerance": "Positive length expression for coordinate and dimension comparisons; default 0.001 mm.",
+      "occurrence": "Optional explicit occurrence instancing the sketch component; required for root-world checks of a non-root sketch.",
+      "featureBRep": "Optional {feature, expectations} containing explicit BRep edge/face/vertex refs. Every entity must belong to one of the named feature's result bodies. BRep expectations use model frame only."
+    },
+    "limitations": [
+      "Read-only snapshot; no solve, recompute, activation, repair, or model mutation.",
+      "Sketch/model roundtrip and native worldGeometry are separate evidence. Without an explicit occurrence, only a root-native sketch can be checked in root-world coordinates.",
+      "Feature-body membership is not proof of generating-profile provenance.",
+      "Unsupported requested native properties return unknown. This offline implementation is not native Fusion qualification."
+    ]
+  },
+  "sketch.profile-query": {
+    "summary": "Query native profile integrals, loop topology, and hole-aware containment; select only one complete, unique profile.",
+    "required": ["schemaVersion", "sketch"],
+    "readOnly": true,
+    "example": {
+      "schemaVersion": 1,
+      "sketch": "Section",
+      "query": {
+        "area": 15.0,
+        "centroid": ["2 cm", "2 cm", "0 cm"],
+        "contains": ["3 cm", "3 cm", "0 cm"],
+        "outerLoops": 1,
+        "innerLoops": 1
+      },
+      "expected": { "profiles": 1, "loops": 2 }
+    },
+    "inputs": {
+      "schemaVersion": "Integer 1.",
+      "sketch": "Native sketch reference in the selected component.",
+      "query": "Optional conjunctive criteria: index (nonnegative integer), area (positive finite cm^2 number), centroid/contains (three length expressions), outerLoops, innerLoops (nonnegative integers).",
+      "expected": "Optional exact nonnegative counts for profiles, loops, outerLoops, and innerLoops. Missing topology is unknown, not zero.",
+      "tolerance": "Positive length expression for sampled topology and containment; default 0.001 mm.",
+      "areaTolerance": "Positive finite number in cm^2 for native integral comparisons; default 0.000001.",
+      "maxSamples": "Shared evaluator-stroke cap across sketch curves and profile boundaries; integer 2..10000, default 2000.",
+      "budgetMs": "Shared monotonic work budget in milliseconds; integer 1..120000, default 10000."
+    },
+    "limitations": [
+      "Native high-accuracy area/centroid and loop enumeration are separate from sampled connectivity and containment.",
+      "Containment uses native profile loops, including holes. Points in the stroke-tolerance band are unknown.",
+      "Sampled branches, degeneracies, duplicate strokes, open loops, and intersections fail sampled topology but do not provide a continuous analytic certificate.",
+      "No profiles.item(0) fallback: ambiguity, no match, or incomplete topology yields no profile selector.",
+      "Offline doubles do not qualify native Fusion or model-kernel behavior."
+    ]
+  }
+}

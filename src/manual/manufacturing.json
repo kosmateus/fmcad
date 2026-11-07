@@ -1,0 +1,52 @@
+{
+  "measure.draft": {
+    "sections": [
+      {"title": "Inputs And Signed Draft", "text": "faces required nonempty array of {name?, point:[x,y,z], normal:[nx,ny,nz]} declared face samples (outward unit normal). pullDirections required nonempty array of {name?, axis:[x,y,z]} or bare [x,y,z] unit pull directions. minDraft optional nonnegative angle default '0 deg'; pullWallWindow default '30 deg'; draftTolerance default '0.1 deg'; method analytic only (native B-Rep ray sampling is gated and rejected). schemaVersion required 1. Signed draft of a face under a pull is 90 deg minus the angle between normal and pull: positive leans toward the pull, negative leans away. A face whose |signedDraft| is within pullWallWindow of parallel is a pull wall and must meet minDraft."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'measure.draft',status,success,documentIdentity,units:{length:'cm',angle:'deg'},frame,associativity:'snapshot',method,limitations,provenance,draftMap:[{face,pull,signedDraft,signedDraftUnits,normalDotPull,pullWall,drafts,draftViolation}],minDraft,pullWallWindow,draftTolerance,faceCount,pullCount,violationCount,draftViolations,demoldableByDraft,demoldableIsNotDraftAlone:true}. Executor created:[]; read-only. Positive draft alone never proves demoldability."}
+    ],
+    "examples": [
+      {"label": "Vertical Wall Versus Pull", "data": {"schemaVersion": 1, "faces": [{"name": "wall", "point": ["0 mm", "0 mm", "10 mm"], "normal": [1, 0, 0]}], "pullDirections": [{"name": "eject", "axis": [0, 0, 1]}], "minDraft": "1 deg"}, "requires": "Open Design document; one side-wall sample with normal perpendicular to the +Z pull.", "output": "result.draftMap[0].signedDraft is 0 deg, pullWall is true and draftViolation is true for minDraft 1 deg."}
+    ],
+    "audit": {"sources": ["assets/cad/dfm.py: _measure_draft, _parse_face, _parse_pull, _dfm_contract"], "verified": ["signed draft sign convention", "pull-wall minDraft enforcement", "demoldableIsNotDraftAlone flag", "read-only envelope"], "tests": ["tests/dfm_test.py", "tests/manufacturing.test.js"], "gaps": [], "bugs": []}
+  },
+  "measure.wall-map": {
+    "sections": [
+      {"title": "Inputs And Material Continuity", "text": "samples required nonempty array of {name?, point:[x,y,z], opposite?:[x,y,z] | thickness?:length, continuity?:solid|void} wall samples. minThickness default '0 mm'; maxThickness optional. method declared only. schemaVersion required 1. Thickness is |opposite - point| (or the declared thickness). A sample with continuity void is void-backed: the nearest opposite wall is behind a void, so its distance is never reported as material thickness and it is listed under unhandledAreas."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'measure.wall-map',status,success,documentIdentity,units,frame,associativity:'snapshot',method,limitations,provenance,wallMap:[{name,point,opposite,thickness,continuity,voidBacked,thinWall,thickWall}],minThickness,maxThickness,thinWallViolations,thickWallViolations,violations,voidBackedSamples,materialContinuityChecked:true,uniform,unhandledAreas,accuracy}. Executor created:[]; read-only."}
+    ],
+    "examples": [
+      {"label": "Uniform Shell With A Void Behind", "data": {"schemaVersion": 1, "samples": [{"name": "shell", "point": ["0 mm", "0 mm", "0 mm"], "opposite": ["2 mm", "0 mm", "0 mm"], "continuity": "solid"}, {"name": "boss", "point": ["10 mm", "0 mm", "0 mm"], "opposite": ["14 mm", "0 mm", "0 mm"], "continuity": "void"}]}, "requires": "Open Design document; one solid 2 mm shell wall and one boss sample whose opposite point is behind a void.", "output": "result.wallMap[0].thickness is 0.2 cm solid; result.wallMap[1].voidBacked is true and result.unhandledAreas contains 'boss'."}
+    ],
+    "audit": {"sources": ["assets/cad/dfm.py: _measure_wall_map, _parse_face, _point3"], "verified": ["solid vs void continuity", "thin/thick violation against limits", "void-backed not treated as material", "read-only envelope"], "tests": ["tests/dfm_test.py", "tests/manufacturing.test.js"], "gaps": [], "bugs": []}
+  },
+  "undercut.check": {
+    "sections": [
+      {"title": "Inputs And Directional Undercut", "text": "faces required nonempty array of declared face samples; pullDirections required nonempty array of unit pull directions; undercutThreshold optional nonnegative angle default '3 deg'. schemaVersion required 1. A face is a directional undercut in a pull when its signed draft is more negative than -undercutThreshold (its normal points back against ejection)."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'undercut.check',status,success,documentIdentity,units,frame,associativity:'snapshot',method,limitations,provenance,passed,undercuts:[{face,pull,signedDraft,undercut}],undercutCount,undercutThreshold,demoldable,demoldableIsNotDraftAlone:true}. status is fail when any undercut is found. Executor created:[]; read-only."}
+    ],
+    "examples": [
+      {"label": "Lip Against Pull", "data": {"schemaVersion": 1, "faces": [{"name": "lip", "point": ["0 mm", "0 mm", "5 mm"], "normal": [0, 0, -1]}], "pullDirections": [{"name": "eject", "axis": [0, 0, 1]}]}, "requires": "Open Design document; one lip face with normal pointing back against the +Z pull.", "output": "result.passed is false, result.undercuts[0].undercut is true and result.undercutCount is 1."}
+    ],
+    "audit": {"sources": ["assets/cad/dfm.py: _undercut_check"], "verified": ["directional undercut from signed draft", "pass/fail status", "reuses measure.draft via ctx.call", "read-only envelope"], "tests": ["tests/dfm_test.py", "tests/manufacturing.test.js"], "gaps": [], "bugs": []}
+  },
+  "manufacturing.zone": {
+    "sections": [
+      {"title": "Inputs And Zone Definition", "text": "zones required nonempty array of {name, kind, protected?, pullDirections?, minThickness?, maxThickness?, minDraft?}. kind is a-surface, fit, seal, optical, parting, gate, ejector, weld or custom. protected defaults to true for a-surface/seal/optical. process and material are optional metadata; a missing material produces a warning. sampling optional {method:declared|uniform|adaptive,tolerance?}; uniform/adaptive native sampling is gated. schemaVersion required 1."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'manufacturing.zone',status,success,documentIdentity,units,frame,associativity:'snapshot',method,limitations,provenance,zones:[{name,kind,protected,pullDirections}],process,material,sampling,warnings,accuracy}. Executor created:[]; read-only; no native Fusion manufacturing feature is created."}
+    ],
+    "examples": [
+      {"label": "Seal And A-Surface Are Protected", "data": {"schemaVersion": 1, "zones": [{"name": "seal-groove", "kind": "seal"}, {"name": "a-panel", "kind": "a-surface"}]}, "requires": "Open Design document; two zones without an explicit protected flag.", "output": "result.zones[0].protected and result.zones[1].protected are both true; result.warnings notes the missing material."}
+    ],
+    "audit": {"sources": ["assets/cad/dfm.py: _manufacturing_zone, _zone_row"], "verified": ["zone kind and protection defaults", "material-missing warning", "read-only envelope"], "tests": ["tests/dfm_test.py", "tests/manufacturing.test.js"], "gaps": [], "bugs": []}
+  },
+  "manufacturing.check": {
+    "sections": [
+      {"title": "Inputs And Aggregation", "text": "zones, faces, walls and pullDirections required nonempty arrays. minDraft/minThickness/maxThickness/undercutThreshold optional thresholds forwarded to the draft, wall and undercut checks. operations optional array of {name?, touches:[zoneName,...]}: any global operation touching a protected zone (seal/a-surface/optical) is a violation. process/material/sampling optional. schemaVersion required 1. The check composes measure.draft, measure.wall-map and undercut.check through ctx.call."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'manufacturing.check',status,success,documentIdentity,units,frame,associativity:'snapshot',method,limitations,provenance,passed,violations:[{source:'draft'|'wall-thickness'|'undercut'|'protected-zone',...}],violationCount,zones,draft,wallMap,undercut,protectedZones,unhandledAreas,process,material,accuracy}. status is fail when any violation exists. Executor created:[]; read-only."}
+    ],
+    "examples": [
+      {"label": "Global Change Touching A Seal Is Rejected", "data": {"schemaVersion": 1, "zones": [{"name": "seal", "kind": "seal"}], "faces": [{"name": "wall", "point": ["0 mm", "0 mm", "10 mm"], "normal": [1, 0, 0]}], "walls": [{"name": "shell", "point": ["0 mm", "0 mm", "0 mm"], "opposite": ["2 mm", "0 mm", "0 mm"], "continuity": "solid"}], "pullDirections": [{"name": "eject", "axis": [0, 0, 1]}], "operations": [{"name": "global-draft", "touches": ["seal"]}]}, "requires": "Open Design document; a declared global operation that touches the protected seal zone.", "output": "result.passed is false and result.violations contains a protected-zone violation for the 'seal' zone."}
+    ],
+    "audit": {"sources": ["assets/cad/dfm.py: _manufacturing_check"], "verified": ["draft/wall/undercut aggregation via ctx.call", "protected-zone enforcement", "pass/fail status", "read-only envelope"], "tests": ["tests/dfm_test.py", "tests/manufacturing.test.js"], "gaps": [], "bugs": []}
+  }
+}

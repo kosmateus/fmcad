@@ -1,0 +1,80 @@
+{
+  "assembly.sequence": {
+    "summary": "Order parts from a rigid dependency graph with phases, removed parts and disconnected media; flexible media are disconnection prerequisites, never assembly joints.",
+    "required": ["parts"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "parts": ["base", "connector", "shaft", "housing"],
+      "dependencies": [["base", "connector"], ["connector", "shaft"], ["shaft", "housing"]],
+      "removedParts": ["connector"],
+      "disconnectedMedia": [{"name": "PWR-cable", "connects": ["connector", "shaft"]}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "parts": "Nonempty array of unique part names.",
+      "dependencies": "Array of [prerequisite, dependent] pairs: prerequisite is assembled before dependent.",
+      "removedParts": "Array of part names to disassemble/service; removal order is reverse of assembly order.",
+      "disconnectedMedia": "Array of {name, connects:[a,b], rigid?:bool}; media are disconnection prerequisites, never rigid joints (rigid defaults false).",
+      "serviceStates": "Array of {part, requires:[{state}|{media,state}|{part,action}]} real disconnection/service states.",
+      "phases": "Array of {name, parts:[...]} grouping parts into assembly phases; each part in at most one phase.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Flexible media (wires/hoses) are never rigidized into assembly joints; they only require disconnection. An exploded endpoint is not a feasible insertion path; swept-access feasibility belongs to service.path-check, not the dependency graph."]
+  },
+  "service.path-check": {
+    "summary": "Sample a swept withdrawal of a part outline in a declared plane and report clearances and blockers; an exploded endpoint is not a feasible insertion path.",
+    "required": ["part", "direction", "distance"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "part": {"name": "tank", "outline": [["-10 mm", "0 mm"], ["10 mm", "0 mm"], ["10 mm", "20 mm"], ["-10 mm", "20 mm"]]},
+      "direction": [0, 1], "distance": "30 mm",
+      "obstacles": [{"name": "wall", "outline": [["15 mm", "0 mm"], ["30 mm", "0 mm"], ["30 mm", "50 mm"], ["15 mm", "50 mm"]]}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "part": "Object {name?, outline:[[x,y],...]} cross-section polygon in the withdrawal plane.",
+      "direction": "Two finite unitless numbers [dx,dy] giving the withdrawal direction in the plane.",
+      "distance": "Positive withdrawal length expression.",
+      "obstacles": "Array of {name?, outline:[[x,y],...], span?:[start,end]} obstacle polygons; span limits where along the withdrawal the obstacle is present.",
+      "minimumClearance": "Nonnegative clearance expression, default 0 mm.",
+      "samples": "Positive integer number of swept-access stations, default 20.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Swept access is sampled along a straight withdrawal in a declared plane; it is bounds, not a continuous collision proof. A full 3D rigid-body swept check against native bodies is a separate gate."]
+  },
+  "tool.access": {
+    "summary": "Sweep a cylindrical tool envelope along an approach axis to a fastener and report reach, engagement and blockers; the cylinder is a simplification, not a fingers/grip model.",
+    "required": ["tool", "target", "entry"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "tool": {"diameter": "6 mm", "length": "40 mm"},
+      "target": {"origin": ["0 mm", "0 mm", "0 mm"], "axis": [0, 0, 1], "engagementDepth": "4 mm"},
+      "entry": {"origin": ["0 mm", "0 mm", "30 mm"], "direction": [0, 0, -1]},
+      "obstacles": [{"name": "rib", "point": ["6 mm", "0 mm", "15 mm"], "radius": "2 mm"}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "tool": "Object {diameter, length} cylindrical envelope; length must reach the engagement point.",
+      "target": "Object {origin, axis, engagementDepth?} fastener seat; the tool tip must reach origin + axis*engagementDepth.",
+      "entry": "Object {origin, direction} tool access point and approach direction.",
+      "obstacles": "Array of {name?, point:[x,y,z], radius?} or {name?, box:{min,max}} obstacles near the tool path.",
+      "minimumClearance": "Nonnegative clearance expression, default 0 mm.",
+      "samples": "Positive integer number of swept-access stations, default 20.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["A cylindrical tool envelope is a simplification, not a full fingers/grip model. Reach and engagement are geometric; torque, grip and seating forces are not computed."]
+  },
+  "fixture.access": {
+    "summary": "Check that a part can seat onto fixture datums: pin/hole diameter fit, datum coincidence and approach reach with explicit prerequisites and blockers.",
+    "required": ["part", "fixture", "pairs"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1,
+      "part": {"name": "pcb", "features": [{"name": "pinA", "kind": "pin", "origin": ["0 mm", "0 mm", "0 mm"], "diameter": "2 mm"},
+        {"name": "datA", "kind": "datum", "origin": ["10 mm", "0 mm", "0 mm"], "direction": [0, 0, 1]}]},
+      "fixture": {"approach": {"direction": [0, 0, 1]},
+        "features": [{"name": "holeA", "kind": "hole", "origin": ["0 mm", "0 mm", "0 mm"], "diameter": "2.1 mm"},
+          {"name": "datA", "kind": "datum", "origin": ["10 mm", "0 mm", "0 mm"], "direction": [0, 0, 1]}]},
+      "pairs": [["pinA", "holeA"], ["datA", "datA"]]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "part": "Object {name?, features:[{name,kind,origin,direction?,diameter?}]}; kind is pin, hole or datum.",
+      "fixture": "Object {name?, approach:{direction}, features:[...]}; approach is the seating direction.",
+      "pairs": "Nonempty array of [partFeature, fixtureFeature] mating pairs.",
+      "tolerance": "Nonnegative length expression for datum coincidence, default 0.01 mm.",
+      "angleTolerance": "Nonnegative angle expression for axis/datum alignment, default 1 deg.",
+      "clearance": "Nonnegative radial clearance required for a pin-in-hole fit, default 0 mm.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Seating is a declared-datum geometric check, not a native fixture/part collision solve. Prerequisites (missing features, undeclared diameters) are reported as blockers, not silently filled."]
+  }
+}

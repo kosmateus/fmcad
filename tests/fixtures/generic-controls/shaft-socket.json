@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "gc-shaft-socket-v1",
+  "family": "shaftSocket",
+  "identity": "offline:generic-controls/shaft-socket",
+  "control": {
+    "minimumDiametralClearanceMm": 0.1,
+    "maximumDiametralClearanceMm": 0.3,
+    "minimumEngagementMm": 10.0
+  },
+  "readPaths": [
+    "shaftDiameterMm",
+    "socketBoreDiameterMm",
+    "engagementMm"
+  ],
+  "cases": [
+    {
+      "id": "nominal",
+      "identity": "offline:generic-controls/shaft-socket/nominal",
+      "variant": "good",
+      "measurements": {
+        "shaftDiameterMm": 10.0,
+        "socketBoreDiameterMm": 10.2,
+        "engagementMm": 12.0
+      },
+      "expected": {
+        "status": "pass",
+        "failedChecks": []
+      }
+    },
+    {
+      "id": "interference",
+      "identity": "offline:generic-controls/shaft-socket/interference",
+      "variant": "bad",
+      "measurements": {
+        "shaftDiameterMm": 10.0,
+        "socketBoreDiameterMm": 9.9,
+        "engagementMm": 12.0
+      },
+      "expected": {
+        "status": "fail",
+        "failedChecks": [
+          "diametral-clearance"
+        ]
+      }
+    },
+    {
+      "id": "short-engagement",
+      "identity": "offline:generic-controls/shaft-socket/short-engagement",
+      "variant": "bad",
+      "measurements": {
+        "shaftDiameterMm": 10.0,
+        "socketBoreDiameterMm": 10.2,
+        "engagementMm": 8.0
+      },
+      "expected": {
+        "status": "fail",
+        "failedChecks": [
+          "minimum-engagement"
+        ]
+      }
+    }
+  ]
+}

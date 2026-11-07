@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "verbatimModuleSyntax": false,
+    "rootDir": ".",
+    "outDir": "../../dist/scripts/adsk-refresh"
+  },
+  "include": ["*.ts"]
+}

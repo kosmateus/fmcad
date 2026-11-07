@@ -1,0 +1,89 @@
+{
+  "mechanism.couple": {
+    "summary": "Evaluate a mechanism coupling (signed rotational ratio or screw lead plus zero phase) into an explicit unwrapped track; angles may exceed 360 degrees. Does not create or infer a native MotionLink.",
+    "required": ["schemaVersion", "frame", "coupling", "driverRange"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "frame": "component", "coupling": {"type": "rotation", "driverTeeth": 20, "drivenTeeth": 40, "external": true, "zeroPhase": "0 deg"}, "driverRange": {"from": "0 deg", "to": "720 deg"}, "samples": 16},
+    "inputs": {
+      "schemaVersion": "Required integer 1.", "frame": "Required component.",
+      "coupling": "Coupling descriptor {type:rotation|screw, ratio? or driverTeeth/drivenTeeth/external?, lead?, zeroPhase?, drivenZero?}. rotation: signed ratio or gear teeth (external flips sign). screw: lead length per revolution.",
+      "driverRange": "Required {from,to} angle expressions for the evaluated driver track; may span more than 360 deg.",
+      "samples": "Optional integer 2..100000, default 16.",
+      "drivenMeasured": "Optional array of driven values, one per sample, to compute residuals.",
+      "tolerance": "Optional coupling tolerance (angle for rotation, length for screw).",
+      "representation": "explicit (default); native is refused because this operation only evaluates mathematics. Use mechanism.motion-link.create for native authoring."
+    },
+    "limitations": ["Gear ratio and screw lead are distinct relationships; a disconnected follower is independent and engagement is never assumed.", "This operation returns mathematical expectations only; it never creates or infers a native MotionLink."]
+  },
+  "mechanism.inspect": {
+    "summary": "Inspect a coupling against actual driver/driven values and report the residual and engagement.",
+    "required": ["schemaVersion", "frame", "coupling", "driverValue", "drivenValue"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "frame": "component", "coupling": {"type": "rotation", "ratio": -0.5, "zeroPhase": "0 deg"}, "driverValue": "90 deg", "drivenValue": "-45 deg", "tolerance": "0.01 deg"},
+    "inputs": {
+      "schemaVersion": "Required integer 1.", "frame": "Required component.",
+      "coupling": "Coupling descriptor as mechanism.couple.",
+      "driverValue": "Actual driver value angle expression.", "drivenValue": "Actual driven value (angle for rotation, length for screw).",
+      "tolerance": "Optional engagement tolerance."
+    },
+    "limitations": ["Actual values are caller-supplied; read joint values through joint.inspect and pass them in for a full native check."]
+  },
+  "mechanism.stop-check": {
+    "summary": "Check mechanism stops: program limit versus physical stop, engagement through the hard stop, stop-surface margins and sensor window placement.",
+    "required": ["schemaVersion", "frame", "coupling"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "frame": "component", "coupling": {"type": "rotation", "ratio": -0.5}, "limits": {"working": {"min": "0 deg", "max": "200 deg"}, "program": {"max": "180 deg"}, "hard": {"max": "200 deg"}}, "stopSurfaces": [{"clearance": "0.2 mm"}], "sensorWindow": {"from": "0 deg", "to": "170 deg"}, "tolerance": "0.01 deg", "driverValue": "200 deg", "drivenValue": "-100 deg"},
+    "inputs": {
+      "schemaVersion": "Required integer 1.", "frame": "Required component.",
+      "coupling": "Coupling descriptor as mechanism.couple.",
+      "limits": "Optional {working?:{min,max}, hard?:{max}, program?:{max}} angle expressions.",
+      "stopSurfaces": "Optional array of {ref?, clearance} physical stop evidence.",
+      "sensorWindow": "Optional {from,to} angle expressions.",
+      "engagement": "Optional engagement descriptor; a mechanical counter keeps engagement through the hard stop.",
+      "tolerance": "Optional coupling tolerance (angle for rotation, length for screw), default 0.01.",
+      "lengthTolerance": "Optional length tolerance for stop-surface margins, default 0 mm.",
+      "driverValue": "Optional driver value at the hard stop.", "drivenValue": "Optional driven value at the hard stop."
+    },
+    "limitations": ["Program limit is a distinct limit, never a substitute for a physical stop; missing declared limits are unknown, not pass."]
+  },
+  "mechanism.motion-link.create": {
+    "summary": "Create and read back a real revolute-to-revolute MotionLink between explicitly referenced native joints; this mutation does not qualify solver behavior.",
+    "required": ["schemaVersion", "frame", "confirm", "jointOne", "jointTwo", "valueOne", "valueTwo"],
+    "readOnly": false, "envelope": true, "documentPin": true, "batchAllowed": false,
+    "example": {"schemaVersion": 1, "frame": "component", "confirm": true, "jointOne": {"kind": "joint", "name": "Driver"}, "jointTwo": {"kind": "joint", "name": "Follower"}, "valueOne": "1 rad", "valueTwo": "1 rad", "isReversed": false},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "frame": "Required component.",
+      "confirm": "Required true; this operation creates and modifies a native MotionLink in the exact pinned document.",
+      "jointOne": "Exact unsuppressed native Joint/AsBuiltJoint reference; must expose revolute rotation motion and belong to the pinned design.",
+      "jointTwo": "A distinct exact unsuppressed native Joint/AsBuiltJoint reference; must expose revolute rotation motion and belong to the pinned design.",
+      "valueOne": "Required positive finite angle expression for MotionLinkInput.valueOne.",
+      "valueTwo": "Required positive finite angle expression for MotionLinkInput.valueTwo.",
+      "isReversed": "Optional strict boolean, default false, passed to the native MotionLinkInput."
+    },
+    "limitations": [
+      "Uses Autodesk's documented MotionLinks.createInput/add API. Only native revolute-to-revolute links are supported by this operation.",
+      "Does not move joints or occurrences, set followers, calculate a ratio/phase, or claim actual solver behavior. Run mechanism.drive-test separately against the created link.",
+      "Creation is a model mutation and is not rolled back if post-create readback fails. Do not blindly retry an uncertain result; inspect the pinned document first."
+    ]
+  },
+  "mechanism.drive-test": {
+    "summary": "Measure follower response while driving only one native driver over bounded waypoints; mathematical tracks are expectations, not solver or native-capability proof.",
+    "required": ["schemaVersion", "confirm", "driver", "waypoints", "followers"], "readOnly": false, "envelope": true,
+    "example": {"schemaVersion": 1, "confirm": true, "driver": {"kind": "joint", "name": "Driver"}, "waypoints": [0.02, 0.04, 0.06], "followers": [{"joint": {"kind": "joint", "name": "Follower"}, "coordinate": "rotation", "ratio": -2, "phase": 0.3, "tolerance": 0.000001}], "budgetSeconds": 10, "driverTolerance": 0.0000001, "restoreTolerance": 0.0000001},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "confirm": "Required true; this operation commands the driver joint and requires explicit confirmation.",
+      "driver": "Existing native rotational Joint/AsBuiltJoint reference. It is the only joint that may be commanded.",
+      "waypoints": "Required 2..240 absolute driver angles in radians. Adjacent steps must be < pi/2; the captured starting angle must be near the first point. The driver and expected follower excursions must exceed their tolerances.",
+      "followers": "Required 1..32 distinct unsuppressed Joint/AsBuiltJoint observations [{joint,coordinate:rotation|slide,ratio,phase,tolerance}]. Rotation is radians with ratio rad/rad; slide is cm with ratio cm/rad. Followers are read only and never set to expected values.",
+      "budgetSeconds": "Optional cooperative sampling budget, default 10 and maximum 30 seconds. Synchronous SDK work cannot be hard-interrupted; cleanup has a separate bounded operation count.",
+      "driverTolerance": "Optional positive radian tolerance, default 1e-7 and maximum 0.01.",
+      "restoreTolerance": "Optional positive tolerance for pose readback, default 1e-7 and maximum 0.001 (native units)."
+    },
+    "limitations": [
+      "The commanded mathematical track, sampled actual joint/transform readback, and native capability are separate evidence. Passing samples do not qualify a native MotionLink or solver relationship; nativeCapability remains unknown and qualified:false.",
+      "Only the driver is commanded, including restore. Followers and transforms are observed only. Capture is independently read back after the restore attempt; failure or unavailable readback is explicit.",
+      "Angular phase is locally unwrapped from consecutive measured values, never fitted to expected phase. Whole turns aliased between samples cannot be detected; increments at or above pi/2 are rejected.",
+      "Sampling is bounded and kinematic only; it does not prove continuous motion, contact, collision, dynamics, or physical performance. Cancellation is cooperative; synchronous native calls cannot be remotely interrupted.",
+      "Offline fake-solver tests are not native Fusion qualification. Real positive/negative synthetic-document tests and restore-failure qualification require separate explicit approval."
+    ]
+  }
+}

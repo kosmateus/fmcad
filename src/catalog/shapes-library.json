@@ -1,0 +1,99 @@
+{
+  "shape.annular_segment": {
+    "summary": "Extrude an expression-driven annular sector between inner and outer radii across a start/sweep span. Returns feature, bodies, healthState, message, helpers, local refs and dependency scope.",
+    "required": ["name", "innerRadius", "outerRadius", "height"], "readOnly": false,
+    "example": {"name": "Annulus", "innerRadius": "10 mm", "outerRadius": "20 mm", "start": "0 deg", "sweep": "120 deg", "height": "5 mm"},
+    "inputs": {
+      "name": "Required feature name; reserves name and name__section (plus name__plane when a frame is declared).",
+      "innerRadius": "Positive inner radius expression, strictly less than outerRadius.",
+      "outerRadius": "Positive outer radius expression.",
+      "height": "Positive extrusion length expression along the sketch normal.",
+      "center": "Three sketch-local length expressions for the arc center, default [0 mm,0 mm,0 mm]; z must evaluate to zero. Use plane/frame for 3D orientation.",
+      "start": "Angular expression measured from sketch +X, default 0 deg.",
+      "sweep": "Angular expression with magnitude in (0,360 deg), default 180 deg; use shape.ring for a full annulus.",
+      "plane": "Native construction plane reference, default XY; mutually exclusive with frame.",
+      "frame": "Named datum.frame or frame descriptor; creates a native plane aligned to the frame.",
+      "operation": "newBody (default), join, cut or intersect.",
+      "participants": "Optional nonempty native body ref array for cut/intersect extrusion."
+    },
+    "limitations": ["Inner and outer radii are driving radial dimensions; start/sweep expressions initialize arc geometry only. Center is sketch-local and planar. Raw coordinates are initial values, not parameter links.", "Multi-operation recipe is not atomic; solver/kernel failures can leave helpers. Component scope only. Frame-derived plane geometry is constant and must be regenerated after source frame changes."]
+  },
+  "shape.arc_strip": {
+    "summary": "Extrude a curved strip built from a centerline arc or three-point circle with normal thickness. The blade center is explicit, never assumed at the global origin. Returns feature, bodies, healthState, message, helpers, refs and dependency scope.",
+    "required": ["name", "thickness", "height"], "readOnly": false,
+    "example": {"name": "Blade", "centerline": {"radius": "30 mm", "start": "10 deg", "sweep": "80 deg"}, "thickness": "2 mm", "height": "20 mm"},
+    "inputs": {
+      "name": "Required feature name; reserves name and name__section (plus name__plane when a frame is declared).",
+      "thickness": "Positive normal (radial) thickness expression retained inside both offset-radius driving dimensions.",
+      "height": "Positive extrusion length expression.",
+      "centerline": "Arc descriptor {radius,start?,sweep?,center?} or three-point descriptor {start,through,end}; mutually exclusive with a top-level radius.",
+      "radius": "Top-level centerline radius when centerline is omitted; combines with top-level start/sweep/center.",
+      "start": "Angular expression, default 0 deg.", "sweep": "Angular expression with magnitude in (0,360 deg], default 90 deg.",
+      "center": "Three sketch-local length expressions for the strip center, default [0 mm,0 mm,0 mm].",
+      "plane": "Native construction plane, default XY; mutually exclusive with frame.",
+      "frame": "Named datum.frame or frame descriptor; creates a native aligned plane.",
+      "operation": "newBody (default), join, cut or intersect.",
+      "participants": "Optional nonempty native body ref array for cut/intersect extrusion."
+    },
+    "limitations": ["Offset radii encode thickness as native expressions; centerline start/sweep and through-points are initial values only. Three-point centers are computed locally and are numeric snapshots. Off-origin centers require the explicit center/centerline input.", "Recipe is not atomic; kernel failures can leave helpers. Component scope only. Normal thickness is exact only for circular centerlines."]
+  },
+  "shape.can": {
+    "summary": "Compose a revolved blank, an opening shell and optional edge fillets into a can. Reuses model.revolve/shell/fillet. Returns blank/shell/fillets plus feature wiring and helpers.",
+    "required": ["name", "height", "wallThickness"], "readOnly": false,
+    "example": {"name": "Can", "diameter": "40 mm", "height": "60 mm", "wallThickness": "1.5 mm", "opening": "top", "radii": ["2 mm", "1 mm"]},
+    "inputs": {
+      "name": "Required feature name; reserves name and name__section.",
+      "height": "Positive height expression retained as a driving dimension.",
+      "wallThickness": "Positive shell inside thickness expression.",
+      "diameter": "Positive blank diameter; exclusive with profileData/profile. Revolves a dimensioned rectangle about the axis.",
+      "profileData": "Structured revolve profile {plane?,geometry,constraints?,dimensions?}; exclusive with diameter/profile.",
+      "profile": "Existing native closed profile; exclusive with diameter/profileData.",
+      "axis": "Revolve axis, default Y; only X/Y/Z support automatic opening-face and fillet-edge discovery.",
+      "plane": "Native construction plane, default XY; mutually exclusive with frame.",
+      "frame": "Named datum.frame or frame descriptor.",
+      "opening": "top (default), bottom or none; shell removes the extreme cap face.",
+      "radii": "Array of positive fillet radius expressions applied to circular edges from the axis-extreme outward.",
+      "operation": "newBody (default), join, cut or intersect for the blank revolve."
+    },
+    "limitations": ["Blank revolve, shell and fillets are distinct native features; no atomic rollback. Opening-face and fillet-edge discovery uses centroid/center extremes along an X/Y/Z axis only. Wall thickness is uniform inside; a distinct bottom thickness is not modeled by the shell recipe.", "Native face/edge discovery requires the blank body to expose topology; the recipe reports helpers but does not verify shell feasibility."]
+  },
+  "shape.impeller": {
+    "summary": "Generate a hub cylinder, a seed blade arc-strip joined to it, an optional shroud/disk revolve and a circular blade pattern. Geometry generator, not aerodynamic design. Returns hub/blade/pattern and helpers with feature dependencies.",
+    "required": ["name", "hub", "blade", "count"], "readOnly": false,
+    "example": {"name": "Impeller", "hub": {"diameter": "20 mm", "height": "15 mm"}, "blade": {"innerRadius": "10 mm", "outerRadius": "40 mm", "sweep": "60 deg", "height": "15 mm"}, "count": 6},
+    "inputs": {
+      "name": "Required pattern name; reserves name plus hub/blade helper names.",
+      "hub": "Descriptor {diameter,height,bore?}; positive diameter and height.",
+      "blade": "Descriptor {thickness,radius?|innerRadius?|outerRadius?,start?,sweep?,height?,centerline?}; a seed arc-strip joined to the hub body. radius is the centerline; outerRadius/innerRadius are reduced to centerline radius plus strip thickness. The seed blade is extruded with a join that targets the hub implicitly: the blade must reach the hub (supply innerRadius equal to the hub radius, or a radius/thickness whose inner edge is no greater than the hub radius); an outerRadius-only blade with an inner edge beyond the hub radius joins no body and produces a detached blade.",
+      "count": "Integer >=2 or unitless parameter expression; includes the seed blade.",
+      "shroud": "Optional {profileData,thickness?}; revolved shroud profile joined to the hub.",
+      "disk": "Optional {profileData,thickness?}; revolved disk profile joined to the hub.",
+      "phase": "Angular expression, default 0 deg (recorded).",
+      "axis": "Pattern axis, default Z.",
+      "plane": "Native construction plane, default XY; mutually exclusive with frame.",
+      "frame": "Named datum.frame or frame descriptor.",
+      "trim": "Optional participant body refs trimming the blade.",
+      "participants": "Optional native body refs limiting the blade extrusion."
+    },
+    "limitations": ["The seed blade extrudes joined to the hub body; the circular pattern depends on the blade feature. Shroud/disk are revolved profiles, not swept aerodynamic surfaces. Geometry generator only: no flow, blade-count or structural design.", "Recipe is not atomic; kernel failures can leave hub/blade/pattern features. Blade centerline/arc inputs are initial values; radii remain driving dimensions."]
+  },
+  "shape.boss_pattern": {
+    "summary": "Generate a seed boss cylinder with an optional coaxial hole/insert, then repeat it in a rectangular, circular or explicit-list layout. Returns boss/hole/pattern with real helper and feature dependencies.",
+    "required": ["name", "boss", "layout"], "readOnly": false,
+    "example": {"name": "Bosses", "boss": {"diameter": "8 mm", "height": "5 mm"}, "hole": {"diameter": "3 mm", "depth": "5 mm"}, "layout": {"type": "circular", "axis": "Z", "quantity": 6, "angle": "360 deg"}},
+    "inputs": {
+      "name": "Required pattern name; reserves boss and hole helper names.",
+      "boss": "Descriptor {diameter,height}; positive diameter and height. Seed is a dimension-driven cylinder.",
+      "hole": "Optional {diameter,depth}; a native hole whose participants are the boss body.",
+      "insert": "Optional {diameter,depth}; treated as a hole-sized insert recess.",
+      "layout": "Descriptor {type:rectangular|circular|list}. rectangular: {direction,quantity,distance,directionTwo?,quantityTwo?,distanceTwo?,distanceType?}. circular: {axis,quantity,angle?,phase?}. list: {positions:[[x,y,z],...]}.",
+      "frame": "Named datum.frame or frame descriptor orienting the seed plane.",
+      "plane": "Native construction plane, default XY; mutually exclusive with frame.",
+      "phase": "Angular expression, default 0 deg (recorded).",
+      "extent": "Recorded extent descriptor; the seed boss/cylinder retains its own height.",
+      "participants": "Optional native body refs limiting the boss extrusion.",
+      "operation": "newBody (default), join, cut or intersect for the seed boss."
+    },
+    "limitations": ["The hole (when present) depends on the boss body; the pattern depends on the seed feature(s). List layouts emit per-position seed copies rather than a native pattern feature.", "Recipe is not atomic. insert and hole share the same recess recipe and are not distinct insert geometry."]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@fmcad/node-adapters",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@fmcad/control-center": "0.1.0",
+    "@fmcad/core": "0.1.0",
+    "basedpyright": "1.40.2",
+    "jsonc-parser": "3.3.1"
+  }
+}

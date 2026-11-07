@@ -1,0 +1,52 @@
+{
+  "pose.save": {
+    "sections": [
+      {"title": "GM18 Named Product State", "text": "Saves a named pose as a local attribute manifest (identity/revision, joints, parameters, visibility, fillState, springState, routeVariant, service disconnections). It is explicitly not a native Fusion ConfigurationTable. onExisting defaults to error; update requires confirm and bumps the revision."},
+      {"title": "Return Contract", "text": "result has schemaVersion:1, name, revision, manifest (schema fmcad.pose.manifest.v1), identity, changed. The manifest carries the eight state dimensions; fillState FULL/EMPTY changes the declared liquid state and springState COCKED the declared spring state; their mass/force effect is resolved by GM23/GM12, not recomputed here."}
+    ],
+    "examples": [
+      {"label": "Save a service pose", "data": {"schemaVersion": 1, "frame": "component", "name": "Service", "revision": 1, "fillState": "EMPTY", "springState": "COCKED", "service": {"disconnections": ["tank-dock"]}}, "requires": "A selected component; root attributes available.", "output": "result.name is Service, result.manifest.fillState is EMPTY and result.manifest.springState is COCKED."}
+    ],
+    "audit": {"sources": ["assets/cad/pose.py:pose_save,_pose_manifest,_pose_index_write"], "verified": ["Local manifest is not a native ConfigurationTable", "Identity and revision are recorded", "Fill/spring/route/service states are manifest-carried"], "tests": ["tests/pose_test.py", "tests/pose.test.js"], "gaps": [], "bugs": ["Native ConfigurationTable is deliberately not used; no native configuration feature is claimed"]}
+  },
+  "pose.apply": {
+    "sections": [
+      {"title": "GM18 Pose Application", "text": "Applies a saved pose and leaves the requested state in place. Joints are driven through joint.drive, parameters through param.apply and visibility through the native light-bulb flag; fill/spring/route/service states are manifest-carried declarations. Incompatible documents and stale refs are rejected before mutation."},
+      {"title": "Return Contract", "text": "result has schemaVersion:1, name, revision, requested (the manifest), applied[], unapplied[], before, after, leftApplied:true. status is fail when any change is unapplied. apply never restores automatically."}
+    ],
+    "examples": [
+      {"label": "Apply the service pose", "data": {"schemaVersion": 1, "frame": "component", "name": "Service"}, "requires": "A saved pose named Service in the same document.", "output": "result.leftApplied is true and result.unapplied lists dimensions that could not be applied."}
+    ],
+    "audit": {"sources": ["assets/cad/pose.py:pose_apply,_pose_apply_manifest,_pose_capture,_pose_resolve_refs"], "verified": ["Apply leaves the requested state", "Stale refs and incompatible documents are rejected", "joint.drive and param.apply are reused by dispatch"], "tests": ["tests/pose_test.py", "tests/pose.test.js"], "gaps": [], "bugs": ["Fill/spring/route/service geometry is not synthesized here; downstream GM methods own that effect"]}
+  },
+  "pose.list": {
+    "sections": [
+      {"title": "GM18 Pose Listing", "text": "Enumerates saved poses with name, revision, savedAt and document identity from the local manifest index."},
+      {"title": "Return Contract", "text": "result has schemaVersion:1, poses[] and count; each pose row has name, revision, savedAt and document."}
+    ],
+    "examples": [
+      {"label": "List poses", "data": {"schemaVersion": 1, "frame": "component"}, "requires": "A selected component.", "output": "result.poses lists each saved pose by name."}
+    ],
+    "audit": {"sources": ["assets/cad/pose.py:pose_list,_pose_index_read"], "verified": ["Read-only manifest enumeration"], "tests": ["tests/pose_test.py", "tests/pose.test.js"], "gaps": [], "bugs": []}
+  },
+  "pose.delete": {
+    "sections": [
+      {"title": "GM18 Pose Deletion", "text": "Deletes a saved pose record from the local manifest. Requires confirm. No geometry is touched."},
+      {"title": "Return Contract", "text": "result has schemaVersion:1, name, deleted:true, revision."}
+    ],
+    "examples": [
+      {"label": "Delete the service pose", "data": {"schemaVersion": 1, "frame": "component", "name": "Service", "confirm": true}, "requires": "A saved pose named Service.", "output": "result.deleted is true and the pose no longer appears in pose.list."}
+    ],
+    "audit": {"sources": ["assets/cad/pose.py:pose_delete,_pose_index_write"], "verified": ["Manifest-only deletion, no geometry mutation"], "tests": ["tests/pose_test.py", "tests/pose.test.js"], "gaps": [], "bugs": []}
+  },
+  "pose.evaluate": {
+    "sections": [
+      {"title": "GM18 Temporary Pose Evaluation", "text": "Applies a pose temporarily, records before/after, then restores the previous state. Restoration failure is reported as a separate restoreErrors list and does not guarantee the previous state was re-established; the primary evaluation result is preserved."},
+      {"title": "Return Contract", "text": "result has schemaVersion:1, name, revision, requested, applied[], unapplied[], before, after, restored, restoration, restoreErrors[]. status is pass only when nothing is unapplied and restoration succeeded."}
+    ],
+    "examples": [
+      {"label": "Evaluate the service pose", "data": {"schemaVersion": 1, "frame": "component", "name": "Service"}, "requires": "A saved pose named Service in the same document.", "output": "result.restored is true and result.restoreErrors is empty on success."}
+    ],
+    "audit": {"sources": ["assets/cad/pose.py:pose_evaluate,_pose_restore,_pose_capture"], "verified": ["Temporary apply then restore", "Restore failure reported separately", "Previous state restored on success"], "tests": ["tests/pose_test.py", "tests/pose.test.js"], "gaps": [], "bugs": ["Restore is not a transaction rollback"]}
+  }
+}

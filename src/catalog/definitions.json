@@ -1,0 +1,32 @@
+{
+  "definition.inspect": {
+    "usage":"definition inspect --file <definition.json> [--json]",
+    "summary":"Inspect and validate a definition library invocation offline.",
+    "required":["operations"],"nodeOnly":true,"offline":true,"requiresDoc":false,"readOnly":true,"definitionMode":"inspect",
+    "inputs":{"timeBudgetMs":"Positive integer scheduling budget; scoped default 180000 ms. Returned in plan; not executed here.","formatVersion":"1 for scoped format; omitted for legacy literal batches.","definitions":"Object keyed by definition name; values {revision?,parameters?,inputs?:[name],operations,outputs?}.","operations":"Ordered leaf {id,operation,data,component?,onExisting?}, use {id,use,parameters?,inputs?,component?}, or loop {id,repeat:N|forEach:array,as?,index?,operations,outputs?,component?}.","parameters":"Root literal values; definition parameters are defaults overridden explicitly at use sites.","inputs":"Root named input values; child inputs must be explicitly bound.","outputs":"Named values/$ref exports. Child exports addressed as id.outputs.name; loops as id.outputs.0.name.","maxExpansion":"Total visited nodes including loop iterations; integer 1..100000, default 10000. Depth capped at 128.","runId":"Optional for inspection; defaults to inspection.","reportPath":"Unused offline.","mode":"validate|preview|run accepted but never executed here.","recipe":"Optional {id,bindings:[{parameter,input,target:{$ref:path},name?,role?}]} for native model parameter regeneration."},
+    "example":{"formatVersion":1,"operations":[{"id":"list","operation":"entity.list","data":{"kind":"body"}}]},
+    "limitations":["Offline structural validation only. No entity resolution, output field validation or kernel evaluation. Display names remain explicit literals; IDs are scoped, names are not automatically prefixed.","No filesystem imports inside definitions. All definitions are embedded in the CLI-local --file payload; no eval or executable code."]
+  },
+  "definition.expand": {
+    "usage":"definition expand --file <definition.json> [--json]",
+    "summary":"Compile scoped definitions and bounded loops to the existing ordered batch engine.",
+    "required":["operations"],"nodeOnly":true,"offline":true,"requiresDoc":false,"readOnly":true,"definitionMode":"expand",
+    "inputs":{"timeBudgetMs":"Positive integer scheduling budget; scoped default 180000 ms. Returned in plan; not executed here.","formatVersion":"1 for scoped format.","definitions":"Named library {name:{revision?,parameters?,inputs?,operations,outputs?}}.","operations":"Leaf/use/repeat/forEach nodes; see definition inspect and docs/DEFINITIONS.md.","parameters":"Root literal values.","inputs":"Root named inputs.","outputs":"Named exported values and references.","maxExpansion":"Visited node budget 1..100000, default 10000.","runId":"Optional run identity for inspection.","reportPath":"Unused offline.","mode":"Validated but never executed.","recipe":"Optional durable {id,bindings}."},
+    "example":{"formatVersion":1,"operations":[{"id":"list","operation":"entity.list","data":{"kind":"body"}}]},
+    "limitations":["Same validation as inspect, returning all flattened operations, symbolic exports and scope/step/mutation plan. Native feasibility remains untested."]
+  },
+  "definition.recipe": {
+    "summary":"Record durable recipe ownership before and after a batch; normally called by the batch engine.",
+    "required":["action","recipe","sourceHash"],"readOnly":false,"batchAllowed":false,
+    "inputs":{"action":"begin|complete. begin is exclusive; incomplete recipes cannot be reused.","recipe":"{id,bindings}; same declaration on begin and complete.","sourceHash":"SHA256 supplied by the batch engine.","source":"Required for begin: embedded full source and bindings.","bindings":"Required for complete: {parameter,input,target,name?,role?}; input is the leaf payload path being driven.","exports":"Resolved outputs at completion.","created":"Actual batch output created refs; every adopted timeline entity must be present."},
+    "example":{"action":"begin","recipe":{"id":"example","bindings":[]},"sourceHash":"0000000000000000000000000000000000000000000000000000000000000000","source":{"operations":[]}},
+    "limitations":["Requires --doc-file-id, saved parametric design at history end. Persistent root attributes, no implicit document save. Existing recipe IDs are refused; this is not an adoption API.","Completion owns appended timeline entities only, requires unchanged earlier feature parameters and explicit bindings. Failure leaves an incomplete recipe for inspection, never automatic replay."]
+  },
+  "definition.regenerate": {
+    "summary":"Preflight or update owned native model parameter bindings from the durable recipe.",
+    "required":["id","expectedRevision","sourceHash"],"readOnly":false,"batchAllowed":false,
+    "inputs":{"id":"Durable recipe ID.","expectedRevision":"Exact positive recipe revision.","sourceHash":"Exact stored source hash. Changed/missing source is blocked; no implicit migration.","parameters":"Partial map of bound root parameter names to dimensional expression strings.","dryRun":"Boolean, default true. false explicitly applies the validated plan."},
+    "example":{"id":"example","expectedRevision":1,"sourceHash":"0000000000000000000000000000000000000000000000000000000000000000","parameters":{"height":"15 mm"},"dryRun":true},
+    "limitations":["Requires --doc-file-id. In-place native model-parameter updates only: no delete/rebuild, changing counts/structure/names or unbound literals is blocked.","Conservative downstream fence: changed timeline membership, foreign later features, user edits, ownership loss, unsupported snapshots or unhealthy history block. No claim of a complete SDK dependency graph.","No rollback. A failed assignment/recompute/readback leaves recipe status unknown and blocks automatic retry. dryRun is read-only in the handler, but transport is conservatively mutating-capable; --preview is only outer CLI validation."]
+  }
+}

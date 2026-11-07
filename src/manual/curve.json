@@ -1,0 +1,57 @@
+{
+  "sketch.profile-file": {
+    "sections": [
+      {"title":"GM07 File Profiles","text":"Imports CSV/JSON samples into a selected native sketch as line or fitted-spline geometry. schemaVersion:1 and frame:sketch are required; plane:sketchXY declares the sketch-local frame. columns maps x/y/z or angle/radius source fields (profile_x is a coordinate, never a radius); optional loop and status columns. units:{length,angle?} are required; unit-bearing cells override. closed:true requires an explicit repeated first endpoint within tolerance; a missing chord is never invented. interpolation lines (default) or spline; closed splines set native periodic closure. winding cw/ccw requires closed nonzero-area loops. Samples are importedReference; re-import into a fresh sketch after source changes. Run with --preview for host-side file preflight without Fusion."},
+      {"title":"Return Contract","text":"result has schemaVersion:1, success/status/operation/documentIdentity, units:{length:cm,angle:rad}, frame:{space:sketch,sketch:Ref}, associativity:importedReference, provenance with source path/SHA256/revision/status:DERIVED, entities:Ref[], sourceLoops, sampleMap with strokeDistance and upperBound, fitError:{status,maximumStrokeDistance,upperBound,tolerance}, profiles:[{kind:profile,sketch:Ref,index}] and inspection curves/loops/selfIntersections/cusps. fitError.status pass means the measured upper bound fits the requested tolerance; fail/unknown mark detection failure or an inconclusive fit. created contains the geometry entities; the profile is feedable to model.extrude."},
+      {"title":"Safety And Limits","text":"16 MiB source, default 2000/max 10000 input or native stroke points, default 10 s/max 120 s cooperative budget. Geometry is validated before the first sketch mutation, but kernel failures can still leave partial geometry; inspect before retry. Imported coordinates are not linked to the source file."}
+    ],
+    "examples": [
+      {"label":"Open cam profile from inline records","data":{"schemaVersion":1,"sketch":"GM07_Profile","frame":"sketch","plane":"sketchXY","columns":{"x":"x","y":"y"},"units":{"length":"mm"},"closed":false,"interpolation":"spline","records":[{"x":0,"y":0},{"x":5,"y":2},{"x":10,"y":8},{"x":12,"y":12}]},"requires":"An existing sketch GM07_Profile in the selected component; create it with sketch create name GM07_Profile plane XY.","output":"result.entities are the fitted spline refs; result.fitError.status is pass when the measured bound fits the tolerance; reuse result.profiles for extrusion."}
+    ],
+    "audit": {"sources":["src/curve.js:prepare,validate","assets/cad/curve.py:curve_fit,_curve_evidence,_curve_result","assets/cad/model.py:_model_fields"],"verified":["CSV/JSON column mapping, polar and loop columns","closed-endpoint snap, winding and provenance survival","preflight before sketch.geometry mutation","fit status propagation into the envelope"],"tests":["tests/curve.test.js","tests/gm07_curve_test.py"],"gaps":[],"bugs":[]}
+  },
+  "curve.fit": {
+    "sections": [
+      {"title":"GM07 Fit","text":"Same input contract as sketch.profile-file; the operation name differs only in the envelope. Fits native line or spline geometry to XY/XYZ/polar samples with an explicit tolerance; no radial substitution of a normal offset is ever offered."},
+      {"title":"Return Contract","text":"Identical to sketch.profile-file: schemaVersion:1 envelope, entities, sourceLoops, sampleMap, fitError, profiles and the bounded-stroke inspection. fitError.status pass means the fit is inside the requested tolerance including its reported uncertainty."},
+      {"title":"Safety And Limits","text":"Shared budgets and preflight as sketch.profile-file. Deviation is sample-to-stroke distance with a documented bound, not exact nearest-point projection."}
+    ],
+    "examples": [
+      {"label":"Fitted polyline","data":{"schemaVersion":1,"sketch":"Profile","frame":"sketch","plane":"sketchXY","columns":{"x":"x","y":"y"},"units":{"length":"mm"},"closed":false,"interpolation":"lines","records":[{"x":0,"y":0},{"x":10,"y":5}]},"requires":"An existing sketch Profile in the selected component.","output":"result.entities contains one line segment; fitError.status pass with a tight tolerance."}
+    ],
+    "audit": {"sources":["src/curve.js:prepare,validate","assets/cad/curve.py:curve_fit"],"verified":["Shared file adapter and preflight","Envelope status and provenance"],"tests":["tests/curve.test.js","tests/gm07_curve_test.py"],"gaps":[],"bugs":[]}
+  },
+  "curve.inspect": {
+    "sections": [
+      {"title":"GM07 Inspection","text":"Read-only bounded evaluator inspection of native sketch curves: entities are nonempty sketch curve refs in flow order. getStrokes supplies the documented deviation bound; 65 curvature/derivative samples per curve detect zero derivatives and signed curvature. No mutation, no created refs."},
+      {"title":"Return Contract","text":"result has schemaVersion:1, status/operation/documentIdentity, units, frame:{space:sketch,sketch:Ref}, associativity:snapshot, inspection:{curves,loops,selfIntersections,cusps,strokeCount,strokeTolerance,polylines}, method and limitations. status pass means the sampled scan found no crossings, near contacts or cusps; unknown means curvature sampling was incomplete; fail means violations were detected. Pass is not a continuous regularity certificate."},
+      {"title":"Safety And Limits","text":"Curvature extrema between samples, global self-contact and G0/G1/G2 join quality are not certified. Re-inspect after topology or parameter changes; nothing stores a future-topology rule."}
+    ],
+    "examples": [
+      {"label":"Inspect a profile","data":{"schemaVersion":1,"sketch":"GM07_Profile","frame":"sketch","entities":[{"token":"curve-token"}]},"requires":"A real curve ref from sketch.inspect curves or the entities returned by sketch.profile-file; the example token is a placeholder, not an executable ID.","output":"result.inspection.curves/loops and result.status pass/unknown/fail; the report does not mutate the sketch."}
+    ],
+    "audit": {"sources":["assets/cad/curve.py:curve_inspect,_curve_evidence"],"verified":["Stroke/curvature sampling and budgets","Loop grouping and crossing detection","pass/unknown/fail envelope status"],"tests":["tests/gm07_curve_test.py","tests/curve.test.js"],"gaps":[],"bugs":["Continuous regularity certification"]}
+  },
+  "curve.offset": {
+    "sections": [
+      {"title":"GM07 Normal Offset","text":"Offsets one connected native sketch loop by a positive distance with an explicit side (left/right of SDK flow; circles/ellipses flow CCW). Curvature-radius loss and cusp evidence block before mutation. The distance expression is retained in the native offset dimension; positive right, negative left."},
+      {"title":"Return Contract","text":"result has schemaVersion:1, status/operation/documentIdentity, associativity:nativeExpression, entities (offset child curve refs), constraint (native offset constraint ref), offsetParameter (native dimension parameter name for curve.offset-edit), before/after inspection and topologyChanged. status pass means the post-offset scan found no crossings or cusps; blocked means the offset was refused before mutation."},
+      {"title":"Safety And Limits","text":"One connected loop per call. A kernel refusal can leave partial constraint/curves; inspect before retry, no rollback. Offsets of curvature-degenerate or intersecting input are blocked by the pre-mutation scan, which is sampled, not a global certificate."}
+    ],
+    "examples": [
+      {"label":"Outward circular offset","data":{"schemaVersion":1,"sketch":"GM07_Profile","frame":"sketch","entities":[{"token":"circle-token"}],"distance":"5 mm","side":"right"},"requires":"A real closed circle ref from sketch.inspect curves; the example token is a placeholder.","output":"result.entities is the outer child circle; result.offsetParameter names the native dimension (edit it with curve offset-edit)."}
+    ],
+    "audit": {"sources":["assets/cad/curve.py:curve_offset","assets/cad/model.py:model_sketch_offset"],"verified":["Pre-mutation cusp/intersection blocking","Signed side expression","Post-offset inspection and envelope","offsetParameter passthrough"],"tests":["tests/gm07_curve_test.py","tests/gm07_offset_edit_test.py","tests/curve.test.js"],"gaps":[],"bugs":[]}
+  },
+  "curve.offset-edit": {
+    "sections": [
+      {"title":"GM07 Offset Dimension Edit","text":"Edits the native offset dimension parameter of an existing offset by parameter name (for example d203, returned as offsetParameter by curve offset) or by a {token,name,kind:parameter} reference. The command verifies the parameter still drives an OffsetConstraint dimension, then writes the new length expression; the sign preserves the offset side."},
+      {"title":"Return Contract","text":"result has schemaVersion:1, status:pass, operation, documentIdentity, units, frame:{space:sketch,sketch:Ref}, associativity:nativeExpression, parameter:{name,expression,unit,value}, before/after expressions, constraint:Ref and provenance:GM07. The new expression is retained by Fusion and may reference other parameters; child curves regenerate."},
+      {"title":"Safety And Limits","text":"A deleted offset dimension cannot be edited; the command fails before any mutation. Editing can regenerate dependent features; no save or rollback is performed."}
+    ],
+    "examples": [
+      {"label":"Resize an existing offset","data":{"schemaVersion":1,"frame":"sketch","parameter":"d203","distance":"8 mm"},"requires":"d203 must be the offsetParameter name reported by a previous curve offset in this document.","output":"result.after.expression is 8 mm and the offset child curves regenerate at the new distance."}
+    ],
+    "audit": {"sources":["src/curve.js:descriptors,validate","assets/cad/curve.py:curve_offset_edit","assets/cad/model.py:model_sketch_offset"],"verified":["Parameter-name and reference targeting","Offset-dimension ownership check before mutation","Before/after expression envelope","Iterable SketchCurveVector handling (no .count)"],"tests":["tests/gm07_offset_edit_test.py","tests/curve.test.js"],"gaps":[],"bugs":[]}
+  }
+}

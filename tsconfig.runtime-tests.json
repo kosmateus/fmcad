@@ -1,0 +1,40 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "rootDir": ".",
+    "outDir": "dist",
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": [
+    "tests/scenarios/**/*.ts",
+    "tests/broker-composition.test.ts",
+    "tests/phased-queue.test.ts",
+    "tests/queue-client-response-recovery.test.ts",
+    "tests/normal-epoch-broker.test.ts",
+    "tests/normal-epoch-admission.test.ts",
+    "tests/queue-runtime-stage.test.ts",
+    "tests/queue-cli-recovery-parity.test.ts",
+    "tests/fixtures/closed-scratch-artifacts.cts",
+    "tests/fixtures/closed-epoch-successor.cts",
+    "tests/live-normal-multidocument.ts",
+    "tests/live-response-recovery.ts",
+    "tests/live-recovery-ports.test.ts",
+    "tests/catalog-worker.test.ts",
+    "tests/control-center-agents-projects.test.ts",
+    "tests/control-center-test-support.ts",
+    "tests/project-history-store.test.ts",
+    "tests/runtime-artifact.test.ts",
+    "tests/fusion-transport-broker.test.ts",
+    "tests/live-sketch-operations.ts",
+    "tests/live-sketch-operations.test.ts",
+    "tests/live-data-import.ts",
+    "tests/live-data-import-fixed.ts",
+    "tests/live-import-receipts.ts",
+    "tests/live-import-receipt.test.ts",
+    "tests/fixed-import-checker.test.ts",
+    "tests/fixed-native-program-source.test.ts"
+  ],
+  "exclude": ["**/node_modules/**", "**/dist/**"]
+}

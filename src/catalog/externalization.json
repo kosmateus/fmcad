@@ -1,0 +1,38 @@
+{
+  "component.externalize": {
+    "summary":"Native copy/reuse, verified linked staging or replacement, mapped retirement and cloud finalization under one immutable operation.",
+    "usage":"component externalize --data '<manifest>'",
+    "required":["schemaVersion","operationId","reportPath","mode","source","items","expectedInventory","linearTolerance","angularTolerance","volumeTolerance"],
+    "readOnly":false,"nodeOnly":true,"requiresDoc":false,"nonTransactional":true,
+    "inputs":{
+      "schemaVersion":"Required integer 1.","operationId":"Immutable safe operation identifier.","reportPath":"Local durable receipt directory.",
+      "mode":"Required copyAndReplace|replaceFromExisting|composeNew|replaceExternal; no strategy fallback.",
+      "phase":"run|copy|verify|stage|retire|finalize|inspect; default run.","verificationScope":"sources|assembly required for explicit verify only.",
+      "source":"Saved recovery baseline {projectId,fileId,creationId,version}; optional context:topLevel resolves a loaded editor.",
+      "items":"Stable itemId, selection or exact dataFileId/projectId/version[,creationId,context:topLevel], instancePolicy:selected|allInstances, new-copy destination, explicit occurrence/body maps, and composeNew placement.",
+      "extractionGroups":"Disjoint {id,members} same-parent sibling groups with instancePolicy:selected; no implicit allInstances group expansion. Isolated native staging only. Original typed Combine input rebinding is limited to captured closed single-body provenance with distinct component attributes; no general copy-context repair.",
+      "destinationDocument":"composeNew only: exact {projectId,folderId,name}; existing folder and no filename collision.",
+      "parameterBindings":"Initial favorite USER parameter native DerivedParameter mappings. Optional targetItemId binds the exact owned extracted child instead of the assembly; save:true publishes that child before insertion. Existing aliases require their actual existingExpression. Never routine reselect.",
+      "rootDatums":"Finite root-origin JointOrigin descriptors and explicit expression dependency maps.",
+      "boundaries":"Explicit rigid/revolute source joint and endpoint maps; unsupported forms block before detach.",
+      "probes":"Declared continuous scalar probes with exact source pins, range, checks and .10 refresh requests; save authorization required. Assembly body measurement ref:{itemId,bodyIndex,instanceIndex?} selects the installed external child (zero-based direct body/instance indexes), not the original local definition.",
+      "callerNamespaces":"Optional [{itemId,scope:parent,group,keys:[...] }] stable parent-context identity tags for mapping repeated destination instances; native and contextual attributes remain separately captured.",
+      "expectedInventory":"Per-item explicit {bodies,occurrences,history} counts in the selected definition scope.",
+      "linearTolerance":"Explicit length expression.","angularTolerance":"Explicit angle expression.","volumeTolerance":"Explicit volume expression.",
+      "save":"true required for run/finalize and publishing driver probes.","confirmRetire":"true for local retirement in copyAndReplace/replaceFromExisting.",
+      "confirmReplace":"true required for replaceExternal only.","resume":"true continues the SAME manifest after known-safe checkpoints; never repeats unknown work.",
+      "itemIds":"Optional subset of original item IDs.","maxItems":"Positive considered-unit limit for the whole invocation.",
+      "maxChecks":"Positive completed verification-check limit.","timeBudgetMs":"Positive forward scheduling budget, not native cancellation."
+    },
+    "example":{"schemaVersion":1,"operationId":"migration-001","reportPath":"./migration","phase":"inspect","mode":"composeNew","source":{"projectId":"PROJECT","fileId":"SOURCE","creationId":"CREATION","version":1},"destinationDocument":{"projectId":"PROJECT","folderId":"FOLDER","name":"Assembly"},"items":[{"itemId":"module","dataFileId":"CHILD","projectId":"PROJECT","version":1,"instancePolicy":"selected"}],"expectedInventory":{"module":{"bodies":1,"occurrences":0,"history":2}},"linearTolerance":"0.001 mm","angularTolerance":"0.001 deg","volumeTolerance":"0.000001 cm^3"},
+    "limitations":["External effects cannot run in an atomic modeling batch. Inspect never opens/activates/saves/replays. Native copy completion is not geometry verification or migration completion.","Only exact pinned reuse is authorized. Existing filename collisions never authorize overwrite or reuse. No cloud deletion, restart, cache purge, general automatic repair or arbitrary rollback.","Native semantics require owned-scratch qualification on the target Fusion build; offline mocks do not prove SDK behavior or arbitrary topology support."]
+  },
+  "occurrence.insert_external": {
+    "summary":"Insert one exact pinned native DataFile as a linked occurrence using addByInsert, preserving declared placement context.",
+    "usage":"occurrence insert_external --doc <name> --data '<object>'",
+    "required":["source","confirm"],"readOnly":false,"nonTransactional":true,
+    "inputs":{"source":"{dataFileId,version}; exact accessible complete native file in the destination project.","destination":"root (default) or unique local root-context occurrence reference.","placement":"Optional {translation,axis,angle}; dimensional strings.","placementSpace":"root|parent required for explicit nonroot placement; forbidden without placement.","name":"Optional new occurrence name, not definition rename.","sharedParentPolicy":"reject (default) or allInstances for a repeated parent.","confirm":"Required true."},
+    "example":{"source":{"dataFileId":"FILE_ID","version":1},"destination":"root","confirm":true},
+    "limitations":["Standalone insertion deletes nothing. Wrong-version native insertion is retained and reported partial if supported pinning fails; never auto-delete/replay.","Cycles, inaccessible source graphs and source-project mismatch block. No neutral import or local occurrence.add alias. Native qualification required."]
+  }
+}

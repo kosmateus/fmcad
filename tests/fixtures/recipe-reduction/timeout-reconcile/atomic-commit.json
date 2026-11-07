@@ -1,0 +1,11 @@
+{
+  "runId": "iw7_3_commit_fixture",
+  "atomic": true,
+  "operations": [
+    {
+      "id": "snapshot",
+      "operation": "entity.stats",
+      "data": { "kind": "body", "expect": { "min": 0 } }
+    }
+  ]
+}

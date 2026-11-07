@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "fixtureId": "containment-program-v1",
+  "kind": "fixed-run-v1",
+  "script": "assets/native-qualification/containment.py",
+  "helperVersion": "cad-v1",
+  "scope": "one proven-new unsaved unmodified owned document; fixed program only; no document lifecycle, file, cloud, or arbitrary Python effects",
+  "argumentKeys": ["approved", "creationId", "expectedFusionVersion", "fixturePrefix"],
+  "expectedClassifications": ["inside", "outside", "boundary"],
+  "callerCleanupRequired": true
+}

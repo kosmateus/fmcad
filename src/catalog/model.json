@@ -1,0 +1,210 @@
+{
+  "sketch.create": {
+    "summary": "Create an empty sketch on an explicit plane or planar face in the selected component.",
+    "required": ["name", "plane"], "readOnly": false,
+    "example": {"name": "Section", "plane": "XY"},
+    "inputs": {"name": "Sketch name.", "plane": "Origin XY/XZ/YZ or plane/planar face reference.", "occurrence": "Optional creation occurrence for a plane in another component."},
+    "limitations": ["Uses Sketches.addWithoutEdges; face edges are not automatically projected. No base-feature sketches."]
+  },
+  "sketch.inspect": {
+    "summary": "Inspect sketch geometry, dimensions, constraints, and explicit profile selectors.",
+    "required": ["sketch"], "readOnly": true, "example": {"sketch": "Section"},
+    "inputs": {"sketch": "Unique sketch name or reference."},
+    "limitations": ["Profile indices are zero-based and topology-dependent; inspect again after edits. No solver recompute or document activation."]
+  },
+  "sketch.edit": {
+    "summary": "Rename/show a sketch, set construction/fixed geometry, or delete selected sketch entities.",
+    "required": ["sketch"], "readOnly": false,
+    "example": {"sketch": "Section", "entities": [{"token": "curve-token"}], "construction": true},
+    "inputs": {"sketch": "Sketch reference.", "name": "New sketch name.", "visible": "Boolean visibility.", "entities": "Nonempty array of sketch entity references for geometry edits.", "construction": "Boolean; curves only.", "fixed": "Boolean fix/unfix geometry.", "delete": "Boolean; deletes selected entities, cannot combine with fixed/construction.", "confirm": "Must be true for deletion.", "movePoints": "GM06 [{point: reference or endpoint selector,to: [x,y,0]}], expression coordinates; respects solver, rejects fixed/reference/fully constrained points. Returns before/after and conflicts. Cannot combine with legacy edit fields.", "dimensions": "GM06 [{dimension: native driving dimension ref,expression}]; supports both ellipse radii. Cannot combine with legacy edit fields.", "frame": "GM06 edits: sketch (default), including sketches on XZ/YZ."},
+    "limitations": ["No arbitrary property assignment, trim, extend, or sketch-plane replacement. Edits honor the Fusion constraint solver; deletion can remove dependent constraints."]
+  },
+  "sketch.geometry": {
+    "summary": "Add points, lines, circles, arcs, rectangles, fitted splines, or exact cubic Bezier curves from expression coordinates.",
+    "required": ["sketch", "geometry"], "readOnly": false,
+    "example": {"sketch": "Section", "geometry": [{"type": "circle", "name": "rim", "center": ["0 mm", "0 mm", "0 mm"], "radius": "20 mm"}]},
+    "inputs": {"sketch": "Sketch reference.", "geometry": "Nonempty array: point {point}; line/rectangle {start,end}; circle {center,radius}; ellipse {center,majorRadius,minorRadius,angle?} or {center,majorAxisPoint,minorAxisPoint}; arc {center,start,sweep}; arc3 {start,through,end}; spline {points} (at least two); bezier {controlPoints} (four). Requires type; optional name, construction, fixed. Points are three length expressions. Ellipse endpoints must be perpendicular with major radius > minor radius > 0; radii are not full axis lengths. Bezier is intrinsically fixed; fixed:false is rejected before any add.", "frame": "sketch (default): local coordinates; GM06 ellipses are planar XY, support plane may be XZ/YZ.", "inferencePolicy": "explicit (default) or native. Preserve native primitive constraints, add no guessed relations, never alter global preferences. Review extra relations using dimension-plan."},
+    "limitations": ["Geometry coordinates/radii are evaluated at creation; use explicit driving dimensions for editable bindings. Bezier imports an exact nonrational degree-3 curve with knots [0,0,0,0,1,1,1,1] as an intrinsically fixed SketchFixedSpline. No generalized NURBS, conics, editable control-point splines or slots. See docs/GM06.md for ellipse API evidence and open native checks.", "Returns entities plus refs keyed by supplied names; rectangle names map to four refs, bezier names to one ref. Names are response labels, not persistent aliases. Batch operations are not atomic."]
+  },
+  "sketch.constrain": {
+    "summary": "Apply an explicit geometric constraint to selected sketch entities.",
+    "required": ["sketch", "type", "entities"], "readOnly": false,
+    "example": {"sketch": "Section", "type": "horizontal", "entities": [{"token": "line-token"}]},
+    "inputs": {"sketch": "Sketch reference.", "type": "coincident, collinear, concentric, midpoint, parallel, perpendicular, horizontal, vertical, horizontalPoints, verticalPoints, tangent, smooth, equal, symmetry.", "entities": "Ordered refs. Horizontal/vertical: one line; symmetry: two like entities then axis line; midpoint: point then line; perpendicular: line then curve; coincident: point then point/curve; other constraints: two compatible entities. Point endpoints can be {entity: curveRef, point: start|end|center}."},
+    "limitations": ["Entities must belong to the selected sketch. Fixed geometry uses sketch.edit. Solver conflicts propagate as errors; no automatic constraint removal."]
+  },
+  "sketch.dimension": {
+    "summary": "Create driving or driven linear, angular, radial, or diameter dimensions.",
+    "required": ["sketch", "type", "entities", "text"], "readOnly": false,
+    "example": {"sketch": "Section", "type": "diameter", "entities": [{"token": "circle-token"}], "text": ["25 mm", "25 mm", "0 mm"], "expression": "40 mm"},
+    "inputs": {"sketch": "Sketch reference.", "type": "distance, angle, radius, diameter, majorRadius, minorRadius.", "entities": "distance: two points; angle: two lines; radius/diameter: one arc/circle; majorRadius/minorRadius: one ellipse. Endpoint selectors {entity: ref,point: start|end|center}. Build returns ellipse.majorAxis/minorAxis line refs for orientation dimensions.", "text": "Three length expressions in sketch coordinates; angular text location selects the quadrant.", "expression": "Required length/angle expression for driving dimensions; prohibited for driven dimensions. Linear distances are positive unsigned values; use sketch.build positions for signed coordinates through zero.", "driving": "Boolean, default true.", "orientation": "Distance only: aligned (default), horizontal, vertical."},
+    "limitations": ["Uses separate native ellipse major/minor radius dimension classes, not circle diameter dimensions. No offset-curve or spline dimensions. Fusion solver failures propagate; no constraint deletion. dimension-plan/apply supplies reviewed proposals."]
+  },
+  "sketch.project": {
+    "summary": "Project selected geometry to a sketch with optional parametric linkage.",
+    "required": ["sketch", "entities"], "readOnly": false,
+    "example": {"sketch": "Section", "entities": [{"token": "edge-token"}], "linked": true},
+    "inputs": {"sketch": "Target sketch reference.", "entities": "Refs to supported curves, points, edges, vertices, faces, bodies, or construction geometry.", "linked": "Boolean, default true; false creates independent projected geometry."},
+    "limitations": ["Uses Sketch.project2; no intersection, project-to-surface, or closest-point projection modes. Requires a Fusion version exposing project2."]
+  },
+  "sketch.offset": {
+    "summary": "Create an expression-driven offset constraint and return its child curves.",
+    "required": ["sketch", "entities", "distance"], "readOnly": false,
+    "example": {"sketch": "Section", "entities": [{"token": "circle-token"}], "distance": "2 mm"},
+    "inputs": {"sketch": "Sketch reference.", "entities": "Ordered end-connected sketch curve references.", "distance": "Signed length expression. Positive is right of curve flow; circles flow counterclockwise, positive offsets outward."},
+    "limitations": ["Uses createOffsetInput/addOffset2, not retired Sketch.offset. Single-sided offsets only; no end-cap selection or automatic chain discovery. Requires the current offset-constraint API."]
+  },
+  "sketch.mirror": {
+    "summary": "Reflect planar sketch primitives about a sketch line and add symmetry constraints.",
+    "required": ["sketch", "entities", "line"], "readOnly": false,
+    "example": {"sketch": "Section", "entities": [{"token": "circle-token"}], "line": {"token": "axis-line-token"}},
+    "inputs": {"sketch": "Sketch reference.", "entities": "Points, lines, circles, or arcs to mirror.", "line": "Nonzero sketch line defining the symmetry axis."},
+    "limitations": ["Only sketch-XY primitives; no spline/ellipse or 3D mirror. Construction status is preserved; source dimensions and other constraints are not copied. Reflection creates primitives plus native symmetry constraints, not a mirror-pattern object."]
+  },
+  "sketch.pattern": {
+    "summary": "Create a native circular or rectangular sketch pattern constraint.",
+    "required": ["sketch", "type", "entities", "quantity"], "readOnly": false,
+    "example": {"sketch": "Section", "type": "rectangular", "entities": [{"token": "circle-token"}], "quantity": 4, "distance": "15 mm"},
+    "inputs": {"sketch": "Sketch reference.", "type": "circular or rectangular.", "entities": "Sketch point/curve refs from this sketch.", "quantity": "Positive integer or unitless parameter expression, including the seed.", "center": "Required sketch point ref for circular patterns.", "angle": "Circular total angle expression, default 360 deg.", "direction": "Rectangular first direction sketch line; omitted uses sketch X.", "distance": "Required rectangular length expression.", "distanceType": "spacing (default) or extent; rectangular only.", "quantityTwo": "Optional second-direction quantity, requires distanceTwo.", "distanceTwo": "Second-direction length expression.", "directionTwo": "Optional second sketch line; omitted is perpendicular to first direction."},
+    "limitations": ["No instance suppression or symmetric sketch patterns. Requires native sketch pattern-constraint API. Return is the pattern constraint; sketch.inspect lists generated geometry."]
+  },
+  "sketch.check": {
+    "summary": "Report sketch constraint completeness, profile count, and native feature health.",
+    "required": ["sketch"], "readOnly": true, "example": {"sketch": "Section"},
+    "inputs": {"sketch": "Sketch reference."},
+    "limitations": ["Reads existing solver state only. Underconstrained lists curves, not a DOF count. Profile count is not a proof of no gaps, duplicates, self-intersections, or manufacturability."]
+  },
+  "path.create": {
+    "summary": "Validate connected curves as a Fusion Path and return a reusable curve-reference descriptor.",
+    "required": ["curves"], "readOnly": true,
+    "example": {"name": "SweepPath", "curves": [{"token": "path-curve-token"}], "chain": "connected"},
+    "inputs": {"curves": "Nonempty curve/edge reference array.", "chain": "none (default), connected, or tangent. Automatic chaining requires one seed.", "name": "Optional descriptor label, not a persistent entity alias.", "kind": "Optional path marker when reusing a returned descriptor."},
+    "limitations": ["Fusion Path is transient, not a timeline feature. No model mutation, activation, or created-list entry. Native curves use their owning component's Features.createPath; returned refs remain native and component-local even if Fusion contextualizes path entries. Explicit proxy requests retain their exact occurrence context. The descriptor frame is carried by each curve ref's component and optional occurrence. All curves must share one component and occurrence context; mixed native/proxy or cross-occurrence paths are rejected. Pass the returned path object into sweep/path-pattern or path.inspect; names alone do not resolve paths. No disconnected or branched paths. connected chaining is sketch-curves only; edges support explicit lists or tangent chaining."]
+  },
+  "path.inspect": {
+    "summary": "Resolve a curve-based path descriptor and report ordered curves, closure, and count.",
+    "required": ["curves"], "readOnly": true,
+    "example": {"curves": [{"token": "path-curve-token"}], "chain": "none"},
+    "inputs": {"curves": "Curve/edge refs, or fields of the path descriptor from path.create.", "chain": "none, connected, tangent; chaining requires one seed.", "name": "Optional descriptor label.", "kind": "Optional path marker."},
+    "limitations": ["Reconstructs a transient Path without model mutation or activation, using the native owning component or exact explicit proxy context. Returned curve refs preserve that frame: native requests remain component-local; explicit proxy requests retain their occurrence. Curves must share one component and occurrence context; no occurrence is inferred for native curves. Does not inspect partial paths from an existing sweep feature. connected chaining is sketch-curves only; edges support explicit lists or tangent chaining."]
+  },
+  "model.extrude": {
+    "summary": "Extrude one profile or a native co-planar profile collection by distance, through all, or to a referenced target.",
+    "required": [], "readOnly": false,
+    "example": {"name": "Base", "profile": {"kind": "profile", "sketch": "Section", "index": 0}, "distance": "10 mm", "operation": "newBody"},
+    "inputs": {"profile": "Single Profile, planar BRepFace, or SDK-supported SketchText ref; exactly one of profile/profiles is required. Profile selector: {kind:profile,sketch:SketchRef,index:nonnegative integer}; alternatively loopCount:positive integer selects one matching profile and is exclusive with index. Omitting both requires exactly one profile.", "profiles": "Alternative to profile: nonempty ordered array of Profile, planar BRepFace, or SDK-supported SketchText refs. Each selector uses index or loopCount. Every ref must resolve in the selected native component; all definitions must be co-planar. Duplicates, proxies, mixed owners/contexts, and unsupported profile types are rejected before feature input creation.", "extent": "distance (default), throughAll, or toEntity.", "distance": "Length expression required only for distance extent; symmetric mode uses the full length. Unit strings or dimensional parameter expressions are accepted.", "target": "ConstructionPlane or planar BRepFace ref required only for toEntity. Connected-face chaining is disabled.", "offset": "Signed toEntity target offset length expression, default 0 mm; prohibited for other extents.", "startOffset": "Signed profile-plane offset length expression, one-sided only; positive follows profile-plane Z, independently of direction.", "direction": "positive (default) or negative relative to profile normal; one-sided only, not an entity ref.", "symmetric": "Boolean, default false; distance extent only, cannot combine with direction or startOffset.", "taper": "Angle expression, default 0 deg.", "operation": "newBody (default), join, cut, intersect.", "solid": "Boolean, default true.", "participants": "Optional explicit native body refs for cut/intersect only; otherwise Fusion infers participants. Supplied bodies must be owned by the selected component and contain no occurrence proxies.", "name": "Optional feature name."},
+    "limitations": ["No independent two-sided extents or thin extrudes. toEntity constructor scope is construction planes and faces; no body/vertex target or ambiguous-target direction hint. Through-all is one-sided; Fusion validates finite geometry and operation compatibility. Profiles must be re-inspected after topology changes. Native input geometry in the selected component only; cross-occurrence creation is not exposed. Multi-profile inputs require exact coplanarity. With profiles input, result.profileRefs follows caller input order, profileCount and bodyCount report observed cardinalities, bodies contains native body identity refs, and profileBodyMapping.status is unavailable because Fusion exposes no stable per-profile body association. Do not infer profile identity from bodies array positions. Kernel failures after add may leave partial changes; inspect before retry. Does not delete source inputs."]
+  },
+  "model.revolve": {
+    "summary": "Revolve a selected profile about a selected axis by an angle expression.",
+    "required": ["profile", "axis", "angle"], "readOnly": false,
+    "example": {"profile": {"kind": "profile", "sketch": "Section", "index": 0}, "axis": "Y", "angle": "360 deg"},
+    "inputs": {"profile": "Profile/planar face ref; indexed sketch profile selectors accepted; index omission requires uniqueness.", "axis": "Construction axis, sketch line, or linear edge ref.", "angle": "Signed angle expression. Symmetric mode applies this angle on EACH side.", "symmetric": "Boolean, default false.", "operation": "newBody, join, cut, intersect; default newBody.", "solid": "Boolean, default true.", "participants": "Optional cut/intersect body refs.", "name": "Optional feature name."},
+    "limitations": ["Angle extents only; no to-entity, two-angle, or thin revolve. Native selected-component geometry only; no cross-occurrence creation."]
+  },
+  "model.sweep": {
+    "summary": "Sweep an explicit section along a connected curve-reference path.",
+    "required": ["profile", "path"], "readOnly": false,
+    "example": {"profile": {"kind": "profile", "sketch": "Section", "index": 0}, "path": {"curves": [{"token": "path-token"}]}},
+    "inputs": {"profile": "Profile/planar face ref; indexed sketch profile selectors accepted; index omission requires uniqueness.", "path": "Path descriptor {curves: [refs], chain?: none|connected|tangent}.", "orientation": "perpendicular (Fusion default) or parallel; prohibited with guideRail.", "guideRail": "Optional native Path descriptor, same format as path. Cannot combine with orientation, twist, or taper because Fusion ignores them with a rail.", "twist": "Optional twist angle expression; no guideRail.", "taper": "Optional taper angle expression; no guideRail.", "operation": "newBody, join, cut, intersect; default newBody.", "solid": "Boolean solid/surface output, default true; not a solid-body sweep.", "participants": "Optional cut/intersect body refs only.", "name": "Optional feature name."},
+    "limitations": ["No solid-body sweeps, guide surface, profile-scaling selection, or guide-rail direction-flip controls. Rail uses Fusion default scaling. Paths use owner-scoped native curves; only native selected-component inputs. Fusion validates connectivity/intersections. Returns feature/body refs and health/message without deleting source inputs."]
+  },
+  "model.loft": {
+    "summary": "Loft through two or more explicitly selected sections.",
+    "required": ["profiles"], "readOnly": false,
+    "example": {"profiles": [{"kind": "profile", "sketch": "Bottom", "index": 0}, {"kind": "profile", "sketch": "Top", "index": 0}]},
+    "inputs": {"profiles": "Ordered profile/planar-face section refs; indexed sketch selectors accepted; index omission requires uniqueness.", "rails": "Nonempty array of sketch-curve/edge refs or Path descriptors {curves: [refs], chain?: none|connected|tangent}. Mutually exclusive with centerLine.", "centerLine": "One sketch-curve/edge ref or Path descriptor; mutually exclusive with rails.", "closed": "Boolean; close the loft back to its first section, default false.", "operation": "newBody, join, cut, intersect; default newBody.", "solid": "Boolean, default true.", "participants": "Optional cut/intersect body refs only.", "name": "Optional feature name."},
+    "limitations": ["Uses public LoftFeatureInput.centerLineOrRails.addRail/addCenterLine with native curves or owner-scoped Paths; no sampled/numeric fallback. No section mapping, rail edge-condition controls, or tangency/curvature end conditions. Rails must intersect every section; Fusion validates guide compatibility. Native selected-component geometry only. Returns feature/body refs and health/message without deleting source inputs."]
+  },
+  "model.hole": {
+    "summary": "Create simple, counterbore, or countersink holes at explicit sketch points.",
+    "required": ["points", "diameter"], "readOnly": false,
+    "example": {"points": [{"token": "point-token"}], "diameter": "5 mm", "depth": "12 mm", "participants": ["Base"]},
+    "inputs": {"points": "Coplanar sketch point refs; natural hole direction is opposite the sketch normal. Fusion validates coplanarity.", "diameter": "Hole diameter length expression.", "extent": "distance (default), throughAll, or toEntity.", "depth": "Blind depth length expression required only for distance extent.", "target": "Required only for toEntity: BRepBody, BRepFace, BRepVertex, ConstructionPlane, or ConstructionPoint ref. Uses setOneSideToExtent with matchShape=false and automatic target direction.", "type": "simple (default), counterbore, countersink.", "boreDiameter": "Counterbore only; required length expression.", "boreDepth": "Counterbore only; required length expression.", "sinkDiameter": "Countersink only; required length expression.", "sinkAngle": "Countersink only; required angle expression.", "reverse": "Boolean, default false; distance/throughAll only. Through-all false is negative sketch-normal direction, true is positive. Prohibited for toEntity, which infers direction.", "participants": "Optional explicit native body refs; otherwise Fusion infers participants.", "name": "Optional feature name."},
+    "limitations": ["Sketch-point positioning only. No tapped holes, clearance database, custom tip angle, toEntity/start offsets, match-shape control, or ambiguous-target vector direction hint. Hole extents use public setDistanceExtent/setAllExtent/setOneSideToExtent, not extrusion extent objects. Through-all explicitly sets isDefaultDirection after setAllExtent to preserve the same natural/reverse convention as blind holes. Native selected-component geometry only. Returns feature/body refs and health/message without deleting source inputs.", "Live verification caveat (Fusion 2705.1.11): reversed throughAll counterbore had one post-regeneration volume mismatch. An isolated diagnostic passed without a modeling fix; repeatability of that case remains inconclusive. Raw evidence is retained in tests/live-feature-modes-report.json."]
+  },
+  "model.shell": {
+    "summary": "Shell bodies or remove selected faces with explicit wall thickness.",
+    "required": ["entities", "thickness"], "readOnly": false,
+    "example": {"entities": [{"token": "top-face-token"}], "thickness": "2 mm"},
+    "inputs": {"entities": "Body refs for closed shells or face refs to remove; never both a face and its owning body.", "thickness": "Inside thickness length expression.", "outsideThickness": "Optional outside thickness expression.", "tangentChain": "Boolean, default true.", "name": "Optional feature name."},
+    "limitations": ["Uniform shell only; no per-face thickness or sharp/rounded offset selection. Native selected-component geometry only."]
+  },
+  "model.thicken": {
+    "summary": "Thicken selected surface faces or patch bodies into solids.",
+    "required": ["entities", "thickness"], "readOnly": false,
+    "example": {"entities": ["Surface"], "thickness": "2 mm", "operation": "newBody"},
+    "inputs": {"entities": "Face or patch-body refs.", "thickness": "Signed thickness length expression.", "symmetric": "Boolean, default false.", "operation": "newBody (default), join, cut, intersect.", "tangentChain": "Boolean, default true.", "name": "Optional feature name."},
+    "limitations": ["Uniform face/surface thickening only; no per-face wall values or explicit participant selection. Native selected-component geometry only."]
+  },
+  "model.combine": {
+    "summary": "Boolean join, cut, or intersect an explicit target body with tool bodies.",
+    "required": ["target", "tools", "operation"], "readOnly": false,
+    "example": {"target": "Base", "tools": ["Cutter"], "operation": "cut", "keepTools": true},
+    "inputs": {"target": "Target body ref.", "tools": "Nonempty tool body ref array.", "operation": "join, cut, or intersect.", "keepTools": "Boolean, default true; false consumes tool bodies in the feature history.", "name": "Optional feature name."},
+    "limitations": ["Single target body; no new-component result option. Fusion validates body intersections. Native selected-component geometry only."]
+  },
+  "model.split": {
+    "summary": "Split selected bodies with an explicit plane, face, profile, or body tool.",
+    "required": ["bodies", "tool"], "readOnly": false,
+    "example": {"bodies": ["Base"], "tool": "XZ", "extend": true},
+    "inputs": {"bodies": "Body reference array.", "tool": "Single body, construction plane, profile, or face ref.", "extend": "Boolean automatic tool extension, default true.", "name": "Optional feature name."},
+    "limitations": ["Split-body mode only; no split-face or explicit projection direction. Native selected-component geometry only."]
+  },
+  "model.fillet": {
+    "summary": "Apply a constant-radius edge fillet.",
+    "required": ["radius"], "readOnly": false,
+    "example": {"edges": [{"token": "edge-token"}], "radius": "1 mm"},
+    "inputs": {"edges": "Nonempty refs; exclusive with query. Face/feature refs select associated edges as supported by Fusion.", "query": "GM03 entity.find query object, default kind edge; requires expect or unique:true and an accepted nonempty native edge set in the selected component. Returns result.resolvedQuery with pre-mutation refs/descriptions/statistics. Selection associativity is snapshot, not a future native topology rule. Re-query after changes. TangentChain may expand the seed set in Fusion.", "radius": "Positive radius length expression.", "tangentChain": "Boolean, default true.", "name": "Optional feature name."},
+    "limitations": ["One constant-radius edge set; no variable-radius, full-round, or face fillet modes. Native selected-component geometry only."]
+  },
+  "model.chamfer": {
+    "summary": "Apply an equal-distance chamfer using the current edge-set API.",
+    "required": ["distance"], "readOnly": false,
+    "example": {"edges": [{"token": "edge-token"}], "distance": "1 mm"},
+    "inputs": {"edges": "Nonempty refs; exclusive with query. Face/feature refs select associated edges.", "query": "GM03 entity.find query object, default kind edge; requires expect or unique:true and accepted nonempty native edges in the selected component. Returns result.resolvedQuery captured before mutation and selectionAssociativity:snapshot. Not a native future selection rule. TangentChain may expand seeds.", "distance": "Positive equal offset length expression.", "tangentChain": "Boolean, default true.", "name": "Optional feature name."},
+    "limitations": ["One equal-distance edge set; no two-distance, distance-angle, or corner-type options. Requires ChamferFeatures.createInput2. Native selected-component geometry only."]
+  },
+  "model.draft": {
+    "summary": "Draft selected faces relative to a fixed plane with a single angle.",
+    "required": ["faces", "plane", "angle"], "readOnly": false,
+    "example": {"faces": [{"token": "side-face-token"}], "plane": "XY", "angle": "3 deg"},
+    "inputs": {"faces": "BRep face refs.", "plane": "Construction plane or planar face ref.", "angle": "Signed draft angle expression.", "symmetric": "Boolean split and draft symmetrically, default false.", "reverse": "Boolean flip direction, default false.", "tangentChain": "Boolean, default true.", "name": "Optional feature name."},
+    "limitations": ["Single-angle fixed-plane mode; no two-angle or preview parting-line APIs. Native selected-component geometry only."]
+  },
+  "model.thread": {
+    "summary": "Create cosmetic/modeled tabular threads or a custom-profile BRep recipe thread; lead = starts * pitch.",
+    "required": ["faces", "internal"], "readOnly": false, "envelope": true,
+    "example": {"faces": [{"token": "cylinder-face-token"}], "internal": false, "threadType": "ISO Metric profile", "designation": "M10x1.5", "class": "6g", "modeled": true},
+    "inputs": {"faces": "Cylindrical face refs, all internal or all external.", "internal": "Required boolean internal/external thread selection.", "threadType": "Exact installed thread-table type identifier (tabular mode).", "designation": "Exact thread designation from that table (tabular mode).", "class": "Exact thread class from that table (tabular mode).", "modeled": "Boolean, default false (cosmetic). Tabular mode only.", "rightHanded": "Boolean, default true. Tabular mode.", "length": "Optional partial thread length expression; omitted means full length.", "offset": "Partial thread offset expression, default 0 mm; requires length. Tabular mode.", "name": "Optional feature name.", "profile": "Custom non-tabular profile {majorDiameter,pitch,minorDiameter?|pitchDiameter?,starts?,hand?,flankAngle?,rootShape?,runout?,clearance?}; selects the BRep recipe representation, never a texture.", "representation": "cosmetic, modeled or recipe; recipe is forced by profile and is never substituted with a texture.", "starts": "Custom profile: positive integer number of starts; lead = starts * pitch.", "hand": "Custom profile: right or left."},
+    "limitations": ["Straight cylindrical threads only; no tapered threads or table discovery. Exact available identifiers depend on the installed Fusion thread tables; example identifiers must be checked there. Partial threads use Fusion's default cylinder end. Requires ThreadInfo.create for tabular mode. Custom profiles use a computed BRep recipe (profile metrics: lead = starts * pitch, major/pitch/minor diameters, depth, flank angle); the modeled helical tooth is a declared native gap (no persistent Coil/helical-path API), so no geometry is created. Never a cosmetic texture. Native selected-component geometry only."]
+  },
+  "model.mirror": {
+    "summary": "Mirror a homogeneous selection of bodies, faces, features, occurrences, or construction geometry.",
+    "required": ["entities", "plane"], "readOnly": false,
+    "example": {"entities": ["Base"], "plane": "YZ"},
+    "inputs": {"entities": "Nonempty homogeneous entity refs; construction geometry supports one entity only.", "plane": "Construction plane or planar face ref.", "name": "Optional feature name."},
+    "limitations": ["Uses Fusion default result/compute options; no stitch/combine or compute-mode controls. Native selected-component input geometry; no cross-occurrence creation."]
+  },
+  "pattern.circular": {
+    "summary": "Create a circular modeling pattern around an explicit axis.",
+    "required": ["entities", "axis", "quantity"], "readOnly": false,
+    "example": {"entities": ["Base"], "axis": "Z", "quantity": 6, "angle": "360 deg"},
+    "inputs": {"entities": "Homogeneous body, face, feature, or occurrence refs; construction geometry supports one entity.", "axis": "Construction axis, linear edge, sketch line, or supported circular axis source.", "quantity": "Positive integer or unitless parameter expression, including seed.", "angle": "Total angle expression, default 360 deg.", "symmetric": "Boolean, default false.", "name": "Optional feature name."},
+    "limitations": ["No suppression or compute-mode controls. Native selected-component geometry; no cross-occurrence creation."]
+  },
+  "pattern.rectangular": {
+    "summary": "Create a one- or two-direction rectangular modeling pattern.",
+    "required": ["entities", "direction", "quantity", "distance"], "readOnly": false,
+    "example": {"entities": ["Base"], "direction": "X", "quantity": 3, "distance": "25 mm", "directionTwo": "Y", "quantityTwo": 2, "distanceTwo": "30 mm"},
+    "inputs": {"entities": "Homogeneous body, face, feature, or occurrence refs; construction geometry supports one entity.", "direction": "Linear edge, construction axis, or sketch line ref.", "quantity": "Positive integer or unitless parameter expression, including seed.", "distance": "Signed length expression.", "distanceType": "spacing (default) or extent.", "directionTwo": "Second direction ref; requires quantityTwo and distanceTwo.", "quantityTwo": "Second direction positive integer or unitless parameter expression.", "distanceTwo": "Second signed length expression; all three second-direction fields required together.", "name": "Optional feature name."},
+    "limitations": ["No suppression, symmetric directions, or compute-mode controls. Native selected-component geometry only."]
+  },
+  "pattern.path": {
+    "summary": "Pattern a homogeneous selection along a connected path.",
+    "required": ["entities", "path", "quantity", "distance"], "readOnly": false,
+    "example": {"entities": ["Base"], "path": {"curves": [{"token": "curve-token"}]}, "quantity": 5, "distance": "10 mm"},
+    "inputs": {"entities": "Homogeneous body, face, feature, or occurrence refs; construction geometry supports one entity.", "path": "Path descriptor from path.create or {curves: [refs], chain?: none|connected|tangent}.", "quantity": "Positive integer or unitless parameter expression, including seed.", "distance": "Signed length expression.", "distanceType": "spacing (default) or extent.", "name": "Optional feature name."},
+    "limitations": ["One-direction path patterns with Fusion default orientation/start point. No suppression, second direction, orientation, or compute-mode controls. Native selected-component geometry only."]
+  }
+}

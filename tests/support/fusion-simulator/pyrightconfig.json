@@ -1,0 +1,7 @@
+{
+  "include": ["adsk", "server.py", "verify_api.py"],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportExplicitAny": "error"
+}

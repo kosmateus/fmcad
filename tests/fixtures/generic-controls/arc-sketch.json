@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "gc-arc-sketch-v1",
+  "family": "arcSketch",
+  "identity": "offline:generic-controls/arc-sketch",
+  "control": {
+    "expectedCenterMm": [0.0, 0.0],
+    "centerToleranceMm": 0.05,
+    "expectedRadiusMm": 10.0,
+    "radiusToleranceMm": 0.02
+  },
+  "readPaths": [
+    "centerMm",
+    "radiusMm"
+  ],
+  "cases": [
+    {
+      "id": "nominal",
+      "identity": "offline:generic-controls/arc-sketch/nominal",
+      "variant": "good",
+      "measurements": {
+        "centerMm": [0.0, 0.0],
+        "radiusMm": 10.0
+      },
+      "expected": {
+        "status": "pass",
+        "failedChecks": []
+      }
+    },
+    {
+      "id": "offset-center",
+      "identity": "offline:generic-controls/arc-sketch/offset-center",
+      "variant": "bad",
+      "measurements": {
+        "centerMm": [0.4, 0.0],
+        "radiusMm": 10.0
+      },
+      "expected": {
+        "status": "fail",
+        "failedChecks": [
+          "arc-center"
+        ]
+      }
+    },
+    {
+      "id": "wrong-radius",
+      "identity": "offline:generic-controls/arc-sketch/wrong-radius",
+      "variant": "bad",
+      "measurements": {
+        "centerMm": [0.0, 0.0],
+        "radiusMm": 10.1
+      },
+      "expected": {
+        "status": "fail",
+        "failedChecks": [
+          "arc-radius"
+        ]
+      }
+    }
+  ]
+}

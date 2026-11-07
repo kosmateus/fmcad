@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "fixtureId": "sketch-proof-program-v1",
+  "kind": "fixed-run-v1",
+  "script": "assets/native-qualification/sketch-proof.py",
+  "helperVersion": "cad-v1",
+  "scope": "one proven-new unsaved owned document; fixed sketch geometry proof only; no document lifecycle, file or cloud effects",
+  "argumentKeys": ["approved", "creationId", "expectedFusionVersion", "fixturePrefix"],
+  "fixtureSource": "tests/native/integrated-qualification/deferred_adapters.js:validateSketchRequest",
+  "callerCleanupRequired": true
+}

@@ -1,0 +1,439 @@
+{
+  "schemaVersion": 1,
+  "candidateBase": "b2fb6c0800a9da515d53373512b4f0ed68048b67",
+  "fusionSessions": 1,
+  "runtimeBuildPolicy": "Read the actual build once after recovery release; each feature runner must confirm its own supported pin.",
+  "runnerFiles": [
+    "tests/native/integrated-qualification/runner.js",
+    "tests/native/integrated-qualification/executor.js",
+    "tests/native/integrated-qualification.test.js",
+    "tests/native/integrated-qualification/containment.py",
+    "tests/native/integrated-qualification/regional_geometry.py",
+    "tests/native/integrated-qualification/drive_motion_link.py",
+    "tests/native/integrated-qualification/measured_fasteners.py",
+    "tests/native/integrated-qualification/deferred_adapters.js",
+    "tests/native/integrated-qualification/first_smoke.js",
+    "tests/native/integrated-qualification-first-smoke.test.js",
+    "tests/native/integrated-qualification/CAPABILITY_NEEDS.json",
+    "tests/native/integrated-qualification/FIRST_SMOKE_HANDOFF.md"
+  ],
+  "hold": {
+    "releaseContract": "Require a fresh coordinator receipt proving owner reconciliation of both listed jobs, cleared queue state, and a contract-qualified runtime before attaching native evidence.",
+    "jobs": [
+      "5fbcd38b-8e8a-4cd7-8eab-353e8b025b9a",
+      "3627db2e-0b9d-4e4f-927f-20cb45deae74"
+    ]
+  },
+  "firstSmoke": {
+    "entrypoint": "tests/native/integrated-qualification/first_smoke.js",
+    "executor": "tests/native/integrated-qualification/executor.js:executeFirstSmoke",
+    "api": "qualified f708 public FmcadServices v1; inject an already-started client; this function never calls start/dispose",
+    "runtime": {
+      "sourceCommit": "f7082569f9ac8c321e704175cccc6781275a0d0e",
+      "buildHash": "0abaea48090ed901ca842604b66d1bf79978f8939c77a1250899da37417b08d0"
+    },
+    "operations": [
+      "sketch.create",
+      "sketch.geometry",
+      "sketch.inspect",
+      "model.extrude",
+      "entity.inspect",
+      "measure.volume"
+    ],
+    "sequence": "begin exclusive on sketch.create; continue with its exact sequenceId; end on measure.volume",
+    "cleanup": "Injected callback bound to original owner. Owner runs supported close-isolated-scratch in original cwd/credentials, without --client, then supplies exact terminal receipt; pending is not cleanup proof.",
+    "requiredInput": [
+      "confirmFirstSmoke: true",
+      "services: started FmcadServices created for grant.clientId with f708 contract versions",
+      "authority: actual derived facts, separate facts-approval result, completed creation activation, exact client grant",
+      "ownerCleanup: callback bound to the original facts-owner clientId; it returns the original owner's actual complete close receipt",
+      "private evidenceDir under /tmp/opencode",
+      "runId and uppercase fixturePrefix",
+      "exact MCP sessionId",
+      "six unique operation requestIds and a distinct cleanupRequestId"
+    ],
+    "retryPolicy": "No replay. Lost execute acknowledgement calls query.request with the same requestId once. Existing ledger blocks resume. Unknown operation or close halts cleanup and keeps NOTRUN.",
+    "status": "implemented; not dispatched until actual current facts, separate approval, creation receipt and grant are supplied"
+  },
+  "features": [
+    {
+      "id": "section-witnesses",
+      "ticket": "fmcad-section-witnesses",
+      "acceptedCommits": [
+        "c849b8f1457a254cd763b0b48982ce4d1ec91851",
+        "40a458a51d3cbaba3d64286d28211cc8958c19b3",
+        "bb34092598129629066367fabf9d58b5b5908e22"
+      ],
+      "files": [
+        "tests/native/section_witness_qualification.py",
+        "tests/fixtures/section_witness_shapes.json",
+        "tests/section_witness_test.py"
+      ],
+      "entrypoint": "tests/native/section_witness_qualification.py",
+      "execution": {
+        "kind": "fmcad-run",
+        "script": "tests/native/section_witness_qualification.py",
+        "scratchMode": "fresh-unsaved",
+        "documentPrefix": "FMCAD_SECTION_WITNESS_",
+        "argsProfile": "section-witness-shapes-v1",
+        "resultStatusField": "nativeCasesStatus",
+        "requiredBuild": "2706.1.14",
+        "timeoutMs": 300000
+      },
+      "scratchSlot": "section-geometry",
+      "requiredCases": [
+        "material-and-void-positive-negative",
+        "missing-sector-and-axial-gap-negative",
+        "closed-loops-and-discrete-coverage",
+        "open-wire-kernel-error-and-frame-rejection",
+        "unknown-intersection-and-tangent-remain-unknown",
+        "owned-scratch-restore-and-cleanup"
+      ]
+    },
+    {
+      "id": "regional-geometry",
+      "ticket": "fmcad-regional-geometry",
+      "acceptedCommits": [
+        "c4751735436cc1d48427084885d4bfa3e0dd621e",
+        "73782ee33e51f534b1d8e79dfbb2a45fa7523962"
+      ],
+      "files": [
+        "tests/fixtures/regional-geometry-native.py",
+        "tests/regional_geometry_test.py",
+        "tests/native/integrated-qualification/regional_geometry.py"
+      ],
+      "entrypoint": "tests/native/integrated-qualification/regional_geometry.py",
+      "relatedFixture": "tests/fixtures/regional-geometry-native.py",
+      "entrypointNote": "The legacy related fixture self-manages a document; the integrated entrypoint is the new caller-pinned cad-v1 adapter and does not execute that legacy lifecycle.",
+      "execution": {
+        "kind": "fmcad-run",
+        "script": "tests/native/integrated-qualification/regional_geometry.py",
+        "scratchMode": "fresh-unsaved",
+        "documentPrefix": "FMCAD_REGIONAL_",
+        "argsProfile": "native-body-containment-v1",
+        "resultStatusField": "nativeCasesStatus",
+        "timeoutMs": 300000
+      },
+      "scratchSlot": "regional-geometry",
+      "requiredCases": [
+        "inside-mask-positive",
+        "outside-mask-negative",
+        "equal-volume-outside-mask-negative",
+        "mask-union-exclusion-and-overlap",
+        "mask-hole-negative",
+        "temporary-copy-does-not-modify-source",
+        "owned-scratch-restore-and-cleanup"
+      ],
+      "offlineSupportingEvidence": ["tests/regional_geometry_test.py"]
+    },
+    {
+      "id": "brep-baselines",
+      "ticket": "fmcad-brep-baselines",
+      "acceptedCommits": [
+        "cbd2ac50aeed6fcfd965550f52fda81f8b325de8",
+        "9ab8f6f8bcc33aa25ab4f03cc1c4d8acad416a67",
+        "0d322401b5360bee6b7468b991fdb466c213aa88"
+      ],
+      "equivalentSourceCommits": [
+        {
+          "commit": "5cfb80bc6122ed5582c11a45581fdc2767feac75",
+          "files": {
+            "assets/cad/measure.py": "2d74e93ff69ab9c7b49c3fa6c78103b72a69bbcb"
+          }
+        }
+      ],
+      "files": [
+        "tests/native/brep_baseline_fixture.py",
+        "tests/brep_baseline_test.py",
+        "assets/cad/measure.py",
+        "tests/native/integrated-qualification/deferred_adapters.js"
+      ],
+      "entrypoint": "tests/native/integrated-qualification/deferred_adapters.js",
+      "relatedFixture": "tests/native/brep_baseline_fixture.py",
+      "entrypointNote": "Typed request validation is available; execution is intentionally unsupported until a saved/versioned document and broker-owned durable exact-BRep staging capability are authorized.",
+      "execution": null,
+      "deferredAdapter": {
+        "kind": "validate-brep-request",
+        "capability": "saved-versioned-document-and-broker-owned-exact-brep-staging",
+        "requiredPins": ["name", "creationId", "projectId", "fileId", "version", "assembly/component-local frame", "before/after body roles", "six acceptance cases", "nine distinct phase requestIds"],
+        "unsupportedReason": "The authorized scratch is unsaved; capture is node-only and requires durable exact-BRep staging plus a new SDK invocation."
+      },
+      "scratchSlot": "brep-baseline",
+      "requiredCases": [
+        "durable-export-inspect-and-new-invocation-restore",
+        "exact-geometry-and-pose-positive",
+        "equal-volume-different-shape-negative",
+        "pose-change-negative-and-restore-positive",
+        "missing-stale-and-budget-outcomes",
+        "owned-scratch-restore-and-cleanup"
+      ]
+    },
+    {
+      "id": "containment",
+      "ticket": "fmcad-1xu",
+      "acceptedCommits": [
+        "8994288936f87321008c5a86fa91afd4bfa50c49"
+      ],
+      "files": [
+        "tests/containment_test.py",
+        "tests/integration/gm20-containment.test.js",
+        "runtime/python/fmcad/adapters/fusion/containment.py",
+        "tests/native/integrated-qualification/containment.py"
+      ],
+      "entrypoint": "tests/native/integrated-qualification/containment.py",
+      "relatedFixture": "tests/integration/gm20-containment.test.js",
+      "entrypointNote": "The existing GM20 live tests cover analytic regions; this pinned runner adds the missing native BRepBody case.",
+      "execution": {
+        "kind": "fmcad-run",
+        "script": "tests/native/integrated-qualification/containment.py",
+        "scratchMode": "fresh-unsaved",
+        "documentPrefix": "FMCAD_CONTAINMENT_",
+        "argsProfile": "native-body-containment-v1",
+        "resultStatusField": "nativeCasesStatus",
+        "timeoutMs": 180000
+      },
+      "scratchSlot": "containment-body",
+      "requiredCases": [
+        "native-body-inside-outside-boundary",
+        "temporary-copy-leaves-document-unchanged",
+        "owned-scratch-restore-and-cleanup"
+      ],
+      "offlineSupportingEvidence": ["tests/containment_test.py"]
+    },
+    {
+      "id": "native-drive-test",
+      "ticket": "fmcad-native-drive-test",
+      "acceptedCommits": [
+        "a47aef07b8d290cc2ef373aff1cd3a14020fb8f4"
+      ],
+      "files": [
+        "scripts/qualify_native_drive.py",
+        "tests/native_drive_test.py",
+        "tests/fixtures/native-drive-prepared-artifact.py",
+        "tests/native/integrated-qualification/drive_motion_link.py"
+      ],
+      "entrypoint": "tests/native/integrated-qualification/drive_motion_link.py",
+      "relatedFixture": "scripts/qualify_native_drive.py",
+      "execution": {
+        "kind": "fmcad-run",
+        "script": "tests/native/integrated-qualification/drive_motion_link.py",
+        "suiteId": "drive-motion-link-v1",
+        "scratchMode": "fresh-unsaved",
+        "documentPrefix": "FMCAD_NATIVE_DRIVE_",
+        "argsProfile": "drive-motion-link-v1",
+        "resultStatusField": "nativeCasesStatus",
+        "timeoutMs": 300000
+      },
+      "scratchSlot": "drive-motion-link",
+      "requiredCases": [
+        "disconnected-or-wrong-follower-detected",
+        "native-driver-and-follower-readback",
+        "joint-and-transform-restore-readback",
+        "owned-scratch-restore-and-cleanup"
+      ]
+    },
+    {
+      "id": "motion-link",
+      "ticket": "fmcad-native-drive-test.1",
+      "acceptedCommits": [
+        "d718f7bb673594f529889c0aa8b21ababc1b958c",
+        "a47aef07b8d290cc2ef373aff1cd3a14020fb8f4"
+      ],
+      "files": [
+        "scripts/qualify_native_drive.py",
+        "tests/native_drive_test.py",
+        "tests/fixtures/native-drive-prepared-artifact.py",
+        "tests/native/integrated-qualification/drive_motion_link.py"
+      ],
+      "entrypoint": "tests/native/integrated-qualification/drive_motion_link.py",
+      "relatedFixture": "scripts/qualify_native_drive.py",
+      "execution": {
+        "kind": "fmcad-run",
+        "script": "tests/native/integrated-qualification/drive_motion_link.py",
+        "suiteId": "drive-motion-link-v1",
+        "scratchMode": "fresh-unsaved",
+        "documentPrefix": "FMCAD_NATIVE_DRIVE_",
+        "argsProfile": "drive-motion-link-v1",
+        "resultStatusField": "nativeCasesStatus",
+        "timeoutMs": 300000
+      },
+      "scratchSlot": "drive-motion-link",
+      "scratchReuse": "May reuse the Drive scratch and its two revolute joints only after the prior case has terminal readback/restore; otherwise use a second scratch in the same Fusion session.",
+      "requiredCases": [
+        "native-motion-link-created-from-pinned-joints",
+        "link-and-joint-native-readback",
+        "wrong-ratio-and-phase-negative",
+        "joint-state-restored",
+        "owned-scratch-restore-and-cleanup"
+      ]
+    },
+    {
+      "id": "capture-integrity",
+      "ticket": "fmcad-capture-integrity",
+      "acceptedCommits": [
+        "458f0f350be0e69550831736dc009cd1f73e2625",
+        "609b3f5b11c0a2c0d94bbcec8499e36b04be2ac2"
+      ],
+      "files": [
+        "tests/native/capture-integrity-qualification.js",
+        "tests/native/capture-integrity-qualification.py",
+        "tests/native/capture-integrity-capture.py",
+        "docs/CAPTURE_INTEGRITY.md",
+        "tests/native/integrated-qualification/deferred_adapters.js"
+      ],
+      "entrypoint": "tests/native/integrated-qualification/deferred_adapters.js",
+      "relatedFixture": "tests/native/capture-integrity-qualification.js",
+      "entrypointNote": "Existing host runner is not reused: it embeds a historical CLIENT_ID and creates three documents with app.documents.add. The current grant authorizes one caller-pinned scratch only.",
+      "execution": null,
+      "deferredAdapter": {
+        "kind": "validate-capture-request",
+        "capability": "three-document-capture-fixture-and-current-client-bound-review-host",
+        "requiredPins": ["current clientId", "Fusion session", "three exact unsaved document pins", "native geometry bounds/volume readback", "sectionName or explicit unsupported reason", "five acceptance cases", "eleven distinct phase requestIds", "owned mode-0700 outputRoot"],
+        "unsupportedReason": "No safe one-scratch port exists for the existing three-document capture/review suite under the current scoped grant."
+      },
+      "scratchSlot": "capture-integrity",
+      "requiredCases": [
+        "corrupt-image-set-fails",
+        "recipe-change-preserves-identity-and-restore-evidence",
+        "unsupported-presentation-restore-remains-explicit",
+        "capture-artifact-hashes-and-document-readback",
+        "owned-scratch-restore-and-cleanup"
+      ]
+    },
+    {
+      "id": "measured-fasteners",
+      "ticket": "fmcad-measured-fasteners",
+      "acceptedCommits": [
+        "b68ce6115ad3d7de00f7c0bc27b123c2dc895e1c"
+      ],
+      "files": [
+        "tests/fixtures/measured-fasteners/native-axial-fixture.json",
+        "tests/fixtures/measured-fasteners/native-document-spec.json",
+        "tests/measured-fasteners-bundle.test.js",
+        "tests/measured_fasteners_test.py",
+        "tests/native/integrated-qualification/measured_fasteners.py"
+      ],
+      "entrypoint": "tests/native/integrated-qualification/measured_fasteners.py",
+      "relatedFixture": "tests/fixtures/measured-fasteners/native-document-spec.json",
+      "entrypointNote": "Integrated pinned cad-v1 fixture generates native datum points/axes on its own fresh scratch; it does not replay the historical unknown fixture job.",
+      "execution": {
+        "kind": "fmcad-run",
+        "script": "tests/native/integrated-qualification/measured_fasteners.py",
+        "scratchMode": "fresh-unsaved",
+        "documentPrefix": "FMCAD_FASTENERS_",
+        "argsProfile": "native-body-containment-v1",
+        "resultStatusField": "nativeCasesStatus",
+        "timeoutMs": 300000
+      },
+      "scratchSlot": "measured-fasteners-fresh",
+      "requiredCases": [
+        "declared-stack-versus-real-engagement-bottoming-negative",
+        "measurement-source-frame-and-coverage",
+        "missing-native-measurement-remains-unknown",
+        "legacy-stack-compatibility",
+        "owned-scratch-restore-and-cleanup"
+      ]
+    },
+    {
+      "id": "sketch-geometry-proof",
+      "ticket": "fmcad-sketch-geometry-proof",
+      "acceptedCommits": [
+        "5545bc2032ff74f4177c1c58a4f682667e739844"
+      ],
+      "files": [
+        "tests/fixtures/sketch-geometry-proof/native_qualification.py",
+        "tests/sketch_geometry_proof_test.py",
+        "tests/sketch-geometry-proof-bundle.test.js",
+        "tests/native/integrated-qualification/deferred_adapters.js"
+      ],
+      "entrypoint": "tests/native/integrated-qualification/deferred_adapters.js",
+      "relatedFixture": "tests/fixtures/sketch-geometry-proof/native_qualification.py",
+      "entrypointNote": "Typed one-scratch fmcad_execute plan uses the current scratch-granted profile operations and exact dynamic document pins; no step is dispatched because the common runner has no fmcad_execute port and the grant omits coordinate-check.",
+      "execution": null,
+      "deferredAdapter": {
+        "kind": "validate-sketch-request",
+        "capability": "isolated-epoch-sketch.coordinate-check-for-full-proof",
+        "requiredPins": ["registered clientId", "actual target/observer job IDs", "terminal scratch-creation request/job receipt", "actual epochId", "exact scratch name and creationId", "unique prefix", "29 distinct operation requestIds", "separate owner close requestId"],
+        "unsupportedReason": "The separate six-operation first-smoke path is executable after actual authority. Full sketch-geometry-proof remains NOTRUN because the narrow epoch omits sketch.coordinate-check required for its three coordinate/world-geometry cases; this broader plan is not dispatched."
+      },
+      "scratchSlot": "sketch-profile",
+      "requiredCases": [
+        "coordinate-positive",
+        "shifted-center-negative",
+        "bad-diameter-negative",
+        "microgap-negative",
+        "duplicate-edge-negative",
+        "hole-inside-material-positive",
+        "hole-inside-void-negative",
+        "unambiguous-profile-selection-positive",
+        "multiple-profiles-ambiguous-negative",
+        "multiple-profiles-explicitly-selected-positive",
+        "missing-or-incomplete-topology-no-first-profile-fallback",
+        "read-only-proof-preserves-scratch-state",
+        "owned-scratch-restore-and-cleanup"
+      ]
+    },
+    {
+      "id": "semantic-model-state",
+      "ticket": "fmcad-semantic-model-state",
+      "acceptedCommits": [
+        "2d5e93d61280fc882fb305b201f5b6df9995a0a0"
+      ],
+      "files": [
+        "tests/native/semantic-model-state/qualify.py",
+        "tests/semantic_model_state_test.py",
+        "docs/SEMANTIC_MODEL_STATE.md"
+      ],
+      "entrypoint": "tests/native/semantic-model-state/qualify.py",
+      "execution": {
+        "kind": "fmcad-run",
+        "script": "tests/native/semantic-model-state/qualify.py",
+        "scratchMode": "prebound-saved-empty",
+        "documentPrefix": "FmcadSemanticStateScratch_",
+        "argsProfile": "semantic-model-state-v1",
+        "resultStatusField": "nativeModelQualification",
+        "probeCapabilityId": "frame.context_audit",
+        "scratchCleanup": "runner-closes-scratch",
+        "timeoutMs": 300000
+      },
+      "scratchSlot": "semantic-model",
+      "requiredCases": [
+        "reorder-does-not-create-false-change",
+        "moved-instance-change-is-detected",
+        "independent-frame-audit-and-transform2",
+        "owned-scratch-restore-and-cleanup"
+      ],
+      "offlineSupportingEvidence": ["tests/semantic_model_state_test.py", "tests/semantic-model-state-e2e.test.js"]
+    },
+    {
+      "id": "selection-rules",
+      "ticket": "fmcad-selection-rules",
+      "acceptedCommits": [
+        "12bf069cf3a380017f66b70f6c134a91790914f7"
+      ],
+      "files": [
+        "tests/fixtures/selection-rules-native.json",
+        "tests/selection_rules_test.py",
+        "tests/selection-rules-store.test.js",
+        "tests/native/integrated-qualification/deferred_adapters.js"
+      ],
+      "entrypoint": "tests/native/integrated-qualification/deferred_adapters.js",
+      "entrypointNote": "Typed request validation is available; native JSON remains an acceptance plan until saved-file artifact ownership and cross-invocation reread are authorized.",
+      "execution": null,
+      "deferredAdapter": {
+        "kind": "validate-selection-request",
+        "capability": "saved-file-selection-artifact-persistence-and-cross-invocation-reread",
+        "requiredPins": ["name", "creationId", "projectId", "fileId", "saved DataFile version", "15 distinct phase requestIds", "six acceptance cases", "full semantic face paths", "occurrence paths"],
+        "unsupportedReason": "The full plan needs durable artifact reread plus authorized split/merge/delete edits and a source save/version change. Current grant permits one unsaved scratch with sketch/extrude/read/cleanup only."
+      },
+      "scratchSlot": "selection-topology",
+      "requiredCases": [
+        "reorder-semantic-resolution-or-explicit-change",
+        "no-cross-instance-selection",
+        "cardinality-negative",
+        "artifact-persistence-across-invocations",
+        "owned-scratch-restore-and-cleanup"
+      ]
+    }
+  ]
+}

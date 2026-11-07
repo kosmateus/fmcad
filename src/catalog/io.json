@@ -1,0 +1,172 @@
+{
+  "visibility.show": {
+    "summary": "Turn on explicitly selected entity light bulbs and return restore state.",
+    "required": ["refs"], "example": {"refs": ["Housing"]}, "readOnly": false,
+    "limitations": ["Hidden ancestor occurrences or browser folders can still prevent effective visibility."],
+    "inputs": {"refs": "Nonempty array of resolvable entities with isLightBulbOn."}
+  },
+  "visibility.hide": {
+    "summary": "Hide explicitly selected entities and return restore state.",
+    "required": ["refs"], "example": {"refs": ["Housing"]}, "readOnly": false,
+    "limitations": ["Changes only specified light bulbs."],
+    "inputs": {"refs": "Nonempty array of resolvable entities with isLightBulbOn."}
+  },
+  "visibility.restore": {
+    "summary": "Restore the explicit light-bulb state returned by a visibility operation.",
+    "required": ["state"],
+    "example": {"state": {"document": {"creationId": "document-id", "name": "Assembly", "dataFileId": null}, "items": [{"ref": "Housing", "isLightBulbOn": true}]}},
+    "readOnly": false, "limitations": ["Requires the same document identity and resolvable entities; no ancestor changes."],
+    "inputs": {"state": "Pass restoreState from an earlier visibility operation unchanged."}
+  },
+  "visibility.isolate": {
+    "summary": "Show selected refs and hide the remainder of an explicit visibility scope.",
+    "required": ["refs", "scope"], "example": {"refs": ["Housing"], "scope": ["Housing", "Lid"]},
+    "readOnly": false, "limitations": ["Use sibling bodies or sibling occurrences. Does not infer hierarchy or turn on ancestor/folder visibility."],
+    "inputs": {"refs": "Nonempty selected refs; each must belong to scope.", "scope": "Nonempty list of all refs whose light bulbs may be changed."}
+  },
+  "camera.save": {
+    "summary": "Return a serializable camera snapshot without changing the viewport or saving the document.",
+    "required": [], "example": {}, "readOnly": true,
+    "limitations": ["Scoped document must already be active. Orthographic snapshots contain extents [widthCm, heightCm] from Camera.getExtents(); perspective snapshots contain perspectiveAngle in radians, not extents. No named-view persistence."], "inputs": {}
+  },
+  "camera.restore": {
+    "summary": "Apply a previously returned camera snapshot and return the replaced state.",
+    "required": ["state"],
+    "example": {"state": {"document": {"creationId": "document-id", "name": "Assembly", "dataFileId": null}, "eye": [10, 10, 10], "target": [0, 0, 0], "up": [0, 0, 1], "cameraType": "OrthographicCameraType", "units": "cm", "extents": [20, 15]}},
+    "readOnly": false, "limitations": ["Requires same document identity and active viewport. Projection and perspectiveAngle changes are committed before rereading and applying explicit pose and orthographic extents; settled projection/FOV values are not reassigned. A failed apply attempts rollback. Fusion may adapt orthographic width/height to viewport aspect ratio; pixel-identical framing is not guaranteed."],
+    "inputs": {"state": "Pass state from camera.save or restoreState from a camera operation unchanged."}
+  },
+  "camera.set": {
+    "summary": "Set standard orientation or explicit camera geometry, projection, and framing.",
+    "required": [], "example": {"orientation": "iso-top-right", "fit": true}, "readOnly": false,
+    "limitations": ["Requires the scoped document to already be active. Returns restoreState. Switching to orthographic requires explicit extents; switching to perspective requires perspectiveAngle."],
+    "inputs": {"orientation": "front/back/top/bottom/left/right/iso-top-left/iso-top-right/iso-bottom-left/iso-bottom-right; exclusive with eye/up, combinable with target/extents/fit.", "eye": "Three world-space length expressions.", "target": "Three world-space length expressions; when combined with orientation, fixes the look-at point while the named orientation fixes the direction.", "up": "Three finite unitless direction components.", "projection": "orthographic or perspective.", "extents": "Two positive length expressions for orthographic width and height, not angles or the retired viewExtents sphere radius.", "perspectiveAngle": "Native Camera.perspectiveAngle expression, converted to radians without horizontal/vertical FOV conversion; installed API documentation does not specify its axis.", "fit": "Boolean; fit the model when applying the camera. At least one camera setting is required."}
+  },
+  "shot.pack": {
+    "summary": "Render requested image files with per-shot camera, visibility, section and active-component presentation state, attempting full original-state restoration even if a shot fails.",
+    "required": ["shots"], "example": {"shots": [{"path": "C:/cad-output/front.png", "camera": {"orientation": "front", "fit": true}, "width": 1600, "height": 1200}]},
+    "readOnly": false, "limitations": ["Paths are on the machine running Fusion, not the CLI machine; integrator handles mapping. Parent directories must exist. Files written before a later failure remain. Viewport aspect changes can affect framing. Restoration failure reports separate primaryError and cleanupErrors and preserves the primary exception as its cause; cameraRestored is returned only on success. Per-shot presentation (visibility/sections/activeComponent) is restored with the camera; restoration touches only the listed entities and their occurrence parents."],
+    "inputs": {"shots": "Nonempty array of {path, camera?, visibility?, sections?, activeComponent?, width?, height?}. camera uses nonempty camera.set inputs and is validated when its shot runs, not during path preflight. visibility is a nonempty array of {ref, isLightBulbOn:boolean}; sections is a nonempty array of {name, isLightBulbOn:boolean}; activeComponent is a component/occurrence ref to activate for the shot. Omitted camera keeps preceding view. width/height integers 0..16384, default 0 uses viewport dimension. Distinct PNG/JPEG/BMP/TIFF paths required.", "overwrite": "Boolean, default false. Existing files require true AND confirm true.", "confirm": "Boolean, default false. Explicit permission to overwrite existing output files."}
+  },
+  "view.compare": {
+    "summary": "Return an ordered left/right pair of existing image-file metadata rows for visual review only.",
+    "required": ["left", "right"], "example": {"left": "C:/cad-output/before.png", "right": "C:/cad-output/after.png", "mode": "pair"},
+    "readOnly": true, "limitations": ["Fusion-machine paths. No overlay compositing, alignment, metric verification, or geometry equivalence claims; compose overlays externally."],
+    "inputs": {"left": "Absolute path to first existing image.", "right": "Absolute path to second existing image.", "mode": "pair only; overlay returns an actionable unsupported-mode error."}
+  },
+  "section.view": {
+    "summary": "Create/show/hide a real section analysis, or explicitly create a non-clipping helper plane.",
+    "required": ["mode", "name"], "example": {"mode": "create", "name": "Inspection section", "plane": "XZ", "offset": "5 mm"},
+    "readOnly": false, "limitations": ["Real creation requires installed SectionAnalyses.createInput/add support; otherwise create via UI then show. Helper mode is not a section cut. Does not turn on the shared Analyses folder or silently replace existing sections."],
+    "inputs": {"mode": "create, show, hide, or helper. helper delegates to datum.plane with no clipping.", "name": "New unique name or exact existing section name.", "plane": "Planar face or construction plane ref, required for create/helper.", "offset": "Signed length expression, default 0 mm for create; required for helper.", "visible": "Boolean initial light bulb, default true; create mode only."}
+  },
+  "reference.image": {
+    "summary": "Calibrate and place an existing canvas using a known segment in current canvas-plane coordinates.",
+    "required": ["mode", "ref", "segment", "length", "anchor"],
+    "example": {"mode": "calibrate", "ref": {"token": "canvas-token"}, "segment": [["0 mm", "0 mm"], ["25 mm", "0 mm"]], "length": "100 mm", "anchor": ["10 mm", "20 mm"], "angle": "90 deg"},
+    "readOnly": false, "limitations": ["Insertion is not exposed by the documented API used here: Insert > Canvas in Fusion first, then pass its token. Segment points are caller-measured current plane coordinates, NOT image pixels. Uniform scaling and rotation only, not distortion correction or independent metrology. Returns previousTransform but no automatic rollback."],
+    "inputs": {"mode": "calibrate only; insertion gets an actionable error.", "ref": "Existing Canvas token reference; select the inserted canvas and reuse selection.inspect result.selections[i].entity. Core name search/entity.list do not enumerate canvases.", "segment": "Two points each containing two length expressions in the current canvas-plane coordinates.", "length": "Positive known real length of that segment.", "anchor": "Desired first endpoint as two canvas-plane length expressions.", "angle": "Desired segment direction in its plane, default 0 deg."}
+  },
+  "appearance.list": {
+    "summary": "List visual appearances in the scoped design or an explicitly loaded library.",
+    "required": [], "example": {}, "readOnly": true,
+    "limitations": ["Lists installed/loaded libraries only; never downloads material libraries. Not a physical-material list."],
+    "inputs": {"library": "Optional exact loaded library ID; omit for scoped design appearances. Response also lists library IDs.", "search": "Optional case-insensitive name substring; IDs are returned unchanged. Discover loaded libraries with an unfiltered list first."}
+  },
+  "appearance.assign": {
+    "summary": "Assign visual overrides to native bodies/faces, occurrence instances, or an explicit component body cascade.",
+    "required": ["refs", "id"], "example": {"refs": ["Housing"], "id": "appearance-id"}, "readOnly": false,
+    "limitations": ["Component selections expand to current direct BRepBodies, not a Component.appearance property; includeChildren opts into descendant definitions. Shared definitions affect every occurrence, but existing face/occurrence overrides remain unless selected. Native occurrence selections set per-instance overrides. Proxies are rejected; explicitly resolve the native definition or native occurrence. No physical material or coating changes. All refs and library ID/name collisions are checked before writes; collisions require explicit local selection, never assumed equivalence. Runtime failures may leave earlier assignments or a copied style; no rollback. Returns actual before/after getters, mapping, count, affectedDefinitions and requested versus actual copied ID."],
+    "inputs": {"refs": "Nonempty native Component, BRepBody, BRepFace or Occurrence refs; use token/kind/component/path disambiguation from entity discovery.", "id": "Exact appearance ID from appearance.list; preserved verbatim, not a display name.", "library": "Loaded library ID containing appearance; omit for design-local appearance. Copies only if neither its ID nor name collides locally; subsequent calls select the returned local ID without library.", "includeChildren": "Boolean, false by default. Supplying it even as false requires at least one Component selection. True also expands descendant component definitions, deduplicating shared bodies. Does not target occurrence overrides."}
+  },
+  "appearance.inspect": {
+    "summary": "Read actual appearance IDs, API source and override status with definition/instance context.",
+    "required": ["refs"], "example": {"refs": [{"kind": "body", "token": "body-token"}]}, "readOnly": true,
+    "limitations": ["Read-only; proxies may be inspected. Components expand to direct bodies, optionally descendant definitions. Body/face appearance is the API current appearance; occurrence appearance is only its override and null means contents, not one uniform effective appearance. BodyAppearanceSource (1) means a body override on a body but inheritance on a face; FaceAppearanceSource (3) means a face override. Generic OverrideAppearanceSource (4) also means an override. Material (0) and occurrence (2) sources on body/face are inherited. appearanceOverrideScope distinguishes native definition, instance, and proxy reads of native-definition overrides; generic proxy overrides have unspecified context, not an inferred instance assignment. Unknown source and override status are null rather than inferred. Related face and occurrence overrides are reported with identical before/after states; not a rendered-color guarantee."],
+    "inputs": {"refs": "Nonempty Component, BRepBody, BRepFace or Occurrence refs.", "includeChildren": "Boolean, default false; component body cascade only. Supplying it even as false requires at least one Component selection."}
+  },
+  "appearance.clear": {
+    "summary": "Remove selected visual overrides with appearance=None without changing physical material.",
+    "required": ["refs"], "example": {"refs": [{"kind": "face", "token": "face-token"}]}, "readOnly": false,
+    "limitations": ["Native body/face/occurrence only, or component expansion to direct native bodies. Proxies rejected. Clearing a body does not clear its faces or occurrence overrides; select those explicitly. Component changes affect shared definitions. API getters can return inherited appearance after clearing, not null. Prevalidated but not atomic: actual before/after state is returned, with no rollback promise. Physical material remains unchanged."],
+    "inputs": {"refs": "Nonempty native Component, BRepBody, BRepFace or Occurrence refs whose overrides may be removed.", "includeChildren": "Boolean, default false; component selections additionally expand descendants when true. Supplying it even as false requires at least one Component selection."}
+  },
+  "material.list": {
+    "summary": "List physical materials in the scoped design or an explicitly loaded library.",
+    "required": [], "example": {}, "readOnly": true,
+    "limitations": ["Loaded/local materials only, no downloads. Distinct from appearance.list."],
+    "inputs": {"library": "Optional exact loaded library ID; omit for scoped design materials. Response also lists library IDs.", "search": "Optional case-insensitive name substring. Discover actual loaded IDs; no built-in material names are assumed."}
+  },
+  "material.assign": {
+    "summary": "Assign physical material to native Component definitions or BRepBodies, separately from visual overrides.",
+    "required": ["refs", "id"], "example": {"refs": ["Housing"], "id": "material-id"}, "readOnly": false,
+    "limitations": ["Faces have no physical material assignment: use appearance.assign for visual treatment. Occurrences and proxies are rejected; select the native owning component or body explicitly. Component.material uses the native API, not a recursive body assignment. Shared definitions affect every occurrence; existing visual overrides are retained. All refs, selected IDs and library ID/name collisions are prevalidated before writes. Collision requires explicit design-local selection, not ID/name equivalence assumptions. No rollback on runtime failure. Returns affected definitions, mapping, count and actual before/after material and appearance state. No density, mass, coating or inheritance validation; measure separately."],
+    "inputs": {"refs": "Nonempty native Component or BRepBody refs. Use persistent token/kind/component refs from discovery to avoid ambiguous names.", "id": "Exact physical material ID from material.list, preserved verbatim.", "library": "Loaded library ID containing material; omit for design-local material. Copy only without local ID/name collision. Use returned actual local ID without library on subsequent assignments."}
+  },
+  "material.inspect": {
+    "summary": "Read physical material IDs from Component.material or BRepBody.material without calculating mass.",
+    "required": ["refs"], "example": {"refs": [{"kind": "body", "token": "body-token"}]}, "readOnly": true,
+    "limitations": ["Face inspection reads its body's physical material; occurrence inspection reads its component definition, not an instance material. Proxies may be inspected. materialReadFrom identifies the actual getter target. API does not expose material inheritance provenance; equal body/component IDs do not establish inheritance. Reports actual before/after (identical for inspection), appearance sources where available and related overrides. Component.getPhysicalProperties is a separate measurement concern; this operation does not compute or validate mass or claim a coating."],
+    "inputs": {"refs": "Nonempty Component, BRepBody, BRepFace or Occurrence refs to inspect; no writes, library copies or mass computation."}
+  },
+  "import.file": {
+    "summary": "Import a local STEP/F3D/IGES/SAT/SMT file into a new document or the scoped native component.",
+    "required": ["path", "mode"], "example": {"path": "C:/cad-input/part.step", "mode": "component"}, "readOnly": false,
+    "limitations": ["Absolute path on machine running Fusion; integrator handles path mapping. No network downloads. F3Z requires explicit cloud upload outside this operation. No mesh-to-parametric-history fabrication. Neutral formats have no original history; F3D retains archive content. Imports cannot run within command events. New mode leaves a separate unsaved document open."],
+    "inputs": {"path": "Existing absolute local .step/.stp/.f3d/.iges/.igs/.sat/.smt path.", "mode": "new: separate unsaved document, never replacing ctx.doc; component: import into ctx.component, no occurrence context."}
+  },
+  "checkpoint.create": {
+    "summary": "Export a self-contained whole-design F3D checkpoint without saving the user document.",
+    "required": ["path"], "example": {"path": "C:/cad-output/checkpoint-01.f3d"}, "readOnly": false,
+    "limitations": ["Local Fusion-machine path with existing parent. External references are rejected; use UI F3Z export. Not a cloud version, named timeline marker, or automatic save."],
+    "inputs": {"path": "Explicit absolute .f3d filename on Fusion machine.", "overwrite": "Existing output requires true AND confirm true.", "confirm": "Explicit overwrite permission."}
+  },
+  "checkpoint.list": {
+    "summary": "List local F3D checkpoint candidates in an explicit directory.",
+    "required": ["directory"], "example": {"directory": "C:/cad-output"}, "readOnly": true,
+    "limitations": ["Nonrecursive filesystem listing on Fusion machine. Does not authenticate checkpoint provenance or list cloud versions."],
+    "inputs": {"directory": "Existing absolute directory on machine running Fusion."}
+  },
+  "checkpoint.inspect": {
+    "summary": "Inspect local checkpoint file existence, size, and modification time.",
+    "required": ["path"], "example": {"path": "C:/cad-output/checkpoint-01.f3d"}, "readOnly": true,
+    "limitations": ["Fusion-machine file metadata only, not archive integrity or geometry validation."],
+    "inputs": {"path": "Existing absolute .f3d path on machine running Fusion."}
+  },
+  "checkpoint.open": {
+    "summary": "Import an F3D checkpoint into a separate new unsaved document.",
+    "required": ["path"], "example": {"path": "C:/cad-output/checkpoint-01.f3d"}, "readOnly": false,
+    "limitations": ["Never closes, saves, or replaces the scoped user document, including unsaved changes. New document may become active. Not available in command event transactions."],
+    "inputs": {"path": "Existing absolute .f3d path on machine running Fusion."}
+  },
+  "export.native": {
+    "summary": "Export a self-contained whole-design F3D archive without silently losing external references.",
+    "required": ["path"], "example": {"path": "C:/cad-output/assembly.f3d", "ref": "root"}, "readOnly": false,
+    "limitations": ["Requires root geometry and no external document/occurrence references. F3Z packaging not exposed by ExportManager: use Fusion UI for referenced assemblies. Paths are on Fusion machine. File existence is not geometric verification."],
+    "inputs": {"path": "Absolute .f3d output; existing parent required.", "ref": "Root component ref; defaults to ctx.component, which must be root.", "overwrite": "Existing file requires true AND confirm true.", "confirm": "Explicit permission to overwrite."}
+  },
+  "export.step": {
+    "summary": "Export the scoped or explicit component to STEP.",
+    "required": ["path"], "example": {"path": "C:/cad-output/part.step", "ref": "Part"}, "readOnly": false,
+    "limitations": ["Component geometry only, component-local coordinates. No original feature history in STEP. Fusion-machine path with existing parent. No implicit reimport verification."],
+    "inputs": {"path": "Absolute .step or .stp output.", "ref": "Component ref; defaults to ctx.component.", "overwrite": "Existing file requires true AND confirm true.", "confirm": "Explicit permission to overwrite."}
+  },
+  "export.mesh": {
+    "summary": "Export one STL or 3MF file from a body, occurrence, or component.",
+    "required": ["path"], "example": {"path": "C:/cad-output/part.stl", "ref": "Housing", "units": "mm"}, "readOnly": false,
+    "limitations": ["Fusion-machine path with existing parent. STL requires explicit units but does not encode them; 3MF embeds units and uses API defaults. Default tessellation unchanged unless STL surfaceDeviation is supplied; no metric verification. No automatic print utility or one-file-per-body filenames."],
+    "inputs": {"path": "Absolute .stl or .3mf output.", "ref": "Body, occurrence, or component ref; defaults to ctx.component.", "units": "Required for STL: mm, cm, or in; omit for 3MF.", "surfaceDeviation": "Optional STL-only positive length expression with units or a dimensional parameter reference, e.g. 0.005 mm. Evaluated in cm independently of output units; SDK setter selects custom refinement. Forbidden for 3MF and export.parts.", "overwrite": "Existing file requires true AND confirm true.", "confirm": "Explicit permission to overwrite."}
+  },
+  "export.parts": {
+    "summary": "Export an explicit list of part refs to caller-specified unique filenames.",
+    "required": ["parts"], "example": {"parts": [{"ref": "Part", "format": "step", "path": "C:/cad-output/part.step"}, {"ref": "Housing", "format": "mesh", "path": "C:/cad-output/housing.stl", "units": "mm"}]},
+    "readOnly": false, "limitations": ["Prevalidates plans and filenames; batch is not atomic. Earlier files remain on later failure. STEP requires components; mesh accepts bodies/occurrences/components. All paths are Fusion-machine local."],
+    "inputs": {"parts": "Nonempty array of {ref, format: step|mesh, path, units?}; no generated filenames.", "overwrite": "Existing files require true AND confirm true.", "confirm": "Explicit permission to overwrite."}
+  },
+  "export.verify": {
+    "summary": "Report file existence separately from an explicitly requested reimport bounding-box comparison.",
+    "required": ["path"], "example": {"path": "C:/cad-output/part.step", "reimport": true, "ref": "Part", "lengthTolerance": "0.01 mm"},
+    "readOnly": false, "limitations": ["Conservatively non-readOnly because reimport opens/closes a temporary document and restores activation. Without reimport, only filesystem existence/size is checked. Reimport supports STEP/F3D/IGES/SAT/SMT, not mesh/F3Z. Both AABBs union direct BRepBodies and recursive occurrence body proxies using preciseBoundingBox in component-local frames; hidden bodies included, graphics/construction/sketches/meshes excluded. Empty or invalid geometric bounds are refused. Bounding box alone does not verify shape, topology, volume, mass, history, or metric equivalence. Only the newly imported verification document is closed; user documents are not saved/closed."],
+    "inputs": {"path": "Absolute file path on the machine running Fusion.", "reimport": "Boolean, default false; true explicitly requests an actual temporary reimport comparison. Inspect result.comparison.withinTolerance explicitly; false does not itself fail the command wrapper.", "ref": "Source component ref for comparison, default ctx.component; only with reimport true.", "lengthTolerance": "Nonnegative length expression for six bounding-box coordinate deltas, default 0.01 mm; only with reimport true.", "volumeTolerance": "Unsupported specific comparison mode; omit and use bounding-box comparison or external volume validation."}
+  }
+}

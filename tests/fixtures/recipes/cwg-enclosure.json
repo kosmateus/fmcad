@@ -1,0 +1,37 @@
+{
+  "formatVersion": 1,
+  "runId": "cwg-enclosure-release",
+  "maxExpansion": 100,
+  "operations": [
+    {"id": "enclosure", "operation": "component.create", "data": {"name": "Enclosure"}},
+    {"id": "enclosureSketch", "operation": "sketch.create", "component": {"$ref": "enclosure.result.component"}, "data": {"name": "EnclosureProfile", "plane": "XZ"}},
+    {"id": "enclosureGeo", "operation": "sketch.geometry", "component": {"$ref": "enclosure.result.component"}, "data": {"sketch": {"$ref": "enclosureSketch.result.sketch"}, "geometry": [{"type": "rectangle", "name": "section", "start": ["0 mm", "0 mm", "0 mm"], "end": ["20 mm", "40 mm", "0 mm"]}]}},
+    {"id": "aSurface", "operation": "model.revolve", "component": {"$ref": "enclosure.result.component"}, "data": {"name": "EnclosureShell", "profile": {"kind": "profile", "sketch": {"$ref": "enclosureSketch.result.sketch"}}, "axis": "Z", "angle": "360 deg", "solid": false}},
+    {"id": "surfaceCheck", "operation": "surface.check", "component": {"$ref": "enclosure.result.component"}, "data": {"schemaVersion": 1, "frame": "component", "bodies": [{"$ref": "aSurface.result.bodies.0"}], "expectClosed": true}},
+    {"id": "solidBlank", "operation": "model.revolve", "component": {"$ref": "enclosure.result.component"}, "data": {"name": "EnclosureBlank", "profile": {"kind": "profile", "sketch": {"$ref": "enclosureSketch.result.sketch"}}, "axis": "Z", "angle": "360 deg", "solid": true}},
+    {"id": "solid", "operation": "model.shell", "component": {"$ref": "enclosure.result.component"}, "data": {"name": "EnclosureSolid", "entities": [{"$ref": "solidBlank.result.bodies.0"}], "thickness": "2 mm"}},
+    {"id": "mount", "operation": "mount.create", "component": {"$ref": "enclosure.result.component"}, "data": {"schemaVersion": 1, "frame": "component", "name": "PcbMount", "scheme": "pin-slot", "pin": {"x": "0 mm", "y": "0 mm"}, "slot": {"x": "40 mm", "y": "0 mm"}, "holes": {"diameter": "3 mm", "clearance": "0.5 mm", "positions": [{"x": "10 mm", "y": "10 mm"}, {"x": "30 mm", "y": "10 mm"}, {"x": "10 mm", "y": "30 mm"}, {"x": "30 mm", "y": "30 mm"}]}, "support": {"connector": true}}},
+    {"id": "screw", "operation": "fastener.stack", "component": {"$ref": "enclosure.result.component"}, "data": {"schemaVersion": 1, "frame": "component", "screw": {"length": "12 mm", "threadLength": "10 mm", "majorDiameter": "3 mm", "pitch": "0.5 mm", "headDiameter": "6 mm"}, "stack": [{"id": "boss", "thickness": "4 mm"}, {"id": "pcb", "thickness": "1.6 mm"}], "receptacle": {"kind": "insert", "depth": "8 mm"}, "torque": "0.5 N*m", "tool": {"diameter": "4 mm", "recess": "5 mm"}}},
+    {"id": "bayonet", "operation": "retention.bayonet", "component": {"$ref": "enclosure.result.component"}, "data": {"schemaVersion": 1, "frame": "component", "lugs": {"count": 3, "width": "4 mm", "height": "2 mm"}, "stroke": "6 mm", "rotation": "30 deg", "capture": {"depth": "1.5 mm"}, "clearances": {"radial": "0.2 mm"}}},
+    {"id": "manufacturing", "operation": "manufacturing.check", "component": {"$ref": "enclosure.result.component"}, "data": {"schemaVersion": 1, "zones": [{"name": "seal", "kind": "seal"}], "faces": [{"name": "wall", "point": ["0 mm", "0 mm", "10 mm"], "normal": [1, 0, 0]}], "walls": [{"name": "shell", "point": ["0 mm", "0 mm", "0 mm"], "opposite": ["2 mm", "0 mm", "0 mm"], "continuity": "solid"}], "pullDirections": [{"name": "eject", "axis": [0, 0, 1]}], "process": "injection-molding", "material": "ABS"}},
+    {"id": "undercut", "operation": "undercut.check", "expectFail": true, "component": {"$ref": "enclosure.result.component"}, "data": {"schemaVersion": 1, "faces": [{"name": "lip", "point": ["0 mm", "0 mm", "5 mm"], "normal": [0, 0, -1]}], "pullDirections": [{"name": "eject", "axis": [0, 0, 1]}]}},
+    {"id": "wallMap", "operation": "measure.wall-map", "component": {"$ref": "enclosure.result.component"}, "data": {"schemaVersion": 1, "samples": [{"name": "shell", "point": ["0 mm", "0 mm", "0 mm"], "opposite": ["2 mm", "0 mm", "0 mm"], "continuity": "solid"}], "minThickness": "1 mm", "maxThickness": "3 mm"}},
+    {"id": "draft", "operation": "measure.draft", "component": {"$ref": "enclosure.result.component"}, "data": {"schemaVersion": 1, "faces": [{"name": "wall", "point": ["0 mm", "0 mm", "10 mm"], "normal": [1, 0, 0]}], "pullDirections": [{"name": "eject", "axis": [0, 0, 1]}], "minDraft": "1 deg"}},
+    {"id": "sheetForm", "operation": "sheet.form", "component": {"$ref": "enclosure.result.component"}, "data": {"schemaVersion": 1, "thickness": "1 mm", "segments": [{"type": "flat", "length": "20 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y", "K": 0.5}, {"type": "flat", "length": "20 mm"}], "representation": "external"}},
+    {"id": "sheetFlat", "operation": "sheet.flat", "component": {"$ref": "enclosure.result.component"}, "data": {"schemaVersion": 1, "thickness": "1 mm", "segments": [{"type": "flat", "length": "20 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y", "allowance": "3.9269908169872414 mm"}]}},
+    {"id": "animation", "operation": "animation.capabilities", "data": {}},
+    {"id": "thicknessCheck", "operation": "check", "data": {"id": "enclosure-body", "source": "MANUFACTURING_REQUIREMENTS.md", "measurement": {"operation": "measure.volume", "data": {"ref": {"$ref": "solid.result.bodies.0"}}}, "min": "1 mm^3"}},
+    {"id": "final", "operation": "report", "data": {"checks": [{"id": "enclosure-body", "source": "MANUFACTURING_REQUIREMENTS.md", "measurement": {"operation": "measure.volume", "data": {"ref": {"$ref": "solid.result.bodies.0"}}}, "min": "1 mm^3"}], "metadata": {"release": "enclosure DFM/DFA/optics system checks"}}},
+    {"id": "health", "operation": "history.check", "data": {}}
+  ],
+  "outputs": {
+    "aSurface": {"$ref": "aSurface.result.bodies.0"},
+    "enclosureBody": {"$ref": "solid.result.bodies.0"},
+    "mount": {"$ref": "mount.result.scheme"},
+    "screwStack": {"$ref": "screw.result.engagement"},
+    "bayonet": {"$ref": "bayonet.result.assemblyPath"},
+    "dfm": {"$ref": "manufacturing.result.status"},
+    "flatPattern": {"$ref": "sheetFlat.result.flatCenterline"},
+    "report": {"$ref": "final.result.checkOutcome"}
+  }
+}

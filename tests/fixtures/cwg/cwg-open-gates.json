@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "fixture": "cwg-open-gates",
+  "governance": "X-15",
+  "specRef": "FMCAD_GENERIC_METHODS_SPEC.md §6",
+  "source": "Cat Water Gun/docs/",
+  "status": "OPEN",
+  "openItems": [
+    { "id": "cam-release", "kind": "cam", "description": "CAM_RISE_PROFILE defines rise only; complete release/dwell law remains OPEN", "status": "OPEN" },
+    { "id": "routing-flex", "kind": "route", "description": "actual flexible routing and wire insulation remain OPEN", "status": "OPEN" },
+    { "id": "cots-data", "kind": "cots", "description": "COTS part data (mass, footprint, dynamics) remain partially OPEN", "status": "OPEN" },
+    { "id": "ebom-full-production", "kind": "ebom", "description": "full production EBOM remains OPEN", "status": "OPEN" }
+  ],
+  "deliverChecklist": [
+    { "id": "routing-open", "predicate": { "kind": "boolean", "actual": { "value": true }, "expected": true }, "source": { "path": "docs/WIRING_AND_FPC.md", "status": "OPEN" } },
+    { "id": "ebom-full-production", "predicate": { "kind": "boolean", "actual": { "value": true }, "expected": true }, "source": { "path": "docs/drawings/BOM.csv", "status": "OPEN" } }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "route": "document.status",
+  "scope": "route-specific admission; not global Python or Fusion readiness",
+  "approvedRuntimeBase": "c00b96c73bc04e5441dd950ed9da34137d208e64",
+  "profile": "document-status",
+  "artifact": {
+    "status": "passed",
+    "wireHash": "75978ad8c9776702dea5060d291da44fb22e34f8b5722cc3af5abfe49adb518c",
+    "artifactHash": "a8e1d16a43be3c94cd2ee7f442c5c98fea22432012517f7e09f3930137dbcfb9",
+    "bytes": 77018,
+    "units": [
+      { "id": "values", "filename": "runtime/python/fmcad/domain/values.py", "sha256": "9171bf7b8a326fc072566eebcd65e36c41da57aa18b8fca5c43d34a41a29caee" },
+      { "id": "fusion-values", "filename": "runtime/python/fmcad/adapters/fusion/values.py", "sha256": "e4ce4647857c157b8ef2f2e84439e6b6a1abf32786e43b9c5131dd760b8b7a8f" },
+      { "id": "core", "filename": "assets/cad/core.py", "sha256": "38a2ac90d6e221ae5921be07288cca96f510efec82cb7eff8c36e34a90028c09" },
+      { "id": "identity", "filename": "runtime/python/fmcad/adapters/fusion/identity.py", "sha256": "a853a9b896cfd43c31744b6838341ea19da92e52a83dee46906c54906a9818ef" },
+      { "id": "document_snapshot", "filename": "runtime/python/fmcad/adapters/fusion/document_snapshot.py", "sha256": "29c6951e2c1a3cf722bc22dc7a13accb3ce354d4a3b4f4145d2c56f6f03c541a" },
+      { "id": "wrapper", "filename": "<fmcad-wrapper>", "sha256": "f62ee9cd634a245a902cb41ba54ab9ee4834ebb22ee167418531df85712ae104" }
+    ]
+  },
+  "checker": {
+    "engine": "basedpyright",
+    "version": "1.40.2",
+    "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+    "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+    "diagnostics": 0,
+    "cache": "disabled"
+  },
+  "fences": {
+    "finalArtifact": "passed",
+    "dispatchPreparedSenderCallsPerValidArtifact": 1,
+    "dispatchPreparedSenderCallsPerNegativeMode": 0,
+    "negativeModes": ["type_error", "incomplete_inventory", "final_byte_tamper", "missing_checker"],
+    "physicalTransportToolsCallsPerValidArtifact": 1,
+    "physicalTransportTest": "tests/python-admission-transport.test.js#public document.status admits the exact prepared light artifact before one physical send"
+  },
+  "installedConsumer": {
+    "status": "passed",
+    "offline": true,
+    "outsideCheckout": true,
+    "artifactHash": "a8e1d16a43be3c94cd2ee7f442c5c98fea22432012517f7e09f3930137dbcfb9",
+    "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179"
+  },
+  "otherAcceptance": {
+    "libraryApiBroker": {
+      "status": "blocked",
+      "code": "LOCAL_PHASE_TIMEOUT",
+      "configuredTimeoutMs": 5000,
+      "pythonChecksRecorded": 0,
+      "senderCount": "not_asserted by failing test",
+      "limitsRaised": false
+    },
+    "installedPackagingMatrix": {
+      "status": "tool_error",
+      "reason": "basedpyright Node process exhausted its default approximately 512 MiB heap during a later packaging-matrix check",
+      "limitsRaised": false
+    },
+    "helperStageContext": {
+      "status": "tool_error",
+      "reason": "basedpyright Node process exhausted its default approximately 512 MiB heap",
+      "limitsRaised": false
+    }
+  },
+  "nonClaims": {
+    "liveSdkCalls": 0,
+    "modelValidation": "not_performed",
+    "globalReadiness": false
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "animation.sequence": {
+    "summary": "Plan a deterministic presentation timeline over declared tracks (camera, visibility, section, joint, occurrence) with an easing law, timing and fps, producing a frame manifest. Read-only: nothing is mutated and no native storyboard action is authored.",
+    "required": ["schemaVersion", "tracks", "duration", "fps"],
+    "example": {
+      "schemaVersion": 1,
+      "tracks": [
+        {"type": "camera", "phase": "intro", "from": {"eye": ["0 cm", "0 cm", "30 cm"], "target": ["0 cm", "0 cm", "0 cm"], "up": [0, 0, 1]}, "to": {"eye": ["10 cm", "0 cm", "30 cm"], "target": ["0 cm", "0 cm", "0 cm"], "up": [0, 0, 1]}},
+        {"type": "visibility", "phase": "reveal", "ref": "Sketch1", "visible": false}
+      ],
+      "phases": ["intro", "reveal"],
+      "duration": "2 s",
+      "fps": 30
+    },
+    "readOnly": true,
+    "envelope": true,
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "tracks": "Nonempty array of typed tracks: camera {from:{eye,target,up},to:{eye,target,up}}; visibility {ref,visible:bool}; section {name,isLightBulbOn:bool}; joint {ref,rotation?{from,to},slide?{from,to}}; occurrence {ref,axis,distance}. Each may declare a phase.",
+      "phases": "Optional ordered phase names (equal time slices). Tracks without a phase join the last phase.",
+      "duration": "Required positive total duration in seconds.",
+      "fps": "Required positive integer frames per second.",
+      "easing": "Optional one of linear, smoothstep, easeIn, easeOut, easeInOut; default linear.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Deterministic evaluated frame manifest, not a native storyboard action sequence. Camera/visibility/section values are plan data, not a rendered-view equivalence proof. Continuous tracks ease within their phase; discrete visibility/section steps apply at their phase start."]
+  },
+  "animation.export": {
+    "summary": "Encode already-rendered frame files into a film through a declared encoder. With no declared (or unavailable) encoder the result is blocked and no fake video file is written. ffmpeg uses a concat template producing a genuinely playable mp4.",
+    "required": ["schemaVersion", "frames", "output", "confirm"],
+    "example": {
+      "schemaVersion": 1,
+      "frames": ["C:/cad-output/frame-000.png", "C:/cad-output/frame-001.png"],
+      "output": "C:/cad-output/film.mp4",
+      "encoder": {"name": "ffmpeg"},
+      "fps": 30,
+      "confirm": true
+    },
+    "readOnly": false,
+    "envelope": true,
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "frames": "Nonempty array of existing .png frame paths on the Fusion machine (CLI maps WSL/native paths).",
+      "output": "Nonempty film path; must not already exist. Parent directory must exist.",
+      "encoder": "Optional {name, program?, arguments?} or {name, command:[argv...]}. name 'ffmpeg' uses a concat template; other names append frames + output to the declared argv. Omitted or unavailable -> blocked, no file written.",
+      "fps": "Optional positive integer; required for the ffmpeg concat template and reported as provenance.",
+      "frame": "Optional frame label.",
+      "confirm": "Must be true; writes a file."
+    },
+    "limitations": ["Without a declared (and runnable) encoder no film file is written; a fake or empty video is never produced. The encoder runs on the Fusion machine. Output is verified nonempty but not transcoded/validated byte-for-byte here."]
+  }
+}

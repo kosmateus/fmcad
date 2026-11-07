@@ -1,0 +1,53 @@
+{
+  "sheet.bends": {
+    "summary": "Compute a sheet-metal bend table: neutral radius and developed length per bend from an explicit K-factor or bend allowance, plus bend directions and process metadata. Bend allowance is never guessed.",
+    "required": ["thickness", "segments"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "thickness": "1 mm", "segments": [{"type": "flat", "length": "20 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y", "K": 0.5}, {"type": "flat", "length": "20 mm"}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "thickness": "Positive material thickness.",
+      "segments": "Nonempty array of {type:flat,length} and {type:bend,radius,angle,axis?,K?|allowance?} segments; every bend declares exactly one of K or allowance.",
+      "fixedFace": "Optional fixed-face label (folding reference).",
+      "reliefs": "Optional array of relief descriptors.",
+      "grain": "Optional grain direction label.",
+      "process": "Optional process metadata object.",
+      "representation": "external (default) or native; native flat-pattern API is a gated availability.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["Bend allowance is never guessed: a bend missing both K and allowance is rejected. This is an external recipe; the native flat-pattern API is gated and not faked."]
+  },
+  "sheet.form": {
+    "summary": "Form declared sheet segments into 3D neutral-axis geometry and produce the flat layout, bend table and flat-to-formed correspondence using an explicit external representation.",
+    "required": ["thickness", "segments"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "thickness": "1 mm", "segments": [{"type": "flat", "length": "20 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y", "K": 0.5}, {"type": "flat", "length": "20 mm"}], "representation": "external"},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "thickness": "Positive material thickness.",
+      "segments": "Nonempty array of flat/bend segments (as sheet.bends).",
+      "fixedFace": "Optional fixed-face label.",
+      "representation": "external (default) or native; native is reported blocked, never faked.",
+      "reliefs": "Optional array of relief descriptors.",
+      "grain": "Optional grain direction label.",
+      "process": "Optional process metadata object.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["External recipe geometry only; the public native flat-pattern API is gated and reported blocked when requested. An arbitrary solid body is not unfolded; FPC is not sheet metal."]
+  },
+  "sheet.flat": {
+    "summary": "Produce the flat layout and developed length of declared sheet segments; developed length equals formed neutral length with no scaling, and bend directions are reported.",
+    "required": ["thickness", "segments"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "thickness": "1 mm", "segments": [{"type": "flat", "length": "20 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y", "allowance": "3.9269908169872414 mm"}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "thickness": "Positive material thickness.",
+      "segments": "Nonempty array of flat/bend segments (as sheet.bends).",
+      "fixedFace": "Optional fixed-face label.",
+      "representation": "external (default) or native; native is reported blocked, never faked.",
+      "reliefs": "Optional array of relief descriptors.",
+      "grain": "Optional grain direction label.",
+      "process": "Optional process metadata object.",
+      "frame": "Optional frame label."
+    },
+    "limitations": ["External flat layout only; no DXF/SVG export and no native flat-pattern associativity. Developed length equals formed neutral length and is never scaled."]
+  }
+}

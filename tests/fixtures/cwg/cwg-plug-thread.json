@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "fixture": "cwg-plug-thread",
+  "governance": "X-13",
+  "specRef": "FMCAD_GENERIC_METHODS_SPEC.md §6 / GM-13",
+  "source": "Cat Water Gun/docs/drawings/ITEM_CATALOG.json P009/P011",
+  "status": "OPEN",
+  "thread": {
+    "part": "P009 tank_lid fill neck (mating P011 fill_cap)",
+    "description": "szyjka gwintu trójzwojowego startowo major72 pitch3",
+    "majorDiameter": "72 mm",
+    "pitch": "3 mm",
+    "starts": null,
+    "lead": null,
+    "ambiguity": "trójzwojowy may mean three starts (lead = 3 x 3 mm = 9 mm) or three turns over the length (starts = 1, lead = 3 mm); starts/pitch/lead are not resolved by the source."
+  }
+}

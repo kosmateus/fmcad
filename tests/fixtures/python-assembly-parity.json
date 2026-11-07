@@ -1,0 +1,935 @@
+{
+  "baselineCommit": "23cc436",
+  "handlers": {
+    "assembly": [
+      "assembly.ground",
+      "assembly.parts",
+      "assembly.rigid_group",
+      "assembly.unground",
+      "change.preview",
+      "component.create",
+      "component.from_bodies",
+      "component.inspect",
+      "component.rename",
+      "component.reparent",
+      "feature.dependencies",
+      "feature.list",
+      "feature.suppress",
+      "feature.unsuppress",
+      "history.check",
+      "history.recompute",
+      "joint.cylindrical",
+      "joint.drive",
+      "joint.edit",
+      "joint.inspect",
+      "joint.limits",
+      "joint.revolute",
+      "joint.rigid",
+      "joint.slider",
+      "occurrence.add",
+      "occurrence.align",
+      "occurrence.duplicate",
+      "occurrence.transform"
+    ],
+    "definitions": [
+      "definition.recipe",
+      "definition.regenerate"
+    ],
+    "fastener": [
+      "bearing.stack-check",
+      "fastener.check",
+      "fastener.schedule",
+      "fastener.stack",
+      "mount.check",
+      "mount.create",
+      "retention.bayonet",
+      "shaft.interface",
+      "shape.hose_barb",
+      "snap.define",
+      "snap.evaluate"
+    ],
+    "gear": [
+      "gear.pair-check",
+      "shape.gear"
+    ],
+    "mechanism": [
+      "mechanism.couple",
+      "mechanism.inspect",
+      "mechanism.stop-check"
+    ],
+    "pose": [
+      "pose.apply",
+      "pose.delete",
+      "pose.evaluate",
+      "pose.list",
+      "pose.save"
+    ],
+    "route3d": [
+      "route.create3d",
+      "route.cut-list",
+      "route.inspect",
+      "route.motion-states"
+    ],
+    "sequence": [
+      "assembly.sequence",
+      "fixture.access",
+      "service.path-check",
+      "tool.access"
+    ],
+    "sheetmetal": [
+      "sheet.bends",
+      "sheet.flat",
+      "sheet.form"
+    ],
+    "spring": [
+      "curve.helix",
+      "shape.helix",
+      "shape.spring",
+      "spring.configure",
+      "spring.evaluate"
+    ],
+    "thread": [
+      "model.thread",
+      "thread.catalog",
+      "thread.custom-profile",
+      "thread.pair-check"
+    ]
+  },
+  "cases": {
+    "assembly_test.AssemblyTests.test_api_failures_propagate": {
+      "family": "assembly",
+      "events": 308,
+      "sha256": "ea3fab7f3ebb683edcd6f6196e1b4d0f5c198f3ecbe6b107ad654a9f48cf51d5"
+    },
+    "assembly_test.AssemblyTests.test_catalog_and_compilation": {
+      "family": "assembly",
+      "events": 192,
+      "sha256": "f605d58464a096f188a6434a388786b9dfc76a2ec499c905f40df3393939830c"
+    },
+    "assembly_test.AssemblyTests.test_create_inspect_rename_parts": {
+      "family": "assembly",
+      "events": 372,
+      "sha256": "a89030721f52b47fc9b1fdf0737d8809a3fcd61d95fb89352048ddd73af3dc29"
+    },
+    "assembly_test.AssemblyTests.test_creation_limit_failure_retains_created_reference": {
+      "family": "assembly",
+      "events": 346,
+      "sha256": "22379896877c730409537d7fbc63927655b804d96c8e3644edb595eb76f9284f"
+    },
+    "assembly_test.AssemblyTests.test_creation_limits_apply_to_created_motion_not_input": {
+      "family": "assembly",
+      "events": 342,
+      "sha256": "86ef2882389cf6f47ce986997286cabcd5929923282b37682b98e5ab7831d578"
+    },
+    "assembly_test.AssemblyTests.test_creation_zeroed_native_limits_all_axes": {
+      "family": "assembly",
+      "events": 814,
+      "sha256": "9756c564f8c8691eacdb80d9bb002984428546ea38fd61de26bc6434ea7da938"
+    },
+    "assembly_test.AssemblyTests.test_custom_vector_guard": {
+      "family": "assembly",
+      "events": 318,
+      "sha256": "09764cdcddda715f63eff7175c91129052384f9dde59dc3d1bc0e8ddb1345b33"
+    },
+    "assembly_test.AssemblyTests.test_dependencies_partial": {
+      "family": "assembly",
+      "events": 198,
+      "sha256": "438629a6eb9b10949dba4ecded67d2cc02fd5a1592b5381fbe2f9715b4df4f02"
+    },
+    "assembly_test.AssemblyTests.test_destination_cycle_and_ambiguous_nested_context_reject_before_mutation": {
+      "family": "assembly",
+      "events": 262,
+      "sha256": "b0fc042cf276bec8893e6f4b021a0b86afb29dc49300c90396d575c7bc4cb182"
+    },
+    "assembly_test.AssemblyTests.test_direct_transform_does_not_capture": {
+      "family": "assembly",
+      "events": 278,
+      "sha256": "67efff75922caacd0f7942682c33a4f3837de6e169bb3a4c194eb65ade6d0bd1"
+    },
+    "assembly_test.AssemblyTests.test_drive_returns_actual_not_requested_value": {
+      "family": "assembly",
+      "events": 396,
+      "sha256": "dffa3fe2ee894034e8b7a4107fb585016e231677e0dacf00f851bceb45b06e67"
+    },
+    "assembly_test.AssemblyTests.test_existing_joint_and_foreign_identity": {
+      "family": "assembly",
+      "events": 386,
+      "sha256": "24d4908a696cb3198363e63879887321ae76e90cd940490f870742d936454aa0"
+    },
+    "assembly_test.AssemblyTests.test_explicit_copy_modes": {
+      "family": "assembly",
+      "events": 398,
+      "sha256": "3a6f0f99435aed596811f7ab9368053b490c78ad7d12be0558edd4fb1eb55f26"
+    },
+    "assembly_test.AssemblyTests.test_explicit_root_context_proxy_is_resolved_by_exact_path": {
+      "family": "assembly",
+      "events": 234,
+      "sha256": "c22d46b675559088ce6dd53a9adc10760ebbbe307cac7ee9a321fd6fe6719b8a"
+    },
+    "assembly_test.AssemblyTests.test_external_component_and_occurrence_refs_reject_before_add_or_duplicate": {
+      "family": "assembly",
+      "events": 276,
+      "sha256": "8dc61dd2b7951ca72c68dc28139a4fa3f47a0326fb4bfe48924cd6655dbfefef"
+    },
+    "assembly_test.AssemblyTests.test_feature_list_inspect_suppress": {
+      "family": "assembly",
+      "events": 248,
+      "sha256": "0b36e3f4fb6fe2350794e199c7fe66c7cc0b1e94c3d14bed7b2214b6021ee4df"
+    },
+    "assembly_test.AssemblyTests.test_from_bodies_preflight_and_move": {
+      "family": "assembly",
+      "events": 334,
+      "sha256": "7aef32853bd42203edcca7919c93386874d4bf733cc6450b46ccdaa1413a6fb5"
+    },
+    "assembly_test.AssemblyTests.test_ground_and_group": {
+      "family": "assembly",
+      "events": 272,
+      "sha256": "05e15fa7e498ee6add380edffc8fcf0da54465ab7d002f8bba76885b49c912fa"
+    },
+    "assembly_test.AssemblyTests.test_grounded_external_nested_ambiguous_rejected": {
+      "family": "assembly",
+      "events": 244,
+      "sha256": "0008c9a8a8a37496bbb921eab49ed12b68cfec54a39b053580daa7b36904286f"
+    },
+    "assembly_test.AssemblyTests.test_history_check_never_hides_suppressed_group_container": {
+      "family": "assembly",
+      "events": 208,
+      "sha256": "ba8f9d1fc6946817b151c500df3308a0fecf574c636c2c4073b6e04fd1832fdf"
+    },
+    "assembly_test.AssemblyTests.test_history_check_only_allows_explicit_suppressed_refs": {
+      "family": "assembly",
+      "events": 228,
+      "sha256": "0007ba5829eb120c45104e33be9f3da4317e4508fccc70afac4770d6a2c276fa"
+    },
+    "assembly_test.AssemblyTests.test_history_check_recurses_groups_and_scopes_to_exact_owner": {
+      "family": "assembly",
+      "events": 262,
+      "sha256": "a8d4c27db80f97fdc706834737f096692aaea20e74666de30ecd9752f2c40ecf"
+    },
+    "assembly_test.AssemblyTests.test_history_read_only_and_recompute": {
+      "family": "assembly",
+      "events": 218,
+      "sha256": "9b5e2b0141cf16fb0ad02fa049d7f5aea7cafae7fb30cc3af98a957131ef575e"
+    },
+    "assembly_test.AssemblyTests.test_identity_native_nested_and_root_origin": {
+      "family": "assembly",
+      "events": 424,
+      "sha256": "2f23c3bf65e40506455a7b01199b69ec297dcfdeb9c126fa69d015d47f81e33c"
+    },
+    "assembly_test.AssemblyTests.test_invalid_copy_preflight": {
+      "family": "assembly",
+      "events": 232,
+      "sha256": "ccd9b10b0bfa9c6b033969b5da0663cc37e48ecd3ed84c4fbed3e4d87b558d0e"
+    },
+    "assembly_test.AssemblyTests.test_invalid_creation_limits_reject_before_add": {
+      "family": "assembly",
+      "events": 296,
+      "sha256": "62cdcb185dd65f83aecc984c5c948a0069e4c642cf15b5a488cfb884e4d2327b"
+    },
+    "assembly_test.AssemblyTests.test_invalid_nested_policy_and_space_options_reject_early": {
+      "family": "assembly",
+      "events": 198,
+      "sha256": "83c957d0734a732e5979618c25732da373d8bb90b0cd125a5600336b0b4b030c"
+    },
+    "assembly_test.AssemblyTests.test_irrelevant_limits_and_creation_preflight": {
+      "family": "assembly",
+      "events": 754,
+      "sha256": "83c9bf179ed94ea865d203d29ad87811229f386e21e1979da493d48d3a5afd13"
+    },
+    "assembly_test.AssemblyTests.test_joint_drive_edit_and_limits": {
+      "family": "assembly",
+      "events": 442,
+      "sha256": "e49b0036929c05592c5ee78ec9db7bb7e1bf9d33491fcccb95800621c53e2d64"
+    },
+    "assembly_test.AssemblyTests.test_joint_invalid_before_add": {
+      "family": "assembly",
+      "events": 270,
+      "sha256": "e3fbd44ecca7383c4cf47f9beae2e6497d198f11024d66b46bbd76e7607df295"
+    },
+    "assembly_test.AssemblyTests.test_limit_changes_drive_uses_actual_limits": {
+      "family": "assembly",
+      "events": 662,
+      "sha256": "72da032f9e1f02a500dbf1dd6c0ecac18384ee39e95b1197b7679772b733ad4d"
+    },
+    "assembly_test.AssemblyTests.test_limit_flag_write_failure_restores_remaining_flags": {
+      "family": "assembly",
+      "events": 380,
+      "sha256": "822506233478860ede7c6ea2a72bddbb63a36aebbdcdccc962a4fcc60d52cf48"
+    },
+    "assembly_test.AssemblyTests.test_limits_all_prevalidated": {
+      "family": "assembly",
+      "events": 722,
+      "sha256": "475dcef6c0724f5beed69f439fe4818fa8c3d7a3134e8025cbf03f4729a3cecc"
+    },
+    "assembly_test.AssemblyTests.test_limits_readonly_and_creation": {
+      "family": "assembly",
+      "events": 742,
+      "sha256": "748cddcc1dc4511b61b13bc6cfe5ad8fecd09dab713ed32a46c8f65c0162c0c1"
+    },
+    "assembly_test.AssemblyTests.test_limits_rollback_both_axes_and_flags": {
+      "family": "assembly",
+      "events": 540,
+      "sha256": "cc393e3f7e6460cfa67e4f44741587df8f9ad18029d3bc79ec0f8b91eb7572b0"
+    },
+    "assembly_test.AssemblyTests.test_nested_copy_requires_explicit_space_and_policy_before_mutation": {
+      "family": "assembly",
+      "events": 264,
+      "sha256": "50fedba65450e4fe53051a513ef0f03f7bf11d396231f97f7d6b2161b2e39616"
+    },
+    "assembly_test.AssemblyTests.test_nested_duplicate_converts_world_pose_to_parent_local": {
+      "family": "assembly",
+      "events": 306,
+      "sha256": "e1c7244458874a7cff290651dbb1af3ab2f0a025a0d6e72d196c44362f7091be"
+    },
+    "assembly_test.AssemblyTests.test_nested_linked_add_uses_selected_parent_collection": {
+      "family": "assembly",
+      "events": 288,
+      "sha256": "87d57b978c617ccc6cdf63e6f0f6ad24b56b2ec2ec81d48193ec273c9246ca1a"
+    },
+    "assembly_test.AssemblyTests.test_pending_transform_is_not_captured": {
+      "family": "assembly",
+      "events": 248,
+      "sha256": "293751d3b086c4351f05d8ff6782b789b709fc888a66c786b2830158143a29a7"
+    },
+    "assembly_test.AssemblyTests.test_placement_space_is_rejected_without_nested_placement": {
+      "family": "assembly",
+      "events": 212,
+      "sha256": "20ae466c25eb3d0d1f4ebc36ed15783a5d26a5f10544efb2bc9ea4ed25e322e6"
+    },
+    "assembly_test.AssemblyTests.test_preview_read_only_edit_and_ownership": {
+      "family": "assembly",
+      "events": 254,
+      "sha256": "99d5a4caece4d77384ce26449b2b6f1f4cee02610b09d4fcce4306b19cde38f1"
+    },
+    "assembly_test.AssemblyTests.test_real_joint_modes": {
+      "family": "assembly",
+      "events": 740,
+      "sha256": "c165f807af77e1f8624429c899f99a0ac8b19d90da11b1202ae006fcc32e782a"
+    },
+    "assembly_test.AssemblyTests.test_recursive_history_accepts_healthy_group_with_nonfeature_unknown_state": {
+      "family": "assembly",
+      "events": 208,
+      "sha256": "a1db0b0c517c16ad51fa1b40dede487267d6c48a410c3e1c9701abbcee606b17"
+    },
+    "assembly_test.AssemblyTests.test_regular_joint_native_geometry_origins_and_move_second_subtree": {
+      "family": "assembly",
+      "events": 588,
+      "sha256": "c21f30be02a68ecf1775df5543ad58b2d0cf892d7c8f8d485b4d3e6694eebd31"
+    },
+    "assembly_test.AssemblyTests.test_regular_joint_pose_policy_rejects_non_subtree_motion": {
+      "family": "assembly",
+      "events": 384,
+      "sha256": "05b0d166d0add049ca8aa71680c129487535d1d5ac727f78bbd59fd0517bafd6"
+    },
+    "assembly_test.AssemblyTests.test_regular_joint_preflight_guards_before_origin_or_joint_creation": {
+      "family": "assembly",
+      "events": 652,
+      "sha256": "7e876d0eb491b173f335a68b33b670596b5dc3190132960e7dc51834fac5c14f"
+    },
+    "assembly_test.AssemblyTests.test_regular_joint_reference_origins_and_asbuilt_legacy": {
+      "family": "assembly",
+      "events": 790,
+      "sha256": "8dd5b2c6bd60c07c7df94f80aeb7ef700984fd50b603f5f7374104b9a035c6ae"
+    },
+    "assembly_test.AssemblyTests.test_regular_joint_three_angle_offset_flip_variants": {
+      "family": "assembly",
+      "events": 1394,
+      "sha256": "f5841a2de06cbb7966cb61fa55080a16b3cb7c67786b62a50b91e619d336e0f3"
+    },
+    "assembly_test.AssemblyTests.test_reparent_all_instances_reports_every_predicted_path": {
+      "family": "assembly",
+      "events": 288,
+      "sha256": "0acb03836fddc63f3840f52c4045e7b391e2f7503fdf061cf936d5ebcd53370c"
+    },
+    "assembly_test.AssemblyTests.test_reparent_cycle_and_success": {
+      "family": "assembly",
+      "events": 296,
+      "sha256": "89eb5295c0a27aaafa9bc27f6158c2e7d52d13ff64421d69c42dcaec9378d443"
+    },
+    "assembly_test.AssemblyTests.test_reparent_pose_readback_detects_unknown_effect": {
+      "family": "assembly",
+      "events": 264,
+      "sha256": "9df2763f5457ace9e6bfb76318578e200bf1bd7b7a3c7b7dbb336b16c9316f44"
+    },
+    "assembly_test.AssemblyTests.test_reparent_repeated_target_requires_all_instances": {
+      "family": "assembly",
+      "events": 240,
+      "sha256": "2712b5226f928b8d243d8513c8800a980520942a6e4c014e740f565050ff04fa"
+    },
+    "assembly_test.AssemblyTests.test_root_destination_and_legacy_add_keep_root_semantics": {
+      "family": "assembly",
+      "events": 230,
+      "sha256": "cb6cb43b21aafec5a05c8e38e94a092c53fb2daf1ad7d0bdd2ac04779ca0d4d9"
+    },
+    "assembly_test.AssemblyTests.test_transform_capture_and_align": {
+      "family": "assembly",
+      "events": 392,
+      "sha256": "a928578b58b8ee09609eb14bf10ca14d447fd6f44dd928a61828a142166dbb6c"
+    },
+    "pose_test.PoseTests.test_apply_leaves_state_and_reports_actual": {
+      "family": "pose",
+      "events": 308,
+      "sha256": "837fb591af33c695296d81fa8e94506e19badd1d6b9119c4c22b34b2a303b42c"
+    },
+    "pose_test.PoseTests.test_apply_rejects_incompatible_document": {
+      "family": "pose",
+      "events": 272,
+      "sha256": "7c4ec9c0ee33d0d2055c17c8b1303693e6e5703262da70963b28b2240855fd16"
+    },
+    "pose_test.PoseTests.test_apply_rejects_stale_refs": {
+      "family": "pose",
+      "events": 284,
+      "sha256": "b625aaac571f7f81eb3f8c062b76176ce1a8cb48d21ae8a6674412f0aeaa4442"
+    },
+    "pose_test.PoseTests.test_delete_removes_pose": {
+      "family": "pose",
+      "events": 286,
+      "sha256": "5929c5f80e70bb2a4522ac254210b954e3bfe0443aac41f6b4ac8ab84bd0ec7a"
+    },
+    "pose_test.PoseTests.test_evaluate_restore_failure_is_separate": {
+      "family": "pose",
+      "events": 322,
+      "sha256": "84b42318590baf0ae672a5ac38613dd955280d26229d1032ed273f9a4fb90cf8"
+    },
+    "pose_test.PoseTests.test_evaluate_restores_previous_state": {
+      "family": "pose",
+      "events": 324,
+      "sha256": "dc42f30fe7ed76a13175e2221ee016ee665fc3ff33864a5368f913569037e636"
+    },
+    "pose_test.PoseTests.test_evaluate_restores_when_first_joint_setter_mutates_then_raises": {
+      "family": "pose",
+      "events": 314,
+      "sha256": "7cde5f2aab14736856a264fee68c31f645a0fa37eb19fbd17f4283f563866d8e"
+    },
+    "pose_test.PoseTests.test_fill_state_variants_change_declared_liquid_state": {
+      "family": "pose",
+      "events": 278,
+      "sha256": "d8e05ae634ca3d18403fdd4609d49bee39d7225a2874ddc09a2bad3c013ce9ea"
+    },
+    "pose_test.PoseTests.test_save_list_and_manifest_roundtrip": {
+      "family": "pose",
+      "events": 274,
+      "sha256": "3548a20c4408db0e14b308f7e86dba6e896174f8c771360ed50875f8af4353ff"
+    },
+    "pose_test.PoseTests.test_save_on_existing_requires_update": {
+      "family": "pose",
+      "events": 284,
+      "sha256": "150b6952002d88f0c57e0d405d30b3eb67904da5b8dc7d32f547af78b63ba944"
+    },
+    "mechanism_test.MechanismTests.test_catalog_and_manual_cover_mechanism_operations": {
+      "family": "mechanism",
+      "events": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "mechanism_test.MechanismTests.test_external_gear_flips_sign_and_unwraps": {
+      "family": "mechanism",
+      "events": 262,
+      "sha256": "6abf9eee03ee3ae695fafff042c13c022ecc96cbbd54d12e3c6a44dee24d8286"
+    },
+    "mechanism_test.MechanismTests.test_inspect_disengaged_beyond_tolerance": {
+      "family": "mechanism",
+      "events": 266,
+      "sha256": "99e41dc9a658f29852a4f16fc32ce92f34b4b5766576fc9c6ab09f61827887c4"
+    },
+    "mechanism_test.MechanismTests.test_inspect_reports_residual": {
+      "family": "mechanism",
+      "events": 266,
+      "sha256": "6d799919bb88079b57bea235f414b96740b2a6bbe59c2a15d5638739a3f945c5"
+    },
+    "mechanism_test.MechanismTests.test_internal_gear_keeps_positive_ratio": {
+      "family": "mechanism",
+      "events": 262,
+      "sha256": "dac530ed07099d87606d892dca3ae309cc308c006259e50443c3c97c41a08fad"
+    },
+    "mechanism_test.MechanismTests.test_invalid_inputs_rejected": {
+      "family": "mechanism",
+      "events": 744,
+      "sha256": "697ea137d0c317e16617a7d6351c07ce2ff63e1a505d24c8b73af5ce44d5372d"
+    },
+    "mechanism_test.MechanismTests.test_measured_residuals_and_engagement": {
+      "family": "mechanism",
+      "events": 278,
+      "sha256": "53ebb8ccd3c9eeeeebb888f00fa8652cc741057afbef21a530198d8f975d70c3"
+    },
+    "mechanism_test.MechanismTests.test_screw_lead_matches_displacement_per_revolution": {
+      "family": "mechanism",
+      "events": 266,
+      "sha256": "51a09b7fcec0f65748b652f17caed8fa6ccda03e9e2b80da5e28fda56e987d10"
+    },
+    "mechanism_test.MechanismTests.test_stop_check_engagement_fails_when_slipped": {
+      "family": "mechanism",
+      "events": 282,
+      "sha256": "8134759e1d19c3d236d66f6d91ba83aa50c31f1f33ffd077d1cebfa7600001b6"
+    },
+    "mechanism_test.MechanismTests.test_stop_check_program_limit_before_hard_stop": {
+      "family": "mechanism",
+      "events": 302,
+      "sha256": "89c2986925a963d67a3e98f47030adb2a733ba20077449bdc584833e1c568ad6"
+    },
+    "mechanism_test.MechanismTests.test_stop_check_program_limit_is_not_a_physical_stop": {
+      "family": "mechanism",
+      "events": 274,
+      "sha256": "1ec1ab56ddc5621cb6627acef27e984e9127b71fcbd268b8fb08e718750d1f2d"
+    },
+    "route3d_test.Route3dTests.test_cut_list_1_1_l_plus_two_tails": {
+      "family": "route3d",
+      "events": 254,
+      "sha256": "5f23b408e95c486b66b62d8acf3fe69e1a2ebb5ba2ac7657fad3b61ed7cefdba"
+    },
+    "route3d_test.Route3dTests.test_cut_list_no_double_tail": {
+      "family": "route3d",
+      "events": 254,
+      "sha256": "5f23b408e95c486b66b62d8acf3fe69e1a2ebb5ba2ac7657fad3b61ed7cefdba"
+    },
+    "route3d_test.Route3dTests.test_inflection_has_no_zero_bend_radius": {
+      "family": "route3d",
+      "events": 322,
+      "sha256": "ffe0190033dfa481b47d746685335c5434a3e57dfd73744a1de8817c636f8b03"
+    },
+    "route3d_test.Route3dTests.test_invalid_inputs_rejected": {
+      "family": "route3d",
+      "events": 740,
+      "sha256": "6e82d618294b4cfd2d1c954d822066faf538a3c1e35c9f109322481cd79c6628"
+    },
+    "route3d_test.Route3dTests.test_known_arc_bend_radius": {
+      "family": "route3d",
+      "events": 322,
+      "sha256": "92ef07911581252b64bc29156acfb0589f6f433fe46c9ef738aa7b42b86f2fca"
+    },
+    "route3d_test.Route3dTests.test_motion_states_pan_tilt_product_preserves_length": {
+      "family": "route3d",
+      "events": 270,
+      "sha256": "40c19c4f6b3d89ac50be051c54f80fad1888c2aba98a89616eaf32365f3cfe48"
+    },
+    "route3d_test.Route3dTests.test_motion_states_set_state_for_explicit_pose": {
+      "family": "route3d",
+      "events": 262,
+      "sha256": "af15d705f330e5e93b23e01f9be40432ad5ecd376e928dd166a7a7e7b81aa99b"
+    },
+    "route3d_test.Route3dTests.test_spatial_route_with_inflection": {
+      "family": "route3d",
+      "events": 322,
+      "sha256": "eb6b0a44e65d4514f1ee7116ae1cbbdfc3983e1d747078fc3cf456c6334829e9"
+    },
+    "sequence_test.SequenceTests.test_assembly_order_and_media_not_rigidized": {
+      "family": "sequence",
+      "events": 246,
+      "sha256": "40fd367ab25c64a208328c2a06ac0377b63b7e31506f414a43fa2dac95d4bb76"
+    },
+    "sequence_test.SequenceTests.test_d6x40_tool_reaches_fastener": {
+      "family": "sequence",
+      "events": 898,
+      "sha256": "262e60e7603f9a861f2c870f0c64b4a113a9dad570897d253e1af0ddda6003ca"
+    },
+    "sequence_test.SequenceTests.test_dependency_cycle_is_fail": {
+      "family": "sequence",
+      "events": 246,
+      "sha256": "40fd367ab25c64a208328c2a06ac0377b63b7e31506f414a43fa2dac95d4bb76"
+    },
+    "sequence_test.SequenceTests.test_fixture_pin_too_large_and_misaligned_datum": {
+      "family": "sequence",
+      "events": 362,
+      "sha256": "daf6283529c91d56f6a561c1a41df991635ee6c0f9fc671b74a5527d82278983"
+    },
+    "sequence_test.SequenceTests.test_fixture_seats_with_pin_and_datum": {
+      "family": "sequence",
+      "events": 362,
+      "sha256": "a81eff7fe87759e4d445307583b20566c5ea68e0cc52ebffa07d81a7c4508802"
+    },
+    "sequence_test.SequenceTests.test_fixture_unknown_feature_rejected": {
+      "family": "sequence",
+      "events": 312,
+      "sha256": "1645a58ec2a79cdb75af563e7d8f939e726c9c1ab29d3a592201311b46c37289"
+    },
+    "sequence_test.SequenceTests.test_service_states_with_real_disconnections": {
+      "family": "sequence",
+      "events": 246,
+      "sha256": "40fd367ab25c64a208328c2a06ac0377b63b7e31506f414a43fa2dac95d4bb76"
+    },
+    "sequence_test.SequenceTests.test_tank_withdrawal_is_feasible": {
+      "family": "sequence",
+      "events": 326,
+      "sha256": "0192b9ab0df8994cf6e54d4b2c5e3606edafd21063e6e33b4eaf8db9edcfacc8"
+    },
+    "sequence_test.SequenceTests.test_tool_too_short_or_misaligned": {
+      "family": "sequence",
+      "events": 620,
+      "sha256": "afc0b7a75d9dfb795c2a4220bd664a3afb7c49c13aabd20955364f80f5281ae1"
+    },
+    "sequence_test.SequenceTests.test_trapped_part_blocked_along_sweep": {
+      "family": "sequence",
+      "events": 326,
+      "sha256": "3a0402e072464af784501b1e74394e767fe7217d8fab2d8894fb70420bb7f155"
+    },
+    "sequence_test.SequenceTests.test_trapped_screw_blocked_by_boss": {
+      "family": "sequence",
+      "events": 898,
+      "sha256": "8d14b28721af4cc68b1a91fcebc359c2f54c1e6676640fe87733bc48a7c1f599"
+    },
+    "sequence_test.SequenceTests.test_trapped_screw_requires_cover_removal_first": {
+      "family": "sequence",
+      "events": 246,
+      "sha256": "40fd367ab25c64a208328c2a06ac0377b63b7e31506f414a43fa2dac95d4bb76"
+    },
+    "sequence_test.SequenceTests.test_unknown_part_and_duplicate_names_rejected": {
+      "family": "sequence",
+      "events": 488,
+      "sha256": "70643ea56d99ad8fcc17c7d1ba93084352669c547267d9a3b8411d585bc20616"
+    },
+    "spring_test.SpringTests.test_compressed_below_solid_height_fails": {
+      "family": "spring",
+      "events": 266,
+      "sha256": "afd473b554d733b5953e5c2b7278b842b5065824bb5257e6d287a3da919b361d"
+    },
+    "spring_test.SpringTests.test_guide_rod_clearance": {
+      "family": "spring",
+      "events": 274,
+      "sha256": "318609d18d12ce8e6092356e494f59e835ca19d3ca57f73023c0be09ee43d7d2"
+    },
+    "spring_test.SpringTests.test_helix_contradictory_pitch_and_height_rejected": {
+      "family": "spring",
+      "events": 512,
+      "sha256": "b4d4994d1ff6f5a23a31b600ed8baed94a0d7da0c38a8c8fa2608522371236cc"
+    },
+    "spring_test.SpringTests.test_helix_left_hand_flips_winding": {
+      "family": "spring",
+      "events": 524,
+      "sha256": "ee9f7b82ca924a9138b73940dbbd78e155a60275bcaeadc2829c22f84b676de1"
+    },
+    "spring_test.SpringTests.test_helix_pitch_and_turns_derive_height_and_arc_length": {
+      "family": "spring",
+      "events": 262,
+      "sha256": "1115b45a10fc705a0e7dca8a3b45dbcb53dacbc846ebcc551a06f079a44b4b7c"
+    },
+    "spring_test.SpringTests.test_helix_turns_height_derive_pitch": {
+      "family": "spring",
+      "events": 262,
+      "sha256": "06ecb72a2e399cbd7827415e633618aa6168e609c45128bd4c04887258b79cb7"
+    },
+    "spring_test.SpringTests.test_native_representation_is_blocked": {
+      "family": "spring",
+      "events": 262,
+      "sha256": "1115b45a10fc705a0e7dca8a3b45dbcb53dacbc846ebcc551a06f079a44b4b7c"
+    },
+    "spring_test.SpringTests.test_p054_spring_stiffness_forces_and_solid_height": {
+      "family": "spring",
+      "events": 266,
+      "sha256": "f17e6e68636b9d85e395eb3b8ef0ff64d1d1805b9880b3abd51c487f29f72ed3"
+    },
+    "spring_test.SpringTests.test_shape_helix_generates": {
+      "family": "spring",
+      "events": 262,
+      "sha256": "e44181906540e6324fbd698977638a218d0f3dcc5718680cb88c11d1261be365"
+    },
+    "spring_test.SpringTests.test_shape_spring_affected_has_no_none_and_no_ground_end_claim": {
+      "family": "spring",
+      "events": 278,
+      "sha256": "c4478601142bb1467c4c3fbd423562f1b22a554713e244851854db7f379480c6"
+    },
+    "spring_test.SpringTests.test_shape_spring_geometry_metrics": {
+      "family": "spring",
+      "events": 278,
+      "sha256": "c4478601142bb1467c4c3fbd423562f1b22a554713e244851854db7f379480c6"
+    },
+    "thread_test.ThreadTests.test_catalog_m10_coarse": {
+      "family": "thread",
+      "events": 246,
+      "sha256": "40fd367ab25c64a208328c2a06ac0377b63b7e31506f414a43fa2dac95d4bb76"
+    },
+    "thread_test.ThreadTests.test_custom_profile_lead_is_starts_times_pitch": {
+      "family": "thread",
+      "events": 254,
+      "sha256": "67168154ee1375220f3819bcdeb4a65131641ef614c8bc7345338d2da739be3d"
+    },
+    "thread_test.ThreadTests.test_custom_profile_rejects_minor_and_pitch_diameter_together": {
+      "family": "thread",
+      "events": 252,
+      "sha256": "688567789fd1bb8943da15005f20554237b35315393e9f189c14eff279733ca4"
+    },
+    "thread_test.ThreadTests.test_model_thread_custom_profile_is_recipe": {
+      "family": "thread",
+      "events": 254,
+      "sha256": "67168154ee1375220f3819bcdeb4a65131641ef614c8bc7345338d2da739be3d"
+    },
+    "thread_test.ThreadTests.test_model_thread_tabular_delegates_to_native": {
+      "family": "thread",
+      "events": 270,
+      "sha256": "54fe2635fc83345f2e213259b216e850253d94e7fb289c4b5d7f427322238428"
+    },
+    "thread_test.ThreadTests.test_pair_check_hand_mismatch_fails": {
+      "family": "thread",
+      "events": 274,
+      "sha256": "e7f522ad0376925a403e98f132732f62289c63d9db769568a7a31eb25ad6840a"
+    },
+    "thread_test.ThreadTests.test_pair_check_multistart_lead_must_match": {
+      "family": "thread",
+      "events": 274,
+      "sha256": "6ea4dd2601556078df8a70747b858b7a3cde2bd6f5db00f82e23cb4b52c99944"
+    },
+    "thread_test.ThreadTests.test_pair_check_rh_pair_passes": {
+      "family": "thread",
+      "events": 274,
+      "sha256": "e7f522ad0376925a403e98f132732f62289c63d9db769568a7a31eb25ad6840a"
+    },
+    "fastener_test.FastenerTests.test_bearing_stack_distinguishes_fixed_ring_and_no_preload": {
+      "family": "fastener",
+      "events": 304,
+      "sha256": "1036a2acb1e4cc15b3d150ffbb681424d266228085a4bc82d345c12bab48ae0b"
+    },
+    "fastener_test.FastenerTests.test_fastener_check_engagement_bottoming_access": {
+      "family": "fastener",
+      "events": 322,
+      "sha256": "8a015ef9ae620b336c070156455c1fcdd61b4a929bba80b0662430de42246559"
+    },
+    "fastener_test.FastenerTests.test_fastener_check_reports_unknown_without_declared_data": {
+      "family": "fastener",
+      "events": 292,
+      "sha256": "153274b16af6156c690e3b096a1213c800fa4e419b3cf94de0eb69297fa0201a"
+    },
+    "fastener_test.FastenerTests.test_fastener_schedule_flags_missing_data": {
+      "family": "fastener",
+      "events": 274,
+      "sha256": "513bb32ea0baf0e033e1652bf6bbbf96c31228050c2f41ccb327d105008f1b1f"
+    },
+    "fastener_test.FastenerTests.test_fastener_stack_engagement_is_thread_length_minus_stack": {
+      "family": "fastener",
+      "events": 304,
+      "sha256": "b9c3bb7701b6373a2026ac03882c65319c7b00efcdf404c19cba60dabe888e0b"
+    },
+    "fastener_test.FastenerTests.test_fastener_stack_requires_engagement": {
+      "family": "fastener",
+      "events": 286,
+      "sha256": "d1f19aa5dbe68bc570294a71ff239c624b1deef720a63fb3b5395d4f16cf2bcf"
+    },
+    "fastener_test.FastenerTests.test_hose_barb_channel_continuity_and_seating": {
+      "family": "fastener",
+      "events": 2040,
+      "sha256": "eb917297128d09d9410f2cce8fbfc4c3ddadc530f2e88fbfb3f61723b34d67ce"
+    },
+    "fastener_test.FastenerTests.test_hose_barb_rejects_blocked_channel": {
+      "family": "fastener",
+      "events": 280,
+      "sha256": "fcefbfdd9883424ca8c68b3713142948e5bdfb00b498908d42f382b732ebb065"
+    },
+    "fastener_test.FastenerTests.test_mount_check_flags_tight_holes_and_requires_connector_support": {
+      "family": "fastener",
+      "events": 310,
+      "sha256": "d6f481c305acc6c39785906d6816fd9c568ff96c78590e0d97d05e6b1d759afc"
+    },
+    "fastener_test.FastenerTests.test_mount_create_pin_slot_locates_without_over_constraining": {
+      "family": "fastener",
+      "events": 446,
+      "sha256": "9480fe01be4631522f54e9ba80c6989630aa7292a1cf00ee03a206f6f1e78a0d"
+    },
+    "fastener_test.FastenerTests.test_mount_create_two_pin_over_constrains": {
+      "family": "fastener",
+      "events": 434,
+      "sha256": "c7ae14f6fcf1554b37c5bce833015abebdaefa125bc07bbccbcc0b5c13b3c35e"
+    },
+    "fastener_test.FastenerTests.test_retention_bayonet_assembly_path_and_capture": {
+      "family": "fastener",
+      "events": 334,
+      "sha256": "c79fc4a7e2953c1cc675104c931b374af1cf216997aec4b867c24568281bb126"
+    },
+    "fastener_test.FastenerTests.test_shaft_interface_d_flat_requires_d_flat_bore": {
+      "family": "fastener",
+      "events": 280,
+      "sha256": "af316e029dec22d00c7635bd7daf7ef51c3a9b82040aef481c7fe3181d8f0b87"
+    },
+    "fastener_test.FastenerTests.test_snap_define_requires_no_material_default": {
+      "family": "fastener",
+      "events": 292,
+      "sha256": "68ef0ad1c249e0a8eb1d3a2927e1896487bb910303f93bf0197bcda8ec375757"
+    },
+    "fastener_test.FastenerTests.test_snap_evaluate_cantilever_beam": {
+      "family": "fastener",
+      "events": 298,
+      "sha256": "5beb8a184034ef17139e0da5e5efb2265e21df2e15798aa6ff22e58858f3a750"
+    },
+    "fastener_test.FastenerTests.test_snap_evaluate_yield_exceeded_fails": {
+      "family": "fastener",
+      "events": 298,
+      "sha256": "02ff2e777001b02088a80a6b5eaffb3553866fda9d684da26af5d66ea6982ecd"
+    },
+    "gear_test.GearTests.test_catalog_and_manual_cover_gear_operations": {
+      "family": "gear",
+      "events": 262,
+      "sha256": "af652e1f897143a2f8bb0191f041e296be52fe82dd3cf5df632020ea3e5a01d3"
+    },
+    "gear_test.GearTests.test_gear_bore_hub_and_key": {
+      "family": "gear",
+      "events": 12934,
+      "sha256": "b3063a5e457907e8a0897507a44f8af887a642acb6019dceb1fce555cab5a6bd"
+    },
+    "gear_test.GearTests.test_gear_diameters_follow_standard_equations": {
+      "family": "gear",
+      "events": 12030,
+      "sha256": "8f3d97642f5b9a54c4b9d81f44df5eafd9e44b506f57ac0a00a64470a0f01da7"
+    },
+    "gear_test.GearTests.test_gear_driving_radii_and_pattern": {
+      "family": "gear",
+      "events": 12030,
+      "sha256": "8f3d97642f5b9a54c4b9d81f44df5eafd9e44b506f57ac0a00a64470a0f01da7"
+    },
+    "gear_test.GearTests.test_gear_invalid_inputs_rejected_before_mutation": {
+      "family": "gear",
+      "events": 304,
+      "sha256": "edd172fe721c87647b00c96e6ee69faa242d5fda5a9a975ce1f42909399fa588"
+    },
+    "gear_test.GearTests.test_gear_rejects_backlash_leaving_no_positive_half_angle": {
+      "family": "gear",
+      "events": 918,
+      "sha256": "49a2d4c0c63838d5646440a3150a74e3103ad8ee1bf554dba3f7c6eeb8dbc18e"
+    },
+    "gear_test.GearTests.test_gear_root_treatment_and_profile_shift": {
+      "family": "gear",
+      "events": 25528,
+      "sha256": "3e5dc5f2e05d3066a76644e4984cd0cdb5e539ae4c9d2db8076f31d9d57a8d7f"
+    },
+    "gear_test.GearTests.test_gear_tooth_flank_is_involute_not_trapezoid": {
+      "family": "gear",
+      "events": 12030,
+      "sha256": "8f3d97642f5b9a54c4b9d81f44df5eafd9e44b506f57ac0a00a64470a0f01da7"
+    },
+    "gear_test.GearTests.test_gear_tooth_profile_is_single_closed_loop_without_crossings": {
+      "family": "gear",
+      "events": 15882,
+      "sha256": "262c6bcc388953f9803108d1204a1f26d4408347c746f9c6c057554cc0a45c25"
+    },
+    "gear_test.GearTests.test_gear_undercut_detection": {
+      "family": "gear",
+      "events": 23120,
+      "sha256": "6a900efbe269c9431b7cb94a89b6ba75f5a4ceab416261653cd2bb1f724b7cce"
+    },
+    "gear_test.GearTests.test_pair_check_backlash_is_sum_not_unconditional_halving": {
+      "family": "gear",
+      "events": 310,
+      "sha256": "e64eaac3a54043f42444984ec78aadeef1749b22d431b62a6f2c93e7931298fd"
+    },
+    "gear_test.GearTests.test_pair_check_internal_gear_flips_sign": {
+      "family": "gear",
+      "events": 310,
+      "sha256": "6e567294b25e282750280a40af016143534e1dc9c9518298726c6b56c8831c61"
+    },
+    "gear_test.GearTests.test_pair_check_ratio_sign_center_distance_and_backlash": {
+      "family": "gear",
+      "events": 310,
+      "sha256": "6e567294b25e282750280a40af016143534e1dc9c9518298726c6b56c8831c61"
+    },
+    "gear_test.GearTests.test_pair_check_undercut_and_mismatched_module": {
+      "family": "gear",
+      "events": 334,
+      "sha256": "cd6d6f9489ae9072d9c0bc085fb768e128a15de8b69812abdd86773c8d71b041"
+    },
+    "sheetmetal_test.SheetMetalTests.test_allowance_never_guessed": {
+      "family": "sheetmetal",
+      "events": 816,
+      "sha256": "b372010aaeb266d0e15ec1d18e3c670e1531d459febf02f3cfed4e51d1a48538"
+    },
+    "sheetmetal_test.SheetMetalTests.test_bend_direction_sign": {
+      "family": "sheetmetal",
+      "events": 274,
+      "sha256": "7ea1fb6a4b147c7379769a4d08ca7281661c16d6a63b7a6093cab98275851809"
+    },
+    "sheetmetal_test.SheetMetalTests.test_bend_table_from_explicit_allowance": {
+      "family": "sheetmetal",
+      "events": 278,
+      "sha256": "87416976140be913378cc0b8203c7e618769cc8f8ea3ba971d2f2fbb050a1542"
+    },
+    "sheetmetal_test.SheetMetalTests.test_bend_table_from_k_factor": {
+      "family": "sheetmetal",
+      "events": 274,
+      "sha256": "f6b5f2c4fa7ab019019d9de837e8e556034155e4740c2bcc01fa182e25e05c51"
+    },
+    "sheetmetal_test.SheetMetalTests.test_flat_layout_developed_length_and_no_scaling": {
+      "family": "sheetmetal",
+      "events": 318,
+      "sha256": "8ab246f418fd99a57f51977ac1bb9efee0be73272cd67b97c70b16c92ae979a6"
+    },
+    "sheetmetal_test.SheetMetalTests.test_form_folds_neutral_axis_and_preserves_length": {
+      "family": "sheetmetal",
+      "events": 306,
+      "sha256": "7b86f262d743d1c2e9c5868e7971170f82b15733bd82c8b201f3c8dcd3ac6096"
+    },
+    "sheetmetal_test.SheetMetalTests.test_invalid_segments_rejected": {
+      "family": "sheetmetal",
+      "events": 744,
+      "sha256": "1e629f1808bd49779c5144a9a5ebd83a9a3a90a239f8c007249083ce181f2cf8"
+    },
+    "sheetmetal_test.SheetMetalTests.test_native_representation_blocked_not_faked": {
+      "family": "sheetmetal",
+      "events": 492,
+      "sha256": "38448a422677c70e093706e48059fc8f9768c4212fd81e303f9f9a79dba42d59"
+    },
+    "definitions_recipe_test.RecipeTests.test_ambiguous_native_role_is_not_first_match": {
+      "family": "definitions",
+      "events": 44,
+      "sha256": "ffe5a2b24706a34806041b70b871463488a95a1c5c8cfd8a78eaae7d80f97169"
+    },
+    "definitions_recipe_test.RecipeTests.test_changed_baseline_prevents_ownership_commit": {
+      "family": "definitions",
+      "events": 48,
+      "sha256": "8a4663fa82de49f59313521b52fdbe8ff1f3b48d94b6b41147f45c16ab567648"
+    },
+    "definitions_recipe_test.RecipeTests.test_complete_never_adopts_unreported_or_preexisting_entities": {
+      "family": "definitions",
+      "events": 54,
+      "sha256": "7cbaf4b234ace47fbbbeae19a3e7b1340188085707070aef951737efbffd7551"
+    },
+    "definitions_recipe_test.RecipeTests.test_durable_source_dry_run_and_two_in_place_revisions": {
+      "family": "definitions",
+      "events": 222,
+      "sha256": "e049fb9f78e256c9270fe91261192da4553aba05b02e9c4e4298f694f066c39f"
+    },
+    "definitions_recipe_test.RecipeTests.test_foreign_later_history_blocks_downstream": {
+      "family": "definitions",
+      "events": 74,
+      "sha256": "38e8251be4de5fe56963dcdfc3f8ffb5050c64650ef47db893e94e38a76e3565"
+    },
+    "definitions_recipe_test.RecipeTests.test_incomplete_build_cannot_replay_or_regenerate": {
+      "family": "definitions",
+      "events": 46,
+      "sha256": "360294db831085f3dcf706dc531dfa51f9a741062a12ed71c9b1e5bc0ae2509c"
+    },
+    "definitions_recipe_test.RecipeTests.test_invalid_units_preflight_all_before_assignment": {
+      "family": "definitions",
+      "events": 84,
+      "sha256": "83eaf285eb98b01f0659c02348aedb83d5a137b18190606603e3ee8605f96b81"
+    },
+    "definitions_recipe_test.RecipeTests.test_missing_recipe_and_pin_refuse_before_mutation": {
+      "family": "definitions",
+      "events": 20,
+      "sha256": "59d1d245f8e2eff64fbfdf50c4f22974b581edafb2aff2ce2f3ecea386ba0265"
+    },
+    "definitions_recipe_test.RecipeTests.test_recompute_failure_retains_uncertainty_and_no_retry": {
+      "family": "definitions",
+      "events": 112,
+      "sha256": "2e134f1b61df3b1690c9b9f8cfd19dcce531a522a40e234cb17eb5f489e847ad"
+    },
+    "definitions_recipe_test.RecipeTests.test_silent_native_assignment_failure_is_not_accepted": {
+      "family": "definitions",
+      "events": 106,
+      "sha256": "02bca41694150acbd0bc338f9a377786e418a260b1814090cd97f56727065571"
+    },
+    "definitions_recipe_test.RecipeTests.test_sketch_snapshot_detects_exact_control_data_changes": {
+      "family": "definitions",
+      "events": 16,
+      "sha256": "2f95366c7f84998ebb9db59863185f16d761338137e0bf26f2fba3a1cf259007"
+    },
+    "definitions_recipe_test.RecipeTests.test_sketch_snapshot_serializes_sdk_vector_outputs_and_detects_edits": {
+      "family": "definitions",
+      "events": 34,
+      "sha256": "f477a3bfbf6487dd33b733acf501c90efa4a64223c39650d5ec6adc2464e4b8d"
+    },
+    "definitions_recipe_test.RecipeTests.test_user_edit_ownership_loss_and_wrong_revision_or_source": {
+      "family": "definitions",
+      "events": 142,
+      "sha256": "c7b7a82fbf6d14bad0ff9b4279d62aab0b072115f88e2eca58e69c006f914363"
+    },
+    "definitions_recipe_test.RecipeTests.test_user_parameter_dependency_edit_blocks_regeneration": {
+      "family": "definitions",
+      "events": 74,
+      "sha256": "a3400dc1fd82a685b453579f3d4de58caad2bf8c012fb6fb14ab4985ebd0a689"
+    }
+  }
+}

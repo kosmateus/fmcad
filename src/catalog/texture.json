@@ -1,0 +1,9 @@
+{
+  "texture.heightmap": {
+    "summary": "Generate a deterministic, tileable PNG heightmap (strips, grooves, waves or value noise) with no product hardcoding and no third-party imaging dependency.",
+    "required": ["path"], "example": {"path": "C:/textures/height.png", "width": 256, "height": 256, "seed": 7, "amplitude": 1.0, "period": 16, "pattern": "waves", "tileable": true},
+    "readOnly": false,
+    "limitations": ["8-bit single-channel grayscale PNG. The PNG is written to the Fusion host. The same parameters reproduce byte-identical pixels (deterministic hash). Value noise is a fixed hash, not a physics-based height field."],
+    "inputs": {"path": "Required absolute .png output path on the Fusion host; existing parent required.", "width": "Integer 1..16384, default 256.", "height": "Integer 1..16384, default 256.", "seed": "Integer seed, default 0.", "amplitude": "Finite number 0..1, default 1.0.", "period": "Positive pixel period, default 16.", "pattern": "strips, grooves, waves, or noise; default waves.", "tileable": "Boolean, default true; wraps the field for seamless tiling.", "overwrite": "Existing output requires true AND confirm true.", "confirm": "Explicit overwrite permission."}
+  }
+}

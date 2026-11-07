@@ -1,0 +1,42 @@
+{
+  "check.set": {
+    "sections": [
+      {"title": "Inputs And Predicates", "text": "checks required nonempty array of items {id, predicate, dependsOn?, source?, supplierApproval?, externalResult?}. predicate kinds: scalar ({measurement:{operation,data}, expected:{min?|max?|equals?}, tolerance?} reuses the existing check engine, or {actual:{value}, expected, tolerance?} for declared external values), vector ({actual:{components}, expected:{components,tolerance?}}), count ({actual:{count}, expected}), boolean ({actual:{value}, expected:true|false}). dependsOn names earlier items; an execution error in a dependency skips its dependents. source.status ESTIMATED/OPEN or a missing supplier approval makes a passing item stale. schemaVersion required 1."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'check.set',status,success,documentIdentity,units,frame,associativity:'snapshot',method,limitations,provenance,items:[{id,status,outcome,actual,expected,method,reason?,source?}],checkPassed,executionSucceeded,itemCount,passCount,failCount,errorCount,staleCount,missingCount,skippedCount,executionSucceededIsNotCheckPassed}. status is pass when all items pass, blocked on any execution error, fail on any ordinary fail, unknown otherwise. executionSucceeded (the evaluation ran without an execution error) is reported separately from checkPassed."}
+    ],
+    "examples": [
+      {"label": "Declared Scalar Acceptance Bound", "data": {"schemaVersion": 1, "checks": [{"id": "od", "predicate": {"kind": "scalar", "actual": {"value": 25.0}, "expected": {"min": 24.0, "max": 26.0}}, "source": {"path": "drawing", "status": "CONFIRMED"}}]}, "requires": "Open Design document; one declared scalar value inside its expected interval.", "output": "result.status is 'pass', result.checkPassed is true and result.executionSucceeded is true."}
+    ],
+    "audit": {"sources": ["assets/cad/checking.py: _check_set, _evaluate_predicate, _checking_contract"], "verified": ["scalar reuse via ctx.call('check')", "vector/count/boolean predicates", "dependency ordering and skip-on-error", "distinct pass/fail/error/missing/stale outcomes", "executionSucceeded vs checkPassed"], "tests": ["tests/checking_test.py", "tests/checking.test.js"], "gaps": [], "bugs": ["Declared vector/count/boolean values are not independently verified against native geometry."]}
+  },
+  "evidence.package": {
+    "sections": [
+      {"title": "Inputs And Manifest", "text": "evidence required nonempty array of items {id, kind:model|drawing|image|film, path, revision?, source?, supplierApproval?, gate?, hash?}. requested optional array of kinds to include (default all four). The manifest lists declared paths/revisions/gates; missing kinds and stale evidence (ESTIMATED/OPEN source, revision mismatch, missing supplier approval) are reported. No files are read or written. schemaVersion required 1."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'evidence.package',status,success,documentIdentity,units,frame,associativity:'snapshot',method,limitations,provenance,manifest:[{id,kind,path,included,revision,gate}],requested,missing,stale,complete,itemCount}. status is pass when complete, unknown when missing or stale."}
+    ],
+    "examples": [
+      {"label": "Single Drawing Package", "data": {"schemaVersion": 1, "evidence": [{"id": "housing-drawing", "kind": "drawing", "path": "drawings/housing.svg", "revision": "B", "source": {"path": "drawings", "revision": "B", "status": "CONFIRMED"}}]}, "requires": "Open Design document; one drawing evidence item with a matching CONFIRMED source revision.", "output": "result.manifest[0].included is true, result.complete is true and result.status is 'pass'."}
+    ],
+    "audit": {"sources": ["assets/cad/checking.py: _evidence_package, _evidence_item, _is_stale_evidence"], "verified": ["manifest construction", "completeness and missing kinds", "staleness detection", "read-only envelope"], "tests": ["tests/checking_test.py", "tests/checking.test.js"], "gaps": [], "bugs": ["Declared paths are not read or verified against the filesystem."]}
+  },
+  "evidence.check": {
+    "sections": [
+      {"title": "Inputs And Completeness", "text": "evidence required nonempty array (as evidence.package). required optional array of required kinds (model/drawing/image/film) and/or evidence ids. Completeness is checked against declared ids/kinds; stale evidence (ESTIMATED/OPEN source, revision mismatch, missing supplier approval) is reported separately. A missing entry is unresolved evidence, not a failed test. schemaVersion required 1."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'evidence.check',status,success,documentIdentity,units,frame,associativity:'snapshot',method,limitations,provenance,complete,missing,stale,itemCount}. status is pass when complete, unknown when missing or stale."}
+    ],
+    "examples": [
+      {"label": "Prototype Film Evidence", "data": {"schemaVersion": 1, "evidence": [{"id": "proto-film", "kind": "film", "path": "evidence/proto.mp4", "gate": "G7", "supplierApproval": {"supplier": "molder", "approved": true}}], "required": ["film"]}, "requires": "Open Design document; one film evidence item with supplier approval and the required film kind.", "output": "result.complete is true and result.status is 'pass'."}
+    ],
+    "audit": {"sources": ["assets/cad/checking.py: _evidence_check, _evidence_item, _is_stale_evidence"], "verified": ["required kind/id completeness", "staleness vs missing distinction", "read-only envelope"], "tests": ["tests/checking_test.py", "tests/checking.test.js"], "gaps": [], "bugs": ["Declared paths are not read or verified against the filesystem."]}
+  },
+  "deliver": {
+    "sections": [
+      {"title": "Inputs And Acceptance", "text": "checks required nonempty required checklist (as check.set); an empty array is an error, never acceptance. evidence optional array (as evidence.package). gate optional label. deliver composes check.set and evidence checks into a single acceptance result; it does not write duplicate exports or add unrequested formats. schemaVersion required 1."},
+      {"title": "Return Contract", "text": "result={schemaVersion:1,operation:'deliver',status,success,documentIdentity,units,frame,associativity:'snapshot',method,limitations,provenance,accepted,checkSet,evidence,manifest,missing,stale,gate,executionSucceeded}. Any fail/blocked/unknown among checks or evidence yields status fail/blocked/unknown and success false (nonzero exit); only a fully passing nonempty checklist returns success true. A source document marked valid:true or CHECKED_DOCUMENT never counts as model acceptance."}
+    ],
+    "examples": [
+      {"label": "Release Gate Over A Passing Checklist", "data": {"schemaVersion": 1, "checks": [{"id": "od", "predicate": {"kind": "scalar", "actual": {"value": 25.0}, "expected": {"min": 24.0, "max": 26.0}}}], "gate": "G7"}, "requires": "Open Design document; one passing scalar check for a release gate.", "output": "result.accepted is true, result.status is 'pass' and result.success is true."}
+    ],
+    "audit": {"sources": ["assets/cad/checking.py: _deliver, _check_set, _evidence_check, _evidence_package"], "verified": ["composes check.set and evidence via ctx.call", "empty checklist is an error", "fail/blocked/unknown map to success false", "read-only envelope"], "tests": ["tests/checking_test.py", "tests/checking.test.js"], "gaps": [], "bugs": ["No files are written by deliver; real export composition remains a separate native path."]}
+  }
+}

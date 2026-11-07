@@ -1,0 +1,43 @@
+{
+  "formatVersion": 1,
+  "runId": "filter-pleats-cage-slots",
+  "maxExpansion": 100,
+  "definitions": {
+    "pleat": {
+      "revision": "1",
+      "parameters": {"name": "Pleat", "thickness": "0.5 mm", "position": ["0 mm", "0 mm", "0 mm"], "end": ["40 mm", "50 mm", "0 mm"]},
+      "operations": [
+        {"id": "section", "operation": "sketch.create", "data": {"name": {"$param": "name"}, "plane": "XY"}},
+        {"id": "rect", "operation": "sketch.geometry", "data": {"sketch": {"$ref": "section.result.sketch"}, "geometry": [{"type": "rectangle", "name": "box", "start": {"$param": "position"}, "end": {"$param": "end"}}]}},
+        {"id": "solid", "operation": "model.extrude", "data": {"name": {"$param": "name"}, "profile": {"kind": "profile", "sketch": {"$ref": "section.result.sketch"}}, "distance": {"$param": "thickness"}, "operation": "newBody"}}
+      ],
+      "outputs": {"feature": {"$ref": "solid.result.feature"}, "body": {"$ref": "solid.result.bodies.0"}}
+    }
+  },
+  "operations": [
+    {"id": "cage", "operation": "shape.tube", "data": {"name": "Cage", "outerRadius": "50 mm", "innerRadius": "48 mm", "height": "60 mm"}},
+    {"id": "pleats", "forEach": [{"name": "Pleat1", "position": ["-40 mm", "0 mm", "0 mm"], "end": ["0 mm", "50 mm", "0 mm"]}, {"name": "Pleat2", "position": ["-20 mm", "0 mm", "0 mm"], "end": ["20 mm", "50 mm", "0 mm"]}, {"name": "Pleat3", "position": ["0 mm", "0 mm", "0 mm"], "end": ["40 mm", "50 mm", "0 mm"]}, {"name": "Pleat4", "position": ["20 mm", "0 mm", "0 mm"], "end": ["60 mm", "50 mm", "0 mm"]}, {"name": "Pleat5", "position": ["40 mm", "0 mm", "0 mm"], "end": ["80 mm", "50 mm", "0 mm"]}], "as": "offset", "operations": [
+      {"id": "item", "use": "pleat", "parameters": {"name": {"$local": "offset.name"}, "position": {"$local": "offset.position"}, "end": {"$local": "offset.end"}}}
+    ], "outputs": {"feature": {"$ref": "item.outputs.feature"}}},
+    {"id": "frontSketch", "operation": "sketch.create", "data": {"name": "SlotFront", "plane": "XY"}},
+    {"id": "frontGeo", "operation": "sketch.geometry", "data": {"sketch": {"$ref": "frontSketch.result.sketch"}, "geometry": [{"type": "rectangle", "name": "slot", "start": ["0 mm", "0 mm", "0 mm"], "end": ["8 mm", "4 mm", "0 mm"]}]}},
+    {"id": "sideSketch", "operation": "sketch.create", "data": {"name": "SlotSide", "plane": "YZ"}},
+    {"id": "sideGeo", "operation": "sketch.geometry", "data": {"sketch": {"$ref": "sideSketch.result.sketch"}, "geometry": [{"type": "rectangle", "name": "slot", "start": ["0 mm", "0 mm", "0 mm"], "end": ["8 mm", "4 mm", "0 mm"]}]}},
+    {"id": "topSketch", "operation": "sketch.create", "data": {"name": "SlotTop", "plane": "XZ"}},
+    {"id": "topGeo", "operation": "sketch.geometry", "data": {"sketch": {"$ref": "topSketch.result.sketch"}, "geometry": [{"type": "rectangle", "name": "slot", "start": ["0 mm", "0 mm", "0 mm"], "end": ["8 mm", "4 mm", "0 mm"]}]}},
+    {"id": "slotFront", "operation": "model.extrude", "data": {"name": "SlotFrontCut", "profile": {"kind": "profile", "sketch": {"$ref": "frontSketch.result.sketch"}}, "distance": "48 mm", "operation": "cut", "participants": [{"$ref": "cage.result.bodies.0"}]}},
+    {"id": "slotSide", "operation": "model.extrude", "data": {"name": "SlotSideCut", "profile": {"kind": "profile", "sketch": {"$ref": "sideSketch.result.sketch"}}, "distance": "48 mm", "operation": "cut", "participants": [{"$ref": "cage.result.bodies.0"}]}},
+    {"id": "slotTop", "operation": "model.extrude", "data": {"name": "SlotTopCut", "profile": {"kind": "profile", "sketch": {"$ref": "topSketch.result.sketch"}}, "distance": "48 mm", "operation": "cut", "participants": [{"$ref": "cage.result.bodies.0"}]}},
+    {"id": "dimPlan", "operation": "sketch.dimension-plan", "data": {"sketch": {"$ref": "frontSketch.result.sketch"}}},
+    {"id": "count", "operation": "entity.stats", "data": {"kind": "body", "expect": 6, "groupBy": ["component"]}},
+    {"id": "health", "operation": "history.check", "data": {}}
+  ],
+  "outputs": {
+    "cageBody": {"$ref": "cage.result.bodies.0"},
+    "pleatSeed": {"$ref": "pleats.outputs.0.feature"},
+    "pleatCount": 5,
+    "slotFrontCut": {"$ref": "slotFront.result.feature"},
+    "slotSideCut": {"$ref": "slotSide.result.feature"},
+    "slotTopCut": {"$ref": "slotTop.result.feature"}
+  }
+}

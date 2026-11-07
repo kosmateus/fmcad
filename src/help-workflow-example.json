@@ -1,0 +1,18 @@
+{
+  "runId": "documentation-workflow-01",
+  "reportPath": "./reports/documentation-workflow-01",
+  "parameters": {"width": "40 mm", "depth": "20 mm", "height": "10 mm"},
+  "operations": [
+    {"id":"parameters","operation":"param.apply","onExisting":"reuse","data":{"parameters":[{"name":"width","unit":"mm","expression":{"$param":"width"}},{"name":"depth","unit":"mm","expression":{"$param":"depth"}},{"name":"height","unit":"mm","expression":{"$param":"height"}}]}},
+    {"id":"roundPart","operation":"component.create","onExisting":"reuse","data":{"name":"DocRoundPart"}},
+    {"id":"boxPart","operation":"component.create","onExisting":"reuse","data":{"name":"DocBoxPart","placement":{"translation":["60 mm","0 mm","0 mm"]}}},
+    {"id":"section","operation":"sketch.create","component":{"$ref":"roundPart.result.component"},"onExisting":"reuse","data":{"name":"Section","plane":"XY"}},
+    {"id":"geometry","operation":"sketch.geometry","component":{"$ref":"roundPart.result.component"},"onExisting":"reuse","data":{"sketch":{"$ref":"section.result.sketch"},"geometry":[{"type":"point","name":"anchor","point":["5 mm","5 mm","0 mm"],"fixed":true},{"type":"circle","name":"rim","center":["10 mm","10 mm","0 mm"],"radius":"10 mm"}]}},
+    {"id":"center","operation":"sketch.constrain","component":{"$ref":"roundPart.result.component"},"onExisting":"reuse","data":{"sketch":{"$ref":"section.result.sketch"},"type":"coincident","entities":[{"$ref":"geometry.result.refs.anchor"},{"entity":{"$ref":"geometry.result.refs.rim"},"point":"center"}]}},
+    {"id":"diameter","operation":"sketch.dimension","component":{"$ref":"roundPart.result.component"},"onExisting":"reuse","data":{"sketch":{"$ref":"section.result.sketch"},"type":"diameter","entities":[{"$ref":"geometry.result.refs.rim"}],"expression":"width","text":["25 mm","25 mm","0 mm"]}},
+    {"id":"roundSolid","operation":"model.extrude","component":{"$ref":"roundPart.result.component"},"onExisting":"reuse","data":{"name":"RoundSolid","profile":{"kind":"profile","sketch":{"$ref":"section.result.sketch"}},"distance":"height"}},
+    {"id":"boxSolid","operation":"shape.box","component":{"$ref":"boxPart.result.component"},"onExisting":"reuse","data":{"name":"BoxSolid","width":"width","depth":"depth","height":"height"}},
+    {"id":"roundCheck","operation":"sketch.check","component":{"$ref":"roundPart.result.component"},"onExisting":"reuse","data":{"sketch":{"$ref":"section.result.sketch"}}},
+    {"id":"boxInspect","operation":"entity.inspect","component":{"$ref":"boxPart.result.component"},"onExisting":"reuse","data":{"ref":{"$ref":"boxSolid.result.bodies.0"}}}
+  ]
+}

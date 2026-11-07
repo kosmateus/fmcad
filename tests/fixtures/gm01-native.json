@@ -1,0 +1,28 @@
+{
+  "formatVersion": 1,
+  "runId": "gm01-native",
+  "maxExpansion": 100,
+  "parameters": {"heightA": "10 mm", "heightB": "15 mm"},
+  "recipe": {"id": "gm01-native", "bindings": [
+    {"parameter": "heightA", "input": "distance", "target": {"$ref": "first.outputs.feature"}, "role": "AlongDistance"},
+    {"parameter": "heightB", "input": "distance", "target": {"$ref": "second.outputs.feature"}, "role": "AlongDistance"}
+  ]},
+  "definitions": {
+    "cylinder": {
+      "revision": "1",
+      "parameters": {"name": "Cylinder", "height": "10 mm", "radius": "5 mm", "center": ["0 mm", "0 mm", "0 mm"]},
+      "operations": [
+        {"id": "part", "operation": "component.create", "data": {"name": {"$param": "name"}}},
+        {"id": "section", "operation": "sketch.create", "component": {"$ref": "part.result.component"}, "data": {"name": "Section", "plane": "XY"}},
+        {"id": "circle", "operation": "sketch.geometry", "component": {"$ref": "part.result.component"}, "data": {"sketch": {"$ref": "section.result.sketch"}, "geometry": [{"type": "circle", "name": "rim", "center": {"$param": "center"}, "radius": {"$param": "radius"}}]}},
+        {"id": "solid", "operation": "model.extrude", "component": {"$ref": "part.result.component"}, "data": {"name": "Solid", "profile": {"kind": "profile", "sketch": {"$ref": "section.result.sketch"}}, "distance": {"$param": "height"}, "operation": "newBody"}}
+      ],
+      "outputs": {"feature": {"$ref": "solid.result.feature"}, "body": {"$ref": "solid.result.bodies.0"}}
+    }
+  },
+  "operations": [
+    {"id": "first", "use": "cylinder", "parameters": {"name": "GM01_A", "height": {"$param": "heightA"}}},
+    {"id": "second", "use": "cylinder", "parameters": {"name": "GM01_B", "height": {"$param": "heightB"}, "radius": "7 mm", "center": ["30 mm", "0 mm", "0 mm"]}}
+  ],
+  "outputs": {"first": {"$ref": "first.outputs.body"}, "second": {"$ref": "second.outputs.body"}}
+}

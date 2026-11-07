@@ -1,0 +1,23 @@
+{
+  "operations": [
+    {"id":"parameter","operation":"param.apply","data":{"parameters":[{"name":"gm03_height","expression":"10 mm","unit":"mm"}]}},
+    {"id":"part","operation":"component.create","data":{"name":"GM03Part","placement":{"translation":["20 mm","0 mm","0 mm"]}}},
+    {"id":"cylinder","operation":"shape.cylinder","component":{"$ref":"part.result.component"},"data":{"name":"GM03Cylinder","radius":"5 mm","height":"gm03_height"}},
+    {"id":"shortBox","operation":"shape.box","component":{"$ref":"part.result.component"},"data":{"name":"GM03ShortBox","width":"2 mm","depth":"3 mm","height":"0.2 mm"}},
+    {"id":"before","operation":"entity.stats","component":{"$ref":"part.result.component"},"data":{"kind":"edge","scope":{"body":{"$ref":"cylinder.result.bodies.0"}},"filters":{"geometry":"circle","radius":"5 mm","axis":[0,0,-1]},"expect":2,"groupBy":["geometry","radius","axis"]}},
+    {"id":"round","operation":"model.fillet","component":{"$ref":"part.result.component"},"data":{"name":"GM03Round","radius":"0.5 mm","tangentChain":false,"query":{"scope":{"body":{"$ref":"cylinder.result.bodies.0"}},"filters":{"geometry":"circle","radius":"5 mm","level":{"axis":"z","value":"10 mm"}},"expect":1}}},
+    {"id":"bevel","operation":"model.chamfer","component":{"$ref":"part.result.component"},"data":{"name":"GM03Bevel","distance":"0.25 mm","tangentChain":false,"query":{"scope":{"body":{"$ref":"cylinder.result.bodies.0"}},"filters":{"geometry":"circle","radius":"5 mm","level":{"axis":"z","value":"0 mm"}},"expect":1}}},
+    {"id":"after","operation":"entity.stats","component":{"$ref":"part.result.component"},"data":{"kind":"edge","scope":{"body":{"$ref":"cylinder.result.bodies.0"}},"expect":{"min":1},"groupBy":["geometry","radius","length"]}},
+    {"id":"featureScope","operation":"entity.stats","component":{"$ref":"part.result.component"},"data":{"kind":"face","scope":{"feature":{"$ref":"round.result.feature"}},"expect":{"min":1},"groupBy":["geometry"]}},
+    {"id":"short","operation":"entity.stats","component":{"$ref":"part.result.component"},"data":{"kind":"edge","scope":{"body":{"$ref":"shortBox.result.bodies.0"}},"filters":{"length":{"max":"0.2 mm"}},"expect":4}},
+    {"id":"heightChange","operation":"param.apply","data":{"parameters":[{"name":"gm03_height","expression":"12 mm"}],"overwrite":true}},
+    {"id":"changed","operation":"entity.stats","component":{"$ref":"part.result.component"},"data":{"kind":"body","scope":{"body":{"$ref":"cylinder.result.bodies.0"}},"filters":{"level":{"axis":"z","at":"max","value":"12 mm"}},"expect":1}},
+    {"id":"parent","operation":"component.create","data":{"name":"GM03Parent"}},
+    {"id":"nested","operation":"component.reparent","data":{"occurrence":{"$ref":"part.result.occurrence"},"target":{"$ref":"parent.result.occurrence"},"confirm":true}},
+    {"id":"parentPose","operation":"occurrence.transform","data":{"occurrence":{"$ref":"parent.result.occurrence"},"placement":{"translation":["100 mm","0 mm","0 mm"],"axis":[0,0,1],"angle":"90 deg"}}},
+    {"id":"linked","operation":"occurrence.add","data":{"component":{"$ref":"part.result.component"},"copyMode":"linked","placement":{"translation":["-100 mm","0 mm","0 mm"],"axis":[1,0,0],"angle":"180 deg"}}},
+    {"id":"instances","operation":"entity.stats","data":{"kind":"face","component":{"$ref":"part.result.component"},"instances":true,"frame":"root","filters":{"geometry":"cylinder","radius":"5 mm","axis":[0,0,1]},"expect":2,"groupBy":["occurrence","axis"]}},
+    {"id":"bodies","operation":"entity.stats","data":{"kind":"body","component":{"$ref":"part.result.component"},"instances":true,"frame":"root","expect":4,"groupBy":["occurrence"]}},
+    {"id":"health","operation":"history.check","data":{}}
+  ]
+}

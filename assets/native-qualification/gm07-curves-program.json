@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "fixtureId": "gm07-curves-program-v1",
+  "kind": "fixed-run-v1",
+  "script": "assets/native-qualification/gm07-curves.py",
+  "helperVersion": "cad-v1",
+  "scope": "One exact owner-bound pristine unsaved scratch; create one sketch and invoke sketch.profile-file, curve.fit, curve.inspect, curve.offset and curve.offset-edit with the fixed GM07 line fixture; return separate native stroke, offset-parameter and document readbacks. Caller closes only this exact scratch after verified result; no save, cloud, preference or external file effects.",
+  "argumentKeys": ["approved", "creationId", "expectedFusionVersion", "fixturePrefix"],
+  "callerCleanupRequired": true
+}

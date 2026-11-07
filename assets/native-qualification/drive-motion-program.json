@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "fixtureId": "drive-motion-program-v1",
+  "kind": "fixed-run-v1",
+  "script": "assets/native-qualification/drive-motion.py",
+  "helperVersion": "cad-v1",
+  "scope": "one proven-new owned unsaved assembly; fixed native drive/MotionLink program only; stop after unproven restore; no lifecycle/file/cloud effects",
+  "argumentKeys": ["approved", "creationId", "expectedFusionVersion", "fixturePrefix"],
+  "expectedRatio": 1,
+  "expectedPhase": 0,
+  "expectationSource": "integrated-fixture-contract: one-to-one, zero-phase",
+  "callerCleanupRequired": true
+}

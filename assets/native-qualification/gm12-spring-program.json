@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "fixtureId": "gm12-spring-program-v1",
+  "kind": "fixed-run-v1",
+  "script": "assets/native-qualification/gm12-spring.py",
+  "helperVersion": "cad-v1",
+  "scope": "One exact owner-bound unsaved scratch document; invoke curve.helix, shape.spring, spring.evaluate and spring.configure once through FMCAD.call; audit document/design state before and after; no persistent geometry, file, cloud, preference or lifecycle effects.",
+  "argumentKeys": ["approved", "creationId", "expectedFusionVersion", "fixturePrefix"],
+  "callerCleanupRequired": false
+}

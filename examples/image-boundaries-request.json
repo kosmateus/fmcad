@@ -1,0 +1,15 @@
+{
+  "svg": "traced.svg",
+  "reference": "image.png",
+  "palette": "palette.json",
+  "referenceMode": "source",
+  "mode": "inspect",
+  "scale": 2,
+  "maxGapWidthPx": 2,
+  "maxOverlapWidthPx": 2,
+  "maxChangedAreaPx": 500,
+  "fitErrorPx": 0.35,
+  "cornerAngle": 55,
+  "widthMm": 50,
+  "mirrorX": false
+}

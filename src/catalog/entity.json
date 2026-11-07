@@ -1,0 +1,23 @@
+{
+  "entity.stats": {
+    "inspectionSafe": true,
+    "summary": "Resolve a GM03 snapshot query and report grouping, statistics, rejected candidates and expected-count diagnostics.",
+    "required": [],
+    "readOnly": true,
+    "example": {"kind":"edge","filters":{"length":{"max":"1 mm"}},"expect":{"min":0},"groupBy":["body","geometry"]},
+    "inputs": {
+      "schemaVersion":"Optional integer 1.",
+      "kind":"Optional entity kind, default face. Same contract as entity.find.",
+      "component":"Optional component reference; exclusive with scope.",
+      "occurrence":"Optional occurrence reference or full path; exclusive with scope.",
+      "scope":"Optional {component?,occurrence?,body?,feature?} references; body/feature exclusive.",
+      "instances":"Optional boolean false; enumerate repeated/nested physical instances when true.",
+      "frame":"Optional context/component/root or {component:Ref}, {occurrence:Ref}, {sketch:Ref}, {datum:name,component?,occurrence?}. Same rigid frame rules as entity.find.",
+      "filters":"Same filters as entity.find, including filters.attributes:[{group,name,value,owner}] exact string predicates. owner is required: native reads the nativeObject/native definition; proxy reads only the exact contextual proxy; occurrence reads the candidate occurrence or its exact context. No owner fallback. Missing attrs are nonmatches. Proxy/occurrence predicates require occurrence scope, kind:occurrence or instances:true; unavailable on component candidates.",
+      "expect":"Optional count or inclusive {min?,max?}; default min 0. Failed expectation returns all matches and status fail.",
+      "unique":"Optional boolean; true enforces count 1, exclusive with expect; stats always retains its aggregate result shape.",
+      "groupBy":"Optional distinct array: kind, geometry, component, occurrence, body, radius, length, axis, level. Exact-value groups; unoriented axes canonicalized to 12 decimals."
+    },
+    "limitations":["Snapshot only; rerun after geometry/pose/parameter changes. No native associative selection rule.","Statistics report count/missing/min/max/sum/mean for radius, length, area, volume with units; unknown measurements remain null, never fabricated zero.","Native live acceptance is pending. AABB bounds are conservative transformed native boxes; not exact containment or collision tests."]
+  }
+}

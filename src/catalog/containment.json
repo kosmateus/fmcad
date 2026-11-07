@@ -1,0 +1,51 @@
+{
+  "measure.contains": {
+    "summary": "Classify points as inside, outside or boundary of an analytic or native containment region using an explicit signed-distance boundary tolerance.",
+    "required": ["region", "points"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "region": {"type": "cylinder", "origin": ["0 mm", "0 mm", "0 mm"], "direction": [0, 0, 1], "radius": "5 mm", "height": "10 mm"}, "points": [["0 mm", "0 mm", "5 mm"], ["6 mm", "0 mm", "5 mm"], ["4.99 mm", "0 mm", "5 mm"]], "boundaryTolerance": "0.01 mm"},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "region": "Containment region object with type: cylinder {origin,direction,radius,height}, ring {origin,direction,outerRadius,innerRadius,height}, box {min,max}, sphere {center,radius}, union {regions:[...]}, or body {ref} for a native BRepBody.",
+      "points": "Nonempty array of [x,y,z] length-expression points (or {point:[...]} objects) to classify.",
+      "boundaryTolerance": "Nonnegative length expression, default 0.01 mm; signed distance within this is boundary.",
+      "method": "analytic (default), native or sampled.",
+      "samplingBudget": "Positive integer, default 10000.",
+      "frame": "Optional frame label.",
+      "units": "Length units for the tolerance (mm default)."
+    },
+    "limitations": ["Native BRepBody.pointContainment accepts no tolerance; signed distance is refined using minimum distance to the faces of a temporary body copy. If the SDK returns an unknown state or required data is unavailable, classification is unknown with a reason. A ring keeps its open channel: the inner cylinder is an exclusion, never filled.", "Native checks use a temporary copy and do not create persistent test bodies."]
+  },
+  "measure.corridor": {
+    "summary": "Measure swept-circle clearance of obstacles against a centerline corridor; report occupancy, intersections, normal sections and limits.",
+    "required": ["path", "radius"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "path": [["0 mm", "0 mm", "0 mm"], ["0 mm", "10 mm", "0 mm"], ["0 mm", "20 mm", "0 mm"]], "radius": "2 mm", "obstacles": [{"point": ["3 mm", "5 mm", "0 mm"]}], "minimumClearance": "0.5 mm"},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "path": "Nonempty array of at least two [x,y,z] waypoints defining the corridor centerline.",
+      "radius": "Positive corridor radius length expression (the swept circular section).",
+      "obstacles": "Array of {point:[x,y,z]} objects; optional.",
+      "minimumClearance": "Nonnegative clearance expression, default 0 mm; obstacles closer intrude.",
+      "sections": "Array of {station,clearance?} arc-length stations for normal-section reports.",
+      "frame": "Optional frame label.",
+      "method": "analytic (default) or native.",
+      "units": "Length units."
+    },
+    "limitations": ["Geometric swept-circle clearance along a polyline centerline, not CFD, not a routing guarantee, and not a continuous-motion proof. Native obstacle bodies are not supported offline."]
+  },
+  "measure.region": {
+    "summary": "Report occupancy of an analytic control region by declared occupant points, per-section occupied-union area and limits.",
+    "required": ["region", "occupants"], "readOnly": true, "envelope": true,
+    "example": {"schemaVersion": 1, "region": {"type": "box", "min": ["0 mm", "0 mm", "0 mm"], "max": ["10 mm", "10 mm", "10 mm"]}, "occupants": [{"point": ["5 mm", "5 mm", "5 mm"], "radius": "2 mm"}], "sections": [{"z": "5 mm"}]},
+    "inputs": {
+      "schemaVersion": "Required integer 1.",
+      "region": "Region object with type cylinder/ring/box/sphere/union (same as measure.contains).",
+      "occupants": "Array of {point:[x,y,z],radius?} objects.",
+      "sections": "Array of {z:length} planes reporting occupant count and occupied-union area.",
+      "limits": "Optional bounds metadata.",
+      "samplingBudget": "Positive integer for union-area estimation, default 200000.",
+      "frame": "Optional frame label.",
+      "units": "Length units."
+    },
+    "limitations": ["Occupied-union area uses a deterministic grid estimate; it is not an exact analytic union. Occupants are declared spheres/points, not native body intersections."]
+  }
+}

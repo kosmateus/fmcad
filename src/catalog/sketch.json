@@ -1,0 +1,30 @@
+{
+  "sketch.build": {
+    "summary": "Build a named sketch using the existing shapes geometry/constraint/dimension schema (GM06 v1).",
+    "required": ["name", "geometry"], "readOnly": false,
+    "inputs": {"name": "Unique sketch name; collisions fail before creation.", "geometry": "Named existing primitives plus ellipse {center,majorRadius,minorRadius,angle?} or {center,majorAxisPoint,minorAxisPoint}. Radii are not full axis lengths. All coordinates are three length expressions.", "plane": "Native construction plane reference; default XY, supports XZ/YZ.", "frame": "sketch (default): local XY coordinates independent of selected plane.", "schemaVersion": "1 (default).", "constraints": "Existing type/entities commands using local labels and .start/.end/.center/.fitN selectors. Ellipses expose .majorAxis/.minorAxis lines; rectangles expose .edge0..edge3 and their endpoints.", "dimensions": "Existing type/entities/expression/text?/orientation? commands plus majorRadius/minorRadius. Use angle between ellipse.majorAxis and an explicit reference line for native orientation.", "positions": "Signed through-zero native bindings: [{name,point: local selector,coordinates: [x,y,0]}]. Creates expression-driven component datum planes, point and linked projection. Requires parametric history; helper names must be unique.", "inferencePolicy": "explicit (default): only requested agent constraints; native: accept native primitive constraints. Both preserve SDK-created constraints and neither changes global UI inference preferences. Use dimension-plan to review further proposals.", "profileIndex": "Optional nonnegative selection hint for downstream shapes recipes."},
+    "example": {"name": "Oval", "plane": "XZ", "inferencePolicy": "explicit", "geometry": [{"type": "ellipse", "name": "oval", "center": ["-10 mm", "0 mm", "0 mm"], "majorRadius": "20 mm", "minorRadius": "10 mm", "angle": "30 deg"}], "dimensions": [{"type": "majorRadius", "entities": ["oval"], "expression": "20 mm"}, {"type": "minorRadius", "entities": ["oval"], "expression": "10 mm"}]},
+    "limitations": ["Extends shapes.py, not a second DSL. Primitive input expressions seed geometry; explicit dimensions/constraints provide persistent bindings. Position frame coefficients are sampled at creation: rebuild/review bindings after changing the support-plane frame. Native solver/ellipse-to-loft acceptance remains open; see docs/GM06.md. No global rollback."]
+  },
+  "sketch.transform": {
+    "summary": "Translate/rotate selected current sketch entities with solver-respecting native Sketch.move.",
+    "required": ["sketch", "entities", "frame"], "readOnly": false,
+    "inputs": {"sketch": "Native sketch in selected component.", "entities": "Unique point/line/arc/circle/ellipse/fitted spline refs.", "frame": "Required sketch; local XY on any support plane including XZ/YZ.", "translate": "Three length expressions, local z must be zero.", "rotate": "{angle: angle expression,center?: three length expressions}; default center is sketch origin. Right-handed about sketch +Z, rotate first then translate."},
+    "example": {"sketch": "Oval", "entities": [{"token": "ellipse-token"}], "frame": "sketch", "translate": ["-5 mm", "0 mm", "0 mm"], "rotate": {"angle": "90 deg"}},
+    "limitations": ["Snapshot edit, not a persistent transformation equation. No scaling/reflection, constraint deletion or automatic retries. Returns whole-sketch before/after and solver conflicts; partial changes may remain. Native XZ/YZ frame acceptance is pending."]
+  },
+  "sketch.dimension-plan": {
+    "summary": "Read-only reviewable dimension proposals for circles, ellipses, rectangles and explicit relations, recognizing existing constraint identities.",
+    "required": ["sketch"], "readOnly": true,
+    "inputs": {"sketch": "Native sketch reference.", "schemaVersion": "1 (default).", "entities": "Optional selected sketch refs; omitted uses sketch curves.", "relations": "Optional explicit requested type/entities constraints: horizontal, vertical, parallel, perpendicular, concentric, equal, coincident, horizontalPoints, verticalPoints. Count is bounded by maxEntities.", "tolerance": "Recognition length expression, default 0.000001 cm; positive, at most 0.01 cm.", "maxEntities": "Integer work budget 1..1000, default 200.", "maxSeconds": "Positive numeric recognition budget in seconds, at most 120, default 10. Checked between SDK reads and inside recognition loops; cannot interrupt a single blocking SDK read."},
+    "example": {"sketch": "Oval", "maxEntities": 200},
+    "limitations": ["Does not create geometry, dimensions, attributes or constraints. Proposals are snapshots, not a solver feasibility guarantee. Recognizes analytic circles/ellipses and isolated closed four-line rectangles, including rotated rectangles. Reports unrecognized constraint types. Existing radius/diameter and opposite rectangle-side dimensions prevent duplicates. Plan stores document identity and a conservative state fingerprint; edits invalidate it."]
+  },
+  "sketch.dimension-apply": {
+    "summary": "Apply explicitly accepted proposal IDs from an unchanged reviewed GM06 dimension plan.",
+    "required": ["sketch", "plan", "accept"], "readOnly": false,
+    "inputs": {"sketch": "Same native sketch as the plan.", "plan": "Exact result.plan returned by sketch.dimension-plan; identity, fingerprint and regenerated proposals are checked before mutation.", "accept": "Nonempty unique proposal ID array, e.g. [p1,p2]; no implicit accept-all."},
+    "example": {"sketch": "Oval", "plan": {"schemaVersion": 1, "documentIdentity": {}, "sketch": "Oval", "fingerprint": "replace-with-returned-fingerprint", "options": {}, "proposals": []}, "accept": ["p1"]},
+    "limitations": ["Use the actual returned plan, not the illustrative example placeholder. Stops on first solver conflict and reports completed/notApplied/before/after; no constraint deletion, rollback or retry. Re-plan after application; new plans recognize existing dimensions."]
+  }
+}

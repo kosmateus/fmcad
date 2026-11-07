@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "route": "document.status",
+  "scope": "candidate-specific local admission evidence; not global readiness or a master deployment claim",
+  "candidateRuntimeCommit": "6bb45185ce1b3a6595d1999528cf7cc990d9467b",
+  "profile": "document-status-6bb",
+  "artifact": {
+    "status": "passed",
+    "wireHash": "637a234698828af85288bc363bcc4bde0925ad9182d536635f3589d9cc7b8981",
+    "artifactHash": "ef81ec39c98ca6625550b3e0c270c9dee826f62bd68f0ff153c87b27eb8cac93",
+    "bytes": 77363,
+    "units": [
+      { "id": "values", "filename": "runtime/python/fmcad/domain/values.py", "sha256": "c1794e888eb270f86a7fcd661f963bd481cc78c8b11769091a32ecbbd2d70e09" },
+      { "id": "fusion-values", "filename": "runtime/python/fmcad/adapters/fusion/values.py", "sha256": "68454b1fce040dea058d26718ad6eb6c1d09d43a71f688e29cc5cbef807ef26d" },
+      { "id": "core", "filename": "assets/cad/core.py", "sha256": "38a2ac90d6e221ae5921be07288cca96f510efec82cb7eff8c36e34a90028c09" },
+      { "id": "identity", "filename": "runtime/python/fmcad/adapters/fusion/identity.py", "sha256": "262e114e76e023fc2f61223f17bd80f9646a389e99a5f88aeef2ac1cfebc0ebc" },
+      { "id": "document_snapshot", "filename": "runtime/python/fmcad/adapters/fusion/document_snapshot.py", "sha256": "0ee2496f8d6715063d89ee9b1ece1bad8c4058ca87d87b7f1146e8e549d675ef" },
+      { "id": "wrapper", "filename": "<fmcad-wrapper>", "sha256": "f62ee9cd634a245a902cb41ba54ab9ee4834ebb22ee167418531df85712ae104" }
+    ]
+  },
+  "checker": {
+    "engine": "basedpyright",
+    "version": "1.40.2",
+    "checkerHash": "b7690e1951df3cc6ac06221825c8b4f868dc9781bce1e47e24b29b99a4c3e8ef",
+    "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+    "diagnostics": 0,
+    "cache": "disabled"
+  },
+  "fences": {
+    "finalArtifact": "passed",
+    "dispatchPreparedSenderCallsPerValidArtifact": 1,
+    "dispatchPreparedSenderCallsPerNegativeMode": 0,
+    "negativeModes": ["type_error", "incomplete_inventory", "final_byte_tamper", "missing_checker"],
+    "physicalTransportToolsCallsPerValidArtifact": 1
+  }
+}

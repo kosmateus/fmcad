@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "runId": "cwg-tank-dock-valves",
+  "maxExpansion": 100,
+  "operations": [
+    {"id": "oRing", "operation": "shape.o_ring", "data": {"schemaVersion": 1, "frame": "component", "name": "DockSeal", "id": "10 mm", "cs": "2 mm"}},
+    {"id": "gland", "operation": "seal.gland", "data": {"schemaVersion": 1, "frame": "component", "type": "radial", "oRing": {"id": "10 mm", "cs": "2 mm"}, "squeeze": 0.15, "swell": 0.03, "hardStop": {"clearance": "0.05 mm"}}},
+    {"id": "sealEval", "operation": "seal.evaluate", "data": {"schemaVersion": 1, "frame": "component", "oRing": {"id": "10 mm", "cs": "2 mm"}, "gland": {"depth": "1.6 mm", "width": "2.4 mm"}, "type": "radial"}},
+    {"id": "dock", "operation": "dock.sequence-check", "data": {"schemaVersion": 1, "frame": "component", "connect": [{"event": "lead-in", "at": "0 mm"}, {"event": "locator-engage", "at": "2 mm"}, {"event": "seal-contact", "at": "4 mm"}, {"event": "valve-open", "at": "5.2 mm"}, {"event": "both-valve-open", "at": "5.5 mm"}], "disconnect": [{"event": "both-valve-close", "at": "5.5 mm"}, {"event": "seal-release", "at": "4 mm"}], "float": "0.5 mm", "axialTolerance": "0.1 mm", "minimumSealBeforeOpen": "0.5 mm"}},
+    {"id": "assembly", "operation": "assembly.sequence", "data": {"schemaVersion": 1, "parts": ["tank", "dock", "valveA", "valveB"], "dependencies": [["tank", "dock"], ["dock", "valveA"], ["dock", "valveB"]], "removedParts": ["valveA"], "disconnectedMedia": [{"name": "water-line", "connects": ["tank", "dock"]}]}},
+    {"id": "service", "operation": "service.path-check", "data": {"schemaVersion": 1, "part": {"name": "tank", "outline": [["-10 mm", "0 mm"], ["10 mm", "0 mm"], ["10 mm", "20 mm"], ["-10 mm", "20 mm"]]}, "direction": [0, 1], "distance": "30 mm", "obstacles": [{"name": "dock", "outline": [["15 mm", "0 mm"], ["30 mm", "0 mm"], ["30 mm", "50 mm"], ["15 mm", "50 mm"]]}]}},
+    {"id": "health", "operation": "history.check", "data": {}}
+  ],
+  "outputs": {
+    "oRing": {"$ref": "oRing.result.torus"},
+    "gland": {"$ref": "gland.result.gland"},
+    "sealStatus": {"$ref": "sealEval.result.status"},
+    "dockSequence": {"$ref": "dock.result.connectOrder"},
+    "assemblySequence": {"$ref": "assembly.result.order"},
+    "tankWithdrawal": {"$ref": "service.result.sweptBounds"}
+  }
+}

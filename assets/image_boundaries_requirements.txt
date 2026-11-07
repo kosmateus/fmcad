@@ -1,0 +1,2 @@
+-r image_optimize_requirements.txt
+shapely>=2.0

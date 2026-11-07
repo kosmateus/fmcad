@@ -1,0 +1,35 @@
+{
+  "name": "@fmcad/control-center",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "require": "./dist/server/index.js",
+      "default": "./dist/server/index.js"
+    },
+    "./resources": {
+      "types": "./dist/resources/index.d.ts",
+      "require": "./dist/resources/index.js",
+      "default": "./dist/resources/index.js"
+    },
+    "./web": {
+      "types": "./dist/web/index.d.ts",
+      "require": "./dist/web/index.js",
+      "default": "./dist/web/index.js"
+    }
+  },
+  "dependencies": {
+    "@fmcad/core": "0.1.0"
+  }
+}

@@ -1,0 +1,724 @@
+{
+  "version": 1,
+  "observations": [
+    {
+      "id": "cad.prepare",
+      "dto": {
+        "operation": "status",
+        "data": {},
+        "doc": "Synthetic Model",
+        "projectId": "project-fixture",
+        "docId": "creation-fixture",
+        "docFileId": "urn:fixture:file"
+      },
+      "sdkCalls": 0,
+      "effects": [],
+      "artifacts": {
+        "status.py": "6167e4ef2eb547f1e5232afe7ccbaeabadd38eb8395cbbe01ee01984926a870a"
+      }
+    },
+    {
+      "id": "cad.status",
+      "dto": {
+        "success": true,
+        "result": {
+          "document": {
+            "doc": "Synthetic Model",
+            "docId": "creation-fixture",
+            "docFileId": "urn:fixture:file",
+            "projectId": "project-fixture"
+          },
+          "bodies": []
+        }
+      },
+      "sdkCalls": 1,
+      "effects": [
+        {
+          "kind": "sdk",
+          "request": {
+            "operation": "status",
+            "data": {},
+            "doc": "Synthetic Model",
+            "projectId": "project-fixture",
+            "docId": "creation-fixture",
+            "docFileId": "urn:fixture:file"
+          }
+        }
+      ],
+      "artifacts": {}
+    },
+    {
+      "id": "documents.status",
+      "dto": {
+        "success": true,
+        "result": {
+          "document": {
+            "doc": "Synthetic Model",
+            "docId": "creation-fixture",
+            "docFileId": "urn:fixture:file",
+            "projectId": "project-fixture"
+          },
+          "isModified": false,
+          "isSaved": true
+        }
+      },
+      "sdkCalls": 1,
+      "effects": [
+        {
+          "kind": "sdk",
+          "request": {
+            "operation": "document.status",
+            "data": {},
+            "doc": "Synthetic Model",
+            "projectId": "project-fixture",
+            "docId": "creation-fixture",
+            "docFileId": "urn:fixture:file"
+          }
+        }
+      ],
+      "artifacts": {}
+    },
+    {
+      "id": "safety.document-changed",
+      "dto": {
+        "success": false,
+        "status": "blocked",
+        "error": "DOCUMENT_CHANGED",
+        "result": {
+          "document": {
+            "doc": "Synthetic Model",
+            "docId": "different-creation",
+            "docFileId": "urn:fixture:file",
+            "projectId": "project-fixture"
+          }
+        }
+      },
+      "sdkCalls": 1,
+      "effects": [
+        {
+          "kind": "sdk",
+          "request": {
+            "operation": "status",
+            "data": {},
+            "doc": "Synthetic Model",
+            "projectId": "project-fixture",
+            "docId": "creation-fixture",
+            "docFileId": "urn:fixture:file"
+          }
+        }
+      ],
+      "artifacts": {}
+    },
+    {
+      "id": "observation.unknown",
+      "dto": {
+        "success": false,
+        "status": "unknown",
+        "error": "ack lost; do not replay",
+        "result": {
+          "document": {
+            "doc": "Synthetic Model",
+            "docId": "creation-fixture",
+            "docFileId": "urn:fixture:file",
+            "projectId": "project-fixture"
+          }
+        }
+      },
+      "sdkCalls": 1,
+      "effects": [
+        {
+          "kind": "sdk",
+          "request": {
+            "operation": "status",
+            "data": {},
+            "doc": "Synthetic Model",
+            "projectId": "project-fixture",
+            "docId": "creation-fixture",
+            "docFileId": "urn:fixture:file"
+          }
+        }
+      ],
+      "artifacts": {}
+    },
+    {
+      "id": "cli.help",
+      "dto": {
+        "code": 0,
+        "stdout": "fmcad - CLI for the Autodesk Fusion MCP\n\nUsage:\n  fmcad <command> [args...] [flags...]\n  fmcad help <command> [subcommand]\n  fmcad <command> [subcommand] --help\n\nCommands:\n  projects\n  project_create <project> [purpose]\n  project_rename <project> <new_name>\n  folder_list <project> [folder_path]\n  folder_create <project> <folder_path>\n  folder_rename <project> <folder_path> <new_name>\n  folder_delete <project> <folder_path>\n  file_rename <project> <folder_path> <file_name> <new_name>\n  file_move <project> <folder_path> <file_name> <dest_folder_path>\n  file_delete <project> <folder_path> <file_name>\n  file_editability\n  file_editability_list [project]\n  tree <project> [folder_path]\n  param_list --doc <name>\n  param_add <name> <expression> [unit] [comment] --doc <name>\n  param_set <name> <expression> --doc <name>\n  param_rename <name> <new_name> --doc <name>\n  param_delete <name> --doc <name>\n  plane_list --doc <name>\n  plane_add <name> offset <ref> <distance> --doc <name>\n  plane_add <name> mid <ref1> <ref2> --doc <name>\n  plane_add <name> angle <ref> <axis> <angle> --doc <name>\n  plane_rename <name> <new_name> --doc <name>\n  plane_delete <name> --doc <name>\n  stats --doc <name>\n  bbox --doc <name>\n  bodies --doc <name>\n  comp_list --doc <name>\n  comp_add <name> [<parent>] --doc <name>\n  rollback <pos> --doc <name>\n  units <mm|cm|in> --doc <name>\n  upload <local_wsl_path> [--project <name>] [--folder <path>]\n  doc search <name> [--project <name>]\n  doc open <name>\n  doc new [--name <name>]\n  doc list\n  doc recent\n  doc save\n  doc close --save | --discard\n  file_download <name> [--out <wsl_path|dir>]\n  shot [--out file.png] [--dir iso-top-right] [--width N] [--height N] [--no-aa] [--transparent]\n  undo\n  redo\n  active\n  licensing\n  doctor\n  init [--from-opencode] [--force]\n  tools\n  call <tool> '<json-args>'\n  run <script|name> [--args '<json>' | --args-file <path>] [--doc <name> [--doc-id <creationId>] [--doc-file-id <cloudId>]] [--helpers <version>] [--readonly] [--out <path> [--out-format text|json] [--pretty true|false]] [--list]\n  export stl [--body <name>] [--out <wsl_path>] --doc <name>\n  export step [--out <wsl_path>] --doc <name>\n  help [command] [subcommand]\n  console [--project PATH] [--config PATH]\n  queue serve [options]\n  queue exec [options] -- <fmcad argv...>\n  queue submit [options] -- <fmcad argv...>\n  queue status [options]\n  queue result [options]\n  queue cancel [options]\n  queue release [options]\n  queue pause [options]\n  queue resume [options]\n  queue stop [options]\n  queue reclaim [options]\n  queue reconcile [options]\n  fusion reset --force\n  review --doc <name> (--doc-id <creationId> | --doc-file-id <cloudId>) --out <new-local-directory> [--width N] [--height N]\n  thermal contact-budget (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  mass system (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  load axis (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  stability check (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  measure fill-volume (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  fluid level-curve (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  drain check (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  cleaning access (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  hydraulic network (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  engineering valve (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  engineering spring-piston (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  float evaluate (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  fit stack (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  interface define (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  interface check (--file <input.json> | --data <JSON>) [--json] [--out <new.json>] [--schema]\n  image trace --input PATH --out NEWDIR [--palette JSON] [--python PATH] [tunables] [--json]\n  image optimize --input PATH --out NEWDIR --palette JSON [--python EXE] [options] [--json]\n  image boundaries --svg PATH --reference PATH --palette JSON --out NEWDIR [--python EXE] [options] [--json]\n  param import --doc <name> --file <adapter.json> [--json] [--preview]\n  catalog import --doc <name> --file <adapter.json> [--json] [--preview]\n  catalog check [--doc <name> --inspect-model true] --file <adapter.json> [--json] [--preview]\n  placement import --doc <name> --file <adapter.json> [--json] [--preview]\n  placement check [--doc <name> --inspect-model true] --file <adapter.json> [--json] [--preview]\n  cots replace --doc <name> --file <adapter.json> [--json] [--preview]\n  sketch profile-file --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  curve fit --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  curve inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  curve offset --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  curve offset-edit --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  surface patch --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  surface stitch --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  surface trim --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  surface extend --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  surface offset --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  surface check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  curve helix --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape spring --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  spring evaluate --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  spring configure --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  thread catalog --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  thread custom-profile --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  thread pair-check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  cam profile --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  cam evaluate --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  cam cycle-check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape o_ring --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  seal gland --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  seal profile --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  seal evaluate --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  dock sequence-check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  mount create --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  mount check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  fastener stack --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  fastener check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  fastener schedule --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  bearing stack-check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shaft interface --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  retention bayonet --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  snap define --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  snap evaluate --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape hose_barb --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  drawing package --file request.json [--json]\n  drawing check --file request.json [--json]\n  drawing export --file request.json [--json]\n  animation sequence --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  animation export --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  animation capabilities --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  animation list --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  animation inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  animation workspace --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  animation create --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  animation activate --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  animation play --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  animation seek --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  motion sample --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  animation joints --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  appearance create --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  appearance edit --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  appearance texture --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  appearance projection --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  appearance assign-map --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  material create --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  material edit --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  material assign-map --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  styles report --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  component inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  component create --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  component rename --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  component reparent --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  component from_bodies --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  occurrence add --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  occurrence duplicate --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  occurrence transform --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  occurrence align --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  joint rigid --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  joint revolute --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  joint slider --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  joint cylindrical --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  joint inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  joint limits --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  joint edit --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  joint drive --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  assembly ground --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  assembly unground --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  assembly rigid_group --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  assembly parts --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  feature list --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  feature suppress --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  feature unsuppress --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  feature dependencies --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  history check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  history recompute --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  change preview --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  entity attribute set --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  entity attribute get --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  batch validate --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  batch preview --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  batch run --doc <name> --data '<object>' [--component <ref>] [--json] [--preview] [--summary]\n  batch summary --report-path <DIR> [--step <N>] [--json]\n  batch reconcile --report-path <DIR> [--data '{\"operations\":[...]}'] [--json]\n  batch finalize --report-path <DIR> [--json]\n  definition instantiate --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  check set --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  evidence package --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  evidence check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  deliver --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure contains --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure corridor --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure region --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  entity list --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  entity inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  entity find --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  entity alias --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  selection inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  selection highlight --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  param apply --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  param inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  param dependencies --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  datum plane --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  datum axis --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  datum point --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  datum frame --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  definition inspect --file <definition.json> [--json]\n  definition expand --file <definition.json> [--json]\n  definition recipe --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  definition regenerate --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  document clear --doc <exact-open-name> --doc-file-id <DataFile.id> --file-id <same-DataFile.id> --confirm true [--dry-run true] [--json]\n  document save once --doc <exact-open-name> --doc-id <creationId> --doc-file-id <fileId> --project-id <projectId> --data '<request>' [--json]\n  document save observe --doc <exact-open-name> --doc-id <creationId> --doc-file-id <fileId> --project-id <projectId> --data '<request>' [--json]\n  document status --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  document save_as --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  entity stats --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  explode plan --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  explode render --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  component externalize --data '<manifest>'\n  occurrence insert_external --doc <name> --data '<object>'\n  feature inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  feature edit --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  fpc fold --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  fpc flatten --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  pcb mechanical-exchange --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  pcb check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  port define --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  connector mate-check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  pack cross-section --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  keepout check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape gear --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  gear pair-check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  clearance grid --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  motion envelope --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  visibility show --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  visibility hide --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  visibility restore --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  visibility isolate --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  camera save --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  camera restore --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  camera set --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shot pack --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  view compare --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  section view --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  reference image --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  appearance list --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  appearance assign --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  appearance inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  appearance clear --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  material list --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  material assign --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  material inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  import file --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  checkpoint create --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  checkpoint list --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  checkpoint inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  checkpoint open --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  export native --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  cad export step --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  export mesh --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  export parts --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  export verify --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure draft --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure wall-map --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  undercut check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  manufacturing zone --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  manufacturing check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  marking create --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  marking check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure diameter --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure radius --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure distance --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure angle --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure length --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure area --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure volume --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure mass --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure bounds --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure section --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  measure thickness --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  parameter test --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  assembly interference --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  assembly clearance --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  assembly motion_check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  audit --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  snapshot --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  diff --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  status --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  report --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  mechanism couple --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  mechanism inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  mechanism stop-check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch create --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch edit --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch geometry --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch constrain --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch dimension --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch project --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch offset --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch mirror --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch pattern --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  path create --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  path inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  model extrude --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  model revolve --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  model sweep --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  model loft --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  model hole --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  model shell --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  model thicken --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  model combine --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  model split --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  model fillet --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  model chamfer --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  model draft --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  model thread --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  model mirror --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  pattern circular --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  pattern rectangular --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  pattern path --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  optics frustum --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  optics coverage --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  optics occlusion --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sensor alignment-check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  pose save --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  pose apply --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  pose list --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  pose delete --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  pose evaluate --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  section inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  section edit --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  visibility finalize --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  references refresh --data '<object>' [--json]\n  route create3d --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  route inspect --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  route cut-list --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  route motion-states --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  assembly sequence --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  service path-check --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  tool access --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  fixture access --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape annular_segment --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape arc_strip --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape can --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape impeller --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape boss_pattern --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape box --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape cylinder --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape tube --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape ring --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape cone --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape revolved_profile --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape bolt_circle --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape slot --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape slot_pattern --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape rib --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape web --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape route --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  shape helix --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sheet bends --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sheet form --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sheet flat --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  simulation capabilities --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch build --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch transform --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch dimension-plan --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  sketch dimension-apply --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  texture heightmap --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  ui inspect --doc <open-name> --doc-id <creationId> --doc-file-id <fileId> --data '<request>' [--json]\n  ui respond --doc <open-name> --doc-id <creationId> --doc-file-id <fileId> --data '<request>' [--json]\n  ui resolve --doc <open-name> --doc-id <creationId> --doc-file-id <fileId> --data '<request>' [--json]\n  datum transform --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  datum plane-on-path --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  joint frame --doc <name> --data '<object>' [--component <ref>] [--json] [--preview]\n  reference layout --file request.json [--python EXE] [--json] [--preview]\n  reference calibrate --file request.json [--python EXE] [--json] [--preview]\n  reference compare --file request.json [--python EXE] [--json] [--preview]\n\nGlobal flags: --config <path>  --url <url>  --header K:V (repeatable)  --timeout\n<ms>\nPurpose metadata: --purpose TEXT (optional, up to 1000 Unicode characters, no\ncontrols).\nBackend: --backend <mcp|addin> (default mcp); env FMCAD_BACKEND; config\nbackend/backends.\nTransport: --transport <node|windows-curl>  --curl-path <executable>.\nQueue (optional): --routing direct|queue; FMCAD_ROUTING or config routing. After\nenabling queue, ordinary commands wait automatically.\nQueue globals: --client LABEL --request-id ID --queue-timeout MS\n--expected-revision N --sequence-action begin|continue|end --sequence-id ID.\nQueue --timeout bounds active whole-command execution, not waiting. Direct\n--timeout retains its existing per-RPC semantics.\nQueued execution autostarts one shared broker by default. Config\nqueue.autoStart:false selects manual startup; queue.startupTimeoutMs defaults to\n60000.\nManual start: fmcad queue serve --backend addin --confirm-ownership true. Help:\nfmcad help queue serve.\naddin uses the independent AutodeskFusionMCP add-in on localhost:8765; WSL\ndefaults to Windows curl.\nNo automatic fallback or mutation retry. addin has no enforced read-only\nsandbox.\naddin does not emulate licensing, recent documents, undo/redo, or electronics;\nselect mcp explicitly for those.\nHelp aliases: --help, -h. Run script listing aliases: --list, -l.\n\nScripts for 'run' resolve from:\n  1) ~/.config/fmcad/scripts/<name>.py    (user scripts)\n  2) <package>/assets/scripts/<name>.py   (built-in scripts)\nA script may declare an 'ARGS = [...]' line; --args '<json>' replaces it.\nAlternatively, --args-file <path> reads any JSON value from a local UTF-8 file\n(relative to cwd).\n--args and --args-file are mutually exclusive; files are parsed before backend\nsetup.\n",
+        "stderr": ""
+      },
+      "sdkCalls": 0,
+      "effects": [
+        {
+          "configReads": 0
+        }
+      ],
+      "artifacts": {}
+    },
+    {
+      "id": "safety.duplicate-pin",
+      "dto": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "ERROR Duplicate CAD option: --doc-id\n"
+      },
+      "sdkCalls": 0,
+      "effects": [
+        {
+          "configReads": 0
+        }
+      ],
+      "artifacts": {}
+    },
+    {
+      "id": "safety.invalid-input",
+      "dto": {
+        "code": 1,
+        "stdout": "",
+        "stderr": "ERROR Invalid JSON at position 1 (line 1 column 2)\n"
+      },
+      "sdkCalls": 0,
+      "effects": [
+        {
+          "configReads": 0
+        }
+      ],
+      "artifacts": {}
+    },
+    {
+      "id": "batch.validate",
+      "dto": {
+        "success": true,
+        "errors": [],
+        "operations": [
+          {
+            "data": {},
+            "id": "one",
+            "operation": "status"
+          },
+          {
+            "component": "Part",
+            "data": {},
+            "id": "two",
+            "operation": "status"
+          }
+        ],
+        "exports": {},
+        "atomic": {
+          "effective": true
+        },
+        "plan": {
+          "steps": 2,
+          "backendCalls": 2,
+          "timeBudgetMs": null,
+          "mutations": 0
+        },
+        "checks": [
+          "JSON structure",
+          "known operations",
+          "required and known input fields",
+          "unique IDs",
+          "reference syntax and ordering",
+          "reference cycles",
+          "parameter substitution"
+        ],
+        "limitations": [
+          "Offline checks cover outer operation keys/required fields and step/reference structure only; nested schemas/types, conditional fields, units, geometry, entity existence, solver behavior and output reference paths are not verified.",
+          "No rollback. Exceptions and unsuccessful mutations may have changed Fusion; inspect before any new run.",
+          "Replay trusts local successful reports, not current model state. CAD CLI --doc accepts open-document names, not file IDs; use doc status to compare actual identity separately. Name-based replay cannot detect document replacement.",
+          "reportPath is a local directory of immutable JSON snapshots. Stale locks require operator inspection; do not use network filesystems."
+        ]
+      },
+      "sdkCalls": 0,
+      "effects": [],
+      "artifacts": {}
+    },
+    {
+      "id": "mcp.response",
+      "dto": [
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "synthetic"
+              }
+            ]
+          }
+        }
+      ],
+      "sdkCalls": 0,
+      "effects": [],
+      "artifacts": {}
+    },
+    {
+      "id": "safety.unknown-outcome",
+      "dto": {
+        "failed": true
+      },
+      "sdkCalls": 0,
+      "effects": [],
+      "artifacts": {}
+    },
+    {
+      "id": "run.prepare",
+      "dto": {
+        "args": {
+          "unicode": "Zażółć 🐈",
+          "safe": "$&"
+        },
+        "doc": "Synthetic Model"
+      },
+      "sdkCalls": 0,
+      "effects": [],
+      "artifacts": {
+        "run.py": "ad580bdb8892310fc6ac08ca7b52c156b50b72d8f5d7c398db9c9dda795dafc9"
+      }
+    },
+    {
+      "id": "run.execute",
+      "dto": {
+        "code": 0,
+        "stdout": "SYNTHETIC_RUN_COMPLETE\n",
+        "stderr": ""
+      },
+      "sdkCalls": 1,
+      "effects": [
+        {
+          "featureType": "script",
+          "readOnly": true,
+          "scriptSha256": "c93cb615100b57178d21f63d8b3f2b070f6b747825817dacc4ca5631fabb7e80"
+        }
+      ],
+      "artifacts": {}
+    },
+    {
+      "id": "batch.execute-replay",
+      "dto": {
+        "report": {
+          "version": 1,
+          "success": true,
+          "operation": "batch.run",
+          "runId": "fixture",
+          "requestHash": "570d38e37d2cc5309728618203266ecba75c4f15f7d24d95ac05d6f75562d53b",
+          "request": {
+            "operations": [
+              {
+                "data": {},
+                "id": "one",
+                "onExisting": "reuse",
+                "operation": "status"
+              },
+              {
+                "component": "Part",
+                "data": {},
+                "id": "two",
+                "onExisting": "reuse",
+                "operation": "status"
+              }
+            ],
+            "runId": "fixture"
+          },
+          "context": {
+            "doc": "Synthetic Model",
+            "docFileId": "urn:fixture:file",
+            "docId": "creation-fixture",
+            "projectId": "project-fixture"
+          },
+          "status": "success",
+          "atomic": {
+            "effective": false
+          },
+          "documentIdentity": {
+            "fileId": "urn:fixture:file",
+            "creationId": "creation-fixture",
+            "name": "Synthetic Model",
+            "assertionsOnly": true
+          },
+          "associativity": "snapshot",
+          "units": "per-step result",
+          "frame": "per-step component/sketch",
+          "created": [],
+          "affected": [],
+          "warnings": [],
+          "provenance": {
+            "sourceHash": "4386496232c396deaa54fb031d3b148947ff2ba572f147eea87f6cfc386df6e5",
+            "formatVersion": "legacy"
+          },
+          "limitations": [
+            "Offline checks cover outer operation keys/required fields and step/reference structure only; nested schemas/types, conditional fields, units, geometry, entity existence, solver behavior and output reference paths are not verified.",
+            "No rollback. Exceptions and unsuccessful mutations may have changed Fusion; inspect before any new run.",
+            "Replay trusts local successful reports, not current model state. CAD CLI --doc accepts open-document names, not file IDs; use doc status to compare actual identity separately. Name-based replay cannot detect document replacement.",
+            "reportPath is a local directory of immutable JSON snapshots. Stale locks require operator inspection; do not use network filesystems."
+          ],
+          "checks": [
+            "JSON structure",
+            "known operations",
+            "required and known input fields",
+            "unique IDs",
+            "reference syntax and ordering",
+            "reference cycles",
+            "parameter substitution"
+          ],
+          "steps": [
+            {
+              "id": "one",
+              "operation": "status",
+              "status": "success",
+              "mutationStatus": "none",
+              "request": {
+                "operation": "status",
+                "data": {},
+                "context": {
+                  "doc": "Synthetic Model",
+                  "docFileId": "urn:fixture:file",
+                  "docId": "creation-fixture",
+                  "projectId": "project-fixture"
+                }
+              },
+              "output": {
+                "result": {
+                  "document": {
+                    "doc": "Synthetic Model",
+                    "docFileId": "urn:fixture:file",
+                    "docId": "creation-fixture",
+                    "projectId": "project-fixture"
+                  }
+                },
+                "success": true
+              }
+            },
+            {
+              "id": "two",
+              "operation": "status",
+              "status": "success",
+              "mutationStatus": "none",
+              "request": {
+                "operation": "status",
+                "data": {},
+                "context": {
+                  "doc": "Synthetic Model",
+                  "docFileId": "urn:fixture:file",
+                  "docId": "creation-fixture",
+                  "projectId": "project-fixture",
+                  "component": "Part"
+                }
+              },
+              "output": {
+                "result": {
+                  "document": {
+                    "doc": "Synthetic Model",
+                    "docFileId": "urn:fixture:file",
+                    "docId": "creation-fixture",
+                    "projectId": "project-fixture"
+                  }
+                },
+                "success": true
+              }
+            }
+          ],
+          "plan": {
+            "steps": 2,
+            "backendCalls": 2,
+            "timeBudgetMs": null,
+            "mutations": 0
+          },
+          "sequence": 4,
+          "exports": {}
+        },
+        "replay": {
+          "version": 1,
+          "success": true,
+          "operation": "batch.run",
+          "runId": "fixture",
+          "requestHash": "570d38e37d2cc5309728618203266ecba75c4f15f7d24d95ac05d6f75562d53b",
+          "request": {
+            "operations": [
+              {
+                "data": {},
+                "id": "one",
+                "onExisting": "reuse",
+                "operation": "status"
+              },
+              {
+                "component": "Part",
+                "data": {},
+                "id": "two",
+                "onExisting": "reuse",
+                "operation": "status"
+              }
+            ],
+            "runId": "fixture"
+          },
+          "context": {
+            "doc": "Synthetic Model",
+            "docFileId": "urn:fixture:file",
+            "docId": "creation-fixture",
+            "projectId": "project-fixture"
+          },
+          "status": "success",
+          "atomic": {
+            "effective": false
+          },
+          "documentIdentity": {
+            "fileId": "urn:fixture:file",
+            "creationId": "creation-fixture",
+            "name": "Synthetic Model",
+            "assertionsOnly": true
+          },
+          "associativity": "snapshot",
+          "units": "per-step result",
+          "frame": "per-step component/sketch",
+          "created": [],
+          "affected": [],
+          "warnings": [],
+          "provenance": {
+            "sourceHash": "4386496232c396deaa54fb031d3b148947ff2ba572f147eea87f6cfc386df6e5",
+            "formatVersion": "legacy"
+          },
+          "limitations": [
+            "Offline checks cover outer operation keys/required fields and step/reference structure only; nested schemas/types, conditional fields, units, geometry, entity existence, solver behavior and output reference paths are not verified.",
+            "No rollback. Exceptions and unsuccessful mutations may have changed Fusion; inspect before any new run.",
+            "Replay trusts local successful reports, not current model state. CAD CLI --doc accepts open-document names, not file IDs; use doc status to compare actual identity separately. Name-based replay cannot detect document replacement.",
+            "reportPath is a local directory of immutable JSON snapshots. Stale locks require operator inspection; do not use network filesystems."
+          ],
+          "checks": [
+            "JSON structure",
+            "known operations",
+            "required and known input fields",
+            "unique IDs",
+            "reference syntax and ordering",
+            "reference cycles",
+            "parameter substitution"
+          ],
+          "steps": [
+            {
+              "id": "one",
+              "operation": "status",
+              "status": "success",
+              "mutationStatus": "none",
+              "request": {
+                "operation": "status",
+                "data": {},
+                "context": {
+                  "doc": "Synthetic Model",
+                  "docFileId": "urn:fixture:file",
+                  "docId": "creation-fixture",
+                  "projectId": "project-fixture"
+                }
+              },
+              "output": {
+                "result": {
+                  "document": {
+                    "doc": "Synthetic Model",
+                    "docFileId": "urn:fixture:file",
+                    "docId": "creation-fixture",
+                    "projectId": "project-fixture"
+                  }
+                },
+                "success": true
+              }
+            },
+            {
+              "id": "two",
+              "operation": "status",
+              "status": "success",
+              "mutationStatus": "none",
+              "request": {
+                "operation": "status",
+                "data": {},
+                "context": {
+                  "doc": "Synthetic Model",
+                  "docFileId": "urn:fixture:file",
+                  "docId": "creation-fixture",
+                  "projectId": "project-fixture",
+                  "component": "Part"
+                }
+              },
+              "output": {
+                "result": {
+                  "document": {
+                    "doc": "Synthetic Model",
+                    "docFileId": "urn:fixture:file",
+                    "docId": "creation-fixture",
+                    "projectId": "project-fixture"
+                  }
+                },
+                "success": true
+              }
+            }
+          ],
+          "plan": {
+            "steps": 2,
+            "backendCalls": 2,
+            "timeBudgetMs": null,
+            "mutations": 0
+          },
+          "sequence": 4,
+          "exports": {},
+          "replayed": true
+        }
+      },
+      "sdkCalls": 2,
+      "effects": [
+        {
+          "kind": "sdk",
+          "request": {
+            "operation": "status",
+            "data": {},
+            "doc": "Synthetic Model",
+            "projectId": "project-fixture",
+            "docId": "creation-fixture",
+            "docFileId": "urn:fixture:file"
+          }
+        },
+        {
+          "kind": "sdk",
+          "request": {
+            "operation": "status",
+            "data": {},
+            "doc": "Synthetic Model",
+            "component": "Part",
+            "projectId": "project-fixture",
+            "docId": "creation-fixture",
+            "docFileId": "urn:fixture:file"
+          }
+        }
+      ],
+      "artifacts": {
+        "report-manifest": "[\"00000000.json\",\"00000001.json\",\"00000002.json\",\"00000003.json\",\"00000004.json\"]"
+      }
+    },
+    {
+      "id": "batch.unknown-no-replay",
+      "dto": {
+        "report": {
+          "version": 1,
+          "success": false,
+          "operation": "batch.run",
+          "runId": "fixture",
+          "requestHash": "570d38e37d2cc5309728618203266ecba75c4f15f7d24d95ac05d6f75562d53b",
+          "request": {
+            "operations": [
+              {
+                "data": {},
+                "id": "one",
+                "onExisting": "reuse",
+                "operation": "status"
+              },
+              {
+                "component": "Part",
+                "data": {},
+                "id": "two",
+                "onExisting": "reuse",
+                "operation": "status"
+              }
+            ],
+            "runId": "fixture"
+          },
+          "context": {
+            "doc": "Synthetic Model",
+            "docFileId": "urn:fixture:file",
+            "docId": "creation-fixture",
+            "projectId": "project-fixture"
+          },
+          "status": "failed",
+          "atomic": {
+            "effective": false
+          },
+          "documentIdentity": {
+            "fileId": "urn:fixture:file",
+            "creationId": "creation-fixture",
+            "name": "Synthetic Model",
+            "assertionsOnly": true
+          },
+          "associativity": "snapshot",
+          "units": "per-step result",
+          "frame": "per-step component/sketch",
+          "created": [],
+          "affected": [],
+          "warnings": [],
+          "provenance": {
+            "sourceHash": "4386496232c396deaa54fb031d3b148947ff2ba572f147eea87f6cfc386df6e5",
+            "formatVersion": "legacy"
+          },
+          "limitations": [
+            "Offline checks cover outer operation keys/required fields and step/reference structure only; nested schemas/types, conditional fields, units, geometry, entity existence, solver behavior and output reference paths are not verified.",
+            "No rollback. Exceptions and unsuccessful mutations may have changed Fusion; inspect before any new run.",
+            "Replay trusts local successful reports, not current model state. CAD CLI --doc accepts open-document names, not file IDs; use doc status to compare actual identity separately. Name-based replay cannot detect document replacement.",
+            "reportPath is a local directory of immutable JSON snapshots. Stale locks require operator inspection; do not use network filesystems."
+          ],
+          "checks": [
+            "JSON structure",
+            "known operations",
+            "required and known input fields",
+            "unique IDs",
+            "reference syntax and ordering",
+            "reference cycles",
+            "parameter substitution"
+          ],
+          "steps": [
+            {
+              "id": "one",
+              "operation": "status",
+              "status": "failed",
+              "mutationStatus": "none",
+              "request": {
+                "operation": "status",
+                "data": {},
+                "context": {
+                  "doc": "Synthetic Model",
+                  "docFileId": "urn:fixture:file",
+                  "docId": "creation-fixture",
+                  "projectId": "project-fixture"
+                }
+              },
+              "output": {
+                "error": "ack lost; do not replay",
+                "status": "unknown",
+                "success": false
+              },
+              "error": {
+                "message": "Executor returned an unsuccessful or unrecognized result"
+              }
+            },
+            {
+              "id": "two",
+              "operation": "status",
+              "status": "skipped"
+            }
+          ],
+          "plan": {
+            "steps": 2,
+            "backendCalls": 2,
+            "timeBudgetMs": null,
+            "mutations": 0
+          },
+          "sequence": 2
+        },
+        "replay": {
+          "error": "Saved run contains failed, unknown, pending, or in-progress steps; operator inspection required, no automatic retry"
+        }
+      },
+      "sdkCalls": 1,
+      "effects": [
+        {
+          "kind": "sdk",
+          "request": {
+            "operation": "status",
+            "data": {},
+            "doc": "Synthetic Model",
+            "projectId": "project-fixture",
+            "docId": "creation-fixture",
+            "docFileId": "urn:fixture:file"
+          }
+        }
+      ],
+      "artifacts": {
+        "report-manifest": "[\"00000000.json\",\"00000001.json\",\"00000002.json\"]"
+      }
+    }
+  ]
+}

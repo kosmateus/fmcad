@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "fixtureId": "sections-program-v1",
+  "kind": "fixed-run-v1",
+  "script": "assets/native-qualification/sections.py",
+  "helperVersion": "cad-v1",
+  "scope": "one proven-new unsaved unmodified owned document; fixed section/witness program only; no document lifecycle, file, or cloud effects",
+  "argumentKeys": ["approved", "creationId", "expectedFusionVersion", "fixturePrefix"],
+  "fixtureSource": "tests/fixtures/section_witness_shapes.json",
+  "callerCleanupRequired": true
+}

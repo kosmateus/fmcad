@@ -1,0 +1,31 @@
+{
+  "formatVersion": 1,
+  "runId": "cwg-pan-tilt-counter-media",
+  "maxExpansion": 100,
+  "operations": [
+    {"id": "driveGear", "operation": "shape.gear", "data": {"name": "DriveGear", "module": "0.5 mm", "teeth": 20, "pressureAngle": "20 deg", "faceWidth": "4 mm"}},
+    {"id": "pair", "operation": "gear.pair-check", "data": {"gear1": {"module": "0.5 mm", "teeth": 20, "pressureAngle": "20 deg"}, "gear2": {"module": "0.5 mm", "teeth": 40, "pressureAngle": "20 deg"}, "external": true, "phase": 0}},
+    {"id": "counterSpring", "operation": "spring.evaluate", "data": {"schemaVersion": 1, "frame": "component", "wireDiameter": "0.5 mm", "meanDiameter": "8 mm", "activeCoils": 6, "totalCoils": 8, "freeLength": "35 mm", "shearModulus": "77000 N/mm^2", "density": "7850 kg/m^3", "installedLength": "27 mm", "compressedLength": "17 mm"}},
+    {"id": "threadTable", "operation": "thread.catalog", "data": {"schemaVersion": 1, "frame": "component", "system": "iso-metric-coarse", "query": "M10"}},
+    {"id": "couple", "operation": "mechanism.couple", "data": {"schemaVersion": 1, "frame": "component", "coupling": {"type": "rotation", "driverTeeth": 20, "drivenTeeth": 40, "external": true, "zeroPhase": "0 deg"}, "driverRange": {"from": "0 deg", "to": "720 deg"}, "samples": 16}},
+    {"id": "stop", "operation": "mechanism.stop-check", "data": {"schemaVersion": 1, "frame": "component", "coupling": {"type": "rotation", "ratio": -0.5}, "limits": {"working": {"min": "0 deg", "max": "200 deg"}, "program": {"max": "180 deg"}, "hard": {"max": "200 deg"}}, "stopSurfaces": [{"clearance": "0.2 mm"}], "sensorWindow": {"from": "0 deg", "to": "170 deg"}, "driverValue": "200 deg", "drivenValue": "-100 deg"}},
+    {"id": "poseCocked", "operation": "pose.save", "data": {"schemaVersion": 1, "frame": "component", "name": "COCKED", "revision": 1, "springState": "COCKED"}},
+    {"id": "poseEmpty", "operation": "pose.save", "data": {"schemaVersion": 1, "frame": "component", "name": "EMPTY", "revision": 1, "fillState": "EMPTY"}},
+    {"id": "applyCocked", "operation": "pose.evaluate", "data": {"schemaVersion": 1, "frame": "component", "name": "COCKED"}},
+    {"id": "envelope", "operation": "motion.envelope", "data": {"schemaVersion": 1, "frame": "component", "motion": {"type": "rotation", "axis": [0, 1, 0], "from": "-45 deg", "to": "45 deg"}, "bounds": {"min": ["-40 mm", "-20 mm", "-20 mm"], "max": ["40 mm", "20 mm", "20 mm"]}, "representation": "conservative"}},
+    {"id": "route", "operation": "route.create3d", "data": {"schemaVersion": 1, "waypoints": [["0 mm", "0 mm", "0 mm"], ["0 mm", "10 mm", "10 mm"], ["0 mm", "0 mm", "20 mm"]], "up": [0, 0, 1], "endTangents": {"start": [0, 0, 1], "end": [0, 0, 1]}}},
+    {"id": "cutList", "operation": "route.cut-list", "data": {"schemaVersion": 1, "length": "100 mm", "allowanceFactor": 1.1, "serviceTail": "15 mm"}},
+    {"id": "motionStates", "operation": "route.motion-states", "data": {"schemaVersion": 1, "length": "100 mm", "pan": {"min": "-45 deg", "max": "45 deg"}, "tilt": {"min": "-30 deg", "max": "30 deg"}, "minBendRadius": "5 mm"}},
+    {"id": "exchange", "operation": "pcb.mechanical-exchange", "data": {"schemaVersion": 1, "frame": "component", "source": {"datum": {"name": "step-center", "type": "step-center", "origin": ["0 mm", "0 mm", "0 mm"]}}, "target": {"datum": {"name": "lens-datum", "type": "lens", "origin": ["2 mm", "1 mm", "0 mm"]}}}},
+    {"id": "health", "operation": "history.check", "data": {}}
+  ],
+  "outputs": {
+    "driveGear": {"$ref": "driveGear.result.bodies.0"},
+    "pair": {"$ref": "pair.result.ratio"},
+    "counterSpringRate": {"$ref": "counterSpring.result.stiffness"},
+    "couple": {"$ref": "couple.result.evaluated"},
+    "route": {"$ref": "route.result.centerline"},
+    "cutList": {"$ref": "cutList.result.cutLengthPerPiece"},
+    "poseCocked": {"$ref": "poseCocked.result.name"}
+  }
+}

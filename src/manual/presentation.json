@@ -1,0 +1,36 @@
+{
+  "section.inspect": {
+    "sections": [
+      {"title": "Inputs And Discovery", "text": "Requires name:exact existing section analysis name. Discover section names in the Fusion Analyses browser (entity.list does not enumerate them). Requires installed analyses.sectionAnalyses; otherwise blocked."},
+      {"title": "Safety And Semantics", "text": "Read-only. The transform is read in cm component space; cut direction is the transform Z axis (flip() flips it). sectionColor is null when the component color is used."},
+      {"title": "Return Contract", "text": "Enveloped result (schemaVersion 1): status:pass|blocked, operation:section.inspect, documentIdentity, units:{length:cm,angle:rad}, frame:{space:component,component:reference}, associativity:snapshot, warnings, method, limitations, provenance, affected:[], result:{name:string,ref:reference,transform:number[16],initialPosition:number[16],frame:{origin:number[3],xAxis:number[3],yAxis:number[3],zAxis:number[3],cutDirection:number[3]},sectionColor:null|{color:[r,g,b,a]},isHatchShown:boolean|null,isLightBulbOn:boolean|null,isVisible:boolean|null,analysesLightBulbOn:boolean|null}."}
+    ],
+    "examples": [
+      {"label": "Inspect a section", "data": {"name": "Inspection section"}, "requires": "Exactly one section with this name exists in the Analyses browser.", "output": "result.frame.cutDirection is the normalized Z axis; result.transform is the full matrix."}
+    ],
+    "audit": {"sources": ["assets/cad/presentation.py:section_inspect,_section_find,_section_state,_mat_frame", "assets/cad/core.py:_cad_fields,_cad_unique,_cad_items"], "verified": ["transform/orientation/hatch/color readback", "unavailable-section blocked path"], "tests": ["tests/presentation_test.py", "tests/presentation.test.js"], "gaps": [], "bugs": []}
+  },
+  "section.edit": {
+    "sections": [
+      {"title": "Inputs And Discovery", "text": "Requires name:exact section name; optional transform (16-number row-major array or {origin,xAxis,yAxis,zAxis} descriptor), sectionColor:null|[r,g,b]|[r,g,b,a], hatch:boolean, flip:boolean. Requires installed SectionAnalyses API."},
+      {"title": "Safety And Semantics", "text": "flip() is an operation that mutates the transform Z axis, not a boolean property to assign. The applied transform is compared to the documented getAsCoordinateSystem frame and reported via orientationMatch. Edits are non-atomic; a runtime failure may leave partial changes."},
+      {"title": "Return Contract", "text": "Enveloped result (schemaVersion 1): status:pass, operation:section.edit, documentIdentity, units, frame, associativity:nativeProperty, warnings, method, limitations, provenance, affected:[{ref:reference,before:object,after:object}], result:{name:string,changed:string[],before:sectionState,after:sectionState,orientationMatch:null|{requested:frame,actual:frame,xAxisAligned:boolean,yAxisAligned:boolean,zAxisAligned:boolean}}."}
+    ],
+    "examples": [
+      {"label": "Set absolute orientation and hatch", "data": {"name": "Inspection section", "transform": {"origin": ["0 mm", "0 mm", "5 mm"], "xAxis": [1, 0, 0], "yAxis": [0, 1, 0], "zAxis": [0, 0, 1]}, "hatch": true}, "requires": "Exactly one section with this name exists.", "output": "result.orientationMatch.zAxisAligned=true when the applied Z axis matches the requested frame; result.after.isHatchShown=true."},
+      {"label": "Flip the cut direction", "data": {"name": "Inspection section", "flip": true}, "requires": "Exactly one section with this name exists.", "output": "result.changed includes flip; result.after.frame.cutDirection is negated."}
+    ],
+    "audit": {"sources": ["assets/cad/presentation.py:section_edit,_matrix_from_descriptor,_mat_frame,_dot_close", "assets/cad/core.py:_cad_fields,_cad_direction,_cad_require_result"], "verified": ["absolute transform/orientation and documented-frame comparison", "flip() as an operation, hatch and color", "blocked path for unavailable API"], "tests": ["tests/presentation_test.py", "tests/presentation.test.js"], "gaps": [], "bugs": []}
+  },
+  "visibility.finalize": {
+    "sections": [
+      {"title": "Inputs And Discovery", "text": "Optional hide:nonempty array of refs (sketches/construction/root), show:nonempty array of refs, recompute:boolean default true, checkHealth:boolean default true. At least one of hide/show is required. Targets must expose isLightBulbOn."},
+      {"title": "Safety And Semantics", "text": "Recompute/checkHealth is a real mutation (computeAll + timeline health), not a read-only inspection. On success the requested presentation state is intentionally left in place. On any error the handler restores its own temporary presentation changes (bulbs of the listed entities and their occurrence parents) and reports restoreErrors separately; recompute/geometry are never undone. checkHealth:true with an unhealthy timeline fails the control (status fail)."},
+      {"title": "Return Contract", "text": "Enveloped result (schemaVersion 1): status:pass|fail, operation:visibility.finalize, documentIdentity, units, frame, associativity:nativeProperty, warnings:string[], method, limitations, provenance, affected:[], restoreErrors:[], result:{applied:reference[],hidden:reference[],shown:reference[],recomputed:boolean,leftRequestedState:boolean,health:{available:boolean,items:[{name,state,message}],unhealthy:[],warningItems:[]},restored:boolean}|result:{applied,restored:boolean,restoreErrors:[{type,message}],health,recomputed,error:{type,message},warnings}."}
+    ],
+    "examples": [
+      {"label": "Hide sketch and show a body, then verify health", "data": {"hide": ["Sketch1"], "show": ["Housing"], "recompute": true, "checkHealth": true}, "requires": "Sketch1 and Housing resolve to unique entities in the scoped component.", "output": "result.leftRequestedState=true and result.health has no unhealthy items on success; on an unhealthy timeline result.status=fail and the bulbs are restored."}
+    ],
+    "audit": {"sources": ["assets/cad/presentation.py:visibility_finalize,_vis_snapshot,_vis_restore,_vis_chain,_health_check,_UnhealthyHistory", "assets/cad/core.py:_cad_fields,_cad_require_result,CadContext.resolve,ref"], "verified": ["hide/show composition with recompute and checkHealth", "leave-state on success and restore-on-error with separate restoreErrors", "unhealthy history fails without silent pass"], "tests": ["tests/presentation_test.py", "tests/presentation.test.js"], "gaps": [], "bugs": []}
+  }
+}

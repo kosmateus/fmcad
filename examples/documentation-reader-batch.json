@@ -1,0 +1,80 @@
+{
+  "runId": "reader-spacer-pair-01",
+  "parameters": {"nominalDiameter": "34 mm", "nominalDepth": "7 mm"},
+  "operations": [
+    {
+      "id": "sizing", "operation": "param.apply", "component": null,
+      "data": {"parameters": [
+        {"name": "readerDiameter", "unit": "mm", "expression": {"$param": "nominalDiameter"}},
+        {"name": "readerDepth", "unit": "mm", "expression": {"$param": "nominalDepth"}},
+        {"name": "readerPinRadius", "unit": "mm", "expression": "readerDiameter / 4"}
+      ]}
+    },
+    {
+      "id": "discPart", "operation": "component.create", "component": null,
+      "data": {"name": "ReaderSpacerDisc"}
+    },
+    {
+      "id": "pinPart", "operation": "component.create", "component": null,
+      "data": {"name": "ReaderCrossPin", "placement": {"translation": ["52 mm", "0 mm", "0 mm"]}}
+    },
+    {
+      "id": "discSketch", "operation": "sketch.create", "component": {"$ref": "discPart.result.component"},
+      "data": {"name": "ReaderDiscSection", "plane": "XY"}
+    },
+    {
+      "id": "discCurve", "operation": "sketch.geometry", "component": {"$ref": "discPart.result.component"},
+      "data": {"sketch": {"$ref": "discSketch.result.sketch"}, "geometry": [
+        {"type": "circle", "name": "discOutline", "center": ["0 mm", "0 mm", "0 mm"], "radius": "12 mm"}
+      ]}
+    },
+    {
+      "id": "discSize", "operation": "sketch.dimension", "component": {"$ref": "discPart.result.component"},
+      "data": {"sketch": {"$ref": "discSketch.result.sketch"}, "type": "diameter",
+        "entities": [{"$ref": "discCurve.result.refs.discOutline"}], "driving": true,
+        "expression": "readerDiameter", "text": ["22 mm", "18 mm", "0 mm"]}
+    },
+    {
+      "id": "discSolid", "operation": "model.extrude", "component": {"$ref": "discPart.result.component"},
+      "data": {"name": "ReaderDiscExtrusion", "profile": {"kind": "profile", "sketch": {"$ref": "discSketch.result.sketch"}},
+        "distance": "readerDepth", "operation": "newBody"}
+    },
+    {
+      "id": "pinSketch", "operation": "sketch.create", "component": {"$ref": "pinPart.result.component"},
+      "data": {"name": "ReaderPinSection", "plane": "XZ"}
+    },
+    {
+      "id": "pinCurve", "operation": "sketch.geometry", "component": {"$ref": "pinPart.result.component"},
+      "data": {"sketch": {"$ref": "pinSketch.result.sketch"}, "geometry": [
+        {"type": "circle", "name": "pinOutline", "center": ["0 mm", "0 mm", "0 mm"], "radius": "6 mm"}
+      ]}
+    },
+    {
+      "id": "pinSize", "operation": "sketch.dimension", "component": {"$ref": "pinPart.result.component"},
+      "data": {"sketch": {"$ref": "pinSketch.result.sketch"}, "type": "radius",
+        "entities": [{"$ref": "pinCurve.result.refs.pinOutline"}], "driving": true,
+        "expression": "readerPinRadius", "text": ["14 mm", "12 mm", "0 mm"]}
+    },
+    {
+      "id": "pinSolid", "operation": "model.extrude", "component": {"$ref": "pinPart.result.component"},
+      "data": {"name": "ReaderPinExtrusion", "profile": {"kind": "profile", "sketch": {"$ref": "pinSketch.result.sketch"}},
+        "distance": "2 * readerDepth", "symmetric": true, "operation": "newBody"}
+    },
+    {
+      "id": "discState", "operation": "sketch.check", "component": {"$ref": "discPart.result.component"},
+      "data": {"sketch": {"$ref": "discSketch.result.sketch"}}
+    },
+    {
+      "id": "pinState", "operation": "sketch.check", "component": {"$ref": "pinPart.result.component"},
+      "data": {"sketch": {"$ref": "pinSketch.result.sketch"}}
+    },
+    {
+      "id": "discVolume", "operation": "measure.volume", "component": {"$ref": "discPart.result.component"},
+      "data": {"ref": {"$ref": "discSolid.result.bodies.0"}, "units": "mm3"}
+    },
+    {
+      "id": "pinInspect", "operation": "entity.inspect", "component": {"$ref": "pinPart.result.component"},
+      "data": {"ref": {"$ref": "pinSolid.result.bodies.0"}}
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "section.inspect": {
+    "summary": "Read a real section analysis: transform, absolute orientation (cut direction), hatch, section color and visibility.",
+    "required": [
+      "name"
+    ],
+    "example": {
+      "name": "Inspection section"
+    },
+    "readOnly": true,
+    "envelope": true,
+    "limitations": [
+      "Requires installed SectionAnalyses API. The transform is read in cm component space; cut direction is the transform Z axis (flip() flips it). No section is created or mutated."
+    ],
+    "inputs": {
+      "name": "Required exact existing section analysis name."
+    }
+  },
+  "section.edit": {
+    "summary": "Edit a real section analysis: absolute transform/orientation, section color, hatch and cut-direction flip. Reports the actual orientation compared to the documented frame.",
+    "required": [
+      "name"
+    ],
+    "example": {
+      "name": "Inspection section",
+      "transform": {
+        "origin": [
+          "0 mm",
+          "0 mm",
+          "5 mm"
+        ],
+        "xAxis": [
+          1,
+          0,
+          0
+        ],
+        "yAxis": [
+          0,
+          1,
+          0
+        ],
+        "zAxis": [
+          0,
+          0,
+          1
+        ]
+      },
+      "hatch": true
+    },
+    "readOnly": false,
+    "limitations": [
+      "flip() is an operation that mutates the transform Z axis, not a boolean property to assign. The applied transform is compared to the documented getAsCoordinateSystem frame and reported. Requires installed SectionAnalyses API."
+    ],
+    "inputs": {
+      "name": "Required exact existing section name.",
+      "transform": "Optional 16-number row-major Matrix3D array or {origin,xAxis,yAxis,zAxis} descriptor.",
+      "sectionColor": "Optional null or [r,g,b]/[r,g,b,a] integers 0..255; null resets to component color.",
+      "hatch": "Optional boolean hatch visibility.",
+      "flip": "Optional boolean; true calls flip() to invert the cut direction."
+    },
+    "envelope": true
+  },
+  "visibility.finalize": {
+    "summary": "Compose hide/show of presentation geometry, an explicit recompute and a timeline health check. Leaves the requested presentation state on success; restores its temporary changes and reports restore errors separately on failure.",
+    "required": [],
+    "example": {
+      "hide": [
+        "Sketch1"
+      ],
+      "show": [
+        "Housing"
+      ],
+      "recompute": true,
+      "checkHealth": true
+    },
+    "readOnly": false,
+    "limitations": [
+      "Recompute/checkHealth is a real mutation, not a read-only inspection. checkHealth:true with an unhealthy timeline fails the control. Restore undoes only presentation changes, never recompute or geometry."
+    ],
+    "inputs": {
+      "hide": "Optional nonempty array of refs to hide (sketches/construction/root).",
+      "show": "Optional nonempty array of refs to show.",
+      "recompute": "Boolean, default true; computeAll().",
+      "checkHealth": "Boolean, default true; unhealthy history fails."
+    },
+    "envelope": true
+  }
+}
