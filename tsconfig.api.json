@@ -18,6 +18,7 @@
     "src/api/**/*.ts",
     "src/composition/library*.ts",
     "src/composition/control-center.ts",
+    "src/composition/run.ts",
     "src/entrypoints/cli.ts",
     "src/entrypoints/cli/**/*.ts",
     "src/entrypoints/mcp.ts",

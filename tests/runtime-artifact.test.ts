@@ -122,6 +122,8 @@ test(
       "dist/runtime/python/fmcad/adapters/fusion/identity.py",
       "dist/assets/cad/identity.py",
       "dist/src/dist/python/checker.js",
+      "dist/src/dist/python/run-script.js",
+      "dist/src/dist/composition/run.js",
       "dist/src/dist/python/document-probe.js",
       "dist/src/dist/fusion-transport/addin-capabilities.js",
       "dist/src/queue-autostart.js",
@@ -175,6 +177,31 @@ test(
     );
     assert.equal(typeof queueAutostart.ensureBroker, "function");
     assert.equal(typeof queueAutostart.reclaimStart, "function");
+    const scripts = runtimeRequire(
+      path.join(runtime, "src/run.js"),
+    ) as typeof import("../src/composition/run.js");
+    const box = scripts.prepareRunScript(
+      "box",
+      [25],
+      true,
+      "Installed fixture",
+      { docId: "installed-creation" },
+    );
+    assert.ok(box.script.includes("installed-creation"));
+    assert.ok(box.units.some((unit) => unit.id === "identity"));
+    assert.equal(
+      box.units.find((unit) => unit.id === "user-script")?.filename,
+      path.join(runtime, "assets/scripts/box.py"),
+    );
+    for (const declaration of [
+      "python/run-script.d.ts",
+      "composition/run.d.ts",
+    ]) {
+      assert.doesNotMatch(
+        fs.readFileSync(path.join(runtime, "src/dist", declaration), "utf8"),
+        /@fmcad\/core|packages\/node-adapters/,
+      );
+    }
     const packageJson = readJson<PackageManifest>(
       path.join(installationRoot, "package.json"),
     );

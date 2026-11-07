@@ -212,3 +212,9 @@ inventory, Control Center backlog or installed-package/native qualification.
 and replaces the builtin script's deprecated extrusion API. Shared sketch and
 feature coverage still needs expansion beyond rectangular prisms; this does not
 qualify arbitrary Fusion geometry or native file formats.
+
+[Stage 4a](REFACTOR_STAGE_4A.md) moves public run-script preparation into the typed
+Node adapter and composition root. Byte-for-byte historical comparisons and
+installed-package checks preserve provenance, input pins and identity guards.
+Continue the remaining CAD orchestration and service migrations alongside their
+shared scenario contracts; a compatibility facade alone is not a completed family.

@@ -82,13 +82,11 @@ export function stageCore(root: string, identityOnly = false): void {
     },
   );
   for (const name of fs.readdirSync(path.join(root, "src/dist/python"))) {
-    if (!name.endsWith(".js")) continue;
+    if (!/\.(js|d\.ts)$/.test(name)) continue;
     const file = path.join(root, "src/dist/python", name);
     fs.writeFileSync(
       file,
-      fs
-        .readFileSync(file, "utf8")
-        .replaceAll('require("@fmcad/core")', 'require("../core")'),
+      fs.readFileSync(file, "utf8").replaceAll('"@fmcad/core"', '"../core"'),
     );
   }
   fs.cpSync(
@@ -184,7 +182,9 @@ export function stageCore(root: string, identityOnly = false): void {
         fs
           .readFileSync(path.join(source, file), "utf8")
           .replaceAll("../../packages/core/src", "../core")
+          .replaceAll('"@fmcad/core"', '"../core"')
           .replaceAll("../../packages/control-center/src", "../control-center")
+          .replaceAll("../../packages/node-adapters/src/python", "../python")
           .replaceAll("../../packages/node-adapters/src", "../node-adapters")
           .replace(
             /require\("\.\.\/(catalog|queue-[^"/]+)([^"\n]*)"\)/g,
