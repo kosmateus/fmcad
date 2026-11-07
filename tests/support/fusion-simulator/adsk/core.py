@@ -47,6 +47,18 @@ class Point3D(Base):
         return [self.x, self.y, self.z]
 
 
+class BoundingBox3D(Base):
+    def __init__(self, minPoint: Point3D, maxPoint: Point3D) -> None:
+        if any(a > b for a, b in zip(minPoint.asArray(), maxPoint.asArray())):
+            raise ValueError("Inverted bounding box")
+        self.minPoint: Point3D = minPoint
+        self.maxPoint: Point3D = maxPoint
+
+    @staticmethod
+    def create(minPoint: Point3D, maxPoint: Point3D) -> BoundingBox3D:
+        return BoundingBox3D(minPoint, maxPoint)
+
+
 class Vector3D(Base):
     def __init__(self, x: float, y: float, z: float) -> None:
         if not all(math.isfinite(v) for v in (x, y, z)):
@@ -275,7 +287,15 @@ class Document(Base):
         self.isModified = False
         self.app.data.save_calls += 1
 
+    def _require_save_support(self) -> None:
+        from .fusion import Design
+        product = self.products.product
+        assert isinstance(product, Design)
+        if product.allComponents.count > 1 or any(c.sketches.count or c.constructionPlanes.count or c.features.count for c in product.allComponents):
+            raise NotImplementedError("Geometry persistence is not modeled")
+
     def saveAs(self, name: str, dataFolder: DataFolder, description: str, tag: str) -> bool:
+        self._require_save_support()
         if not self.isValid or dataFolder.parentProject.data is not self.app.data:
             raise RuntimeError("Unavailable document or foreign data folder")
         if self.isSaved:
@@ -293,6 +313,7 @@ class Document(Base):
             return False
         if not self.isModified:
             return True
+        self._require_save_support()
         old = self.dataFile
         file = DataFile(old.parentFolder, self.name, old.id, old.versionNumber + 1)
         old.parentFolder.dataFiles.values.remove(old)
@@ -338,7 +359,7 @@ class Application(Base):
     _instance: ClassVar[Application | None] = None
 
     def __init__(self) -> None:
-        self.version: str = "fmcad-simulator-v5-not-Fusion"
+        self.version: str = "fmcad-simulator-v6-not-Fusion"
         self.activeDocument: Document | None = None
         self.documents: Documents = Documents(self)
         self.userInterface: UserInterface = UserInterface()

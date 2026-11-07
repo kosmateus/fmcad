@@ -207,3 +207,8 @@ measurements. [Stage 3d](REFACTOR_STAGE_3D.md) migrates the remaining legacy clo
 commands and adds shared inventory scenarios. These bounded deliveries do not
 close the sketch/feature contracts, remaining JavaScript services, final coverage
 inventory, Control Center backlog or installed-package/native qualification.
+
+[Stage 3e](REFACTOR_STAGE_3E.md) adds the historical box/inspection/rollback contract
+and replaces the builtin script's deprecated extrusion API. Shared sketch and
+feature coverage still needs expansion beyond rectangular prisms; this does not
+qualify arbitrary Fusion geometry or native file formats.

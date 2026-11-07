@@ -1,6 +1,6 @@
 # Partial Fusion test model
 
-Model version 5 implements document identity/lifecycle, numeric user-parameter CRUD,
+Model version 6 implements document identity/lifecycle, numeric user-parameter CRUD,
 saved-file identity and deletion, and a **test state export**. The exported `.f3d` fixture contains a JSON marker
 `nativeF3d: false`; it is not a native Fusion archive and must not be imported into Fusion.
 Native export/import assertions require `native-f3d`, which this model does not advertise.
@@ -45,7 +45,7 @@ the real broker detect modeled edits without activating the document. Revision
 strings are model state hashes, not simulated Autodesk revision identifiers.
 
 Nonparallel midplanes, parameter-driven plane regeneration, referenced-plane
-cascading deletion, nonidentity component transforms and feature rollback are
+cascading deletion, nonidentity component transforms and general feature rollback are
 explicitly unsupported. Geometry persistence/reopen and native F3D export are not
 implemented; saved fixtures exercise cloud ownership and cleanup, not geometry
 roundtrips. The shared document scenarios test geometry before closing the fixture.
@@ -55,3 +55,15 @@ extension/read-only metadata for the configured fixture project. It does not mod
 project administration, file moves or personal-license quotas. Those adapters are
 covered by retained SDK fault fixtures and real Python admission, not by claims of
 cloud simulation. Cloud visibility and permission semantics need final live checks.
+
+Rectangular XY sketches support literal two-point rectangles and one-sided,
+untapered new-body extrusion. Bounds and volume are calculated from the rectangle
+and extent; there is no geometry selected by scenario name. Timeline rollback
+hides/restores the extruded body. Other profile types, booleans, taper, constraints,
+cross-component creation, edits behind the timeline marker and general regeneration
+remain unsupported. Saves with geometry now fail explicitly before creating a file,
+rather than silently dropping geometry from parameter-only state persistence.
+
+The deprecated `setDistanceExtent` method exists only to run the frozen historical
+box fixture. Shipped code uses the pinned `DistanceExtentDefinition` and
+`setOneSideExtent` interfaces, which are included in the API shape checks.
