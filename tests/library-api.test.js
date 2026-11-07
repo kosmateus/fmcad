@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { tmpdir } = require('node:os');
 const { execFileSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
@@ -109,7 +110,7 @@ test('unsupported public versions and direct routing reject before effects', asy
 });
 
 test('broker composition fences compatibility before credentials, submits typed DTO once and never retries', () => {
-  const directory = fs.mkdtempSync('/tmp/opencode/fmcad-api-');
+  const directory = fs.mkdtempSync(path.join(tmpdir(), 'fmcad-api-'));
   try {
     child(`
       const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
@@ -167,7 +168,7 @@ test('broker composition fences compatibility before credentials, submits typed 
 });
 
 test('outside-repository consumer imports built JS and declarations with no source or host SDK', () => {
-  const directory = fs.mkdtempSync('/tmp/opencode/fmcad-consumer-');
+  const directory = fs.mkdtempSync(path.join(tmpdir(), 'fmcad-consumer-'));
   let installed;
   try {
     fs.writeFileSync(path.join(directory, 'package.json'), '{"private":true}');

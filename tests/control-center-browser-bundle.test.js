@@ -93,7 +93,7 @@ function checkBrowserEsmGraph(assetRoot) {
       return result;
     }
     const linker = (specifier, referencing) => {
-      if (!specifier.startsWith('./') || !specifier.endsWith('.js')) throw new Error('unexpected browser import: ' + specifier);
+      if (!/^\.{1,2}\//.test(specifier) || !specifier.endsWith('.js')) throw new Error('unexpected browser import: ' + specifier);
       return moduleFor(path.resolve(path.dirname(referencing.identifier), specifier));
     };
     (async () => {
@@ -105,6 +105,8 @@ function checkBrowserEsmGraph(assetRoot) {
       assert.ok(app, 'the operational application must be emitted and linked');
       assert.equal(typeof app.namespace.ControlCenterApp, 'function');
       const api = cache.get(path.join(root, 'web/api.js'));
+      const projectActions = cache.get(path.join(root, 'contracts/project-actions.js'));
+      assert.equal(projectActions?.namespace.PROJECT_ACTIONS_ROUTE, '/api/v1/console/project-actions');
       const calls = [];
       const client = new api.namespace.ConsoleQueryClient('http://localhost:4748', async (input, init) => {
         const url = new URL(String(input));
@@ -134,7 +136,7 @@ function checkBrowserEsmGraph(assetRoot) {
     { cwd: repository, encoding: "utf8", timeout: 30000 },
   );
   assert.equal(result.status, 0, result.stderr + result.stdout);
-  assert.match(result.stdout, /"modules":7/);
+  assert.match(result.stdout, /"modules":8/);
 }
 
 test("browser build emits standalone ESM and a hash-bound static allowlist", async (t) => {
@@ -151,7 +153,18 @@ test("browser build emits standalone ESM and a hash-bound static allowlist", asy
   const manifest = resolver.readControlCenterAssetManifest(installation);
   assert.equal(manifest.version, 1);
   assert.equal(manifest.entrypoint, "/assets/control-center/web/index.js");
-  assert.equal(manifest.assets.length, 17);
+  // The agents/projects feature added a browser module and a runtime route contract.
+  // Both are emitted by the browser build and must be in the exact server allowlist.
+  assert.equal(manifest.assets.length, 19);
+  for (const file of [
+    "web/agents-projects.js",
+    "contracts/project-actions.js",
+  ]) {
+    assert.ok(
+      manifest.assets.some((asset) => asset.file === file),
+      file,
+    );
+  }
   assert.equal(manifest.notices.length, 4);
   assert.deepEqual(
     manifest.assets.map((asset) => asset.path),
@@ -177,6 +190,7 @@ test("browser build emits standalone ESM and a hash-bound static allowlist", asy
 
   const sourceFiles = fs.readdirSync(path.join(assetRoot, "web"));
   assert.deepEqual(sourceFiles.sort(), [
+    "agents-projects.js",
     "api.js",
     "app.js",
     "index.js",

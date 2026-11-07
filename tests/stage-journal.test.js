@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { tmpdir } = require('node:os');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { isDeepStrictEqual } = require('node:util');
 const api = require('../src/dist/core/application/stage-journal');
@@ -12,7 +13,7 @@ const { readJson, durable } = require('../src/dist/node-adapters/persistence/rec
 const { createNativeReceipts } = require('../src/dist/node-adapters/execution/native-receipt');
 
 function fixture(t) {
-  const root = fs.mkdtempSync('/tmp/opencode/stage-journal-');
+  const root = fs.mkdtempSync(path.join(tmpdir(), 'stage-journal-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const request = { clientId: 'client', requestId: 'request', payload: { source: 'original accepted input' } };
   accepted.retainAdmission(root, request);

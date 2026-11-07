@@ -39,6 +39,7 @@ interface RuntimeModules {
     ): Promise<number>;
   };
   stageDependencies: {
+    requiresPhysicalStageOwner(payload: unknown): boolean;
     createAuthenticatedStageDependencies(
       inputs: VerifiedWorkerInputs,
     ): Promise<unknown>;
@@ -68,11 +69,15 @@ export async function execute(
   }
   const service = createWorkerExecutionService({
     cad: async (input, client, outcome) => {
-      const stageDependencies = verifiedWorkerInputs
-        ? await runtimeModules.stageDependencies.createAuthenticatedStageDependencies(
-            verifiedWorkerInputs,
-          )
-        : null;
+      const stageDependencies =
+        verifiedWorkerInputs &&
+        runtimeModules.stageDependencies.requiresPhysicalStageOwner(
+          input.payload,
+        )
+          ? await runtimeModules.stageDependencies.createAuthenticatedStageDependencies(
+              verifiedWorkerInputs,
+            )
+          : null;
       return runtimeModules.cadService.execute(
         input,
         client,

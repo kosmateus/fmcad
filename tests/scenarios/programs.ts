@@ -4,6 +4,9 @@ export const marker = "FMCAD_SCENARIO ";
 const quoted = (value: string): string => JSON.stringify(value);
 export function program(body: string): string {
   return (
+    // The public run command requires this slot when --doc is supplied.
+    // Identity remains pinned separately by --doc-id and the in-script guard.
+    "DOC_NAME = None\n" +
     "def run(context: str) -> None:\n" +
     body
       .split("\n")

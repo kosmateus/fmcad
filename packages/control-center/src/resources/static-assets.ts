@@ -9,6 +9,7 @@ const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_ASSET_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_ASSET_BYTES = 32 * 1024 * 1024;
 const KNOWN_MODULES = [
+  "agents-projects.js",
   "api.js",
   "app.js",
   "index.js",
@@ -28,6 +29,13 @@ const KNOWN_ASSETS = new Map<string, { file: string; contentType: string }>([
   [
     "/index.html",
     { file: "index.html", contentType: "text/html; charset=utf-8" },
+  ],
+  [
+    "/assets/control-center/contracts/project-actions.js",
+    {
+      file: "contracts/project-actions.js",
+      contentType: "text/javascript; charset=utf-8",
+    },
   ],
   [
     "/assets/control-center/contracts/query.js",
