@@ -16,7 +16,8 @@
     },
     "cmd_bodies": {
       "before": "13452ffd2a9c15a88ed28da0d0b86ff78e89ec8c3b492317be42b1bf631f874d",
-      "after": "938a4e16b0800aad7a698574baf1f670dd352c1b2be19097d8497ec7016591b0"
+      "after": "de16940c603ecdbc9aedbf95c2099bd053638119bdae23f1b3f0be36e739338d",
+      "reason": "Intentional correction of inherited false zero measurements: physical-property exceptions now propagate with the body name and original cause; nonfinite or negative values also fail. Valid zero and positive volumes retain the historical format. Paired tests verify one read, no replay and no DONE on failure."
     },
     "cmd_units": {
       "before": "75b193eb940884884e2c7680b6e69a81073387997ff20e6d035494ab4af9d915",
