@@ -1284,7 +1284,7 @@ const catalogs = {
     "nav.logs": "Logi",
     "nav.system": "System",
     "nav.projects": "Projekty",
-    "scope.global": "Wszystkie projekty",
+    "scope.global": "Globalnie",
     "scope.project": "Projekt",
     "common.openMenu": "Otwórz menu",
     "common.search": "Szukaj",

@@ -1,24 +1,6 @@
-@font-face {
-  font-family: "Fmcad Unicode";
-  src: url("/assets/control-center/assets/fonts/DejaVuSans.ttf")
-    format("truetype");
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Fmcad Unicode";
-  src: url("/assets/control-center/assets/fonts/DejaVuSans-Bold.ttf")
-    format("truetype");
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-}
-
 :root {
   --font:
-    "DM Sans", "Fmcad Unicode", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
 }
 
@@ -27,7 +9,7 @@
   display: inline-flex;
   flex: none;
   color: var(--text, #eeeef4);
-  font-family: "DM Sans", "Fmcad Unicode", system-ui, sans-serif;
+  font-family: "DM Sans", system-ui, sans-serif;
 }
 
 .locale-trigger {
@@ -89,7 +71,7 @@
   background: #1b1c23;
   color: #e3e3eb;
   box-shadow: 0 16px 45px #03030780;
-  font-family: "DM Sans", "Fmcad Unicode", system-ui, sans-serif;
+  font-family: "DM Sans", system-ui, sans-serif;
 }
 
 .locale-menu[hidden] {

@@ -97,7 +97,8 @@ test(
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
-      if (message.type() === "error") errors.push(message.text());
+      if (message.type() === "error")
+        errors.push(`${message.text()} ${message.location().url}`);
     });
     await page.goto(`http://localhost:${port}/`);
     await page

@@ -1033,7 +1033,10 @@ test(
     await page.getByRole("dialog", { name: "Pomoc i skróty" }).waitFor({
       state: "detached",
     });
-    await page.getByRole("button", { name: "Ustawienia", exact: true }).click();
+    await page
+      .locator(".topbar")
+      .getByRole("button", { name: "Ustawienia", exact: true })
+      .click();
     await page
       .getByRole("combobox", { name: /Odstęp między aktualizacjami widoku:/ })
       .click();
@@ -1049,7 +1052,10 @@ test(
       .waitFor({ state: "detached" });
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Przegląd globalny" }).waitFor();
-    await page.getByRole("button", { name: "Ustawienia", exact: true }).click();
+    await page
+      .locator(".topbar")
+      .getByRole("button", { name: "Ustawienia", exact: true })
+      .click();
     assert.match(
       (await page
         .getByRole("combobox", { name: /Odstęp między aktualizacjami widoku:/ })
