@@ -21,6 +21,7 @@
     "src/composition/run.ts",
     "src/composition/cad.ts",
     "src/composition/cad-execution.ts",
+    "src/composition/document-publication.ts",
     "src/entrypoints/cli.ts",
     "src/entrypoints/cli/**/*.ts",
     "src/entrypoints/mcp.ts",
