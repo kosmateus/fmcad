@@ -51,7 +51,3 @@ license/readme, and the `Point3D.create` annotation change are retained beside
 it under `dist/runtime/python/typing/snapshots/`. See [`NOTICE.md`](NOTICE.md)
 and the snapshot's own `NOTICES.md` for the retained upstream terms and
 provenance.
-
-The user authorized distribution with the documented uncertainty accepted.
-This is not Autodesk permission or legal clearance; the package does not
-assert Autodesk sponsorship, endorsement, or SDK implementation status.
