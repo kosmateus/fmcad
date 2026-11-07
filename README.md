@@ -40,14 +40,3 @@ no plugin is needed for the API, CLI, or MCP. See
 [`docs/OPENCODE_PLUGIN.md`](docs/OPENCODE_PLUGIN.md) for supported host
 versions and configuration. API consumers can consult
 [`docs/LIBRARY_API.md`](docs/LIBRARY_API.md).
-
-## Runtime resources and notices
-
-The tarball includes the Python worker/runtime, Fusion helper scripts,
-PowerShell UI helper, formatter and requirements files, plus the verified
-Autodesk editor-definition snapshot used by the type checker. The snapshot's
-manifest pins its upstream commit and file hashes; its notices, upstream
-license/readme, and the `Point3D.create` annotation change are retained beside
-it under `dist/runtime/python/typing/snapshots/`. See [`NOTICE.md`](NOTICE.md)
-and the snapshot's own `NOTICES.md` for the retained upstream terms and
-provenance.
