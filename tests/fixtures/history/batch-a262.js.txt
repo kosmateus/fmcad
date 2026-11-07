@@ -1,0 +1,691 @@
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { failedOutcome } = require('./outcome');
+const { createHash } = require('node:crypto');
+const { publishComplete } = require('./publish');
+const { redactDiagnostic, formatJsonError } = require('./diagnostics');
+const { run: runLocal, localOperations } = require('./engineering-local');
+
+const limitations = [
+  'Offline checks cover outer operation keys/required fields and step/reference structure only; nested schemas/types, conditional fields, units, geometry, entity existence, solver behavior and output reference paths are not verified.',
+  'No rollback. Exceptions and unsuccessful mutations may have changed Fusion; inspect before any new run.',
+  'Replay trusts local successful reports, not current model state. CAD CLI --doc accepts open-document names, not file IDs; use doc status to compare actual identity separately. Name-based replay cannot detect document replacement.',
+  'reportPath is a local directory of immutable JSON snapshots. Stale locks require operator inspection; do not use network filesystems.',
+];
+const own = (value, key) => Object.hasOwn(value, key);
+const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const isLocal = (operation) => own(localOperations, operation);
+
+// An explicitly expected negative check result (status fail) is a recorded, well-formed
+// outcome, not an execution error. `blocked` (execution error) and `unknown` (unresolved)
+// are never treated as expected negatives.
+function expectedFail(step, output) {
+  if (step.expectFail !== true || !object(output)) return false;
+  if (output.restored === false || output.rollbackVerified === false || output.result?.restored === false) return false;
+  const status = output.status ?? output.result?.status;
+  return status === 'fail';
+}
+
+function validateBatchMode(data) {
+  if (own(data, 'mode') && !['validate', 'preview', 'run'].includes(data.mode)) {
+    throw new Error('mode must be validate, preview, or run');
+  }
+}
+
+// Omitted or atomic: true selects atomic execution; only an explicit atomic: false
+// selects the legacy per-step semantics. Invalid types are rejected, never coerced.
+function atomicInfo(data) {
+  const requested = object(data) && own(data, 'atomic') ? data.atomic : undefined;
+  return { requested, effective: requested === undefined ? true : requested };
+}
+
+const ATOMIC_BACKENDS = { addin: true, mcp: false };
+
+function canonical(value, stack = new Set()) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
+  if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value);
+  if (typeof value !== 'object' || stack.has(value)) throw new Error('Expected acyclic JSON data');
+  if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+    throw new Error('Expected plain JSON objects');
+  }
+  stack.add(value);
+  const result = Array.isArray(value)
+    ? '[' + Array.from(value, (entry) => canonical(entry, stack)).join(',') + ']'
+    : '{' + Object.keys(value).sort().map((key) => JSON.stringify(key) + ':' + canonical(value[key], stack)).join(',') + '}';
+  stack.delete(value);
+  return result;
+}
+
+const clone = (value) => JSON.parse(canonical(value));
+const hash = (value) => createHash('sha256').update(canonical(value)).digest('hex');
+
+function transform(value, marker, replace) {
+  if (Array.isArray(value)) return value.map((entry) => transform(entry, marker, replace));
+  if (!object(value)) return value;
+  if (own(value, marker)) {
+    if (Object.keys(value).length !== 1 || typeof value[marker] !== 'string' || !value[marker]) {
+      throw new Error(`${marker} must be the sole key with a nonempty string value`);
+    }
+    return replace(value[marker]);
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, transform(entry, marker, replace)]));
+}
+
+function referenceParts(reference) {
+  const parts = reference.split('.');
+  if (parts.length < 2 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part) || ['__proto__', 'prototype', 'constructor'].includes(part))) {
+    throw new Error(`Invalid reference: ${reference}`);
+  }
+  return parts;
+}
+
+function resolveReferences(value, results) {
+  return transform(clone(value), '$ref', (reference) => {
+    let current = results;
+    for (const part of referenceParts(reference)) {
+      if (Array.isArray(current)) {
+        if (!/^(0|[1-9][0-9]*)$/.test(part) || !Number.isSafeInteger(Number(part)) || Number(part) >= current.length) {
+          throw new Error(`Invalid or out-of-range array index in reference: ${reference}`);
+        }
+        current = current[Number(part)];
+      } else {
+        if (current === null || typeof current !== 'object' || !own(current, part)) throw new Error(`Unresolved reference: ${reference}`);
+        current = current[part];
+      }
+    }
+    return clone(current);
+  });
+}
+
+function expandDefinition(data) {
+  const input = clone(data);
+  if (input.formatVersion !== undefined || input.definitions !== undefined) return expandScoped(input);
+  const parameters = input.parameters === undefined ? {} : input.parameters;
+  if (!object(parameters)) throw new Error('parameters must be an object');
+  input.operations = transform(input.operations, '$param', (name) => {
+    if (!own(parameters, name)) throw new Error(`Unknown parameter: ${name}`);
+    return clone(parameters[name]);
+  });
+  return input;
+}
+
+// Compile to the existing flat batch contract. No executor or expression language here.
+function expandScoped(input) {
+  if (input.formatVersion !== 1) throw new Error('Scoped definitions require formatVersion: 1');
+  const optional = (value, fallback) => value === undefined ? fallback : value;
+  const max = optional(input.maxExpansion, 10000);
+  if (!Number.isSafeInteger(max) || max < 1 || max > 100000) throw new Error('maxExpansion must be an integer in 1..100000');
+  const definitions = optional(input.definitions, {});
+  if (!object(definitions)) throw new Error('definitions must be an object');
+  const validName = name => typeof name === 'string' && /^[A-Za-z0-9_-]+$/.test(name) && !['constructor', 'prototype', '__proto__'].includes(name);
+  const fields = (value, allowed, label) => {
+    if (!object(value)) throw new Error(`${label} must be an object`);
+    for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`Unknown ${label} field: ${key}`);
+  };
+  const dictionary = (value, label) => {
+    if (!object(value) || Object.keys(value).some(key => !validName(key))) throw new Error(`Invalid ${label} names`);
+    return value;
+  };
+  dictionary(definitions, 'definition');
+  function literalValues(values) {
+    for (const marker of ['$ref', '$param', '$input', '$local']) transform(values, marker, () => {
+      throw new Error('Scoped defaults/root values must be literal JSON; bind caller references through inputs');
+    });
+  }
+  literalValues(optional(input.parameters, {}));
+  literalValues(optional(input.inputs, {}));
+  for (const [name, def] of Object.entries(definitions)) {
+    fields(def, ['parameters', 'inputs', 'operations', 'outputs', 'revision'], `definition ${name}`);
+    dictionary(optional(def.parameters, {}), 'parameter');
+    literalValues(optional(def.parameters, {}));
+    const names = optional(def.inputs, []);
+    if (!Array.isArray(names) || new Set(names).size !== names.length || names.some(key => !validName(key))) throw new Error(`Invalid inputs in ${name}`);
+    dictionary(optional(def.outputs, {}), 'output');
+    if (def.revision !== undefined && (typeof def.revision !== 'string' || !def.revision)) throw new Error(`Invalid revision in ${name}`);
+  }
+  const checked = new Set();
+  function checkLibrary(name, chain = []) {
+    if (chain.includes(name)) throw new Error(`Definition cycle: ${[...chain, name].join(' -> ')}`);
+    if (checked.has(name)) return;
+    if (chain.length > 128) throw new Error('Definition depth exceeds 128');
+    function walk(steps, depth = 0) {
+      if (depth > 128 || !Array.isArray(steps) || !steps.length) throw new Error('Invalid definition operations/depth');
+      for (const step of steps) {
+        if (!object(step)) throw new Error('Definition step must be an object');
+        if (own(step, 'use')) {
+          if (!own(definitions, step.use)) throw new Error(`Unknown definition: ${step.use}`);
+          checkLibrary(step.use, [...chain, name]);
+        }
+        if (own(step, 'operations')) walk(step.operations, depth + 1);
+      }
+    }
+    walk(definitions[name].operations);
+    checked.add(name);
+  }
+  for (const name of Object.keys(definitions)) checkLibrary(name);
+  let visits = 0;
+  let expandedBytes = 0;
+  const maxExpandedBytes = 32 * 1024 * 1024;
+  const boundedCopy = value => {
+    const encoded = canonical(value);
+    expandedBytes += Buffer.byteLength(encoded);
+    if (expandedBytes > maxExpandedBytes) throw new Error('Expansion memory budget exceeded: 32 MiB of copied JSON');
+    return JSON.parse(encoded);
+  };
+  const operations = [], scopes = [];
+  let bindings;
+  const generated = new Set();
+  function scope(steps, prefix, params, inputs, locals, outputs, stack, inheritedComponent) {
+    if (stack.length + prefix.length > 128) throw new Error('Expansion depth exceeds 128');
+    if (!Array.isArray(steps) || !steps.length) throw new Error('operations must be a nonempty array');
+    dictionary(params, 'parameter'); dictionary(inputs, 'input');
+    const symbols = new Map();
+    function value(raw) {
+      if (own(raw, '$param')) return transform(raw, '$param', key => {
+        if (!own(params, key)) throw new Error(`Unknown parameter: ${key}`);
+        return boundedCopy(params[key]);
+      });
+      if (own(raw, '$input')) return transform(raw, '$input', key => {
+        if (!own(inputs, key)) throw new Error(`Unbound input: ${key}`);
+        return boundedCopy(inputs[key]);
+      });
+      if (own(raw, '$local')) return transform(raw, '$local', key => {
+        const parts = referenceParts(`local.${key}`).slice(1);
+        let result = locals;
+        for (const part of parts) {
+          if (result === null || typeof result !== 'object' || !own(result, part)) throw new Error(`Unbound local: ${key}`);
+          result = result[part];
+        }
+        return boundedCopy(result);
+      });
+      return transform(raw, '$ref', ref => {
+        const [id, ...parts] = referenceParts(ref);
+        if (!symbols.has(id)) throw new Error(`Unbound, future or cross-scope reference: ${ref}`);
+        const symbol = symbols.get(id);
+        if (typeof symbol === 'string') return { $ref: [symbol, ...parts].join('.') };
+        let result = symbol;
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          if (object(result) && own(result, '$ref')) return { $ref: [result.$ref, ...parts.slice(i)].join('.') };
+          if (!object(result) && !Array.isArray(result) || !own(result, part)) throw new Error(`Unexposed reference: ${ref}`);
+          result = result[part];
+        }
+        return boundedCopy(result);
+      });
+    }
+    // Bindings already resolved in the caller must not be reinterpreted in the callee.
+    function substitute(raw) {
+      if (Array.isArray(raw)) return raw.map(substitute);
+      if (!object(raw)) return raw;
+      for (const marker of ['$param', '$input', '$local', '$ref']) {
+        if (own(raw, marker)) return value(raw);
+      }
+      return Object.fromEntries(Object.entries(raw).map(([key, item]) => [key, substitute(item)]));
+    }
+    for (const step of steps) {
+      if (++visits > max) throw new Error(`Expansion limit exceeded: ${max} nodes`);
+      if (!object(step) || !validName(step.id)) throw new Error('Invalid scoped step id');
+      if (symbols.has(step.id)) throw new Error(`Duplicate step id: ${step.id}`);
+      const address = [...prefix, step.id];
+      const component = own(step, 'component') ? substitute(step.component) : inheritedComponent;
+      if (own(step, 'use')) {
+        fields(step, ['id', 'use', 'parameters', 'inputs', 'component'], 'use');
+        if (!own(definitions, step.use)) throw new Error(`Unknown definition: ${step.use}`);
+        if (stack.includes(step.use)) throw new Error(`Definition cycle: ${[...stack, step.use].join(' -> ')}`);
+        const def = definitions[step.use];
+        const overrides = dictionary(optional(step.parameters, {}), 'parameter');
+        for (const key of Object.keys(overrides)) if (!own(def.parameters ?? {}, key)) throw new Error(`Unknown parameter: ${step.use}.${key}`);
+        const bound = dictionary(optional(step.inputs, {}), 'input');
+        const names = optional(def.inputs, []);
+        if (names.some(key => !own(bound, key)) || Object.keys(bound).some(key => !names.includes(key))) throw new Error(`Missing or unknown inputs: ${step.use}`);
+        const exports = scope(def.operations, address, { ...optional(def.parameters, {}), ...substitute(overrides) }, substitute(bound), {}, optional(def.outputs, {}), [...stack, step.use], component);
+        symbols.set(step.id, { outputs: exports });
+      } else if (own(step, 'repeat') || own(step, 'forEach')) {
+        fields(step, ['id', 'repeat', 'forEach', 'as', 'index', 'operations', 'outputs', 'component'], 'loop');
+        if (own(step, 'repeat') === own(step, 'forEach')) throw new Error('Specify exactly one of repeat or forEach');
+        if (!Array.isArray(step.operations) || !step.operations.length) throw new Error('Loop operations must be a nonempty array');
+        dictionary(optional(step.outputs, {}), 'output');
+        const items = own(step, 'repeat') ? substitute(step.repeat) : substitute(step.forEach);
+        const count = own(step, 'repeat') ? items : items?.length;
+        if (own(step, 'forEach') && !Array.isArray(items) || !Number.isSafeInteger(count) || count < 0 || count > max - visits) throw new Error('Loop requires a finite bounded count or array within maxExpansion');
+        const itemName = optional(step.as, 'item'), indexName = optional(step.index, 'index');
+        if (![itemName, indexName].every(validName) || itemName === indexName || own(locals, itemName) || own(locals, indexName)) throw new Error('Loop local name collision');
+        const exported = [];
+        for (let i = 0; i < count; i++) {
+          if (++visits > max) throw new Error('Expansion limit exceeded');
+          exported.push(scope(step.operations, [...address, String(i)], params, inputs,
+            { ...locals, [itemName]: own(step, 'repeat') ? i : items[i], [indexName]: i }, optional(step.outputs, {}), stack, component));
+        }
+        symbols.set(step.id, { outputs: exported });
+      } else {
+        fields(step, ['id', 'operation', 'data', 'component', 'onExisting', 'expectFail'], 'step');
+        const id = prefix.length ? 'scope_' + address.map(part => `${part.length}_${part}`).join('_') : step.id;
+        if (generated.has(id)) throw new Error(`Expanded ID collision: ${id}`);
+        generated.add(id);
+        const flat = { ...step, id, data: substitute(step.data) };
+        if (component !== undefined) flat.component = component;
+        operations.push(boundedCopy(flat));
+        scopes.push({ id, path: address });
+        symbols.set(step.id, id);
+      }
+    }
+    dictionary(outputs, 'output');
+    if (!prefix.length && input.recipe) bindings = substitute(input.recipe.bindings);
+    return boundedCopy(substitute(outputs));
+  }
+  const exports = scope(input.operations, [], optional(input.parameters, {}), optional(input.inputs, {}), {}, optional(input.outputs, {}), [], undefined);
+  const result = { ...input, operations, exports, expansion: { nodes: visits, steps: operations.length, maxExpansion: max, expandedBytes, maxExpandedBytes, scopes } };
+  if (input.recipe) result.recipe = { ...input.recipe, bindings };
+  for (const key of ['formatVersion', 'definitions', 'maxExpansion', 'inputs', 'outputs']) delete result[key];
+  return result;
+}
+
+function validateBatch(data, catalog) {
+  const errors = [];
+  let input;
+  try {
+    if (object(data)) validateBatchMode(data);
+    if (object(data) && (own(data, 'exports') || own(data, 'expansion'))) throw new Error('exports and expansion are result-only fields; use outputs');
+    input = expandDefinition(data);
+    if (!object(input)) throw new Error('Batch must be an object');
+  } catch (error) {
+    return { success: false, errors: [error.message], limitations: [...limitations], atomic: atomicInfo(data) };
+  }
+  for (const key of Object.keys(input)) {
+    if (!['operations', 'runId', 'reportPath', 'mode', 'parameters', 'exports', 'expansion', 'recipe', 'timeBudgetMs', 'atomic'].includes(key)) errors.push(`Unknown batch field: ${key}`);
+  }
+  if (own(input, 'atomic') && typeof input.atomic !== 'boolean') errors.push('atomic must be a boolean: true for atomic (default) or false for non-atomic');
+  if (own(input, 'timeBudgetMs') && (!Number.isSafeInteger(input.timeBudgetMs) || input.timeBudgetMs < 1)) errors.push('timeBudgetMs must be a positive safe integer');
+  if (typeof input.runId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(input.runId)) errors.push('runId must contain only letters, digits, underscores, or hyphens');
+  if (input.reportPath !== undefined && (typeof input.reportPath !== 'string' || !input.reportPath.trim())) errors.push('reportPath must be a nonempty directory path');
+  if (!Array.isArray(input.operations) || !input.operations.length) errors.push('operations must be a nonempty array');
+  const steps = Array.isArray(input.operations) ? input.operations : [];
+  if (input.recipe !== undefined) {
+    if (!object(input.recipe) || Object.keys(input.recipe).some(key => !['id', 'bindings'].includes(key)) ||
+        typeof input.recipe.id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(input.recipe.id) || !Array.isArray(input.recipe.bindings) || !input.recipe.bindings.length) errors.push('recipe requires id and nonempty bindings');
+    else for (const binding of input.recipe.bindings) {
+      if (!object(binding) || Object.keys(binding).some(key => !['parameter', 'target', 'name', 'role', 'input'].includes(key)) ||
+          typeof binding.parameter !== 'string' || !own(input.parameters ?? {}, binding.parameter) || !object(binding.target) ||
+          typeof binding.target.$ref !== 'string' || typeof binding.input !== 'string' || (typeof binding.name !== 'string' && typeof binding.role !== 'string')) errors.push('Invalid recipe binding: parameter, input, target $ref and name or role required');
+    }
+  }
+  const ids = new Map();
+  steps.forEach((step, index) => {
+    if (!object(step)) { errors.push(`Step ${index} must be an object`); return; }
+    if (typeof step.id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(step.id) || ['__proto__', 'constructor', 'prototype'].includes(step.id)) errors.push(`Invalid step id at ${index}`);
+    if (ids.has(step.id)) errors.push(`Duplicate step id: ${step.id}`);
+    ids.set(step.id, index);
+  });
+  const dependencies = steps.map(() => []);
+  steps.forEach((step, index) => {
+    if (!object(step)) return;
+    for (const key of Object.keys(step)) {
+      if (!['id', 'operation', 'data', 'component', 'onExisting', 'expectFail'].includes(key)) errors.push(`Unknown step field: ${step.id}.${key}`);
+    }
+    if (step.onExisting !== undefined && !['error', 'reuse'].includes(step.onExisting)) errors.push(`Invalid onExisting for ${step.id}`);
+    if (step.expectFail !== undefined && typeof step.expectFail !== 'boolean') errors.push(`Invalid expectFail for ${step.id}`);
+    const spec = object(catalog) && own(catalog, step.operation) ? catalog[step.operation] : null;
+    if (step.expectFail === true && !(spec?.readOnly === true || isLocal(step.operation))) errors.push(`expectFail requires a read-only operation: ${step.id}`);
+    if ((!spec && !isLocal(step.operation)) || spec?.nodeOnly || /^(batch\.|definition\.)/.test(step.operation)) errors.push(`Unknown or non-CAD operation: ${step.operation}`);
+    if (spec?.batchAllowed === false) errors.push(`Operation must be invoked separately, not in a modeling batch: ${step.operation}`);
+    if (!object(step.data)) errors.push(`data must be an object for ${step.id}`);
+    else if (spec) {
+      for (const field of spec.required || []) {
+        if (!own(step.data, field) || step.data[field] === null) errors.push(`Missing required field: ${step.id}.${field}`);
+      }
+      if (spec.inputs) {
+        for (const field of Object.keys(step.data)) {
+          if (!own(spec.inputs, field) && !(spec.required || []).includes(field)) errors.push(`Unknown input field: ${step.id}.${field}`);
+        }
+      }
+    }
+    try {
+      transform(step, '$param', (name) => { throw new Error(`Unresolved parameter: ${name}`); });
+      for (const marker of ['$input', '$local']) transform(step, marker, name => { throw new Error(`Unresolved ${marker}: ${name}`); });
+      transform(step, '$ref', (reference) => {
+        const [id] = referenceParts(reference);
+        if (!ids.has(id)) errors.push(`Unknown reference: ${reference}`);
+        else {
+          dependencies[index].push(ids.get(id));
+          if (ids.get(id) >= index) errors.push(`Future or self reference: ${reference}`);
+        }
+        return null;
+      });
+    } catch (error) { errors.push(error.message); }
+  });
+  const visiting = new Set();
+  const visited = new Set();
+  function visit(index) {
+    if (visiting.has(index)) { errors.push(`Reference cycle at step ${steps[index].id}`); return; }
+    if (visited.has(index)) return;
+    visiting.add(index);
+    for (const dependency of dependencies[index]) visit(dependency);
+    visiting.delete(index);
+    visited.add(index);
+  }
+  steps.forEach((_, index) => visit(index));
+  try {
+    transform(input.exports ?? {}, '$ref', reference => {
+      if (!ids.has(referenceParts(reference)[0])) throw new Error(`Unknown exported reference: ${reference}`);
+      return null;
+    });
+    if (input.recipe && !errors.length) {
+      const bindings = input.recipe.bindings;
+      for (const binding of bindings) {
+        const id = referenceParts(binding.target.$ref)[0];
+        if (!ids.has(id)) throw new Error(`Unknown binding target: ${binding.target.$ref}`);
+        if (typeof input.parameters[binding.parameter] !== 'string') throw new Error('Bound recipe parameters must be expression strings');
+      }
+      // Every changed leaf input must have an explicit native binding. This prevents
+      // silently updating only one of several uses of the same recipe parameter.
+      for (const name of new Set(bindings.map(b => b.parameter))) {
+        const probe = clone(data);
+        probe.parameters[name] = '__fmcad_binding_probe__';
+        const expanded = expandDefinition(probe).operations;
+        if (expanded.length !== steps.length) throw new Error('Structural parameter cannot be regenerated');
+        const changed = [];
+        function differences(a, b, parts) {
+          if (canonical(a) === canonical(b)) return;
+          if (object(a) && object(b) || Array.isArray(a) && Array.isArray(b) && a.length === b.length) {
+            if (Object.keys(a).join('|') !== Object.keys(b).join('|')) throw new Error('Structural parameter cannot be regenerated');
+            for (const key of Object.keys(a)) differences(a[key], b[key], [...parts, key]);
+          } else changed.push(parts.join('.'));
+        }
+        steps.forEach((step, i) => differences(step, expanded[i], [step.id]));
+        const declared = bindings.filter(b => b.parameter === name).map(b => `${referenceParts(b.target.$ref)[0]}.data.${b.input}`);
+        if (!changed.length || changed.some(key => !declared.includes(key)) || declared.some(key => !changed.includes(key))) throw new Error(`Incomplete or structural regeneration bindings for parameter: ${name}`);
+      }
+    }
+  } catch (error) { errors.push(error.message); }
+  return {
+    success: errors.length === 0, errors, operations: steps, exports: input.exports ?? {},
+    recipe: input.recipe,
+    atomic: atomicInfo(data),
+    plan: { steps: steps.length, backendCalls: steps.length + (input.recipe ? 2 : 0),
+      timeBudgetMs: input.timeBudgetMs ?? (data.formatVersion === 1 ? 180000 : null),
+      mutations: steps.filter(step => !(catalog[step.operation]?.readOnly === true || isLocal(step.operation))).length,
+      ...(input.expansion ?? {}) },
+    checks: ['JSON structure', 'known operations', 'required and known input fields', 'unique IDs', 'reference syntax and ordering', 'reference cycles', 'parameter substitution'],
+    limitations: [...limitations],
+  };
+}
+
+async function runBatch(client, data, context = {}, executeCad, catalog) {
+  const validation = validateBatch(data, catalog);
+  const mode = context.preview ? 'preview' : (object(data) && own(data, 'mode') ? data.mode : 'run');
+  if (!validation.success || mode !== 'run') return { ...validation, operation: `batch.${mode}`, mode, mutated: false };
+  if (!context.doc || typeof executeCad !== 'function') throw new Error('Batch run requires an explicit context.doc and executeCad function');
+  const started = performance.now();
+  // Snapshot inputs before asynchronous work or calls into the executor.
+  const request = clone(data);
+  delete request.mode;
+  delete request.reportPath;
+  const executionContext = clone(context);
+  const requestHash = hash({ request, context: executionContext });
+  const reportPath = path.resolve(data.reportPath || path.join('.fmcad-batch', data.runId));
+  await fs.mkdir(reportPath, { recursive: true });
+  const lockPath = path.join(reportPath, 'run.lock');
+  const lock = await fs.open(lockPath, 'wx', 0o600).catch((error) => {
+    if (error.code === 'EEXIST') throw new Error('Run is locked; inspect operator/model state before removing a stale lock');
+    throw error;
+  });
+  let report;
+  let sequence = 0;
+  async function persist() {
+    report.sequence = sequence;
+    report.updatedAt = new Date().toISOString();
+    report.elapsedMs = performance.now() - started;
+    const target = path.join(reportPath, `${String(sequence).padStart(8, '0')}.json`);
+    await publishComplete(target, JSON.stringify(report, null, 2) + '\n');
+    sequence++;
+  }
+  async function budgetExhausted() {
+    if (validation.plan.timeBudgetMs === null || performance.now() - started < validation.plan.timeBudgetMs) return false;
+    report.status = 'failed';
+    report.error = { code: 'FMCAD_BATCH_BUDGET_EXHAUSTED', message: 'Execution scheduling budget exhausted; no further calls submitted. Completed calls are retained; remote calls were not cancelled.' };
+    // Called only at submission/completion boundaries, never with an outstanding RPC.
+    for (const step of report.steps) if (['pending', 'running'].includes(step.status)) { step.status = 'skipped'; step.mutationStatus = 'not_started'; }
+    await persist();
+    return true;
+  }
+  try {
+    const files = (await fs.readdir(reportPath)).filter((name) => /^\d{8}\.json$/.test(name)).sort();
+    if (files.length) {
+      for (let index = 0; index < files.length; index++) {
+        if (files[index] !== `${String(index).padStart(8, '0')}.json`) throw new Error('Incomplete report history; operator inspection required');
+      }
+      report = JSON.parse(await fs.readFile(path.join(reportPath, files.at(-1)), 'utf8'));
+      if (report.version !== 1 || report.requestHash !== requestHash || hash({ request: report.request, context: report.context }) !== requestHash) {
+        throw new Error('Saved request/context hash differs; replay refused');
+      }
+      if (report.status !== 'success' || report.steps.length !== validation.operations.length || report.steps.some((step, index) =>
+        step.id !== validation.operations[index].id || step.status !== 'success' ||
+        (!step.expectFail && (step.output?.success !== true || failedOutcome(step.output))))) {
+        throw new Error('Saved run contains failed, unknown, pending, or in-progress steps; operator inspection required, no automatic retry');
+      }
+      if (validation.operations.some((step) => step.onExisting !== 'reuse')) throw new Error('Existing run requires onExisting: reuse for every successful step');
+      return { ...report, replayed: true, reportPath };
+    }
+    if ((await fs.readdir(reportPath)).some((name) => name !== 'run.lock')) throw new Error('Unrecognized report files; operator inspection required');
+    report = {
+      version: 1, success: false, operation: 'batch.run', runId: data.runId, requestHash, request,
+      context: executionContext, status: 'running', createdAt: new Date().toISOString(), reportPath,
+      atomic: { ...(atomicInfo(data).requested === undefined ? {} : { requested: atomicInfo(data).requested }), effective: false },
+      documentIdentity: { fileId: executionContext.docFileId ?? null, creationId: executionContext.docId ?? null,
+        name: executionContext.doc, assertionsOnly: true },
+      associativity: data.recipe ? 'recipeRegeneration' : 'snapshot',
+      units: 'per-step result', frame: 'per-step component/sketch', created: [], affected: [], warnings: [],
+      provenance: { sourceHash: hash(request), formatVersion: data.formatVersion ?? 'legacy' },
+      limitations: [...limitations], checks: validation.checks,
+      steps: validation.operations.map((step) => ({ id: step.id, operation: step.operation, status: 'pending',
+        ...(step.expectFail === true ? { expectFail: true } : {}) })),
+      plan: validation.plan,
+    };
+    await persist();
+    if (await budgetExhausted()) return report;
+    if (data.recipe) {
+      try {
+        report.recipe = await executeCad(client, 'definition.recipe', { action: 'begin', recipe: data.recipe,
+          source: request, sourceHash: hash(request) }, executionContext);
+        if (failedOutcome(report.recipe) || report.recipe?.success !== true) throw new Error('Recipe begin failed');
+      } catch (error) {
+        report.status = 'unknown'; report.error = { message: redactDiagnostic(error.message, client?.server) };
+        report.steps.forEach(step => { step.status = 'skipped'; });
+        await persist(); return report;
+      }
+    }
+    const results = Object.create(null);
+    for (let index = 0; index < validation.operations.length; index++) {
+      if (await budgetExhausted()) return report;
+      const step = validation.operations[index];
+      const progress = report.steps[index];
+      const localStep = isLocal(step.operation);
+      let resolvedData;
+      let resolvedContext;
+      try {
+        resolvedData = resolveReferences(step.data, results);
+        resolvedContext = { ...executionContext, ...(own(step, 'component') ? { component: resolveReferences(step.component, results) } : {}) };
+      } catch (error) {
+        progress.status = 'failed';
+        progress.mutationStatus = 'not_started';
+        progress.error = { message: redactDiagnostic(error.message, client?.server) };
+      }
+      if (progress.status !== 'failed') {
+        progress.status = 'running';
+        progress.mutationStatus = localStep || catalog[step.operation]?.readOnly === true ? 'none' : 'unknown';
+        progress.request = { operation: step.operation, data: resolvedData, context: resolvedContext };
+        await persist();
+        if (await budgetExhausted()) return report;
+        try {
+          const output = localStep ? runLocal(step.operation, resolvedData)
+            : await executeCad(client, step.operation, clone(resolvedData), clone(resolvedContext));
+          progress.output = clone(output);
+          report.created.push(...(Array.isArray(output?.created) ? clone(output.created) : []));
+          report.affected.push(...(Array.isArray(output?.affected) ? clone(output.affected) : []));
+          if (expectedFail(step, output)) {
+            // An explicitly expected negative check result is recorded and the run continues.
+            progress.status = 'success';
+            progress.mutationStatus = localStep || catalog[step.operation]?.readOnly === true ? 'none' : 'completed';
+            results[step.id] = progress.output;
+          } else if (output?.success !== true || failedOutcome(output)) {
+            progress.status = 'failed';
+            progress.error = { message: 'Executor returned an unsuccessful or unrecognized result' };
+          } else {
+            progress.status = 'success';
+            progress.mutationStatus = localStep || catalog[step.operation]?.readOnly === true ? 'none' : 'completed';
+            results[step.id] = progress.output;
+          }
+        } catch (error) {
+          progress.status = 'unknown';
+          progress.error = { message: redactDiagnostic(error?.message || error, client?.server),
+            ...(typeof error?.code === 'string' ? { code: redactDiagnostic(error.code, client?.server) } : {}) };
+          progress.timeout = /timeout|timed out|ETIMEDOUT/i.test(`${error?.code || ''} ${error?.message || error}`);
+        }
+      }
+      if (progress.status !== 'success') {
+        report.status = progress.status;
+        for (const remaining of report.steps.slice(index + 1)) remaining.status = 'skipped';
+        await persist();
+        return report;
+      }
+      if (index === validation.operations.length - 1) {
+        if (await budgetExhausted()) return report;
+        try {
+          report.exports = resolveReferences(validation.exports, results);
+          if (data.recipe) {
+            if (await budgetExhausted()) return report;
+            report.recipe = await executeCad(client, 'definition.recipe', { action: 'complete', recipe: data.recipe,
+              sourceHash: hash(request), bindings: resolveReferences(validation.recipe.bindings, results), exports: report.exports,
+              created: report.steps.flatMap(step => step.output?.created ?? []) }, executionContext);
+            if (failedOutcome(report.recipe) || report.recipe?.success !== true) throw new Error('Recipe completion failed');
+          }
+          if (await budgetExhausted()) return report;
+          report.status = 'success'; report.success = true;
+        } catch (error) {
+          report.status = 'unknown'; report.error = { message: redactDiagnostic(error.message, client?.server) };
+        }
+      }
+      await persist();
+    }
+    return report;
+  } finally {
+    await lock.close();
+    await fs.unlink(lockPath);
+  }
+}
+
+// Shared dispatcher for batch.validate/preview/run. Validate and preview stay
+// offline and report the effective atomic mode; run routes to the atomic command
+// transaction by default or to the legacy per-step executor only with atomic: false.
+async function runBatchEntry(client, data, context = {}, executeCad, catalog) {
+  const validation = validateBatch(data, catalog);
+  const mode = context.preview ? 'preview' : (object(data) && own(data, 'mode') ? data.mode : 'run');
+  if (!validation.success || mode !== 'run') {
+    const result = { ...validation, operation: `batch.${mode}`, mode, mutated: false,
+      atomicCapability: { ...ATOMIC_BACKENDS } };
+    // External-effect/batchAllowed:false operations (document.save_as, document.clear)
+    // are rejected before the first mutation; in the atomic run path they surface the
+    // same outcome:'rejected' shape as the atomic preflight instead of a bare validation
+    // failure (contract §1). Non-atomic and validate/preview behavior is unchanged.
+    if (mode === 'run' && validation.atomic.effective &&
+        (validation.operations || []).some((step) => object(catalog) && own(catalog, step.operation) &&
+          catalog[step.operation].batchAllowed === false)) {
+      result.outcome = 'rejected';
+      result.status = 'failed';
+    }
+    return result;
+  }
+  if (validation.atomic.effective) {
+    const { runAtomicBatch } = require('./batch-atomic');
+    return runAtomicBatch(client, data, context, executeCad, catalog, validation);
+  }
+  return runBatch(client, data, context, executeCad, catalog);
+}
+
+async function definitionInstantiate(client, data, context, executeCad, catalog) {
+  const result = await runBatch(client, data, context, executeCad, catalog);
+  return { ...result, operation: 'definition.instantiate' };
+}
+
+function definitionInspect(data, catalog, operation = 'definition.inspect') {
+  const result = validateBatch({ runId: 'inspection', ...data }, catalog);
+  return { ...result, operation, status: result.success ? 'pass' : 'fail', mutated: false,
+    documentIdentity: null, associativity: data.recipe ? 'recipeRegeneration' : 'snapshot', units: 'inherited from leaf operations', frame: 'per-step component/sketch',
+    provenance: { sourceHash: hash(data), formatVersion: data.formatVersion ?? 'legacy' },
+    definitions: Object.keys(data.definitions ?? {}), warnings: ['Offline expansion is not native model acceptance.'] };
+}
+
+function smallResult(output) {
+  const result = output?.result;
+  if (!object(result)) return {};
+  return Object.fromEntries(['value', 'units', 'count', 'healthy', 'healthState', 'passed', 'sampledPassed', 'checkOutcome']
+    .filter(key => own(result, key) && (result[key] === null || typeof result[key] === 'number' ||
+      typeof result[key] === 'boolean' || typeof result[key] === 'string' && result[key].length <= 256))
+    .map(key => [key, result[key]]));
+}
+
+function summarizeReport(report) {
+  return {
+    operation: 'batch.summary', historical: true, modelValidated: false,
+    success: report.success, status: report.status, runId: report.runId, reportPath: report.reportPath,
+    sequence: report.sequence,
+    ...(report.error ? { error: clone(report.error) } : {}),
+    steps: report.steps.map((step, index) => {
+      const result = smallResult(step.output);
+      return { step: index + 1, id: step.id, status: step.status,
+        ...(Object.keys(result).length ? { result } : {}),
+        ...(step.expectFail ? { expectFail: true } : {}),
+        ...(step.error ? { error: clone(step.error) } : {}) };
+    }),
+  };
+}
+
+async function readBatchSummary(data) {
+  if (typeof data.reportPath !== 'string' || !data.reportPath.trim()) throw new Error('reportPath must be a nonempty directory path');
+  if (data.step !== undefined && (!Number.isSafeInteger(data.step) || data.step < 1)) throw new Error('step must be a 1-based positive integer');
+  const reportPath = path.resolve(data.reportPath);
+  const files = (await fs.readdir(reportPath)).filter(name => /^\d{8}\.json$/.test(name)).sort();
+  if (!files.length) throw new Error('Missing numbered batch report');
+  if (files.some((name, index) => name !== `${String(index).padStart(8, '0')}.json`)) throw new Error('Incomplete report history; operator inspection required');
+  let report;
+  try {
+    report = JSON.parse(await fs.readFile(path.join(reportPath, files.at(-1)), 'utf8'));
+    const expanded = object(report?.request) ? expandDefinition(report.request).operations : null;
+    if (!object(report) || ![1, 2].includes(report.version) || report.operation !== 'batch.run' ||
+        typeof report.success !== 'boolean' || !['running', 'success', 'failed', 'unknown'].includes(report.status) ||
+        typeof report.runId !== 'string' || !report.runId || report.sequence !== files.length - 1 ||
+        !object(report.request) || !object(report.context) ||
+        hash({ request: report.request, context: report.context }) !== report.requestHash ||
+        !Array.isArray(report.steps) || !report.steps.length ||
+        !Array.isArray(expanded) || report.steps.length !== expanded.length ||
+        report.steps.some((step, index) => !object(step) || typeof step.id !== 'string' ||
+          step.id !== expanded[index]?.id || step.operation !== expanded[index]?.operation ||
+          !['pending', 'running', 'success', 'failed', 'unknown', 'skipped'].includes(step.status) ||
+          (step.error !== undefined && (!object(step.error) || typeof step.error.message !== 'string'))) ||
+        report.success !== (report.status === 'success') ||
+        (report.success && report.steps.some(step => step.status !== 'success' ||
+          (!step.expectFail && (step.output?.success !== true || failedOutcome(step.output)))))) {
+      throw new Error('Invalid version-1 report schema or request/context hash');
+    }
+  } catch (error) { throw new Error(`Corrupt batch report ${files.at(-1)}: ${error instanceof SyntaxError ? formatJsonError(error) : error.message}`); }
+  const summary = summarizeReport({ ...report, reportPath });
+  if (data.step !== undefined) {
+    if (data.step > summary.steps.length) throw new Error(`step out of range: expected 1..${summary.steps.length}`);
+    summary.steps = [summary.steps[data.step - 1]];
+  }
+  return summary;
+}
+
+function formatBatchSummary(report) {
+  const summary = report.historical ? report : report.steps ? summarizeReport(report) : report;
+  const text = value => JSON.stringify(value ?? null);
+  return [summary.steps ? 'Historical reported outcome; not current model validation (modelValidated=false).'
+    : 'Offline input validation only; no report or model validated.',
+    `status=${summary.status || (summary.success ? 'input-validated-only' : 'failed')} runId=${text(summary.runId)} reportPath=${text(summary.reportPath)}`,
+    ...(summary.error ? [`error=${text(summary.error)}`] : []),
+    ...(summary.steps || []).map(step => `step=${step.step} id=${text(step.id)} status=${step.status}${step.result ? ` result=${text(step.result)}` : ''}${step.error ? ` error=${text(step.error)}` : ''}`),
+    ...(summary.errors || []).map(error => `error=${text(error)}`)].join('\n') + '\n';
+}
+
+module.exports = { runBatch, validateBatch, validateBatchMode, resolveReferences, expandDefinition, definitionInstantiate,
+  definitionInspect, readBatchSummary, formatBatchSummary, runBatchEntry, hash, clone, atomicInfo, ATOMIC_BACKENDS };

@@ -31,5 +31,8 @@ until final qualification; API types alone do not prove it.
 Local validation: 127 shared-scenario/inventory tests and 20 existing Python
 coordinate-proof tests passed. Full pinned build, lint, test types, formatting,
 strict model types and the API-shape check passed. Two concurrent component
-runs ended without a terminal report; they are not counted as passes. A serial
-component run and full broker CI remain required before merging.
+runs ended without a terminal report; they are not counted as passes. Serial
+MCP and add-in component runs each passed with one owner, complete cleanup and
+the unchanged source hash
+`3f1327bb5a42d7f9856d9e3eec55866da071ff65808bbbbc75c64c8b2db68a94`.
+Full broker CI remains required before merging.

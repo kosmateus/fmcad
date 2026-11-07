@@ -63,3 +63,7 @@ separate OpenCode build and Python typing resources. Missing source/build inputs
 fail before pruning. Two strict TypeScript tests exercise a source rename across
 the staged scopes, repeated staging, package contents and the missing-input case.
 The package exclusion rule and installed runtime checks remain unchanged.
+
+The null-selector compatibility gap is addressed in [stage 4n](REFACTOR_STAGE_4N.md).
+The original binding and bytes are retained; only fully pinned historical receipt
+replay accepts null/absent optional selectors.

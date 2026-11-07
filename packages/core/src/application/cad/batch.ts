@@ -88,6 +88,41 @@ function batchBinding(data: CadData, context: CadContext) {
     requestHash: hash({ request, context: executionContext }),
   };
 }
+function sameReplayBinding(
+  saved: BatchReport,
+  current: ReturnType<typeof batchBinding>,
+): boolean {
+  // Verify the original binding before considering the old optional-field
+  // representation. Never rewrite a receipt or normalize its stored hash.
+  if (
+    hash({ request: saved.request, context: saved.context }) !==
+    saved.requestHash
+  )
+    return false;
+  if (saved.requestHash === current.requestHash) return true;
+  if (!record(saved.context)) return false;
+  for (const context of [saved.context, current.context])
+    for (const key of ["docId", "docFileId"] as const) {
+      const value = context[key];
+      if (typeof value !== "string" || !value.trim()) return false;
+    }
+  const withoutNullSelectors = (context: CadContext): CadContext => {
+    const result = { ...context };
+    for (const key of ["component", "projectId"] as const)
+      if (result[key] === null) delete result[key];
+    return result;
+  };
+  return (
+    hash({
+      request: saved.request,
+      context: withoutNullSelectors(saved.context),
+    }) ===
+    hash({
+      request: current.request,
+      context: withoutNullSelectors(current.context),
+    })
+  );
+}
 export function expectedFail(
   step: { expectFail?: boolean },
   output: unknown,
@@ -206,22 +241,26 @@ export async function runBatch(
   try {
     const saved = await journal.latest();
     if (saved) {
-      if (
-        saved.version !== 1 ||
-        saved.requestHash !== requestHash ||
-        hash({ request: saved.request, context: saved.context }) !== requestHash
-      )
+      if (saved.version !== 1 || !sameReplayBinding(saved, batch))
         throw new Error("Saved request/context hash differs; replay refused");
       if (
         saved.status !== "success" ||
+        saved.success !== true ||
+        saved.operation !== "batch.run" ||
+        saved.runId !== String(data["runId"]) ||
         saved.steps.length !== operations.length ||
         saved.steps.some(
           (step, index) =>
             step.id !== operations[index]!.id ||
+            step.operation !== operations[index]!.operation ||
+            (step.expectFail === true) !==
+              (operations[index]!.expectFail === true) ||
             step.status !== "success" ||
-            (!step.expectFail &&
-              (step.output?.["success"] !== true ||
-                services.failed(step.output))),
+            !(
+              expectedFail(operations[index]!, step.output) ||
+              (step.output?.["success"] === true &&
+                !services.failed(step.output))
+            ),
         )
       )
         throw new Error(

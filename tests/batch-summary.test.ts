@@ -322,9 +322,15 @@ test("run TEXT formatting leaves full JSON, snapshots, references and full-conte
   ]);
 });
 
-test("a legacy null-selector binding is refused without replay when the typed context differs", async (t) => {
+test("a legacy null-selector report remains readable through the typed CLI without resubmission", async (t) => {
   const dir = await directory(t);
-  await runBatch(null, request(dir), context, async () => output, catalog);
+  const saved = await runBatch(
+    null,
+    request(dir),
+    context,
+    async () => output,
+    catalog,
+  );
   const before = await snapshots(dir);
   const result = await cli(
     [
@@ -342,11 +348,8 @@ test("a legacy null-selector binding is refused without replay when the typed co
     ],
     true,
   );
-  assert.equal(result.code, 1);
-  assert.match(
-    result.stderr,
-    /Saved request\/context hash differs; replay refused/,
-  );
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(parseOutput(result.stdout), { ...saved, replayed: true });
   assert.equal(result.calls, 0);
   assert.deepEqual(await snapshots(dir), before);
 });

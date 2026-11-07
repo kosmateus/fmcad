@@ -166,8 +166,8 @@ close/reopen, both transports and cleanup ownership.
 
 Completed backend and runtime deliveries are recorded below. Each delivery
 combines its migration with historical comparisons and relevant model scenarios.
-Continue with historical batch-binding compatibility, the next model capability
-and the remaining service families. Native availability is not a reason to stop
+Continue with the next model capability and the remaining service families.
+Native availability is not a reason to stop
 the mock-backed refactor.
 
 Stage 1 came first because unchecked inspection typing, inaccessible historical
@@ -350,3 +350,8 @@ unchanged; the previously intermittent native-action timeout is still unresolved
 the root builtin XY plane. The later sketch suite is now partially represented;
 its remaining geometry/solver operations and non-root coordinate transforms stay
 open. Unsupported frames are refused explicitly by the model.
+
+[Stage 4n](REFACTOR_STAGE_4N.md) restores receipt-only replay across historical
+null/absent optional selectors with unchanged document/file pins. It also rejects
+contradictory success and step metadata that both historical policies accepted.
+Original reports stay byte-identical; no mutation is retried.
