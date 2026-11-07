@@ -1150,10 +1150,32 @@ test("positive transport receipt plus failed native termination fails the settle
   assert.equal(f.maximum(), 1);
 });
 
-test("reconciliation never upgrades positive transport plus failed native end to succeeded", async (t) => {
+test("raw RPC reconciliation never upgrades positive transport plus failed native end to succeeded", async (t) => {
   const f = await fixture(t, { autoReconcile: true });
   f.declareNative();
-  const a = await f.submit(f.a, "publish.py", [], { timeoutMs: 300 });
+  // Raw RPC has a durable transport reply independent of a child worker's exit.
+  // The previous command fixture raced its 300 ms timeout against publication
+  // of worker-result.json, which legitimately changes the diagnostic code.
+  const a = await f.call(f.a, "submit", {
+    request: {
+      kind: "rpc",
+      requestId: randomUUID(),
+      backend: "mcp",
+      timeoutMs: 300,
+      payload: {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "fusion_mcp_execute",
+          arguments: {
+            featureType: "script",
+            object: { script: "# SDK_A\ndef run(context: str) -> None: pass" },
+          },
+        },
+      },
+    },
+  });
   await until(
     async () =>
       (await f.result(f.a, a.id)).job.state === "needs_reconciliation",
@@ -1165,7 +1187,54 @@ test("reconciliation never upgrades positive transport plus failed native end to
   const result = await f.result(f.a, a.id);
   assert.equal(result.job.code, "RECONCILED");
   assert.equal(result.job.state, "failed");
+  assert.equal(result.execution.sdkSettled, true);
+  assert.equal(result.execution.mayHaveMutated, true);
   assert.equal(f.trace.filter((item) => item === "sdk-start-A").length, 1);
+  assert.equal((await f.call(f.a, "status")).control.activeOperations, 0);
+});
+
+test("failed native reconciliation preserves unavailable output after the observing worker is killed", async (t) => {
+  const f = await fixture(t, { autoReconcile: true });
+  f.declareNative();
+  const finishSdk = f.holdSdk("A");
+  const a = await f.submit(f.a, "publish.py");
+  await until(
+    () => f.trace.includes("sdk-start-A"),
+    "physical request started",
+  );
+  const identity = JSON.parse(
+    fs.readFileSync(
+      path.join(f.dir, "jobs", a.id, "worker-identity.json"),
+      "utf8",
+    ),
+  ) as { pid: number };
+  // Kill before the transport reply, so missing worker output is deliberate,
+  // independent of process startup speed or the test runner's scheduling.
+  process.kill(identity.pid, "SIGKILL");
+  await until(
+    async () =>
+      (await f.result(f.a, a.id)).job.state === "needs_reconciliation",
+    "dead observing worker",
+  );
+  assert.equal(
+    fs.existsSync(path.join(f.dir, "jobs", a.id, "worker-result.json")),
+    false,
+  );
+  const b = await f.submit(f.b, "fast.py");
+  finishSdk();
+  await until(
+    () => f.trace.includes("sdk-end-A"),
+    "positive transport completion",
+  );
+  f.finishNative(true);
+  await f.complete(f.b, b.id);
+  const result = await f.result(f.a, a.id);
+  assert.equal(result.job.code, "RESULT_UNAVAILABLE");
+  assert.equal(result.job.state, "failed");
+  assert.equal(result.execution.sdkSettled, true);
+  assert.equal(result.execution.mayHaveMutated, true);
+  assert.equal(f.trace.filter((item) => item === "sdk-start-A").length, 1);
+  assert.equal(f.maximum(), 1);
   assert.equal((await f.call(f.a, "status")).control.activeOperations, 0);
 });
 

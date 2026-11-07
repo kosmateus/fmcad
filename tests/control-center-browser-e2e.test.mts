@@ -115,7 +115,7 @@ function waitForQuery(
 }
 
 test(
-  "production Control Center works in headless Chromium against isolated HTTP/query service",
+  "Control Center interactions work in headless Chromium against an isolated query fixture",
   { timeout: 120_000 },
   async (t) => {
     fs.mkdirSync(artifactsRoot, { recursive: true });
@@ -132,9 +132,8 @@ test(
     const expectedNetworkFailures: string[] = [];
     const badResponses: string[] = [];
     const assertions: string[] = [];
-    const unmetRequirements: string[] = [
-      "The browser backend currently injects a test ConsoleQueryReadPort; production root composition with isolated ProjectRegistry/SQLite is not exercised.",
-    ];
+    // Real registry/SQLite composition is covered by the companion production browser test.
+    const unmetRequirements: string[] = [];
     const observedControls = new Map<string, ObservedControl>();
     const clickedControls: ObservedControl[] = [];
     let mobileLayout: MobileLayout | null = null;

@@ -214,3 +214,6 @@ th:has(.column-header){padding:8px 10px 8px 14px}
 .alias-editor>strong{display:block;color:var(--text);font-size:13px;margin:9px 0}
 @media(max-width:580px){.project-toolbar{gap:12px}.project-toolbar .search-box{max-width:none;flex-basis:100%}.project-filter .segment{font-size:11px}.archive-banner{flex-wrap:wrap;padding:13px}.archive-banner .text-link{margin-left:31px}.project-removal-heading{flex-wrap:wrap}.project-removal-heading>.badge{margin-left:53px}.project-removal-check p,.project-removal-check ul{font-size:11px}}
 @media(pointer:coarse){.project-filter .segment,.project-card-bottom .btn{min-height:42px}.archive-banner .text-link{min-height:40px}}
+
+/* Keep the project selector and all toolbar actions inside narrow viewports. */
+@media(max-width:580px){.topbar{height:auto;min-height:58px;flex-wrap:wrap;padding-block:10px}.topbar>.row{min-width:0;max-width:100%}.topbar .breadcrumb{display:none}}
