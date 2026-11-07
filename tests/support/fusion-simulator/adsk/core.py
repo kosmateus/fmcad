@@ -97,6 +97,9 @@ class Point3D(Base):
     def asArray(self) -> list[float]:
         return [self.x, self.y, self.z]
 
+    def copy(self) -> Point3D:
+        return Point3D(self.x, self.y, self.z)
+
 
 class BoundingBox3D(Base):
     def __init__(self, minPoint: Point3D, maxPoint: Point3D) -> None:
@@ -421,7 +424,7 @@ class Application(Base):
     _instance: ClassVar[Application | None] = None
 
     def __init__(self) -> None:
-        self.version: str = "fmcad-simulator-v8-not-Fusion"
+        self.version: str = "fmcad-simulator-v9-not-Fusion"
         self.activeDocument: Document | None = None
         self.documents: Documents = Documents(self)
         self.userInterface: UserInterface = UserInterface()

@@ -129,6 +129,7 @@ export const simulatorCapabilities = new Set([
   "rectangular-extrusion",
   "body-attributes",
   "rectangular-sketch",
+  "sketch-coordinate-proof",
 ]);
 export const simulatorFolder = Object.freeze({
   projectId: "sim-project:fixtures",

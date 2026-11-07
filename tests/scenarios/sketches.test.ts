@@ -14,6 +14,7 @@ import {
   rectangle,
   sketchReadback,
   sketchScenarios,
+  coordinateExpectations,
 } from "./sketch-cases";
 import { cadCommand } from "./cad-programs";
 
@@ -73,6 +74,99 @@ test("invalid rectangle input leaves the empty sketch unchanged", async (t) => {
   );
   assert.equal(reports[0]?.status, "passed", JSON.stringify(reports));
   assert.equal(reports[0]?.cleanup, "complete");
+  assert.deepEqual(await remaining(model), { active: null, documents: [] });
+});
+
+test("coordinate proof rejects an entity from another sketch in the same owned document", async (t) => {
+  const { directory, model, backend } = await fixture(t);
+  const reports = await runScenarios(
+    backend,
+    [
+      {
+        ...sketchScenarios(simulatorFolder, 1)[0]!,
+        async run(session) {
+          const first = await createSketch(session);
+          const second = await createSketch(session);
+          const created = await session.execute(
+            "rectangle",
+            cadCommand(session.document, "sketch.geometry", rectangle(second)),
+            session.document,
+            "cad-v1",
+          );
+          assert.equal(created["error"], null, JSON.stringify(created));
+          const refs = record(record(created["result"])["refs"])["outline"];
+          assert.ok(Array.isArray(refs));
+          const before = await sketchReadback(session, second);
+          const result = await session.execute(
+            "foreign-curve",
+            cadCommand(session.document, "sketch.coordinate-check", {
+              schemaVersion: 1,
+              sketch: first,
+              expectations: coordinateExpectations(record(refs[1]), 10, 20),
+            }),
+            session.document,
+            "cad-v1",
+          );
+          assert.match(
+            String(result["error"]),
+            /entity belongs to a different sketch/,
+          );
+          assert.equal(result["result"], null);
+          assert.deepEqual(await sketchReadback(session, second), before);
+          assert.deepEqual((await sketchReadback(session, first))["lines"], []);
+        },
+      },
+    ],
+    directory,
+    1,
+  );
+  assert.equal(reports[0]?.status, "passed", JSON.stringify(reports));
+  assert.equal(reports[0]?.cleanup, "complete");
+  assert.deepEqual(await remaining(model), { active: null, documents: [] });
+});
+
+test("model coordinate transforms copy points and refuse unmodeled assembly and plane frames", async (t) => {
+  const { model } = await fixture(t);
+  const result = await model.execute(
+    program(`import adsk.core, adsk.fusion, json
+app = adsk.core.Application.get()
+doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
+try:
+    design = adsk.fusion.Design.cast(doc.products.itemByProductType('DesignProductType'))
+    assert design is not None
+    root = design.rootComponent
+    sketch = root.sketches.addWithoutEdges(root.xYConstructionPlane)
+    point = adsk.core.Point3D.create(1, 2, 0)
+    model_point = sketch.sketchToModelSpace(point)
+    roundtrip = sketch.modelToSketchSpace(model_point)
+    assert roundtrip.asArray() == [1, 2, 0]
+    model_point.x, roundtrip.y = 8, 9
+    assert point.asArray() == [1, 2, 0]
+    lines = sketch.sketchCurves.sketchLines.addTwoPointRectangle(adsk.core.Point3D.create(0,0,0), point)
+    endpoint = lines.item(1).endSketchPoint
+    world = endpoint.worldGeometry
+    world.x = 99
+    assert endpoint.geometry.asArray() == [1, 2, 0]
+    child = root.occurrences.addNewComponent(adsk.core.Matrix3D.create()).component
+    child_sketch = child.sketches.addWithoutEdges(child.xYConstructionPlane)
+    plane_input = root.constructionPlanes.createInput()
+    assert plane_input.setByOffset(root.xYConstructionPlane, adsk.core.ValueInput.createByReal(1))
+    plane = root.constructionPlanes.add(plane_input)
+    offset_sketch = root.sketches.addWithoutEdges(plane)
+    rejected = 0
+    for unsupported in [child_sketch, offset_sketch]:
+        try:
+            unsupported.sketchToModelSpace(point)
+        except NotImplementedError:
+            rejected += 1
+        else:
+            raise AssertionError('Unmodeled frame accepted')
+    ${emit("dict(rejected=rejected)")}
+finally:
+    doc.close(False)`),
+  );
+  assert.equal(result.success, true, result.error);
+  assert.match(result.stdout, /"rejected": 2/);
   assert.deepEqual(await remaining(model), { active: null, documents: [] });
 });
 

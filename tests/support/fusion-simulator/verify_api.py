@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 METHODS: dict[str, dict[str, list[str]]] = {
-    "core": {"BoundingBox3D": ["create"], "Point3D": ["create", "asArray"], "Vector3D": ["create", "asArray"],
+    "core": {"BoundingBox3D": ["create"], "Point3D": ["create", "asArray", "copy"], "Vector3D": ["create", "asArray"],
              "UnitsManager": ["isValidExpression", "evaluateExpression"],
              "Attributes": ["add", "itemByName", "itemsByGroup"],
              "Plane": ["create"], "Matrix3D": ["create", "asArray"],
@@ -19,6 +19,7 @@ METHODS: dict[str, dict[str, list[str]]] = {
              "Data": ["findFileById"], "DataProjects": ["itemById"], "DataFolders": ["itemById", "itemByName", "add"],
              "DataFiles": ["itemById"], "DataFile": ["deleteMe"]},
     "fusion": {"Sketches": ["add", "addWithoutEdges"], "SketchLines": ["addTwoPointRectangle"],
+               "Sketch": ["sketchToModelSpace", "modelToSketchSpace"],
                "DistanceExtentDefinition": ["create"], "ExtrudeFeatureInput": ["setOneSideExtent"],
                "ExtrudeFeatures": ["createInput", "add"], "ConstructionPlane": ["deleteMe"], "ConstructionPlanes": ["createInput", "add", "itemByName"],
                "ConstructionPlaneInput": ["setByOffset", "setByTwoPlanes", "setByAngle"],
@@ -29,6 +30,7 @@ METHODS: dict[str, dict[str, list[str]]] = {
 
 PARAMETER_PROPERTIES = ["name", "expression", "value", "unit", "comment"]
 PROPERTIES = [("fusion", "Parameter", "fusion", "UserParameter", PARAMETER_PROPERTIES),
+              ("fusion", "SketchPoint", "fusion", "SketchPoint", ["worldGeometry"]),
               ("fusion", "Sketch", "fusion", "Sketch", ["healthState", "errorOrWarningMessage"]),
               ("fusion", "SketchCurve", "fusion", "SketchLine", ["isConstruction"]),
               ("fusion", "SketchEntity", "fusion", "SketchLine", ["isFixed"]),

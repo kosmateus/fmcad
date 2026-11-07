@@ -345,3 +345,8 @@ intent disappeared. This preserves receipt bytes and does not add mutation repla
 with paired pre-refactor pause and RPC-budget scenarios. It also corrects private
 workspace imports in installed worker declarations. Production deadlines remain
 unchanged; the previously intermittent native-action timeout is still unresolved.
+
+[Stage 3i](REFACTOR_STAGE_3I.md) adds shared public sketch-coordinate checks for
+the root builtin XY plane. The later sketch suite is now partially represented;
+its remaining geometry/solver operations and non-root coordinate transforms stay
+open. Unsupported frames are refused explicitly by the model.

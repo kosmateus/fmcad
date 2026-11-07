@@ -1,6 +1,6 @@
 # Partial Fusion test model
 
-Model version 8 implements document identity/lifecycle, numeric user-parameter CRUD,
+Model version 9 implements document identity/lifecycle, numeric user-parameter CRUD,
 saved-file identity and deletion, and a **test state export**. The exported `.f3d` fixture contains a JSON marker
 `nativeF3d: false`; it is not a native Fusion archive and must not be imported into Fusion.
 Native export/import assertions require `native-f3d`, which this model does not advertise.
@@ -91,3 +91,12 @@ multiple loops, general curves, projected edges and constraint solving explicitl
 remain unsupported. Shared-point token lookup is deduplicated within its design;
 foreign or closed document tokens never resolve. Native edge order, health and
 expression behavior remain final Fusion qualification assumptions.
+
+Coordinate proof supports the root component's builtin XY plane only. Sketch to
+model conversion, its inverse, and endpoint worldGeometry return independent
+Point3D copies. The public coordinate-check scenario checks all three frames,
+roundtrips and native endpoint world readback, then deliberately supplies a wrong
+coordinate and requires a failed proof with unchanged geometry. Child-component,
+offset-plane and occurrence transforms are explicitly unsupported by this model;
+no identity transform is silently substituted for those cases. Native orientation
+and world-coordinate behavior still need final Fusion qualification.

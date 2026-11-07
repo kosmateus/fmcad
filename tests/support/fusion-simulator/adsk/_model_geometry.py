@@ -29,8 +29,16 @@ class SketchPoint(core.Base):
         self.parentSketch: Sketch = sketch
         self.geometry: core.Point3D = geometry
 
+    @property
+    def worldGeometry(self) -> core.Point3D:
+        return self.parentSketch.sketchToModelSpace(self.geometry)
 
-class SketchLine(core.Base):
+
+class SketchCurve(core.Base):
+    pass
+
+
+class SketchLine(SketchCurve):
     def __init__(self, sketch: Sketch, start: SketchPoint, end: SketchPoint) -> None:
         self.objectType: str = "adsk::fusion::SketchLine"
         self.entityToken: str = "model-sketch-line:" + str(uuid.uuid4())
@@ -115,6 +123,20 @@ class Sketch(core.Base):
         self.name: str = "Sketch" + str(component.sketches.count + 1)
         self.profiles: Profiles = Profiles()
         self.sketchCurves: SketchCurves = SketchCurves(self)
+
+    def model_coordinates_supported(self) -> None:
+        component = self.parentComponent
+        if (component is not component.model_design.rootComponent
+                or self.model_plane is not component.xYConstructionPlane):
+            raise NotImplementedError("Coordinate proof supports only the root builtin XY plane")
+
+    def sketchToModelSpace(self, sketchCoordinate: core.Point3D) -> core.Point3D:
+        self.model_coordinates_supported()
+        return sketchCoordinate.copy()
+
+    def modelToSketchSpace(self, modelCoordinate: core.Point3D) -> core.Point3D:
+        self.model_coordinates_supported()
+        return modelCoordinate.copy()
 
     @property
     def healthState(self) -> int:

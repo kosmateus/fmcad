@@ -58,11 +58,50 @@ for i in range(lines.count):
 ${emit("dict(creationId=doc.creationId, name=sketch.name, profiles=sketch.profiles.count, lines=coordinates)")}`),
   );
 }
+
+export function coordinateExpectations(
+  ref: Record<string, unknown>,
+  width: number,
+  height: number,
+) {
+  return ["sketch", "model", "world"].map((frame) => ({
+    entity: ref,
+    frame,
+    start: [`${width} mm`, "0 mm", "0 mm"],
+    end: [`${width} mm`, `${height} mm`, "0 mm"],
+  }));
+}
+
+export function assertCoordinateProof(
+  value: Record<string, unknown>,
+  count: number,
+): void {
+  assert.equal(value["status"], "pass");
+  assert.equal(value["geometryStatus"], "pass");
+  assert.equal(value["healthStatus"], "pass");
+  const entities = record(value["analytic"])["entities"];
+  assert.ok(Array.isArray(entities));
+  assert.equal(entities.length, count);
+  for (const item of entities) {
+    const entity = record(item);
+    assert.equal(entity["status"], "pass");
+    const checks = entity["checks"];
+    assert.ok(Array.isArray(checks));
+    assert.equal(checks.length, 6);
+    for (const check of checks) assert.equal(record(check)["status"], "pass");
+  }
+}
+
 export function sketchScenarios(folder: FixtureFolder, owners = 2): Scenario[] {
   return Array.from({ length: owners }, (_, index): Scenario => ({
     id: "sketch-" + index,
     fixture: folder,
-    requires: ["documents", "saved-fixtures", "rectangular-sketch"],
+    requires: [
+      "documents",
+      "saved-fixtures",
+      "rectangular-sketch",
+      "sketch-coordinate-proof",
+    ],
     async run(session) {
       const ref = await createSketch(session);
       const width = 10 + index,
@@ -132,6 +171,46 @@ export function sketchScenarios(folder: FixtureFolder, owners = 2): Scenario[] {
           }
         }
       }
+      const checked = await session.execute(
+        "coordinate-proof",
+        cadCommand(session.document, "sketch.coordinate-check", {
+          schemaVersion: 1,
+          sketch: ref,
+          tolerance: "0.001 mm",
+          expectations: coordinateExpectations(record(refs[1]), width, height),
+        }),
+        session.document,
+        "cad-v1",
+      );
+      assert.equal(checked["error"], null, JSON.stringify(checked));
+      const proof = record(checked["result"]);
+      assertCoordinateProof(proof, 3);
+      assert.equal(
+        record(proof["documentIdentity"])["creationId"],
+        session.document.creationId,
+      );
+      assert.deepEqual(await sketchReadback(session, ref), readback);
+      const mismatch = await session.execute(
+        "coordinate-mismatch",
+        cadCommand(session.document, "sketch.coordinate-check", {
+          schemaVersion: 1,
+          sketch: ref,
+          tolerance: "0.001 mm",
+          expectations: coordinateExpectations(
+            record(refs[1]),
+            width,
+            height + 1,
+          ),
+        }),
+        session.document,
+        "cad-v1",
+      );
+      assert.equal(mismatch["error"], null, JSON.stringify(mismatch));
+      const failedProof = record(mismatch["result"]);
+      assert.equal(failedProof["status"], "fail");
+      assert.equal(failedProof["success"], false);
+      assert.equal(failedProof["geometryStatus"], "fail");
+      assert.deepEqual(await sketchReadback(session, ref), readback);
     },
   }));
 }

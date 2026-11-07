@@ -13,7 +13,7 @@ from . import core
 from ._expressions import UNITS, Quantity, evaluate
 from ._model_geometry import (BRepBodies as BRepBodies, BRepBody as BRepBody,
     PhysicalProperties as PhysicalProperties, Sketch as Sketch, Sketches as Sketches,
-    SketchCurves as SketchCurves, SketchLines as SketchLines, SketchLine as SketchLine,
+    SketchCurves as SketchCurves, SketchCurve as SketchCurve, SketchLines as SketchLines, SketchLine as SketchLine,
     SketchLineList as SketchLineList, SketchPoint as SketchPoint, Profile as Profile,
     Profiles as Profiles, FeatureOperations as FeatureOperations,
     ExtentDirections as ExtentDirections, ExtentDefinition as ExtentDefinition,
