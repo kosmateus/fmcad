@@ -69,6 +69,11 @@ matrix retains ten parameter owners; the saved matrix uses two parameter owners
 plus a lifecycle case. Unit tests separately interleave ten saved owners. All
 profiles retain production Python admission and process guards.
 
+CI exposed another existing browser-test race: the initial heading rendered
+before project/task data arrived. The test now waits for the API-backed rows and
+freshness state. Similar filter assertions wait for the requested row count or
+removal of excluded rows. All existing expected values and assertions remain.
+
 ## Final native qualification
 
 Verify save acceptance/dataFile visibility, creationId lifetime through save,
