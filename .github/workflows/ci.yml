@@ -98,7 +98,16 @@ jobs:
       matrix:
         protocol: [mcp, addin]
         suite:
-          [foundation, saved, parameters, documents, cloud, boxes, attributes]
+          [
+            foundation,
+            saved,
+            parameters,
+            documents,
+            cloud,
+            boxes,
+            attributes,
+            sketches,
+          ]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -109,7 +118,7 @@ jobs:
       - run: npm run build
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      - run: timeout --signal=TERM --kill-after=15s 12m npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite }} --concurrency 10 --owners ${{ (matrix.suite == 'saved' || matrix.suite == 'attributes') && 2 || 10 }}
+      - run: timeout --signal=TERM --kill-after=15s 12m npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite }} --concurrency 10 --owners ${{ (matrix.suite == 'saved' || matrix.suite == 'attributes' || matrix.suite == 'sketches') && 2 || 10 }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

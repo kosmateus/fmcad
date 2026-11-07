@@ -11,13 +11,14 @@ from pathlib import Path
 
 METHODS: dict[str, dict[str, list[str]]] = {
     "core": {"BoundingBox3D": ["create"], "Point3D": ["create", "asArray"], "Vector3D": ["create", "asArray"],
+             "UnitsManager": ["isValidExpression", "evaluateExpression"],
              "Attributes": ["add", "itemByName", "itemsByGroup"],
              "Plane": ["create"], "Matrix3D": ["create", "asArray"],
              "Application": ["get"], "Documents": ["add"], "Document": ["activate", "close", "saveAs", "save"],
              "Products": ["itemByProductType"], "ValueInput": ["createByString", "createByReal"],
              "Data": ["findFileById"], "DataProjects": ["itemById"], "DataFolders": ["itemById", "itemByName", "add"],
              "DataFiles": ["itemById"], "DataFile": ["deleteMe"]},
-    "fusion": {"Sketches": ["add"], "SketchLines": ["addTwoPointRectangle"],
+    "fusion": {"Sketches": ["add", "addWithoutEdges"], "SketchLines": ["addTwoPointRectangle"],
                "DistanceExtentDefinition": ["create"], "ExtrudeFeatureInput": ["setOneSideExtent"],
                "ExtrudeFeatures": ["createInput", "add"], "ConstructionPlane": ["deleteMe"], "ConstructionPlanes": ["createInput", "add", "itemByName"],
                "ConstructionPlaneInput": ["setByOffset", "setByTwoPlanes", "setByAngle"],
@@ -28,6 +29,9 @@ METHODS: dict[str, dict[str, list[str]]] = {
 
 PARAMETER_PROPERTIES = ["name", "expression", "value", "unit", "comment"]
 PROPERTIES = [("fusion", "Parameter", "fusion", "UserParameter", PARAMETER_PROPERTIES),
+              ("fusion", "Sketch", "fusion", "Sketch", ["healthState", "errorOrWarningMessage"]),
+              ("fusion", "SketchCurve", "fusion", "SketchLine", ["isConstruction"]),
+              ("fusion", "SketchEntity", "fusion", "SketchLine", ["isFixed"]),
               ("core", "Attribute", "core", "Attribute", ["value"]),
               ("fusion", "FusionUnitsManager", "fusion", "FusionUnitsManager", ["distanceDisplayUnits"]),
               ("core", "UnitsManager", "fusion", "FusionUnitsManager", ["defaultLengthUnits"])]
@@ -73,7 +77,10 @@ def main(snapshot: Path) -> None:
     for upstream_module, upstream_class, model_module, model_class, names in PROPERTIES:
         for name in names:
             expected = property_accessors(snapshot / "adsk" / (upstream_module + ".py"), upstream_class, name)
-            actual = property_accessors(Path(__file__).parent / "adsk" / (model_module + ".py"), model_class, name)
+            model_file = Path(__file__).parent / "adsk" / (model_module + ".py")
+            if model_module == "fusion" and model_class not in methods(model_file):
+                model_file = model_file.with_name("_model_geometry.py")
+            actual = property_accessors(model_file, model_class, name)
             if not actual or [shape(fn) for fn in actual] != [shape(fn) for fn in expected]:
                 raise ValueError("Property accessor differs: " + model_class + "." + name)
             accessors += len(actual)

@@ -45,7 +45,7 @@
       "id": "cad",
       "source": "tests/live-cad.js",
       "runner": "all",
-      "model": "pending",
+      "model": "partial",
       "scope": "Dimension regeneration, bodies, holes, patterns, fillets and checkpoints",
       "prerequisites": "Installed matching broker and an isolated owned fixture",
       "baseline": {
@@ -53,7 +53,7 @@
         "path": "tests/live-cad.js",
         "sha256": "d628563f3cd0e5b91945ce7b870c6c0d1f1636bd5e31efbd4f02a05c9341001e"
       },
-      "sharedScenarios": []
+      "sharedScenarios": ["sketches"]
     },
     {
       "id": "camera-probe",
@@ -153,9 +153,7 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": [
-        "attributes"
-      ]
+      "sharedScenarios": ["attributes"]
     },
     {
       "id": "extended",

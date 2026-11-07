@@ -16,7 +16,7 @@ The fixture archive, rather than a current test result, is the provenance source
 | [`animation-methods`](../tests/live-animation-methods.js) | standalone | native-only | later | Storyboard creation, animation actions and frame export |
 | [`backend-adapter`](../tests/live-backend-adapter.js) | all | pending | changed | Backend capabilities, progress, transport limits and read-only soak |
 | [`batch-reference`](../tests/live-batch-reference.js) | standalone | pending | unchanged | Batch reference resolution, propagation and failure stop |
-| [`cad`](../tests/live-cad.js) | all | pending | unchanged | Dimension regeneration, bodies, holes, patterns, fillets and checkpoints |
+| [`cad`](../tests/live-cad.js) | all | partial | unchanged | Dimension regeneration, bodies, holes, patterns, fillets and checkpoints |
 | [`camera-probe`](../tests/live-camera-probe.js) | all | native-only | unchanged | Camera projection, orientation, capture and restoration |
 | [`component-hierarchy`](../tests/live-component-hierarchy.js) | standalone | pending | later | Nested occurrences, component lookup and transforms |
 | [`data-import-fixed`](../tests/live-data-import-fixed.ts) | scoped | pending | later | Source-pinned cad-v1 import in an externally owned exact scratch document |
@@ -52,8 +52,8 @@ The fixture archive, rather than a current test result, is the provenance source
 
 ## Required next deliveries
 
-1. Port sketch curves/dimensions/constraints and entity attributes with analytical
-   cases and negative no-mutation checks. Preserve native solver assertions as
+1. Extend the rectangular-sketch and body-attribute cases to additional curves,
+   dimensions and constraints with negative no-mutation checks. Preserve native solver assertions as
    pending; types and source generation do not establish constraint satisfaction.
 2. Add component transforms and additional solid/feature modes that have defensible
    analytical models. Keep exact native tolerances and unsupported capability errors.
@@ -71,3 +71,9 @@ The fixture archive, rather than a current test result, is the provenance source
 CI verifies that new live files cannot be added without a classification and that
 the existing runner lists agree with this source of truth. It does not execute
 unmigrated suites or treat their current presence in `all` as proof of safe concurrency.
+
+The `sketches` shared family covers the historical CAD suite's rectangle setup,
+four named edge references and one profile, with coordinate readback and owner
+isolation. Revolve, driving dimensions and regeneration are still pending. The
+later `sketch-operations` suite's nine target operations remain pending; basic
+fixture creation alone does not qualify those operations.

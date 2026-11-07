@@ -128,6 +128,7 @@ export const simulatorCapabilities = new Set([
   "cloud-inventory",
   "rectangular-extrusion",
   "body-attributes",
+  "rectangular-sketch",
 ]);
 export const simulatorFolder = Object.freeze({
   projectId: "sim-project:fixtures",

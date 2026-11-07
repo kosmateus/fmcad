@@ -1,0 +1,852 @@
+"""Prewritten sketch and feature commands; bundled after core.py, never run alone.
+
+API signatures checked against Autodesk Fusion API documentation via apiDocumentation.
+Lengths passed as floats are internal cm; all user dimensional inputs are expressions.
+"""
+import adsk.core
+import adsk.fusion
+
+
+def _model_fields(data, required=(), optional=()):
+    if not isinstance(data, dict):
+        raise ValueError('Command data must be an object')
+    missing = set(required) - data.keys()
+    unknown = data.keys() - set(required) - set(optional)
+    if missing or unknown:
+        raise ValueError('Missing inputs: %s; unsupported inputs: %s' %
+                         (sorted(missing), sorted(unknown)))
+    if 'name' in data and (not isinstance(data['name'], str) or not data['name'].strip()):
+        raise ValueError('name must be a nonempty string')
+    for key in ('visible', 'construction', 'fixed', 'delete', 'confirm', 'driving', 'linked',
+                'symmetric', 'solid', 'closed', 'reverse', 'tangentChain', 'keepTools',
+                'extend', 'internal', 'modeled', 'rightHanded'):
+        if key in data and type(data[key]) is not bool:
+            raise ValueError(key + ' must be boolean')
+
+
+def _model_ok(result, operation):
+    if result is None or result is False:
+        raise RuntimeError('Fusion failed: ' + operation)
+    return result
+
+
+def _model_items(collection):
+    if isinstance(collection, (list, tuple)):
+        return list(collection)
+    return [collection.item(i) for i in range(collection.count)]
+
+
+def _model_enum(group, key, choices):
+    if key not in choices:
+        raise ValueError('Supported modes: ' + ', '.join(choices))
+    return getattr(group, choices[key])
+
+
+def _model_resolve(ctx, ref, kind=None):
+    if isinstance(ref, dict) and ref.get('kind') == 'openProfile':
+        return _surface_open_profile(ctx, ref)
+    if isinstance(ref, dict) and ref.get('kind') == 'path':
+        return _model_path(ctx, ref)
+    if isinstance(ref, dict) and 'entity' in ref and 'point' in ref:
+        _model_fields(ref, ('entity', 'point'))
+        attr = {'start': 'startSketchPoint', 'end': 'endSketchPoint', 'center': 'centerSketchPoint'}
+        if ref['point'] not in attr:
+            raise ValueError('Point selector must be start, end, or center')
+        return getattr(ctx.resolve(ref['entity']), attr[ref['point']])
+    return ctx.resolve(ref, kind)
+
+
+def _model_entities(ctx, refs, sketch=None, kind=None):
+    if not isinstance(refs, list) or not refs:
+        raise ValueError('entities must be a nonempty array of references')
+    entities = [_model_resolve(ctx, ref, kind) for ref in refs]
+    if sketch is not None:
+        for entity in entities:
+            if entity.parentSketch != sketch:
+                raise ValueError('All entities must belong to the selected sketch')
+    return entities
+
+
+def _model_extrude_profile_plane(profile):
+    sketch_text_type = getattr(adsk.fusion, 'SketchText', None)
+    if adsk.fusion.Profile.cast(profile):
+        plane = getattr(profile, 'plane', None)
+        sketch = getattr(profile, 'parentSketch', None)
+    elif adsk.fusion.BRepFace.cast(profile):
+        plane = adsk.core.Plane.cast(getattr(profile, 'geometry', None))
+        sketch = None
+    elif sketch_text_type is not None and sketch_text_type.cast(profile):
+        sketch = getattr(profile, 'parentSketch', None)
+        support = getattr(sketch, 'referencePlane', None) if sketch is not None else None
+        plane = adsk.core.Plane.cast(getattr(support, 'geometry', None))
+    else:
+        raise ValueError('Extrude profiles must resolve to Profile, planar BRepFace, or SketchText refs')
+    plane = adsk.core.Plane.cast(plane)
+    if plane is None:
+        raise ValueError('Extrude profiles must have a supported planar definition')
+    if sketch is not None:
+        transform = getattr(sketch, 'transform', None)
+        if transform is None:
+            raise ValueError('Sketch-based extrude profiles require a model-space sketch transform')
+        plane = plane.copy()
+        if not plane.transformBy(transform):
+            raise ValueError('Unable to transform sketch-based extrude profile plane into model space')
+    return plane
+
+
+def _model_created(ctx, entity, name=None):
+    _model_ok(entity, 'create entity')
+    if name is not None:
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError('name must be a nonempty string')
+        entity.name = name
+    ref = ctx.ref(entity)
+    ctx.created.append(ref)
+    return ref
+
+
+def _model_geometry_result(ctx, entities):
+    refs = [_model_created(ctx, entity) for entity in entities]
+    return {'entities': refs, 'refs': {}}
+
+
+def _model_operation(data):
+    return _model_enum(adsk.fusion.FeatureOperations, data.get('operation', 'newBody'), {
+        'newBody': 'NewBodyFeatureOperation', 'join': 'JoinFeatureOperation',
+        'cut': 'CutFeatureOperation', 'intersect': 'IntersectFeatureOperation'})
+
+
+def _model_distance_type(data):
+    return _model_enum(adsk.fusion.PatternDistanceType, data.get('distanceType', 'spacing'), {
+        'spacing': 'SpacingPatternDistanceType', 'extent': 'ExtentPatternDistanceType'})
+
+
+def _model_quantity(ctx, quantity):
+    if type(quantity) is int:
+        if quantity < 1:
+            raise ValueError('quantity must be positive')
+        return adsk.core.ValueInput.createByReal(quantity)
+    if not isinstance(quantity, str) or not quantity.strip():
+        raise ValueError('quantity must be a positive integer or unitless parameter expression')
+    return ctx.value(quantity)
+
+
+def _model_path(ctx, data):
+    _model_fields(data, ('curves',), ('chain', 'kind', 'name'))
+    if data.get('kind', 'path') != 'path':
+        raise ValueError('Path descriptor kind must be path')
+    curves = _model_entities(ctx, data['curves'])
+    chain = _model_enum(adsk.fusion.ChainedCurveOptions, data.get('chain', 'none'), {
+        'none': 'noChainedCurves', 'connected': 'connectedChainedCurves', 'tangent': 'tangentChainedCurves'})
+    if len(curves) > 1 and data.get('chain', 'none') != 'none':
+        raise ValueError('Automatic chaining requires exactly one seed curve')
+    if data.get('chain') == 'connected' and curves[0].objectType.endswith('BRepEdge'):
+        raise ValueError('connected chaining supports sketch curves only; use explicit edge refs or tangent chaining')
+    owner = _cad_owner(curves[0])
+    occurrence = getattr(curves[0], 'assemblyContext', None)
+    for curve in curves:
+        if not (adsk.fusion.SketchCurve.cast(curve) or adsk.fusion.BRepEdge.cast(curve)):
+            raise ValueError('Paths require sketch curves or model edges')
+        if _cad_owner(curve) != owner or getattr(curve, 'assemblyContext', None) != occurrence:
+            raise ValueError('Path curves must share one component and occurrence context')
+    if owner is None or (occurrence is not None and occurrence.component != owner):
+        raise ValueError('Path curves require a valid owning component and occurrence context')
+    inputs = curves[0] if len(curves) == 1 else ctx.collection(curves)
+    if occurrence is not None:
+        # Keep the exact proxies, including nested occurrence transforms. Never
+        # invent an occurrence for a native component definition.
+        return _model_ok(adsk.fusion.Path.create(inputs, chain), 'Path.create')
+    # Static Path.create has no component owner and fails for native child
+    # sketch curves. Features.createPath supplies that scope without activation.
+    path = _model_ok(owner.features.createPath(inputs, data.get('chain') == 'connected'), 'Features.createPath')
+    if data.get('chain') == 'tangent':
+        _model_ok(path.addCurves(curves[0], chain), 'Path.addCurves')
+    return path
+
+
+def model_path_create(ctx, data):
+    path = _model_path(ctx, data)
+    seed = _model_resolve(ctx, data['curves'][0])
+    native_frame = getattr(seed, 'assemblyContext', None) is None
+    refs = []
+    for i in range(path.count):
+        entity = path.item(i).entity
+        # Features.createPath can return contextualized entries for native inputs.
+        # Serialize in the requested definition frame, not the SDK's chosen instance.
+        if native_frame:
+            entity = getattr(entity, 'nativeObject', None) or entity
+            if getattr(entity, 'assemblyContext', None) is not None or _cad_owner(entity) != _cad_owner(seed):
+                raise ValueError('Generated path curve does not belong to the requested native component frame')
+        refs.append(ctx.ref(entity))
+    descriptor = {'kind': 'path', 'curves': refs, 'chain': 'none'}
+    if 'name' in data:
+        descriptor['name'] = data['name']
+    return {'path': descriptor, 'count': path.count, 'isClosed': path.isClosed}
+
+
+@_cad_scoped_step('sketch.create', scope_keys=('component',))
+def model_sketch_create(ctx, data):
+    _model_fields(data, ('name', 'plane'), ('occurrence',))
+    args = [_model_resolve(ctx, data['plane'])]
+    if 'occurrence' in data:
+        args.append(ctx.resolve(data['occurrence'], 'occurrence'))
+    sketch = ctx.component.sketches.addWithoutEdges(*args)
+    return {'sketch': _model_created(ctx, sketch, data['name'])}
+
+
+def model_sketch_inspect(ctx, data):
+    _model_fields(data, ('sketch',))
+    sketch = ctx.resolve(data['sketch'], 'sketch')
+    return {'sketch': ctx.ref(sketch), 'isFullyConstrained': sketch.isFullyConstrained,
+            'curves': [ctx.describe(e) for e in _model_items(sketch.sketchCurves)],
+            'points': [ctx.describe(e) for e in _model_items(sketch.sketchPoints)],
+            'constraints': [ctx.ref(e) for e in _model_items(sketch.geometricConstraints)],
+            'dimensions': [{'ref': ctx.ref(e), 'expression': e.parameter.expression,
+                            'isDriving': e.isDriving} for e in _model_items(sketch.sketchDimensions)],
+            'profiles': [{'ref': {'kind': 'profile', 'sketch': ctx.ref(sketch), 'index': i},
+                          'loops': sketch.profiles.item(i).profileLoops.count}
+                         for i in range(sketch.profiles.count)]}
+
+
+def model_sketch_check(ctx, data):
+    _model_fields(data, ('sketch',))
+    sketch = ctx.resolve(data['sketch'], 'sketch')
+    return {'sketch': ctx.ref(sketch), 'isFullyConstrained': sketch.isFullyConstrained,
+            'profileCount': sketch.profiles.count, 'healthState': int(sketch.healthState),
+            'message': sketch.errorOrWarningMessage,
+            'underconstrained': [ctx.ref(e) for e in _model_items(sketch.sketchCurves)
+                                 if not e.isFullyConstrained]}
+
+
+def model_sketch_edit(ctx, data):
+    _model_fields(data, ('sketch',), ('name', 'visible', 'entities', 'construction', 'fixed', 'delete', 'confirm'))
+    sketch = ctx.resolve(data['sketch'], 'sketch')
+    entities = _model_entities(ctx, data['entities'], sketch) if 'entities' in data else []
+    if any(k in data for k in ('construction', 'fixed', 'delete')) and not entities:
+        raise ValueError('Entity edits require entities')
+    if data.get('delete'):
+        ctx.require_confirm(data)
+        if any(k in data for k in ('construction', 'fixed')):
+            raise ValueError('delete cannot be combined with construction/fixed edits')
+    if 'construction' in data and any(not hasattr(e, 'isConstruction') for e in entities):
+        raise ValueError('construction applies only to sketch curves')
+    if 'name' in data:
+        sketch.name = data['name']
+    if 'visible' in data:
+        sketch.isLightBulbOn = data['visible']
+    for entity in entities:
+        if data.get('delete'):
+            _model_ok(entity.deleteMe(), 'delete sketch entity')
+        else:
+            if 'construction' in data:
+                entity.isConstruction = data['construction']
+            if 'fixed' in data:
+                entity.isFixed = data['fixed']
+    return {'sketch': ctx.ref(sketch), 'edited': len(entities)}
+
+
+def model_sketch_geometry(ctx, data):
+    _model_fields(data, ('sketch', 'geometry'))
+    sketch = ctx.resolve(data['sketch'], 'sketch')
+    specs = data['geometry']
+    if not isinstance(specs, list) or not specs:
+        raise ValueError('geometry must be a nonempty array')
+    schemas = {'point': ('point',), 'line': ('start', 'end'), 'circle': ('center', 'radius'),
+               'arc': ('center', 'start', 'sweep'), 'arc3': ('start', 'through', 'end'),
+               'rectangle': ('start', 'end'), 'spline': ('points',), 'bezier': ('controlPoints',)}
+    names = set()
+    for spec in specs:
+        mode = spec.get('type')
+        if mode not in schemas:
+            raise ValueError('Supported geometry: ' + ', '.join(schemas))
+        _model_fields(spec, ('type',) + schemas[mode], ('name', 'construction', 'fixed'))
+        if 'name' in spec:
+            if not isinstance(spec['name'], str) or not spec['name'] or spec['name'] in names:
+                raise ValueError('Geometry names must be nonempty and unique within the command')
+            names.add(spec['name'])
+        if mode == 'point' and 'construction' in spec:
+            raise ValueError('Points do not support construction mode')
+        if mode == 'spline' and (not isinstance(spec['points'], list) or len(spec['points']) < 2):
+            raise ValueError('Fitted spline requires at least two points')
+        if mode == 'bezier':
+            if not isinstance(spec['controlPoints'], list) or len(spec['controlPoints']) != 4:
+                raise ValueError('Cubic Bezier requires exactly four controlPoints')
+            if spec.get('fixed') is False:
+                raise ValueError('Bezier is an intrinsically fixed noneditable reference curve; fixed:false is not supported')
+    result = {'entities': [], 'refs': {}}
+    for spec in specs:
+        mode = spec['type']
+        curves = sketch.sketchCurves
+        if mode == 'point':
+            made = [sketch.sketchPoints.add(ctx.point(spec['point']))]
+        elif mode == 'line':
+            made = [curves.sketchLines.addByTwoPoints(ctx.point(spec['start']), ctx.point(spec['end']))]
+        elif mode == 'circle':
+            made = [curves.sketchCircles.addByCenterRadius(ctx.point(spec['center']), ctx.length(spec['radius']))]
+        elif mode == 'arc':
+            made = [curves.sketchArcs.addByCenterStartSweep(ctx.point(spec['center']), ctx.point(spec['start']), ctx.angle(spec['sweep']))]
+        elif mode == 'arc3':
+            made = [curves.sketchArcs.addByThreePoints(ctx.point(spec['start']), ctx.point(spec['through']), ctx.point(spec['end']))]
+        elif mode == 'rectangle':
+            made = _model_items(curves.sketchLines.addTwoPointRectangle(ctx.point(spec['start']), ctx.point(spec['end'])))
+        elif mode == 'bezier':
+            nurbs = _model_ok(adsk.core.NurbsCurve3D.createNonRational(
+                [ctx.point(p) for p in spec['controlPoints']], 3,
+                [0, 0, 0, 0, 1, 1, 1, 1], False), 'create cubic Bezier')
+            made = [curves.sketchFixedSplines.addByNurbsCurve(nurbs)]
+        else:
+            made = [curves.sketchFittedSplines.add(ctx.collection([ctx.point(p) for p in spec['points']]))]
+        for entity in made:
+            _model_ok(entity, 'sketch ' + mode)
+            if 'construction' in spec:
+                entity.isConstruction = spec['construction']
+            if 'fixed' in spec and mode != 'bezier':
+                entity.isFixed = spec['fixed']
+        refs = _model_geometry_result(ctx, made)['entities']
+        result['entities'].extend(refs)
+        if 'name' in spec:
+            result['refs'][spec['name']] = refs if len(refs) > 1 else refs[0]
+    return result
+
+
+def model_sketch_constrain(ctx, data):
+    _model_fields(data, ('sketch', 'type', 'entities'))
+    sketch = ctx.resolve(data['sketch'], 'sketch')
+    methods = {'coincident': ('addCoincident', 2), 'collinear': ('addCollinear', 2),
+               'concentric': ('addConcentric', 2), 'midpoint': ('addMidPoint', 2),
+               'parallel': ('addParallel', 2), 'perpendicular': ('addPerpendicular2', 2),
+               'horizontal': ('addHorizontal', 1), 'vertical': ('addVertical', 1),
+               'horizontalPoints': ('addHorizontalPoints', 2), 'verticalPoints': ('addVerticalPoints', 2),
+               'tangent': ('addTangent', 2), 'smooth': ('addSmooth', 2),
+               'equal': ('addEqual', 2), 'symmetry': ('addSymmetry', 3)}
+    if data['type'] not in methods:
+        raise ValueError('Supported constraints: ' + ', '.join(methods))
+    method, count = methods[data['type']]
+    entities = _model_entities(ctx, data['entities'], sketch)
+    if len(entities) != count:
+        raise ValueError('%s requires %d entities' % (data['type'], count))
+    return {'constraint': _model_created(ctx, getattr(sketch.geometricConstraints, method)(*entities))}
+
+
+def model_sketch_dimension(ctx, data):
+    _model_fields(data, ('sketch', 'type', 'entities', 'text'), ('expression', 'driving', 'orientation'))
+    sketch = ctx.resolve(data['sketch'], 'sketch')
+    entities = _model_entities(ctx, data['entities'], sketch)
+    mode = data['type']
+    counts = {'distance': 2, 'angle': 2, 'radius': 1, 'diameter': 1}
+    if mode not in counts or len(entities) != counts[mode]:
+        raise ValueError('distance/angle require two entities; radius/diameter require one curve')
+    driving = data.get('driving', True)
+    if driving and 'expression' not in data:
+        raise ValueError('Driving dimensions require expression')
+    if not driving and 'expression' in data:
+        raise ValueError('Driven dimensions cannot accept expression')
+    if mode != 'distance' and 'orientation' in data:
+        raise ValueError('orientation is only supported for distance dimensions')
+    if 'expression' in data:
+        (ctx.angle if mode == 'angle' else ctx.length)(data['expression'])
+    args = list(entities)
+    if mode == 'distance':
+        args.append(_model_enum(adsk.fusion.DimensionOrientations, data.get('orientation', 'aligned'), {
+            'aligned': 'AlignedDimensionOrientation', 'horizontal': 'HorizontalDimensionOrientation',
+            'vertical': 'VerticalDimensionOrientation'}))
+    args.extend([ctx.point(data['text']), driving])
+    method = {'distance': 'addDistanceDimension', 'angle': 'addAngularDimension',
+              'radius': 'addRadialDimension', 'diameter': 'addDiameterDimension'}[mode]
+    dimension = _model_ok(getattr(sketch.sketchDimensions, method)(*args), method)
+    if driving:
+        dimension.parameter.expression = data['expression']
+    return {'dimension': _model_created(ctx, dimension), 'parameter': dimension.parameter.name,
+            'expression': dimension.parameter.expression}
+
+
+def model_sketch_project(ctx, data):
+    _model_fields(data, ('sketch', 'entities'), ('linked',))
+    sketch = ctx.resolve(data['sketch'], 'sketch')
+    return _model_geometry_result(ctx, sketch.project2(_model_entities(ctx, data['entities']), data.get('linked', True)))
+
+
+def model_sketch_offset(ctx, data):
+    _model_fields(data, ('sketch', 'entities', 'distance'))
+    sketch = ctx.resolve(data['sketch'], 'sketch')
+    constraints = sketch.geometricConstraints
+    inp = _model_ok(constraints.createOffsetInput(_model_entities(ctx, data['entities'], sketch), ctx.value(data['distance'])), 'createOffsetInput')
+    constraint = _model_ok(constraints.addOffset2(inp), 'addOffset2')
+    dimension = getattr(constraint, 'dimension', None)
+    offset_parameter = None
+    if dimension is not None and getattr(dimension, 'parameter', None) is not None:
+        offset_parameter = dimension.parameter.name
+    return {'constraint': _model_created(ctx, constraint), 'offsetParameter': offset_parameter,
+            **_model_geometry_result(ctx, list(constraint.childCurves))}
+
+
+def model_sketch_mirror(ctx, data):
+    _model_fields(data, ('sketch', 'entities', 'line'))
+    sketch = ctx.resolve(data['sketch'], 'sketch')
+    entities = _model_entities(ctx, data['entities'], sketch)
+    line = _model_entities(ctx, [data['line']], sketch)[0]
+    if not adsk.fusion.SketchLine.cast(line):
+        raise ValueError('Mirror axis must be a sketch line')
+    supported = (adsk.fusion.SketchLine, adsk.fusion.SketchCircle, adsk.fusion.SketchArc, adsk.fusion.SketchPoint)
+    if any(not any(cls.cast(e) for cls in supported) for e in entities):
+        raise ValueError('Sketch mirror supports points, lines, circles, and arcs only')
+    a, b = line.startSketchPoint.geometry, line.endSketchPoint.geometry
+    dx, dy = b.x - a.x, b.y - a.y
+    norm = dx * dx + dy * dy
+    if norm == 0 or abs(a.z) > 1e-7 or abs(b.z) > 1e-7:
+        raise ValueError('Mirror axis must be a nonzero line in the sketch XY plane')
+
+    def reflected(point):
+        if abs(point.z) > 1e-7:
+            raise ValueError('Sketch mirror supports planar XY geometry only')
+        t = ((point.x - a.x) * dx + (point.y - a.y) * dy) / norm
+        return adsk.core.Point3D.create(2 * (a.x + t * dx) - point.x,
+                                        2 * (a.y + t * dy) - point.y, 0)
+
+    # Rebuild primitive geometry, then constrain symmetry rather than relying on
+    # an unsupported negative-determinant sketch copy transform.
+    prepared = []
+    for entity in entities:
+        if adsk.fusion.SketchPoint.cast(entity):
+            prepared.append(('point', [reflected(entity.geometry)]))
+        elif adsk.fusion.SketchLine.cast(entity):
+            prepared.append(('line', [reflected(entity.startSketchPoint.geometry), reflected(entity.endSketchPoint.geometry)]))
+        elif adsk.fusion.SketchCircle.cast(entity):
+            prepared.append(('circle', [reflected(entity.centerSketchPoint.geometry), entity.radius]))
+        else:
+            prepared.append(('arc', [reflected(entity.centerSketchPoint.geometry), reflected(entity.endSketchPoint.geometry), reflected(entity.startSketchPoint.geometry)]))
+    made = []
+    constraints = []
+    curves = sketch.sketchCurves
+    for entity, (mode, args) in zip(entities, prepared):
+        if mode == 'point':
+            new = sketch.sketchPoints.add(*args)
+        elif mode == 'line':
+            new = curves.sketchLines.addByTwoPoints(*args)
+        elif mode == 'circle':
+            new = curves.sketchCircles.addByCenterRadius(*args)
+        else:
+            new = curves.sketchArcs.addByCenterStartEnd(*args)
+        _model_ok(new, 'mirrored ' + mode)
+        if mode != 'point':
+            new.isConstruction = entity.isConstruction
+        made.append(new)
+        constraints.append(_model_created(ctx, sketch.geometricConstraints.addSymmetry(entity, new, line)))
+    return {**_model_geometry_result(ctx, made), 'constraints': constraints}
+
+
+def model_sketch_pattern(ctx, data):
+    _model_fields(data, ('sketch', 'type', 'entities', 'quantity'),
+                  ('center', 'angle', 'direction', 'distance', 'distanceType', 'quantityTwo', 'distanceTwo', 'directionTwo'))
+    sketch = ctx.resolve(data['sketch'], 'sketch')
+    entities = _model_entities(ctx, data['entities'], sketch)
+    constraints = sketch.geometricConstraints
+    quantity = _model_quantity(ctx, data['quantity'])
+    if data['type'] == 'circular':
+        _model_fields(data, ('sketch', 'type', 'entities', 'quantity', 'center'), ('angle',))
+        center = _model_entities(ctx, [data['center']], sketch)[0]
+        inp = constraints.createCircularPatternInput(entities, center)
+        inp.quantity = quantity
+        inp.totalAngle = ctx.value(data.get('angle', '360 deg'))
+        result = constraints.addCircularPattern(inp)
+    elif data['type'] == 'rectangular':
+        _model_fields(data, ('sketch', 'type', 'entities', 'quantity', 'distance'),
+                      ('direction', 'distanceType', 'quantityTwo', 'distanceTwo', 'directionTwo'))
+        if ('quantityTwo' in data) != ('distanceTwo' in data) or ('directionTwo' in data and 'quantityTwo' not in data):
+            raise ValueError('Second direction requires quantityTwo and distanceTwo')
+        inp = constraints.createRectangularPatternInput(entities, _model_distance_type(data))
+        direction = _model_entities(ctx, [data['direction']], sketch)[0] if 'direction' in data else None
+        _model_ok(inp.setDirectionOne(direction, quantity, ctx.value(data['distance'])), 'setDirectionOne')
+        if 'quantityTwo' in data:
+            direction = _model_entities(ctx, [data['directionTwo']], sketch)[0] if 'directionTwo' in data else None
+            _model_ok(inp.setDirectionTwo(direction, _model_quantity(ctx, data['quantityTwo']), ctx.value(data['distanceTwo'])), 'setDirectionTwo')
+        result = constraints.addRectangularPattern(inp)
+    else:
+        raise ValueError('Sketch pattern type must be circular or rectangular')
+    return {'constraint': _model_created(ctx, result)}
+
+
+@_cad_scoped_step('model', native_only=True)
+def model_feature(ctx, data, mode):
+    surface_variant = mode in ('loft', 'sweep', 'revolve') and data.get('solid') is False
+    if surface_variant:
+        blocked = _surface_model_preflight(ctx, data, mode)
+        if blocked is not None:
+            return blocked
+    schemas = {
+        'extrude': ((), ('profile', 'profiles', 'extent', 'distance', 'target', 'offset', 'startOffset', 'symmetric', 'direction', 'taper')),
+        'revolve': (('profile', 'axis', 'angle'), ('symmetric',)),
+        'sweep': (('profile', 'path'), ('twist', 'taper', 'orientation', 'guideRail')),
+        'loft': (('profiles',), ('closed', 'rails', 'centerLine')),
+        'hole': (('points', 'diameter'), ('extent', 'depth', 'target', 'type', 'boreDiameter', 'boreDepth', 'sinkDiameter', 'sinkAngle', 'reverse')),
+        'shell': (('entities', 'thickness'), ('outsideThickness', 'tangentChain')),
+        'thicken': (('entities', 'thickness'), ('symmetric', 'tangentChain')),
+        'combine': (('target', 'tools', 'operation'), ('keepTools',)),
+        'split': (('bodies', 'tool'), ('extend',)),
+        'fillet': (('radius',), ('edges', 'query', 'tangentChain')),
+        'chamfer': (('distance',), ('edges', 'query', 'tangentChain')),
+        'draft': (('faces', 'plane', 'angle'), ('symmetric', 'reverse', 'tangentChain')),
+        'thread': (('faces', 'internal', 'threadType', 'designation', 'class'), ('modeled', 'rightHanded', 'length', 'offset')),
+        'mirror': (('entities', 'plane'), ()),
+        'circular': (('entities', 'axis', 'quantity'), ('angle', 'symmetric')),
+        'rectangular': (('entities', 'direction', 'quantity', 'distance'), ('distanceType', 'directionTwo', 'quantityTwo', 'distanceTwo')),
+        'path': (('entities', 'path', 'quantity', 'distance'), ('distanceType',)),
+    }
+    required, optional = schemas[mode]
+    if surface_variant:
+        optional += ('schemaVersion', 'frame', 'representation', 'onExisting', 'protected') + (('endConditions',) if mode == 'loft' else ())
+    operation_modes = ('extrude', 'revolve', 'sweep', 'loft', 'thicken')
+    if mode in operation_modes:
+        optional += ('operation', 'solid', 'participants') if mode != 'thicken' else ('operation',)
+    if mode == 'hole':
+        optional += ('participants',)
+    _model_fields(data, required, optional + ('name',))
+    extrude_profiles, multi_profile_extrude = None, False
+    if mode == 'extrude':
+        has_profile, has_profiles = 'profile' in data, 'profiles' in data
+        if has_profile == has_profiles:
+            raise ValueError('Supply exactly one of profile or profiles for model.extrude')
+        multi_profile_extrude = has_profiles
+        if has_profiles:
+            profile_refs = data['profiles']
+            if not isinstance(profile_refs, list) or not profile_refs:
+                raise ValueError('profiles must be a nonempty array of profile references')
+            extrude_profiles = [_model_resolve(ctx, ref) for ref in profile_refs]
+            for index, profile in enumerate(extrude_profiles):
+                if getattr(profile, 'assemblyContext', None) is not None or _cad_owner(profile) != ctx.component:
+                    raise ValueError('Every extrude profile must be native geometry owned by the selected component')
+                if any(profile == other for other in extrude_profiles[:index]):
+                    raise ValueError('profiles must contain distinct profile references')
+            planes = [_model_extrude_profile_plane(profile) for profile in extrude_profiles]
+            if any(not planes[0].isCoPlanarTo(plane) for plane in planes[1:]):
+                raise ValueError('All profiles in a multi-profile extrusion must be co-planar')
+        else:
+            if isinstance(data['profile'], (list, tuple)):
+                raise ValueError('profile accepts one reference; use profiles for a collection')
+            extrude_profiles = [_model_resolve(ctx, data['profile'])]
+    resolved_query = None
+    selected_edges = None
+    if mode in ('fillet', 'chamfer'):
+        if ('edges' in data) == ('query' in data):
+            raise ValueError('Supply exactly one of edges or query')
+        dimension = 'radius' if mode == 'fillet' else 'distance'
+        if ctx.length(data[dimension]) <= 0:
+            raise ValueError(dimension + ' must be a positive length')
+        if 'query' in data:
+            if not isinstance(data['query'], dict):
+                raise ValueError('query must be an object')
+            query = dict(data['query'])
+            if query.get('kind', 'edge') != 'edge':
+                raise ValueError('Fillet/chamfer query kind must be edge')
+            query['kind'] = 'edge'
+            if 'expect' not in query and not query.get('unique'):
+                raise ValueError('Modeling query requires expect or unique:true')
+            selected_edges, resolved_query = _entity_query(ctx, query)
+            if not resolved_query['success'] or not selected_edges:
+                raise ValueError('Modeling query did not select an accepted nonempty set: ' + json.dumps(resolved_query))
+            for edge in selected_edges:
+                if getattr(edge, 'assemblyContext', None) is not None or _cad_owner(edge) != ctx.component:
+                    raise ValueError('Modeling requires native input geometry in the selected component; cross-occurrence creation is unsupported')
+    if mode in ('extrude', 'hole'):
+        extent_mode = data.get('extent', 'distance')
+        if extent_mode not in ('distance', 'throughAll', 'toEntity'):
+            raise ValueError('extent must be distance, throughAll, or toEntity')
+        distance_key = 'distance' if mode == 'extrude' else 'depth'
+        if (distance_key in data) != (extent_mode == 'distance'):
+            raise ValueError(distance_key + ' is required only for distance extent')
+        if ('target' in data) != (extent_mode == 'toEntity'):
+            raise ValueError('target is required only for toEntity extent')
+        if 'offset' in data and extent_mode != 'toEntity':
+            raise ValueError('offset requires toEntity extent')
+        if mode == 'extrude' and data.get('symmetric', False):
+            if extent_mode != 'distance' or 'direction' in data or 'startOffset' in data:
+                raise ValueError('Symmetric extrude requires distance and cannot specify direction or startOffset')
+        if mode == 'hole' and extent_mode == 'toEntity' and 'reverse' in data:
+            raise ValueError('toEntity hole determines direction automatically; reverse is unsupported')
+    if mode == 'sweep' and 'guideRail' in data and any(k in data for k in ('orientation', 'twist', 'taper')):
+        raise ValueError('guideRail cannot combine with orientation, twist, or taper (ignored by Fusion)')
+    if mode == 'loft' and 'rails' in data and 'centerLine' in data:
+        raise ValueError('Loft accepts rails or centerLine, not both')
+    # Validate dimensional compatibility, but retain the original expressions in ValueInput.
+    if mode in ('extrude', 'hole', 'sweep'):
+        for key in ('distance', 'depth', 'diameter', 'offset', 'startOffset', 'boreDiameter', 'boreDepth', 'sinkDiameter'):
+            if key in data:
+                ctx.length(data[key])
+        for key in ('taper', 'twist', 'sinkAngle'):
+            if key in data:
+                ctx.angle(data[key])
+    direction = None
+    if mode == 'extrude':
+        direction = _model_enum(adsk.fusion.ExtentDirections, data.get('direction', 'positive'), {
+            'positive': 'PositiveExtentDirection', 'negative': 'NegativeExtentDirection'})
+    orientation = None
+    if mode == 'sweep' and 'orientation' in data:
+        orientation = _model_enum(adsk.fusion.SweepOrientationTypes, data['orientation'], {
+            'perpendicular': 'PerpendicularOrientationType', 'parallel': 'ParallelOrientationType'})
+    # This command surface deliberately excludes cross-occurrence creation.
+    # Reject foreign/proxy inputs before Fusion can interpret them in the wrong frame.
+    refs = []
+    for key in ('profile', 'axis', 'target', 'tool', 'plane') + (('direction', 'directionTwo') if mode == 'rectangular' else ()):
+        if key in data:
+            refs.append(data[key])
+    for key in ('profiles', 'points', 'entities', 'tools', 'bodies', 'edges', 'faces', 'participants'):
+        if key in data:
+            if not isinstance(data[key], list) or not data[key]:
+                raise ValueError(key + ' must be a nonempty reference array')
+            refs.extend(data[key])
+    guides = []
+    if 'rails' in data:
+        if not isinstance(data['rails'], list) or not data['rails']:
+            raise ValueError('rails must be a nonempty array of curve refs or path descriptors')
+        guides.extend(data['rails'])
+    if 'centerLine' in data:
+        guides.append(data['centerLine'])
+    paths = [data[k] for k in ('path', 'guideRail') if k in data]
+    for guide in guides:
+        if isinstance(guide, dict) and ('curves' in guide or guide.get('kind') == 'path'):
+            paths.append(guide)
+        else:
+            refs.append(guide)
+    for path in paths:
+        _model_fields(path, ('curves',), ('chain', 'kind', 'name'))
+        if not isinstance(path['curves'], list) or not path['curves']:
+            raise ValueError('Path curves must be a nonempty reference array')
+        refs.extend(path['curves'])
+    for ref in refs:
+        entity = _model_resolve(ctx, ref)
+        owner = _cad_owner(entity)
+        if getattr(entity, 'assemblyContext', None) is not None or (owner is not None and owner != ctx.component):
+            raise ValueError('Modeling requires native input geometry in the selected component; cross-occurrence creation is unsupported')
+    features = ctx.component.features
+    chain = data.get('tangentChain', True)
+    operation = _model_operation(data) if mode in operation_modes or mode == 'combine' else None
+    participants = None
+    if 'participants' in data:
+        if mode != 'hole' and data.get('operation', 'newBody') not in ('cut', 'intersect'):
+            raise ValueError('participants are supported only for cut/intersect or holes')
+        participants = _model_entities(ctx, data['participants'], kind='body')
+        if any(not adsk.fusion.BRepBody.cast(body) for body in participants):
+            raise ValueError('participants must reference bodies')
+        if mode == 'extrude' and multi_profile_extrude and any(
+                _cad_owner(body) != ctx.component or getattr(body, 'assemblyContext', None) is not None
+                for body in participants):
+            raise ValueError('Extrude participants must be native bodies owned by the selected component')
+    target = None
+    if mode in ('extrude', 'hole') and extent_mode == 'toEntity':
+        target = _model_resolve(ctx, data['target'])
+        target_types = (adsk.fusion.ConstructionPlane, adsk.fusion.BRepFace)
+        if mode == 'hole':
+            target_types += (adsk.fusion.BRepBody, adsk.fusion.BRepVertex, adsk.fusion.ConstructionPoint)
+        if not any(cls.cast(target) for cls in target_types):
+            raise ValueError('Unsupported toEntity target type')
+    prepared_guides = []
+    for guide in guides:
+        if isinstance(guide, dict) and ('curves' in guide or guide.get('kind') == 'path'):
+            prepared_guides.append(_model_path(ctx, guide))
+        else:
+            curve = _model_resolve(ctx, guide)
+            if not (adsk.fusion.SketchCurve.cast(curve) or adsk.fusion.BRepEdge.cast(curve)):
+                raise ValueError('Loft guides require sketch curves, edges, or path descriptors')
+            prepared_guides.append(curve)
+    if mode == 'extrude':
+        collection = features.extrudeFeatures
+        profile_input = ctx.collection(extrude_profiles) if multi_profile_extrude else extrude_profiles[0]
+        inp = collection.createInput(profile_input, operation)
+        taper = ctx.value(data.get('taper', '0 deg'))
+        if 'startOffset' in data:
+            inp.startExtent = _model_ok(adsk.fusion.OffsetStartDefinition.create(ctx.value(data['startOffset'])), 'OffsetStartDefinition.create')
+        if data.get('symmetric', False):
+            _model_ok(inp.setSymmetricExtent(ctx.value(data['distance']), True, taper), 'setSymmetricExtent')
+        else:
+            if extent_mode == 'distance':
+                extent = adsk.fusion.DistanceExtentDefinition.create(ctx.value(data['distance']))
+            elif extent_mode == 'throughAll':
+                extent = adsk.fusion.ThroughAllExtentDefinition.create()
+            else:
+                extent = adsk.fusion.ToEntityExtentDefinition.create(target, False, ctx.value(data.get('offset', '0 mm')))
+            _model_ok(extent, 'create extent')
+            _model_ok(inp.setOneSideExtent(extent, direction, taper), 'setOneSideExtent')
+    elif mode == 'revolve':
+        collection = features.revolveFeatures
+        inp = collection.createInput(_model_resolve(ctx, data['profile']), _model_resolve(ctx, data['axis']), operation)
+        _model_ok(inp.setAngleExtent(data.get('symmetric', False), ctx.value(data['angle'])), 'setAngleExtent')
+    elif mode == 'sweep':
+        collection = features.sweepFeatures
+        inp = collection.createInput(_model_resolve(ctx, data['profile']), _model_path(ctx, data['path']), operation)
+        if orientation is not None:
+            inp.orientation = orientation
+        if 'guideRail' in data:
+            inp.guideRail = _model_path(ctx, data['guideRail'])
+        if 'twist' in data:
+            inp.twistAngle = ctx.value(data['twist'])
+        if 'taper' in data:
+            inp.taperAngle = ctx.value(data['taper'])
+    elif mode == 'loft':
+        profiles = _model_entities(ctx, data['profiles'])
+        if len(profiles) < 2:
+            raise ValueError('Loft requires at least two explicitly selected sections')
+        collection = features.loftFeatures
+        inp = collection.createInput(operation)
+        inp.isSolid = data.get('solid', True)
+        for profile in profiles:
+            _model_ok(inp.loftSections.add(profile), 'loftSections.add')
+        inp.isClosed = data.get('closed', False)
+        for guide in prepared_guides:
+            method = inp.centerLineOrRails.addCenterLine if 'centerLine' in data else inp.centerLineOrRails.addRail
+            _model_ok(method(guide), 'loft guide')
+        if surface_variant:
+            _surface_loft_conditions(ctx, inp, data)
+    elif mode == 'hole':
+        collection = features.holeFeatures
+        hole_type = data.get('type', 'simple')
+        diameter = ctx.value(data['diameter'])
+        extras = {'simple': (), 'counterbore': ('boreDiameter', 'boreDepth'), 'countersink': ('sinkDiameter', 'sinkAngle')}
+        if hole_type not in extras:
+            raise ValueError('Hole type must be simple, counterbore, or countersink')
+        supplied = set(data) & {'boreDiameter', 'boreDepth', 'sinkDiameter', 'sinkAngle'}
+        if supplied != set(extras[hole_type]):
+            raise ValueError('Hole mode requires exactly these inputs: ' + ', '.join(extras[hole_type]))
+        method = {'simple': 'createSimpleInput', 'counterbore': 'createCounterboreInput', 'countersink': 'createCountersinkInput'}[hole_type]
+        inp = getattr(collection, method)(diameter, *[ctx.value(data[k]) for k in extras[hole_type]])
+        _model_ok(inp.setPositionBySketchPoints(ctx.collection(_model_entities(ctx, data['points']))), 'setPositionBySketchPoints')
+        if extent_mode == 'distance':
+            _model_ok(inp.setDistanceExtent(ctx.value(data['depth'])), 'setDistanceExtent')
+            inp.isDefaultDirection = not data.get('reverse', False)
+        elif extent_mode == 'throughAll':
+            direction = (adsk.fusion.ExtentDirections.PositiveExtentDirection if data.get('reverse', False)
+                         else adsk.fusion.ExtentDirections.NegativeExtentDirection)
+            _model_ok(inp.setAllExtent(direction), 'setAllExtent')
+            # setAllExtent can change the input's default-direction flag. Keep
+            # the same natural/reversed convention as distance holes explicitly.
+            inp.isDefaultDirection = not data.get('reverse', False)
+        else:
+            _model_ok(inp.setOneSideToExtent(target, False), 'setOneSideToExtent')
+    elif mode == 'shell':
+        collection = features.shellFeatures
+        inp = collection.createInput(ctx.collection(_model_entities(ctx, data['entities'])), chain)
+        inp.insideThickness = ctx.value(data['thickness'])
+        if 'outsideThickness' in data:
+            inp.outsideThickness = ctx.value(data['outsideThickness'])
+    elif mode == 'thicken':
+        collection = features.thickenFeatures
+        inp = collection.createInput(ctx.collection(_model_entities(ctx, data['entities'])), ctx.value(data['thickness']), data.get('symmetric', False), operation, chain)
+    elif mode == 'combine':
+        if data['operation'] == 'newBody':
+            raise ValueError('Combine supports join, cut, or intersect only')
+        collection = features.combineFeatures
+        inp = collection.createInput(ctx.resolve(data['target'], 'body'), ctx.collection(_model_entities(ctx, data['tools'], kind='body')))
+        inp.operation = operation
+        inp.isKeepToolBodies = data.get('keepTools', True)
+    elif mode == 'split':
+        collection = features.splitBodyFeatures
+        inp = collection.createInput(ctx.collection(_model_entities(ctx, data['bodies'], kind='body')), _model_resolve(ctx, data['tool']), data.get('extend', True))
+    elif mode == 'fillet':
+        collection = features.filletFeatures
+        inp = collection.createInput()
+        _model_ok(inp.edgeSetInputs.addConstantRadiusEdgeSet(ctx.collection(selected_edges if selected_edges is not None else _model_entities(ctx, data['edges'])), ctx.value(data['radius']), chain), 'addConstantRadiusEdgeSet')
+    elif mode == 'chamfer':
+        collection = features.chamferFeatures
+        inp = collection.createInput2()
+        _model_ok(inp.chamferEdgeSets.addEqualDistanceChamferEdgeSet(ctx.collection(selected_edges if selected_edges is not None else _model_entities(ctx, data['edges'])), ctx.value(data['distance']), chain), 'addEqualDistanceChamferEdgeSet')
+    elif mode == 'draft':
+        collection = features.draftFeatures
+        inp = collection.createInput(_model_entities(ctx, data['faces'], kind='face'), _model_resolve(ctx, data['plane']), chain)
+        _model_ok(inp.setSingleAngle(data.get('symmetric', False), ctx.value(data['angle'])), 'setSingleAngle')
+        inp.isDirectionFlipped = data.get('reverse', False)
+    elif mode == 'thread':
+        if 'offset' in data and 'length' not in data:
+            raise ValueError('Thread offset requires a partial thread length')
+        collection = features.threadFeatures
+        info = _model_ok(adsk.fusion.ThreadInfo.create(False, data['internal'], data['threadType'], data['designation'], data['class'], data.get('rightHanded', True)), 'ThreadInfo.create')
+        inp = collection.createInput(ctx.collection(_model_entities(ctx, data['faces'], kind='face')), info)
+        inp.isModeled = data.get('modeled', False)
+        inp.isFullLength = 'length' not in data
+        if 'length' in data:
+            inp.threadLength = ctx.value(data['length'])
+            inp.threadOffset = ctx.value(data.get('offset', '0 mm'))
+    else:
+        entities = _model_entities(ctx, data['entities'])
+        # Pattern and mirror API inputs must be homogeneous.
+        types = {('Feature' if e.objectType.endswith('Feature') else e.objectType.split('::')[-1]) for e in entities}
+        if len(types) != 1:
+            raise ValueError('Pattern/mirror entities must have the same API type')
+        if next(iter(types)) in ('ConstructionPlane', 'ConstructionAxis', 'ConstructionPoint') and len(entities) != 1:
+            raise ValueError('Pattern/mirror accepts only one construction entity')
+        entities = ctx.collection(entities)
+        if mode == 'mirror':
+            collection = features.mirrorFeatures
+            inp = collection.createInput(entities, _model_resolve(ctx, data['plane']))
+        elif mode == 'circular':
+            collection = features.circularPatternFeatures
+            inp = collection.createInput(entities, _model_resolve(ctx, data['axis']))
+            inp.quantity = _model_quantity(ctx, data['quantity'])
+            inp.totalAngle = ctx.value(data.get('angle', '360 deg'))
+            inp.isSymmetric = data.get('symmetric', False)
+        elif mode == 'rectangular':
+            if ('quantityTwo' in data or 'distanceTwo' in data or 'directionTwo' in data) and not all(k in data for k in ('quantityTwo', 'distanceTwo', 'directionTwo')):
+                raise ValueError('Second direction requires directionTwo, quantityTwo, and distanceTwo')
+            collection = features.rectangularPatternFeatures
+            inp = collection.createInput(entities, _model_resolve(ctx, data['direction']), _model_quantity(ctx, data['quantity']), ctx.value(data['distance']), _model_distance_type(data))
+            if 'quantityTwo' in data:
+                inp.directionTwoEntity = _model_resolve(ctx, data['directionTwo'])
+                inp.quantityTwo = _model_quantity(ctx, data['quantityTwo'])
+                inp.distanceTwo = ctx.value(data['distanceTwo'])
+        else:
+            collection = features.pathPatternFeatures
+            inp = collection.createInput(entities, _model_path(ctx, data['path']), _model_quantity(ctx, data['quantity']), ctx.value(data['distance']), _model_distance_type(data))
+    if mode in ('extrude', 'revolve', 'sweep', 'loft'):
+        inp.isSolid = data.get('solid', True)
+    if participants is not None:
+        inp.participantBodies = participants
+    if resolved_query is not None:
+        ctx.assert_identity()
+    feature = _model_ok(collection.add(inp), mode)
+    reference = _model_created(ctx, feature, data.get('name'))
+    if multi_profile_extrude and feature.healthState != adsk.fusion.FeatureHealthStates.HealthyFeatureHealthState:
+        raise RuntimeError('%s created a non-healthy multi-profile feature %s (healthState=%s): %s; inspect partial changes' %
+                           (mode, feature.name, feature.healthState, feature.errorOrWarningMessage))
+    if feature.healthState == adsk.fusion.FeatureHealthStates.ErrorFeatureHealthState:
+        raise RuntimeError('%s created an unhealthy feature %s: %s; inspect partial changes' %
+                           (mode, feature.name, feature.errorOrWarningMessage))
+    body_refs = [ctx.ref(body) for body in _model_items(feature.bodies)]
+    result = {'feature': reference, 'bodies': body_refs,
+              'healthState': int(feature.healthState), 'message': feature.errorOrWarningMessage}
+    if multi_profile_extrude:
+        result.update({
+            'profileRefs': [ctx.ref(profile) for profile in extrude_profiles],
+            'profileCount': len(extrude_profiles),
+            'bodyCount': len(body_refs),
+            'profileBodyMapping': {
+                'status': 'unavailable',
+                'reason': 'Fusion does not expose a stable result-body to input-profile mapping; use the returned body refs as identities.',
+            },
+        })
+    if resolved_query is not None:
+        result['resolvedQuery'] = resolved_query
+        result['selectionAssociativity'] = 'snapshot'
+    if surface_variant:
+        return _surface_model_result(ctx, mode, data, feature, result)
+    return result
+
+
+CAD_HANDLERS.update({
+    'sketch.create': model_sketch_create, 'sketch.inspect': model_sketch_inspect,
+    'sketch.edit': model_sketch_edit, 'sketch.geometry': model_sketch_geometry,
+    'sketch.constrain': model_sketch_constrain, 'sketch.dimension': model_sketch_dimension,
+    'sketch.project': model_sketch_project, 'sketch.offset': model_sketch_offset,
+    'sketch.mirror': model_sketch_mirror, 'sketch.pattern': model_sketch_pattern,
+    'sketch.check': model_sketch_check, 'path.create': model_path_create,
+    'path.inspect': model_path_create,
+})
+
+
+def _model_handler(mode):
+    def handler(ctx, data):
+        return model_feature(ctx, data, mode)
+    return handler
+
+
+CAD_HANDLERS.update({'model.' + mode: _model_handler(mode) for mode in (
+    'extrude', 'revolve', 'sweep', 'loft', 'hole', 'shell', 'thicken', 'combine',
+    'split', 'fillet', 'chamfer', 'draft', 'thread', 'mirror')})
+CAD_HANDLERS.update({'pattern.' + mode: _model_handler(mode) for mode in ('circular', 'rectangular', 'path')})

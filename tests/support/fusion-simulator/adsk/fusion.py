@@ -205,6 +205,12 @@ class FusionUnitsManager(core.UnitsManager):
         self.model_doc: core.Document = doc
         self.model_distance: int = DistanceUnits.MillimeterDistanceUnits
 
+    def model_resolve(self, name: str) -> Quantity:
+        design = Design.cast(self.model_doc.products.itemByProductType("DesignProductType"))
+        if design is None:
+            raise ValueError("No design for parameter lookup")
+        return design.userParameters.evaluate(name, set())
+
     @property
     def distanceDisplayUnits(self) -> int:
         return self.model_distance
@@ -264,6 +270,7 @@ class ConstructionAxis(core.Base):
 
 
 class ConstructionPlane(core.Base):
+    objectType: ClassVar[str] = "adsk::fusion::ConstructionPlane"
     def __init__(self, owner: Component, geometry: core.Plane, name: str, origin: bool = False) -> None:
         self.parentComponent: Component = owner
         self.geometry: core.Plane = geometry
@@ -487,4 +494,11 @@ class Design(core.Product):
             if component.entityToken == entityToken:
                 entities.append(component)
             entities.extend(body for body in component.bRepBodies if body.entityToken == entityToken)
+            for sketch in component.sketches:
+                if sketch.entityToken == entityToken:
+                    entities.append(sketch)
+                for line in sketch.sketchCurves.sketchLines:
+                    for entity in (line, line.startSketchPoint, line.endSketchPoint):
+                        if entity.entityToken == entityToken and entity not in entities:
+                            entities.append(entity)
         return entities

@@ -1,6 +1,6 @@
 # Partial Fusion test model
 
-Model version 7 implements document identity/lifecycle, numeric user-parameter CRUD,
+Model version 8 implements document identity/lifecycle, numeric user-parameter CRUD,
 saved-file identity and deletion, and a **test state export**. The exported `.f3d` fixture contains a JSON marker
 `nativeF3d: false`; it is not a native Fusion archive and must not be imported into Fusion.
 Native export/import assertions require `native-f3d`, which this model does not advertise.
@@ -76,3 +76,18 @@ paired handler tests also compare the frozen pre-refactor implementation.
 Attribute persistence, proxies, split/merged topology and token lifetime after
 reopen remain unsupported. The modeled 2 MiB limit counts UTF-8 bytes; native
 encoding and boundary failure behavior still require qualification.
+
+Public rectangular-sketch scenarios add `Sketches.addWithoutEdges` on owned XY
+construction planes, stable in-process sketch/edge/point tokens, and coordinate
+readback in centimetres. The original rectangle corners are copied; mutating an
+input Point3D cannot edit an existing profile. The bounded expression evaluator
+backs UnitsManager length/angle/scalar validation and parameter lookup. This does
+not implement the full Fusion expression grammar or implicit display units.
+
+Shared scenarios assert four ordered edge references and one closed profile,
+preserving the rectangle setup used before the refactor. Health is modeled only
+for empty sketches and these nondegenerate rectangles. Fixed/construction edits,
+multiple loops, general curves, projected edges and constraint solving explicitly
+remain unsupported. Shared-point token lookup is deduplicated within its design;
+foreign or closed document tokens never resolve. Native edge order, health and
+expression behavior remain final Fusion qualification assumptions.

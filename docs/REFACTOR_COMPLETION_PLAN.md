@@ -329,3 +329,9 @@ failure, including two owners exchanging journals. The typed validator rejects
 foreign receipts without replaying mutations. CI also includes the existing
 stage-owner integration suite. This does not close the stage 4j compatibility gap
 or the remaining runtime/mock coverage work.
+
+[Stage 3h](REFACTOR_STAGE_3H.md) adds shared public rectangle-sketch creation,
+reference and profile checks from the pre-refactor CAD suite. It also exercises
+foreign sketch tokens, failure cleanup and bounded expression evaluation. This is
+partial CAD coverage; driving dimensions, revolve/regeneration and the later
+sketch-operation suite remain open. The expanded CI matrix has 22 required jobs.
