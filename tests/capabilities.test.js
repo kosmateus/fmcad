@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const core = require('../src/dist/core');
 const { catalog, contracts, mcpTools, mcpInvocation, localInvocation, executeCapability } = require('../src/catalog');
 const { commands, findCommand } = require('../src/commands');
@@ -150,10 +151,27 @@ test('actual CLI and MCP inspect dispatch match and never load a backend', async
 });
 
 test('cad-v1 helper inventory matches implemented public facade methods exactly', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../assets/cad/helpers.py'), 'utf8');
-  const methods = [...source.matchAll(/^    def ([A-Za-z_][A-Za-z0-9_]*)\(/gm)]
-    .map(match => match[1]).filter(name => !['__init__', '_terminal'].includes(name)).sort();
-  assert.deepEqual(core.CAD_V1_HELPERS.map(helper => helper.id).sort(), methods);
+  const inventory = JSON.parse(execFileSync('python3', ['-B', '-c', `
+import ast,json,sys
+tree=ast.parse(open(sys.argv[1],encoding='utf-8').read())
+facade=next(node for node in tree.body if isinstance(node,ast.ClassDef) and node.name=='FMCAD')
+methods=[]
+properties=[]
+for node in facade.body:
+    if not isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) or node.name.startswith('_'): continue
+    property_method=any(isinstance(d,ast.Name) and d.id=='property' for d in node.decorator_list)
+    (properties if property_method else methods).append(node.name)
+print(json.dumps(dict(methods=sorted(methods),properties=sorted(properties))))
+`, path.join(__dirname, '../assets/cad/helpers.py')], { encoding: 'utf8' }));
+  assert.deepEqual(core.CAD_V1_HELPERS.map(helper => helper.id).sort(), inventory.methods);
+  assert.deepEqual(inventory.properties, ['has_emitted']);
+  assert.ok(!core.CAD_V1_HELPERS.some(helper => helper.id.startsWith('_') || inventory.properties.includes(helper.id)));
+  for (const name of ['mechanism_drive_test', 'terminal']) {
+    const item = executeCapability('capabilities.inspect', { query: 'FMCAD.' + name, limit: 100 }).items.find(item => item.id === 'helper.' + name);
+    assert.ok(item, name);
+    assert.equal(item.evidence.sdkProbe, 'not-run');
+    assert.equal(item.evidence.status, 'unknown');
+  }
 });
 
 test('SDK probe is separate, explicit, broker-bound and never called by inspect/help/list', async () => {

@@ -59,6 +59,17 @@ interface HelperDeclaration {
  * aligned with the actual helpers.py class; it is not a second command list. */
 export const CAD_V1_HELPERS: readonly HelperDeclaration[] = [
   {
+    id: "mechanism_drive_test",
+    method: "FMCAD.mechanism_drive_test",
+    summary: "Run the guarded driver-only mechanism test in the current context.",
+    searchTerms: ["mechanism", "driver", "joint", "motion"],
+    possibleMutation: "possible",
+    restoration: "operation-specific",
+    limitations: [
+      "Delegates to mechanism.drive-test. Driver motion and restoration depend on native evidence; this entry does not qualify follower coupling or solver behavior.",
+    ],
+  },
+  {
     id: "call",
     method: "FMCAD.call",
     summary:
@@ -347,6 +358,17 @@ export const CAD_V1_HELPERS: readonly HelperDeclaration[] = [
     restoration: "not-applicable",
     limitations: [
       "Emission is limited to one JSON-serializable value and does not itself validate its claims.",
+    ],
+  },
+  {
+    id: "terminal",
+    method: "FMCAD.terminal",
+    summary: "Write the cad-v1 terminal envelope used by the run wrapper.",
+    searchTerms: ["terminal", "result", "output", "envelope"],
+    possibleMutation: "none",
+    restoration: "not-applicable",
+    limitations: [
+      "The wrapper calls this lifecycle method. Calling it directly can produce duplicate terminal markers. The envelope alone does not prove native completion or restoration.",
     ],
   },
 ];

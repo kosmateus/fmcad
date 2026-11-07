@@ -39,18 +39,39 @@ test('invalid explicit modes fail shared validation and runners before executor 
 
 function cliHarness() {
   const calls = { config: 0, backend: 0, tool: 0 };
+  const sessions = { created: 0, disposed: 0 };
   let stdout = '';
   let stderr = '';
   return {
-    calls, output: () => stdout, error: () => stderr,
+    calls, sessions, output: () => stdout, error: () => stderr,
     deps: {
-      loadConfig: () => { calls.config++; return { cfg: { backend: 'mcp' } }; },
-      McpClient: class {
-        constructor() { calls.backend++; }
-        async callTool() {
+      loadConfig: () => { calls.config++; return { cfg: { backend: 'mcp', routing: 'queue',
+        url: 'http://127.0.0.1:1/mcp', headers: {}, timeoutMs: 1000, tool: 'execute_python',
+        transport: 'node', protocolVersion: '2025-06-18', queue: { autoStart: false } } }; },
+      createBackend() { assert.fail('CLI must not construct a direct backend'); },
+      McpClient: class { constructor() { assert.fail('CLI must not construct a direct client'); } },
+      createFmcad(options) {
+        assert.equal(options.config.routing, 'queue');
+        sessions.created++;
+        let started = false;
+        const client = { async callTool() {
           calls.tool++;
           return { text: 'FMCAD_RESULT ' + JSON.stringify({ success: true, result: { entities: [] } }) };
-        }
+        } };
+        return {
+          async start() { started = true; calls.backend++; },
+          async dispose() { sessions.disposed++; },
+          async execute(value, execution) {
+            assert.equal(value.kind, 'cad-command');
+            assert.ok(execution.requestId);
+            const result = await require('../src/catalog/execute').executeInvocation(value.invocation, started ? client : null);
+            return { version: 1, requestId: execution.requestId, jobId: started ? 'mode-job' : null,
+              state: started ? 'succeeded' : 'local', result,
+              output: { stdout: JSON.stringify(result) + '\n', stderr: '' },
+              outcome: { acceptance: 'accepted', executionOutcome: 'succeeded', validation: { status: 'not_checked' } },
+            };
+          },
+        };
       },
       stdout: { write: (text) => { stdout += text; } },
       stderr: { write: (text) => { stderr += text; } },
@@ -90,6 +111,7 @@ test('CLI preserves omitted/explicit run, validate/preview, and valid --preview 
       assert.equal(result.operation, 'definition.instantiate');
       const live = !preview && (mode === undefined || mode === 'run');
       assert.deepEqual(harness.calls, { config: Number(live), backend: Number(live), tool: Number(live) });
+      assert.deepEqual(harness.sessions, { created: 1, disposed: 1 });
       if (live) {
         assert.equal(result.status, 'success');
         assert.ok((await fs.readdir(reportPath)).includes('00000000.json'));
