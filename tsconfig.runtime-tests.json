@@ -48,7 +48,9 @@
     "tests/control-center-locales.test.ts",
     "tests/cad-dispatch.test.ts",
     "tests/cad-preparation.test.ts",
-    "tests/document-publication-migration.test.ts"
+    "tests/document-publication-migration.test.ts",
+    "tests/cad-result-parsing.test.ts",
+    "tests/native-action-results.test.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]
 }
