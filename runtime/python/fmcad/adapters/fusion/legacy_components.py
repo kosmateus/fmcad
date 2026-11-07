@@ -9,12 +9,12 @@ USAGE = [
 
 
 def _find_comp(design: adsk.fusion.Design, name: str) -> "adsk.fusion.Component | None":
-    if design.rootComponent.name == name:
-        return design.rootComponent
-    for c in design.allComponents:
-        if c.name == name:
-            return c
-    return None
+    root = design.rootComponent
+    matches = [root] if root.name == name else []
+    matches.extend(c for c in design.allComponents if c != root and c.name == name)
+    if len(matches) > 1:
+        raise ValueError("ambiguous component name: " + name)
+    return matches[0] if matches else None
 
 
 def cmd_comp_list(data: object, doc_name: str) -> None:

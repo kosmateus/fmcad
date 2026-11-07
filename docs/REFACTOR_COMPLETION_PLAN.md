@@ -218,3 +218,7 @@ Node adapter and composition root. Byte-for-byte historical comparisons and
 installed-package checks preserve provenance, input pins and identity guards.
 Continue the remaining CAD orchestration and service migrations alongside their
 shared scenario contracts; a compatibility facade alone is not a completed family.
+
+[Stage 3f](REFACTOR_STAGE_3F.md) fixes inherited first-match component selection.
+Duplicate parent, root and existing-component names are rejected before mutation;
+unique-name historical behavior remains covered by paired tests.
