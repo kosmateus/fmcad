@@ -1271,8 +1271,11 @@ test(
       new URL(failedSnapshotRequest.url()).pathname,
       "/api/v1/console/snapshot",
     );
+    // The error can also appear in an empty table, but retained rows hide that
+    // duplicate. Assert the persistent status notice for either table state.
     await page
-      .getByText("Nie można połączyć się z lokalnym panelem.", { exact: true })
+      .locator('.notice[role="status"]')
+      .filter({ hasText: "Nie można połączyć się z lokalnym panelem." })
       .waitFor();
     assert.ok(
       expectedNetworkFailures.some((request) =>
