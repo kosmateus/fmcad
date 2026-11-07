@@ -11,6 +11,7 @@ import type { BatchCatalog, BatchStep, BatchValidation } from "./batch-plan";
 import { errorMessage } from "./batch-plan";
 import type { BatchJournal, BatchReport } from "./batch";
 import { clone, hash, resolveReferences } from "./json";
+import { parseNativeResult, unknownNativeOutcome } from "./native-result";
 
 export interface AtomicServices {
   catalog: BatchCatalog;
@@ -63,15 +64,12 @@ function callAtomic(
         .split(/\r?\n/)
         .find((value) => value.startsWith("FMCAD_RESULT "));
       if (out.failed || !line)
-        throw new Error(
-          `Atomic batch ${String(args["operation"])} failed; ${text}`,
+        throw unknownNativeOutcome(
+          new Error(
+            `Atomic batch ${String(args["operation"])} failed; ${text}`,
+          ),
         );
-      const result: unknown = JSON.parse(line.slice("FMCAD_RESULT ".length));
-      if (!record(result))
-        throw new Error(
-          "Atomic batch returned a non-object result; outcome unknown",
-        );
-      return result;
+      return parseNativeResult(text);
     });
 }
 export interface AtomicReport extends BatchReport {
