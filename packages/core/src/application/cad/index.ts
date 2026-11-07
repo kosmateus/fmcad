@@ -10,6 +10,7 @@ export * from "./batch-plan";
 export * from "./batch";
 export * from "./batch-report";
 export * from "./atomic";
+export * from "./atomic-receipt";
 export * from "./brep-baseline";
 export * from "./worker-command";
 export {

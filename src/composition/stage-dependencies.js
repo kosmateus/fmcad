@@ -6,7 +6,7 @@ const { createHash } = require('node:crypto');
 const json = require('../dist/core/application/cad/json');
 const stageCore = require('../dist/core/application/stage-journal');
 const documentSave = require('../dist/core/application/documents/save');
-const atomic = require('../dist/core/application/cad/atomic');
+const atomic = require('../dist/core/application/cad/atomic-receipt');
 const { createAuthenticatedStageOwner } = require('../dist/node-adapters/persistence/stage-owner');
 const { stageReceiptReference } = require('../dist/node-adapters/persistence/stage-journal');
 const { readBytes } = require('../dist/node-adapters/persistence/records');
@@ -157,7 +157,7 @@ function batchReceipt({ scope, stage, reference, lifecycle }) {
     catch { return { status: 'unknown' }; }
     if (!atomicRecords.length) return { status: 'missing' };
     let atomicReport;
-    try { atomicReport = atomic.validateAtomicHistory(atomicRecords.map(item => item.record)); }
+    try { atomicReport = atomic.validateOwnedAtomicHistory(atomicRecords.map(item => item.record), binding, pinned); }
     catch { return { status: 'corrupt' }; }
     const finalRecord = atomicRecords.at(-1)?.record;
     if (atomicReport.status !== 'success' || atomicReport.outcome !== 'committed' ||
