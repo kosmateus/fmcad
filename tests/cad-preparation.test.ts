@@ -1,15 +1,25 @@
-"use strict";
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const os = require("node:os");
-const current = require("../src/cad");
-const previous = require("./fixtures/historical-module.cjs")(
+import test from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
+import { createRequire } from "node:module";
+import type { CadData } from "../packages/core/src/application/cad/contracts.js";
+const root = path.resolve(__dirname, "../..");
+const load = createRequire(path.join(root, "package.json"));
+const historical = load("./tests/fixtures/historical-module.cjs") as (
+  revision: string,
+  source: string,
+) => unknown;
+type CadApi = typeof import("../src/composition/cad-execution.js");
+const current = load("./src/cad.js") as CadApi;
+const previous = historical(
   "5292078741b417d6e921d3252a8bf19b3f0cc15b",
   "src/cad.js",
-);
-const fakeWsl = require("./fixtures/fake-wsl-platform.cjs");
+) as CadApi;
+const fakeWsl = load(
+  "./tests/fixtures/fake-wsl-platform.cjs",
+) as () => () => void;
 
 test("CAD preparation retains exact source, units, hashes and context across migrated routes", (t) => {
   const restore = fakeWsl();
@@ -35,15 +45,24 @@ test("CAD preparation retains exact source, units, hashes and context across mig
     docFileId: "owned-file",
   };
   for (const operation of operations) {
-    const data = structuredClone(current.catalog[operation].example);
-    if (operation === "cots.replace") data.model.path = file;
-    if (operation === "catalog.import")
-      data.records[0].model = {
+    const data = structuredClone(current.catalog[operation]!.example);
+    if (operation === "cots.replace") {
+      const model = data["model"];
+      assert.ok(model && typeof model === "object" && !Array.isArray(model));
+      (model as CadData)["path"] = file;
+    }
+    if (operation === "catalog.import") {
+      const records = data["records"];
+      assert.ok(Array.isArray(records));
+      const first: unknown = records[0];
+      assert.ok(first && typeof first === "object" && !Array.isArray(first));
+      (first as CadData)["model"] = {
         path: file,
         representation: "envelope",
         source: "model fixture",
         status: "ESTIMATED",
       };
+    }
     const input = structuredClone(data);
     const before = previous.prepareCadScript(operation, data, context);
     const after = current.prepareCadScript(operation, data, context);
@@ -85,14 +104,14 @@ test("path mapping preserves platform spelling, all nested path families and cal
     ["view.compare", { left: file, right: "\\\\server\\share\\frame.png" }],
     ["texture.heightmap", { path: file }],
     ...["motion.sample", "animation.joints", "explode.render"].map(
-      (operation) => [
+      (operation): [string, CadData] => [
         operation,
         { directory: "out", frameFiles: [file, "D:/native/frame.png"] },
       ],
     ),
     ["animation.export", { frames: [file], output: "out/movie.mp4" }],
     ["unrelated.operation", { path: file, nested: [{ value: 1 }] }],
-  ]) {
+  ] satisfies [string, CadData][]) {
     const original = structuredClone(data);
     const expected = previous.mapCadPaths(operation, data);
     const actual = current.mapCadPaths(operation, data);
@@ -102,7 +121,7 @@ test("path mapping preserves platform spelling, all nested path families and cal
   }
   for (const value of ["C:/native/file.step", "\\\\server\\share\\file.step"]) {
     assert.equal(
-      current.mapCadPaths("export.step", { path: value }).path,
+      current.mapCadPaths("export.step", { path: value })["path"],
       value,
     );
   }
@@ -114,19 +133,20 @@ test("preparation retains validation and path failures before execution", (t) =>
     ["not.a.command", {}],
     ["shape.box", {}],
     ["document.status", { unexpected: true }],
-    ["curve.fit", { ...current.catalog["curve.fit"].example, plane: "XY" }],
-  ]) {
-    let expected;
+    ["curve.fit", { ...current.catalog["curve.fit"]!.example, plane: "XY" }],
+  ] satisfies [string, CadData][]) {
+    let expected: string;
     assert.throws(
       () => previous.prepareCadScript(operation, data, { doc: "Owned" }),
       (error) => {
+        assert.ok(error instanceof Error);
         expected = error.message;
         return true;
       },
     );
     assert.throws(
       () => current.prepareCadScript(operation, data, { doc: "Owned" }),
-      (error) => error.message === expected,
+      (error) => error instanceof Error && error.message === expected,
     );
   }
   for (const value of [null, 42, {}, []]) {

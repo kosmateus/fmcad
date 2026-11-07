@@ -290,3 +290,9 @@ failure resolved solely from another successful run.
 tests retain exact stage binding, saved-file identity, acceptance/publication
 separation and receipt-only replay. The shared atomic journal codec and remaining
 specialist services still need migration.
+
+[Stage 5b](REFACTOR_STAGE_5B.md) moves CAD preparation, dispatch and publication
+regressions to strict TypeScript and compiler-only execution. Remaining handwritten
+tests and transitional source facades are still part of stages 4–5; they are not
+accepted as the final architecture. The stage records the complete mock/checker
+regression runs after runtime commit `165585e` and the merges of PRs #11 and #12.
