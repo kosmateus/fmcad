@@ -1,3 +1,4 @@
+import { parseNativeResult, unknownNativeOutcome } from "@fmcad/core";
 import { pythonLiteral } from "./artifact.js";
 import { prepareCadBundle } from "./bundle.js";
 import { resolveRuntimePaths } from "../config-platform/runtime-paths.js";
@@ -13,33 +14,6 @@ export interface NativeActionClient {
     featureType: "script";
     object: { script: string; readOnly: boolean };
   }): Promise<NativeActionReply>;
-}
-
-function unknownOutcome(cause: unknown): Error & { unknown: true } {
-  const error =
-    cause instanceof Error && Object.isExtensible(cause)
-      ? cause
-      : new Error(cause instanceof Error ? cause.message : String(cause), {
-          cause,
-        });
-  return Object.assign(error, { unknown: true as const });
-}
-
-/** One result is required: selecting an arbitrary marker cannot settle a mutation. */
-function result(text: string): Record<string, unknown> {
-  try {
-    const lines = text
-      .split(/\r?\n/)
-      .filter((line) => line.startsWith("FMCAD_RESULT "));
-    if (lines.length !== 1)
-      throw new Error("Expected exactly one native result marker");
-    const value: unknown = JSON.parse(lines[0]!.slice("FMCAD_RESULT ".length));
-    if (value === null || typeof value !== "object" || Array.isArray(value))
-      throw new Error("Expected a native result object");
-    return value as Record<string, unknown>;
-  } catch (error) {
-    throw unknownOutcome(error);
-  }
 }
 
 const referenceReadActions = new Set(["graph", "preflight"]);
@@ -105,7 +79,7 @@ export async function executeReferencesAction(
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("RPC not submitted:"))
       return { status: "notStarted", notStarted: true, error: message };
-    throw unknownOutcome(error);
+    throw unknownNativeOutcome(error);
   } finally {
     if (timeoutAdjusted) server.timeoutMs = previousTimeoutMs;
   }
@@ -125,13 +99,13 @@ export async function executeReferencesAction(
   ) {
     if (text.includes("RPC not submitted:"))
       return { status: "notStarted", notStarted: true, error: text };
-    throw unknownOutcome(
+    throw unknownNativeOutcome(
       new Error(
         `references.refresh ${action} failed; inspect before retry. ${text}`,
       ),
     );
   }
-  return result(text);
+  return parseNativeResult(text);
 }
 
 export async function executeExternalizationAction(
@@ -197,9 +171,9 @@ export async function executeExternalizationAction(
       throw new Error(
         "External native outcome unknown; inspect existing operation. " + text,
       );
-    return result(text);
+    return parseNativeResult(text);
   } catch (error) {
-    throw unknownOutcome(error);
+    throw unknownNativeOutcome(error);
   } finally {
     if (client.server) {
       if (previous === undefined) delete client.server.timeoutMs;

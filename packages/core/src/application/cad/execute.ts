@@ -5,6 +5,7 @@ import {
   type CadOutput,
   type CadServices,
 } from "./contracts";
+import { parseNativeResult, unknownNativeOutcome } from "./native-result";
 
 export function previewCad(
   operation: string,
@@ -63,19 +64,16 @@ export async function executeCad(
       (operation === "document.clear" && data["dryRun"] === true),
   });
   const text = out.text || "";
-  const line = text
-    .split(/\r?\n/)
-    .find((value) => value.startsWith("FMCAD_RESULT "));
-  if (out.failed || !line)
-    throw new Error(
-      `${operation} failed; model may contain partial changes. Inspect before retry. ${text}`,
+  if (
+    out.failed ||
+    !text.split(/\r?\n/).some((value) => value.startsWith("FMCAD_RESULT "))
+  )
+    throw unknownNativeOutcome(
+      new Error(
+        `${operation} failed; model may contain partial changes. Inspect before retry. ${text}`,
+      ),
     );
-  const decoded: unknown = JSON.parse(line.slice("FMCAD_RESULT ".length));
-  if (!record(decoded))
-    throw new Error(
-      `${operation} returned a non-object result; inspect before retry`,
-    );
-  const output = decoded;
+  const output = parseNativeResult(text);
   if (services.failed(output)) output["success"] = false;
   const result = output["result"];
   if (!record(result)) return output;

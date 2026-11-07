@@ -241,3 +241,13 @@ The next model increment covers namespaced body attributes through the shipped
 cad-v1 facade, plus foreign-token rejection and retained-handler parity. See
 [stage 3g](REFACTOR_STAGE_3G.md). Attribute persistence, general entity topology and
 native `shape.box` qualification remain separate work.
+
+### Stage 4c: public CAD result evidence
+
+[Stage 4c](REFACTOR_STAGE_4C.md) shares the native result parser with the public
+CAD executor and rejects inherited duplicate-marker acceptance. Unknown reply
+outcomes remain unknown; valid result shaping and one-call semantics are retained.
+
+PRs #8 (box geometry/rollback) and #9 (typed run preparation) are merged into
+`main`, each after a complete 18-job CI run on its current head. Later stages
+remain open until their own full CI passes.
