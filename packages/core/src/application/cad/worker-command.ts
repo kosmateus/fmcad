@@ -190,7 +190,10 @@ export interface RunCommandReply extends CadExecutionReply {
   uiGuard?: CadOutput;
 }
 export interface RunCommandServices {
-  prepare(request: RunRequest, trustedStageContext?: unknown): PreparedPythonArtifact;
+  prepare(
+    request: RunRequest,
+    trustedStageContext?: unknown,
+  ): PreparedPythonArtifact;
   trustedStageContext?: unknown;
   execution: {
     execute(request: CadExecutionRequest): Promise<RunCommandReply>;
@@ -259,7 +262,10 @@ export async function executeRunCommand(
     },
   });
   if (out.data) services.outcome(out.data);
-  if (out.uiGuard)
+  if (out.uiGuard) {
+    const notStarted =
+      out.uiGuard["status"] === "rejected-before-mutation" &&
+      out.uiGuard["notStarted"] === true;
     return {
       code: 1,
       stdout:
@@ -269,14 +275,16 @@ export async function executeRunCommand(
             operation: "run",
             status: out.uiGuard["status"],
             script: request.name,
-            userCodeSubmitted: out.uiGuard["notStarted"] === true,
+            userCodeSubmitted: notStarted ? false : null,
             activeCommand: out.uiGuard["activeCommand"] ?? null,
             activeCommandIdentityAvailable:
               out.uiGuard["identityAvailable"] === true,
             originalOperationOutcome: "notEvaluated",
             suggestedRecovery: ["ui.inspect", "ui.resolve"],
             limitations: [
-              "This receipt proves only that this new script was rejected before user code; it does not resolve any underlying pending/unknown operation.",
+              notStarted
+                ? "This receipt proves only that this new script was rejected before user code; it does not resolve any underlying pending/unknown operation."
+                : "This receipt does not establish whether user code started. Inspect the original operation before another run; no retry is automatic.",
             ],
           },
           null,
@@ -284,6 +292,7 @@ export async function executeRunCommand(
         ) + "\n",
       stderr: "",
     };
+  }
   const text = out.text || "";
   const stderr =
     (request.identity.readOnly && services.backend === "addin"
