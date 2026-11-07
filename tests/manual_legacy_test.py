@@ -145,22 +145,71 @@ class LegacyManualContracts(unittest.TestCase):
                 else:
                     self.assertEqual(lines, [])
 
-    def test_body_volume_failure_is_reported_as_zero_not_real_measurement(self):
-        class Body:
-            name = 'Body'
-            isVisible = True
+    def test_inherited_volume_read_failure_cannot_be_a_zero_measurement(self):
+        root_path = Path(__file__).resolve().parents[1]
+        sources = [(root_path / 'tests/fixtures/history/inspect-a262.py.txt').read_text(),
+                   migrated_legacy('legacy_inspect.py')]
+        for failure in [RuntimeError('property unavailable'), ValueError('invalid body')]:
+            for revision, source in enumerate(sources):
+                with self.subTest(failure=failure, revision=revision):
+                    calls = []
+                    class Body:
+                        name = 'Body'
+                        isVisible = True
 
-            @property
-            def physicalProperties(self):
-                raise RuntimeError('MOCK property failure')
+                        @property
+                        def physicalProperties(self):
+                            calls.append('read')
+                            raise failure
 
-        root = types.SimpleNamespace(bRepBodies=types.SimpleNamespace(count=1, item=lambda index: Body()))
-        self.app.activeProduct = types.SimpleNamespace(rootComponent=root)
-        document = types.SimpleNamespace(name='Model', creationId='volume-document', activate=lambda: True)
-        self.app.documents = [document]
-        self.app.activeDocument = document
-        ns = self.load('inspect.py')
-        self.assertIn('volume=0.00 mm3', self.output(ns['cmd_bodies'], None, 'Model'))
+                    root = types.SimpleNamespace(bRepBodies=types.SimpleNamespace(count=1, item=lambda index: Body()))
+                    self.app.activeProduct = types.SimpleNamespace(rootComponent=root)
+                    document = types.SimpleNamespace(name='Model', creationId='volume-document', activate=lambda: True)
+                    self.app.documents = [document]
+                    self.app.activeDocument = document
+                    namespace = {}
+                    exec(compile(source, 'volume-fixture.py', 'exec'), namespace)
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        if revision == 0:
+                            namespace['cmd_bodies'](None, 'Model')
+                        else:
+                            with self.assertRaisesRegex(RuntimeError, 'Body volume unavailable: Body') as caught:
+                                namespace['cmd_bodies'](None, 'Model')
+                            self.assertIs(caught.exception.__cause__, failure)
+                    self.assertEqual(calls, ['read'])
+                    if revision == 0:
+                        self.assertIn('volume=0.00 mm3', output.getvalue())
+                        self.assertIn('DONE', output.getvalue())
+                    else:
+                        self.assertNotIn('BODY name=', output.getvalue())
+                        self.assertNotIn('DONE', output.getvalue())
+
+    def test_volume_read_preserves_real_zero_and_rejects_invalid_measurements(self):
+        namespace = {}
+        exec(compile(migrated_legacy('legacy_inspect.py'), 'volume-fixture.py', 'exec'), namespace)
+        for volume in [0.0, 6.0, float('nan'), float('inf'), float('-inf'), -1.0]:
+            with self.subTest(volume=volume):
+                body = types.SimpleNamespace(name='Body', isVisible=True,
+                    physicalProperties=types.SimpleNamespace(volume=volume))
+                self.app.activeProduct = types.SimpleNamespace(rootComponent=types.SimpleNamespace(
+                    bRepBodies=types.SimpleNamespace(count=1, item=lambda index: body)))
+                document = types.SimpleNamespace(name='Model', creationId='volume-document', activate=lambda: True)
+                self.app.documents = [document]
+                self.app.activeDocument = document
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    if volume in (0.0, 6.0):
+                        namespace['cmd_bodies'](None, 'Model')
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, 'Body volume invalid: Body'):
+                            namespace['cmd_bodies'](None, 'Model')
+                if volume in (0.0, 6.0):
+                    self.assertIn('volume=%.2f mm3' % (volume * 1000), output.getvalue())
+                    self.assertIn('DONE', output.getvalue())
+                else:
+                    self.assertNotIn('BODY name=', output.getvalue())
+                    self.assertNotIn('DONE', output.getvalue())
 
     def test_inspection_matches_pre_refactor_behavior_on_the_same_sdk_scenarios(self):
         import hashlib

@@ -1,3 +1,4 @@
+import math
 
 OP = "help"
 ARGS: list[str] = []
@@ -54,11 +55,12 @@ def cmd_bodies(data: object, doc_name: str) -> None:
         b = cast("adsk.fusion.BRepBody | None", root.bRepBodies.item(i))
         if b is None:
             raise RuntimeError("Body disappeared: " + str(i))
-        vol = 0.0
         try:
             vol = b.physicalProperties.volume * 1000.0
-        except Exception:
-            pass
+        except Exception as error:
+            raise RuntimeError("Body volume unavailable: " + b.name + ": " + str(error)) from error
+        if not math.isfinite(vol) or vol < 0:
+            raise RuntimeError("Body volume invalid: " + b.name)
         print("BODY name=" + b.name + " volume=%.2f mm3 visible=%s" % (vol, b.isVisible))
     print("DONE")
 
