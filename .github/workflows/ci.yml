@@ -92,7 +92,7 @@ jobs:
 
   scenario-broker:
     runs-on: ubuntu-24.04
-    timeout-minutes: 16
+    timeout-minutes: ${{ matrix.suite == 'sketches' && 22 || 16 }}
     strategy:
       fail-fast: false
       matrix:
@@ -118,7 +118,8 @@ jobs:
       - run: npm run build
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      - run: timeout --signal=TERM --kill-after=15s 12m npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite }} --concurrency 10 --owners ${{ (matrix.suite == 'saved' || matrix.suite == 'attributes' || matrix.suite == 'sketches') && 2 || 10 }}
+      # Sketches check four full helper programs per owner; keep time for the final file audit.
+      - run: timeout --signal=TERM --kill-after=15s ${{ matrix.suite == 'sketches' && '18m' || '12m' }} npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite }} --concurrency 10 --owners ${{ (matrix.suite == 'saved' || matrix.suite == 'attributes' || matrix.suite == 'sketches') && 2 || 10 }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
