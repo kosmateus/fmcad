@@ -4,6 +4,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const fs = require('node:fs');
+const inventory = require('./live-suite-inventory.json');
 const { boundedMap, concurrencyLimit, sourceHash } = require('../dist/tests/scenarios/scheduling');
 
 const suites = ['legacy', 'cad', 'extended', 'definitions', 'data-import', 'backend-adapter',
@@ -97,6 +98,11 @@ print(json.dumps(dict(documents=[dict(creationId=d.creationId,name=d.name,saved=
 }
 
 async function run(argv = process.argv.slice(2), settings = {}) {
+  if (argv.includes('--list')) {
+    if (argv.length !== 1) throw new Error('--list cannot be combined with execution options');
+    console.log(JSON.stringify(inventory, null, 2));
+    return 0;
+  }
   const { routing, concurrency, suite, args } = parseOptions(argv);
   if (suite === 'all') {
     const sourceBefore = testSourceHash();
