@@ -58,5 +58,11 @@
     "sourcePath": "src/batch-atomic.js",
     "file": "batch-atomic-e92a.js.txt",
     "sha256": "09119531542c440a8e89d45c6a8dabb3acf44ca7ee747ea977b55c9f4e992d0d"
+  },
+  {
+    "revision": "979944d53961b9b80a5e8213c43706409d194669",
+    "sourcePath": "src/batch.js",
+    "file": "batch-9799.js.txt",
+    "sha256": "e88b323aa88dab551aed576ac09c75395301e429f12597a5eee8d4a392e43c53"
   }
 ]

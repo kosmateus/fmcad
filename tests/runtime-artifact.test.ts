@@ -34,6 +34,31 @@ function readJson<T>(file: string): T {
 const projectRoot = path.resolve(__dirname, "..", "..");
 const runtimeRequire = createRequire(__filename);
 
+function assertNoEvidenceFiles(paths: string[]): void {
+  const unexpected = paths.filter((file) =>
+    /(^|\/)(\.cad|\.beads|\.development|\.cache|fixtures|reports?)(\/|$)|(^|\/)[^/]*(?:^|[-_.])report[^/]*\.[^/]+$|(^|\/)[^/]*(?:benchmark|diagnosis)[^/]*\.[^/]+$|\.py[co]$|Zone\.Identifier|(^|\/)\.env(?:\.|$)|\.pem$|\.key$|\.log$/i.test(
+      file,
+    ),
+  );
+  assert.deepEqual(
+    unexpected,
+    [],
+    "Package contains local evidence or diagnostic files",
+  );
+}
+
+test("npm package excludes local evidence without installing dependencies", () => {
+  const packages = JSON.parse(
+    execFileSync("npm", ["pack", "--dry-run", "--ignore-scripts", "--json"], {
+      cwd: projectRoot,
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    }),
+  ) as NpmPackedPackage[];
+  assert.equal(packages.length, 1);
+  assertNoEvidenceFiles(packages[0]!.files.map((file) => file.path));
+});
+
 test(
   "actual npm tarball runs CLI MCP and worker readonly outside checkout with clean Unicode HOME",
   { timeout: 120000 },
@@ -129,6 +154,8 @@ test(
       "dist/src/dist/composition/cad-execution.js",
       "dist/src/dist/composition/document-publication.js",
       "dist/src/dist/composition/batch-atomic.js",
+      "dist/src/dist/composition/batch.js",
+      "dist/src/dist/node-adapters/persistence/batch-journal.js",
       "dist/src/dist/node-adapters/persistence/operation-journal.js",
       "dist/src/dist/python/document-probe.js",
       "dist/src/dist/fusion-transport/addin-capabilities.js",
@@ -145,14 +172,7 @@ test(
           !/^(src|assets|packages|\.development|\.beads)\//.test(file.path),
       ),
     );
-    assert.ok(
-      packedPaths.every(
-        (file) =>
-          !/(^|\/)(\.cad|\.beads|\.development|\.cache|fixtures|reports?)(\/|$)|(^|\/)[^/]*(?:^|[-_.])report[^/]*\.[^/]+$|(^|\/)[^/]*(?:benchmark|diagnosis)[^/]*\.[^/]+$|\.py[co]$|Zone\.Identifier|(^|\/)\.env(?:\.|$)|\.pem$|\.key$|\.log$/i.test(
-            file,
-          ),
-      ),
-    );
+    assertNoEvidenceFiles(packedPaths);
     assert.ok(!packedPaths.includes("docs/inspection-benchmark.json"));
     assert.ok(!packedPaths.includes("docs/inspection-strict-report.json"));
     // Install actual production dependencies, not symlinks back into this checkout.
@@ -217,6 +237,8 @@ test(
       "composition/cad-execution.d.ts",
       "composition/document-publication.d.ts",
       "composition/batch-atomic.d.ts",
+      "composition/batch.d.ts",
+      "node-adapters/persistence/batch-journal.d.ts",
       "node-adapters/persistence/operation-journal.d.ts",
     ]) {
       assert.doesNotMatch(

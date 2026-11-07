@@ -55,7 +55,11 @@
     "tests/live-suite-inventory.test.ts",
     "tests/artifact-read-evidence.test.ts",
     "tests/operation-journal-migration.test.ts",
-    "tests/atomic-adapter-migration.test.ts"
+    "tests/atomic-adapter-migration.test.ts",
+    "tests/batch-services-migration.test.ts",
+    "tests/batch-summary.test.ts",
+    "tests/runtime-journal-declarations.test.ts",
+    "tests/core-staging.test.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]
 }
