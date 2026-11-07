@@ -11,6 +11,15 @@ from typing import ClassVar
 
 from . import core
 from ._expressions import UNITS, Quantity, evaluate
+from ._model_geometry import (BRepBodies as BRepBodies, BRepBody as BRepBody,
+    PhysicalProperties as PhysicalProperties, Sketch as Sketch, Sketches as Sketches,
+    SketchCurves as SketchCurves, SketchLines as SketchLines, SketchLine as SketchLine,
+    SketchLineList as SketchLineList, SketchPoint as SketchPoint, Profile as Profile,
+    Profiles as Profiles, FeatureOperations as FeatureOperations,
+    ExtentDirections as ExtentDirections, ExtentDefinition as ExtentDefinition,
+    DistanceExtentDefinition as DistanceExtentDefinition,
+    ExtrudeFeature as ExtrudeFeature, ExtrudeFeatures as ExtrudeFeatures,
+    ExtrudeFeatureInput as ExtrudeFeatureInput)
 
 
 class UserParameter(core.Base):
@@ -217,8 +226,8 @@ class FeatureHealthStates:
 
 
 class TimelineObject(core.Base):
-    def __init__(self, entity: ConstructionPlane | Occurrence) -> None:
-        self.entity: ConstructionPlane | Occurrence = entity
+    def __init__(self, entity: ConstructionPlane | Occurrence | Sketch | ExtrudeFeature) -> None:
+        self.entity: ConstructionPlane | Occurrence | Sketch | ExtrudeFeature = entity
         self.healthState: int = FeatureHealthStates.HealthyFeatureHealthState
         self.errorOrWarningMessage: str = ""
 
@@ -228,16 +237,25 @@ class TimelineObject(core.Base):
 
 
 class Timeline(core.Collection[TimelineObject]):
+    def __init__(self, doc: core.Document) -> None:
+        super().__init__()
+        self.model_doc: core.Document = doc
+        self.model_marker: int | None = None
+
     @property
     def markerPosition(self) -> int:
-        return self.count
+        return self.count if self.model_marker is None else self.model_marker
 
     @markerPosition.setter
     def markerPosition(self, value: int) -> None:
         if value < 0 or value > self.count:
             raise ValueError("Timeline marker out of range")
-        if value != self.count:
-            raise NotImplementedError("Rollback of native features is not modeled")
+        old = self.markerPosition
+        if any(not isinstance(item.entity, (Sketch, ExtrudeFeature)) for item in self.values[min(old, value):max(old, value)]):
+            raise NotImplementedError("Only rectangular sketch/extrude rollback is modeled")
+        self.model_marker = None if value == self.count else value
+        if value != old:
+            self.model_doc.isModified = True
 
 
 class ConstructionAxis(core.Base):
@@ -268,13 +286,13 @@ class ConstructionPlane(core.Base):
         return True
 
 
-def _literal(value: core.ValueInput, units: str) -> float:
+def model_literal(value: core.ValueInput, units: str) -> float:
     def unsupported(name: str) -> Quantity:
-        raise NotImplementedError("Parameter-driven plane regeneration is not modeled: " + name)
+        raise NotImplementedError("Parameter-driven geometry regeneration is not modeled: " + name)
     if isinstance(value.value, str):
         return evaluate(value.value, units, unsupported).value
     if not math.isfinite(value.value):
-        raise ValueError("Non-finite plane input")
+        raise ValueError("Non-finite geometry input")
     return value.value
 
 
@@ -292,7 +310,7 @@ class ConstructionPlaneInput(core.Base):
 
     def setByOffset(self, planarEntity: core.Base, offset: core.ValueInput) -> bool:
         plane = self.model_plane(planarEntity)
-        distance = _literal(offset, "cm")
+        distance = model_literal(offset, "cm")
         origin, normal = plane.geometry.origin, plane.geometry.normal
         self.model_geometry = core.Plane(core.Point3D(origin.x + normal.x * distance,
             origin.y + normal.y * distance, origin.z + normal.z * distance), normal)
@@ -323,7 +341,7 @@ class ConstructionPlaneInput(core.Base):
         dot = axis.x*n.x + axis.y*n.y + axis.z*n.z
         if abs(dot) > 1e-9:
             return False
-        theta = _literal(angle, "rad")
+        theta = model_literal(angle, "rad")
         c, sine = math.cos(theta), math.sin(theta)
         normal = core.Vector3D(n.x*c+(axis.y*n.z-axis.z*n.y)*sine,
             n.y*c+(axis.z*n.x-axis.x*n.z)*sine, n.z*c+(axis.x*n.y-axis.y*n.x)*sine)
@@ -343,6 +361,9 @@ class ConstructionPlanes(core.Collection[ConstructionPlane]):
         return ConstructionPlaneInput(self.component)
 
     def add(self, input: ConstructionPlaneInput) -> ConstructionPlane | None:
+        timeline = self.component.model_design.timeline
+        if timeline.markerPosition != timeline.count:
+            raise NotImplementedError("Editing a rolled-back timeline is not modeled")
         if input.model_component is not self.component or input.model_geometry is None:
             return None
         plane = ConstructionPlane(self.component, input.model_geometry, "Plane" + str(self.count+1))
@@ -371,6 +392,9 @@ class Occurrences(core.Collection[Occurrence]):
         self.model_component: Component = component
 
     def addNewComponent(self, transform: core.Matrix3D) -> Occurrence:
+        timeline = self.model_component.model_design.timeline
+        if timeline.markerPosition != timeline.count:
+            raise NotImplementedError("Editing a rolled-back timeline is not modeled")
         if transform.asArray() != core.Matrix3D.create().asArray():
             raise NotImplementedError("Only identity component placement is modeled")
         design = self.model_component.model_design
@@ -384,9 +408,10 @@ class Occurrences(core.Collection[Occurrence]):
 
 
 class Features(core.Collection[object]):
-    def __init__(self) -> None:
+    def __init__(self, component: Component) -> None:
         super().__init__()
         self.deriveFeatures: core.Collection[object] = core.Collection()
+        self.extrudeFeatures: ExtrudeFeatures = ExtrudeFeatures(component)
 
 
 class Component(core.Base):
@@ -396,9 +421,9 @@ class Component(core.Base):
         self.model_id: str = str(uuid.uuid4())
         self.occurrences: Occurrences = Occurrences(self)
         self.constructionPlanes: ConstructionPlanes = ConstructionPlanes(self)
-        self.bRepBodies: core.Collection[object] = core.Collection()
-        self.features: Features = Features()
-        self.sketches: core.Collection[object] = core.Collection()
+        self.bRepBodies: BRepBodies = BRepBodies()
+        self.features: Features = Features(self)
+        self.sketches: Sketches = Sketches(self)
         self.xYConstructionPlane: ConstructionPlane = ConstructionPlane(self,
             core.Plane(core.Point3D(0, 0, 0), core.Vector3D(0, 0, 1)), "XY", True)
         self.xZConstructionPlane: ConstructionPlane = ConstructionPlane(self,
@@ -420,7 +445,10 @@ class Component(core.Base):
             units=self.model_design.unitsManager.defaultLengthUnits,
             planes=[dict(name=p.name, origin=p.geometry.origin.asArray(),
                          normal=p.geometry.normal.asArray()) for p in self.constructionPlanes],
-            occurrences=[dict(id=o.component.id, name=o.component.name) for o in self.occurrences])
+            occurrences=[dict(id=o.component.id, name=o.component.name) for o in self.occurrences],
+            sketches=[dict(name=s.name, profiles=[dict(first=p.model_first.asArray(),
+                second=p.model_second.asArray()) for p in s.profiles]) for s in self.sketches],
+            bodies=[dict(name=b.name, revision=b.revisionId) for b in self.bRepBodies])
         return hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest()
 
     @property
@@ -439,7 +467,7 @@ class Design(core.Product):
         self.userParameters: UserParameters = UserParameters(doc)
         self.allParameters: UserParameters = self.userParameters
         self.allComponents: core.Collection[Component] = core.Collection()
-        self.timeline: Timeline = Timeline()
+        self.timeline: Timeline = Timeline(doc)
         self.unitsManager: FusionUnitsManager = FusionUnitsManager(doc)
         self.rootComponent: Component = Component(self)
         self.allComponents.values.append(self.rootComponent)

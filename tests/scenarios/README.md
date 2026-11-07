@@ -2,7 +2,7 @@
 
 The scenario case modules supply the same steps and assertions to real Fusion and the partial
 Python model. The scope includes document and saved-file lifecycle, numeric
-parameters, simple construction planes, component trees, display units and cloud inventory,
+parameters, simple construction planes, component trees, display units, cloud inventory and rectangular extrusions,
 including ownership under interleaving. It does not replace the
 existing CAD/live suites or qualify geometry, cloud storage or rendering.
 
@@ -56,10 +56,11 @@ at most two scenarios based on CPU availability. Each slot covers setup, steps
 and cleanup. `--owners N` sets the number of parameter scenarios, in addition
 to one lifecycle scenario. Run one coordinator per Fusion instance.
 
-`--suite all` is the default and runs foundation, saved, parameter, document and cloud scenarios. Use
+`--suite all` is the default and runs foundation, saved, parameter, document, cloud and box scenarios. Use
 `--suite foundation` for historical unsaved/export behavior or `--suite saved`
 for the save/close/delete lifecycle, `--suite parameters` for parameter contracts
-or `--suite documents` for planes, components and units, or `--suite cloud` for inventory. The model supplies a dedicated fixture
+or `--suite documents` for planes, components and units, or `--suite cloud` for inventory. `--suite boxes` covers historical box dimensions,
+volume and rollback. The model supplies a dedicated fixture
 folder. Native saved scenarios require exact project/folder IDs; the runner never
 chooses a live folder by name or creates one implicitly. Native runs are deferred
 until the refactor is complete.

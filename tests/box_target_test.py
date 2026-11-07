@@ -38,6 +38,8 @@ class BoxTargetTests(unittest.TestCase):
         adsk.core = ModuleType('adsk.core')
         adsk.fusion = ModuleType('adsk.fusion')
         adsk.core.Application = SimpleNamespace(get=lambda: app)
+        adsk.core.Point3D = SimpleNamespace(
+            create=lambda x, y, z: SimpleNamespace(x=x, y=y, z=z))
         adsk.fusion.Design = SimpleNamespace(cast=lambda product: product)
         output = io.StringIO()
         with patch.dict(sys.modules, {'adsk': adsk, 'adsk.core': adsk.core, 'adsk.fusion': adsk.fusion}):

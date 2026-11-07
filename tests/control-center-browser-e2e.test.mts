@@ -20,6 +20,12 @@ import {
   projectId,
 } from "./control-center-browser-fixture.mts";
 
+import {
+  classifyNetworkConsoleErrors,
+  type BrowserConsoleError,
+  type ExpectedNetworkFailure,
+} from "./browser-network-evidence.ts";
+
 interface CapturedQuery {
   readonly collection?: string;
   readonly scope?: { readonly kind?: string; readonly projectId?: string };
@@ -137,6 +143,21 @@ test(
     const fixture = createBrowserFixture();
     const http = await fixture.start();
     const consoleErrors: string[] = [];
+    const consoleMessages: BrowserConsoleError[] = [];
+    const outageFailures: ExpectedNetworkFailure[] = [];
+    const classifyConsoleErrors = (): void => {
+      const classified = classifyNetworkConsoleErrors(
+        consoleMessages,
+        outageFailures,
+        http.origin,
+      );
+      consoleErrors.splice(0, consoleErrors.length, ...classified.unexpected);
+      expectedNetworkConsoleErrors.splice(
+        0,
+        expectedNetworkConsoleErrors.length,
+        ...classified.expected,
+      );
+    };
     const expectedNetworkConsoleErrors: string[] = [];
     const pageErrors: string[] = [];
     const failedRequests: string[] = [];
@@ -177,6 +198,7 @@ test(
       return [...observed].filter((action) => !clicked.has(action)).sort();
     };
     const writeReport = () => {
+      classifyConsoleErrors();
       fs.writeFileSync(
         path.join(runDirectory, "report.json"),
         `${JSON.stringify(
@@ -198,6 +220,8 @@ test(
             },
             backendCalls: fixture.calls,
             consoleErrors,
+            consoleMessages,
+            outageFailures,
             expectedNetworkConsoleErrors,
             pageErrors,
             failedRequests,
@@ -318,31 +342,34 @@ test(
       queueMicrotask(scan);
     });
     let expectingNetworkOutage = false;
+    const pendingRequests = new Set<Request>();
+    const outageRequests = new WeakSet<Request>();
+    page.on("request", (request) => {
+      pendingRequests.add(request);
+      if (expectingNetworkOutage) outageRequests.add(request);
+    });
+    page.on("requestfinished", (request) => pendingRequests.delete(request));
     page.on("console", (message) => {
-      if (message.type() !== "error") return;
-      const description = message.text();
-      const location = new URL(message.location().url || http.origin);
-      if (
-        expectingNetworkOutage &&
-        location.origin === http.origin &&
-        location.pathname.startsWith("/api/v1/console/") &&
-        // Closing an owned server can reset an existing connection or refuse
-        // a new one. Neither permits unrelated errors outside this outage.
-        /^Failed to load resource: net::ERR_(?:CONNECTION_REFUSED|CONNECTION_RESET|SOCKET_NOT_CONNECTED)$/u.test(
-          description,
-        )
-      )
-        expectedNetworkConsoleErrors.push(description);
-      else consoleErrors.push(description);
+      if (message.type() === "error")
+        consoleMessages.push({
+          text: message.text(),
+          url: message.location().url,
+        });
     });
     page.on("pageerror", (error) => pageErrors.push(error.message));
     page.on("requestfailed", (request) => {
+      pendingRequests.delete(request);
       const failure = request.failure()?.errorText ?? "unknown failure";
       const description = `${request.method()} ${request.url()}: ${failure}`;
       const pathname = new URL(request.url()).pathname;
-      if (expectingNetworkOutage && pathname.startsWith("/api/v1/console/"))
+      if (
+        outageRequests.has(request) &&
+        new URL(request.url()).origin === http.origin &&
+        pathname.startsWith("/api/v1/console/")
+      ) {
         expectedNetworkFailures.push(description);
-      else if (
+        outageFailures.push({ url: request.url(), error: failure });
+      } else if (
         pathname === "/api/v1/console/events" &&
         failure === "net::ERR_ABORTED"
       )
@@ -1306,6 +1333,7 @@ test(
     await page.getByRole("option", { name: "Globalnie", exact: true }).click();
     await networkTestGlobalRequest;
     expectingNetworkOutage = true;
+    for (const request of pendingRequests) outageRequests.add(request);
     const failedSnapshot = new Promise<Request>((resolve) => {
       const onRequestFailed = (request: Request): void => {
         if (new URL(request.url()).pathname !== "/api/v1/console/snapshot")
@@ -1351,6 +1379,7 @@ test(
           requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
         ),
     );
+    classifyConsoleErrors();
     assert.deepEqual(consoleErrors, [], "browser console has no errors");
     assert.deepEqual(
       pageErrors,

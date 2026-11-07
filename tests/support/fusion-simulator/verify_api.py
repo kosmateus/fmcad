@@ -10,13 +10,15 @@ import sys
 from pathlib import Path
 
 METHODS: dict[str, dict[str, list[str]]] = {
-    "core": {"Point3D": ["create", "asArray"], "Vector3D": ["create", "asArray"],
+    "core": {"BoundingBox3D": ["create"], "Point3D": ["create", "asArray"], "Vector3D": ["create", "asArray"],
              "Plane": ["create"], "Matrix3D": ["create", "asArray"],
              "Application": ["get"], "Documents": ["add"], "Document": ["activate", "close", "saveAs", "save"],
              "Products": ["itemByProductType"], "ValueInput": ["createByString", "createByReal"],
              "Data": ["findFileById"], "DataProjects": ["itemById"], "DataFolders": ["itemById", "itemByName", "add"],
              "DataFiles": ["itemById"], "DataFile": ["deleteMe"]},
-    "fusion": {"ConstructionPlane": ["deleteMe"], "ConstructionPlanes": ["createInput", "add", "itemByName"],
+    "fusion": {"Sketches": ["add"], "SketchLines": ["addTwoPointRectangle"],
+               "DistanceExtentDefinition": ["create"], "ExtrudeFeatureInput": ["setOneSideExtent"],
+               "ExtrudeFeatures": ["createInput", "add"], "ConstructionPlane": ["deleteMe"], "ConstructionPlanes": ["createInput", "add", "itemByName"],
                "ConstructionPlaneInput": ["setByOffset", "setByTwoPlanes", "setByAngle"],
                "Occurrences": ["addNewComponent"],
                "UserParameter": ["deleteMe"], "UserParameters": ["add", "itemByName"], "ExportManager": ["createFusionArchiveExportOptions", "execute"],
@@ -51,6 +53,8 @@ def main(snapshot: Path) -> None:
     for module, classes in METHODS.items():
         upstream = methods(snapshot / "adsk" / (module + ".py"))
         model = methods(Path(__file__).parent / "adsk" / (module + ".py"))
+        if module == "fusion":
+            model.update(methods(Path(__file__).parent / "adsk/_model_geometry.py"))
         for cls, names in classes.items():
             for name in names:
                 expected, actual = upstream[cls][name], model[cls][name]
