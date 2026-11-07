@@ -68,6 +68,119 @@ class Products:
         return self.product
 
 
+class DataFile(Base):
+    """A versioned test state. Cloud progress advances between SDK requests."""
+    def __init__(self, folder: DataFolder, name: str, id: str | None = None, version: int = 1) -> None:
+        self.parentFolder: DataFolder = folder
+        self.parentProject: DataProject = folder.parentProject
+        self.id: str = id or "sim-file:" + str(uuid4())
+        self.name: str = name
+        self.versionNumber: int = version
+        self.isReadOnly: bool = False
+        self.isComplete: bool = False
+        self.model_pending: int = folder.parentProject.data.save_delay_steps
+        self.model_delete_remaining: int | None = None
+        self.model_parameters: list[tuple[str, str, float, str, str]] = []
+
+    @property
+    def latestVersion(self) -> DataFile:
+        file = self.parentFolder.dataFiles.itemById(self.id)
+        if file is None:
+            raise RuntimeError("File is deleted")
+        return file
+
+    @property
+    def latestVersionNumber(self) -> int:
+        return self.latestVersion.versionNumber
+
+    def deleteMe(self) -> bool:
+        data = self.parentProject.data
+        if self.isReadOnly or not self.isComplete:
+            return False
+        if any(d.dataFile is not None and d.dataFile.id == self.id for d in data.app.documents):
+            return False
+        if self.model_delete_remaining is not None:
+            raise RuntimeError("Deletion already accepted; observe the original operation")
+        if self not in self.parentFolder.dataFiles.values:
+            return False
+        self.model_delete_remaining = data.delete_delay_steps
+        data.delete_calls += 1
+        return True
+
+
+class DataFiles(Collection[DataFile]):
+    def itemById(self, id: str) -> DataFile | None:
+        return next((file for file in self if file.id == id), None)
+
+
+class DataFolder(Base):
+    def __init__(self, project: DataProject, name: str, id: str | None = None) -> None:
+        self.id: str = id or "sim-folder:" + str(uuid4())
+        self.name: str = name
+        self.parentProject: DataProject = project
+        self.dataFiles: DataFiles = DataFiles()
+        self.dataFolders: DataFolders = DataFolders(project)
+
+
+class DataFolders(Collection[DataFolder]):
+    def __init__(self, project: DataProject) -> None:
+        super().__init__()
+        self.project: DataProject = project
+
+    def itemById(self, id: str) -> DataFolder | None:
+        return next((folder for folder in self if folder.id == id), None)
+
+    def add(self, name: str) -> DataFolder:
+        if not name or any(folder.name == name for folder in self):
+            raise ValueError("Invalid or duplicate folder name")
+        folder = DataFolder(self.project, name)
+        self.values.append(folder)
+        return folder
+
+
+class DataProject(Base):
+    def __init__(self, data: Data) -> None:
+        self.data: Data = data
+        self.id: str = "sim-project:fixtures"
+        self.rootFolder: DataFolder = DataFolder(self, "Scenario fixtures", "sim-folder:fixtures")
+
+
+class DataProjects(Collection[DataProject]):
+    def itemById(self, id: str) -> DataProject | None:
+        return next((project for project in self if project.id == id), None)
+
+
+class Data(Base):
+    def __init__(self, app: Application) -> None:
+        self.app: Application = app
+        self.save_delay_steps: int = 2
+        self.delete_delay_steps: int = 2
+        self.save_calls: int = 0
+        self.delete_calls: int = 0
+        self.dataProjects: DataProjects = DataProjects([DataProject(self)])
+
+    def _folders(self) -> Iterator[DataFolder]:
+        pending = [project.rootFolder for project in self.dataProjects]
+        while pending:
+            folder = pending.pop()
+            yield folder
+            pending.extend(folder.dataFolders)
+
+    def findFileById(self, id: str) -> DataFile | None:
+        return next((file for folder in self._folders() for file in folder.dataFiles if file.id == id), None)
+
+    def advance_model(self) -> None:
+        for folder in self._folders():
+            for file in list(folder.dataFiles):
+                if file.model_pending > 0:
+                    file.model_pending -= 1
+                file.isComplete = file.model_pending == 0
+                if file.model_delete_remaining is not None:
+                    file.model_delete_remaining -= 1
+                    if file.model_delete_remaining <= 0:
+                        folder.dataFiles.values.remove(file)
+
+
 class Document(Base):
     def __init__(self, app: Application) -> None:
         from .fusion import Design
@@ -77,10 +190,45 @@ class Document(Base):
         self.isSaved: bool = False
         self.isModified: bool = False
         self.isValid: bool = True
-        self.dataFile: None = None
+        self.dataFile: DataFile | None = None
         self.allDocumentReferences: Collection[object] = Collection()
         self.documentReferences: Collection[object] = Collection()
         self.products: Products = Products(Design(self))
+
+    def _snapshot(self, file: DataFile) -> None:
+        from .fusion import Design
+        product = self.products.product
+        assert isinstance(product, Design)
+        file.model_parameters = [(p.name, p.expression, p.value, p.unit, p.comment) for p in product.userParameters]
+        self.dataFile = file
+        self.isSaved = True
+        self.isModified = False
+        self.app.data.save_calls += 1
+
+    def saveAs(self, name: str, dataFolder: DataFolder, description: str, tag: str) -> bool:
+        if not self.isValid or dataFolder.parentProject.data is not self.app.data:
+            raise RuntimeError("Unavailable document or foreign data folder")
+        if self.isSaved:
+            raise NotImplementedError("SaveAs of an existing file is outside the fixture model")
+        self.name = name or self.name
+        file = DataFile(dataFolder, self.name)
+        dataFolder.dataFiles.values.append(file)
+        self._snapshot(file)
+        return True
+
+    def save(self, description: str) -> bool:
+        if not self.isValid or self.dataFile is None:
+            raise RuntimeError("SaveAs is required before save")
+        if self.dataFile.isReadOnly or not self.dataFile.isComplete:
+            return False
+        if not self.isModified:
+            return True
+        old = self.dataFile
+        file = DataFile(old.parentFolder, self.name, old.id, old.versionNumber + 1)
+        old.parentFolder.dataFiles.values.remove(old)
+        old.parentFolder.dataFiles.values.append(file)
+        self._snapshot(file)
+        return True
 
     def activate(self) -> bool:
         if not self.isValid:
@@ -89,8 +237,8 @@ class Document(Base):
         return True
 
     def close(self, saveChanges: bool) -> bool:
-        if saveChanges:
-            raise NotImplementedError("Cloud save is not modeled")
+        if saveChanges and self.isModified:
+            raise NotImplementedError("Interactive save prompts are not modeled")
         if not self.isValid:
             raise RuntimeError("Document is already closed")
         self.app.documents.values.remove(self)
@@ -120,10 +268,11 @@ class Application(Base):
     _instance: ClassVar[Application | None] = None
 
     def __init__(self) -> None:
-        self.version: str = "fmcad-simulator-v1-not-Fusion"
+        self.version: str = "fmcad-simulator-v2-not-Fusion"
         self.activeDocument: Document | None = None
         self.documents: Documents = Documents(self)
         self.userInterface: UserInterface = UserInterface()
+        self.data: Data = Data(self)
 
     @staticmethod
     def get() -> Application:

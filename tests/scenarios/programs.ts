@@ -18,16 +18,29 @@ export function program(body: string): string {
 export function emit(expression: string): string {
   return `print(${quoted(marker)} + json.dumps(${expression}))`;
 }
-export function guard(document: Document): string {
+export function select(document: Document): string {
   return `import adsk.core, adsk.fusion, json
 from typing import cast
 app = adsk.core.Application.get()
 matches = [d for d in app.documents if d.creationId == ${quoted(document.creationId)}]
 assert len(matches) == 1, 'Owned creationId is unavailable'
 doc = matches[0]
-assert doc.name == ${quoted(document.name)} and not doc.isSaved, 'Owned document identity changed'
+assert doc.name == ${quoted(document.name)}, 'Owned document identity changed'
 assert doc.activate()
-assert app.activeDocument is not None and app.activeDocument.creationId == doc.creationId
+assert app.activeDocument is not None and app.activeDocument.creationId == doc.creationId`;
+}
+export function savedGuard(document: Document): string {
+  return document.file
+    ? `assert doc.isSaved
+file = cast('adsk.core.DataFile | None', doc.dataFile)
+assert file is not None
+assert file.id == ${quoted(document.file.fileId)} and file.versionNumber == ${document.file.version}
+assert file.parentProject.id == ${quoted(document.file.projectId)} and file.parentFolder.id == ${quoted(document.file.folderId)}`
+    : "assert not doc.isSaved, 'Owned document unexpectedly became saved'";
+}
+export function guard(document: Document): string {
+  return `${select(document)}
+${savedGuard(document)}
 design = cast(adsk.fusion.Design, doc.products.itemByProductType('DesignProductType'))
 assert design is not None`;
 }
@@ -71,12 +84,17 @@ ${emit("dict(creationId=doc.creationId, count=design.userParameters.count, saved
 }
 export function close(document: Document): string {
   return program(`import adsk.core, json
+from typing import cast
 app = adsk.core.Application.get()
 matches = [d for d in app.documents if d.creationId == ${quoted(document.creationId)}]
 assert len(matches) <= 1
 if matches:
     doc = matches[0]
-    assert doc.name == ${quoted(document.name)} and not doc.isSaved
+    assert doc.name == ${quoted(document.name)}
+${savedGuard(document)
+  .split("\n")
+  .map((line) => "    " + line)
+  .join("\n")}
     assert doc.close(False)
 assert not any(d.creationId == ${quoted(document.creationId)} for d in app.documents)
 ${emit(`dict(creationId=${quoted(document.creationId)}, closed=True)`)}`);

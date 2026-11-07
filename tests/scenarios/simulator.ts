@@ -111,7 +111,12 @@ export const simulatorCapabilities = new Set([
   "documents",
   "literal-length-parameters",
   "fixture-export",
+  "saved-fixtures",
 ]);
+export const simulatorFolder = Object.freeze({
+  projectId: "sim-project:fixtures",
+  folderId: "sim-folder:fixtures",
+});
 
 /** Component profile only. It is explicitly NOT evidence that broker/IPC admission passed. */
 export class CheckedSimulatorBackend implements ScenarioBackend {
@@ -208,9 +213,7 @@ export class CheckedSimulatorBackend implements ScenarioBackend {
 }
 
 /** Both wire protocols over a real loopback HTTP connection, for the real broker profile. */
-export async function simulatorEndpoint(
-  model: PythonSimulator,
-): Promise<{
+export async function simulatorEndpoint(model: PythonSimulator): Promise<{
   url: string;
   loseNextToolResponse(): void;
   close(): Promise<void>;

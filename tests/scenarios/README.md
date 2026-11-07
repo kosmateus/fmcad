@@ -1,7 +1,7 @@
 # Shared Fusion scenarios
 
 `cases.ts` supplies the same steps and assertions to real Fusion and the partial
-Python model. The initial scope is document lifecycle and literal length user
+Python model. The scope is document lifecycle, saved-file lifecycle and literal length user
 parameters, including ownership under interleaving. It does not replace the
 existing CAD/live suites or qualify geometry, cloud storage or rendering.
 
@@ -45,8 +45,8 @@ After installing the matching build, start the configured broker and Fusion
 backend. The protocol must match that configuration:
 
 ```sh
-npm run test:scenarios:live -- --run --protocol mcp
-npm run test:scenarios:live -- --run --protocol addin
+npm run test:scenarios:live -- --run --protocol mcp --project-id PROJECT --folder-id FOLDER
+npm run test:scenarios:live -- --run --protocol addin --project-id PROJECT --folder-id FOLDER
 ```
 
 The runner does not start or upgrade a live broker. Fusion defaults to 10
@@ -55,9 +55,21 @@ at most two scenarios based on CPU availability. Each slot covers setup, steps
 and cleanup. `--owners N` sets the number of parameter scenarios, in addition
 to one lifecycle scenario. Run one coordinator per Fusion instance.
 
+`--suite all` is the default and runs foundation and saved variants. Use
+`--suite foundation` for historical unsaved/export behavior or `--suite saved`
+for the save/close/delete lifecycle. The model supplies a dedicated fixture
+folder. Native saved scenarios require exact project/folder IDs; the runner never
+chooses a live folder by name or creates one implicitly. Native runs are deferred
+until the refactor is complete.
+
 Each scenario receives its own document, creation ID, request IDs and export
 file. Guarded operations activate the exact owned document in the same SDK
-call. Cleanup closes only that document without saving, then removes its export.
+call. Foundation cleanup closes that document without saving and removes its export.
+Saved fixtures bind the accepted save to its original client/request, observe
+the exact completed file/version, close the document, request deletion and verify
+absence from the configured folder before removing the export. Cleanup refuses
+changed versions and read-only files. A successful delete call alone is not proof
+of absence. File inventories protect pre-existing folder contents.
 Reports and source hashes are retained under `.test-artifacts/scenarios/`.
 The model's `.f3d` is marked JSON test state, not a native archive.
 
@@ -82,9 +94,12 @@ npm run test:scenarios:live -- --run --protocol mcp --cleanup /absolute/path/rep
 ```
 
 Recovery looks up original results, verifies ownership and settlement, and only
-then closes the owned document. It never replays the original mutation and does
+then continues cleanup. It never replays an accepted save, close or delete and does
 not change a failed scenario into a pass. A new model process is a different
 backend instance and cannot recover the old process's documents.
+When all created scenarios have cleaned up, recovery audits the original document
+and file inventories and restores the original active document. These extra
+read-only observations do not repeat the original mutation.
 
 Unsupported capabilities are reported before setup and fail the required
 profile. Backend-specific changes to expected results or tolerances are not

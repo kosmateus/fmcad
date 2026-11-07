@@ -2,7 +2,13 @@
 
 "use strict";
 
-import type { Browser, BrowserContext, Page, Request } from "playwright";
+import type {
+  Browser,
+  BrowserContext,
+  Locator,
+  Page,
+  Request,
+} from "playwright";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -113,6 +119,11 @@ function waitForQuery(
     },
     { timeout: 10_000 },
   );
+}
+
+async function waitForCount(locator: Locator, count: number): Promise<void> {
+  if (count > 0) await locator.nth(count - 1).waitFor();
+  await locator.nth(count).waitFor({ state: "detached" });
 }
 
 test(
@@ -352,6 +363,14 @@ test(
       "real HTTP server returns the production page",
     );
     await page.getByRole("heading", { name: "Przegląd globalny" }).waitFor();
+    // The shell renders before API data. Wait for the data and freshness state
+    // that the assertions below actually verify.
+    await page
+      .getByRole("button", { name: /E2E Synthetic Project/ })
+      .first()
+      .waitFor();
+    await page.getByText("E2E queued task", { exact: true }).first().waitFor();
+    await page.getByText("POŁĄCZONO", { exact: true }).waitFor();
     assert.equal(await page.locator("#app .app-shell").count(), 1);
     assert.match(
       await page.locator("#app").innerText(),
@@ -434,6 +453,11 @@ test(
     await page
       .getByRole("heading", { name: "E2E Synthetic Project" })
       .waitFor();
+    await page.getByText("NIEAKTUALNE", { exact: true }).waitFor();
+    await page
+      .getByText("E2E stale-data scenario", { exact: false })
+      .first()
+      .waitFor();
     assert.match(await page.locator("#app").innerText(), /NIEAKTUALNE/);
     assert.match(
       await page.locator("#app").innerText(),
@@ -446,6 +470,7 @@ test(
     await page.getByRole("combobox", { name: /Zakres projektu:/ }).click();
     await page.getByRole("option", { name: "Globalnie", exact: true }).click();
     await page.getByRole("heading", { name: "Przegląd globalny" }).waitFor();
+    await page.getByText("POŁĄCZONO", { exact: true }).waitFor();
     assert.match(await page.locator("#app").innerText(), /POŁĄCZONO/);
     record("project scope selector returns to fresh global snapshot");
 
@@ -471,6 +496,7 @@ test(
       .click();
     await allTasksRequest;
     await page.getByRole("row", { name: /E2E queued task/ }).waitFor();
+    await waitForCount(taskRows, 12);
     assert.equal(
       await taskRows.count(),
       12,
@@ -488,6 +514,10 @@ test(
     await page.getByRole("button", { name: /Otwarte/ }).click();
     await openRequest;
     await page.getByRole("row", { name: /E2E queued task/ }).waitFor();
+    await waitForCount(
+      page.getByRole("row", { name: /E2E completed task/ }),
+      0,
+    );
     assert.equal(
       await page.getByRole("row", { name: /E2E completed task/ }).count(),
       0,
@@ -503,6 +533,7 @@ test(
     await page.getByRole("button", { name: /Historia/ }).click();
     await historyRequest;
     await page.getByRole("row", { name: /E2E completed task/ }).waitFor();
+    await waitForCount(page.getByRole("row", { name: /E2E queued task/ }), 0);
     assert.equal(
       await page.getByRole("row", { name: /E2E queued task/ }).count(),
       0,
@@ -527,6 +558,7 @@ test(
     await page.getByLabel("Szukaj zadań").fill("E2E queued task");
     await taskSearchRequest;
     await page.getByRole("row", { name: /E2E queued task/ }).waitFor();
+    await waitForCount(taskRows, 1);
     assert.equal(await taskRows.count(), 1);
     record(
       "task search is sent to the backend and narrows the rendered result",
@@ -552,6 +584,10 @@ test(
     await page.getByRole("button", { name: "Zastosuj" }).click();
     await filterRequest;
     await page.getByRole("row", { name: /E2E queued task/ }).waitFor();
+    await waitForCount(
+      page.getByRole("row", { name: /E2E completed task/ }),
+      0,
+    );
     assert.equal(
       await page.getByRole("row", { name: /E2E completed task/ }).count(),
       0,
@@ -583,6 +619,7 @@ test(
     await page.getByRole("button", { name: "Zastosuj" }).click();
     await textFilterRequest;
     await page.getByRole("row", { name: /E2E failed task/ }).waitFor();
+    await waitForCount(taskRows, 1);
     assert.equal(await taskRows.count(), 1);
     record("text column filter sends contains to the backend and narrows rows");
     const resetTextFilterRequest = waitForQuery(

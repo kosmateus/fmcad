@@ -20,6 +20,8 @@ def execute(source: str, entrypoint: bool) -> dict[str, object]:
     namespace: dict[str, object] = {"__name__": "__fmcad_scenario__"}
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
         try:
+            from adsk.core import Application
+            Application.get().data.advance_model()
             exec(compile(source, "scenario.py", "exec"), namespace, namespace)
             if entrypoint:
                 run = namespace.get("run")

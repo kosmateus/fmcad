@@ -1,72 +1,18 @@
-import { test, type TestContext } from "node:test";
+import { test } from "node:test";
+import { fixture, remaining } from "./test-support";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { createBrokerTransport } from "../../packages/node-adapters/src/fusion-transport/broker";
-import type {
-  ScenarioBackend,
-  ScriptRequest,
-  Execution,
-  Protocol,
-  Document,
-} from "./contracts";
-import {
-  PythonSimulator,
-  simulatorCapabilities,
-  simulatorEndpoint,
-} from "./simulator";
+import type { ScenarioBackend, Document } from "./contracts";
+import { simulatorEndpoint } from "./simulator";
 import { runScenarios, resumeCleanup, type Scenario } from "./runner";
 import { foundationScenarios, lifecycle, parameterScenario } from "./cases";
 import * as programs from "./programs";
 
 const root = path.resolve(__dirname, "../../..");
 const runtimeRequire = createRequire(path.join(root, "package.json"));
-async function fixture(t: TestContext, protocol: Protocol = "mcp") {
-  const parent = path.join(root, ".test-artifacts/scenario-unit");
-  fs.mkdirSync(parent, { recursive: true });
-  const directory = fs.mkdtempSync(path.join(parent, "case-"));
-  const model = new PythonSimulator(root);
-  const retained = new Map<string, Execution>();
-  t.after(async () => {
-    await model.close();
-    fs.rmSync(directory, { recursive: true, force: true });
-  });
-  // Unit-level lifecycle/model test. Checker and real broker have separate explicit suites.
-  const backend: ScenarioBackend = {
-    mode: "simulator",
-    qualification: "component",
-    protocol,
-    identity: "unit:" + model.instanceId,
-    capabilities: simulatorCapabilities,
-    fusionPath: (local) => local,
-    async execute(request) {
-      const source =
-        request.source + (protocol === "addin" ? '\nrun("")\n' : "");
-      const result = await model.execute(source, protocol === "mcp");
-      const execution: Execution = {
-        requestId: request.requestId,
-        state: result.success ? "succeeded" : "failed",
-        sdkSettled: true,
-        mayHaveMutated: true,
-        stdout: result.stdout,
-        ...(result.success ? {} : { error: result.error }),
-      };
-      retained.set(request.owner.clientId + "/" + request.requestId, execution);
-      return execution;
-    },
-    lookup: (owner, requestId) =>
-      Promise.resolve(retained.get(owner.clientId + "/" + requestId) ?? null),
-  };
-  return { directory, model, backend };
-}
-async function remaining(model: PythonSimulator): Promise<unknown> {
-  const response = await model.execute(programs.snapshot());
-  assert.equal(response.success, true, response.error);
-  const line = response.stdout.trim();
-  const value: unknown = JSON.parse(line.slice(programs.marker.length));
-  return value;
-}
 for (const protocol of ["mcp", "addin"] as const) {
   test(`shared scenarios and cleanup use actual Python in ${protocol} protocol`, async (t) => {
     const { directory, model, backend } = await fixture(t, protocol);
@@ -234,8 +180,8 @@ test("lost response remains unknown, persists original request and never dispatc
   );
   assert.equal(
     model.executions,
-    previousExecutions + 1,
-    "Only guarded cleanup executes; original mutation is not replayed",
+    previousExecutions + 2,
+    "Guarded cleanup and a final inventory read execute; the original mutation is not replayed",
   );
   assert.equal(
     (await resumeCleanup(backend, path.join(report.directory, "report.json")))
@@ -244,8 +190,8 @@ test("lost response remains unknown, persists original request and never dispatc
   );
   assert.equal(
     model.executions,
-    previousExecutions + 1,
-    "Completed cleanup is read back, not repeated",
+    previousExecutions + 3,
+    "Completed cleanup is not repeated; only the run inventory is checked again",
   );
   assert.equal(
     fs.existsSync(path.join(report.directory, "fixture.f3d")),
@@ -437,14 +383,24 @@ for (const protocol of ["mcp", "addin"] as const) {
     );
     const executions = model.executions;
     const recovered = await resumeCleanup(
-      backend,
+      {
+        ...backend,
+        async execute(request) {
+          assert.equal(
+            request.source.includes("doc.close(False)"),
+            false,
+            "The original close must never be replayed",
+          );
+          return backend.execute(request);
+        },
+      },
       path.join(report.directory, "report.json"),
     );
     assert.equal(recovered.cleanup, "complete");
     assert.equal(
       model.executions,
-      executions,
-      "read original settlement and remove local artifact; no second SDK close",
+      executions + 1,
+      "one final inventory read audits the recovered run; no second SDK close",
     );
     assert.equal(
       fs.existsSync(path.join(report.directory, "fixture.f3d")),

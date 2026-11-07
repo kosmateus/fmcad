@@ -95,6 +95,7 @@ jobs:
       fail-fast: false
       matrix:
         protocol: [mcp, addin]
+        suite: [foundation, saved]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -105,11 +106,11 @@ jobs:
       - run: npm run build
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      - run: timeout --signal=TERM --kill-after=15s 12m npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --concurrency 10 --owners 10
+      - run: timeout --signal=TERM --kill-after=15s 12m npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite }} --concurrency 10 --owners ${{ matrix.suite == 'saved' && 2 || 10 }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: scenario-broker-${{ matrix.protocol }}
+          name: scenario-broker-${{ matrix.protocol }}-${{ matrix.suite }}
           path: .test-artifacts/scenarios/
           include-hidden-files: true
 

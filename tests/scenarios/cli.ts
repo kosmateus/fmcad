@@ -7,12 +7,13 @@ import {
   PythonSimulator,
   simulatorCapabilities,
   simulatorEndpoint,
+  simulatorFolder,
 } from "./simulator";
 import { QueueScenarioBackend } from "./queue-backend";
-import { foundationScenarios } from "./cases";
+import { foundationScenarios, savedScenarios } from "./cases";
 import { runScenarios, resumeCleanup } from "./runner";
 import { concurrencyLimit, defaultConcurrency, sourceHash } from "./scheduling";
-import type { Protocol, ScenarioBackend } from "./contracts";
+import type { FixtureFolder, Protocol, ScenarioBackend } from "./contracts";
 import type { createBrokerTransport } from "../../packages/node-adapters/src/fusion-transport/broker";
 import type {
   detectPlatform,
@@ -26,6 +27,8 @@ interface Options {
   concurrency: number;
   owners: number;
   run: boolean;
+  suite: "foundation" | "saved" | "all";
+  folder?: FixtureFolder;
   cleanup?: string;
 }
 export function parse(argv: string[]): Options {
@@ -36,6 +39,8 @@ export function parse(argv: string[]): Options {
     owners = 10,
     run = false;
   let cleanup: string | undefined;
+  let suite: Options["suite"] = "all";
+  let projectId: string | undefined, folderId: string | undefined;
   const seen = new Set<string>();
   for (let index = 0; index < argv.length; index++) {
     const flag = argv[index];
@@ -56,6 +61,15 @@ export function parse(argv: string[]): Options {
       profile = value;
     else if (flag === "--protocol" && (value === "mcp" || value === "addin"))
       protocol = value;
+    else if (
+      flag === "--suite" &&
+      (value === "foundation" || value === "saved" || value === "all")
+    )
+      suite = value;
+    else if (flag === "--project-id" && value && !value.startsWith("--"))
+      projectId = value;
+    else if (flag === "--folder-id" && value && !value.startsWith("--"))
+      folderId = value;
     else if (flag === "--cleanup" && value && !value.startsWith("--"))
       cleanup = path.resolve(value);
     else if (
@@ -77,12 +91,29 @@ export function parse(argv: string[]): Options {
     throw new Error(
       "Process-restart cleanup requires the original live Fusion backend; a new simulator is a different instance",
     );
+  if (Boolean(projectId) !== Boolean(folderId))
+    throw new Error("Provide both --project-id and --folder-id");
+  if (
+    backend === "fusion" &&
+    suite !== "foundation" &&
+    !cleanup &&
+    (!projectId || !folderId)
+  )
+    throw new Error(
+      "Saved Fusion scenarios require an explicitly configured --project-id and --folder-id",
+    );
   return {
     backend,
     profile,
     protocol,
     owners,
     run,
+    suite,
+    ...(projectId && folderId
+      ? { folder: { projectId, folderId } }
+      : backend === "simulator"
+        ? { folder: simulatorFolder }
+        : {}),
     concurrency: concurrency ?? defaultConcurrency(backend),
     ...(cleanup ? { cleanup } : {}),
   };
@@ -240,7 +271,14 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     try {
       reports = await runScenarios(
         backend,
-        foundationScenarios(options.owners),
+        [
+          ...(options.suite !== "saved"
+            ? foundationScenarios(options.owners)
+            : []),
+          ...(options.suite !== "foundation" && options.folder
+            ? savedScenarios(options.folder, options.owners)
+            : []),
+        ],
         output,
         options.concurrency,
         cancellation.signal,

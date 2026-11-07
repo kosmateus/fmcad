@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { Scenario } from "./runner";
-import { number } from "./contracts";
+import { number, type FixtureFolder } from "./contracts";
 import * as programs from "./programs";
 
 export const lifecycle: Scenario = {
@@ -51,4 +51,34 @@ export function foundationScenarios(owners = 10): Scenario[] {
     lifecycle,
     ...Array.from({ length: owners }, (_, index) => parameterScenario(index)),
   ];
+}
+
+export function savedScenarios(folder: FixtureFolder, owners = 10): Scenario[] {
+  // The steps and assertions are identical for the model and Fusion. Only the
+  // configured project/folder identifiers belong to the backend environment.
+  return foundationScenarios(owners).map((scenario) => ({
+    ...scenario,
+    id: "saved-" + scenario.id,
+    fixture: folder,
+    requires: [...scenario.requires, "saved-fixtures"],
+    async run(session) {
+      assert.ok(
+        session.document.file,
+        "Setup must observe the exact saved fixture",
+      );
+      assert.equal(session.document.file.projectId, folder.projectId);
+      assert.equal(session.document.file.folderId, folder.folderId);
+      assert.equal(session.document.file.version, 1);
+      if (scenario.id === lifecycle.id) {
+        const state = await session.execute(
+          "inspect",
+          programs.inspect(session.document),
+        );
+        assert.equal(state["saved"], true);
+        assert.equal(state["count"], 0);
+      } else {
+        await scenario.run(session);
+      }
+    },
+  }));
 }

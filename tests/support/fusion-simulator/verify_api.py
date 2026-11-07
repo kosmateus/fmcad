@@ -10,8 +10,10 @@ import sys
 from pathlib import Path
 
 METHODS: dict[str, dict[str, list[str]]] = {
-    "core": {"Application": ["get"], "Documents": ["add"], "Document": ["activate", "close"],
-             "Products": ["itemByProductType"], "ValueInput": ["createByString", "createByReal"]},
+    "core": {"Application": ["get"], "Documents": ["add"], "Document": ["activate", "close", "saveAs", "save"],
+             "Products": ["itemByProductType"], "ValueInput": ["createByString", "createByReal"],
+             "Data": ["findFileById"], "DataProjects": ["itemById"], "DataFolders": ["itemById", "add"],
+             "DataFiles": ["itemById"], "DataFile": ["deleteMe"]},
     "fusion": {"UserParameters": ["add", "itemByName"], "ExportManager": ["createFusionArchiveExportOptions", "execute"],
                "Design": ["cast"]},
 }
