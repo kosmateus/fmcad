@@ -3,7 +3,8 @@
   "definitions": {
     "_design": {
       "before": "566de39a27df01b88380cd294eb3f7b110ef4d5cc0d8ef2e493a8aab9ac54c2a",
-      "after": "8015d02f703fc6ac4b30001cf1f832b9e5ad6cd8c1e5d1046c74713ae5988f91"
+      "after": "f9d1a685928b96a7a9c9b97556442471c7517015ac39ead7302ca921f977e9b5",
+      "reason": "Intentional safety correction to inherited name/activation behavior: require exactly one case-insensitive name match, successful activation and matching active creationId before any inspection or mutation. Paired historical/current tests reproduce six unsafe cases and require zero current mutations; eight original normal cases retain exact output and effects."
     },
     "cmd_stats": {
       "before": "043d595745e7d241fedf916d2271dd775773c5ffcdf98647a610bd3fb5336d0b",

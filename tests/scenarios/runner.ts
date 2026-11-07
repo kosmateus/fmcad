@@ -28,6 +28,29 @@ export interface ScenarioReport {
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+function creationProof(
+  value: Record<string, unknown>,
+  owner: Owner,
+  requestId: string,
+): Document {
+  const name = "FMCAD_SCENARIO_" + owner.runId + "_" + owner.scenarioId;
+  if (
+    value["name"] !== name ||
+    value["requestId"] !== requestId ||
+    value["clientId"] !== owner.clientId
+  )
+    throw new Error(
+      "Creation receipt does not belong to this scenario request",
+    );
+  return Object.freeze({ name, creationId: text(value["creationId"]) });
+}
+function readCreation(directory: string): Record<string, unknown> {
+  const file = path.join(directory, "creation.json");
+  const stat = fs.lstatSync(file);
+  if (!stat.isFile() || stat.isSymbolicLink())
+    throw new Error("Expected an owned regular creation receipt");
+  return record(JSON.parse(fs.readFileSync(file, "utf8")) as unknown);
+}
 function persist(filename: string, value: unknown): void {
   const temporary = filename + ".new";
   fs.writeFileSync(temporary, JSON.stringify(value, null, 2) + "\n", {
@@ -50,7 +73,7 @@ export class ScenarioSession {
     fs.mkdirSync(directory, { recursive: false, mode: 0o700 });
     this.file = path.join(directory, "fixture.f3d");
     this.report = {
-      owner,
+      owner: Object.freeze({ ...owner }),
       directory,
       mode: backend.mode,
       qualification: backend.qualification,
@@ -72,9 +95,21 @@ export class ScenarioSession {
   async execute(
     phase: string,
     source: string,
+    target: Document = this.document,
+  ): Promise<Record<string, unknown>> {
+    this.signal?.throwIfAborted();
+    if (["create", "export", "cleanup"].includes(phase))
+      throw new Error("Lifecycle phases are owned by the runner");
+    const owned = this.document;
+    if (target.creationId !== owned.creationId || target.name !== owned.name)
+      throw new Error("Target does not belong to this scenario");
+    return this.#dispatch(phase, source, owned);
+  }
+  async #dispatch(
+    phase: string,
+    source: string | ((requestId: string) => string),
     target?: Document,
   ): Promise<Record<string, unknown>> {
-    if (phase !== "cleanup") this.signal?.throwIfAborted();
     if (this.#uncertain)
       throw new Error(
         "Unsettled original request; inspect before continuing, never replay",
@@ -88,7 +123,7 @@ export class ScenarioSession {
       execution = await this.backend.execute({
         owner: this.report.owner,
         requestId,
-        source,
+        source: typeof source === "string" ? source : source(requestId),
         directory: this.directory,
         ...(target ? { target } : {}),
       });
@@ -119,9 +154,16 @@ export class ScenarioSession {
       .filter((line) => line.startsWith(programs.marker));
     if (lines.length !== 1)
       throw new Error("Expected exactly one scenario result marker");
-    return record(
+    const value = record(
       JSON.parse(text(lines[0]).slice(programs.marker.length)) as unknown,
     );
+    if (target && value["creationId"] !== target.creationId) {
+      this.#uncertain = true;
+      throw new Error(
+        "Foreign document result; recover the original request before cleanup",
+      );
+    }
+    return value;
   }
   async setup(): Promise<void> {
     this.signal?.throwIfAborted();
@@ -132,24 +174,32 @@ export class ScenarioSession {
       this.report.owner.scenarioId;
     this.report.cleanup = "pending";
     this.persist();
-    const value = await this.execute(
-      "create",
+    const value = await this.#dispatch("create", (requestId) =>
       programs.create(
         name,
         this.backend.fusionPath(path.join(this.directory, "creation.json")),
+        { requestId, clientId: this.report.owner.clientId },
       ),
     );
-    this.#document = {
-      name: text(value["name"]),
-      creationId: text(value["creationId"]),
-    };
-    if (this.#document.name !== name) {
+    try {
+      const requestId = text(this.report.requests.at(-1)?.requestId);
+      const returned = creationProof(value, this.report.owner, requestId);
+      const durable = creationProof(
+        readCreation(this.directory),
+        this.report.owner,
+        requestId,
+      );
+      if (returned.creationId !== durable.creationId)
+        throw new Error("Returned and durable creation identities differ");
+      this.#document = returned;
+    } catch (error) {
       this.#uncertain = true;
-      throw new Error("Foreign creation receipt");
+      throw error;
     }
     this.report.document = this.#document;
     this.persist();
-    await this.execute(
+    this.signal?.throwIfAborted();
+    await this.#dispatch(
       "export",
       programs.exportFile(this.document, this.backend.fusionPath(this.file)),
       this.document,
@@ -158,21 +208,19 @@ export class ScenarioSession {
       throw new Error("Fixture export did not produce a local file");
   }
   async cleanup(): Promise<void> {
+    if (this.report.cleanup === "complete") return;
     // A malformed creation result can still leave a durable identity written by the exact original request.
     if (!this.#document && !this.#uncertain) {
       const receipt = path.join(this.directory, "creation.json");
       if (fs.existsSync(receipt)) {
-        const value = record(
-          JSON.parse(fs.readFileSync(receipt, "utf8")) as unknown,
+        const creation = this.report.requests.find(
+          (entry) => entry.phase === "create",
         );
-        const name =
-          "FMCAD_SCENARIO_" +
-          this.report.owner.runId +
-          "_" +
-          this.report.owner.scenarioId;
-        if (value["name"] !== name)
-          throw new Error("Creation receipt does not belong to this scenario");
-        this.#document = { name, creationId: text(value["creationId"]) };
+        this.#document = creationProof(
+          readCreation(this.directory),
+          this.report.owner,
+          text(creation?.requestId),
+        );
         this.report.document = this.#document;
       }
     }
@@ -185,11 +233,17 @@ export class ScenarioSession {
       return;
     }
     if (this.#document) {
-      const result = await this.execute(
-        "cleanup",
-        programs.close(this.#document),
-        this.#document,
-      );
+      let result: Record<string, unknown>;
+      try {
+        result = await this.#dispatch(
+          "cleanup",
+          programs.close(this.#document),
+          this.#document,
+        );
+      } catch (error) {
+        this.report.cleanup = this.#uncertain ? "deferred" : "failed";
+        throw error;
+      }
       if (
         result["closed"] !== true ||
         result["creationId"] !== this.#document.creationId
@@ -234,7 +288,8 @@ export async function runScenario(
     try {
       await session.cleanup();
     } catch (error) {
-      session.report.cleanup = "failed";
+      if (session.report.cleanup !== "deferred")
+        session.report.cleanup = "failed";
       session.report.cleanupError = errorText(error);
     }
     if (session.report.cleanup !== "complete") session.report.status = "failed";
@@ -450,15 +505,16 @@ export async function resumeCleanup(
   const created = record(
     JSON.parse(text(lines[0]).slice(programs.marker.length)) as unknown,
   );
-  const document = {
-    creationId: text(created["creationId"]),
-    name: text(created["name"]),
-  };
-  if (
-    document.name !==
-    "FMCAD_SCENARIO_" + owner.runId + "_" + owner.scenarioId
-  )
-    throw new Error("Original document belongs to another scenario");
+  const document = creationProof(created, owner, creation[0].requestId);
+  if (fs.existsSync(path.join(directory, "creation.json"))) {
+    const durable = creationProof(
+      readCreation(directory),
+      owner,
+      creation[0].requestId,
+    );
+    if (durable.creationId !== document.creationId)
+      throw new Error("Original and durable creation identities differ");
+  }
   const report: ScenarioReport = {
     owner,
     directory,

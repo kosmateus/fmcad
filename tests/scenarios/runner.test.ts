@@ -9,6 +9,7 @@ import type {
   ScriptRequest,
   Execution,
   Protocol,
+  Document,
 } from "./contracts";
 import {
   PythonSimulator,
@@ -335,6 +336,266 @@ test("unsupported capability is reported before any request, never counted as pa
   );
   assert.equal(report?.status, "unsupported");
   assert.equal(model.executions, 0);
+});
+
+for (const protocol of ["mcp", "addin"] as const) {
+  test(
+    `${protocol}: a scenario cannot submit another scenario's document, even with valid foreign source`,
+    { timeout: 30_000 },
+    async (t) => {
+      const { directory, model, backend } = await fixture(t, protocol);
+      let publishTarget!: (target: Document) => void;
+      const targetReady = new Promise<Document>((resolve) => {
+        publishTarget = resolve;
+      });
+      let release!: () => void;
+      const attempted = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      t.after(() => release());
+      const reports = await runScenarios(
+        backend,
+        [
+          {
+            id: "recipient",
+            requires: lifecycle.requires,
+            async run(session) {
+              publishTarget(session.document);
+              await attempted;
+              const value = await session.execute(
+                "read",
+                programs.inspect(session.document),
+                session.document,
+              );
+              assert.equal(
+                value["count"],
+                0,
+                "recipient's independent read proves no foreign mutation",
+              );
+            },
+          },
+          {
+            id: "sender",
+            requires: lifecycle.requires,
+            async run(session) {
+              const target = await targetReady;
+              const before = session.report.requests.length;
+              try {
+                await assert.rejects(
+                  session.execute(
+                    "wrong-target",
+                    programs.parameter(target, 17),
+                    target,
+                  ),
+                  /does not belong to this scenario/,
+                );
+                assert.equal(
+                  session.report.requests.length,
+                  before,
+                  "rejected before recording or submitting another owner's request",
+                );
+              } finally {
+                release();
+              }
+            },
+          },
+        ],
+        directory,
+        2,
+      );
+      assert.ok(
+        reports.every((r) => r.status === "passed" && r.cleanup === "complete"),
+        JSON.stringify(reports),
+      );
+      assert.deepEqual(await remaining(model), { active: null, documents: [] });
+    },
+  );
+
+  test(`${protocol}: a lost cleanup reply remains deferred and recovery never closes twice`, async (t) => {
+    const { directory, model, backend } = await fixture(t, protocol);
+    let closes = 0;
+    const losing: ScenarioBackend = {
+      ...backend,
+      async execute(request) {
+        const value = await backend.execute(request);
+        if (request.source.includes("doc.close(False)")) {
+          closes++;
+          throw new Error("lost close reply");
+        }
+        return value;
+      },
+    };
+    const [report] = await runScenarios(losing, [lifecycle], directory, 1);
+    assert.ok(report);
+    assert.equal(report.status, "failed");
+    assert.equal(report.cleanup, "deferred");
+    assert.equal(report.cleanupError, "lost close reply");
+    assert.equal(closes, 1);
+    assert.equal(
+      fs.existsSync(path.join(report.directory, "fixture.f3d")),
+      true,
+    );
+    const executions = model.executions;
+    const recovered = await resumeCleanup(
+      backend,
+      path.join(report.directory, "report.json"),
+    );
+    assert.equal(recovered.cleanup, "complete");
+    assert.equal(
+      model.executions,
+      executions,
+      "read original settlement and remove local artifact; no second SDK close",
+    );
+    assert.equal(
+      fs.existsSync(path.join(report.directory, "fixture.f3d")),
+      false,
+    );
+    assert.deepEqual(await remaining(model), { active: null, documents: [] });
+  });
+}
+
+test("a returned foreign document identity defers cleanup until the original result is recovered", async (t) => {
+  const { directory, model, backend } = await fixture(t);
+  let closes = 0;
+  const corrupt: ScenarioBackend = {
+    ...backend,
+    async execute(request) {
+      const value = await backend.execute(request);
+      if (request.source.includes("doc.close(False)")) closes++;
+      if (request.source.includes("p = design.userParameters.add")) {
+        return {
+          ...value,
+          stdout:
+            programs.marker +
+            JSON.stringify({
+              creationId: "another-owner",
+              count: 1,
+              value: 0.2,
+            }),
+        };
+      }
+      return value;
+    },
+  };
+  const [report] = await runScenarios(
+    corrupt,
+    [parameterScenario(0)],
+    directory,
+    1,
+  );
+  assert.ok(report);
+  assert.equal(report.cleanup, "deferred");
+  assert.equal(closes, 0);
+  const recovered = await resumeCleanup(
+    backend,
+    path.join(report.directory, "report.json"),
+  );
+  assert.equal(recovered.cleanup, "complete");
+  assert.deepEqual(await remaining(model), { active: null, documents: [] });
+});
+
+test("creation identity must agree with the durable receipt, not just the generated name", async (t) => {
+  const { directory, model, backend } = await fixture(t);
+  let closes = 0;
+  const corrupt: ScenarioBackend = {
+    ...backend,
+    async execute(request) {
+      const result = await backend.execute(request);
+      if (request.source.includes("doc.close(False)")) closes++;
+      if (request.source.includes("identity: dict[str, object]")) {
+        const value = JSON.parse(
+          result.stdout.slice(programs.marker.length),
+        ) as Record<string, unknown>;
+        value["creationId"] = "foreign-id-with-the-correct-name";
+        return { ...result, stdout: programs.marker + JSON.stringify(value) };
+      }
+      return result;
+    },
+  };
+  const [report] = await runScenarios(corrupt, [lifecycle], directory, 1);
+  assert.ok(report);
+  assert.equal(report.cleanup, "deferred");
+  assert.match(report.error ?? "", /creation identities differ/);
+  assert.equal(closes, 0);
+  const recovered = await resumeCleanup(
+    backend,
+    path.join(report.directory, "report.json"),
+  );
+  assert.equal(recovered.cleanup, "complete");
+  assert.deepEqual(await remaining(model), { active: null, documents: [] });
+});
+
+for (const corruptReceipt of [false, true]) {
+  test(`partially failed setup ${corruptReceipt ? "rejects a foreign" : "uses its bound"} durable receipt`, async (t) => {
+    const { directory, model, backend } = await fixture(t);
+    let closes = 0;
+    const partial: ScenarioBackend = {
+      ...backend,
+      async execute(request) {
+        const result = await backend.execute(request);
+        if (request.source.includes("doc.close(False)")) closes++;
+        if (request.source.includes("identity: dict[str, object]")) {
+          if (corruptReceipt) {
+            const file = path.join(request.directory, "creation.json");
+            const receipt = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+              string,
+              unknown
+            >;
+            receipt["requestId"] = "another-owner:request";
+            fs.writeFileSync(file, JSON.stringify(receipt));
+          }
+          return {
+            ...result,
+            state: "failed",
+            stdout: "",
+            error: "setup failed after document creation",
+          };
+        }
+        return result;
+      },
+    };
+    const [report] = await runScenarios(partial, [lifecycle], directory, 1);
+    assert.ok(report);
+    assert.equal(report.status, "failed");
+    assert.equal(report.error, "setup failed after document creation");
+    assert.equal(report.cleanup, corruptReceipt ? "failed" : "complete");
+    assert.equal(closes, corruptReceipt ? 0 : 1);
+    if (corruptReceipt)
+      assert.match(
+        report.cleanupError ?? "",
+        /does not belong to this scenario request/,
+      );
+    else
+      assert.deepEqual(await remaining(model), { active: null, documents: [] });
+  });
+}
+
+test("scenario code cannot change its owned identity or impersonate lifecycle phases", async (t) => {
+  const { directory, backend } = await fixture(t);
+  const scenario: Scenario = {
+    ...lifecycle,
+    async run(session) {
+      assert.throws(
+        () => Object.assign(session.document, { creationId: "foreign" }),
+        TypeError,
+      );
+      assert.throws(
+        () => Object.assign(session.report.owner, { clientId: "foreign" }),
+        TypeError,
+      );
+      const before = session.report.requests.length;
+      for (const phase of ["create", "export", "cleanup"]) {
+        await assert.rejects(
+          session.execute(phase, programs.inspect(session.document)),
+          /Lifecycle phases/,
+        );
+      }
+      assert.equal(session.report.requests.length, before);
+    },
+  };
+  const [report] = await runScenarios(backend, [scenario], directory, 1);
+  assert.equal(report?.status, "passed");
+  assert.equal(report.cleanup, "complete");
 });
 test("a forged target id is rejected before changing a foreign document", async (t) => {
   const { directory, model, backend } = await fixture(t);

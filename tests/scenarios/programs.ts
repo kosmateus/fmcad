@@ -31,14 +31,18 @@ assert app.activeDocument is not None and app.activeDocument.creationId == doc.c
 design = cast(adsk.fusion.Design, doc.products.itemByProductType('DesignProductType'))
 assert design is not None`;
 }
-export function create(name: string, receipt: string): string {
+export function create(
+  name: string,
+  receipt: string,
+  binding: { requestId: string; clientId: string },
+): string {
   return program(`import adsk.core, json
 from typing import cast
 app = adsk.core.Application.get()
 assert not any(d.name == ${quoted(name)} for d in app.documents)
 doc = app.documents.add(cast(adsk.core.DocumentTypes, adsk.core.DocumentTypes.FusionDesignDocumentType))
 doc.name = ${quoted(name)}
-identity: dict[str, object] = dict(creationId=doc.creationId, name=doc.name)
+identity: dict[str, object] = dict(creationId=doc.creationId, name=doc.name, requestId=${quoted(binding.requestId)}, clientId=${quoted(binding.clientId)})
 with open(${quoted(receipt)}, 'x', encoding='utf-8') as stream:
     _ = stream.write(json.dumps(identity))
 ${emit("identity")}`);

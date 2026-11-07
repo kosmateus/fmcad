@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 class LegacyManualContracts(unittest.TestCase):
     def setUp(self):
-        self.app = types.SimpleNamespace(data=types.SimpleNamespace(), documents=[], activeProduct=None)
+        self.app = types.SimpleNamespace(data=types.SimpleNamespace(), documents=[], activeProduct=None, activeDocument=None)
         core = types.ModuleType('adsk.core')
         core.Application = types.SimpleNamespace(get=lambda: self.app)
         core.ValueInput = types.SimpleNamespace(createByString=lambda value: value)
@@ -146,7 +146,9 @@ class LegacyManualContracts(unittest.TestCase):
 
         root = types.SimpleNamespace(bRepBodies=types.SimpleNamespace(count=1, item=lambda index: Body()))
         self.app.activeProduct = types.SimpleNamespace(rootComponent=root)
-        self.app.documents = [types.SimpleNamespace(name='Model', activate=lambda: True)]
+        document = types.SimpleNamespace(name='Model', creationId='volume-document', activate=lambda: True)
+        self.app.documents = [document]
+        self.app.activeDocument = document
         ns = self.load('inspect.py')
         self.assertIn('volume=0.00 mm3', self.output(ns['cmd_bodies'], None, 'Model'))
 
@@ -182,8 +184,10 @@ class LegacyManualContracts(unittest.TestCase):
                     def activate():
                         activations.append('Model')
                         self.app.activeProduct = target
+                        self.app.activeDocument = document
                         return True
-                    self.app.documents = [types.SimpleNamespace(name='Model', activate=activate)]
+                    document = types.SimpleNamespace(name='Model', creationId='paired-document', activate=activate)
+                    self.app.documents = [document]
                     sys.modules['adsk.fusion'].FeatureHealthStates = types.SimpleNamespace(HealthyFeatureHealthState=0)
                     namespace = {}
                     exec(compile(source, 'inspection-fixture.py', 'exec'), namespace)
@@ -192,6 +196,47 @@ class LegacyManualContracts(unittest.TestCase):
                     self.assertEqual(activations, [] if args == ['Missing'] else ['Model'])
                     self.assertEqual(timeline.markerPosition, 1 if operation == 'rollback' and args[0] == '1' else 2)
                     self.assertEqual(units.distanceDisplayUnits, 1 if operation == 'units' and args[0] == 'cm' else 0)
+
+    def test_inherited_ambiguous_and_failed_activation_never_mutate_either_document(self):
+        root = Path(__file__).resolve().parents[1]
+        sources = [
+            (root / 'tests/fixtures/history/inspect-a262.py.txt').read_text(),
+            (root / 'runtime/python/fmcad/adapters/fusion/legacy_inspect.py').read_text(),
+        ]
+        for mode in ('duplicate-name', 'activate-false', 'activate-wrong-document'):
+            for operation, args in [('units', ['cm', 'Model']), ('rollback', ['1', 'Model'])]:
+                for revision, source in enumerate(sources):
+                    with self.subTest(mode=mode, operation=operation, revision=revision):
+                        target = types.SimpleNamespace(unitsManager=types.SimpleNamespace(distanceDisplayUnits=0), timeline=types.SimpleNamespace(count=2, markerPosition=2))
+                        foreign = types.SimpleNamespace(unitsManager=types.SimpleNamespace(distanceDisplayUnits=0), timeline=types.SimpleNamespace(count=2, markerPosition=2))
+                        other = types.SimpleNamespace(name='mOdEl' if mode == 'duplicate-name' else 'Other', creationId='foreign')
+                        activations = []
+                        def activate():
+                            activations.append('target')
+                            if mode == 'duplicate-name':
+                                self.app.activeProduct = target
+                                self.app.activeDocument = document
+                            return mode != 'activate-false'
+                        document = types.SimpleNamespace(name='Model', creationId='target', activate=activate)
+                        self.app.documents = [document, other]
+                        self.app.activeProduct = foreign
+                        self.app.activeDocument = other
+                        namespace = {}
+                        exec(compile(source, 'inspection-identity-fixture.py', 'exec'), namespace)
+                        namespace['OP'], namespace['ARGS'] = operation, args
+                        output = self.output(namespace['run'], '')
+                        values = [(d.unitsManager.distanceDisplayUnits, d.timeline.markerPosition) for d in (target, foreign)]
+                        if revision == 0:
+                            # Historical bug: first name wins, and a failed activation
+                            # leaves the unrelated active design as the mutation target.
+                            self.assertIn('DONE', output)
+                            expected = (1, 2) if operation == 'units' else (0, 1)
+                            self.assertEqual(values[0 if mode == 'duplicate-name' else 1], expected)
+                        else:
+                            self.assertIn('ERROR ', output)
+                            self.assertNotIn('DONE', output)
+                            self.assertEqual(values, [(0, 2), (0, 2)])
+                            self.assertEqual(activations, [] if mode == 'duplicate-name' else ['target'])
 
     def test_builtin_box_missing_document_is_rejected_without_active_design_fallback(self):
         class ActiveDesign:
