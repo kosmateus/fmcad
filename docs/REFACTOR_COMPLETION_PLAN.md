@@ -259,3 +259,11 @@ into the typed Node adapter and composition root. Whole-artifact comparisons
 preserve the source, provenance and document binding. Remaining public dispatch
 and service implementations still need migration; this extraction does not mark
 the CAD family complete.
+
+### Stage 4e: CAD route composition
+
+[Stage 4e](REFACTOR_STAGE_4E.md) moves dispatch into typed core ports and a typed
+composition root, with catalog-wide preview parity and exact native-call checks.
+The public CAD JavaScript file is now a compatibility facade. Remaining specialist
+services, model contracts and the six separately reproduced verification gaps in
+that stage remain part of the completion scope.

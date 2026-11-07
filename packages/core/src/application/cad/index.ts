@@ -1,5 +1,6 @@
 export * from "./contracts";
 export * from "./execute";
+export * from "./dispatch";
 export * from "./prepare";
 export * from "./input";
 export * from "./run";

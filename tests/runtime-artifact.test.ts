@@ -126,6 +126,7 @@ test(
       "dist/src/dist/composition/run.js",
       "dist/src/dist/python/cad-script.js",
       "dist/src/dist/composition/cad.js",
+      "dist/src/dist/composition/cad-execution.js",
       "dist/src/dist/python/document-probe.js",
       "dist/src/dist/fusion-transport/addin-capabilities.js",
       "dist/src/queue-autostart.js",
@@ -210,6 +211,7 @@ test(
       "composition/run.d.ts",
       "python/cad-script.d.ts",
       "composition/cad.d.ts",
+      "composition/cad-execution.d.ts",
     ]) {
       assert.doesNotMatch(
         fs.readFileSync(path.join(runtime, "src/dist", declaration), "utf8"),
