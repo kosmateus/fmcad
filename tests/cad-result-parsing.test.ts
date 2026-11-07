@@ -1,14 +1,29 @@
-"use strict";
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const current = require("../src/cad");
-const original = require("./fixtures/historical-module.cjs")(
+import test from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import { createRequire } from "node:module";
+import type {
+  NativeActionClient,
+  NativeActionReply,
+} from "../packages/node-adapters/src/python/native-actions.js";
+const root = path.resolve(__dirname, "../..");
+const load = createRequire(path.join(root, "package.json"));
+type CadApi = typeof import("../src/composition/cad-execution.js");
+const current = load("./src/cad.js") as CadApi;
+const historical = load("./tests/fixtures/historical-module.cjs") as (
+  revision: string,
+  source: string,
+) => unknown;
+const original = historical(
   "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
   "src/cad.js",
-);
+) as CadApi;
+function isUnknown(error: unknown): error is Error & { unknown: true } {
+  return error instanceof Error && "unknown" in error && error.unknown === true;
+}
 
-function execute(api, reply) {
-  const calls = [];
+function execute(api: CadApi, reply: NativeActionReply) {
+  const calls: Parameters<NativeActionClient["callTool"]>[0][] = [];
   const pending = api.executeCad(
     {
       async callTool(request) {
@@ -34,7 +49,7 @@ for (const tail of ['{"success":false}', '{"success":true}']) {
     const after = execute(current, reply);
     await assert.rejects(
       after.pending,
-      (error) => error.unknown === true && /exactly one/.test(error.message),
+      (error) => isUnknown(error) && /exactly one/.test(error.message),
     );
     assert.equal(after.calls.length, 1);
   });
@@ -49,7 +64,7 @@ for (const text of [
 ]) {
   test(`CAD marks unusable result evidence unknown without replay: ${text}`, async () => {
     const result = execute(current, { text });
-    await assert.rejects(result.pending, (error) => error.unknown === true);
+    await assert.rejects(result.pending, (error) => isUnknown(error));
     assert.equal(result.calls.length, 1);
   });
 }
@@ -61,15 +76,16 @@ for (const reply of [
 ]) {
   test(`CAD preserves failure evidence and classifies an unsettled reply: ${reply.text}`, async () => {
     const before = execute(original, reply);
-    let originalMessage;
+    let originalMessage: string | undefined;
     await assert.rejects(before.pending, (error) => {
+      assert.ok(error instanceof Error);
       originalMessage = error.message;
-      return error.unknown === undefined;
+      return !("unknown" in error) || error.unknown === undefined;
     });
     const after = execute(current, reply);
     await assert.rejects(
       after.pending,
-      (error) => error.unknown === true && error.message === originalMessage,
+      (error) => isUnknown(error) && error.message === originalMessage,
     );
     assert.equal(before.calls.length, 1);
     assert.equal(after.calls.length, 1);

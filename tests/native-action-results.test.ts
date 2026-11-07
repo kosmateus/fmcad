@@ -1,30 +1,58 @@
-"use strict";
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const current = require("../src/cad");
-const historical = require("./fixtures/historical-module.cjs");
+import test from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import { createRequire } from "node:module";
+import type {
+  NativeActionClient,
+  NativeActionReply,
+} from "../packages/node-adapters/src/python/native-actions.js";
+const root = path.resolve(__dirname, "../..");
+const load = createRequire(path.join(root, "package.json"));
+type CadApi = typeof import("../src/composition/cad-execution.js");
+const current = load("./src/cad.js") as CadApi;
+const historical = load("./tests/fixtures/historical-module.cjs") as (
+  revision: string,
+  source: string,
+) => unknown;
 const original = historical(
   "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
   "src/cad.js",
-);
+) as CadApi;
+function isUnknown(error: unknown): error is Error & { unknown: true } {
+  return error instanceof Error && "unknown" in error && error.unknown === true;
+}
 const previous = historical(
   "5292078741b417d6e921d3252a8bf19b3f0cc15b",
   "src/cad.js",
-);
+) as CadApi;
 
-function port(reply, thrown, server = { timeoutMs: 120000 }) {
-  const calls = [];
+function port(
+  reply?: NativeActionReply,
+  thrown?: unknown,
+  server: NonNullable<NativeActionClient["server"]> = { timeoutMs: 120000 },
+) {
+  const calls: {
+    request: Parameters<NativeActionClient["callTool"]>[0];
+    timeout: number | undefined;
+  }[] = [];
   return {
     calls,
     server,
-    async callTool(request) {
+    async callTool(request: Parameters<NativeActionClient["callTool"]>[0]) {
       calls.push({ request, timeout: server.timeoutMs });
       if (thrown !== undefined) throw thrown;
+      assert.ok(reply, "Reply fixture is required unless the port throws");
       return reply;
     },
   };
 }
-const operations = [
+const operations: [
+  string,
+  (
+    api: CadApi,
+    client: ReturnType<typeof port>,
+  ) => Promise<Record<string, unknown>>,
+][] = [
   [
     "references",
     (api, client) =>
@@ -61,7 +89,7 @@ for (const [name, execute] of operations) {
     assert.deepEqual(after.calls, before.calls);
     for (const client of [before, after, baseline]) {
       assert.equal(client.calls.length, 1);
-      assert.equal(client.calls[0].timeout, 5000);
+      assert.equal(client.calls[0]!.timeout, 5000);
       assert.equal(client.server.timeoutMs, 120000);
     }
   });
@@ -78,9 +106,8 @@ for (const [name, execute] of operations) {
         assert.equal(client.calls.length, 1);
       }
       const client = port({ text });
-      await assert.rejects(
-        execute(current, client),
-        (error) => error.unknown === true,
+      await assert.rejects(execute(current, client), (error) =>
+        isUnknown(error),
       );
       assert.equal(client.calls.length, 1);
       assert.equal(client.server.timeoutMs, 120000);
@@ -90,14 +117,13 @@ for (const [name, execute] of operations) {
     for (const api of [original, previous]) {
       await assert.rejects(
         execute(api, port({ text: "FMCAD_RESULT {" })),
-        (error) => error instanceof SyntaxError && error.unknown === undefined,
+        (error) =>
+          error instanceof SyntaxError &&
+          (!("unknown" in error) || error.unknown === undefined),
       );
     }
     const client = port({ text: "FMCAD_RESULT {" });
-    await assert.rejects(
-      execute(current, client),
-      (error) => error.unknown === true,
-    );
+    await assert.rejects(execute(current, client), (error) => isUnknown(error));
     assert.equal(client.calls.length, 1);
     assert.equal(client.server.timeoutMs, 120000);
   });
@@ -110,7 +136,7 @@ for (const [name, execute] of operations) {
       await assert.rejects(
         execute(current, client),
         (error) =>
-          error.unknown === true &&
+          isUnknown(error) &&
           error.cause === thrown &&
           error.message ===
             (typeof thrown === "string" ? thrown : thrown.message),
@@ -126,7 +152,7 @@ for (const [name, execute] of operations) {
     const client = port(undefined, error, {});
     await assert.rejects(
       execute(current, client),
-      (caught) => caught === error && caught.unknown === true,
+      (caught) => caught === error && isUnknown(caught),
     );
     assert.equal(error.code, "LOST_REPLY");
     assert.equal(client.calls.length, 1);
@@ -174,7 +200,7 @@ test("reference read classification and native timeout stripping retain the orig
       );
       assert.deepEqual(after.calls, before.calls);
       assert.equal(
-        after.calls[0].request.object.readOnly,
+        after.calls[0]!.request.object.readOnly,
         ["graph", "preflight"].includes(action) && lifecycle === "existingOnly",
       );
     }
@@ -190,7 +216,7 @@ test("externalization keeps subsecond budgets unsent and inspect read-only flags
       { remainingMs: 999 },
       false,
     );
-    assert.equal(result.notStarted, true);
+    assert.equal(result["notStarted"], true);
     assert.equal(client.calls.length, 0);
     assert.equal(client.server.timeoutMs, 120000);
   }
@@ -205,6 +231,6 @@ test("externalization keeps subsecond budgets unsent and inspect read-only flags
     );
     await current.executeExternalizationAction(after, "inspect", {}, readOnly);
     assert.deepEqual(after.calls, before.calls);
-    assert.equal(after.calls[0].request.object.readOnly, readOnly);
+    assert.equal(after.calls[0]!.request.object.readOnly, readOnly);
   }
 });

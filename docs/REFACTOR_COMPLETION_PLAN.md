@@ -296,3 +296,7 @@ regressions to strict TypeScript and compiler-only execution. Remaining handwrit
 tests and transitional source facades are still part of stages 4–5; they are not
 accepted as the final architecture. The stage records the complete mock/checker
 regression runs after runtime commit `165585e` and the merges of PRs #11 and #12.
+
+[Stage 5c](REFACTOR_STAGE_5C.md) applies the same compiler-only test boundary to
+public CAD and private native-action result comparisons. Their 31 historical and
+negative cases retain exact outcomes, timeout restoration and one-call semantics.
