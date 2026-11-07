@@ -105,3 +105,20 @@ jobs:
           name: scenario-broker-${{ matrix.protocol }}
           path: .test-artifacts/scenarios/
           include-hidden-files: true
+
+  refactor-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:regressions

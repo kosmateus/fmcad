@@ -1,0 +1,168 @@
+@font-face {
+  font-family: "Fmcad Unicode";
+  src: url("/assets/control-center/assets/fonts/DejaVuSans.ttf")
+    format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Fmcad Unicode";
+  src: url("/assets/control-center/assets/fonts/DejaVuSans-Bold.ttf")
+    format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  --font:
+    "DM Sans", "Fmcad Unicode", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+.locale-selector {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  color: var(--text, #eeeef4);
+  font-family: "DM Sans", "Fmcad Unicode", system-ui, sans-serif;
+}
+
+.locale-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 42px;
+  min-height: 40px;
+  padding: 6px 9px;
+  border: 1px solid var(--line, #343540);
+  border-radius: 7px;
+  background: var(--input, #17181e);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.locale-trigger:hover,
+.locale-trigger[aria-expanded="true"] {
+  border-color: #655477;
+  background: #24222d;
+}
+
+.locale-trigger:focus-visible,
+.locale-option:focus-visible {
+  outline: 2px solid #b49ad8;
+  outline-offset: 2px;
+}
+
+.locale-flag {
+  display: block;
+  width: 24px;
+  height: 16px;
+  flex: none;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px #ffffff2a;
+  overflow: hidden;
+}
+
+.locale-menu {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 7px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 260px;
+  max-width: calc(100vw - 20px);
+  max-height: min(64vh, 420px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border: 1px solid #393a46;
+  border-radius: 9px;
+  background: #1b1c23;
+  color: #e3e3eb;
+  box-shadow: 0 16px 45px #03030780;
+  font-family: "DM Sans", "Fmcad Unicode", system-ui, sans-serif;
+}
+
+.locale-menu[hidden] {
+  display: none;
+}
+
+.locale-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.locale-option:hover,
+.locale-option:focus-visible {
+  background: #2a2935;
+}
+
+.locale-option[aria-checked="true"] {
+  background: #302a3b;
+  color: #e8daf8;
+}
+
+.locale-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.locale-option-check {
+  width: 16px;
+  flex: none;
+  color: #c8adde;
+  text-align: center;
+}
+
+.locale-system-icon {
+  width: 19px;
+  height: 19px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+}
+
+@media (max-width: 580px) {
+  .locale-menu {
+    position: fixed;
+    top: 62px;
+    right: 10px;
+    width: min(300px, calc(100vw - 20px));
+    max-height: calc(100dvh - 82px);
+  }
+
+  .locale-option {
+    min-height: 44px;
+    font-size: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .locale-menu,
+  .locale-option {
+    scroll-behavior: auto;
+  }
+}

@@ -21,6 +21,12 @@ import {
 } from "./table-model.js";
 import { createSelectControls } from "./select-controls.js";
 import { correlate, nonemptyId, type ConsoleRow } from "./read-model.js";
+import { localeText } from "./locale-runtime.js";
+import {
+  mountLocaleSelector,
+  type LocaleSelectorHandle,
+} from "./locale-selector.js";
+import type { MessageKey } from "./locale-catalogs.js";
 
 type Collection = QueryRequest["collection"];
 type TableName = "tasks" | "agents" | "logs";
@@ -145,7 +151,9 @@ const telemetryNumber = (row: Row, key: string): number | null => {
     : null;
 };
 const display = (value: unknown): string =>
-  value == null || value === "" ? "Nie zgłoszono" : String(value);
+  value == null || value === ""
+    ? localeText.t("common.notReported")
+    : String(value);
 const icon = (name: string, cls = ""): string =>
   `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICON_PATHS[name] ?? ICON_PATHS["file"]}"/></svg>`;
 const safeClone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -155,29 +163,36 @@ const scopeParam = (value: string): QueryScope =>
   value === "global"
     ? { kind: "global" }
     : { kind: "project", projectId: value };
+const STATE_MESSAGES: Readonly<Record<string, MessageKey>> = {
+  success: "state.success",
+  succeeded: "state.success",
+  completed: "state.completed",
+  unsuccessful: "state.unsuccessful",
+  failed: "state.failed",
+  running: "state.running",
+  processing: "state.processing",
+  preparing: "state.preparing",
+  sending: "state.sending",
+  queued: "state.queued",
+  unresolved: "state.unresolved",
+  needs_reconciliation: "state.unresolved",
+  observed: "state.observed",
+  stale: "state.stale",
+  unknown: "ui.queue.status.unknown",
+  missing: "state.missing",
+  "no-data": "common.noData",
+  cancelled: "state.cancelled",
+  expired: "state.expired",
+  paused: "state.paused",
+  active: "state.active",
+  idle: "state.idle",
+  pending: "state.pending",
+};
 const stateLabel = (state: unknown): string => {
-  const normalized = String(state ?? "unknown").toLowerCase();
-  return (
-    {
-      success: "Sukces",
-      succeeded: "Sukces",
-      completed: "Zakończone",
-      unsuccessful: "Bez sukcesu",
-      failed: "Niepowodzenie",
-      running: "W trakcie",
-      processing: "Przetwarzanie",
-      preparing: "Przygotowanie",
-      sending: "Wysyłanie",
-      queued: "Oczekuje",
-      unresolved: "Nierozstrzygnięte",
-      observed: "Zaobserwowany",
-      stale: "Sygnał nieaktualny",
-      unknown: "Niepotwierdzony",
-      missing: "Brak danych",
-      cancelled: "Anulowane",
-      expired: "Wygasłe",
-    }[normalized] ?? (normalized === "unknown" ? "Nieznany" : normalized)
-  );
+  const raw = String(state ?? "unknown");
+  const normalized = raw.toLowerCase();
+  const key = STATE_MESSAGES[normalized];
+  return key ? localeText.t(key) : raw;
 };
 const stateTone = (state: unknown): string => {
   const normalized = String(state ?? "unknown").toLowerCase();
@@ -210,34 +225,36 @@ const time = (value: unknown): string => {
     typeof value === "number" ? new Date(value) : new Date(String(value));
   return Number.isNaN(date.getTime())
     ? "—"
-    : date.toLocaleTimeString("pl-PL", {
+    : localeText.formatDate(date, {
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",
       });
 };
 const dateTime = (value: unknown): string => {
-  if (value == null) return "Nie zgłoszono";
+  if (value == null) return localeText.t("common.notReported");
   const date =
     typeof value === "number" ? new Date(value) : new Date(String(value));
   return Number.isNaN(date.getTime())
-    ? "Nie zgłoszono"
-    : date.toLocaleString("pl-PL");
+    ? localeText.t("common.notReported")
+    : localeText.formatDate(date);
 };
 const utcDateTime = (value: unknown): string => {
   const timestamp = number(value);
-  if (timestamp === null) return "Nie zgłoszono";
+  if (timestamp === null) return localeText.t("common.notReported");
   const date = new Date(timestamp);
-  return Number.isNaN(date.getTime()) ? "Nie zgłoszono" : date.toISOString();
+  return Number.isNaN(date.getTime())
+    ? localeText.t("common.notReported")
+    : localeText.formatDate(date, {
+        timeZone: "UTC",
+        dateStyle: "medium",
+        timeStyle: "medium",
+      });
 };
 const duration = (value: unknown): string => {
   const ms = number(value);
   if (ms === null) return "—";
-  return ms < 1000
-    ? `${ms.toLocaleString("pl-PL")} ms`
-    : ms < 60_000
-      ? `${(ms / 1000).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} s`
-      : `${Math.floor(ms / 60_000)} min`;
+  return localeText.formatDuration(ms);
 };
 const knownTotal = (page: QueryPage<Row> | null | undefined): number | null =>
   !page ||
@@ -246,7 +263,9 @@ const knownTotal = (page: QueryPage<Row> | null | undefined): number | null =>
     ? null
     : page.total;
 const projectName = (project: Row): string =>
-  text(project, "name") ?? text(project, "displayName") ?? "Projekt bez nazwy";
+  text(project, "name") ??
+  text(project, "displayName") ??
+  localeText.t("ui.project.unnamed");
 const projectId = (project: Row): string | null =>
   text(project, "id") ?? text(project, "projectId");
 const projectColor = (project: Row): string => {
@@ -295,16 +314,20 @@ const statusSourceText = (source: {
   const state = source.state ?? "unavailable";
   const reason = source.reason;
   const name = source.source;
-  if (state === "available") return name ? `Źródło: ${name}` : "Dane dostępne";
-  const label =
+  if (state === "available")
+    return name
+      ? localeText.t("ui.source.availableWithName", { source: name })
+      : localeText.t("ui.source.available");
+  const key =
     state === "partial"
-      ? "Dane częściowe"
+      ? "ui.source.partial"
       : state === "stale"
-        ? "Dane nieaktualne"
+        ? "ui.source.stale"
         : state === "no-data"
-          ? "Brak zachowanych danych"
-          : "Źródło niedostępne";
-  return `${label}${reason ? ` · ${reason}` : name ? ` · ${name}` : ""}`;
+          ? "ui.source.noData"
+          : "ui.source.unavailable";
+  const detail = reason ?? name;
+  return `${localeText.t(key)}${detail ? ` · ${detail}` : ""}`;
 };
 
 export interface ControlCenterOptions {
@@ -318,6 +341,10 @@ export class ControlCenterApp {
   readonly #root: HTMLElement;
   readonly #selects = createSelectControls();
   readonly #listeners = new AbortController();
+  #localeSelector: LocaleSelectorHandle | null = null;
+  #unsubscribeLocale: (() => void) | null = null;
+  #started = false;
+  #localeRenderQueued = false;
   #scope: QueryScope = { kind: "global" };
   #view: View = "overview";
   #visible: LoadState | null = null;
@@ -361,6 +388,7 @@ export class ControlCenterApp {
   #filterChosen = new Set<string | null>();
   #filterSearch = "";
   #auxiliaryModal: AuxiliaryModal | null = null;
+  #exportCollection: Collection | null = null;
   #returnAgent: AgentReturn | null = null;
 
   constructor(root: HTMLElement, options: ControlCenterOptions = {}) {
@@ -382,10 +410,23 @@ export class ControlCenterApp {
     document.addEventListener("keydown", (event) => this.#onKeyDown(event), {
       signal,
     });
+    this.#unsubscribeLocale = localeText.subscribe(() => {
+      this.#syncDocumentLocale();
+      if (!this.#started || this.#localeRenderQueued) return;
+      this.#localeRenderQueued = true;
+      queueMicrotask(() => {
+        this.#localeRenderQueued = false;
+        if (this.#listeners.signal.aborted) return;
+        this.#render();
+        this.#renderLocaleOverlay();
+      });
+    });
     void this.start();
   }
 
   async start(): Promise<void> {
+    this.#started = true;
+    this.#syncDocumentLocale();
     this.#render();
     await this.#load(this.#scope, false);
     this.#watch();
@@ -393,6 +434,11 @@ export class ControlCenterApp {
 
   dispose(): void {
     this.#listeners.abort();
+    this.#loadGeneration += 1;
+    this.#unsubscribeLocale?.();
+    this.#unsubscribeLocale = null;
+    this.#localeSelector?.dispose();
+    this.#localeSelector = null;
     this.#selects.dispose();
     this.#source?.close();
     this.#source = null;
@@ -401,6 +447,15 @@ export class ControlCenterApp {
     this.#root.inert = false;
     this.#root.innerHTML = "";
     document.getElementById("overlay-root")?.replaceChildren();
+  }
+
+  #syncDocumentLocale(): void {
+    document.documentElement.lang = localeText.locale;
+    document.title = `fmcad — ${localeText.t("app.title")}`;
+    const description = $("meta[name=description]") as HTMLMetaElement | null;
+    if (description) description.content = localeText.t("ui.meta.description");
+    const skipLink = $(".skip-link");
+    if (skipLink) skipLink.textContent = localeText.t("ui.skipLink");
   }
 
   async #load(scope: QueryScope, background: boolean): Promise<void> {
@@ -475,8 +530,7 @@ export class ControlCenterApp {
     const scopeChanged =
       this.#visible && scopeKey(this.#visible.scope) !== scopeKey(scope);
     if (!this.#frozen || (!background && scopeChanged)) this.#visible = next;
-    if (this.#frozen)
-      this.#notice = "Podgląd zamrożony; nowe dane są dostępne po wznowieniu.";
+    if (this.#frozen) this.#notice = localeText.t("ui.freeze.banner");
     this.#render();
     this.#renderModal();
   }
@@ -569,7 +623,7 @@ export class ControlCenterApp {
     if (!logsPage) {
       target.recentLogCount = null;
       target.recentLogsError =
-        target.errors.logs ?? "Odczyt logów niedostępny.";
+        target.errors.logs ?? localeText.t("ui.logs.empty.unavailable");
       return;
     }
     if (logsPage.source.state === "no-data") {
@@ -660,7 +714,7 @@ export class ControlCenterApp {
 
   #error(error: unknown): string {
     if (error instanceof ConsoleApiError) return error.message;
-    return "Nie udało się odczytać danych z lokalnego API.";
+    return localeText.t("ui.error.localApiRead");
   }
 
   #state(): LoadState | null {
@@ -812,9 +866,11 @@ export class ControlCenterApp {
   }
 
   #render(): void {
+    if (this.#listeners.signal.aborted) return;
     this.#selects.close(false);
     const state = this.#state();
     const active = document.activeElement as HTMLElement | null;
+    const restoreLocaleFocus = Boolean(active?.closest(".locale-selector"));
     const focusId = active?.id;
     const selectionStart =
       active instanceof HTMLInputElement ? active.selectionStart : null;
@@ -846,38 +902,40 @@ export class ControlCenterApp {
     ];
     const issue =
       stale || messages.length
-        ? `<div class="notice info" role="status">${icon(stale ? "alert" : "info")}<div><strong>${stale ? "Dane mogą być nieaktualne" : "Stan źródła danych"}</strong><p>${esc(stale ? `Ostatni odczyt: ${messages.join(" · ") || "połączenie jest chwilowo niedostępne"}` : messages.join(" · "))}</p></div></div>`
+        ? `<div class="notice info" role="status">${icon(stale ? "alert" : "info")}<div><strong>${localeText.t(stale ? "ui.notice.stale.title" : "ui.notice.source.title")}</strong><p>${esc(stale ? localeText.t("ui.notice.lastRead", { details: messages.join(" · ") || localeText.t("ui.notice.connectionUnavailable") }) : messages.join(" · "))}</p></div></div>`
         : "";
+    this.#localeSelector?.dispose();
+    this.#localeSelector = null;
     this.#root.innerHTML = `
       <div class="app-shell">
         <aside class="sidebar ${this.#mobile ? "open" : ""}">
-          <a class="brand" href="#main" data-action="view" data-view="overview" aria-label="fmcad — przegląd">
+          <a class="brand" href="#main" data-action="view" data-view="overview" aria-label="${localeText.t("ui.brand.aria")}">
             <div class="brand-mark"><span class="brand-symbol" aria-hidden="true"><span class="brand-face brand-top"></span><span class="brand-face brand-left"></span><span class="brand-face brand-right"></span></span></div>
             <div class="brand-name">fmcad<span>CONTROL CENTER</span></div>
           </a>
-          <div class="workspace"><span class="workspace-icon">${icon("server")}</span><div><strong>Środowisko lokalne</strong><small>${selectedProjectId === null ? "Odczyt globalny" : esc(project ? projectName(project) : selectedProjectId)}</small></div><span class="dot ${state?.snapshotToken && !this.#isStale(state) ? "good" : "warn"}" style="margin-left:auto"></span></div>
-          <div class="section-label">PROJEKTY</div>
-          <nav aria-label="Projekty">
-            <button class="project-nav ${this.#scope.kind === "global" ? "active" : ""}" data-action="scope" data-id="global">${icon("globe", "small")}<span class="project-name">Globalnie</span>${this.#projectTotal === null ? "" : `<span class="mini-count">${this.#projectTotal}</span>`}</button>
+          <div class="workspace"><span class="workspace-icon">${icon("server")}</span><div><strong>${localeText.t("ui.workspace.local")}</strong><small>${selectedProjectId === null ? localeText.t("scope.global") : esc(project ? projectName(project) : selectedProjectId)}</small></div><span class="dot ${state?.snapshotToken && !this.#isStale(state) ? "good" : "warn"}" style="margin-left:auto"></span></div>
+          <div class="section-label">${localeText.t("ui.workspace.section.projects").toLocaleUpperCase(localeText.locale)}</div>
+          <nav aria-label="${localeText.t("nav.projects")}">
+            <button class="project-nav ${this.#scope.kind === "global" ? "active" : ""}" data-action="scope" data-id="global">${icon("globe", "small")}<span class="project-name">${localeText.t("scope.global")}</span>${this.#projectTotal === null ? "" : `<span class="mini-count">${localeText.formatNumber(this.#projectTotal)}</span>`}</button>
             ${
               this.#projects
                 .map((item) => {
                   const id = projectId(item);
                   if (!id) return "";
                   const pending = number(item["pending"]);
-                  return `<button class="project-nav ${this.#scope.kind === "project" && this.#scope.projectId === id ? "active" : ""}" data-action="scope" data-id="${esc(id)}"><span class="project-dot" style="--project-color:${projectColor(item)}"></span><span class="project-name">${esc(projectName(item))}</span>${pending !== null && pending > 0 ? `<span class="mini-count">${pending}</span>` : ""}</button>`;
+                  return `<button class="project-nav ${this.#scope.kind === "project" && this.#scope.projectId === id ? "active" : ""}" data-action="scope" data-id="${esc(id)}"><span class="project-dot" style="--project-color:${projectColor(item)}"></span><span class="project-name">${esc(projectName(item))}</span>${pending !== null && pending > 0 ? `<span class="mini-count">${localeText.formatNumber(pending)}</span>` : ""}</button>`;
                 })
                 .join("") ||
-              `<p class="project-list-description" role="status">${esc(state?.errors.projects ?? (state?.pages.projects ? statusSourceText(state.pages.projects.source) : "Lista projektów niedostępna."))}</p>`
+              `<p class="project-list-description" role="status">${esc(state?.errors.projects ?? (state?.pages.projects ? statusSourceText(state.pages.projects.source) : localeText.t("ui.workspace.error.projectsUnavailable")))}</p>`
             }
           </nav>
-          <div class="sidebar-bottom"><div class="source-card"><div class="row"><span class="dot ${state?.snapshotToken && !stale ? "good" : "warn"}"></span><strong>${stale ? "Ostatni odczyt nieaktualny" : state?.snapshotToken ? "Odczyt gotowy" : "Oczekiwanie na API"}</strong></div><p>${state?.revision ? `Snapshot ${state.revision.epoch}:${state.revision.revision}` : "Panel nie udostępnił jeszcze odczytu."} Dane nie są symulowane.</p></div>
-          <button class="nav-button" data-action="settings">${icon("settings")}Ustawienia podglądu</button><button class="nav-button" data-action="help">${icon("help")}Pomoc i skróty<span class="count">?</span></button>
-          <div class="account"><div class="avatar">FC</div><div><strong>Centrum diagnostyczne</strong><small>fmcad console · web edition</small></div></div></div>
+          <div class="sidebar-bottom"><div class="source-card"><div class="row"><span class="dot ${state?.snapshotToken && !stale ? "good" : "warn"}"></span><strong>${stale ? localeText.t("ui.workspace.status.stale") : state?.snapshotToken ? localeText.t("ui.workspace.status.ready") : localeText.t("ui.workspace.status.waiting")}</strong></div><p>${state?.revision ? `Snapshot ${esc(state.revision.epoch)}:${localeText.formatNumber(state.revision.revision)}` : localeText.t("ui.workspace.read.notReady")} ${localeText.t("ui.workspace.notSimulated")}</p></div>
+          <button class="nav-button" data-action="settings">${icon("settings")}${localeText.t("common.settings")}</button><button class="nav-button" data-action="help">${icon("help")}${localeText.t("common.help")}<span class="count">?</span></button>
+           <div class="account"><div class="avatar">FC</div><div><strong>${localeText.t("app.title")}</strong><small>fmcad console · web edition</small></div></div></div>
         </aside>
-        <button class="mobile-scrim" data-action="mobile" aria-label="Zamknij menu"></button>
+          <button class="mobile-scrim" data-action="mobile" aria-label="${localeText.t("common.close")}"></button>
         <div class="main-shell">
-          <header class="topbar"><div class="row"><button class="icon-button mobile-menu" data-action="mobile" aria-label="Otwórz menu">${icon("menu")}</button><div class="breadcrumb"><span class="breadcrumb-root">Przestrzeń robocza</span><span class="breadcrumb-root">/</span>${this.#scope.kind === "global" ? "Globalnie" : esc(project ? projectName(project) : this.#scope.projectId)}</div><label class="scope-picker">${icon("globe", "small")}<select aria-label="Zakres projektu" data-action="scope-select"><option value="global" ${this.#scope.kind === "global" ? "selected" : ""}>Globalnie</option>${this.#projects
+          <header class="topbar"><div class="row"><button class="icon-button mobile-menu" data-action="mobile" aria-label="${localeText.t("common.openMenu")}">${icon("menu")}</button><div class="breadcrumb"><span class="breadcrumb-root">${localeText.t("scope.project")}</span><span class="breadcrumb-root">/</span>${this.#scope.kind === "global" ? localeText.t("scope.global") : esc(project ? projectName(project) : this.#scope.projectId)}</div><label class="scope-picker">${icon("globe", "small")}<select aria-label="${localeText.t("ui.scope.project.aria")}" data-action="scope-select"><option value="global" ${this.#scope.kind === "global" ? "selected" : ""}>${localeText.t("scope.global")}</option>${this.#projects
             .map((item) => {
               const id = projectId(item);
               return id
@@ -886,17 +944,22 @@ export class ControlCenterApp {
             })
             .join(
               "",
-            )}</select></label></div><div class="top-actions"><span class="simulation-label"><span class="dot ${this.#isStale(state) ? "warn" : "good"}"></span>${this.#isStale(state) ? "NIEAKTUALNE" : state?.snapshotToken ? "POŁĄCZONO" : "OCZEKIWANIE"}</span><span class="top-divider"></span><button class="icon-button" data-action="global-search" aria-label="Szukaj globalnie" title="Szukaj (Ctrl+K)">${icon("search")}</button><button class="icon-button" data-action="settings" aria-label="Ustawienia">${icon("settings")}</button><button class="icon-button" data-action="help" aria-label="Pomoc">${icon("help")}</button></div></header>
+            )}</select></label></div><div class="top-actions"><span class="simulation-label"><span class="dot ${this.#isStale(state) ? "warn" : "good"}"></span>${this.#isStale(state) ? localeText.t("ui.workspace.status.stale").toLocaleUpperCase(localeText.locale) : state?.snapshotToken ? localeText.t("ui.workspace.status.connected") : localeText.t("ui.workspace.status.waitingUpper")}</span><span class="top-divider"></span><button class="icon-button" data-action="global-search" aria-label="${localeText.t("ui.search.global.aria")}" title="${localeText.t("ui.search.global.title")}">${icon("search")}</button><button class="icon-button" data-action="settings" aria-label="${localeText.t("common.settings")}">${icon("settings")}</button><button class="icon-button" data-action="help" aria-label="${localeText.t("common.help")}">${icon("help")}</button><div id="locale-selector"></div></div></header>
           <main id="main" class="content">
-            <div class="page-heading"><div><div class="eyebrow">${this.#scope.kind === "global" ? "CAŁA PRZESTRZEŃ ROBOCZA" : esc(project ? projectName(project) : "PROJEKT")}</div><h1>${this.#view === "overview" ? (this.#scope.kind === "global" ? "Przegląd globalny" : esc(project ? projectName(project) : "Przegląd")) : this.#view === "tasks" ? "Kolejki i zadania" : this.#view === "agents" ? "Agenci i ich praca" : "Strumień zdarzeń"}</h1><p class="page-description">${this.#view === "overview" ? (this.#scope.kind === "global" ? "Wszystkie projekty. Jedno miejsce do monitorowania pracy." : "Kolejki, wykonania i kondycja projektu w jednym miejscu.") : this.#view === "tasks" ? "Od dodania do kolejki aż po wynik wykonania." : this.#view === "agents" ? "Kto pracuje, w którym projekcie i nad jakimi plikami." : "Bieżące zdarzenia, pełny kontekst i powiązane wykonania."}</p></div><div class="heading-actions"><button class="btn" data-action="export" data-collection="${this.#activeCollection()}" aria-label="Eksportuj dane">${icon("download", "small")}<span>Eksportuj</span></button>${this.#returnAgent ? `<button class="btn" data-action="back-agent">← Agent</button>` : ""}<button class="btn ${this.#frozen ? "primary" : ""}" data-action="freeze" aria-label="${this.#frozen ? "Wznów podgląd" : "Zamroź podgląd"}">${icon(this.#frozen ? "play" : "pause", "small")}<span>${this.#frozen ? "Wznów podgląd" : "Zamroź podgląd"}</span></button><button class="btn primary" data-action="refresh" aria-label="Odśwież widok">${icon("refresh", "small")}<span>Odśwież</span></button></div></div>
-            <div class="tabs" role="tablist" aria-label="Widoki diagnostyczne">${this.#tab("overview", "grid", "Przegląd")}${this.#tab("tasks", "layers", "Zadania", knownTotal(state?.pages.tasks))}${this.#tab("agents", "users", "Agenci", knownTotal(state?.pages.agents))}${this.#tab("logs", "terminal", "Logi", knownTotal(state?.pages.logs))}<span class="tab-end">${icon("clock", "small")}<span>${state?.revision ? `Odświeżanie co ${this.#refreshInterval / 1000} s · rewizja ${state.revision.revision}` : `Oczekiwanie · odświeżanie co ${this.#refreshInterval / 1000} s`}</span></span></div>
-            ${issue}${this.#frozen ? `<div class="freeze-banner">${icon("pause", "small")}Podgląd zamrożony. Odczyt brokerowy działa niezależnie.<span>${esc(this.#notice)}</span><button data-action="freeze">Wznów ${icon("play", "small")}</button></div>` : ""}
+            <div class="page-heading"><div><div class="eyebrow">${this.#scope.kind === "global" ? localeText.t("ui.page.eyebrow.global") : localeText.t("ui.page.eyebrow.project")}</div><h1>${this.#view === "overview" ? (this.#scope.kind === "global" ? localeText.t("ui.page.overview.global.title") : esc(project ? projectName(project) : localeText.t("ui.page.overview.project.title"))) : this.#view === "tasks" ? localeText.t("ui.page.tasks.title") : this.#view === "agents" ? localeText.t("ui.page.agents.title") : localeText.t("ui.page.logs.title")}</h1><p class="page-description">${this.#view === "overview" ? (this.#scope.kind === "global" ? localeText.t("ui.page.overview.global.description") : localeText.t("ui.page.overview.project.description")) : this.#view === "tasks" ? localeText.t("ui.page.tasks.description") : this.#view === "agents" ? localeText.t("ui.page.agents.description") : localeText.t("ui.page.logs.description")}</p></div><div class="heading-actions"><button class="btn" data-action="export" data-collection="${this.#activeCollection()}" aria-label="${localeText.t("ui.action.exportData")}">${icon("download", "small")}<span>${localeText.t("common.export")}</span></button>${this.#returnAgent ? `<button class="btn" data-action="back-agent">${localeText.t("ui.action.backAgent")}</button>` : ""}<button class="btn ${this.#frozen ? "primary" : ""}" data-action="freeze" aria-label="${localeText.t(this.#frozen ? "common.resume" : "common.freeze")}">${icon(this.#frozen ? "play" : "pause", "small")}<span>${localeText.t(this.#frozen ? "common.resume" : "common.freeze")}</span></button><button class="btn primary" data-action="refresh" aria-label="${localeText.t("common.refresh")}">${icon("refresh", "small")}<span>${localeText.t("common.refresh")}</span></button></div></div>
+            <div class="tabs" role="tablist" aria-label="${localeText.t("ui.tabs.aria")}">${this.#tab("overview", "grid", localeText.t("nav.overview"))}${this.#tab("tasks", "layers", localeText.t("nav.tasks"), knownTotal(state?.pages.tasks))}${this.#tab("agents", "users", localeText.t("nav.agents"), knownTotal(state?.pages.agents))}${this.#tab("logs", "terminal", localeText.t("nav.logs"), knownTotal(state?.pages.logs))}<span class="tab-end">${icon("clock", "small")}<span>${state?.revision ? localeText.t("ui.tabs.refreshRate", { seconds: this.#refreshInterval / 1000, revision: state.revision.revision }) : localeText.t("ui.tabs.waitingRefreshRate", { seconds: this.#refreshInterval / 1000 })}</span></span></div>
+            ${issue}${this.#frozen ? `<div class="freeze-banner">${icon("pause", "small")}${localeText.t("ui.freeze.banner")}<span>${esc(this.#notice)}</span><button data-action="freeze">${localeText.t("common.resume")} ${icon("play", "small")}</button></div>` : ""}
             <div class="tab-content">${this.#view === "overview" ? this.#overview(state) : this.#view === "tasks" ? this.#tasksView(state) : this.#view === "logs" ? this.#logsView(state) : this.#agentsView(state)}</div>
-            <footer class="page-footer"><span>${icon("server", "small")} Dane z Console Query API · tylko odczyt</span><span><kbd>1–4</kbd> widoki <kbd>/</kbd> szukaj <kbd>spacja</kbd> zamroź</span></footer>
+            <footer class="page-footer"><span>${icon("server", "small")} ${localeText.t("ui.footer.source")}</span><span><kbd>1–4</kbd> ${localeText.t("nav.overview")} <kbd>/</kbd> ${localeText.t("common.search")} <kbd>␠</kbd> ${localeText.t("common.freeze")}</span></footer>
           </main>
         </div>
       </div>`;
     this.#selects.upgrade(this.#root);
+    const localeHost = $("#locale-selector", this.#root);
+    if (localeHost) {
+      this.#localeSelector = mountLocaleSelector(localeHost, localeText);
+      if (restoreLocaleFocus) this.#localeSelector.focus();
+    }
     if (focusId) {
       const next = $<HTMLInputElement>(`#${CSS.escape(focusId)}`, this.#root);
       if (next) {
@@ -961,10 +1024,10 @@ export class ControlCenterApp {
     const barWidth = (plotWidth - 15) / Math.max(plotted.length, 1);
     const ticks = [0, 0.5, 1];
     const chart = plotted.length
-      ? `<svg class="duration-chart" viewBox="0 0 ${chartWidth} 137" role="img" aria-label="Czasy ostatnich ${plotted.length} zakończonych zadań">${ticks
+      ? `<svg class="duration-chart" viewBox="0 0 ${chartWidth} 137" role="img" aria-label="${localeText.t("ui.chart.recentExecutions", { count: plotted.length })}">${ticks
           .map((fraction) => {
             const y = 12 + chartHeight * (1 - fraction);
-            return `<line class="grid" x1="37" y1="${y}" x2="583" y2="${y}"/><text x="0" y="${y + 3}">${((max * fraction) / 1000).toLocaleString("pl-PL", { maximumFractionDigits: 0 })} s</text>`;
+            return `<line class="grid" x1="37" y1="${y}" x2="583" y2="${y}"/><text x="0" y="${y + 3}">${localeText.formatNumber((max * fraction) / 1000, { maximumFractionDigits: 0 })} s</text>`;
           })
           .join("")}${plotted
           .map((row, index) => {
@@ -977,12 +1040,12 @@ export class ControlCenterApp {
               "cancelled",
               "expired",
             ].includes(String(row["state"]));
-            return `<rect class="bar ${failed ? "failed" : ""}" x="${43 + index * barWidth}" y="${12 + chartHeight - height}" width="${Math.max(6, barWidth - 11)}" height="${height}" rx="3"><title>${esc(text(row, "label") ?? "Wykonanie")} · ${esc(duration(value))}</title></rect>`;
+            return `<rect class="bar ${failed ? "failed" : ""}" x="${43 + index * barWidth}" y="${12 + chartHeight - height}" width="${Math.max(6, barWidth - 11)}" height="${height}" rx="3"><title>${esc(text(row, "label") ?? localeText.t("ui.chart.executionTimes"))} · ${esc(duration(value))}</title></rect>`;
           })
           .join(
             "",
-          )}<text x="39" y="132">Starsze</text><text x="532" y="132">Najnowsze</text></svg>`
-      : `<div class="empty-state">${icon("pulse")}<strong>Brak zakończonych wykonań</strong><span>Wykres pojawi się, gdy API udostępni obserwacje z tego zakresu.</span></div>`;
+          )}<text x="39" y="132">${localeText.t("ui.chart.older")}</text><text x="532" y="132">${localeText.t("ui.chart.newest")}</text></svg>`
+      : `<div class="empty-state">${icon("pulse")}<strong>${localeText.t("ui.chart.noCompletedExecutions")}</strong><span>${localeText.t("ui.chart.willAppear")}</span></div>`;
     const queue = overview?.pendingProject ?? null;
     const running = overview?.running ?? null;
     const failed = overview?.failedExecutions ?? null;
@@ -1005,13 +1068,13 @@ export class ControlCenterApp {
       image: string,
       tone = "",
     ) =>
-      `<article class="metric"><div class="metric-top"><span>${label}</span>${icon(image)}</div><div class="metric-value ${tone}">${value === null ? "—" : value.toLocaleString("pl-PL", { maximumFractionDigits: 1 })}<small>${unit}</small></div><div class="metric-bottom">${detail}</div></article>`;
+      `<article class="metric"><div class="metric-top"><span>${label}</span>${icon(image)}</div><div class="metric-value ${tone}">${value === null ? "—" : localeText.formatNumber(value, { maximumFractionDigits: 1 })}<small>${unit}</small></div><div class="metric-bottom">${detail}</div></article>`;
     const sessionDetail =
       sessions === null
-        ? "Telemetria niedostępna"
-        : "Potwierdzone przez bieżącą obecność";
-    return `<section class="metrics" aria-label="Kluczowe wskaźniki">${metric("W kolejce", queue, "zadań", running === null ? "Brak danych o pracy w toku" : `${running} w trakcie wykonania`, "layers", "purple")}${metric("Wykonania · zachowane z 1 h", samplesCount, "", `${failed === null ? "Brak licznika niepowodzeń" : `${failed} zakończonych bez sukcesu`}`, "check", failed ? "warn" : "")}${metric("Mediana oczekiwania", waitValue, waitUnit, `95. percentyl ${duration(p95Wait)}`, "clock")}${metric("Potwierdzone sesje", sessions, "", sessionDetail, "users")}</section>
-      <div class="analytics-grid"><section class="panel"><div class="panel-head"><div><h2>Czas wykonania zadań</h2><p class="panel-subtitle">Ostatnie ${plotted.length} zakończonych wywołań</p></div><div class="legend"><span><span class="dot purple"></span>Sukces</span><span><span class="dot warn"></span>Bez sukcesu</span></div></div><div class="chart-body">${chart}</div><div class="chart-foot"><span>Mediana <strong>${duration(chartPage?.aggregates["executionMs"]?.median ?? null)}</strong></span><span>Czas całego wywołania ${icon("help", "small")}</span></div></section>${this.#queuePanel(overview)}</div>
+        ? localeText.t("ui.metric.telemetryUnavailable")
+        : localeText.t("ui.metric.confirmedPresence");
+    return `<section class="metrics" aria-label="${localeText.t("ui.metric.aria")}">${metric(localeText.t("ui.metric.queue"), queue, "", running === null ? localeText.t("ui.metric.noRunningData") : localeText.t("ui.queue.processing", { count: running }), "layers", "purple")}${metric(localeText.t("ui.metric.executionsHour"), samplesCount, "", failed === null ? localeText.t("ui.metric.noFailureCounter") : localeText.t("ui.metric.failedExecutions", { count: failed }), "check", failed ? "warn" : "")}${metric(localeText.t("ui.metric.medianWait"), waitValue, waitUnit, localeText.t("ui.metric.p95", { duration: duration(p95Wait) }), "clock")}${metric(localeText.t("ui.metric.confirmedSessions"), sessions, "", sessionDetail, "users")}</section>
+       <div class="analytics-grid"><section class="panel"><div class="panel-head"><div><h2>${localeText.t("ui.chart.executionTimes")}</h2><p class="panel-subtitle">${localeText.t("ui.chart.lastCalls", { count: plotted.length })}</p></div><div class="legend"><span><span class="dot purple"></span>${localeText.t("ui.chart.success")}</span><span><span class="dot warn"></span>${localeText.t("ui.chart.unsuccessful")}</span></div></div><div class="chart-body">${chart}</div><div class="chart-foot"><span>${localeText.t("ui.chart.median")} <strong>${duration(chartPage?.aggregates["executionMs"]?.median ?? null)}</strong></span><span>${localeText.t("ui.chart.fullCallDuration")} ${icon("help", "small")}</span></div></section>${this.#queuePanel(overview)}</div>
       ${this.#taskTable(state, true)}
       ${this.#systemStrip(state)}
       ${this.#recentLogs(state)}`;
@@ -1058,7 +1121,7 @@ export class ControlCenterApp {
     const known =
       pending !== null || processing !== null || unresolved !== null;
     const busy = (pending ?? 0) + (processing ?? 0) > 0;
-    return `<section class="panel"><div class="panel-head"><div><h2>Stan kolejki</h2><p class="panel-subtitle">${this.#scope.kind === "global" ? "Wszystkie monitorowane projekty" : "Wybrany projekt"}</p></div><span class="badge ${known ? (busy ? "blue" : "green") : "amber"}"><span class="dot"></span>${known ? (busy ? "Praca w toku" : "Stan odczytany") : "Niepotwierdzony"}</span></div><div class="queue-body"><div class="queue-orbit ${busy ? "busy" : ""}">${icon(known ? (busy ? "layers" : "check") : "help")}</div><div><h3>${known ? (busy ? "Praca w toku" : "Kolejka odczytana") : "Oczekiwanie na telemetrię"}</h3><p>${known ? `${pending === null ? "Oczekujące: —" : `Oczekujące: ${pending}`} · ${processing === null ? "Przetwarzane: —" : `Przetwarzane: ${processing}`}.` : "Brak danych nie oznacza pustej kolejki."}</p></div></div><div class="queue-meta"><div><span>Przetwarzane</span><strong>${processing === null ? "—" : processing}</strong></div><div><span>Nierozstrzygnięte</span><strong class="${unresolved === null || unresolved === 0 ? "" : "warn"}">${unresolved === null ? "—" : unresolved}</strong></div></div><button class="queue-link" data-action="open-queue">Przejdź do kolejki ${icon("arrow", "small")}</button></section>`;
+    return `<section class="panel"><div class="panel-head"><div><h2>${localeText.t("ui.queue.panelTitle")}</h2><p class="panel-subtitle">${localeText.t(this.#scope.kind === "global" ? "ui.queue.scope.global" : "ui.queue.scope.project")}</p></div><span class="badge ${known ? (busy ? "blue" : "green") : "amber"}"><span class="dot"></span>${known ? (busy ? localeText.t("ui.queue.status.running") : localeText.t("ui.queue.status.read")) : localeText.t("ui.queue.status.unknown")}</span></div><div class="queue-body"><div class="queue-orbit ${busy ? "busy" : ""}">${icon(known ? (busy ? "layers" : "check") : "help")}</div><div><h3>${known ? (busy ? localeText.t("ui.queue.heading.running") : localeText.t("ui.queue.heading.read")) : localeText.t("ui.queue.heading.waiting")}</h3><p>${known ? `${pending === null ? "—" : localeText.t("ui.queue.pending", { count: pending })} · ${processing === null ? "—" : localeText.t("ui.queue.processing", { count: processing })}.` : localeText.t("ui.queue.noData")}</p></div></div><div class="queue-meta"><div><span>${localeText.t("ui.queue.processingLabel")}</span><strong>${processing === null ? "—" : localeText.formatNumber(processing)}</strong></div><div><span>${localeText.t("ui.queue.unresolved")}</span><strong class="${unresolved === null || unresolved === 0 ? "" : "warn"}">${unresolved === null ? "—" : localeText.formatNumber(unresolved)}</strong></div></div><button class="queue-link" data-action="open-queue">${localeText.t("ui.queue.open")} ${icon("arrow", "small")}</button></section>`;
   }
 
   #taskTable(state: LoadState | null, preview: boolean): string {
@@ -1090,22 +1153,22 @@ export class ControlCenterApp {
     );
     const shown = preview ? shownRows.slice(0, 6) : shownRows;
     const headers = [
-      ["label", "Zadanie / dokument"],
+      ["label", localeText.t("ui.tasks.column.taskDocument")],
       ...(this.#scope.kind === "global"
-        ? [["projectId", "Projekt"] as const]
+        ? [["projectId", localeText.t("ui.tasks.column.project")] as const]
         : []),
-      ["clientId", "Klient"],
-      ["state", "Stan"],
-      ["waitMs", "Oczekiwanie"],
-      ["executionMs", "Wykonanie"],
+      ["clientId", localeText.t("ui.tasks.column.client")],
+      ["state", localeText.t("ui.tasks.column.state")],
+      ["waitMs", localeText.t("ui.tasks.column.wait")],
+      ["executionMs", localeText.t("ui.tasks.column.execution")],
     ] as const;
     const columnCount = headers.length + 1;
     const widths =
       this.#scope.kind === "global"
         ? [23, 12, 14, 18, 15, 14, 4]
         : [26, 18, 20, 17, 15, 4];
-    return `<section class="panel table-panel"><div class="panel-head"><div class="row"><h2>${preview ? "Ostatnie zadania" : "Lista zadań"}<span class="count-label">${total ?? "—"}</span></h2></div>${preview ? `<button class="text-link" data-action="view" data-view="tasks">Wszystkie zadania ${icon("chevron", "small")}</button>` : `<span class="inline-source">${statusSourceText(record(page?.source))}</span>`}</div>
-      <div class="table-toolbar"><label class="search-box">${icon("search", "small")}<input id="task-search" type="search" placeholder="Szukaj zadania, dokumentu lub klienta…" value="${esc(this.#search)}" aria-label="Szukaj zadań"></label>${this.#tableControls("tasks")}</div>
+    return `<section class="panel table-panel"><div class="panel-head"><div class="row"><h2>${localeText.t(preview ? "ui.tasks.preview.title" : "ui.tasks.list.title")}<span class="count-label">${total === null ? "—" : localeText.formatNumber(total)}</span></h2></div>${preview ? `<button class="text-link" data-action="view" data-view="tasks">${localeText.t("ui.tasks.all.link")} ${icon("chevron", "small")}</button>` : `<span class="inline-source">${statusSourceText(record(page?.source))}</span>`}</div>
+      <div class="table-toolbar"><label class="search-box">${icon("search", "small")}<input id="task-search" type="search" placeholder="${localeText.t("ui.tasks.search.placeholder")}" value="${esc(this.#search)}" aria-label="${localeText.t("ui.tasks.search.aria")}"></label>${this.#tableControls("tasks")}</div>
       ${
         !preview
           ? `<div class="queue-list-header"><div class="segmented">${this.#taskSegments(
@@ -1117,10 +1180,10 @@ export class ControlCenterApp {
               )
               .join(
                 "",
-              )}</div><span class="inline-source">Kliknij wiersz, aby otworzyć szczegóły</span></div>`
+              )}</div><span class="inline-source">${localeText.t("ui.tasks.clickRow")}</span></div>`
           : ""
       }
-      <div class="table-wrap"><table class="task-grid-table ${this.#scope.kind === "project" ? "scoped-table" : ""}" aria-label="Zadania"><colgroup>${widths.map((width) => `<col style="width:${width}%">`).join("")}</colgroup><thead><tr>${headers.map(([key, label]) => this.#header(key, label)).join("")}<th scope="col"><span class="sr-only">Szczegóły</span></th></tr></thead><tbody>${
+      <div class="table-wrap"><table class="task-grid-table ${this.#scope.kind === "project" ? "scoped-table" : ""}" aria-label="${localeText.t("ui.tasks.table.aria")}"><colgroup>${widths.map((width) => `<col style="width:${width}%">`).join("")}</colgroup><thead><tr>${headers.map(([key, label]) => this.#header(key, label)).join("")}<th scope="col"><span class="sr-only">${localeText.t("ui.tasks.column.details")}</span></th></tr></thead><tbody>${
         shown.length
           ? shown
               .map((task) => {
@@ -1128,13 +1191,13 @@ export class ControlCenterApp {
                 const command =
                   text(task, "label") ??
                   text(task, "kind") ??
-                  "Nieznana operacja";
-                return `<tr class="${id ? "click-row" : ""}" ${id ? `tabindex="0" data-action="task" data-id="${esc(id)}" data-project="${esc(text(task, "projectId") ?? "")}"` : ""} aria-label="${id ? `Szczegóły: ${esc(command)}` : "Zadanie bez stabilnego ID — szczegóły niedostępne"}"><td><div class="task-cell"><span class="task-icon">${icon("code", "small")}</span><div><span class="task-name">${esc(command)}</span><div class="task-doc">${esc(text(task, "document") ?? text(task, "purpose") ?? "Dokument niezgłoszony")}</div></div></div></td>${this.#scope.kind === "global" ? `<td><span class="client-id" title="${esc(text(task, "projectId") ?? "Projekt niezgłoszony")}">${esc(text(task, "projectName") ?? text(task, "projectId") ?? "Projekt niezgłoszony")}</span></td>` : ""}<td><span class="client-id" title="${esc(text(task, "clientId") ?? "Klient niezgłoszony")}">${esc(text(task, "clientName") ?? text(task, "clientId") ?? "Klient niezgłoszony")}</span></td><td>${statusBadge(task["state"])}</td><td class="duration">${duration(task["waitMs"])}</td><td class="duration">${duration(task["executionMs"])}</td><td class="row-arrow">${icon("chevron", "small")}</td></tr>`;
+                  localeText.t("ui.tasks.operation.unknown");
+                return `<tr class="${id ? "click-row" : ""}" ${id ? `tabindex="0" data-action="task" data-id="${esc(id)}" data-project="${esc(text(task, "projectId") ?? "")}"` : ""} aria-label="${id ? esc(localeText.t("ui.tasks.row.details", { command })) : localeText.t("ui.tasks.row.unstableDetails")}"><td><div class="task-cell"><span class="task-icon">${icon("code", "small")}</span><div><span class="task-name">${esc(command)}</span><div class="task-doc">${esc(text(task, "document") ?? text(task, "purpose") ?? localeText.t("ui.tasks.document.notReported"))}</div></div></div></td>${this.#scope.kind === "global" ? `<td><span class="client-id" title="${esc(text(task, "projectId") ?? localeText.t("ui.tasks.project.notReported"))}">${esc(text(task, "projectName") ?? text(task, "projectId") ?? localeText.t("ui.tasks.project.notReported"))}</span></td>` : ""}<td><span class="client-id" title="${esc(text(task, "clientId") ?? localeText.t("ui.tasks.client.notReported"))}">${esc(text(task, "clientName") ?? text(task, "clientId") ?? localeText.t("ui.tasks.client.notReported"))}</span></td><td>${statusBadge(task["state"])}</td><td class="duration">${duration(task["waitMs"])}</td><td class="duration">${duration(task["executionMs"])}</td><td class="row-arrow">${icon("chevron", "small")}</td></tr>`;
               })
               .join("")
-          : `<tr><td class="table-empty" colspan="${columnCount}">${this.#empty(!page ? "Zadania niedostępne" : page.source.state === "no-data" ? "Brak zachowanych zadań" : "Brak pasujących zadań", !page ? (state?.errors.tasks ?? "Źródło zadań nie zwróciło danych.") : page.source.state === "no-data" ? statusSourceText(page.source) : "Zmień filtry lub wyszukiwanie.", "layers")}</td></tr>`
+          : `<tr><td class="table-empty" colspan="${columnCount}">${this.#empty(!page ? localeText.t("ui.tasks.empty.unavailable") : page.source.state === "no-data" ? localeText.t("ui.tasks.empty.retained") : localeText.t("ui.tasks.empty.noMatches"), !page ? (state?.errors.tasks ?? localeText.t("ui.tasks.empty.sourceUnavailable")) : page.source.state === "no-data" ? statusSourceText(page.source) : localeText.t("ui.tasks.empty.filters"), "layers")}</td></tr>`
       }</tbody></table></div>
-      <div class="table-footer"><span>${page ? `${page.offset + (page.rows.length ? 1 : 0)}–${Math.min(page.offset + page.rows.length, total ?? page.offset + page.rows.length)} z ${total ?? "nieznanej liczby"}` : "Brak strony danych"}</span>${preview ? "" : this.#pagination(page?.total ?? null, page?.limit ?? 12, (page?.rows.length ?? 0) >= (page?.limit ?? 12))}</div></section>`;
+      <div class="table-footer"><span>${page ? `${localeText.formatNumber(page.offset + (page.rows.length ? 1 : 0))}–${localeText.formatNumber(Math.min(page.offset + page.rows.length, total ?? page.offset + page.rows.length))} ${total === null ? localeText.t("ui.table.ofUnknownCount") : localeText.t("ui.pagination.of", { pages: localeText.formatNumber(total) })}` : localeText.t("ui.table.noPage")}</span>${preview ? "" : this.#pagination(page?.total ?? null, page?.limit ?? 12, (page?.rows.length ?? 0) >= (page?.limit ?? 12))}</div></section>`;
   }
 
   #taskSegments(
@@ -1150,10 +1213,10 @@ export class ControlCenterApp {
         : null;
     };
     return [
-      ["all", "Wszystkie", knownTotal(page)],
+      ["all", localeText.t("ui.tasks.range.all"), knownTotal(page)],
       [
         "open",
-        "Otwarte",
+        localeText.t("ui.tasks.range.open"),
         sum([
           "queued",
           "preparing",
@@ -1165,7 +1228,7 @@ export class ControlCenterApp {
       ],
       [
         "history",
-        "Historia",
+        localeText.t("ui.tasks.range.history"),
         sum([
           "success",
           "succeeded",
@@ -1188,18 +1251,18 @@ export class ControlCenterApp {
           : "tasks";
     const index = this.#sorts[table].findIndex((item) => item.key === key);
     const sort = this.#sorts[table][index];
-    return `<th scope="col" ${index === 0 ? `aria-sort="${sort?.dir === "asc" ? "ascending" : "descending"}"` : ""}><div class="column-header"><button class="column-sort ${sort ? "is-sorted" : ""}" data-action="sort" data-column="${key}" aria-label="Sortuj według ${label}; Ctrl lub Command dodaje kolumnę"><span>${label}</span><span class="column-order">${sort ? `${sort.dir === "asc" ? "↑" : "↓"}${this.#sorts[table].length > 1 ? `<span class="column-priority">${index + 1}</span>` : ""}` : icon("sort", "small")}</span></button><button class="column-filter ${this.#filters[table][key] ? "is-filtered" : ""}" data-action="filter" data-column="${key}" aria-label="Filtruj ${label}" aria-haspopup="dialog">${icon("filter", "small")}</button></div></th>`;
+    return `<th scope="col" ${index === 0 ? `aria-sort="${sort?.dir === "asc" ? "ascending" : "descending"}"` : ""}><div class="column-header"><button class="column-sort ${sort ? "is-sorted" : ""}" data-action="sort" data-column="${key}" aria-label="${esc(localeText.t("ui.table.sort.aria", { label }))}"><span>${label}</span><span class="column-order">${sort ? `${sort.dir === "asc" ? "↑" : "↓"}${this.#sorts[table].length > 1 ? `<span class="column-priority">${index + 1}</span>` : ""}` : icon("sort", "small")}</span></button><button class="column-filter ${this.#filters[table][key] ? "is-filtered" : ""}" data-action="filter" data-column="${key}" aria-label="${esc(localeText.t("ui.table.filter.aria", { label }))}" aria-haspopup="dialog">${icon("filter", "small")}</button></div></th>`;
   }
 
   #tableControls(table: TableName): string {
     const count =
       Object.keys(this.#filters[table]).length + this.#sorts[table].length;
-    return `<div class="table-controls"><span class="table-sort-hint"><kbd>Ctrl</kbd> + klik · wiele kolumn</span>${count ? `<span class="table-filter-count">Filtry / sortowanie: ${count}</span><button class="btn small" data-action="reset-table" data-table="${table}">${icon("refresh", "small")}Resetuj</button>` : ""}</div>`;
+    return `<div class="table-controls"><span class="table-sort-hint"><kbd>Ctrl</kbd> + ${localeText.t("ui.common.click")} · ${localeText.t("ui.table.sort.multiHint")}</span>${count ? `<span class="table-filter-count">${localeText.t("ui.table.filterCount", { count })}</span><button class="btn small" data-action="reset-table" data-table="${table}">${icon("refresh", "small")}${localeText.t("ui.table.reset")}</button>` : ""}</div>`;
   }
 
   #pagination(total: number | null, limit: number, hasNext: boolean): string {
     const pages = total === null ? null : Math.max(1, Math.ceil(total / limit));
-    return `<div class="pagination"><button class="btn small" data-action="page" data-page="${this.#page - 1}" ${this.#page <= 1 ? "disabled" : ""}>Poprzednia</button><span>Strona ${this.#page}${pages === null ? "" : ` z ${pages}`}</span><button class="btn small" data-action="page" data-page="${this.#page + 1}" ${pages !== null ? (this.#page >= pages ? "disabled" : "") : !hasNext ? "disabled" : ""}>Następna</button></div>`;
+    return `<div class="pagination"><button class="btn small" data-action="page" data-page="${this.#page - 1}" ${this.#page <= 1 ? "disabled" : ""}>${localeText.t("common.previous")}</button><span>${localeText.t("ui.pagination.page", { page: this.#page })}${pages === null ? "" : localeText.t("ui.pagination.of", { pages })}</span><button class="btn small" data-action="page" data-page="${this.#page + 1}" ${pages !== null ? (this.#page >= pages ? "disabled" : "") : !hasNext ? "disabled" : ""}>${localeText.t("common.next")}</button></div>`;
   }
 
   #tasksView(state: LoadState | null): string {
@@ -1213,11 +1276,13 @@ export class ControlCenterApp {
         ? values.reduce((sum, value) => sum + value, 0)
         : null;
     };
-    return `<div class="status-overview">${this.#stat("Przygotowywane", count("preparing"), "Rzeczywista faza", "clock")}${this.#stat("Przetwarzane", count("processing"), "Rzeczywista faza", "pulse")}${this.#stat("Nierozstrzygnięte", count("unresolved"), "Wymagają sprawdzenia wyniku", "alert")}</div>${this.#taskTable(state, false)}`;
+    return `<div class="status-overview">${this.#stat(localeText.t("ui.tasks.preparing"), count("preparing"), localeText.t("ui.phase.real"), "clock")}${this.#stat(localeText.t("ui.tasks.processing"), count("processing"), localeText.t("ui.phase.real"), "pulse")}${this.#stat(localeText.t("ui.tasks.unresolved"), count("unresolved"), localeText.t("ui.tasks.needsReview"), "alert")}</div>${this.#taskTable(state, false)}`;
   }
 
   #stat(label: string, value: unknown, detail: string, image: string): string {
-    return `<div class="metric"><div class="metric-top"><span>${label}</span>${icon(image)}</div><div class="metric-value">${value == null ? "—" : esc(value)}</div><div class="metric-bottom">${detail}</div></div>`;
+    const displayed =
+      typeof value === "number" ? localeText.formatNumber(value) : value;
+    return `<div class="metric"><div class="metric-top"><span>${label}</span>${icon(image)}</div><div class="metric-value">${displayed == null ? "—" : esc(displayed)}</div><div class="metric-bottom">${detail}</div></div>`;
   }
 
   #logsView(state: LoadState | null): string {
@@ -1239,22 +1304,53 @@ export class ControlCenterApp {
     const recentSummary =
       lastMinute === null || lastMinute === undefined
         ? "—"
-        : `${lastMinute}${state?.recentLogsError ? ` · ${state.recentLogsError}` : ""}`;
-    return `<div class="log-layout"><section class="panel log-main"><div class="panel-head"><div class="row"><h2>Logi projektu<span class="count-label">${page?.total ?? "—"}</span></h2><span class="live-pip ${this.#follow ? "" : "off"}"></span></div><button class="btn small ${this.#follow ? "follow-active" : ""}" data-action="follow">${icon(this.#follow ? "eye" : "pause", "small")}${this.#follow ? "Śledzenie włączone" : "Śledzenie zatrzymane"}</button></div><div class="log-toolbar"><label class="search-box">${icon("search", "small")}<input id="log-search" type="search" placeholder="Szukaj w wiadomościach, ID i poleceniach…" value="${esc(this.#search)}" aria-label="Szukaj w logach"></label><div class="filter-group"><select id="log-level" aria-label="Poziom logów"><option value="all">Wszystkie poziomy</option>${["INFO", "WARN", "ERROR", "DEBUG", "TRACE", "OTHER"].map((level) => `<option value="${level}" ${this.#logLevel === level ? "selected" : ""}>${level}</option>`).join("")}</select><select id="log-source" aria-label="Źródło logów"><option value="all" ${this.#logSource === "all" ? "selected" : ""}>Wszystkie źródła</option>${sources.map((source) => `<option value="${esc(source)}" ${this.#logSource === source ? "selected" : ""}>${esc(source)}</option>`).join("")}</select></div><label class="toggle-label"><input id="heartbeat" type="checkbox" ${this.#showHeartbeat ? "checked" : ""}>Pokaż heartbeat</label>${this.#tableControls("logs")}</div><div class="logs scroll-logs" id="log-stream">${shown.length ? this.#logItems(shown.slice(0, 150)) : this.#empty(page ? "Brak pasujących wpisów" : "Logi niedostępne", page ? "Zmień filtry lub wyszukiwanie." : (state?.errors.logs ?? "Źródło logów nie zwróciło danych."), "terminal")}</div><div class="table-footer"><span>${Math.min(shown.length, 150)}${page?.total == null ? "" : ` z ${page.total}`} wpisów · ${this.#follow ? "śledzenie włączone" : "śledzenie zatrzymane"}</span><button class="text-link" data-action="export" data-collection="logs">${icon("download", "small")}Eksport</button></div></section><aside class="log-side"><section class="panel system-panel"><h2>${icon("filter", "small")}Poziomy zdarzeń</h2>${levels.length ? levels.map(([level, count]) => `<button class="level-stat ${this.#logLevel === level ? "selected" : ""}" data-action="log-level-select" data-level="${esc(level)}"><span>${esc(level)}</span><b>${count}</b></button>`).join("") : this.#empty("Brak liczników", "Źródło nie udostępniło pełnych liczników poziomów.", "filter")}<div class="key-values"><div><dt>Ostatnie 60 s</dt><dd>${recentSummary}</dd></div></div></section><section class="panel system-panel"><h2>Źródło</h2>${statusSourceText(page?.source ?? { state: "unavailable", source: "logs" })}</section></aside></div>`;
+        : localeText.formatNumber(lastMinute);
+    const resultRows = shown.length
+      ? this.#logItems(shown.slice(0, 150))
+      : this.#empty(
+          page
+            ? localeText.t("ui.logs.empty.entries")
+            : localeText.t("ui.logs.empty.unavailable"),
+          page
+            ? localeText.t("ui.tasks.empty.filters")
+            : (state?.errors.logs ??
+                localeText.t("ui.logs.empty.sourceUnavailable")),
+          "terminal",
+        );
+    const levelRows = levels.length
+      ? levels
+          .map(
+            ([level, count]) =>
+              `<button class="level-stat ${this.#logLevel === level ? "selected" : ""}" data-action="log-level-select" data-level="${esc(level)}"><span>${esc(level)}</span><b>${localeText.formatNumber(count)}</b></button>`,
+          )
+          .join("")
+      : this.#empty(
+          localeText.t("ui.logs.levels.empty"),
+          localeText.t("ui.logs.levels.incomplete"),
+          "filter",
+        );
+    const countNote =
+      page?.total == null
+        ? ""
+        : ` ${localeText.t("ui.pagination.of", {
+            pages: localeText.formatNumber(page.total),
+          })}`;
+
+    return `<div class="log-layout"><section class="panel log-main"><div class="panel-head"><div class="row"><h2>${localeText.t("ui.logs.title")}<span class="count-label">${page?.total == null ? "—" : localeText.formatNumber(page.total)}</span></h2><span class="live-pip ${this.#follow ? "" : "off"}"></span></div><button class="btn small ${this.#follow ? "follow-active" : ""}" data-action="follow">${icon(this.#follow ? "eye" : "pause", "small")}${localeText.t(this.#follow ? "ui.logs.follow.enabled" : "ui.logs.follow.paused")}</button></div><div class="log-toolbar"><label class="search-box">${icon("search", "small")}<input id="log-search" type="search" placeholder="${localeText.t("ui.logs.search.placeholder")}" value="${esc(this.#search)}" aria-label="${localeText.t("ui.logs.search.aria")}"></label><div class="filter-group"><select id="log-level" aria-label="${localeText.t("ui.logs.level.aria")}" ><option value="all">${localeText.t("ui.logs.level.all")}</option>${["INFO", "WARN", "ERROR", "DEBUG", "TRACE", "OTHER"].map((level) => `<option value="${level}" ${this.#logLevel === level ? "selected" : ""}>${level}</option>`).join("")}</select><select id="log-source" aria-label="${localeText.t("ui.logs.source.aria")}"><option value="all" ${this.#logSource === "all" ? "selected" : ""}>${localeText.t("ui.logs.source.all")}</option>${sources.map((source) => `<option value="${esc(source)}" ${this.#logSource === source ? "selected" : ""}>${esc(source)}</option>`).join("")}</select></div><label class="toggle-label"><input id="heartbeat" type="checkbox" ${this.#showHeartbeat ? "checked" : ""}>${localeText.t("ui.logs.heartbeat.show")}</label>${this.#tableControls("logs")}</div><div class="logs scroll-logs" id="log-stream">${resultRows}</div><div class="table-footer"><span>${localeText.t("ui.logs.footer.entries")}: ${localeText.formatNumber(Math.min(shown.length, 150))}${countNote} · ${localeText.t(this.#follow ? "ui.logs.follow.enabled" : "ui.logs.follow.paused")}</span><button class="text-link" data-action="export" data-collection="logs">${icon("download", "small")}${localeText.t("common.export")}</button></div></section><aside class="log-side"><section class="panel system-panel"><h2>${icon("filter", "small")}${localeText.t("ui.logs.levels.title")}</h2>${levelRows}<div class="key-values"><div><dt>${localeText.t("ui.logs.recent.seconds")}</dt><dd>${recentSummary}</dd></div></div></section><section class="panel system-panel"><h2>${localeText.t("system.lock.source")}</h2>${statusSourceText(page?.source ?? { state: "unavailable", source: "logs" })}</section></aside></div>`;
   }
 
   #logItems(rows: readonly Row[]): string {
     return rows
       .map((row) => {
         const id = text(row, "id");
-        return `<div class="log-row" ${id ? `tabindex="0" data-action="log" data-id="${esc(id)}"` : 'aria-disabled="true"'}><span class="log-time">${esc(time(row["timestamp"]))}</span><span class="log-level ${esc(text(row, "level")?.toLowerCase() ?? "other")}">${esc(text(row, "level") ?? "OTHER")}</span><div><div class="log-text">${esc(text(row, "message") ?? "Brak treści zdarzenia")}</div><div class="log-meta">${esc(text(row, "source") ?? "Źródło niezgłoszone")}${nonemptyId(row["taskId"]) ? ` · zadanie ${esc(row["taskId"])}` : ""}</div></div>${icon("chevron", "small")}</div>`;
+        return `<div class="log-row" ${id ? `tabindex="0" data-action="log" data-id="${esc(id)}"` : 'aria-disabled="true"'}><span class="log-time">${esc(time(row["timestamp"]))}</span><span class="log-level ${esc(text(row, "level")?.toLowerCase() ?? "other")}">${esc(text(row, "level") ?? "OTHER")}</span><div><div class="log-text">${esc(text(row, "message") ?? localeText.t("ui.logs.message.empty"))}</div><div class="log-meta">${esc(text(row, "source") ?? localeText.t("ui.logs.source.notReported"))}${nonemptyId(row["taskId"]) ? ` · ${localeText.t("ui.logs.task.label")} ${esc(row["taskId"])}` : ""}</div></div>${icon("chevron", "small")}</div>`;
       })
       .join("");
   }
 
   #recentLogs(state: LoadState | null): string {
     const rows = (state?.pages.logs?.rows ?? []).slice(0, 3);
-    return `<section class="panel"><div class="panel-head"><div class="row"><h2>Ostatnie zdarzenia</h2><span class="live-pip"></span></div><button class="text-link" data-action="view" data-view="logs">Otwórz logi ${icon("chevron", "small")}</button></div>${rows.length ? `<div class="logs">${this.#logItems(rows)}</div>` : this.#empty("Brak zdarzeń", "Zdarzenia pojawią się po udostępnieniu ich przez źródło.", "terminal")}</section>`;
+    return `<section class="panel"><div class="panel-head"><div class="row"><h2>${localeText.t("ui.logs.recent.title")}</h2><span class="live-pip"></span></div><button class="text-link" data-action="view" data-view="logs">${localeText.t("ui.logs.open")} ${icon("chevron", "small")}</button></div>${rows.length ? `<div class="logs">${this.#logItems(rows)}</div>` : this.#empty(localeText.t("ui.logs.events.empty"), localeText.t("ui.logs.events.emptyDescription"), "terminal")}</section>`;
   }
 
   #agentsView(state: LoadState | null): string {
@@ -1278,7 +1374,7 @@ export class ControlCenterApp {
         count(["stale", "unknown", "missing", "history"]),
       ],
     ] as const;
-    return `<div class="agent-toolbar"><div class="segmented agent-filter" aria-label="Filtr agentów">${ranges.map(([key, label, total]) => `<button class="segment ${this.#agentRange === key ? "active" : ""}" data-action="agent-range" data-range="${key}">${label}<span>${total ?? "—"}</span></button>`).join("")}</div></div><section class="panel table-panel"><div class="panel-head"><div><h2>Agenci i sesje<span class="count-label">${knownTotal(page) ?? "—"}</span></h2><p class="panel-subtitle">Wyłącznie tożsamości zgłoszone przez źródło obecności</p></div><span class="inline-source">${statusSourceText(page?.source ?? { state: "unavailable", source: "agents" })}</span></div><div class="table-toolbar"><label class="search-box">${icon("search", "small")}<input id="agent-search" type="search" placeholder="Szukaj nazwy, sesji lub projektu…" value="${esc(this.#search)}" aria-label="Szukaj agentów"></label>${this.#tableControls("agents")}</div><div class="agent-list">${rows.length ? rows.map((agent) => `<div class="agent-list-row" ${nonemptyId(agent["id"]) ? `tabindex="0" data-action="agent" data-id="${esc(agent["id"])}" data-project="${esc(text(agent, "projectId") ?? "")}"` : ""}><span class="agent-identity"><span class="agent-monogram">${esc((text(agent, "name") ?? "?").slice(0, 2).toUpperCase())}</span><span class="agent-identity-text"><span class="agent-name-line"><strong>${esc(text(agent, "name") ?? text(agent, "clientId") ?? "Nieznana tożsamość")}</strong>${statusBadge(agent["presence"])}</span><span class="agent-role">${esc(display(agent["kind"]))}</span><span class="agent-tool">${esc(text(agent, "id") ?? "ID niezgłoszone")}</span></span></span><span class="agent-work">${esc(text(agent, "work") ?? "Brak zgłoszonego aktywnego zadania")}</span>${icon("chevron", "small")}</div>`).join("") : this.#empty(!page ? "Dane agentów niedostępne" : page.source.state === "no-data" ? "Brak zgłoszonej obecności" : "Brak tożsamości", !page ? (state?.errors.agents ?? "Źródło obecności nie zwróciło danych.") : statusSourceText(page.source), "users")}</div><div class="table-footer"><span>${page ? `${page.offset + (rows.length ? 1 : 0)}–${page.offset + rows.length} z ${knownTotal(page) ?? "nieznanej liczby"}` : "Brak strony danych"}</span>${this.#pagination(knownTotal(page), page?.limit ?? 8, rows.length >= (page?.limit ?? 8))}</div></section>`;
+    return `<div class="agent-toolbar"><div class="segmented agent-filter" aria-label="${localeText.t("ui.agents.filter.aria")}">${ranges.map(([key, label, total]) => `<button class="segment ${this.#agentRange === key ? "active" : ""}" data-action="agent-range" data-range="${key}">${label}<span>${total === null ? "—" : localeText.formatNumber(total)}</span></button>`).join("")}</div></div><section class="panel table-panel"><div class="panel-head"><div><h2>${localeText.t("ui.agents.title")}<span class="count-label">${knownTotal(page) === null ? "—" : localeText.formatNumber(knownTotal(page)!)}</span></h2><p class="panel-subtitle">${localeText.t("ui.agents.description")}</p></div><span class="inline-source">${statusSourceText(page?.source ?? { state: "unavailable", source: "agents" })}</span></div><div class="table-toolbar"><label class="search-box">${icon("search", "small")}<input id="agent-search" type="search" placeholder="${localeText.t("ui.agents.search.placeholder")}" value="${esc(this.#search)}" aria-label="${localeText.t("ui.agents.search.aria")}"></label>${this.#tableControls("agents")}</div><div class="agent-list">${rows.length ? rows.map((agent) => `<div class="agent-list-row" ${nonemptyId(agent["id"]) ? `tabindex="0" data-action="agent" data-id="${esc(agent["id"])}" data-project="${esc(text(agent, "projectId") ?? "")}"` : ""}><span class="agent-identity"><span class="agent-monogram">${esc((text(agent, "name") ?? "?").slice(0, 2).toUpperCase())}</span><span class="agent-identity-text"><span class="agent-name-line"><strong>${esc(text(agent, "name") ?? text(agent, "clientId") ?? localeText.t("ui.agents.identity.unknown"))}</strong>${statusBadge(agent["presence"])}</span><span class="agent-role">${esc(display(agent["kind"]))}</span><span class="agent-tool">${esc(text(agent, "id") ?? localeText.t("ui.agents.identity.notReported"))}</span></span></span><span class="agent-work">${esc(text(agent, "work") ?? localeText.t("ui.agents.work.none"))}</span>${icon("chevron", "small")}</div>`).join("") : this.#empty(!page ? localeText.t("ui.agents.empty.unavailable") : page.source.state === "no-data" ? localeText.t("ui.agents.empty.noPresence") : localeText.t("ui.agents.empty.noIdentity"), !page ? (state?.errors.agents ?? localeText.t("ui.agents.source.noData")) : statusSourceText(page.source), "users")}</div><div class="table-footer"><span>${page ? `${localeText.formatNumber(page.offset + (rows.length ? 1 : 0))}–${localeText.formatNumber(page.offset + rows.length)} ${knownTotal(page) === null ? localeText.t("ui.table.ofUnknownCount") : localeText.t("ui.pagination.of", { pages: localeText.formatNumber(knownTotal(page)!) })}` : localeText.t("ui.agents.page.unavailable")}</span>${this.#pagination(knownTotal(page), page?.limit ?? 8, rows.length >= (page?.limit ?? 8))}</div></section>`;
   }
 
   #empty(title: string, description: string, image: string): string {
@@ -1291,7 +1387,7 @@ export class ControlCenterApp {
       (row) => rowTaskId(row) === id,
     );
     if (!task) {
-      this.#toast("Zadanie nie jest dostępne w bieżącym odczycie.");
+      this.#toast(localeText.t("ui.project.task.unavailable"));
       return;
     }
     const owner =
@@ -1299,9 +1395,7 @@ export class ControlCenterApp {
         ? this.#scope.projectId
         : text(task, "projectId");
     if (!nonemptyId(owner)) {
-      this.#toast(
-        "Źródło nie zgłosiło projektu zadania; szczegóły nie są dostępne.",
-      );
+      this.#toast(localeText.t("ui.project.task.sourceMissing"));
       return;
     }
     try {
@@ -1441,8 +1535,8 @@ export class ControlCenterApp {
       modal.eventStatus = null;
       modal.eventStatus =
         pages
+          .filter((page) => page.source.state !== "available")
           .map((page) => statusSourceText(page.source))
-          .filter((status) => status !== "Dane dostępne")
           .join(" · ") || null;
     } catch (error) {
       modal.events = [];
@@ -1517,6 +1611,7 @@ export class ControlCenterApp {
   }
 
   #renderModal(focus = false): void {
+    if (this.#listeners.signal.aborted) return;
     const host = document.getElementById("overlay-root");
     if (!host) return;
     if (!this.#modal) {
@@ -1565,6 +1660,39 @@ export class ControlCenterApp {
     }
   }
 
+  #renderLocaleOverlay(): void {
+    if (this.#modal) {
+      this.#renderModal();
+      return;
+    }
+    switch (this.#auxiliaryModal) {
+      case "filter":
+        if (this.#filterColumn) this.#openFilter(this.#filterColumn, true);
+        break;
+      case "search": {
+        const query =
+          ($("#global-search-input") as HTMLInputElement | null)?.value ?? "";
+        const results = $("#global-results")?.innerHTML ?? "";
+        const activeSearch =
+          document.activeElement?.id === "global-search-input";
+        this.#searchDialog(query, results);
+        if (activeSearch) $("#global-search-input")?.focus();
+        break;
+      }
+      case "settings":
+        this.#showSettings();
+        break;
+      case "help":
+        this.#showHelp();
+        break;
+      case "export":
+        if (this.#exportCollection) this.#showExport(this.#exportCollection);
+        break;
+      default:
+        break;
+    }
+  }
+
   #rememberModalFocus(): void {
     if (this.#modalReturnFocus) return;
     const active = document.activeElement;
@@ -1593,6 +1721,7 @@ export class ControlCenterApp {
     const host = document.getElementById("overlay-root");
     if (host) host.innerHTML = "";
     this.#root.inert = false;
+    this.#exportCollection = null;
     this.#modal = null;
     this.#auxiliaryModal = null;
     this.#globalSearchSerial += 1;
@@ -2368,7 +2497,7 @@ export class ControlCenterApp {
     returnTask?: Extract<ModalState, { type: "task" }>,
   ): Promise<void> {
     if (!nonemptyId(id) || !nonemptyId(owner)) {
-      this.#toast("Brak niepustej tożsamości agenta lub projektu.");
+      this.#toast(localeText.t("ui.agent.identity.unavailable"));
       return;
     }
     try {
@@ -2388,7 +2517,7 @@ export class ControlCenterApp {
         ),
       );
       if (!agent) {
-        this.#toast("Tożsamość nie jest dostępna w źródle obecności.");
+        this.#toast(localeText.t("ui.agent.identity.unavailable"));
         return;
       }
       if (!returnTask) this.#rememberModalFocus();
@@ -2493,7 +2622,7 @@ export class ControlCenterApp {
           undefined,
           snapshot.sources,
         );
-      else this.#toast("Zadanie nie jest dostępne w tym snapshotcie.");
+      else this.#toast(localeText.t("ui.project.task.unavailable"));
     } catch (error) {
       this.#toast(this.#error(error));
     }
@@ -2750,8 +2879,10 @@ export class ControlCenterApp {
     }
   }
 
-  #openFilter(column: string): void {
+  #openFilter(column: string, preserveState = false): void {
     if (!column) return;
+    const preservedSearch = preserveState ? this.#filterSearch : "";
+    const preservedChosen = preserveState ? this.#filterChosen : null;
     this.#filterTable =
       this.#view === "logs"
         ? "logs"
@@ -2792,19 +2923,20 @@ export class ControlCenterApp {
         { value: null, count: page.total - knownCount, label: "Brak danych" },
       ];
     this.#filterColumn = column;
-    this.#filterSearch = "";
+    this.#filterSearch = preservedSearch;
     this.#filterChosen =
-      filter?.type === "values"
+      preservedChosen ??
+      (filter?.type === "values"
         ? new Set(
             filter.values.map((value) =>
               value === null ? null : String(value),
             ),
           )
-        : new Set(this.#filterOptions.map((option) => option.value));
+        : new Set(this.#filterOptions.map((option) => option.value)));
     const body = isNumber
       ? `<p class="column-filter-description">Zakres wartości · sekundy</p><div class="column-number-range"><label for="filter-min">Od<input id="filter-min" type="number" min="0" step="any" value="${filter?.type === "number" && filter.min !== "" ? esc(typeof filter.min === "number" ? filter.min / 1000 : "") : ""}"></label><span>—</span><label for="filter-max">Do<input id="filter-max" type="number" min="0" step="any" value="${filter?.type === "number" && filter.max !== "" ? esc(typeof filter.max === "number" ? filter.max / 1000 : "") : ""}"></label></div><label class="column-unknown"><input id="filter-missing" type="checkbox" ${filter?.type !== "number" || filter.includeUnknown ? "checked" : ""}>Uwzględnij brak danych</label>`
       : this.#filterOptions.length
-        ? `<div class="column-value-search">${icon("search", "small")}<input id="filter-value-search" type="search" autocomplete="off" placeholder="Szukaj wartości…" aria-label="Szukaj wartości kolumny"></div><div class="column-choice-actions"><button type="button" data-action="filter-select-visible">Tylko widoczne</button><button type="button" data-action="filter-select-all">Wszystkie</button><button type="button" data-action="filter-select-none">Żadne</button></div><div class="column-values" id="filter-values"></div><div class="column-selection-note" id="filter-selection-note" aria-live="polite"></div>`
+        ? `<div class="column-value-search">${icon("search", "small")}<input id="filter-value-search" type="search" autocomplete="off" value="${esc(this.#filterSearch)}" placeholder="Szukaj wartości…" aria-label="Szukaj wartości kolumny"></div><div class="column-choice-actions"><button type="button" data-action="filter-select-visible">Tylko widoczne</button><button type="button" data-action="filter-select-all">Wszystkie</button><button type="button" data-action="filter-select-none">Żadne</button></div><div class="column-values" id="filter-values"></div><div class="column-selection-note" id="filter-selection-note" aria-live="polite"></div>`
         : `<label class="column-text-label" for="filter-text">Zawiera tekst</label><input id="filter-text" type="search" value="${filter?.type === "text" ? esc(filter.query) : ""}"><p class="column-filter-description">Wyszukiwanie bez rozróżniania wielkości liter.</p>`;
     this.#mountOverlay(
       "filter",
@@ -2825,9 +2957,11 @@ export class ControlCenterApp {
     count: number;
     label: string;
   }[] {
-    const query = this.#filterSearch.trim().toLocaleLowerCase("pl");
+    const query = this.#filterSearch
+      .trim()
+      .toLocaleLowerCase(localeText.locale);
     return this.#filterOptions.filter((option) =>
-      option.label.toLocaleLowerCase("pl").includes(query),
+      option.label.toLocaleLowerCase(localeText.locale).includes(query),
     );
   }
 
@@ -2839,19 +2973,19 @@ export class ControlCenterApp {
       ? rows
           .map(
             (option) =>
-              `<button type="button" class="column-choice" data-action="filter-toggle" data-value="${option.value === null ? "__missing__" : esc(option.value)}" aria-pressed="${this.#filterChosen.has(option.value)}"><span class="column-choice-check">${this.#filterChosen.has(option.value) ? icon("check", "small") : ""}</span><span><strong>${esc(option.label)}</strong></span><span class="column-value-count">${option.count}</span></button>`,
+              `<button type="button" class="column-choice" data-action="filter-toggle" data-value="${option.value === null ? "__missing__" : esc(option.value)}" aria-pressed="${this.#filterChosen.has(option.value)}"><span class="column-choice-check">${this.#filterChosen.has(option.value) ? icon("check", "small") : ""}</span><span><strong>${esc(option.label)}</strong></span><span class="column-value-count">${localeText.formatNumber(option.count)}</span></button>`,
           )
           .join("")
-      : `<p class="column-no-values">Brak pasujących wartości.</p>`;
+      : `<p class="column-no-values">${localeText.t("common.noResults")}</p>`;
     const note = document.getElementById("filter-selection-note");
     if (note)
-      note.textContent = `Zaznaczono ${this.#filterChosen.size} z ${this.#filterOptions.length} wartości`;
+      note.textContent = `${localeText.formatNumber(this.#filterChosen.size)} / ${localeText.formatNumber(this.#filterOptions.length)}`;
   }
 
-  #searchDialog(): void {
+  #searchDialog(query = "", results = ""): void {
     this.#mountOverlay(
       "search",
-      `<div class="overlay" data-action="backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><h2 id="modal-title">Szukaj w przestrzeni roboczej</h2><button class="icon-button" data-action="close" aria-label="Zamknij">${icon("close")}</button></header><div class="modal-body"><label class="search-box global-modal-search">${icon("search")}<input id="global-search-input" type="search" placeholder="Projekt, zadanie, agent, ID…" aria-label="Szukaj globalnie" autocomplete="off"></label><div id="global-results" class="global-search-results"></div></div></section></div>`,
+      `<div class="overlay" data-action="backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><h2 id="modal-title">Szukaj w przestrzeni roboczej</h2><button class="icon-button" data-action="close" aria-label="Zamknij">${icon("close")}</button></header><div class="modal-body"><label class="search-box global-modal-search">${icon("search")}<input id="global-search-input" type="search" placeholder="Projekt, zadanie, agent, ID…" aria-label="Szukaj globalnie" autocomplete="off" value="${esc(query)}"></label><div id="global-results" class="global-search-results">${results}</div></div></section></div>`,
       "#global-search-input",
     );
   }
@@ -2955,6 +3089,7 @@ export class ControlCenterApp {
   }
 
   #showExport(collection: Collection): void {
+    this.#exportCollection = collection;
     this.#mountOverlay(
       "export",
       `<div class="overlay" data-action="backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><h2 id="modal-title">Eksport danych</h2><button class="icon-button" data-action="close" aria-label="Zamknij">${icon("close")}</button></header><div class="modal-body"><p>Eksport obejmuje cały retained scope i aktualne filtry, niezależnie od bieżącej strony.</p><button class="source-option" data-action="export-format" data-collection="${esc(collection)}" data-format="csv"><span class="source-option-icon">${icon("file")}</span><div><strong>CSV · pełny wynik</strong><p>Separator i formuły obsługuje serwer eksportu.</p></div>${icon("download", "small")}</button><button class="source-option" data-action="export-format" data-collection="${esc(collection)}" data-format="json"><span class="source-option-icon">${icon("code")}</span><div><strong>JSON · pełny wynik</strong><p>Wersjonowany eksport wybranego zakresu.</p></div>${icon("download", "small")}</button></div></section></div>`,

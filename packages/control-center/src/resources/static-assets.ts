@@ -13,6 +13,12 @@ const KNOWN_MODULES = [
   "api.js",
   "app.js",
   "index.js",
+  "locale-catalogs.js",
+  "locale-runtime.js",
+  "locale-selector.js",
+  "locale-system-controls.js",
+  "locale-system-view.js",
+  "locale-web-ui.js",
   "read-model.js",
   "select-controls.js",
   "table-model.js",
@@ -54,6 +60,13 @@ const KNOWN_ASSETS = new Map<string, { file: string; contentType: string }>([
   [
     "/assets/control-center/assets/styles.css",
     { file: "assets/styles.css", contentType: "text/css; charset=utf-8" },
+  ],
+  [
+    "/assets/control-center/assets/locale-selector.css",
+    {
+      file: "assets/locale-selector.css",
+      contentType: "text/css; charset=utf-8",
+    },
   ],
   [
     "/assets/control-center/assets/favicon.svg",

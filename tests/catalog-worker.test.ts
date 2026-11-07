@@ -6,7 +6,7 @@ import * as os from "node:os";
 import path from "node:path";
 import { spawn, type SpawnOptions } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import Module, { createRequire } from "node:module";
+import { createRequire } from "node:module";
 import { isolateRuntimeTestEnvironment } from "./runtime-test-environment.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -36,31 +36,9 @@ type PhysicalBackend = {
     object: { script: string };
   }): Promise<{ failed: boolean; text: string }>;
 };
-type MutableModuleLoader = {
-  _load(
-    request: string,
-    parent: { filename?: string } | null,
-    ...args: unknown[]
-  ): unknown;
-};
 const localPhaseTimeoutMs = 180_000;
 const projectRoot = path.resolve(__dirname, "..", "..");
 const runtimeRequire = createRequire(__filename);
-const mutableModule = Module as unknown as MutableModuleLoader;
-const loadModule = mutableModule._load;
-mutableModule._load = function (request, parent, ...args) {
-  const loaded = loadModule.call(this, request, parent, ...args);
-  if (
-    request === "./dist/config-platform" &&
-    parent?.filename?.endsWith("/src/queue-instance.js")
-  ) {
-    return {
-      ...(loaded as Record<string, unknown>),
-      toWindowsPath: (file: string) => file,
-    };
-  }
-  return loaded;
-};
 const { serve } = runtimeRequire(
   path.join(projectRoot, "src/queue-broker.js"),
 ) as {
@@ -188,6 +166,7 @@ Module._load = function(name, parent, ...rest) {
         dir,
         confirmOwnership: true,
         createBackend: () => physical,
+        nativePath: (file: string) => file,
         pollMs: 5,
         spawnWorker(exe: string, args: string[], options: SpawnOptions) {
           return spawn(exe, args, {
@@ -235,12 +214,14 @@ Module._load = function(name, parent, ...rest) {
         },
       });
       const deadline = Date.now() + localPhaseTimeoutMs + 10_000;
+      let lastResult: QueueJobResult | undefined;
       while (Date.now() < deadline) {
         const value = await request<QueueJobResult>(dir, {
           action: "result",
           auth,
           jobId: job.id,
         });
+        lastResult = value;
         if (
           ["succeeded", "failed", "needs_reconciliation", "expired"].includes(
             value.job.state,
@@ -250,7 +231,7 @@ Module._load = function(name, parent, ...rest) {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
       assert.fail(
-        `Typed catalog worker did not settle within ${localPhaseTimeoutMs} ms`,
+        `Typed catalog worker did not settle within ${localPhaseTimeoutMs} ms; physical calls=${calls}; last result=${JSON.stringify(lastResult)}`,
       );
     }
     const completed = await submit(input.argv);

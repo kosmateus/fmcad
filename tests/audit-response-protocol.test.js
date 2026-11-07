@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { AsyncLocalStorage } = require('node:async_hooks');
+const restorePlatform = require('./fixtures/fake-wsl-platform.cjs')();
+test.after(restorePlatform);
 const installation = path.resolve(__dirname, '..');
 const { createBrokerTransport } = require('../src/dist/fusion-transport/broker');
 const identity = { resolvedIdentity: { name: 'Fixture historical document', creationId: 'fixture-old-id', fileId: null } };
@@ -15,7 +17,7 @@ function summary() {
 }
 for (const mode of ['frozen-843', 'fixed', 'wrong-wire-id', 'lost-response', 'bad-facts', 'guarded-mutation', 'unbound-mutation-rejected']) {
   test('add-in/McpClient response contract with historical source comparison: ' + mode, async t => {
-    const directory = fs.mkdtempSync('/tmp/opencode/audit-id-protocol-');
+    const directory = fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'audit-id-protocol-'));
     t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
     const scope = new AsyncLocalStorage();
     const client = createBrokerTransport({ backend: 'addin', url: 'http://never-send.invalid', timeoutMs: 3000 },

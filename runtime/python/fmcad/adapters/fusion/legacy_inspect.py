@@ -1,8 +1,9 @@
+from typing import Callable, cast
 import adsk.core
 import adsk.fusion
 
 OP = "help"
-ARGS = []
+ARGS: list[str] = []
 
 USAGE = [
     "stats <doc>",
@@ -13,11 +14,11 @@ USAGE = [
 ]
 
 
-def _err(msg):
+def _err(msg: str) -> None:
     print("ERROR " + msg)
 
 
-def _design(doc_name):
+def _design(doc_name: str) -> "adsk.fusion.Design | None":
     app = adsk.core.Application.get()
     if not doc_name:
         _err("document commands require a document name")
@@ -25,7 +26,8 @@ def _design(doc_name):
     for d in app.documents:
         if d.name.lower() == doc_name.lower():
             d.activate()
-            design = adsk.fusion.Design.cast(app.activeProduct)
+            design_cast = cast("Callable[[object], adsk.fusion.Design | None]", getattr(adsk.fusion.Design, "cast"))
+            design = design_cast(app.activeProduct)
             if design is None:
                 _err("document is not a design: " + doc_name)
                 return None
@@ -35,7 +37,7 @@ def _design(doc_name):
     return None
 
 
-def cmd_stats(data, doc_name):
+def cmd_stats(data: object, doc_name: str) -> None:
     design = _design(doc_name)
     if design is None:
         return
@@ -43,19 +45,23 @@ def cmd_stats(data, doc_name):
     print("BODIES=" + str(root.bRepBodies.count) + " FEATURES=" + str(root.features.count) + " SKETCHES=" + str(root.sketches.count) + " USER_PARAMS=" + str(design.userParameters.count) + " PLANES=" + str(root.constructionPlanes.count))
     tl = design.timeline
     for i in range(tl.count):
-        item = tl.item(i)
-        if item.healthState != adsk.fusion.FeatureHealthStates.HealthyFeatureHealthState:
+        item = cast("adsk.fusion.TimelineObject | None", tl.item(i))
+        if item is None:
+            raise RuntimeError("Timeline item disappeared: " + str(i))
+        if cast(object, item.healthState) != adsk.fusion.FeatureHealthStates.HealthyFeatureHealthState:
             print("TIMELINE_ISSUE name=" + str(item.name) + " state=" + str(item.healthState) + " msg=" + str(item.errorOrWarningMessage))
     print("DONE")
 
 
-def cmd_bbox(data, doc_name):
+def cmd_bbox(data: object, doc_name: str) -> None:
     design = _design(doc_name)
     if design is None:
         return
     root = design.rootComponent
     for i in range(root.bRepBodies.count):
-        b = root.bRepBodies.item(i)
+        b = cast("adsk.fusion.BRepBody | None", root.bRepBodies.item(i))
+        if b is None:
+            raise RuntimeError("Body disappeared: " + str(i))
         bb = b.boundingBox
         mi = bb.minPoint
         ma = bb.maxPoint
@@ -65,13 +71,15 @@ def cmd_bbox(data, doc_name):
     print("DONE")
 
 
-def cmd_bodies(data, doc_name):
+def cmd_bodies(data: object, doc_name: str) -> None:
     design = _design(doc_name)
     if design is None:
         return
     root = design.rootComponent
     for i in range(root.bRepBodies.count):
-        b = root.bRepBodies.item(i)
+        b = cast("adsk.fusion.BRepBody | None", root.bRepBodies.item(i))
+        if b is None:
+            raise RuntimeError("Body disappeared: " + str(i))
         vol = 0.0
         try:
             vol = b.physicalProperties.volume * 1000.0
@@ -81,7 +89,7 @@ def cmd_bodies(data, doc_name):
     print("DONE")
 
 
-def cmd_rollback(data, doc_name, pos):
+def cmd_rollback(data: object, doc_name: str, pos: str) -> None:
     design = _design(doc_name)
     if design is None:
         return
@@ -102,7 +110,7 @@ UNITS_MAP = {
 }
 
 
-def cmd_units(data, doc_name, unit):
+def cmd_units(data: object, doc_name: str, unit: str) -> None:
     design = _design(doc_name)
     if design is None:
         return
@@ -110,23 +118,25 @@ def cmd_units(data, doc_name, unit):
     if low not in UNITS_MAP:
         _err("unsupported unit: " + unit + " (use mm, cm or in)")
         return
-    design.unitsManager.distanceDisplayUnits = UNITS_MAP[low]
-    print("UNITS distanceDisplayUnits=" + str(design.unitsManager.distanceDisplayUnits))
+    units = cast("adsk.fusion.FusionUnitsManager", design.unitsManager)
+    units.distanceDisplayUnits = cast("adsk.fusion.DistanceUnits", UNITS_MAP[low])
+    print("UNITS distanceDisplayUnits=" + str(units.distanceDisplayUnits))
     print("DONE")
 
 
-def run(_context: str):
+def run(_context: str) -> None:
     app = adsk.core.Application.get()
     data = app.data
-    if OP == "stats":
+    operation = cast(str, OP)
+    if operation == "stats":
         cmd_stats(data, ARGS[0] if len(ARGS) > 0 else "")
-    elif OP == "bbox":
+    elif operation == "bbox":
         cmd_bbox(data, ARGS[0] if len(ARGS) > 0 else "")
-    elif OP == "bodies":
+    elif operation == "bodies":
         cmd_bodies(data, ARGS[0] if len(ARGS) > 0 else "")
-    elif OP == "rollback":
+    elif operation == "rollback":
         cmd_rollback(data, ARGS[1] if len(ARGS) > 1 else "", ARGS[0])
-    elif OP == "units":
+    elif operation == "units":
         cmd_units(data, ARGS[1] if len(ARGS) > 1 else "", ARGS[0])
     else:
         for line in USAGE:

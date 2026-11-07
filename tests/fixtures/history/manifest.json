@@ -1,0 +1,20 @@
+[
+  {
+    "revision": "f7082569f9ac8c321e704175cccc6781275a0d0e",
+    "sourcePath": "packages/node-adapters/src/python/checker.ts",
+    "file": "checker-f708.ts.txt",
+    "sha256": "c5cce55256c647a6514444df852dbc246131805ac298ac241027213f9db0cf87"
+  },
+  {
+    "revision": "843ce0dc98d512f88c3c42124ad4f6909b69cc91",
+    "sourcePath": "src/queue-atomic-recovery-audit.js",
+    "file": "audit-843.js.txt",
+    "sha256": "61a644a74512701d2cb19ca807643068539c49e63bd1488cead1dcd145851e5a"
+  },
+  {
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "assets/inspect.py",
+    "file": "inspect-a262.py.txt",
+    "sha256": "0785b3c59e300ae018b3008d64ffe03e4a2ffca54c68ed3e518c8b276e2ecf2c"
+  }
+]

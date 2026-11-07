@@ -150,6 +150,49 @@ class LegacyManualContracts(unittest.TestCase):
         ns = self.load('inspect.py')
         self.assertIn('volume=0.00 mm3', self.output(ns['cmd_bodies'], None, 'Model'))
 
+    def test_inspection_matches_pre_refactor_behavior_on_the_same_sdk_scenarios(self):
+        import hashlib
+        directory = Path(__file__).resolve().parent / 'fixtures' / 'history'
+        manifest = json.loads((directory / 'manifest.json').read_text())
+        entry = next(item for item in manifest if item['file'] == 'inspect-a262.py.txt')
+        frozen = (directory / entry['file']).read_bytes()
+        self.assertEqual(hashlib.sha256(frozen).hexdigest(), entry['sha256'])
+        sources = [frozen.decode(), (directory.parents[2] / 'runtime/python/fmcad/adapters/fusion/legacy_inspect.py').read_text()]
+        cases = [
+            ('stats', ['Model'], 'DOC name=Model\nBODIES=1 FEATURES=2 SKETCHES=3 USER_PARAMS=4 PLANES=5\nDONE\n'),
+            ('bbox', ['Model'], 'DOC name=Model\nBODY name=Body min=(0.00,0.00,0.00) max=(10.00,20.00,30.00) size=(10.0 x 20.0 x 30.0) mm\nDONE\n'),
+            ('bodies', ['Model'], 'DOC name=Model\nBODY name=Body volume=6000.00 mm3 visible=True\nDONE\n'),
+            ('rollback', ['1', 'Model'], 'DOC name=Model\nROLLBACK pos=1 of 2\nDONE\n'),
+            ('rollback', ['3', 'Model'], 'DOC name=Model\nERROR rollback position out of range: 3 (valid 0..2)\n'),
+            ('units', ['cm', 'Model'], 'DOC name=Model\nUNITS distanceDisplayUnits=1\nDONE\n'),
+            ('units', ['bad', 'Model'], 'DOC name=Model\nERROR unsupported unit: bad (use mm, cm or in)\n'),
+            ('stats', ['Missing'], 'ERROR document not open: Missing\n'),
+        ]
+        for operation, args, expected in cases:
+            for revision, source in enumerate(sources):
+                with self.subTest(operation=operation, args=args, revision=revision):
+                    point = lambda x, y, z: types.SimpleNamespace(x=x, y=y, z=z)
+                    body = types.SimpleNamespace(name='Body', isVisible=True, physicalProperties=types.SimpleNamespace(volume=6), boundingBox=types.SimpleNamespace(minPoint=point(0, 0, 0), maxPoint=point(1, 2, 3)))
+                    root = types.SimpleNamespace(bRepBodies=types.SimpleNamespace(count=1, item=lambda i: body), features=types.SimpleNamespace(count=2), sketches=types.SimpleNamespace(count=3), constructionPlanes=types.SimpleNamespace(count=5))
+                    timeline = types.SimpleNamespace(count=2, markerPosition=2, item=lambda i: types.SimpleNamespace(healthState=0))
+                    units = types.SimpleNamespace(distanceDisplayUnits=0)
+                    target = types.SimpleNamespace(rootComponent=root, userParameters=types.SimpleNamespace(count=4), timeline=timeline, unitsManager=units)
+                    self.app.activeProduct = types.SimpleNamespace(name='Other document')
+                    activations = []
+                    def activate():
+                        activations.append('Model')
+                        self.app.activeProduct = target
+                        return True
+                    self.app.documents = [types.SimpleNamespace(name='Model', activate=activate)]
+                    sys.modules['adsk.fusion'].FeatureHealthStates = types.SimpleNamespace(HealthyFeatureHealthState=0)
+                    namespace = {}
+                    exec(compile(source, 'inspection-fixture.py', 'exec'), namespace)
+                    namespace['OP'], namespace['ARGS'] = operation, args
+                    self.assertEqual(self.output(namespace['run'], ''), expected)
+                    self.assertEqual(activations, [] if args == ['Missing'] else ['Model'])
+                    self.assertEqual(timeline.markerPosition, 1 if operation == 'rollback' and args[0] == '1' else 2)
+                    self.assertEqual(units.distanceDisplayUnits, 1 if operation == 'units' and args[0] == 'cm' else 0)
+
     def test_builtin_box_missing_document_is_rejected_without_active_design_fallback(self):
         class ActiveDesign:
             @property

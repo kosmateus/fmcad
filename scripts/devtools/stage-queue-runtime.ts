@@ -36,7 +36,11 @@ export function stageQueueRuntime(root: string): void {
 }
 
 export function stageQueueTestFixtures(root: string): void {
-  const names = ["closed-scratch-artifacts.cjs", "closed-epoch-successor.cjs"];
+  const names = [
+    "closed-scratch-artifacts.cjs",
+    "closed-epoch-successor.cjs",
+    "historical-module.cjs",
+  ];
   const artifacts = names.map((filename) => ({
     filename,
     bytes: fs.readFileSync(path.join(root, "dist/tests/fixtures", filename)),

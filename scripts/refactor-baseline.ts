@@ -63,6 +63,7 @@ function compare(
       if (isDeepStrictEqual(a[field], b[field])) continue;
       const allowance = allowances.find(
         (x) =>
+          field !== "sdkCalls" &&
           x.id === id &&
           x.field === field &&
           x.reason.trim() &&
@@ -269,18 +270,17 @@ async function capture(root: string): Promise<Snapshot> {
     const effects: unknown[] = [];
     let stdout = "",
       stderr = "";
-    const code = await main(["run", file, "--doc", pins.doc, "--readonly"], {
-      loadConfig: () => ({ cfg: { backend: "mcp" } }),
-      McpClient: class {
-        async callTool(request: any) {
-          effects.push({
-            featureType: request.featureType,
-            readOnly: request.object.readOnly,
-            scriptSha256: digest(request.object.script),
-          });
-          return { text: "SYNTHETIC_RUN_COMPLETE" };
-        }
+    const backend = {
+      async callTool(request: any) {
+        effects.push({
+          featureType: request.featureType,
+          readOnly: request.object.readOnly,
+          scriptSha256: digest(request.object.script),
+        });
+        return { text: "SYNTHETIC_RUN_COMPLETE" };
       },
+    };
+    const io = {
       stdout: {
         write(s: string) {
           stdout += s;
@@ -291,8 +291,34 @@ async function capture(root: string): Promise<Snapshot> {
           stderr += s;
         },
       },
-      setExitCode() {},
-    });
+    };
+    // The refactor moved execution behind a typed worker service. Keep the
+    // physical boundary fake, but execute the real service and generated program.
+    // Historical checkouts still use their original CLI injection point.
+    let code: number;
+    if (require("node:fs").existsSync(join(root, "src/cad-service.js"))) {
+      const service = require("./src/cad-service");
+      const request = service.fromParsedCommand({
+        kind: "run",
+        request: {
+          name: file,
+          args: {},
+          hasArgs: false,
+          doc: pins.doc,
+          identity: { readOnly: true },
+        },
+      });
+      code = await service.execute(request, backend, undefined, io);
+    } else {
+      code = await main(["run", file, "--doc", pins.doc, "--readonly"], {
+        loadConfig: () => ({ cfg: { backend: "mcp" } }),
+        McpClient: class {
+          callTool = backend.callTool;
+        },
+        ...io,
+        setExitCode() {},
+      });
+    }
     observations.push({
       id: "run.execute",
       dto: { code, stdout, stderr },

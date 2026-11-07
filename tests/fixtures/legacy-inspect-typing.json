@@ -1,0 +1,29 @@
+{
+  "reason": "Explicit optional SDK casts, callable Design.cast boundary, typed units manager and runtime operation selection replace untyped AST. Null SDK items still fail. Eight exact before/after SDK scenarios in manual_legacy_test.py preserve outputs, document activation and mutations; strict admission covers all five injected operations. Hashes bind only these reviewed executable definitions; further changes require review.",
+  "definitions": {
+    "_design": {
+      "before": "566de39a27df01b88380cd294eb3f7b110ef4d5cc0d8ef2e493a8aab9ac54c2a",
+      "after": "8015d02f703fc6ac4b30001cf1f832b9e5ad6cd8c1e5d1046c74713ae5988f91"
+    },
+    "cmd_stats": {
+      "before": "043d595745e7d241fedf916d2271dd775773c5ffcdf98647a610bd3fb5336d0b",
+      "after": "e0719947c25627f99bd730349354f6e7103075cce5180276ca032b4688638ba0"
+    },
+    "cmd_bbox": {
+      "before": "869703114d1a15604a122f9102950affd3bd729f771acd487b8b7da52478949f",
+      "after": "7486c4549663793f63e03d363b4f1b3cb145f0553a623f631274719525c537a5"
+    },
+    "cmd_bodies": {
+      "before": "13452ffd2a9c15a88ed28da0d0b86ff78e89ec8c3b492317be42b1bf631f874d",
+      "after": "938a4e16b0800aad7a698574baf1f670dd352c1b2be19097d8497ec7016591b0"
+    },
+    "cmd_units": {
+      "before": "75b193eb940884884e2c7680b6e69a81073387997ff20e6d035494ab4af9d915",
+      "after": "54f3a1f5c9b913e83d073aa6045d9da59b39201063a20664c2f167e1de27e603"
+    },
+    "run": {
+      "before": "6a6d9bc888b504b5ce0768cda55c1cf776534a19af4a646cce0212b70503316a",
+      "after": "f4f4676b4db28b6c6e73718900a6a23c0ecb617a0b54067e8215cd4bf618eb50"
+    }
+  }
+}

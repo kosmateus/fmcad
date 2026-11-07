@@ -20,7 +20,10 @@ test("real legacy fake-backend capture matches the frozen baseline", async () =>
   const candidate = await capture(root);
   const checkoutAllowances: Allowance[] = JSON.parse(
     readFileSync(
-      resolve(root, "tests/fixtures/refactor-baseline/checkout-allowances.json"),
+      resolve(
+        root,
+        "tests/fixtures/refactor-baseline/checkout-allowances.json",
+      ),
       "utf8",
     ),
   );
@@ -31,6 +34,17 @@ test("real legacy fake-backend capture matches the frozen baseline", async () =>
           allowance.field
         ],
       ) === JSON.stringify(allowance.after),
+  );
+  active.push(
+    ...JSON.parse(
+      readFileSync(
+        resolve(
+          root,
+          "tests/fixtures/refactor-baseline/migration-allowances.json",
+        ),
+        "utf8",
+      ),
+    ),
   );
   const result = compare(baseline, candidate, active);
   assert.deepEqual(result, {
