@@ -862,6 +862,11 @@ test(
       .click();
     await page.getByRole("option", { name: "ERROR", exact: true }).click();
     await errorLevelRequest;
+    // The ERROR row already existed before filtering. Wait for the INFO row
+    // to leave the rendered result, not merely for the request to be sent.
+    await page
+      .getByText("E2E queued task was accepted")
+      .waitFor({ state: "detached" });
     await page.getByText("E2E synthetic failure detail").waitFor();
     assert.equal(
       await page.getByText("E2E queued task was accepted").count(),

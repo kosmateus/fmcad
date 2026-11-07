@@ -9,6 +9,7 @@
   },
   "include": [
     "tests/scenarios/**/*.ts",
+    "tests/run-identity-admission.test.ts",
     "tests/broker-composition.test.ts",
     "tests/phased-queue.test.ts",
     "tests/queue-client-response-recovery.test.ts",

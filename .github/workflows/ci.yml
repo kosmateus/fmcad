@@ -32,6 +32,7 @@ jobs:
       - run: node dist/tests/scenarios/verify-api.js
       - run: npm run test:scenarios:component -- --protocol mcp --owners 2
       - run: npm run test:scenarios:component -- --protocol addin --owners 2
+      - run: npm run test:prepare-offline
       - run: npm run test:contracts
       - run: npm run test:python
 

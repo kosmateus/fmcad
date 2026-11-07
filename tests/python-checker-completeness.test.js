@@ -352,7 +352,7 @@ test("real basedpyright verifies retained origin bytes inside a transformed Addi
 
 test("prepared canonical cad-v1 receipt retains all 154 helper units, maps, bytes and both contexts without a full checker run", (t) => {
   const directory = require("node:fs").mkdtempSync(
-    "/tmp/opencode/helper-completeness-canonical-",
+    path.join(os.tmpdir(), "helper-completeness-canonical-"),
   );
   t.after(() =>
     require("node:fs").rmSync(directory, { recursive: true, force: true }),

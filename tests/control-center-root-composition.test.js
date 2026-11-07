@@ -30,7 +30,16 @@ test("installed root stages the trusted service entrypoint and verified static c
     protocolVersion: 1,
     instanceNonce: "b".repeat(64),
   });
-  assert.equal(composition.assets.length, 17);
+  assert.equal(composition.assets.length, 19);
+  for (const module of [
+    "web/agents-projects.js",
+    "contracts/project-actions.js",
+  ])
+    assert.ok(
+      composition.assets.some(
+        (asset) => asset.path === `/assets/control-center/${module}`,
+      ),
+    );
   assert.ok(composition.assets.some((asset) => asset.path === "/index.html"));
   assert.ok(
     composition.assets.some(

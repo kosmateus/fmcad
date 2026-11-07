@@ -3,6 +3,7 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import syntheticClosedScratch from "./fixtures/closed-scratch-artifacts.cjs";
 
@@ -38,7 +39,7 @@ const isolated = runtimeRequire(
   ): void;
 };
 function fixture(t: TestContext) {
-  const base = fs.mkdtempSync("/tmp/opencode/normal-epoch-admission-");
+  const base = fs.mkdtempSync(path.join(tmpdir(), "normal-epoch-admission-"));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const make = runtimeRequire(
     path.join(sourceRoot, "tests/fixtures/current-epoch-upgrade.cjs"),

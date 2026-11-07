@@ -355,6 +355,8 @@ def analysis_plan(source_units, projection_unit_ids=None, max_group_weight=75000
             }
 
     class_users = {}
+    class_patterns = {name: re.compile(r'\b' + re.escape(name) + r'\b') for name in class_owner}
+    body_class_references = {}
     weights = {profile['id']: 0 for profile in profiles if profile['role'] == 'runtime'}
     body_inventory = []
     for profile in profiles:
@@ -366,12 +368,17 @@ def analysis_plan(source_units, projection_unit_ids=None, max_group_weight=75000
                 'bodyHash', 'policy', 'weight')})
             if record['policy'] != 'projectable' or profile['id'] not in projectable_units:
                 continue
-            for name in class_owner:
-                referenced = name in record['names'] or any(
-                    re.search(r'\b' + re.escape(name) + r'\b', text)
-                    for text in record['strings'])
-                if referenced:
-                    class_users.setdefault((class_owner[name]['unitId'], name), set()).add(profile['id'])
+            references = set(record['names']).intersection(class_owner)
+            # A class identifier cannot span a newline. Joining literal strings
+            # preserves their word boundaries while avoiding a regex compilation
+            # and search for every (class, body, string) triple.
+            literals = '\n'.join(record['strings'])
+            if literals:
+                references.update(name for name, pattern in class_patterns.items()
+                                  if name not in references and pattern.search(literals))
+            body_class_references[record['id']] = references
+            for name in references:
+                class_users.setdefault((class_owner[name]['unitId'], name), set()).add(profile['id'])
 
     # Bind a complete use body to each class. The checker aggregates unused-class
     # diagnostics only after that body is analyzed in its assigned full group.
@@ -383,8 +390,7 @@ def analysis_plan(source_units, projection_unit_ids=None, max_group_weight=75000
                       for consumer in consumers
                       for record in next(profile for profile in profiles if profile['id'] == consumer)['bodyRecords']
                       if record['policy'] == 'projectable' and
-                      (name in record['names'] or any(re.search(r'\b' + re.escape(name) + r'\b', text)
-                                                        for text in record['strings']))]
+                      name in body_class_references[record['id']]]
         if candidates:
             witness = min(candidates, key=lambda item: (item['weight'], item['unitId'], item['id']))
             witnesses[name] = witness['id']

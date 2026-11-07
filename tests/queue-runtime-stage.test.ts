@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 
 const runtimeRequire = createRequire(__filename);
@@ -13,7 +14,7 @@ const { stageQueueRuntime, stageQueueTestFixtures } = runtimeRequire(
 };
 
 test("queue staging publishes exact compiler bytes and preserves unrelated files", (t) => {
-  const root = fs.mkdtempSync("/tmp/opencode/queue-emission-");
+  const root = fs.mkdtempSync(path.join(tmpdir(), "queue-emission-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const compiled = path.join(root, "dist/library-build/src");
   fs.mkdirSync(compiled, { recursive: true });
@@ -57,14 +58,14 @@ test("queue staging publishes exact compiler bytes and preserves unrelated files
 });
 
 test("missing compiler output rejects before any partial publication", (t) => {
-  const root = fs.mkdtempSync("/tmp/opencode/queue-emission-missing-");
+  const root = fs.mkdtempSync(path.join(tmpdir(), "queue-emission-missing-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   assert.throws(() => stageQueueRuntime(root));
   assert.equal(fs.existsSync(path.join(root, "src")), false);
 });
 
 test("legacy fixture consumers receive emitted CJS from canonical CTS, not handwritten wrappers", (t) => {
-  const root = fs.mkdtempSync("/tmp/opencode/queue-fixture-emission-");
+  const root = fs.mkdtempSync(path.join(tmpdir(), "queue-fixture-emission-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const compiled = path.join(root, "dist/tests/fixtures");
   fs.mkdirSync(compiled, { recursive: true });

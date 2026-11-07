@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
@@ -185,7 +186,7 @@ if (
         : "FAKE broker reopens owner-released normal admission, preserves history and matches lost-ACK input",
       { timeout: 30000 },
       (t) => {
-        const root = fs.mkdtempSync("/tmp/opencode/normal-epoch-broker-");
+        const root = fs.mkdtempSync(path.join(tmpdir(), "normal-epoch-broker-"));
         t.after(() => fs.rmSync(root, { recursive: true, force: true }));
         const result = spawnSync(
           process.execPath,

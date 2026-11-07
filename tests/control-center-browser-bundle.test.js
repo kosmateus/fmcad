@@ -509,7 +509,16 @@ test(
       runtimeBuild.fingerprint,
     );
     const assets = installedResolver.loadConsoleHttpAssets(installedDist);
-    assert.equal(assets.length, 17);
+    assert.equal(assets.length, 19);
+    for (const module of [
+      "web/agents-projects.js",
+      "contracts/project-actions.js",
+    ])
+      assert.ok(
+        assets.some(
+          (asset) => asset.path === `/assets/control-center/${module}`,
+        ),
+      );
     checkBrowserEsmGraph(path.join(installedDist, "assets/control-center"));
 
     const port = await availablePort();

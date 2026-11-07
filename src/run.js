@@ -41,8 +41,8 @@ function prepareRunScript(name, args, hasArgs, docName, identity = {}, helperVer
       pythonLiteral,
     prepare: preparePythonArtifact,
     runtime: version => version ? cadBundleUnits(resolveRuntimePaths({ anchor: __filename }).installation) :
-      [{ id: 'identity', filename: 'assets/cad/identity.py',
-        source: fs.readFileSync(path.join(resolveRuntimePaths({ anchor: __filename }).assets, 'cad', 'identity.py'), 'utf8'), role: 'runtime' }],
+      [{ id: 'identity', filename: 'runtime/python/fmcad/adapters/fusion/identity.py',
+        source: fs.readFileSync(path.join(resolveRuntimePaths({ anchor: __filename }).runtime, 'fmcad', 'adapters', 'fusion', 'identity.py'), 'utf8'), role: 'runtime' }],
   }, options.trustedStageContext);
 }
 
