@@ -164,11 +164,11 @@ close/reopen, both transports and cleanup ownership.
 | 6 — Control Center and packaging | Remaining system/global controls; real telemetry/history; agents/projects; retention; demo/TUI retirement; translations and assets                              | 1 and stable broker contracts from 2/4                                  | Chromium against real SQLite/broker composition; no console/resource errors; packaged installation; disposal/localization checks and runtime cost measurements          |
 | 7 — final native qualification   | Installed package; both transports; full live profile; restart/lost reply; saved fixtures; native geometry/motion and UI                                        | Offline refactor complete; access to Fusion and dedicated test fixtures | SHA, Fusion/API versions, inputs/assertions, receipts and cleanup recorded; every required case passes. Blocked/unsupported/not-run is never counted as pass            |
 
-The current safe delivery covers [document commands](REFACTOR_STAGE_3B.md):
-planes, component hierarchy, units and their shared selection guard. Each delivery
-combines the relevant runtime migration with historical comparisons and model scenarios. Continue with the next contract
-family and its migration after this delivery passes CI. Native availability is
-not a reason to stop the mock-backed refactor.
+Completed backend and runtime deliveries are recorded below. Each delivery
+combines its migration with historical comparisons and relevant model scenarios.
+Continue with historical batch-binding compatibility, the next model capability
+and the remaining service families. Native availability is not a reason to stop
+the mock-backed refactor.
 
 Stage 1 came first because unchecked inspection typing, inaccessible historical
 commits in fresh checkouts and incomplete browser coverage made further changes
@@ -281,10 +281,10 @@ CI. This is an initial coverage repair, not completion of the full method/Beads
 inventory.
 
 PR #10 (ambiguous component selection) is merged into `main` after all 18 CI jobs
-passed. PR #11's native-timeout test failed once; its unchanged job is being
-rechecked. The test also exists before the refactor, but the failed run did not
-retain enough job/trace evidence to attribute the timeout. Do not call that
-failure resolved solely from another successful run.
+passed. PR #11's native-timeout test failed once and then passed on an unchanged
+rerun. The test also exists before the refactor, but the failed run did not retain
+enough job/trace evidence to attribute the timeout. Later diagnostics improve
+future evidence; they do not explain the original failure.
 
 [Stage 4g](REFACTOR_STAGE_4G.md) migrates the document-publication adapter. Paired
 tests retain exact stage binding, saved-file identity, acceptance/publication
@@ -314,3 +314,10 @@ after their full 20-job CI runs passed.
 inherited first-result parsing defect in all four atomic phases. Shared historical
 tests justify rejection before submission and unknown outcomes after submission;
 they retain exact physical call counts and ordinary completion behavior.
+
+[Stage 4j](REFACTOR_STAGE_4J.md) migrates batch services and repairs installed
+journal declarations. It also records an existing compatibility gap between
+historical null-selector batch bindings and omitted selectors in typed requests.
+The current behavior safely refuses reuse without SDK calls. Completing that
+compatibility requires exact request/owner checks and explicit historical tests;
+do not relax the hash guard or start a fresh mutation to make replay pass.

@@ -129,6 +129,8 @@ test(
       "dist/src/dist/composition/cad-execution.js",
       "dist/src/dist/composition/document-publication.js",
       "dist/src/dist/composition/batch-atomic.js",
+      "dist/src/dist/composition/batch.js",
+      "dist/src/dist/node-adapters/persistence/batch-journal.js",
       "dist/src/dist/node-adapters/persistence/operation-journal.js",
       "dist/src/dist/python/document-probe.js",
       "dist/src/dist/fusion-transport/addin-capabilities.js",
@@ -217,6 +219,8 @@ test(
       "composition/cad-execution.d.ts",
       "composition/document-publication.d.ts",
       "composition/batch-atomic.d.ts",
+      "composition/batch.d.ts",
+      "node-adapters/persistence/batch-journal.d.ts",
       "node-adapters/persistence/operation-journal.d.ts",
     ]) {
       assert.doesNotMatch(

@@ -52,11 +52,13 @@ export interface BatchServices {
   catalog: BatchCatalog;
   isLocal(operation: string): boolean;
   local(operation: string, data: CadData): CadOutput;
-  execute(
-    operation: string,
-    data: CadData,
-    context: CadContext,
-  ): Promise<CadOutput>;
+  execute:
+    | ((
+        operation: string,
+        data: CadData,
+        context: CadContext,
+      ) => Promise<CadOutput>)
+    | undefined;
   atomic(
     data: CadData,
     context: CadContext,

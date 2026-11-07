@@ -151,7 +151,7 @@ export function stageCore(root: string, identityOnly = false): void {
       for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
         const file = path.join(directory, entry.name);
         if (entry.isDirectory()) rewrite(file);
-        else if (entry.isFile() && entry.name.endsWith(".js")) {
+        else if (entry.isFile() && /\.(js|d\.ts)$/.test(entry.name)) {
           const core = path
             .relative(directory, path.join(root, "src/dist/core"))
             .split(path.sep)
@@ -160,7 +160,8 @@ export function stageCore(root: string, identityOnly = false): void {
             file,
             fs
               .readFileSync(file, "utf8")
-              .replaceAll('require("@fmcad/core")', `require("${core}")`),
+              .replaceAll('"@fmcad/core"', `"${core}"`)
+              .replace(/"(?:\.\.\/)+core\/src(?=[/\"])/g, `"${core}`),
           );
         }
       }
