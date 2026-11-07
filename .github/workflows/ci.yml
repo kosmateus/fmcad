@@ -95,7 +95,7 @@ jobs:
       fail-fast: false
       matrix:
         protocol: [mcp, addin]
-        suite: [foundation, saved, parameters]
+        suite: [foundation, saved, parameters, documents]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

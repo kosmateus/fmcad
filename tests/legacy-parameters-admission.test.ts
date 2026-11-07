@@ -30,9 +30,9 @@ test(
       ["param_delete", ["newWidth", "Model"]],
     ] as const) {
       const artifact = prepareOpScript(operation, args);
-      assert.equal(artifact.units.length, 1);
+      assert.equal(artifact.units.length, 2);
       assert.equal(
-        artifact.units[0]?.filename,
+        artifact.units[1]?.filename,
         "runtime/python/fmcad/adapters/fusion/legacy_parameters.py",
       );
       assert.doesNotMatch(artifact.script, /def cmd_file_delete/);

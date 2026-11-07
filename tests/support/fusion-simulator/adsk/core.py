@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+import math
 from typing import ClassVar, Generic, TypeVar
 from uuid import uuid4
 
@@ -24,6 +25,65 @@ class Collection(Generic[T]):
 
 
 class Base:
+    pass
+
+
+class Point3D(Base):
+    def __init__(self, x: float, y: float, z: float) -> None:
+        if not all(math.isfinite(v) for v in (x, y, z)):
+            raise ValueError("Non-finite point")
+        self.x: float = x
+        self.y: float = y
+        self.z: float = z
+
+    @staticmethod
+    def create(x: float = 0.0, y: float = 0.0, z: float = 0.0) -> Point3D:
+        return Point3D(x, y, z)
+
+    def asArray(self) -> list[float]:
+        return [self.x, self.y, self.z]
+
+
+class Vector3D(Base):
+    def __init__(self, x: float, y: float, z: float) -> None:
+        if not all(math.isfinite(v) for v in (x, y, z)):
+            raise ValueError("Non-finite vector")
+        self.x: float = x
+        self.y: float = y
+        self.z: float = z
+
+    @staticmethod
+    def create(x: float = 0.0, y: float = 0.0, z: float = 0.0) -> Vector3D:
+        return Vector3D(x, y, z)
+
+    def asArray(self) -> list[float]:
+        return [self.x, self.y, self.z]
+
+
+class Plane(Base):
+    def __init__(self, origin: Point3D, normal: Vector3D) -> None:
+        magnitude = math.sqrt(sum(v * v for v in normal.asArray()))
+        if magnitude == 0:
+            raise ValueError("Zero plane normal")
+        self.origin: Point3D = Point3D(origin.x, origin.y, origin.z)
+        self.normal: Vector3D = Vector3D(normal.x / magnitude, normal.y / magnitude, normal.z / magnitude)
+
+    @staticmethod
+    def create(origin: Point3D, normal: Vector3D) -> Plane:
+        return Plane(origin, normal)
+
+
+class Matrix3D(Base):
+    @staticmethod
+    def create() -> Matrix3D:
+        return Matrix3D()
+
+    def asArray(self) -> list[float]:
+        # Only the identity placement used by comp_add is implemented.
+        return [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.]
+
+
+class UnitsManager(Base):
     pass
 
 
@@ -268,7 +328,7 @@ class Application(Base):
     _instance: ClassVar[Application | None] = None
 
     def __init__(self) -> None:
-        self.version: str = "fmcad-simulator-v3-not-Fusion"
+        self.version: str = "fmcad-simulator-v4-not-Fusion"
         self.activeDocument: Document | None = None
         self.documents: Documents = Documents(self)
         self.userInterface: UserInterface = UserInterface()

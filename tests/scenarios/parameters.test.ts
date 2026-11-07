@@ -21,10 +21,19 @@ const historical = fs.readFileSync(
   path.join(root, "tests/fixtures/history/parameters-a26222f.py.txt"),
   "utf8",
 );
-const current = fs.readFileSync(
-  path.join(root, "runtime/python/fmcad/adapters/fusion/legacy_parameters.py"),
-  "utf8",
-);
+const current =
+  fs.readFileSync(
+    path.join(root, "runtime/python/fmcad/adapters/fusion/legacy_document.py"),
+    "utf8",
+  ) +
+  "\n" +
+  fs.readFileSync(
+    path.join(
+      root,
+      "runtime/python/fmcad/adapters/fusion/legacy_parameters.py",
+    ),
+    "utf8",
+  );
 
 for (const protocol of ["mcp", "addin"] as const) {
   for (const concurrency of [1, 2, 10]) {

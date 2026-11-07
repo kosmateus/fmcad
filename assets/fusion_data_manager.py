@@ -1,5 +1,4 @@
 import adsk.core
-import adsk.fusion
 import json
 
 OP = "help"
@@ -19,12 +18,6 @@ USAGE = [
     "file_editability",
     "file_editability_list [project]",
     "tree <project> [folder_path]",
-    "plane_list",
-    "plane_add <name> offset <ref> <distance>",
-    "plane_add <name> mid <ref1> <ref2>",
-    "plane_add <name> angle <ref> <axis> <angle>",
-    "plane_rename <name> <new_name>",
-    "plane_delete <name>",
 ]
 
 
@@ -366,151 +359,6 @@ def cmd_tree(data, project_name, path):
     print("DONE")
 
 
-def _design(doc_name):
-    app = adsk.core.Application.get()
-    if not doc_name:
-        _err("document commands require a document name")
-        return None
-    for d in app.documents:
-        if d.name.lower() == doc_name.lower():
-            d.activate()
-            design = adsk.fusion.Design.cast(app.activeProduct)
-            if design is None:
-                _err("document is not a design: " + doc_name)
-                return None
-            print("DOC name=" + d.name)
-            return design
-    _err("document not open: " + doc_name)
-    return None
-
-
-def _root(doc_name):
-    design = _design(doc_name)
-    if design is None:
-        return None
-    return design.rootComponent
-
-
-def _find_plane(root, name):
-    for p in root.constructionPlanes:
-        if p.name == name:
-            return p
-    return None
-
-
-def _resolve_plane_ref(root, ref):
-    low = ref.lower()
-    if low == "xy":
-        return root.xYConstructionPlane
-    if low == "xz":
-        return root.xZConstructionPlane
-    if low == "yz":
-        return root.yZConstructionPlane
-    return _find_plane(root, ref)
-
-
-def _resolve_axis(root, axis):
-    low = axis.lower()
-    if low == "x":
-        return root.xConstructionAxis
-    if low == "y":
-        return root.yConstructionAxis
-    if low == "z":
-        return root.zConstructionAxis
-    return None
-
-
-def cmd_plane_list(data, doc_name):
-    root = _root(doc_name)
-    if root is None:
-        return
-    for p in root.constructionPlanes:
-        print("PLANE name=" + p.name)
-    print("DONE")
-
-
-def cmd_plane_add(data, doc_name, name, mode, mode_args):
-    root = _root(doc_name)
-    if root is None:
-        return
-    if _find_plane(root, name) is not None:
-        print("EXISTS name=" + name)
-        print("DONE")
-        return
-    inp = root.constructionPlanes.createInput()
-    ok = False
-    if mode == "offset":
-        if len(mode_args) < 2:
-            _err("plane_add offset needs <ref> <distance>")
-            return
-        ref = _resolve_plane_ref(root, mode_args[0])
-        if ref is None:
-            _err("plane ref not found: " + mode_args[0])
-            return
-        ok = inp.setByOffset(ref, adsk.core.ValueInput.createByString(mode_args[1]))
-    elif mode == "mid":
-        if len(mode_args) < 2:
-            _err("plane_add mid needs <ref1> <ref2>")
-            return
-        a = _resolve_plane_ref(root, mode_args[0])
-        b = _resolve_plane_ref(root, mode_args[1])
-        if a is None or b is None:
-            _err("plane ref not found")
-            return
-        ok = inp.setByTwoPlanes(a, b)
-    elif mode == "angle":
-        if len(mode_args) < 3:
-            _err("plane_add angle needs <ref> <axis> <angle>")
-            return
-        ref = _resolve_plane_ref(root, mode_args[0])
-        axis = _resolve_axis(root, mode_args[1])
-        if ref is None or axis is None:
-            _err("plane ref or axis not found")
-            return
-        ok = inp.setByAngle(axis, adsk.core.ValueInput.createByString(mode_args[2]), ref)
-    else:
-        _err("unknown plane mode: " + mode)
-        return
-    if not ok:
-        _err("plane_add definition failed")
-        return
-    p = root.constructionPlanes.add(inp)
-    if p is None:
-        _err("plane_add " + name)
-        return
-    p.name = name
-    print("CREATED_PLANE name=" + p.name)
-    print("DONE")
-
-
-def cmd_plane_rename(data, doc_name, name, new_name):
-    root = _root(doc_name)
-    if root is None:
-        return
-    p = _find_plane(root, name)
-    if p is None:
-        _err("plane not found: " + name)
-        return
-    p.name = new_name
-    print("RENAMED_PLANE new=" + p.name)
-    print("DONE")
-
-
-def cmd_plane_delete(data, doc_name, name):
-    root = _root(doc_name)
-    if root is None:
-        return
-    p = _find_plane(root, name)
-    if p is None:
-        _err("plane not found: " + name)
-        return
-    if p.deleteMe():
-        print("DELETED_PLANE name=" + name)
-    else:
-        _err("plane_delete " + name)
-    print("DONE")
-
-
 def run(_context: str):
     app = adsk.core.Application.get()
     data = app.data
@@ -547,16 +395,6 @@ def run(_context: str):
         cmd_file_editability_list(data, ARGS[0] if ARGS else None)
     elif OP == "tree":
         cmd_tree(data, ARGS[0], ARGS[1] if len(ARGS) > 1 else "")
-    elif OP == "plane_list":
-        cmd_plane_list(data, ARGS[0] if len(ARGS) > 0 else "")
-    elif OP == "plane_add":
-        doc = ARGS[len(ARGS) - 1]
-        mode_args = ARGS[2:-1]
-        cmd_plane_add(data, doc, ARGS[0], ARGS[1], mode_args)
-    elif OP == "plane_rename":
-        cmd_plane_rename(data, ARGS[2] if len(ARGS) > 2 else "", ARGS[0], ARGS[1])
-    elif OP == "plane_delete":
-        cmd_plane_delete(data, ARGS[1] if len(ARGS) > 1 else "", ARGS[0])
     else:
         for line in USAGE:
             print("USAGE " + line)

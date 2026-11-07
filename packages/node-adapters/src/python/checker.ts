@@ -1013,7 +1013,9 @@ export function createPythonChecker(
         }
         if (!projection && analysisPlan.groups.length > 1) {
           if (temporaryDirectory) {
-            await rm(temporaryDirectory, { recursive: true, force: true });
+            await rm(temporaryDirectory, {
+              recursive: true, force: true, maxRetries: 3, retryDelay: 50,
+            });
             temporaryDirectory = undefined;
             directory = undefined;
           }
@@ -1512,7 +1514,9 @@ export function createPythonChecker(
         return report("tool_error");
       } finally {
         if (temporaryDirectory)
-          await rm(temporaryDirectory, { recursive: true, force: true });
+          await rm(temporaryDirectory, {
+              recursive: true, force: true, maxRetries: 3, retryDelay: 50,
+            });
       }
   };
   return {

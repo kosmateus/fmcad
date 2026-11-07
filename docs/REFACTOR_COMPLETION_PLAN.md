@@ -6,9 +6,9 @@ removed; neither its implementation nor its tests will be restored.
 
 Stage 1 and stage 2a are merged into `main`. Their evidence is recorded in
 [stage 1](REFACTOR_STAGE_1.md) and [stage 2a](REFACTOR_STAGE_2A.md).
-Saved-file support and cleanup recovery are implemented in
+Saved-file support and cleanup recovery were merged in PR #3; see
 [stage 2b](REFACTOR_STAGE_2B.md).
-The next delivery covers [parameter commands and contracts](REFACTOR_STAGE_3A.md),
+PR #4 merged [parameter commands and contracts](REFACTOR_STAGE_3A.md),
 including inherited document-selection and deletion-reporting defects.
 
 ## Delivery order
@@ -157,15 +157,16 @@ close/reopen, both transports and cleanup ownership.
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1 — completed                    | Portable historical fixtures, exact baseline exceptions, strict inspection, broker regressions, restored translations, browser checks and API download handling | Archive and current repository                                          | Full CI passed for the same SHA on Node 22.13/24, Python, Chromium and both transports; merged in PR #1                                                                 |
 | 2a — completed                   | Immutable document ownership, request-bound receipts, deferred cleanup without replay, duplicate-name and activation fixes                                      | 1                                                                       | Paired historical cases, fault injection, full CI and both broker profiles; merged in PR #2                                                                             |
-| 2b — implemented                 | Saved-file model and shared lifecycle; exact file/version ownership; async completion; close/delete/absence; recovery; foreign file preservation                | 2a and pinned Autodesk definitions                                      | Fault injection at every lifecycle boundary; no retained owned files after settled cleanup; other files unchanged; both protocols and configurable concurrency          |
+| 2b — completed                   | Saved-file model and shared lifecycle; exact file/version ownership; async completion; close/delete/absence; recovery; foreign file preservation                | 2a and pinned Autodesk definitions                                      | Fault injection at every lifecycle boundary; no retained owned files after settled cleanup; other files unchanged; both protocols and configurable concurrency          |
 | 3 — backend contracts            | Extend the model and shared scenarios using the historical/later assertion inventory                                                                            | 2b for saved fixtures; each capability may proceed independently        | Every declared capability has matching shared steps and expected results; negative tests; explicit native assumptions. Native execution is deferred to 7                |
 | 4 — remaining runtime migration  | Remaining service/entrypoint/adapter JavaScript and Python families; transitional facades; core/ports/adapters boundaries; defects in already migrated code     | 1, 2 and the relevant contract from 3                                   | Small family-sized deliveries, strict types without admission bypasses, CLI/SDK/receipt parity, installed-package tests, no obsolete execution path                     |
 | 5 — coverage and Beads           | Inventory all methods/tests; register later suites; reconcile `69j`, `cb4`, `e4m` and duplicates                                                                | 2–4; inventory work can proceed earlier                                 | Each method has effects/readback and negative coverage or a documented gap. `all` includes every required supported profile. Native tasks remain awaiting qualification |
 | 6 — Control Center and packaging | Remaining system/global controls; real telemetry/history; agents/projects; retention; demo/TUI retirement; translations and assets                              | 1 and stable broker contracts from 2/4                                  | Chromium against real SQLite/broker composition; no console/resource errors; packaged installation; disposal/localization checks and runtime cost measurements          |
 | 7 — final native qualification   | Installed package; both transports; full live profile; restart/lost reply; saved fixtures; native geometry/motion and UI                                        | Offline refactor complete; access to Fusion and dedicated test fixtures | SHA, Fusion/API versions, inputs/assertions, receipts and cleanup recorded; every required case passes. Blocked/unsupported/not-run is never counted as pass            |
 
-The current safe delivery combines saved-file lifecycle, fault injection and the
-model operations required by those scenarios. Continue with the next contract
+The current safe delivery covers [document commands](REFACTOR_STAGE_3B.md):
+planes, component hierarchy, units and their shared selection guard. Each delivery
+combines the relevant runtime migration with historical comparisons and model scenarios. Continue with the next contract
 family and its migration after this delivery passes CI. Native availability is
 not a reason to stop the mock-backed refactor.
 
