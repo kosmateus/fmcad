@@ -8,6 +8,8 @@ Stage 1 and stage 2a are merged into `main`. Their evidence is recorded in
 [stage 1](REFACTOR_STAGE_1.md) and [stage 2a](REFACTOR_STAGE_2A.md).
 Saved-file support and cleanup recovery are implemented in
 [stage 2b](REFACTOR_STAGE_2B.md).
+The next delivery covers [parameter commands and contracts](REFACTOR_STAGE_3A.md),
+including inherited document-selection and deletion-reporting defects.
 
 ## Delivery order
 

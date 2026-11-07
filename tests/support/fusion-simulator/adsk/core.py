@@ -268,11 +268,15 @@ class Application(Base):
     _instance: ClassVar[Application | None] = None
 
     def __init__(self) -> None:
-        self.version: str = "fmcad-simulator-v2-not-Fusion"
+        self.version: str = "fmcad-simulator-v3-not-Fusion"
         self.activeDocument: Document | None = None
         self.documents: Documents = Documents(self)
         self.userInterface: UserInterface = UserInterface()
         self.data: Data = Data(self)
+
+    @property
+    def activeProduct(self) -> Product | None:
+        return self.activeDocument.products.product if self.activeDocument is not None else None
 
     @staticmethod
     def get() -> Application:

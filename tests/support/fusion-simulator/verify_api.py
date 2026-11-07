@@ -14,9 +14,17 @@ METHODS: dict[str, dict[str, list[str]]] = {
              "Products": ["itemByProductType"], "ValueInput": ["createByString", "createByReal"],
              "Data": ["findFileById"], "DataProjects": ["itemById"], "DataFolders": ["itemById", "add"],
              "DataFiles": ["itemById"], "DataFile": ["deleteMe"]},
-    "fusion": {"UserParameters": ["add", "itemByName"], "ExportManager": ["createFusionArchiveExportOptions", "execute"],
+    "fusion": {"UserParameter": ["deleteMe"], "UserParameters": ["add", "itemByName"], "ExportManager": ["createFusionArchiveExportOptions", "execute"],
                "Design": ["cast"]},
 }
+
+PARAMETER_PROPERTIES = ["name", "expression", "value", "unit", "comment"]
+
+
+def property_accessors(file: Path, cls: str, name: str) -> list[ast.FunctionDef]:
+    tree = ast.parse(file.read_text(encoding="utf-8"))
+    definition = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == cls)
+    return [node for node in definition.body if isinstance(node, ast.FunctionDef) and node.name == name]
 
 
 def methods(file: Path) -> dict[str, dict[str, ast.FunctionDef]]:
@@ -41,7 +49,14 @@ def main(snapshot: Path) -> None:
                 if shape(expected) != shape(actual):
                     raise ValueError(f"Call shape differs: {module}.{cls}.{name}: {shape(expected)} != {shape(actual)}")
                 supported += 1
-    print(f"Verified {supported} supported method call shapes against {snapshot.name}; behavior still requires live qualification")
+    accessors = 0
+    for name in PARAMETER_PROPERTIES:
+        expected = property_accessors(snapshot / "adsk/fusion.py", "Parameter", name)
+        actual = property_accessors(Path(__file__).parent / "adsk/fusion.py", "UserParameter", name)
+        if not actual or [shape(fn) for fn in actual] != [shape(fn) for fn in expected]:
+            raise ValueError("Parameter property accessor differs: " + name)
+        accessors += len(actual)
+    print(f"Verified {supported} method and {accessors} property accessor shapes against {snapshot.name}; behavior still requires live qualification")
 
 
 if __name__ == "__main__":

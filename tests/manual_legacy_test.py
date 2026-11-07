@@ -26,7 +26,9 @@ class LegacyManualContracts(unittest.TestCase):
 
     def load(self, name):
         namespace = {'__name__': 'offline_legacy_manual'}
-        file = Path(__file__).resolve().parents[1] / 'assets' / name
+        root = Path(__file__).resolve().parents[1]
+        file = (root / 'runtime/python/fmcad/adapters/fusion/legacy_parameters.py'
+                if name == 'legacy_parameters.py' else root / 'assets' / name)
         exec(compile(file.read_text(), str(file), 'exec'), namespace)
         return namespace
 
@@ -45,8 +47,10 @@ class LegacyManualContracts(unittest.TestCase):
                 return types.SimpleNamespace(name=name, expression=expression, unit=unit)
 
         self.app.activeProduct = types.SimpleNamespace(userParameters=Parameters())
-        self.app.documents = [types.SimpleNamespace(name='Model', activate=lambda: True)]
-        ns = self.load('fusion_data_manager.py')
+        doc = types.SimpleNamespace(name='Model', creationId='owned', activate=lambda: True)
+        self.app.documents = [doc]
+        self.app.activeDocument = doc
+        ns = self.load('legacy_parameters.py')
         ns['OP'], ns['ARGS'] = 'param_add', ['wall', '3 mm', '', '', 'Model']
         self.assertIn('CREATED_PARAM', self.output(ns['run'], ''))
         self.assertEqual(made, [('wall', '3 mm', 'mm', '')])

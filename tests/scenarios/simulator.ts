@@ -112,6 +112,8 @@ export const simulatorCapabilities = new Set([
   "literal-length-parameters",
   "fixture-export",
   "saved-fixtures",
+  "parameter-crud",
+  "parameter-expressions",
 ]);
 export const simulatorFolder = Object.freeze({
   projectId: "sim-project:fixtures",

@@ -11,6 +11,7 @@ import {
 } from "./simulator";
 import { QueueScenarioBackend } from "./queue-backend";
 import { foundationScenarios, savedScenarios } from "./cases";
+import { parameterScenarios } from "./parameter-cases";
 import { runScenarios, resumeCleanup } from "./runner";
 import { concurrencyLimit, defaultConcurrency, sourceHash } from "./scheduling";
 import type { FixtureFolder, Protocol, ScenarioBackend } from "./contracts";
@@ -27,7 +28,7 @@ interface Options {
   concurrency: number;
   owners: number;
   run: boolean;
-  suite: "foundation" | "saved" | "all";
+  suite: "foundation" | "saved" | "parameters" | "all";
   folder?: FixtureFolder;
   cleanup?: string;
 }
@@ -63,7 +64,10 @@ export function parse(argv: string[]): Options {
       protocol = value;
     else if (
       flag === "--suite" &&
-      (value === "foundation" || value === "saved" || value === "all")
+      (value === "foundation" ||
+        value === "saved" ||
+        value === "parameters" ||
+        value === "all")
     )
       suite = value;
     else if (flag === "--project-id" && value && !value.startsWith("--"))
@@ -272,11 +276,16 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       reports = await runScenarios(
         backend,
         [
-          ...(options.suite !== "saved"
+          ...(options.suite === "foundation" || options.suite === "all"
             ? foundationScenarios(options.owners)
             : []),
-          ...(options.suite !== "foundation" && options.folder
+          ...((options.suite === "saved" || options.suite === "all") &&
+          options.folder
             ? savedScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "parameters" || options.suite === "all") &&
+          options.folder
+            ? parameterScenarios(options.folder)
             : []),
         ],
         output,
