@@ -7,6 +7,8 @@ const { spawnSync } = require('node:child_process');
 const { prepare, offlineResult, transform, multiply, inverse, csv, descriptors } = require('../src/data-import');
 const { buildCadScript, executeCad } = require('../src/cad');
 const { main } = require('../src/cli');
+const restorePlatform = require('./fixtures/fake-wsl-platform.cjs')();
+test.after(restorePlatform);
 
 const base = process.env.FMCAD_DATA_IMPORT_TEST_ROOT || os.tmpdir();
 const directory = fs.mkdtempSync(path.join(base, 'data_import-'));

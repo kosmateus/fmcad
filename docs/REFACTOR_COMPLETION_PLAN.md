@@ -251,3 +251,11 @@ outcomes remain unknown; valid result shaping and one-call semantics are retaine
 PRs #8 (box geometry/rollback) and #9 (typed run preparation) are merged into
 `main`, each after a complete 18-job CI run on its current head. Later stages
 remain open until their own full CI passes.
+
+### Stage 4d: CAD artifact preparation
+
+[Stage 4d](REFACTOR_STAGE_4D.md) extracts script preparation and host path mapping
+into the typed Node adapter and composition root. Whole-artifact comparisons
+preserve the source, provenance and document binding. Remaining public dispatch
+and service implementations still need migration; this extraction does not mark
+the CAD family complete.
