@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 import hashlib
 import json
+import math
 import uuid
 from typing import TYPE_CHECKING, ClassVar
 
@@ -22,14 +23,38 @@ class ExtentDirections:
 
 
 class SketchPoint(core.Base):
-    def __init__(self, geometry: core.Point3D) -> None:
+    def __init__(self, sketch: Sketch, geometry: core.Point3D) -> None:
+        self.objectType: str = "adsk::fusion::SketchPoint"
+        self.entityToken: str = "model-sketch-point:" + str(uuid.uuid4())
+        self.parentSketch: Sketch = sketch
         self.geometry: core.Point3D = geometry
 
 
 class SketchLine(core.Base):
-    def __init__(self, start: core.Point3D, end: core.Point3D) -> None:
-        self.startSketchPoint: SketchPoint = SketchPoint(start)
-        self.endSketchPoint: SketchPoint = SketchPoint(end)
+    def __init__(self, sketch: Sketch, start: SketchPoint, end: SketchPoint) -> None:
+        self.objectType: str = "adsk::fusion::SketchLine"
+        self.entityToken: str = "model-sketch-line:" + str(uuid.uuid4())
+        self.parentSketch: Sketch = sketch
+        self.startSketchPoint: SketchPoint = start
+        self.endSketchPoint: SketchPoint = end
+
+    @property
+    def isConstruction(self) -> bool:
+        return False
+
+    @isConstruction.setter
+    def isConstruction(self, value: bool) -> None:
+        if value:
+            raise NotImplementedError("Construction-curve profile changes are not modeled")
+
+    @property
+    def isFixed(self) -> bool:
+        return False
+
+    @isFixed.setter
+    def isFixed(self, value: bool) -> None:
+        if value:
+            raise NotImplementedError("Sketch constraints are not modeled")
 
 
 class SketchLineList(core.Collection[SketchLine]):
@@ -62,13 +87,16 @@ class SketchLines(core.Collection[SketchLine]):
             raise NotImplementedError("Multiple loops and overlap solving are not modeled")
         if pointOne.z != 0 or pointTwo.z != 0:
             raise ValueError("Rectangle points must lie in the sketch plane")
+        if not all(math.isfinite(v) for p in (pointOne, pointTwo) for v in p.asArray()):
+            raise ValueError("Rectangle points must be finite")
         if pointOne.x == pointTwo.x or pointOne.y == pointTwo.y:
             raise ValueError("Degenerate rectangle")
-        points = [pointOne, core.Point3D(pointTwo.x, pointOne.y, 0),
-                  pointTwo, core.Point3D(pointOne.x, pointTwo.y, 0)]
-        lines = [SketchLine(points[i], points[(i+1) % 4]) for i in range(4)]
+        corners = [core.Point3D(pointOne.x, pointOne.y, 0), core.Point3D(pointTwo.x, pointOne.y, 0),
+                   core.Point3D(pointTwo.x, pointTwo.y, 0), core.Point3D(pointOne.x, pointTwo.y, 0)]
+        points = [SketchPoint(self.model_sketch, p) for p in corners]
+        lines = [SketchLine(self.model_sketch, points[i], points[(i+1) % 4]) for i in range(4)]
         self.values.extend(lines)
-        self.model_sketch.profiles.values.append(Profile(self.model_sketch, pointOne, pointTwo))
+        self.model_sketch.profiles.values.append(Profile(self.model_sketch, corners[0], corners[2]))
         self.model_sketch.parentComponent.model_design.model_doc.isModified = True
         return SketchLineList(lines)
 
@@ -81,10 +109,21 @@ class SketchCurves:
 class Sketch(core.Base):
     def __init__(self, component: fusion.Component, plane: fusion.ConstructionPlane) -> None:
         self.parentComponent: fusion.Component = component
+        self.objectType: str = "adsk::fusion::Sketch"
+        self.entityToken: str = "model-sketch:" + str(uuid.uuid4())
         self.model_plane: fusion.ConstructionPlane = plane
         self.name: str = "Sketch" + str(component.sketches.count + 1)
         self.profiles: Profiles = Profiles()
         self.sketchCurves: SketchCurves = SketchCurves(self)
+
+    @property
+    def healthState(self) -> int:
+        # Only a valid empty sketch or one nondegenerate literal rectangle exists.
+        return 0
+
+    @property
+    def errorOrWarningMessage(self) -> str:
+        return ""
 
 
 class Sketches(core.Collection[Sketch]):
@@ -110,6 +149,10 @@ class Sketches(core.Collection[Sketch]):
         design.timeline.values.append(fusion.TimelineObject(sketch))
         design.model_doc.isModified = True
         return sketch
+
+    def addWithoutEdges(self, planarEntity: core.Base, occurrenceForCreation: fusion.Occurrence | None = None) -> Sketch:
+        # Construction planes have no edges to project. Face support is rejected by add.
+        return self.add(planarEntity, occurrenceForCreation)
 
 
 class ExtentDefinition(core.Base):

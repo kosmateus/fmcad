@@ -5,6 +5,7 @@ from collections.abc import Iterator
 import math
 from typing import ClassVar, Generic, TypeVar
 from uuid import uuid4
+from ._expressions import Quantity, evaluate
 
 T = TypeVar("T")
 
@@ -149,7 +150,18 @@ class Matrix3D(Base):
 
 
 class UnitsManager(Base):
-    pass
+    def model_resolve(self, name: str) -> Quantity:
+        raise ValueError("Unknown parameter: " + name)
+
+    def evaluateExpression(self, expression: str, units: str = 'DefaultDistance') -> float:
+        return evaluate(expression, "" if units == "cm/cm" else units, self.model_resolve).value
+
+    def isValidExpression(self, expression: str, units: str) -> bool:
+        try:
+            _ = self.evaluateExpression(expression, units)
+            return True
+        except (ValueError, SyntaxError, ZeroDivisionError):
+            return False
 
 
 class NamedValues(Base):
@@ -409,7 +421,7 @@ class Application(Base):
     _instance: ClassVar[Application | None] = None
 
     def __init__(self) -> None:
-        self.version: str = "fmcad-simulator-v7-not-Fusion"
+        self.version: str = "fmcad-simulator-v8-not-Fusion"
         self.activeDocument: Document | None = None
         self.documents: Documents = Documents(self)
         self.userInterface: UserInterface = UserInterface()

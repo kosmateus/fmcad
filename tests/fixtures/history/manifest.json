@@ -76,5 +76,11 @@
     "sourcePath": "src/composition/stage-dependencies.js",
     "file": "stage-dependencies-b50f.js.txt",
     "sha256": "4b923dc42c63cbe8e5a609a797e036bbacb6299a1d21c12f8c77158a65d3169e"
+  },
+  {
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "assets/cad/model.py",
+    "file": "model-a262.py.txt",
+    "sha256": "42fb01425089e1af7e3a0b6d3f0dd6ce23fe3cac6cdff55f07b3ad8b367edef5"
   }
 ]
