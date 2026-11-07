@@ -222,3 +222,9 @@ shared scenario contracts; a compatibility facade alone is not a completed famil
 [Stage 3f](REFACTOR_STAGE_3F.md) fixes inherited first-match component selection.
 Duplicate parent, root and existing-component names are rejected before mutation;
 unique-name historical behavior remains covered by paired tests.
+
+
+The [live suite inventory](REFACTOR_LIVE_INVENTORY.md) classifies all 36 current
+suite/helper files, links their reference relation and records the remaining
+contracts. CI checks inventory completeness; `run-live --list` reports the gaps
+offline. Existing legacy `all` registration does not qualify concurrent isolation.

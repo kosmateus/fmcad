@@ -1,0 +1,471 @@
+{
+  "baselineCommit": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+  "entries": [
+    {
+      "id": "animation-methods",
+      "source": "tests/live-animation-methods.js",
+      "runner": "standalone",
+      "model": "native-only",
+      "scope": "Storyboard creation, animation actions and frame export",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "backend-adapter",
+      "source": "tests/live-backend-adapter.js",
+      "runner": "all",
+      "model": "pending",
+      "scope": "Backend capabilities, progress, transport limits and read-only soak",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "changed",
+        "path": "tests/live-backend-adapter.js",
+        "sha256": "a058aafa576e98d29c8af20224b4d5eb61622867a13e685e864573d7831de0d5"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "batch-reference",
+      "source": "tests/live-batch-reference.js",
+      "runner": "standalone",
+      "model": "pending",
+      "scope": "Batch reference resolution, propagation and failure stop",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "unchanged",
+        "path": "tests/live-batch-reference.js",
+        "sha256": "4da717dcf4d3718ad043dd4082377f6b54639503446301ba13a660a0fb85921f"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "cad",
+      "source": "tests/live-cad.js",
+      "runner": "all",
+      "model": "pending",
+      "scope": "Dimension regeneration, bodies, holes, patterns, fillets and checkpoints",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "unchanged",
+        "path": "tests/live-cad.js",
+        "sha256": "d628563f3cd0e5b91945ce7b870c6c0d1f1636bd5e31efbd4f02a05c9341001e"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "camera-probe",
+      "source": "tests/live-camera-probe.js",
+      "runner": "all",
+      "model": "native-only",
+      "scope": "Camera projection, orientation, capture and restoration",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "unchanged",
+        "path": "tests/live-camera-probe.js",
+        "sha256": "a1ec277be6034ced88cb5b1f3f8372a59c3fbb3857998d74939b39545bee7593"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "component-hierarchy",
+      "source": "tests/live-component-hierarchy.js",
+      "runner": "standalone",
+      "model": "pending",
+      "scope": "Nested occurrences, component lookup and transforms",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "data-import-fixed",
+      "source": "tests/live-data-import-fixed.ts",
+      "runner": "scoped",
+      "model": "pending",
+      "scope": "Source-pinned cad-v1 import in an externally owned exact scratch document",
+      "prerequisites": "Externally prepared exact document, client, runtime and Fusion version",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "data-import",
+      "source": "tests/live-data-import.ts",
+      "runner": "all",
+      "model": "pending",
+      "scope": "Versioned catalog import, replacement, lineage and native geometry",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "definitions",
+      "source": "tests/live-definitions.js",
+      "runner": "all",
+      "model": "pending",
+      "scope": "Literal definitions, idempotent run IDs and failed-check stop",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "changed",
+        "path": "tests/live-definitions.js",
+        "sha256": "68333e6b02ec2cd6fa83fd55b2b5f8923a8beb9928997a2e7c88c5cc6bc6dc01"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "design-styles",
+      "source": "tests/live-design-styles.js",
+      "runner": "standalone",
+      "model": "pending",
+      "scope": "Material/appearance editing, scope and retained design state",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "engineering-analytics",
+      "source": "tests/live-engineering-analytics.js",
+      "runner": "standalone",
+      "model": "pending",
+      "scope": "Engineering calculations with native geometry/measurement readback",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "entity-attributes",
+      "source": "tests/live-entity-attributes.js",
+      "runner": "standalone",
+      "model": "pending",
+      "scope": "Entity identity, attributes and selection behavior",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "extended",
+      "source": "tests/live-extended.js",
+      "runner": "all",
+      "model": "pending",
+      "scope": "Sweep, loft, shell, chamfer, combine, split, draft, joints and interference",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "unchanged",
+        "path": "tests/live-extended.js",
+        "sha256": "9bd480369aea6cb5ecd351bd51614f1db83532abc6f09ca5e11cd5c5ce2072c5"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "feature-modes",
+      "source": "tests/live-feature-modes.js",
+      "runner": "all",
+      "model": "pending",
+      "scope": "Extrusion, hole, sweep and loft variants; geometry and timeline health",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "unchanged",
+        "path": "tests/live-feature-modes.js",
+        "sha256": "5258a69714c8456ee399749f402488f84bd47c8317e1b5c37a8c48a936152a89"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "file-exports",
+      "source": "tests/live-file-exports.js",
+      "runner": "standalone",
+      "model": "pending",
+      "scope": "Native export artifacts, paths and file checks",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "gm07",
+      "source": "tests/live-gm07.js",
+      "runner": "standalone",
+      "model": "pending",
+      "scope": "Pinned native GM07 fixture and its geometric evidence",
+      "prerequisites": "Externally prepared exact document, client, runtime and Fusion version",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "gm12-spring",
+      "source": "tests/live-gm12-spring.js",
+      "runner": "scoped",
+      "model": "pending",
+      "scope": "Pinned spring fixture and native shape/measurement evidence",
+      "prerequisites": "Externally prepared exact document, client, runtime and Fusion version",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "import-receipts",
+      "source": "tests/live-import-receipts.ts",
+      "runner": "helper",
+      "model": "helper",
+      "scope": "Receipt parsing and owned import evidence used by import suites",
+      "prerequisites": "Caller-supplied owned request",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "joint-limits-probe",
+      "source": "tests/live-joint-limits-probe.js",
+      "runner": "all",
+      "model": "native-only",
+      "scope": "Joint limit setup, readback and pose ordering",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "unchanged",
+        "path": "tests/live-joint-limits-probe.js",
+        "sha256": "834bea7cc30a0374e82383bfd5efb0e5ad6442e9f6297450559e3e40a7516f3a"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "legacy",
+      "source": "tests/live-legacy.js",
+      "runner": "all",
+      "model": "partial",
+      "scope": "Document/parameter/plane/component CLI, units, box, rollback and exports",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "unchanged",
+        "path": "tests/live-legacy.js",
+        "sha256": "f1418bdca5c9e934eb8c82a5b0e475094a717e3c06bd111a59ca46dfc0bae960"
+      },
+      "sharedScenarios": ["foundation", "parameters", "documents", "boxes"]
+    },
+    {
+      "id": "mcp-stdio",
+      "source": "tests/live-mcp-stdio.js",
+      "runner": "all",
+      "model": "pending",
+      "scope": "Installed stdio discovery and live Fusion tool invocation",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "changed",
+        "path": "tests/live-mcp-stdio.js",
+        "sha256": "a424fa866aea3582771dc7a14e74ea0fadc82959827ce7bfea25d7f715bdd832"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "motion-animation",
+      "source": "tests/live-motion-animation.js",
+      "runner": "all",
+      "model": "native-only",
+      "scope": "Joint limits, five motion frames, storyboard and workspace restoration",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "unchanged",
+        "path": "tests/live-motion-animation.js",
+        "sha256": "21c23eccc448d90f7672dcb81a2af922ed61609a175266b74e1d0ef0a1e880fe"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "normal-multidocument",
+      "source": "tests/live-normal-multidocument.ts",
+      "runner": "standalone",
+      "model": "pending",
+      "scope": "Normal document operations with interleaving and exact document ownership",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "pose-methods",
+      "source": "tests/live-pose-methods.js",
+      "runner": "standalone",
+      "model": "native-only",
+      "scope": "Pose creation/application, capture and restoration",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "recovery-ports",
+      "source": "tests/live-recovery-ports.ts",
+      "runner": "helper",
+      "model": "helper",
+      "scope": "Shared response-loss boundary helpers for recovery tests",
+      "prerequisites": "Caller-supplied owned request",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "response-recovery",
+      "source": "tests/live-response-recovery.ts",
+      "runner": "standalone",
+      "model": "pending",
+      "scope": "Accepted response loss, original receipt recovery and no mutation replay",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "rpc-recovery",
+      "source": "tests/live-rpc-recovery.js",
+      "runner": "standalone",
+      "model": "pending",
+      "scope": "RPC reply loss, broker settlement and original result recovery",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "changed",
+        "path": "tests/live-rpc-recovery.js",
+        "sha256": "431355e8641dd8beff29a5ae48348959b1529d4959023cc17932b4e6663d03d5"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "shape-native-solids",
+      "source": "tests/live-shape-native-solids.js",
+      "runner": "standalone",
+      "model": "pending",
+      "scope": "Native solid creation and geometric properties",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "sketch-operations",
+      "source": "tests/live-sketch-operations.ts",
+      "runner": "standalone",
+      "model": "pending",
+      "scope": "Sketch creation, curves, dimensions, constraints, edits and readback",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "style-save",
+      "source": "tests/live-style-save.js",
+      "runner": "all",
+      "model": "pending",
+      "scope": "Style precedence, mass, unsaved state and local archive roundtrip",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "changed",
+        "path": "tests/live-style-save.js",
+        "sha256": "466a26f77303d206c0cd68b1aa947f17c674646aacdc366a722abdd2e40d683b"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "thicken-slot-pattern",
+      "source": "tests/live-thicken-slot-pattern.js",
+      "runner": "standalone",
+      "model": "pending",
+      "scope": "Thicken, slots and pattern geometry with rejected inputs",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "thread-method",
+      "source": "tests/live-thread-method.js",
+      "runner": "standalone",
+      "model": "pending",
+      "scope": "Thread selection, creation and native feature readback",
+      "prerequisites": "Installed matching broker and an isolated owned fixture",
+      "baseline": {
+        "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "ui-host-inspect",
+      "source": "tests/live-ui-host-inspect.js",
+      "runner": "helper",
+      "model": "helper",
+      "scope": "Windows UI inspection host helper",
+      "prerequisites": "Caller-supplied owned request",
+      "baseline": {
+        "kind": "unchanged",
+        "path": "tests/live-ui-host-inspect.js",
+        "sha256": "7a8003baefed5e9286547d703605c8a780f9b416ff9127396db00ac07525d0a9"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "ui-observed-watcher",
+      "source": "tests/live-ui-observed-watcher.js",
+      "runner": "helper",
+      "model": "helper",
+      "scope": "Observed UI watcher host helper",
+      "prerequisites": "Caller-supplied owned request",
+      "baseline": {
+        "kind": "unchanged",
+        "path": "tests/live-ui-observed-watcher.js",
+        "sha256": "e34d75ef89c9f1d21c8e229b1895883d85cb4c6336bd56763af5bbcca8d7e6da"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "ui-respond-host",
+      "source": "tests/live-ui-respond-host.js",
+      "runner": "helper",
+      "model": "helper",
+      "scope": "Windows UI response host helper",
+      "prerequisites": "Caller-supplied owned request",
+      "baseline": {
+        "kind": "unchanged",
+        "path": "tests/live-ui-respond-host.js",
+        "sha256": "deafa1eb675fccc15799cf03080691ea18a16ff1809a533fb653ada71da30c0c"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "ui-watcher-host",
+      "source": "tests/live-ui-watcher-host.js",
+      "runner": "helper",
+      "model": "helper",
+      "scope": "Windows UI watcher lifecycle host helper",
+      "prerequisites": "Caller-supplied owned request",
+      "baseline": {
+        "kind": "unchanged",
+        "path": "tests/live-ui-watcher-host.js",
+        "sha256": "0c2bc6f3912d50188d08ce3a373d07d73c566d824106d6f0c2ca326e2b95bfed"
+      },
+      "sharedScenarios": []
+    }
+  ]
+}
