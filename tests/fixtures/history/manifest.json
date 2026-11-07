@@ -82,5 +82,11 @@
     "sourcePath": "assets/cad/model.py",
     "file": "model-a262.py.txt",
     "sha256": "42fb01425089e1af7e3a0b6d3f0dd6ce23fe3cac6cdff55f07b3ad8b367edef5"
+  },
+  {
+    "revision": "2bad473b98d29486d4b21a19b0a8253d1914fb6d",
+    "sourcePath": "src/document-stages.js",
+    "file": "document-stages-2bad.js.txt",
+    "sha256": "07d9784933c98ab0c3859c2ac8cd4cbc6e6af32fe92ae469e829a25be3f45232"
   }
 ]

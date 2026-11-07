@@ -60,7 +60,9 @@
     "tests/batch-summary.test.ts",
     "tests/runtime-journal-declarations.test.ts",
     "tests/atomic-receipt-owner.test.ts",
-    "tests/core-staging.test.ts"
+    "tests/core-staging.test.ts",
+    "tests/document-stages-migration.test.ts",
+    "tests/document-stages.test.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]
 }
