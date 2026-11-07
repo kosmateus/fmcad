@@ -64,7 +64,8 @@
     "tests/document-stages-migration.test.ts",
     "tests/document-stages.test.ts",
     "tests/execution-budget.test.ts",
-    "tests/execution-budget-migration.test.ts"
+    "tests/execution-budget-migration.test.ts",
+    "tests/batch-replay-compatibility.test.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]
 }

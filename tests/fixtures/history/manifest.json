@@ -112,5 +112,17 @@
     "sourcePath": "src/request-timeout.js",
     "file": "request-timeout-abbc.js.txt",
     "sha256": "1a150d0c03796f4622c0766e1d7313221a256a01daabc1a666771de975d17553"
+  },
+  {
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "src/batch.js",
+    "file": "batch-a262.js.txt",
+    "sha256": "ba02d9bba6eed87684ea80c658afa325b9976b122491b8d3345152dd32f7e2bd"
+  },
+  {
+    "revision": "e57d3874f049c23016084d69e013b345fdf9e30a",
+    "sourcePath": "packages/core/src/application/cad/batch.ts",
+    "file": "batch-e57.ts.txt",
+    "sha256": "71661a7ded17b962e1863d6a6716c5efc9ecaafead3def58bc56e9390f3f7932"
   }
 ]

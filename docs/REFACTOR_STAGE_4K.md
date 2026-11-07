@@ -73,3 +73,6 @@ that one case uses the existing reversible fake WSL path fixture. The production
 platform guard, checker, authenticated owner and assertions are unchanged.
 The first complete Node 24 run passed 201 cases and failed only at that path
 conversion, before reaching the checker. Native qualification remains deferred.
+
+[Stage 4n](REFACTOR_STAGE_4N.md) addresses non-atomic historical selector replay.
+Atomic ownership validation introduced here remains exact.
