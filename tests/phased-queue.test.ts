@@ -1261,11 +1261,26 @@ test("a timed-out native command cannot auto-release from its script receipt; la
   const f = await fixture(t, { autoReconcile: true });
   f.declareNative();
   const a = await f.submit(f.a, "publish.py", [], { timeoutMs: 300 });
-  await until(
-    async () =>
-      (await f.result(f.a, a.id)).job.state === "needs_reconciliation",
-    "native caller timeout",
-  );
+  let last: QueueResult | undefined;
+  try {
+    await until(async () => {
+      last = await f.result(f.a, a.id);
+      return last.job.state === "needs_reconciliation";
+    }, "native caller timeout");
+  } catch (error) {
+    // Keep the evidence that distinguishes a pre-dispatch deadline from an
+    // unsettled native turn. Fixture cleanup otherwise removes these records.
+    t.diagnostic(
+      JSON.stringify({
+        checkpoint: "native caller timeout",
+        job: last?.job,
+        execution: last?.execution,
+        trace: f.trace,
+        probes: f.probeCount(),
+      }),
+    );
+    throw error;
+  }
   const probes = f.probeCount();
   const b = await f.submit(f.b, "fast.py");
   try {

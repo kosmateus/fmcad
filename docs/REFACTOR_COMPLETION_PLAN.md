@@ -273,3 +273,15 @@ missing inode-verification evidence now fails explicitly instead of masquerading
 as a missing artifact. Historical fault comparisons attribute this to the reader
 and store introduced after the pre-refactor reference. Genuine absence and all
 ownership checks retain their existing behavior.
+
+[Stage 5a](REFACTOR_STAGE_5A.md) reconciles the public helper inventory and moves
+the stale definition-mode test to the broker library boundary without changing
+its operation counts or preview expectations. Both suites now run in regression
+CI. This is an initial coverage repair, not completion of the full method/Beads
+inventory.
+
+PR #10 (ambiguous component selection) is merged into `main` after all 18 CI jobs
+passed. PR #11's native-timeout test failed once; its unchanged job is being
+rechecked. The test also exists before the refactor, but the failed run did not
+retain enough job/trace evidence to attribute the timeout. Do not call that
+failure resolved solely from another successful run.
