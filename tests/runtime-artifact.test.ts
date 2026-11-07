@@ -34,6 +34,31 @@ function readJson<T>(file: string): T {
 const projectRoot = path.resolve(__dirname, "..", "..");
 const runtimeRequire = createRequire(__filename);
 
+function assertNoEvidenceFiles(paths: string[]): void {
+  const unexpected = paths.filter((file) =>
+    /(^|\/)(\.cad|\.beads|\.development|\.cache|fixtures|reports?)(\/|$)|(^|\/)[^/]*(?:^|[-_.])report[^/]*\.[^/]+$|(^|\/)[^/]*(?:benchmark|diagnosis)[^/]*\.[^/]+$|\.py[co]$|Zone\.Identifier|(^|\/)\.env(?:\.|$)|\.pem$|\.key$|\.log$/i.test(
+      file,
+    ),
+  );
+  assert.deepEqual(
+    unexpected,
+    [],
+    "Package contains local evidence or diagnostic files",
+  );
+}
+
+test("npm package excludes local evidence without installing dependencies", () => {
+  const packages = JSON.parse(
+    execFileSync("npm", ["pack", "--dry-run", "--ignore-scripts", "--json"], {
+      cwd: projectRoot,
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    }),
+  ) as NpmPackedPackage[];
+  assert.equal(packages.length, 1);
+  assertNoEvidenceFiles(packages[0]!.files.map((file) => file.path));
+});
+
 test(
   "actual npm tarball runs CLI MCP and worker readonly outside checkout with clean Unicode HOME",
   { timeout: 120000 },
@@ -147,14 +172,7 @@ test(
           !/^(src|assets|packages|\.development|\.beads)\//.test(file.path),
       ),
     );
-    assert.ok(
-      packedPaths.every(
-        (file) =>
-          !/(^|\/)(\.cad|\.beads|\.development|\.cache|fixtures|reports?)(\/|$)|(^|\/)[^/]*(?:^|[-_.])report[^/]*\.[^/]+$|(^|\/)[^/]*(?:benchmark|diagnosis)[^/]*\.[^/]+$|\.py[co]$|Zone\.Identifier|(^|\/)\.env(?:\.|$)|\.pem$|\.key$|\.log$/i.test(
-            file,
-          ),
-      ),
-    );
+    assertNoEvidenceFiles(packedPaths);
     assert.ok(!packedPaths.includes("docs/inspection-benchmark.json"));
     assert.ok(!packedPaths.includes("docs/inspection-strict-report.json"));
     // Install actual production dependencies, not symlinks back into this checkout.
