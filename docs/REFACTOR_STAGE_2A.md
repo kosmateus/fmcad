@@ -70,6 +70,14 @@ budget nor the test's 420-second outer bound changes. Success, exact two product
 submissions and rejection of mismatched guard metadata remain mandatory; this
 does not establish a native performance qualification.
 
+The browser matrix also exposed an existing filter-test race (unchanged from
+`a80b775`): the historical agent was already visible before selecting the history
+filter. Waiting for that row did not establish that the asynchronous filtered
+response had rendered, so an immediate count sometimes still included the active
+agent. The test now observes the project-scoped presence-filter request and waits
+for the active row to detach before retaining the same zero-count assertion and
+historical-row check. No production filter or expected result changes.
+
 Run the build, lint, test typecheck, `test:regressions`, `test:scenarios:unit`,
 both component profiles, Python tests and the full CI matrix. Existing broker
 tests verify that project A can remain in offline preparation while B executes,
