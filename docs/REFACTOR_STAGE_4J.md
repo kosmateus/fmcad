@@ -48,3 +48,18 @@ also runs independently of dependency installation, with offending paths include
 in the assertion message. This permits local package validation when the offline
 installation cache is incomplete. Full installed CLI/MCP/worker checks still run
 in CI.
+
+## Incremental build correction
+
+A fresh CI checkout did not reveal that `tsc` retains outputs after a source
+rename. Reintroducing the obsolete `batch-report.js` output locally and running
+the real staging command reproduced its inclusion in `npm pack --dry-run`.
+The same additive-copy behavior existed before the batch migration; the module
+rename exposed it. This is an incremental packaging defect, not a Fusion result.
+
+Staging now prunes orphan `.ts` emissions from the compiler output and both
+runtime copies for its owned scopes. It preserves current declarations, the
+separate OpenCode build and Python typing resources. Missing source/build inputs
+fail before pruning. Two strict TypeScript tests exercise a source rename across
+the staged scopes, repeated staging, package contents and the missing-input case.
+The package exclusion rule and installed runtime checks remain unchanged.

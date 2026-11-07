@@ -64,3 +64,12 @@ Local tests do not replace those integration results: this environment lacks the
 pass before merge. Final Fusion qualification still checks actual document and
 native receipt identity. The legacy null-selector replay gap from stage 4j,
 remaining service migrations and additional mock geometry families remain open.
+# Offline fixture setup
+
+Enabling the retained stage-owner suite in CI exposed two fixture preconditions:
+its temporary parent directory did not exist on a clean runner, and its offline
+receipt-wrapper case assumed WSL path conversion. CI now creates the parent;
+that one case uses the existing reversible fake WSL path fixture. The production
+platform guard, checker, authenticated owner and assertions are unchanged.
+The first complete Node 24 run passed 201 cases and failed only at that path
+conversion, before reaching the checker. Native qualification remains deferred.
