@@ -120,6 +120,7 @@ export class ScenarioSession {
     phase: string,
     source: string,
     target: Document = this.document,
+    helpers?: "cad-v1",
   ): Promise<Record<string, unknown>> {
     this.signal?.throwIfAborted();
     if (
@@ -138,13 +139,14 @@ export class ScenarioSession {
     const owned = this.document;
     if (target.creationId !== owned.creationId || target.name !== owned.name)
       throw new Error("Target does not belong to this scenario");
-    return this.#dispatch(phase, source, owned);
+    return this.#dispatch(phase, source, owned, true, helpers);
   }
   async #dispatch(
     phase: string,
     source: string | ((requestId: string) => string),
     target?: Document,
     routeTarget = true,
+    helpers?: "cad-v1",
   ): Promise<Record<string, unknown>> {
     if (this.#uncertain)
       throw new Error(
@@ -161,6 +163,7 @@ export class ScenarioSession {
         requestId,
         source: typeof source === "string" ? source : source(requestId),
         directory: this.directory,
+        ...(helpers ? { helpers } : {}),
         ...(target && routeTarget ? { target } : {}),
       });
     } catch (error) {

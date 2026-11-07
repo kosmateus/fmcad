@@ -24,7 +24,7 @@ The fixture archive, rather than a current test result, is the provenance source
 | [`definitions`](../tests/live-definitions.js) | all | pending | changed | Literal definitions, idempotent run IDs and failed-check stop |
 | [`design-styles`](../tests/live-design-styles.js) | standalone | pending | later | Material/appearance editing, scope and retained design state |
 | [`engineering-analytics`](../tests/live-engineering-analytics.js) | standalone | pending | later | Engineering calculations with native geometry/measurement readback |
-| [`entity-attributes`](../tests/live-entity-attributes.js) | standalone | pending | later | Entity identity, attributes and selection behavior |
+| [`entity-attributes`](../tests/live-entity-attributes.js) | standalone | partial | later | Entity identity, attributes and selection behavior |
 | [`extended`](../tests/live-extended.js) | all | pending | unchanged | Sweep, loft, shell, chamfer, combine, split, draft, joints and interference |
 | [`feature-modes`](../tests/live-feature-modes.js) | all | pending | unchanged | Extrusion, hole, sweep and loft variants; geometry and timeline health |
 | [`file-exports`](../tests/live-file-exports.js) | standalone | pending | later | Native export artifacts, paths and file checks |

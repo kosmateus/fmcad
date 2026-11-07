@@ -11,6 +11,7 @@ from pathlib import Path
 
 METHODS: dict[str, dict[str, list[str]]] = {
     "core": {"BoundingBox3D": ["create"], "Point3D": ["create", "asArray"], "Vector3D": ["create", "asArray"],
+             "Attributes": ["add", "itemByName", "itemsByGroup"],
              "Plane": ["create"], "Matrix3D": ["create", "asArray"],
              "Application": ["get"], "Documents": ["add"], "Document": ["activate", "close", "saveAs", "save"],
              "Products": ["itemByProductType"], "ValueInput": ["createByString", "createByReal"],
@@ -22,11 +23,12 @@ METHODS: dict[str, dict[str, list[str]]] = {
                "ConstructionPlaneInput": ["setByOffset", "setByTwoPlanes", "setByAngle"],
                "Occurrences": ["addNewComponent"],
                "UserParameter": ["deleteMe"], "UserParameters": ["add", "itemByName"], "ExportManager": ["createFusionArchiveExportOptions", "execute"],
-               "Design": ["cast"]},
+               "Design": ["cast", "findEntityByToken"]},
 }
 
 PARAMETER_PROPERTIES = ["name", "expression", "value", "unit", "comment"]
 PROPERTIES = [("fusion", "Parameter", "fusion", "UserParameter", PARAMETER_PROPERTIES),
+              ("core", "Attribute", "core", "Attribute", ["value"]),
               ("fusion", "FusionUnitsManager", "fusion", "FusionUnitsManager", ["distanceDisplayUnits"]),
               ("core", "UnitsManager", "fusion", "FusionUnitsManager", ["defaultLengthUnits"])]
 

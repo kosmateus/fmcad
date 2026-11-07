@@ -419,6 +419,8 @@ class Component(core.Base):
         self.model_design: Design = design
         self.model_name: str | None = name
         self.model_id: str = str(uuid.uuid4())
+        self.objectType: str = "adsk::fusion::Component"
+        self.entityToken: str = "model-component:" + self.model_id
         self.occurrences: Occurrences = Occurrences(self)
         self.constructionPlanes: ConstructionPlanes = ConstructionPlanes(self)
         self.bRepBodies: BRepBodies = BRepBodies()
@@ -476,3 +478,13 @@ class Design(core.Product):
     @staticmethod
     def cast(arg: object) -> Design | None:
         return arg if isinstance(arg, Design) else None
+
+    def findEntityByToken(self, entityToken: str) -> list[core.Base]:
+        if not self.model_doc.isValid:
+            return []
+        entities: list[core.Base] = []
+        for component in self.allComponents:
+            if component.entityToken == entityToken:
+                entities.append(component)
+            entities.extend(body for body in component.bRepBodies if body.entityToken == entityToken)
+        return entities

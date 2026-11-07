@@ -1,6 +1,6 @@
 # Partial Fusion test model
 
-Model version 6 implements document identity/lifecycle, numeric user-parameter CRUD,
+Model version 7 implements document identity/lifecycle, numeric user-parameter CRUD,
 saved-file identity and deletion, and a **test state export**. The exported `.f3d` fixture contains a JSON marker
 `nativeF3d: false`; it is not a native Fusion archive and must not be imported into Fusion.
 Native export/import assertions require `native-f3d`, which this model does not advertise.
@@ -67,3 +67,12 @@ rather than silently dropping geometry from parameter-only state persistence.
 The deprecated `setDistanceExtent` method exists only to run the frozen historical
 box fixture. Shipped code uses the pinned `DistanceExtentDefinition` and
 `setOneSideExtent` interfaces, which are included in the API shape checks.
+
+Body attributes support namespaced string creation/update and exact/group lookup.
+Body/component tokens resolve only within their owning open design. Attribute
+writes affect document dirty state and conservative body/component revisions.
+The shared scenarios retain the later live suite's write/update/readback assertions;
+paired handler tests also compare the frozen pre-refactor implementation.
+Attribute persistence, proxies, split/merged topology and token lifetime after
+reopen remain unsupported. The modeled 2 MiB limit counts UTF-8 bytes; native
+encoding and boundary failure behavior still require qualification.

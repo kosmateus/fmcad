@@ -234,3 +234,10 @@ adapters and fixes inherited ambiguous response handling. Exactly one structured
 result is required; uncertain post-submit outcomes remain unknown without replay.
 The existing nested workflow test keeps its expected outcome after its stale
 request parser is repaired.
+
+### Stage 3g: body attributes and token isolation
+
+The next model increment covers namespaced body attributes through the shipped
+cad-v1 facade, plus foreign-token rejection and retained-handler parity. See
+[stage 3g](REFACTOR_STAGE_3G.md). Attribute persistence, general entity topology and
+native `shape.box` qualification remain separate work.
