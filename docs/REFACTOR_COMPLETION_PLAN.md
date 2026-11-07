@@ -198,3 +198,12 @@ have later code changes; reconcile them against source and evidence.
 
 All identifiers have the `fmcad-` prefix. This mapping retains the outstanding
 backlog while distinguishing refactor work from new features.
+
+## Current deliveries
+
+PR #4 migrated parameter commands. [Stage 3b](REFACTOR_STAGE_3B.md) covers planes,
+components and units; [stage 3c](REFACTOR_STAGE_3C.md) corrects unavailable volume
+measurements. [Stage 3d](REFACTOR_STAGE_3D.md) migrates the remaining legacy cloud
+commands and adds shared inventory scenarios. These bounded deliveries do not
+close the sketch/feature contracts, remaining JavaScript services, final coverage
+inventory, Control Center backlog or installed-package/native qualification.

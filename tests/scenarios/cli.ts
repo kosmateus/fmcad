@@ -13,6 +13,7 @@ import { QueueScenarioBackend } from "./queue-backend";
 import { foundationScenarios, savedScenarios } from "./cases";
 import { parameterScenarios } from "./parameter-cases";
 import { documentScenarios } from "./document-cases";
+import { cloudScenarios } from "./cloud-cases";
 import { runScenarios, resumeCleanup } from "./runner";
 import { concurrencyLimit, defaultConcurrency, sourceHash } from "./scheduling";
 import type { FixtureFolder, Protocol, ScenarioBackend } from "./contracts";
@@ -29,7 +30,7 @@ interface Options {
   concurrency: number;
   owners: number;
   run: boolean;
-  suite: "foundation" | "saved" | "parameters" | "documents" | "all";
+  suite: "foundation" | "saved" | "parameters" | "documents" | "cloud" | "all";
   folder?: FixtureFolder;
   cleanup?: string;
 }
@@ -69,6 +70,7 @@ export function parse(argv: string[]): Options {
         value === "saved" ||
         value === "parameters" ||
         value === "documents" ||
+        value === "cloud" ||
         value === "all")
     )
       suite = value;
@@ -292,6 +294,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           ...((options.suite === "documents" || options.suite === "all") &&
           options.folder
             ? documentScenarios(options.folder)
+            : []),
+          ...((options.suite === "cloud" || options.suite === "all") &&
+          options.folder
+            ? cloudScenarios(options.folder)
             : []),
         ],
         output,

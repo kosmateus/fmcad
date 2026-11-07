@@ -14,7 +14,7 @@ METHODS: dict[str, dict[str, list[str]]] = {
              "Plane": ["create"], "Matrix3D": ["create", "asArray"],
              "Application": ["get"], "Documents": ["add"], "Document": ["activate", "close", "saveAs", "save"],
              "Products": ["itemByProductType"], "ValueInput": ["createByString", "createByReal"],
-             "Data": ["findFileById"], "DataProjects": ["itemById"], "DataFolders": ["itemById", "add"],
+             "Data": ["findFileById"], "DataProjects": ["itemById"], "DataFolders": ["itemById", "itemByName", "add"],
              "DataFiles": ["itemById"], "DataFile": ["deleteMe"]},
     "fusion": {"ConstructionPlane": ["deleteMe"], "ConstructionPlanes": ["createInput", "add", "itemByName"],
                "ConstructionPlaneInput": ["setByOffset", "setByTwoPlanes", "setByAngle"],
@@ -57,6 +57,12 @@ def main(snapshot: Path) -> None:
                 if shape(expected) != shape(actual):
                     raise ValueError(f"Call shape differs: {module}.{cls}.{name}: {shape(expected)} != {shape(actual)}")
                 supported += 1
+    for cls in ("DataProjects", "DataFolders", "DataFiles"):
+        expected = methods(snapshot / "adsk/core.py")[cls]["asArray"]
+        actual = methods(Path(__file__).parent / "adsk/core.py")["Collection"]["asArray"]
+        if shape(expected) != shape(actual):
+            raise ValueError("Collection call shape differs: " + cls + ".asArray")
+        supported += 1
     accessors = 0
     for upstream_module, upstream_class, model_module, model_class, names in PROPERTIES:
         for name in names:

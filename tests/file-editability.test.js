@@ -1,28 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { main } = require('../src/cli');
 const { buildOpScript } = require('../src/ops');
 const { globalHelp } = require('../src/help');
-const { BrokerMcpClient } = require('../packages/node-adapters/dist/fusion-transport/mcp');
-
-async function invoke(argv, backend = 'mcp', failed = false) {
-  const calls = [];
-  let stdout = '', stderr = '', loads = 0;
-  class Client {
-    async callTool(request) {
-      calls.push(request);
-      return { text: failed ? 'ERROR file_editability getter failed' : 'DONE', failed };
-    }
-  }
-  const code = await main(argv, {
-    loadConfig: () => { loads++; return { cfg: { backend } }; },
-    McpClient: Client, AddinClient: Client,
-    stdout: { write: text => { stdout += text; } },
-    stderr: { write: text => { stderr += text; } },
-    setExitCode: () => {},
-  });
-  return { code, calls, stdout, stderr, loads };
-}
+const executeDiagnostic = require('./helpers/diagnostic-command');
+const invoke = (argv, backend = 'mcp', failed = false) => executeDiagnostic(argv, backend,
+  failed ? 'ERROR file_editability getter failed' : 'DONE');
 
 for (const backend of ['mcp', 'addin']) {
   test(`file_editability sends the generated read-only payload via ${backend}`, async () => {
@@ -75,22 +57,10 @@ test('incomplete diagnostic plus ERROR remains nonzero through MCP text parsing'
     errors: [{ getter: 'personalUseLimits.editableFiles', message: '2 : InternalValidationError : file' }] };
   const text = 'FILE_EDITABILITY ' + JSON.stringify(report) +
     '\nERROR file_editability personalUseLimits.editableFiles: 2 : InternalValidationError : file\n';
-  let calls = 0, stdout = '';
-  class Client extends BrokerMcpClient {
-    constructor(server) { super(server, { version: 'test', requestTimeout: () => 100, bridgeSource: () => '' }); }
-    async _openSession() { return 'offline'; }
-    async _post(payload) {
-      calls++;
-      return { status: 200, raw: JSON.stringify({ jsonrpc: '2.0', id: payload.id, result: { content: [{ type: 'text', text }] } }) };
-    }
-  }
-  const code = await main(['file_editability'], {
-    loadConfig: () => ({ cfg: { backend: 'mcp', url: 'http://offline.invalid/mcp' } }), McpClient: Client,
-    stdout: { write: value => { stdout += value; } },
-    stderr: { write: value => assert.fail(value) }, setExitCode: () => {},
-  });
+  const { code, calls, stdout, stderr } = await executeDiagnostic(['file_editability'], 'mcp', text);
+  assert.equal(stderr, '');
   assert.equal(code, 1);
-  assert.equal(calls, 1);
+  assert.equal(calls.length, 1);
   assert.equal(stdout, text + '\n');
   assert.doesNotMatch(stdout, /^DONE$/m);
 });
