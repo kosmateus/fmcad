@@ -34,7 +34,9 @@ class LegacyManualContracts(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         file = (root / 'runtime/python/fmcad/adapters/fusion/legacy_parameters.py'
                 if name == 'legacy_parameters.py' else root / 'assets' / name)
-        source = migrated_legacy(name) if name == 'legacy_parameters.py' else file.read_text()
+        source = (migrated_legacy(name) if name == 'legacy_parameters.py' else
+                  (root / 'runtime/python/fmcad/adapters/fusion/legacy_cloud.py').read_text()
+                  if name == 'fusion_data_manager.py' else file.read_text())
         exec(compile(source, str(file), 'exec'), namespace)
         return namespace
 
@@ -64,24 +66,46 @@ class LegacyManualContracts(unittest.TestCase):
         self.assertIn('ERROR document commands require', self.output(ns['run'], ''))
         self.assertEqual(len(made), 1)
 
-    def test_folder_delete_slash_only_path_reaches_root_despite_guard(self):
-        deleted = []
-        root = types.SimpleNamespace(deleteMe=lambda: deleted.append('root') or False)
-        project = types.SimpleNamespace(name='Project', rootFolder=root)
-        data = types.SimpleNamespace(dataProjects=types.SimpleNamespace(asArray=lambda: [project]))
-        ns = self.load('fusion_data_manager.py')
-        self.assertIn('cannot delete project root', self.output(ns['cmd_folder_delete'], data, 'Project', ''))
-        self.assertEqual(deleted, [])
-        self.assertIn('ERROR folder_delete', self.output(ns['cmd_folder_delete'], data, 'Project', '///'))
-        self.assertEqual(deleted, ['root'])
+    def cloud_revisions(self):
+        root = Path(__file__).resolve().parents[1]
+        return [(root / 'tests/fixtures/history/parameters-a26222f.py.txt').read_text(),
+                (root / 'runtime/python/fmcad/adapters/fusion/legacy_cloud.py').read_text()]
 
-    def test_file_move_ignores_false_api_result_as_documented(self):
-        file = types.SimpleNamespace(name='Part', fileExtension='f3d', id='file-id', move=lambda target: False, deleteMe=lambda: False)
-        root = types.SimpleNamespace(name='Root', dataFiles=types.SimpleNamespace(asArray=lambda: [file]))
-        project = types.SimpleNamespace(name='Project', rootFolder=root)
-        data = types.SimpleNamespace(dataProjects=types.SimpleNamespace(asArray=lambda: [project]))
-        ns = self.load('fusion_data_manager.py')
-        self.assertIn('MOVED_FILE', self.output(ns['cmd_file_move'], data, 'Project', '', 'Part', ''))
+    def test_folder_delete_rejects_all_spellings_of_project_root(self):
+        for revision, source in enumerate(self.cloud_revisions()):
+            for path in ('', '/', '///'):
+                with self.subTest(revision=revision, path=path):
+                    deleted = []
+                    root = types.SimpleNamespace(deleteMe=lambda: deleted.append('root') or False)
+                    project = types.SimpleNamespace(name='Project', rootFolder=root)
+                    data = types.SimpleNamespace(dataProjects=types.SimpleNamespace(asArray=lambda: [project]))
+                    namespace = {}
+                    exec(compile(source, 'cloud-fixture.py', 'exec'), namespace)
+                    output = self.output(namespace['cmd_folder_delete'], data, 'Project', path)
+                    self.assertEqual(deleted, ['root'] if revision == 0 and path else [])
+                    if revision == 1 or not path:
+                        self.assertIn('cannot delete project root', output)
+
+    def test_file_move_preserves_success_but_rejects_false_acceptance(self):
+        for revision, source in enumerate(self.cloud_revisions()):
+            for accepted in (True, False):
+                with self.subTest(revision=revision, accepted=accepted):
+                    calls = []
+                    def move(target):
+                        calls.append(target)
+                        return accepted
+                    file = types.SimpleNamespace(name='Part', fileExtension='f3d', id='file-id', move=move)
+                    root = types.SimpleNamespace(name='Root', dataFiles=types.SimpleNamespace(asArray=lambda: [file]))
+                    project = types.SimpleNamespace(name='Project', rootFolder=root)
+                    data = types.SimpleNamespace(dataProjects=types.SimpleNamespace(asArray=lambda: [project]))
+                    namespace = {}
+                    exec(compile(source, 'cloud-fixture.py', 'exec'), namespace)
+                    output = self.output(namespace['cmd_file_move'], data, 'Project', '', 'Part', '')
+                    self.assertEqual(calls, [root])
+                    if revision == 0 or accepted:
+                        self.assertEqual(output, 'MOVED_FILE id=file-id to=Root\nDONE\n')
+                    else:
+                        self.assertEqual(output, 'ERROR file_move returned false: Part\n')
 
     def test_file_delete_acceptance_false_and_exception_without_replay(self):
         for outcome in (True, False, RuntimeError('SDK deletion failed')):

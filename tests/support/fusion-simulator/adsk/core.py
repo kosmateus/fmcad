@@ -20,6 +20,9 @@ class Collection(Generic[T]):
     def item(self, index: int) -> T:
         return self.values[index]
 
+    def asArray(self) -> list[T]:
+        return list(self.values)
+
     def __iter__(self) -> Iterator[T]:
         return iter(self.values)
 
@@ -136,6 +139,7 @@ class DataFile(Base):
         self.id: str = id or "sim-file:" + str(uuid4())
         self.name: str = name
         self.versionNumber: int = version
+        self.fileExtension: str = "f3d"
         self.isReadOnly: bool = False
         self.isComplete: bool = False
         self.model_pending: int = folder.parentProject.data.save_delay_steps
@@ -174,26 +178,31 @@ class DataFiles(Collection[DataFile]):
 
 
 class DataFolder(Base):
-    def __init__(self, project: DataProject, name: str, id: str | None = None) -> None:
+    def __init__(self, project: DataProject, name: str, id: str | None = None, parent: DataFolder | None = None) -> None:
         self.id: str = id or "sim-folder:" + str(uuid4())
         self.name: str = name
         self.parentProject: DataProject = project
         self.dataFiles: DataFiles = DataFiles()
-        self.dataFolders: DataFolders = DataFolders(project)
+        self.parentFolder: DataFolder | None = parent
+        self.dataFolders: DataFolders = DataFolders(project, self)
 
 
 class DataFolders(Collection[DataFolder]):
-    def __init__(self, project: DataProject) -> None:
+    def __init__(self, project: DataProject, parent: DataFolder | None = None) -> None:
         super().__init__()
+        self.parent: DataFolder | None = parent
         self.project: DataProject = project
 
     def itemById(self, id: str) -> DataFolder | None:
         return next((folder for folder in self if folder.id == id), None)
 
+    def itemByName(self, name: str) -> DataFolder | None:
+        return next((folder for folder in self if folder.name == name), None)
+
     def add(self, name: str) -> DataFolder:
         if not name or any(folder.name == name for folder in self):
             raise ValueError("Invalid or duplicate folder name")
-        folder = DataFolder(self.project, name)
+        folder = DataFolder(self.project, name, parent=self.parent)
         self.values.append(folder)
         return folder
 
@@ -202,6 +211,7 @@ class DataProject(Base):
     def __init__(self, data: Data) -> None:
         self.data: Data = data
         self.id: str = "sim-project:fixtures"
+        self.name: str = "Scenario fixtures"
         self.rootFolder: DataFolder = DataFolder(self, "Scenario fixtures", "sim-folder:fixtures")
 
 
@@ -328,7 +338,7 @@ class Application(Base):
     _instance: ClassVar[Application | None] = None
 
     def __init__(self) -> None:
-        self.version: str = "fmcad-simulator-v4-not-Fusion"
+        self.version: str = "fmcad-simulator-v5-not-Fusion"
         self.activeDocument: Document | None = None
         self.documents: Documents = Documents(self)
         self.userInterface: UserInterface = UserInterface()

@@ -1,29 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { main } = require('../src/cli');
 const { buildOpScript } = require('../src/ops');
 const { globalHelp } = require('../src/help');
-const { BrokerMcpClient } = require('../packages/node-adapters/dist/fusion-transport/mcp');
-
-async function invoke(argv, backend = 'mcp', text = 'DONE') {
-  const calls = [];
-  let stdout = '', stderr = '', loads = 0;
-  class Client extends BrokerMcpClient {
-    constructor(server) { super(server, { version: 'test', requestTimeout: () => 100, bridgeSource: () => '' }); }
-    async _openSession() { return 'offline'; }
-    async _post(payload) {
-      calls.push(payload.params);
-      return { status: 200, raw: JSON.stringify({ jsonrpc: '2.0', id: payload.id, result: { content: [{ type: 'text', text }] } }) };
-    }
-  }
-  const code = await main(argv, {
-    loadConfig: () => { loads++; return { cfg: { backend, url: 'http://offline.invalid/mcp' } }; },
-    McpClient: Client, AddinClient: Client,
-    stdout: { write: value => { stdout += value; } },
-    stderr: { write: value => { stderr += value; } }, setExitCode: () => {},
-  });
-  return { code, calls, stdout, stderr, loads };
-}
+const invoke = require('./helpers/diagnostic-command');
 
 for (const backend of ['mcp', 'addin']) {
   test(`inventory requests readOnly via ${backend} with zero or one project argument`, async () => {
@@ -31,7 +10,7 @@ for (const backend of ['mcp', 'addin']) {
       const result = await invoke(['file_editability_list', ...args], backend);
       assert.equal(result.code, 0);
       assert.equal(result.calls.length, 1);
-      assert.deepEqual(result.calls[0].arguments, { featureType: 'script', object: {
+      assert.deepEqual(result.calls[0], { featureType: 'script', object: {
         script: buildOpScript('file_editability_list', args), readOnly: true,
       } });
       assert.equal(result.stderr, '');

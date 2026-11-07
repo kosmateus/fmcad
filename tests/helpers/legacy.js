@@ -126,12 +126,9 @@ async function fixture(t, respond) {
     calls = [];
   let stdout = "",
     stderr = "";
-  const previousWslDistro = process.env.WSL_DISTRO_NAME;
+  const restorePlatform = require("../fixtures/fake-wsl-platform.cjs")();
   process.env.WSL_DISTRO_NAME = "LegacyTest";
-  t.after(() => {
-    if (previousWslDistro === undefined) delete process.env.WSL_DISTRO_NAME;
-    else process.env.WSL_DISTRO_NAME = previousWslDistro;
-  });
+  t.after(restorePlatform);
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
 
   async function run(args, options = {}) {

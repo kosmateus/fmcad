@@ -1,6 +1,6 @@
 # Partial Fusion test model
 
-Model version 4 implements document identity/lifecycle, numeric user-parameter CRUD,
+Model version 5 implements document identity/lifecycle, numeric user-parameter CRUD,
 saved-file identity and deletion, and a **test state export**. The exported `.f3d` fixture contains a JSON marker
 `nativeF3d: false`; it is not a native Fusion archive and must not be imported into Fusion.
 Native export/import assertions require `native-f3d`, which this model does not advertise.
@@ -49,3 +49,9 @@ cascading deletion, nonidentity component transforms and feature rollback are
 explicitly unsupported. Geometry persistence/reopen and native F3D export are not
 implemented; saved fixtures exercise cloud ownership and cleanup, not geometry
 roundtrips. The shared document scenarios test geometry before closing the fixture.
+
+Cloud inventory adds project/folder/file enumeration, parent-folder paths and file
+extension/read-only metadata for the configured fixture project. It does not model
+project administration, file moves or personal-license quotas. Those adapters are
+covered by retained SDK fault fixtures and real Python admission, not by claims of
+cloud simulation. Cloud visibility and permission semantics need final live checks.

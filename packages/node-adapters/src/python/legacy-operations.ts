@@ -63,7 +63,7 @@ function scriptFileForOp(op: string) {
   )
     return "inspect.py";
   if (op === "upload") return "upload.py";
-  return "fusion_data_manager.py";
+  return "legacy-cloud";
 }
 
 export function prepareOpScript(op: string, args: readonly string[]) {
@@ -117,16 +117,20 @@ export function prepareOpScript(op: string, args: readonly string[]) {
     );
     return preparePythonArtifact(units, { request: { op, args } });
   }
-  const file = path.join(paths.assets, scriptFileForOp(op));
-  let code = fs.readFileSync(file, "utf8");
-  code = code.replace('OP = "help"', () => "OP = " + pythonValue(op));
-  code = code.replace("ARGS = []", () => "ARGS = " + pythonValue(args));
+  const filename = "fmcad/adapters/fusion/legacy_cloud.py";
+  const source = fs
+    .readFileSync(path.join(paths.runtime, filename), "utf8")
+    .replace('OP = "help"', () => "OP = " + pythonLiteral(op))
+    .replace(
+      "ARGS: list[str] = []",
+      () => "ARGS: list[str] = " + pythonLiteral(args),
+    );
   return preparePythonArtifact(
     [
       {
-        id: "operation",
-        filename: "assets/" + scriptFileForOp(op),
-        source: code,
+        id: "legacy-cloud",
+        filename: "runtime/python/" + filename,
+        source,
         role: "wrapper",
       },
     ],

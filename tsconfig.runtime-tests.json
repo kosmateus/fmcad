@@ -42,6 +42,7 @@
     "tests/legacy-inspect-admission.test.ts",
     "tests/legacy-parameters-admission.test.ts",
     "tests/legacy-document-admission.test.ts",
+    "tests/legacy-cloud-admission.test.ts",
     "tests/fixtures/checker-cleanup.cts",
     "tests/control-center-locales.test.ts"
   ],
