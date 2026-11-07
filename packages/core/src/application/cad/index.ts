@@ -3,6 +3,7 @@ export * from "./execute";
 export * from "./prepare";
 export * from "./input";
 export * from "./run";
+export * from "./native-result";
 export * from "./definition";
 export * from "./batch-plan";
 export * from "./batch";
