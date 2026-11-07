@@ -160,70 +160,7 @@ function dispatchCad(client, operation, data, context, entry, internal = {}) {
   return undefined;
 }
 
-const REFERENCE_READ_ACTIONS = new Set(['graph', 'preflight']);
-function buildReferencesActionScript(action, data) {
-  if (!['graph', 'preflight', 'sdkUpdate', 'nativeUpdate', 'save', 'coldVerify'].includes(action)) {
-    throw new Error('Unsupported internal references.refresh SDK action');
-  }
-  const request = pythonLiteral({ action, data });
-  return prepareCadBundle(resolveRuntimePaths({ anchor: __filename }).installation,
-    `\n\n_FMCAD_REFERENCE_REQUEST: JsonObject = ${request}\ndef run(_context: str) -> None:\n    import json\n    _request = _FMCAD_REFERENCE_REQUEST\n    _result = _references_refresh_internal(_request['action'], _request['data'])\n    print('FMCAD_RESULT ' + json.dumps(_cad_json(_result), allow_nan=False))\n`, { request: { action, data } }).script;
-}
-
-async function executeReferencesAction(client, action, data, input) {
-  if (!client) throw new Error(`references.refresh ${action} requires the selected Fusion backend`);
-  const scriptData = { ...data };
-  const nativeRpcTimeoutMs = action === 'nativeUpdate' ? scriptData.nativeRpcTimeoutMs : null;
-  delete scriptData.nativeRpcTimeoutMs;
-  const script = buildReferencesActionScript(action, scriptData);
-  const readOnly = REFERENCE_READ_ACTIONS.has(action) && (input.lifecycle ?? 'existingOnly') === 'existingOnly';
-  const server = client.server;
-  const previousTimeoutMs = server?.timeoutMs;
-  const timeoutAdjusted = Number.isFinite(nativeRpcTimeoutMs) && nativeRpcTimeoutMs > 0 &&
-    server && Number.isFinite(previousTimeoutMs);
-  if (timeoutAdjusted) server.timeoutMs = Math.min(previousTimeoutMs, nativeRpcTimeoutMs);
-  let output;
-  try {
-    output = await client.callTool({ featureType: 'script', object: { script, readOnly } });
-  } catch (error) {
-    const message = String(error?.message ?? error);
-    if (message.includes('RPC not submitted:')) return { status: 'notStarted', notStarted: true, error: message };
-    error.unknown = true;
-    throw error;
-  } finally {
-    if (timeoutAdjusted) server.timeoutMs = previousTimeoutMs;
-  }
-  if (output.uiGuard?.notStarted === true) return { status: 'blocked', notStarted: true,
-    activeCommand: output.uiGuard.activeCommand ?? null, error: output.text ?? 'Fusion command preflight rejected the script before user code.' };
-  const line = String(output.text ?? '').split(/\r?\n/).find(value => value.startsWith('FMCAD_RESULT '));
-  if (output.failed || !line) {
-    const message = String(output.text ?? '');
-    if (message.includes('RPC not submitted:')) return { status: 'notStarted', notStarted: true, error: message };
-    const error = new Error(`references.refresh ${action} failed; inspect before retry. ${message}`);
-    error.unknown = true;
-    throw error;
-  }
-  return JSON.parse(line.slice('FMCAD_RESULT '.length));
-}
-
-async function executeExternalizationAction(client, action, data, readOnly) {
-  if (!client) throw new Error('component.externalize requires the selected Fusion backend');
-  if (!['inspect','perform'].includes(action)) throw new Error('Invalid private externalization action');
-  const previous = client.server?.timeoutMs;
-  const scriptData={...data,copyRpcBudgetMs:Math.min(previous ?? 180000,data.remainingMs ?? 180000)};
-  const script = prepareCadBundle(resolveRuntimePaths({ anchor: __filename }).installation,
-    `\n_EXTERNAL_REQUEST: JsonObject = ${pythonLiteral({action,data:scriptData})}\ndef run(_context: str) -> None:\n    _result = _external_refresh_internal(_EXTERNAL_REQUEST['action'], _EXTERNAL_REQUEST['data'])\n    print('FMCAD_RESULT ' + json.dumps(_cad_json(_result), allow_nan=False))\n`, { request: { action, data: scriptData } }).script;
-  if (Number.isFinite(data.remainingMs) && data.remainingMs < 1000) return {status:'pending',
-    receipt:{cursor:0,reason:'budgetExhausted',stopReason:'budgetExhausted'},notStarted:true};
-  if (client.server && Number.isFinite(data.remainingMs)) client.server.timeoutMs = Math.min(previous ?? 180000, data.remainingMs);
-  try {
-    const output = await client.callTool({featureType:'script',object:{script,readOnly:action==='inspect' && readOnly===true}});
-    if(output.uiGuard?.notStarted)return {status:'blocked',notStarted:true,receipt:{cursor:0,reason:'interactiveCommandActive'}};
-    const line=String(output.text ?? '').split(/\r?\n/).find(row=>row.startsWith('FMCAD_RESULT '));
-    if(output.failed || !line)throw new Error('External native outcome unknown; inspect existing operation. '+(output.text ?? ''));
-    return JSON.parse(line.slice('FMCAD_RESULT '.length));
-  } finally { if(client.server) {if(previous===undefined)delete client.server.timeoutMs;else client.server.timeoutMs=previous;} }
-}
+const { buildReferencesActionScript, executeReferencesAction, executeExternalizationAction } = require('./dist/python/native-actions');
 
 module.exports = { catalog, validateCad, buildCadScript, prepareCadScript, buildReferencesActionScript, executeReferencesAction, executeExternalizationAction,
   executeCad, mapCadPaths };

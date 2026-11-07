@@ -8,11 +8,16 @@ const {catalog,validateCad,executeCad,executeExternalizationAction}=require('../
 const {isTransactional,readOperationJournal,writeOperationRecord}=require('../src/batch-atomic');
 
 function embeddedRequest(script, variable) {
-  const start=script.indexOf(`${variable} = `);
-  assert.notEqual(start,-1,`missing ${variable} assignment`);
-  const match=script.slice(start).match(/__import__\('json'\)\.loads\(("(?:\\.|[^"\\])*")\)/);
-  assert.ok(match,`could not parse ${variable} JSON transport payload`);
-  return JSON.parse(JSON.parse(match[1]));
+  const parsed = require('node:child_process').spawnSync('python3',
+    ['-B', path.join(__dirname, 'helpers/python_config.py')], {
+      input: JSON.stringify({ script, names: [variable] }), encoding: 'utf8',
+      timeout: 10000, maxBuffer: 32 * 1024 * 1024,
+    });
+  assert.ifError(parsed.error);
+  assert.equal(parsed.status, 0, parsed.stderr);
+  const values = JSON.parse(parsed.stdout);
+  assert.ok(Object.hasOwn(values, variable), `missing ${variable} assignment`);
+  return values[variable];
 }
 
 function input(mode='composeNew',extra={}) {
@@ -245,7 +250,7 @@ test('executeCad nested externalize-to-refresh preserves saved root, qualified m
   const client={capabilities:{backend:'addin',implementation:'transport-double'},server:{url:'http://transport.invalid',timeoutMs:120000},
     callTool:async request=>{
       const script=request.object.script;
-      if(script.includes('_EXTERNAL_REQUEST = ')){
+      if(/^_EXTERNAL_REQUEST(?:: JsonObject)? = /m.test(script)){
         const envelope=embeddedRequest(script,'_EXTERNAL_REQUEST');
         assert.equal(envelope.action,'perform');
         const payload=envelope.data;nativeCalls.push(payload.phase);
@@ -271,7 +276,7 @@ test('executeCad nested externalize-to-refresh preserves saved root, qualified m
         if(payload.phase==='copy')return {failed:false,text:'FMCAD_RESULT '+JSON.stringify({status:'notApplicable',receipt:{cursor:1}})};
         return {failed:false,text:'FMCAD_RESULT '+JSON.stringify({status:'complete',receipt:{cursor:1}})};
       }
-      if(script.includes('_FMCAD_REFERENCE_REQUEST = ')){
+      if(/^_FMCAD_REFERENCE_REQUEST(?:: JsonObject)? = /m.test(script)){
         const envelope=embeddedRequest(script,'_FMCAD_REFERENCE_REQUEST');
         referenceCalls.push(envelope);
         if(envelope.action==='graph')return {failed:false,text:'FMCAD_RESULT '+JSON.stringify(graph)};

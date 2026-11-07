@@ -1,0 +1,300 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const { pythonValue } = require('./python');
+const { runBatchEntry, definitionInstantiate, definitionInspect, validateBatchMode, readBatchSummary } = require('./batch');
+const { failedOutcome } = require('./outcome');
+const dataImport = require('./data-import');
+const entityQuery = require('./entity-query');
+const sketch = require('./sketch');
+const datum = require('./datum');
+const curve = require('./curve');
+const surface = require('./surface');
+const reference = require('./reference');
+const drawingPackage = require('./drawing-package');
+const drawingCheck = require('./drawing-check');
+const drawingExport = require('./drawing-export');
+const spring = require('./spring');
+const thread = require('./thread');
+const cam = require('./cam');
+const seal = require('./seal');
+const fastener = require('./fastener');
+const featureRework = require('./feature-rework');
+const ui = require('./ui');
+const referencesRefresh = require('./references-refresh');
+const externalization = require('./externalization');
+const documentPublication = require('./document-publication');
+
+const catalog = { ...dataImport.descriptors, ...curve.descriptors, ...surface.descriptors, ...spring.descriptors, ...thread.descriptors, ...cam.descriptors, ...seal.descriptors, ...fastener.descriptors, ...drawingPackage.descriptors, ...drawingCheck.descriptors, ...drawingExport.descriptors };
+for (const file of fs.readdirSync(path.join(__dirname, 'catalog')).sort()) {
+  if (!file.endsWith('.json')) continue;
+  for (const [operation, entry] of Object.entries(require('./catalog/' + file))) {
+    if (catalog[operation]) throw new Error('Duplicate CAD operation: ' + operation);
+    catalog[operation] = entry;
+  }
+}
+datum.configure(catalog);
+surface.configure(catalog);
+reference.configure(catalog);
+referencesRefresh.configure(catalog);
+
+function validateCad(operation, data) {
+  const entry = catalog[operation];
+  if (!entry) throw new Error('Unknown CAD operation: ' + operation);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('CAD data must be an object');
+  const missing = entry.required.filter((key) => !Object.hasOwn(data, key));
+  if (missing.length) throw new Error('Missing CAD inputs: ' + missing.join(', '));
+  const unknown = Object.keys(data).filter((key) => !Object.hasOwn(entry.inputs, key));
+  if (unknown.length) throw new Error('Unknown CAD inputs: ' + unknown.join(', '));
+  ui.validate(operation, data);
+  referencesRefresh.validate(data, operation);
+  documentPublication.validate(operation, data);
+  if (operation === 'component.externalize') externalization.validate(data);
+  if (operation === 'batch.reconcile') {
+    if (data.operations !== undefined && (!Array.isArray(data.operations) || data.operations.length > 100 ||
+        data.operations.some(item => !item || typeof item !== 'object' || Array.isArray(item) ||
+          Object.keys(item).some(key => !['operation', 'data'].includes(key)) ||
+          typeof item.operation !== 'string' || !item.data || typeof item.data !== 'object' || Array.isArray(item.data)))) {
+      throw new Error('batch reconcile operations must be an array of at most 100 {operation,data} objects');
+    }
+  }
+  if (operation === 'definition.instantiate') validateBatchMode(data);
+  featureRework.validate(operation, data);
+  if (entry.dataImport) dataImport.prepare(operation, data);
+  entityQuery.validate(operation, data);
+  sketch.validate(operation, data);
+  datum.validate(operation, data);
+  curve.validate(operation, data);
+  surface.validate(operation, data);
+  reference.validate(operation, data);
+  drawingPackage.validate(operation, data);
+  drawingCheck.validate(operation, data);
+  drawingExport.validate(operation, data);
+  spring.validate(operation, data);
+  thread.validate(operation, data);
+  cam.validate(operation, data);
+  seal.validate(operation, data);
+  fastener.validate(operation, data);
+  return entry;
+}
+
+function fusionPath(value) {
+  if (typeof value !== 'string') throw new Error('File path must be a string');
+  if (/^[A-Za-z]:[\\/]|^\\\\/.test(value)) return value;
+  const absolute = path.resolve(value);
+  const drive = absolute.match(/^\/mnt\/([a-zA-Z])\/(.*)$/);
+  if (drive) return drive[1].toUpperCase() + ':\\' + drive[2].replaceAll('/', '\\');
+  if (process.platform === 'win32' || process.platform === 'darwin') return absolute;
+  return '\\\\wsl$\\' + (process.env.WSL_DISTRO_NAME || 'Ubuntu') + absolute.replaceAll('/', '\\');
+}
+
+function mapCadPaths(operation, data) {
+  const out = structuredClone(data);
+  if (operation.startsWith('export.') || operation.startsWith('checkpoint.') || operation === 'import.file') {
+    if (out.path) out.path = fusionPath(out.path);
+    if (out.directory) out.directory = fusionPath(out.directory);
+    if (out.parts) for (const part of out.parts) part.path = fusionPath(part.path);
+  }
+  if (operation === 'shot.pack') for (const shot of out.shots) shot.path = fusionPath(shot.path);
+  if (operation === 'view.compare') for (const field of ['left', 'right']) out[field] = fusionPath(out[field]);
+  if (operation === 'texture.heightmap' && out.path) out.path = fusionPath(out.path);
+  if (['motion.sample', 'animation.joints', 'explode.render'].includes(operation)) {
+    if (out.directory) out.directory = fusionPath(out.directory);
+    if (out.frameFiles) out.frameFiles = out.frameFiles.map(fusionPath);
+  }
+  if (operation === 'animation.export') {
+    if (out.frames) out.frames = out.frames.map(fusionPath);
+    if (out.output) out.output = fusionPath(out.output);
+  }
+  return out;
+}
+
+function buildCadScript(operation, data, context) {
+  const entry = validateCad(operation, data);
+  if (entry.curve) data = curve.prepare(operation, data);
+  if (entry.dataImport) {
+    data = dataImport.prepare(operation, data);
+    const models = operation === 'cots.replace' ? [data.result.model] : (data.result.items || []).map(r => r.model).filter(Boolean);
+    for (const model of models) model.fusionPath = fusionPath(model.path);
+  }
+  const dir = path.join(__dirname, '..', 'assets', 'cad');
+  // Keep the existing identity/context implementation, but do not transmit the
+  // entire modeling library for a document-only read. Explicit component scopes
+  // retain the full resolver contract. No target activation or retry is added.
+  const lightStatus = operation === 'document.status' && context.component == null;
+  const files = lightStatus ? ['core.py', 'identity.py', 'document_snapshot.py'] :
+    ['core.py', ...fs.readdirSync(dir).filter(f => f.endsWith('.py') && f !== 'core.py').sort()];
+  let source = files.map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n\n');
+  if (lightStatus) source += '\n\ndef _document_status_minimal(ctx, data):\n    _cad_fields(data)\n    return _document_snapshot(ctx.doc)\n\nCAD_HANDLERS["document.status"] = _document_status_minimal\n';
+  const request = { operation, data: mapCadPaths(operation, data), doc: context.doc, component: context.component, projectId: context.projectId,
+    docId: context.docId, docFileId: context.docFileId };
+  return source + `\n\n_FMCAD_REQUEST = ${pythonValue(request)}
+
+def run(_context: str):
+    # Fail before touching Fusion if the host has leaked nested output wrappers.
+    # Keep all host sanitization in place; never replace or unwrap the streams.
+    import sys
+    for stream in (sys.stdout, sys.stderr):
+        seen = set()
+        while type(stream).__name__ == '_NsSanitizedWriter':
+            if id(stream) in seen or len(seen) >= 64:
+                raise RuntimeError('FMCAD_MCP_STREAM_EXHAUSTED: the host has accumulated nested sanitized output writers. No CAD operation was started. Restart or repair the MCP add-in; output filtering has not been changed.')
+            seen.add(id(stream))
+            stream = object.__getattribute__(stream, '__dict__')['_original']
+    request = _FMCAD_REQUEST
+    ctx = CadContext(request['doc'], request.get('component'), request.get('projectId'), request.get('docId'), request.get('docFileId'))
+    if ${entry.readOnly || operation === 'document.clear' || operation === 'document.save_native' || operation === 'selection.highlight' || operation.startsWith('camera.') && operation !== 'camera.set' || operation === 'shot.pack' ? 'False' : 'True'}:
+        ctx.activate_target()
+    ctx.assert_identity()
+    print('FMCAD_PROGRESS ' + json.dumps({'operation': request['operation'], 'document': ctx.doc.name, 'state': 'started'}))
+    result = ctx.call(request['operation'], request['data'])
+    success = not (isinstance(result, dict) and (result.get('passed') is False or (result.get('restored') is False and result.get('leftRequestedState') is not True and result.get('status') != 'pass') or result.get('sampledPassed') is False or result.get('checkOutcome') == 'fail' or result.get('status') in ('fail', 'failed', 'blocked', 'unknown', 'missing', 'stale')))
+    print('FMCAD_RESULT ' + json.dumps(_cad_json({'success': success, 'operation': request['operation'], 'document': ctx.doc.name, 'result': result, 'created': ctx.created}), allow_nan=False))
+`;
+}
+
+async function executeCad(client, operation, data, context) {
+  const entry = validateCad(operation, data);
+  if (entry.curve && context.preview) return { success: true, status: 'notEvaluated', operation, mutation: false,
+    plan: curve.prepare(operation, data), limitations: ['Input preflight only; native geometry and kernel not evaluated.'] };
+  if (entry.dataImport && (context.preview || dataImport.isOffline(operation, data))) return dataImport.offlineResult(dataImport.prepare(operation, data), !!context.preview);
+  if (entry.definitionMode) return definitionInspect(data, catalog, operation);
+  if (context.preview && (operation === 'definition.instantiate' || entry.batchMode)) {
+    const result = operation === 'definition.instantiate'
+      ? await definitionInstantiate(client, data, context, executeCad, catalog)
+      : await runBatchEntry(client, { ...data, mode: entry.batchMode }, context, executeCad, catalog);
+    return { ...result, mutation: false };
+  }
+  if (context.preview) return { success: true, operation, state: 'input-validated-only', mutation: false,
+    document: context.doc, data, limitations: ['Entity resolution and kernel feasibility not tested.',
+      sketch.validates(operation) ? 'GM06 nested input shapes and expression-string syntax checked; Fusion expressions, entity selectors and solver feasibility remain unvalidated.' :
+        'Only outer payload keys and unconditional required-key presence checked; nested schemas/types, conditional fields, units and supported mode values are not validated.',
+      ...(entry.offline ? ['No stored report was read or validated.'] : [])] };
+  if (entry.nodeOnly) {
+    if (ui.operations.includes(operation)) return ui.execute(client, operation, data, context);
+    if (documentPublication.OPERATIONS.includes(operation)) {
+      return documentPublication.execute(client, operation, data, context, executeCad);
+    }
+    if (operation === 'component.externalize') return externalization.execute(client, data, context, {
+      step: (action, payload, readOnly) => executeExternalizationAction(client, action, payload, readOnly),
+      refresh: request => executeCad(client, 'references.refresh', request, {}),
+    });
+    if (operation === 'references.refresh') return referencesRefresh.execute(client, data, context, {
+      step: (action, payload, input, targetContext) => executeReferencesAction(client, action, payload, input, targetContext),
+      inspectUi: (targetClient, request, targetContext) => {
+        ui.validate('ui.inspect', request);
+        return ui.execute(targetClient, 'ui.inspect', request, targetContext);
+      },
+      armWatcher: (targetClient, request) => ui.armWatcher(targetClient, request),
+      backend: client?.capabilities?.backend ?? null,
+    });
+    if (reference.descriptors[operation]) return reference.execute(operation, data);
+    if (drawingPackage.descriptors[operation]) return drawingPackage.execute(operation, data);
+    if (drawingCheck.descriptors[operation]) return drawingCheck.execute(operation, data);
+    if (drawingExport.descriptors[operation]) return drawingExport.execute(operation, data);
+    if (operation === 'batch.summary') return readBatchSummary(data);
+    if (operation === 'batch.reconcile' || operation === 'batch.finalize') {
+      const atomic = require('./batch-atomic');
+      atomic.setObserveReadOnlyCatalog(catalog);
+      if (!client) throw new Error(`${operation} requires the selected addin backend; no offline result is available`);
+      if (operation === 'batch.reconcile') return atomic.reconcileAtomicBatch(client, data.reportPath, data.operations ?? []);
+      return atomic.finalizeAtomicBatch(client, data.reportPath);
+    }
+    if (operation === 'definition.instantiate') return definitionInstantiate(client, data, context, executeCad, catalog);
+    if (entry.batchMode) return runBatchEntry(client, { ...data, mode: entry.batchMode }, context, executeCad, catalog);
+    throw new Error('Unknown Node-only CAD operation: ' + operation);
+  }
+  const script = buildCadScript(operation, data, context);
+  const out = await client.callTool({ featureType: 'script', object: { script,
+    readOnly: entry.readOnly || (operation === 'document.clear' && data.dryRun === true) } });
+  const text = out.text || '';
+  const resultLine = text.split(/\r?\n/).find(line => line.startsWith('FMCAD_RESULT '));
+  if (out.failed || !resultLine) {
+    throw new Error(`${operation} failed; model may contain partial changes. Inspect before retry. ${text}`);
+  }
+  const output = JSON.parse(resultLine.slice('FMCAD_RESULT '.length));
+  if (failedOutcome(output)) output.success = false;
+  if (entry.dataImport || (output.result?.schemaVersion === 1 && /^(entity|datum|joint|occurrence)\./.test(operation))) {
+    for (const key of ['status', 'documentIdentity', 'units', 'frame', 'associativity', 'warnings', 'method', 'limitations', 'provenance']) {
+      if (output.result && Object.hasOwn(output.result, key)) output[key] = output.result[key];
+    }
+    output.affected = output.result?.affected || output.result?.occurrenceMap || output.result?.poses || output.result?.instances || output.result?.parameters || [];
+  }
+  if ((operation.startsWith('sketch.') || entry.curve || entry.surface || entry.envelope || data.solid === false) && output.result?.schemaVersion === 1) {
+    for (const key of ['status', 'documentIdentity', 'units', 'frame', 'associativity', 'warnings', 'method', 'limitations', 'provenance', 'affected']) {
+      if (Object.hasOwn(output.result, key)) output[key] = output.result[key];
+    }
+  }
+  return output;
+}
+
+const REFERENCE_READ_ACTIONS = new Set(['graph', 'preflight']);
+function buildReferencesActionScript(action, data) {
+  if (!['graph', 'preflight', 'sdkUpdate', 'nativeUpdate', 'save', 'coldVerify'].includes(action)) {
+    throw new Error('Unsupported internal references.refresh SDK action');
+  }
+  const dir = path.join(__dirname, '..', 'assets', 'cad');
+  const files = ['core.py', ...fs.readdirSync(dir).filter(f => f.endsWith('.py') && f !== 'core.py').sort()];
+  const source = files.map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n\n');
+  const request = pythonValue({ action, data });
+  return source + `\n\n_FMCAD_REFERENCE_REQUEST = ${request}\ndef run(_context: str):\n    import json\n    _request = _FMCAD_REFERENCE_REQUEST\n    _result = _references_refresh_internal(_request['action'], _request['data'])\n    print('FMCAD_RESULT ' + json.dumps(_cad_json(_result), allow_nan=False))\n`;
+}
+
+async function executeReferencesAction(client, action, data, input) {
+  if (!client) throw new Error(`references.refresh ${action} requires the selected Fusion backend`);
+  const scriptData = { ...data };
+  const nativeRpcTimeoutMs = action === 'nativeUpdate' ? scriptData.nativeRpcTimeoutMs : null;
+  delete scriptData.nativeRpcTimeoutMs;
+  const script = buildReferencesActionScript(action, scriptData);
+  const readOnly = REFERENCE_READ_ACTIONS.has(action) && (input.lifecycle ?? 'existingOnly') === 'existingOnly';
+  const server = client.server;
+  const previousTimeoutMs = server?.timeoutMs;
+  const timeoutAdjusted = Number.isFinite(nativeRpcTimeoutMs) && nativeRpcTimeoutMs > 0 &&
+    server && Number.isFinite(previousTimeoutMs);
+  if (timeoutAdjusted) server.timeoutMs = Math.min(previousTimeoutMs, nativeRpcTimeoutMs);
+  let output;
+  try {
+    output = await client.callTool({ featureType: 'script', object: { script, readOnly } });
+  } catch (error) {
+    const message = String(error?.message ?? error);
+    if (message.includes('RPC not submitted:')) return { status: 'notStarted', notStarted: true, error: message };
+    error.unknown = true;
+    throw error;
+  } finally {
+    if (timeoutAdjusted) server.timeoutMs = previousTimeoutMs;
+  }
+  if (output.uiGuard?.notStarted === true) return { status: 'blocked', notStarted: true,
+    activeCommand: output.uiGuard.activeCommand ?? null, error: output.text ?? 'Fusion command preflight rejected the script before user code.' };
+  const line = String(output.text ?? '').split(/\r?\n/).find(value => value.startsWith('FMCAD_RESULT '));
+  if (output.failed || !line) {
+    const message = String(output.text ?? '');
+    if (message.includes('RPC not submitted:')) return { status: 'notStarted', notStarted: true, error: message };
+    const error = new Error(`references.refresh ${action} failed; inspect before retry. ${message}`);
+    error.unknown = true;
+    throw error;
+  }
+  return JSON.parse(line.slice('FMCAD_RESULT '.length));
+}
+
+async function executeExternalizationAction(client, action, data, readOnly) {
+  if (!client) throw new Error('component.externalize requires the selected Fusion backend');
+  if (!['inspect','perform'].includes(action)) throw new Error('Invalid private externalization action');
+  const dir = path.join(__dirname, '..', 'assets', 'cad');
+  const files = ['core.py', ...fs.readdirSync(dir).filter(f => f.endsWith('.py') && f !== 'core.py').sort()];
+  const source = files.map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n\n');
+  const previous = client.server?.timeoutMs;
+  const scriptData={...data,copyRpcBudgetMs:Math.min(previous ?? 180000,data.remainingMs ?? 180000)};
+  const script = source + `\n_EXTERNAL_REQUEST = ${pythonValue({action,data:scriptData})}\ndef run(_context):\n    _result = _external_refresh_internal(_EXTERNAL_REQUEST['action'], _EXTERNAL_REQUEST['data'])\n    print('FMCAD_RESULT ' + json.dumps(_cad_json(_result), allow_nan=False))\n`;
+  if (Number.isFinite(data.remainingMs) && data.remainingMs < 1000) return {status:'pending',
+    receipt:{cursor:0,reason:'budgetExhausted',stopReason:'budgetExhausted'},notStarted:true};
+  if (client.server && Number.isFinite(data.remainingMs)) client.server.timeoutMs = Math.min(previous ?? 180000, data.remainingMs);
+  try {
+    const output = await client.callTool({featureType:'script',object:{script,readOnly:action==='inspect' && readOnly===true}});
+    if(output.uiGuard?.notStarted)return {status:'blocked',notStarted:true,receipt:{cursor:0,reason:'interactiveCommandActive'}};
+    const line=String(output.text ?? '').split(/\r?\n/).find(row=>row.startsWith('FMCAD_RESULT '));
+    if(output.failed || !line)throw new Error('External native outcome unknown; inspect existing operation. '+(output.text ?? ''));
+    return JSON.parse(line.slice('FMCAD_RESULT '.length));
+  } finally { if(client.server) {if(previous===undefined)delete client.server.timeoutMs;else client.server.timeoutMs=previous;} }
+}
+
+module.exports = { catalog, validateCad, buildCadScript, buildReferencesActionScript, executeReferencesAction, executeExternalizationAction,
+  executeCad, mapCadPaths };
