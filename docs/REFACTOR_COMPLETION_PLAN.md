@@ -340,3 +340,8 @@ sketch-operation suite remain open. The expanded CI matrix has 22 required jobs.
 core and compiles its existing integration test. Paired historical checks also
 close a missing-journal case that could allow a physical save after its stage
 intent disappeared. This preserves receipt bytes and does not add mutation replay.
+
+[Stage 4m](REFACTOR_STAGE_4M.md) moves execution clock/timer adapters to TypeScript,
+with paired pre-refactor pause and RPC-budget scenarios. It also corrects private
+workspace imports in installed worker declarations. Production deadlines remain
+unchanged; the previously intermittent native-action timeout is still unresolved.

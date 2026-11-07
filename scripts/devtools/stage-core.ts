@@ -193,7 +193,12 @@ export function stageCore(root: string, identityOnly = false): void {
     path.join(root, "src/dist/node-adapters/control-center"),
     { recursive: true },
   );
-  for (const name of ["control-center", "telemetry", "persistence"]) {
+  for (const name of [
+    "control-center",
+    "telemetry",
+    "persistence",
+    "execution",
+  ]) {
     const rewrite = (directory: string): void => {
       for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
         const file = path.join(directory, entry.name);

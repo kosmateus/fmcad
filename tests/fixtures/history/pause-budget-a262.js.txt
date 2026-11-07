@@ -1,0 +1,25 @@
+'use strict';
+const { performance } = require('node:perf_hooks');
+
+class PauseBudget {
+  constructor(ms, expired, { now = () => performance.now(), schedule = setTimeout, cancel = clearTimeout } = {}) {
+    Object.assign(this, { left: ms, expired, now, schedule, cancel, generation: 0, frozen: false, ended: false });
+    this.arm();
+  }
+  remaining() { return Math.max(0, this.left - (this.frozen || this.ended ? 0 : this.now() - this.start)); }
+  arm() {
+    this.start = this.now();
+    const generation = ++this.generation;
+    this.timer = this.schedule(() => {
+      if (this.ended || this.frozen || generation !== this.generation) return;
+      this.left = 0; this.ended = true; this.expired();
+    }, this.left);
+  }
+  freeze() {
+    if (this.frozen || this.ended) return;
+    this.left = this.remaining(); this.frozen = true; ++this.generation; this.cancel(this.timer);
+  }
+  resume() { if (!this.frozen || this.ended) return; this.frozen = false; this.arm(); }
+  close() { this.left = this.remaining(); this.ended = true; ++this.generation; this.cancel(this.timer); }
+}
+module.exports = { PauseBudget };
