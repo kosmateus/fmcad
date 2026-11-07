@@ -36,3 +36,15 @@ MCP and add-in component runs each passed with one owner, complete cleanup and
 the unchanged source hash
 `3f1327bb5a42d7f9856d9e3eec55866da071ff65808bbbbc75c64c8b2db68a94`.
 Full broker CI remains required before merging.
+
+CI follow-up: runs 42422725174 and 42423582972 passed all 22 jobs. In run
+42424182027 the MCP sketch profile hit the outer 12-minute CI limit during the
+final folder audit. Artifact 13594933542 records all 15 requests for each owner
+as succeeded, including close, deletion and observed absence. The eight helper
+requests took about eight minutes together; the other requests and coordinator
+checks used the remaining budget. The interrupted final audit remains a failure,
+not a pass. Allow 18 minutes for this expanded profile and 22 for its complete CI
+job, including installation, build and artifact upload. Other profiles keep
+their existing limits. Per-request broker deadlines, both owners, concurrency,
+assertions and cleanup requirements are unchanged; this does not address the
+separate historical native observation timeout.
