@@ -2,8 +2,6 @@ import { createRequire } from "node:module";
 import type { CadContext, CadData, CadOutput } from "@fmcad/core";
 import type {
   NativeSaveResult,
-  SaveBinding,
-  SaveRecord,
   SaveServices,
   SaveOperation,
 } from "../../packages/core/src/application/documents/save.js";
@@ -20,22 +18,9 @@ const { hash } = load(
   "../core/application/cad/json.js",
 ) as typeof import("../../packages/core/src/application/cad/json.js");
 type JournalIo = NonNullable<Parameters<typeof openSaveJournal>[4]>;
-const journal = load("../../batch-atomic.js") as {
-  readOperationJournal(
-    directory: string,
-    binding: SaveBinding,
-    io?: JournalIo,
-  ): Promise<SaveRecord[]>;
-  writeOperationRecord(
-    directory: string,
-    binding: SaveBinding,
-    sequence: number,
-    value: Parameters<
-      import("../../packages/node-adapters/src/persistence/document-save.js").SaveJournalRecords["write"]
-    >[3],
-    io?: JournalIo,
-  ): Promise<SaveRecord>;
-};
+const journal = load(
+  "../node-adapters/persistence/operation-journal.js",
+) as typeof import("../../packages/node-adapters/src/persistence/operation-journal.js");
 export interface PublicationDependencies {
   stages?: DocumentSaveStages;
   fs?: JournalIo;

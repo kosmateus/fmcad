@@ -304,3 +304,8 @@ negative cases retain exact outcomes, timeout restoration and one-call semantics
 [Stage 5d](REFACTOR_STAGE_5D.md) compiles the remaining new historical-evidence
 tests for run scripts, suite inventory and artifact reads. Their expectations and
 baseline hashes remain unchanged. PRs #13–#15 passed their full CI and are merged.
+
+[Stage 4h](REFACTOR_STAGE_4H.md) extracts the shared immutable operation journal,
+with the same fault cases run against pre-refactor, pre-extraction and typed
+implementations. Batch orchestration remains in scope. PRs #16–#17 are merged
+after their full 20-job CI runs passed.

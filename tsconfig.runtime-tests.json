@@ -53,7 +53,8 @@
     "tests/native-action-results.test.ts",
     "tests/run-script-migration.test.ts",
     "tests/live-suite-inventory.test.ts",
-    "tests/artifact-read-evidence.test.ts"
+    "tests/artifact-read-evidence.test.ts",
+    "tests/operation-journal-migration.test.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]
 }

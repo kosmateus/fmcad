@@ -4,11 +4,10 @@ const { randomBytes } = require('node:crypto');
 const { pythonLiteral, prepareCadBundle } = require('./python');
 const { publishComplete } = require('./publish');
 const { redactDiagnostic } = require('./diagnostics');
-const { hash, batchServices } = require('./batch');
+const { batchServices } = require('./batch');
 const { localOperations } = require('./engineering-local');
 const application = require('./dist/core/application/cad/atomic');
 const own = (value, key) => Object.hasOwn(value, key);
-const sameJson = (left, right) => hash(left) === hash(right);
 
 // Test-only deterministic fault injection; absent from the public catalog.
 function injectTestFault(steps) {
@@ -99,25 +98,6 @@ async function finalizeAtomicBatch(client, reportPath) {
       close: async preserveLock => { await lock.close(); if (!preserveLock) await fs.unlink(path.join(dir, 'run.lock')); } };
   });
 }
-// External-effect owners retain the same immutable publication and binding checks.
-async function readOperationJournal(directory, binding, io = fs) {
-  let names;
-  try { names = (await io.readdir(directory)).filter(name => /^\d{8}\.json$/.test(name)).sort(); }
-  catch (error) { if (error.code === 'ENOENT') return []; throw error; }
-  const records = [];
-  for (let index = 0; index < names.length; index++) {
-    if (names[index] !== String(index).padStart(8, '0') + '.json') throw new Error('Operation journal sequence gap; outcome unknown');
-    const record = JSON.parse(await io.readFile(path.join(directory, names[index]), 'utf8'));
-    if (record.sequence !== index || !sameJson(record.binding, binding)) throw new Error('Operation journal identity mismatch; no replay');
-    records.push(record);
-  }
-  return records;
-}
-async function writeOperationRecord(directory, binding, sequence, value, io = fs) {
-  await io.mkdir(directory, { recursive: true, mode: 0o700 });
-  const record = { ...value, sequence, binding, at: new Date().toISOString() };
-  await publishComplete(path.join(directory, String(sequence).padStart(8, '0') + '.json'), JSON.stringify(record) + '\n', io);
-  return record;
-}
+const { readOperationJournal, writeOperationRecord } = require('./dist/node-adapters/persistence/operation-journal');
 module.exports = { readOperationJournal, writeOperationRecord, runAtomicBatch, buildAtomicScript, prepareAtomicScript,
   isTransactional: application.isTransactional, injectTestFault, readAtomicReceipt, reconcileAtomicBatch, finalizeAtomicBatch, setObserveReadOnlyCatalog };
