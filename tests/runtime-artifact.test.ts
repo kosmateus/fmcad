@@ -124,6 +124,8 @@ test(
       "dist/src/dist/python/checker.js",
       "dist/src/dist/python/run-script.js",
       "dist/src/dist/composition/run.js",
+      "dist/src/dist/python/cad-script.js",
+      "dist/src/dist/composition/cad.js",
       "dist/src/dist/python/document-probe.js",
       "dist/src/dist/fusion-transport/addin-capabilities.js",
       "dist/src/queue-autostart.js",
@@ -193,9 +195,21 @@ test(
       box.units.find((unit) => unit.id === "user-script")?.filename,
       path.join(runtime, "assets/scripts/box.py"),
     );
+    const cad = runtimeRequire(
+      path.join(runtime, "src/cad.js"),
+    ) as typeof import("../src/composition/cad.js");
+    const status = cad.prepareCadScript(
+      "document.status",
+      {},
+      { doc: "Installed fixture", docId: "installed-creation" },
+    );
+    assert.ok(status.script.includes("installed-creation"));
+    assert.ok(status.units.some((unit) => unit.id === "document_snapshot"));
     for (const declaration of [
       "python/run-script.d.ts",
       "composition/run.d.ts",
+      "python/cad-script.d.ts",
+      "composition/cad.d.ts",
     ]) {
       assert.doesNotMatch(
         fs.readFileSync(path.join(runtime, "src/dist", declaration), "utf8"),

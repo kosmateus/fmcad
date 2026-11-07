@@ -1,6 +1,3 @@
-const path = require('node:path');
-const { pythonValue, pythonLiteral, prepareCadBundle } = require('./python');
-const { resolveRuntimePaths, detectPlatform, toWindowsPath } = require('./dist/config-platform');
 const { runBatchEntry, definitionInstantiate, definitionInspect, readBatchSummary } = require('./batch');
 const { failedOutcome } = require('./outcome');
 const dataImport = require('./data-import');
@@ -18,51 +15,7 @@ const documentPublication = require('./document-publication');
 
 const { catalog, contracts, validateCad } = require('./catalog');
 const cadApplication = require('./dist/core/application/cad/execute');
-const { planCadScript } = require('./dist/core/application/cad/prepare');
-
-function fusionPath(value) {
-  if (typeof value !== 'string') throw new Error('File path must be a string');
-  if (/^[A-Za-z]:[\\/]|^\\\\/.test(value)) return value;
-  const absolute = path.resolve(value);
-  return toWindowsPath(absolute, detectPlatform());
-}
-
-function mapCadPaths(operation, data) {
-  const out = structuredClone(data);
-  if (operation.startsWith('export.') || operation.startsWith('checkpoint.') || operation === 'import.file') {
-    if (out.path) out.path = fusionPath(out.path);
-    if (out.directory) out.directory = fusionPath(out.directory);
-    if (out.parts) for (const part of out.parts) part.path = fusionPath(part.path);
-  }
-  if (operation === 'shot.pack') for (const shot of out.shots) shot.path = fusionPath(shot.path);
-  if (operation === 'view.compare') for (const field of ['left', 'right']) out[field] = fusionPath(out[field]);
-  if (operation === 'texture.heightmap' && out.path) out.path = fusionPath(out.path);
-  if (['motion.sample', 'animation.joints', 'explode.render'].includes(operation)) {
-    if (out.directory) out.directory = fusionPath(out.directory);
-    if (out.frameFiles) out.frameFiles = out.frameFiles.map(fusionPath);
-  }
-  if (operation === 'animation.export') {
-    if (out.frames) out.frames = out.frames.map(fusionPath);
-    if (out.output) out.output = fusionPath(out.output);
-  }
-  return out;
-}
-
-function prepareCadScript(operation, data, context) {
-  const entry = validateCad(operation, data);
-  if (operation === 'inspect.pack') data = require('./dist/core/application/inspection').planInspection(data, contracts, validateCad);
-  if (entry.curve) data = curve.prepare(operation, data);
-  if (entry.dataImport) {
-    data = dataImport.prepare(operation, data);
-    const models = operation === 'cots.replace' ? [data.result.model] : (data.result.items || []).map(r => r.model).filter(Boolean);
-    for (const model of models) model.fusionPath = fusionPath(model.path);
-  }
-  const plan = planCadScript(operation, mapCadPaths(operation, data), context, entry, pythonLiteral);
-  return prepareCadBundle(resolveRuntimePaths({ anchor: __filename }).installation, plan.wrapper,
-    { request: plan.request, context: plan.context }, plan.profile);
-}
-
-function buildCadScript(operation, data, context) { return prepareCadScript(operation, data, context).script; }
+const { fusionPath, mapCadPaths, prepareCadScript, buildCadScript } = require('./dist/composition/cad');
 
 async function executeCad(client, operation, data, context, internal = {}) {
   return cadApplication.executeCad(operation, data, context, {

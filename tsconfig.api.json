@@ -19,6 +19,7 @@
     "src/composition/library*.ts",
     "src/composition/control-center.ts",
     "src/composition/run.ts",
+    "src/composition/cad.ts",
     "src/entrypoints/cli.ts",
     "src/entrypoints/cli/**/*.ts",
     "src/entrypoints/mcp.ts",
