@@ -59,3 +59,7 @@ Required checks are the historical comparisons, shared scenarios, real admission
 for all generated commands, strict model typing, pinned API call shapes, Python
 source/manifest parity and full CI. Passing this family does not complete the
 remaining runtime migration or native qualification.
+
+The component lookup follow-up is recorded in [stage 3f](REFACTOR_STAGE_3F.md):
+duplicate component names must no longer select the first parent or imply a unique
+existing result. This is separate from the document-name guard delivered here.

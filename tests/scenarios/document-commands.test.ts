@@ -260,3 +260,66 @@ print(json.dumps(fingerprints))`),
   assert.equal(fingerprints.length, 6);
   assert.equal(new Set(fingerprints).size, fingerprints.length);
 });
+
+for (const kind of [
+  "duplicate-parent",
+  "root-collision",
+  "duplicate-existing",
+] as const) {
+  test(`historical component ambiguity is rejected before mutation: ${kind}`, async (t) => {
+    for (const index of [0, 1] as const) {
+      const { model } = await fixture(t);
+      const setup = await model.execute(
+        programs.program(`import adsk.core
+app = adsk.core.Application.get()
+doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
+doc.name = 'Model'
+root = doc.products.product.rootComponent
+root.name = 'Root'
+for index in range(2):
+    occurrence = root.occurrences.addNewComponent(adsk.core.Matrix3D.create())
+    occurrence.component.name = ${pythonLiteral(kind === "root-collision" ? "Root" : "Duplicate")}
+`),
+      );
+      assert.equal(setup.success, true, setup.error);
+      const before = await execute(
+        model,
+        sources.component[index],
+        "comp_list",
+        ["Model"],
+      );
+      const args =
+        kind === "duplicate-existing"
+          ? ["Duplicate", "Model"]
+          : [
+              "UnsafeChild",
+              kind === "root-collision" ? "Root" : "Duplicate",
+              "Model",
+            ];
+      const result = await execute(
+        model,
+        sources.component[index],
+        "comp_add",
+        args,
+      );
+      if (index === 0) {
+        assert.equal(result["error"], null);
+        assert.match(
+          String(result["output"]),
+          kind === "duplicate-existing"
+            ? /EXISTS name=Duplicate/
+            : /CREATED_COMP name=UnsafeChild/,
+        );
+        if (kind !== "duplicate-existing")
+          assert.notDeepEqual(result["documents"], before["documents"]);
+      } else {
+        assert.match(String(result["error"]), /ambiguous component name/);
+        assert.deepEqual(result["documents"], before["documents"]);
+        assert.doesNotMatch(
+          String(result["output"]),
+          /CREATED_COMP|EXISTS |DONE/,
+        );
+      }
+    }
+  });
+}

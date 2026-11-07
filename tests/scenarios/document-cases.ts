@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { Scenario, ScenarioSession } from "./runner";
 import { number, record, text, type FixtureFolder } from "./contracts";
 import { documentCommand } from "./document-programs";
+import { program, guard, emit } from "./programs";
 
 export function rows(
   value: Record<string, unknown>,
@@ -180,6 +181,76 @@ export function documentScenarios(folder: FixtureFolder): Scenario[] {
         assert.deepEqual(
           rows(invalid, "components"),
           rows(child, "components"),
+        );
+        // Duplicate component names can arrive from native editing/imports.
+        const parents = await session.execute(
+          "duplicate-parent-setup",
+          program(`${guard(session.document)}
+root = design.rootComponent
+for index in range(2):
+    occurrence = root.occurrences.addNewComponent(adsk.core.Matrix3D.create())
+    occurrence.component.name = "AmbiguousParent"
+${emit("dict(creationId=doc.creationId, count=sum(1 for c in design.allComponents if c.name == 'AmbiguousParent'))")}
+`),
+        );
+        assert.equal(parents["count"], 2);
+        const ambiguousBefore = await command(
+          session,
+          "ambiguous-before",
+          "comp_list",
+        );
+        for (const [phase, args] of [
+          ["ambiguous-parent", ["MustNotExist", "AmbiguousParent"]],
+          ["ambiguous-existing", ["AmbiguousParent"]],
+        ] as const) {
+          const rejected = await command(
+            session,
+            phase,
+            "comp_add",
+            [...args],
+            false,
+          );
+          assert.match(String(rejected["error"]), /ambiguous component name/);
+          assert.deepEqual(
+            rows(rejected, "components"),
+            rows(ambiguousBefore, "components"),
+          );
+          assert.equal(
+            rejected["timelineCount"],
+            ambiguousBefore["timelineCount"],
+          );
+          assert.doesNotMatch(
+            text(rejected["output"]),
+            /CREATED_COMP|EXISTS |DONE/,
+          );
+        }
+        const rootCollision = await session.execute(
+          "duplicate-root-name-setup",
+          program(`${guard(session.document)}
+root = design.rootComponent
+occurrence = root.occurrences.addNewComponent(adsk.core.Matrix3D.create())
+occurrence.component.name = root.name
+${emit("dict(creationId=doc.creationId, count=sum(1 for c in design.allComponents if c.name == root.name))")}
+`),
+        );
+        assert.equal(rootCollision["count"], 2);
+        const rootBefore = await command(session, "root-before", "comp_list");
+        const rootName = text(rows(rootBefore, "components")[0]!["name"]);
+        const rootRejected = await command(
+          session,
+          "ambiguous-root",
+          "comp_add",
+          ["MustNotExist", rootName],
+          false,
+        );
+        assert.match(String(rootRejected["error"]), /ambiguous component name/);
+        assert.deepEqual(
+          rows(rootRejected, "components"),
+          rows(rootBefore, "components"),
+        );
+        assert.equal(
+          rootRejected["timelineCount"],
+          rootBefore["timelineCount"],
         );
       },
     },
