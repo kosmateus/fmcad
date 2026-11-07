@@ -37,3 +37,14 @@ lint/type/format checks passed. CI is required before
 merge; native Fusion qualification remains deferred.
 
 PRs #19–#20 passed all 20 CI jobs each and are merged into `main`.
+
+## Package check correction
+
+CI on `b50f228` rejected the new `batch-report.js` module because the package
+contract excludes report-named files. The four matches were this module's JavaScript,
+declaration and source maps, not leaked user reports. Renamed the source to
+`batch-summary.ts`; the exclusion rule is unchanged. The same content check now
+also runs independently of dependency installation, with offending paths included
+in the assertion message. This permits local package validation when the offline
+installation cache is incomplete. Full installed CLI/MCP/worker checks still run
+in CI.
