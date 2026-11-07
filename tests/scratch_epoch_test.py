@@ -62,7 +62,7 @@ class Documents:
 
 class ScratchEpochTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='epoch-python-', dir='/tmp/opencode')
+        self.temp = tempfile.TemporaryDirectory(prefix='epoch-python-')
         self.addCleanup(self.temp.cleanup)
         self.root = pathlib.Path(self.temp.name)
         self.old = Document('old-open')

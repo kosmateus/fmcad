@@ -34,6 +34,26 @@ jobs:
       - run: npm run test:scenarios:component -- --protocol addin --owners 2
       - run: npm run test:prepare-offline
       - run: npm run test:contracts
+
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            tests/python-requirements.txt
+            tests/python-constraints.txt
+            assets/*requirements.txt
+      - run: python -m pip install -r tests/python-requirements.txt
+      - run: npm ci
+      - run: npm run build
       - run: npm run test:python
 
   control-center-browser:
@@ -47,6 +67,14 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:control-center:e2e
+        env:
+          FMCAD_CONTROL_CENTER_E2E_ARTIFACTS: .test-artifacts/control-center
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: control-center-browser
+          path: .test-artifacts/control-center/
+          include-hidden-files: true
 
   scenario-broker:
     runs-on: ubuntu-24.04

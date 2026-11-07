@@ -11,7 +11,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 class CaptureTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='audit-capture-sdk-', dir='/tmp/opencode')
+        self.temp = tempfile.TemporaryDirectory(prefix='audit-capture-sdk-')
         self.addCleanup(self.temp.cleanup)
         self.root = pathlib.Path(self.temp.name)
         adsk = types.ModuleType('adsk')

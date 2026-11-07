@@ -2,6 +2,7 @@
 import json
 import math
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -207,11 +208,12 @@ class AppearanceTests(unittest.TestCase):
     def setUpClass(cls):
         cls.adsk, cls.module = load_module()
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.adsk = self.__class__.adsk
         self.module = self.__class__.module
-        self.folder = Path('/tmp/fmcad-appearance-test')
-        self.folder.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix='fmcad-appearance-')
+        self.addCleanup(temporary.cleanup)
+        self.folder = Path(temporary.name)
 
     def texture_props(self):
         return [FloatProp('texture_RealWorldScaleX', 'RealWorldScaleX', 1.0),

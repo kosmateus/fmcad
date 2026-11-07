@@ -73,7 +73,7 @@ class Document:
 
 class SavedFixtureTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='/tmp/opencode/saved-fixture-')
+        self.temp = tempfile.TemporaryDirectory(prefix='saved-fixture-')
         self.addCleanup(self.temp.cleanup)
         self.epoch = 'a' * 8 + '-aaaa-aaaa-aaaa-' + 'a' * 12
         self.app = types.SimpleNamespace(documents=Documents(), userInterface=types.SimpleNamespace(activeCommand='SelectCommand'))

@@ -1,0 +1,7 @@
+# All optional local image workers run in CI; production requirements stay owned
+# by their respective assets. Constraints pin the tested Python 3.12 environment.
+-c python-constraints.txt
+-r ../assets/image_boundaries_requirements.txt
+-r ../assets/image_trace_detail_requirements.txt
+-r ../assets/image_optimize_requirements.txt
+-r ../assets/reference_images_requirements.txt

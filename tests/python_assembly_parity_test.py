@@ -23,7 +23,13 @@ FAMILIES = ('assembly', 'pose', 'mechanism', 'route3d', 'sequence', 'spring',
 SUITES = tuple(family + '_test' if family != 'definitions' else 'definitions_recipe_test'
                for family in FAMILIES)
 GOLDEN = ROOT / 'tests/fixtures/python-assembly-parity.json'
+EVIDENCE_DELTAS = ROOT / 'tests/fixtures/python-assembly-evidence-deltas.json'
 POST_BASELINE_CASES = {
+    # Added by 769c562 and cda1128 after the captured migration baseline:
+    # precision evidence and the legacy tapped-hole native fixture declaration.
+    # They execute their own assertions; the original golden traces stay fixed.
+    'assembly_test.AssemblyTests.test_joint_drive_reports_evaluated_setter_and_post_capture_values_separately',
+    'fastener_test.FastenerTests.test_native_fixture_declaration_uses_legacy_tapped_kind_not_native_blind_kind',
     # Native MotionLink was added after the legacy parity baseline. These cases
     # still execute and assert here; they have no pre-migration implementation.
     'mechanism_test.MechanismTests.test_native_representation_does_not_infer_motion_link_from_api_presence',
@@ -31,6 +37,17 @@ POST_BASELINE_CASES = {
     'mechanism_test.MechanismTests.test_native_motion_link_rejects_confirmation_units_and_non_revolute_before_add',
     'mechanism_test.MechanismTests.test_native_motion_link_reports_unhealthy_readback_without_rollback',
 }
+
+
+def expected_traces(golden: dict[str, object]) -> dict[str, object]:
+    """Keep the original oracle and bind each reviewed additive change to it."""
+    changes = json.loads(EVIDENCE_DELTAS.read_text())
+    expected = dict(golden)
+    for name, change in changes['cases'].items():
+        if golden.get(name) != change['baseline']:
+            raise AssertionError('Documented evidence delta no longer matches the original oracle: ' + name)
+        expected[name] = change['expected']
+    return expected
 
 
 def projection(value, depth=0):
@@ -128,7 +145,7 @@ class AssemblyParityTests(unittest.TestCase):
         self.assertEqual(set(FAMILIES), {entry['family'] for entry in actual.values()})
         self.assertTrue(POST_BASELINE_CASES.isdisjoint(golden['cases']))
         self.assertEqual(set(actual), set(golden['cases']) | POST_BASELINE_CASES)
-        for name, trace in golden['cases'].items():
+        for name, trace in expected_traces(golden['cases']).items():
             with self.subTest(case=name):
                 self.assertEqual(actual[name], trace)
 
@@ -136,7 +153,7 @@ class AssemblyParityTests(unittest.TestCase):
         run = subprocess.run([sys.executable, '-B', str(Path(__file__)), '--registry-traces'],
                              cwd=ROOT, capture_output=True, text=True, check=True)
         actual = json.loads(run.stdout)
-        expected = json.loads(GOLDEN.read_text())['cases']
+        expected = expected_traces(json.loads(GOLDEN.read_text())['cases'])
         self.assertTrue(POST_BASELINE_CASES.isdisjoint(expected))
         self.assertEqual(set(actual), set(expected) | POST_BASELINE_CASES)
         self.assertEqual({name: trace for name, trace in actual.items()

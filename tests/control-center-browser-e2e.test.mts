@@ -310,9 +310,14 @@ test(
     page.on("console", (message) => {
       if (message.type() !== "error") return;
       const description = message.text();
+      const location = new URL(message.location().url || http.origin);
       if (
         expectingNetworkOutage &&
-        /Failed to load resource: net::ERR_(?:CONNECTION_REFUSED|SOCKET_NOT_CONNECTED)/u.test(
+        location.origin === http.origin &&
+        location.pathname.startsWith("/api/v1/console/") &&
+        // Closing an owned server can reset an existing connection or refuse
+        // a new one. Neither permits unrelated errors outside this outage.
+        /^Failed to load resource: net::ERR_(?:CONNECTION_REFUSED|CONNECTION_RESET|SOCKET_NOT_CONNECTED)$/u.test(
           description,
         )
       )

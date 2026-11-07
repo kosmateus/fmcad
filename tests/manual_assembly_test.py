@@ -139,7 +139,14 @@ class ManualAssemblyTests(unittest.TestCase):
                                      'requestedOccurrences', 'requested', 'linearTolerance',
                                      'angularTolerance', 'poseUnits', 'groundingPolicy', 'associativity'}
                         if mode == 'drive':
-                            keys.add('snapshot')
+                            keys.update({'snapshot', 'coordinateReadback'})
+                            evidence = output['coordinateReadback']
+                            self.assertEqual(set(evidence), {'evaluated', 'beforeCapture'})
+                            for key, prop, evaluate in (('rotation', 'rotationValue', ctx.angle),
+                                                        ('slide', 'slideValue', ctx.length)):
+                                if key in example['data']:
+                                    self.assertEqual(evidence['evaluated'][prop], evaluate(example['data'][key]))
+                                    self.assertEqual(evidence['beforeCapture'][prop], output[prop])
                         for state in output['limits'].values():
                             self.assertEqual(set(state), {'minimumValue', 'maximumValue', 'restValue',
                                 'isMinimumValueEnabled', 'isMaximumValueEnabled', 'isRestValueEnabled', 'units'})

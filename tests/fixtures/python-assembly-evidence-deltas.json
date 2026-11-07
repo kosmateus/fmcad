@@ -1,0 +1,46 @@
+{
+  "baselineCommit": "23cc436",
+  "changeCommit": "769c56299bf56fa093681d27564d2d5c61eba42a",
+  "verification": "All three traces before changeCommit match the original migration oracle exactly. Full event diffs against this change contain only the documented coordinate evidence and one additional getter pair. Model mutations are unchanged.",
+  "cases": {
+    "assembly_test.AssemblyTests.test_drive_returns_actual_not_requested_value": {
+      "baseline": {
+        "family": "assembly",
+        "events": 396,
+        "sha256": "dffa3fe2ee894034e8b7a4107fb585016e231677e0dacf00f851bceb45b06e67"
+      },
+      "expected": {
+        "family": "assembly",
+        "events": 398,
+        "sha256": "95a0ca75c72f6f6ac729b503773b6daccfccafdf87c9f2de5f7ee9e5c083e212"
+      },
+      "reason": "Adds one slideValue getter call/return before capture and coordinateReadback to the result; the legacy final actual value remains unchanged."
+    },
+    "assembly_test.AssemblyTests.test_joint_drive_edit_and_limits": {
+      "baseline": {
+        "family": "assembly",
+        "events": 442,
+        "sha256": "e49b0036929c05592c5ee78ec9db7bb7e1bf9d33491fcccb95800621c53e2d64"
+      },
+      "expected": {
+        "family": "assembly",
+        "events": 442,
+        "sha256": "ed8e42e46d473fe821228822f41fb905ec61d753fe51542de650659695700f10"
+      },
+      "reason": "Adds evaluated and beforeCapture coordinates to the result; the SDK call sequence and final coordinates remain unchanged."
+    },
+    "assembly_test.AssemblyTests.test_limit_changes_drive_uses_actual_limits": {
+      "baseline": {
+        "family": "assembly",
+        "events": 662,
+        "sha256": "72da032f9e1f02a500dbf1dd6c0ecac18384ee39e95b1197b7679772b733ad4d"
+      },
+      "expected": {
+        "family": "assembly",
+        "events": 662,
+        "sha256": "9d601ecfc4d6f02b6e36cfb863eaa6135f03f68983589cea91110947cc9ba370"
+      },
+      "reason": "Adds coordinateReadback to both successful drive results; limit rejection and SDK calls remain unchanged."
+    }
+  }
+}

@@ -17,7 +17,7 @@ from generated_cleanup import collect, identity
 
 class HostWorkerCleanupTests(unittest.TestCase):
     def test_internal_callable_stdout_is_one_json_to_eof(self):
-        with tempfile.TemporaryDirectory(dir='/tmp/opencode') as root:
+        with tempfile.TemporaryDirectory(prefix='host-worker-cleanup-') as root:
             for module, function, args in [('os', '_exit', [0]), ('builtins', 'print', ['{}'])]:
                 with self.assertRaises(json.JSONDecodeError):
                     offline.call_offline(module, function, args, log_parent=root)
@@ -39,7 +39,7 @@ class HostWorkerCleanupTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
 
     def test_success_does_not_collect_replaced_log_or_unknown_file(self):
-        with tempfile.TemporaryDirectory(dir='/tmp/opencode') as root:
+        with tempfile.TemporaryDirectory(prefix='host-worker-cleanup-') as root:
             # Replace a declared diagnostic after its producer opened it. Cleanup
             # must compare with the created inode, not inventory the replacement.
             code = """import os,pathlib,time
@@ -58,7 +58,7 @@ print('{}')
             self.assertEqual((folder / 'unknown.txt').read_text(), 'sentinel')
 
     def test_cleanup_retains_symlinks_hardlinks_changed_and_foreign_files(self):
-        with tempfile.TemporaryDirectory(dir='/tmp/opencode') as root:
+        with tempfile.TemporaryDirectory(prefix='host-worker-cleanup-') as root:
             root = Path(root)
             owned = root / 'owned'; owned.write_text('original')
             inventory = {str(owned): identity(owned)}
@@ -73,7 +73,7 @@ print('{}')
             self.assertTrue(all(path.exists() for path in [owned, foreign, link, hard]))
 
     def test_supervisor_limit_and_non_linux_fail_closed(self):
-        with tempfile.TemporaryDirectory(dir='/tmp/opencode') as root:
+        with tempfile.TemporaryDirectory(prefix='host-worker-cleanup-') as root:
             result = offline.run_offline([sys.executable, '-B', '-c', "print('x'*10000)"],
                                          log_parent=root, stage='limit', timeout=2, max_output_bytes=100)
             self.assertEqual(result.returncode, 125)
