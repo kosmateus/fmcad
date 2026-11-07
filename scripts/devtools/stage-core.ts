@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { pruneTypeScriptEmissions } from "./prune-emissions";
 const runtimeRequire = createRequire(__filename);
 
 /** Stage the one installed runtime without changing its existing resource identity. */
@@ -9,6 +10,52 @@ export function stageCore(root: string, identityOnly = false): void {
     writeRuntimeIdentity();
     return;
   }
+  // tsc leaves outputs behind after source renames. Prune both compiler and
+  // staged copies; cleaning only one destination lets the next copy revive them.
+  const emissions: Array<[string, string, string]> = [
+    ["packages/core/src", "packages/core/dist", "src/dist/core"],
+    ...[
+      "console",
+      "persistence",
+      "config-platform",
+      "fusion-transport",
+      "telemetry",
+      "python",
+      "review",
+      "execution",
+      "broker-ipc",
+      "control-center",
+    ].map((name): [string, string, string] => [
+      `packages/node-adapters/src/${name}`,
+      `packages/node-adapters/dist/${name}`,
+      `src/dist/${["config-platform", "fusion-transport", "python", "review"].includes(name) ? name : `node-adapters/${name}`}`,
+    ]),
+    ...["api", "composition", "entrypoints"].map(
+      (name): [string, string, string] => [
+        `src/${name}`,
+        `dist/library-build/src/${name}`,
+        `src/dist/${name}`,
+      ],
+    ),
+    ...["contracts", "resources", "server"].map(
+      (name): [string, string, string] => [
+        `packages/control-center/src/${name}`,
+        `packages/control-center/dist/${name}`,
+        `src/dist/control-center/${name}`,
+      ],
+    ),
+  ];
+  // A missing checkout/build input must fail before pruning another workspace.
+  for (const [source, compiled] of emissions)
+    for (const input of [source, compiled])
+      if (!fs.statSync(path.join(root, input)).isDirectory())
+        throw new Error("Missing staging input: " + input);
+  for (const [source, compiled, staged] of emissions)
+    pruneTypeScriptEmissions(path.join(root, source), [
+      path.join(root, compiled),
+      path.join(root, staged),
+      path.join(root, "dist", staged),
+    ]);
   fs.cpSync(
     path.join(root, "packages/core/dist"),
     path.join(root, "src/dist/core"),
