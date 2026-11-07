@@ -253,7 +253,7 @@ test("prepared compatibility loaders resolve every dependency without executing 
   );
 
   const temporaryRoot = fs.mkdtempSync(
-    "/tmp/opencode/fmcad-compatibility-loader-",
+    path.join(require("node:os").tmpdir(), "fmcad-compatibility-loader-"),
   );
   t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   fs.mkdirSync(path.join(temporaryRoot, "assets/cad"), { recursive: true });
@@ -434,7 +434,8 @@ test("payload nonfinite and Unicode policy remains compatible", () => {
   assert.throws(() => pythonValue(undefined), /JSON serializable/);
 });
 
-test("final receipt preparation includes transport wrapper and nested literal user code before dispatch", () => {
+test("final receipt preparation includes transport wrapper and nested literal user code before dispatch", (t) => {
+  t.after(require("./fixtures/fake-wsl-platform.cjs")());
   const { prepareReceiptScript } = require("../src/queue-instance");
   const code = 'def run(context):\n    return "日本語"\n';
   const outer = `def run(context):\n    exec(compile(${pythonValue(code)}, '/user.py', 'exec'), {})\n`;
@@ -503,7 +504,7 @@ test("actual CAD and cad-v1 run wrappers retain prepared units and original sour
     buildCadScript("document.status", {}, { doc: "fixture" }),
   );
   assert.ok(!status.units.some((unit) => unit.id === "model"));
-  const directory = fs.mkdtempSync("/tmp/opencode/python-source-");
+  const directory = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "python-source-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const file = path.join(directory, "日本語.py");
   const source =

@@ -16,5 +16,11 @@
     "sourcePath": "assets/inspect.py",
     "file": "inspect-a262.py.txt",
     "sha256": "0785b3c59e300ae018b3008d64ffe03e4a2ffca54c68ed3e518c8b276e2ecf2c"
+  },
+  {
+    "revision": "d496c734d63661f2f131b6797ce171e9373a58f4",
+    "sourcePath": "src/run.js",
+    "file": "run-d496.js.txt",
+    "sha256": "b055c2144b88d7b03d6079d472cdaa9541c8f8322ceafbf3990347b2419ccb34"
   }
 ]

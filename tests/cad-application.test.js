@@ -590,7 +590,9 @@ test("run adapter pins accepted raw bytes before UTF-8 decoding and argument inj
   const fs = require("node:fs");
   const path = require("node:path");
   const { createHash } = require("node:crypto");
-  const dir = fs.mkdtempSync("/tmp/opencode/cad-source-bytes-");
+  const dir = fs.mkdtempSync(
+    path.join(require("node:os").tmpdir(), "cad-source-bytes-"),
+  );
   const file = path.join(dir, "trusted.py");
   const bytes = Buffer.concat([
     Buffer.from("# "),
