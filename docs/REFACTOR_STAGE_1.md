@@ -29,6 +29,11 @@ This stage establishes repeatable offline evidence; it does not certify Fusion.
 - The catalog worker uses the broker's explicit native-path test adapter in place
   of a module-loader patch. A timeout reports its last job state and physical call
   count; the deadline and admission checks are not relaxed.
+- The pause/resume test no longer accepts a Python checker rejection as proof of
+  document protection. It requires either invalidated preparation
+  (`DOCUMENT_CHANGED`) or a fresh unavailable target (`DOCUMENT_STATE_UNAVAILABLE`),
+  a not-started outcome and zero product submissions. The fixture explicitly
+  reports the unavailable target.
 - Browser project filtering waits for the complete scoped result, because a
   matching row is already present before the scope change. The expected rows are
   unchanged.
@@ -57,7 +62,12 @@ mock pass must never be reported as a live Fusion pass.
 1. Finish scenario ownership/cleanup: a separately saved Fusion file per scenario,
    cleanup after operation/assertion failure, close/delete reconciliation and an
    explicit cross-document routing regression. Preserve one SDK lane and concurrent
-   offline preparation. Native concurrency defaults to 10; measure CPU/memory
+   offline preparation. Include failed document activation and duplicate document
+   names: the historical inspection helper already trusted activation and selected
+   the first matching name. Add identity-based rejection before tightening that
+   behavior. A failed volume read reported as zero is another inherited defect
+   requiring an explicit unknown/error contract, not a fabricated measurement.
+   Native concurrency defaults to 10; measure CPU/memory
    before increasing the simulator default of 2.
 2. Extend the shared simulator/live scenarios from historical assertions, using
    the pinned Autodesk interfaces. Add parameters, sketch/component operations,

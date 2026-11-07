@@ -1127,7 +1127,10 @@ test(
     ).length;
     await page.getByRole("button", { name: "Zamroź podgląd" }).click();
     await page.getByText("Podgląd zamrożony.").waitFor();
-    await page.getByRole("button", { name: "Wznów podgląd" }).click();
+    await page
+      .locator(".heading-actions")
+      .getByRole("button", { name: "Wznów podgląd" })
+      .click();
     const refreshRequest = page.waitForRequest(
       (request) => request.url().includes("/api/v1/console/snapshot"),
       { timeout: 10_000 },
