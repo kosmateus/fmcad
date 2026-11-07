@@ -80,15 +80,23 @@ export function readBytes(
   try {
     // Linux is the supported broker host. Verify the opened inode's path too:
     // component checks alone can race a parent-directory symlink substitution.
-    if (
-      expectedPath &&
-      process.platform === "linux" &&
-      io.realpathSync(`/proc/self/fd/${fd}`) !== expectedPath
-    ) {
-      failure(
-        "INVALID_ARTIFACT",
-        "Opened artifact escaped its verified directory",
-      );
+    if (expectedPath && process.platform === "linux") {
+      let openedPath: string;
+      try {
+        openedPath = io.realpathSync(`/proc/self/fd/${fd}`);
+      } catch (cause) {
+        // The file was opened. Missing verification evidence is not a missing
+        // artifact and must never be converted to null by an owning store.
+        throw Object.assign(
+          new Error("Cannot verify opened artifact path", { cause }),
+          { code: "STORAGE_UNAVAILABLE" },
+        );
+      }
+      if (openedPath !== expectedPath)
+        failure(
+          "INVALID_ARTIFACT",
+          "Opened artifact escaped its verified directory",
+        );
     }
     const stat = io.fstatSync(fd);
     if (!stat.isFile())

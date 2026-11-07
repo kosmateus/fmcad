@@ -34,5 +34,11 @@
     "sourcePath": "src/cad.js",
     "file": "cad-5292.js.txt",
     "sha256": "5677e713d8b58294d874cf01b736f034cf8b6695c5101efc3401d8bf21dd91bc"
+  },
+  {
+    "revision": "04fa9e1fd0dab98ea7a8c49f3a26fe46658f07f6",
+    "sourcePath": "packages/node-adapters/src/persistence/records.ts",
+    "file": "records-04fa.ts.txt",
+    "sha256": "7a3073f634c1f541fb46d4603c8ce74d251d14469f25d283fbbb9ee0f9241bad"
   }
 ]
