@@ -60,6 +60,16 @@ all five generated operations must still pass the real strict checker.
 
 ## Verification and next boundary
 
+CI also reproduced the catalog-worker timeout with zero product sends: local
+preparation consumed about 93 seconds, then the test's wall clock expired while
+the broker's distinct SDK deadline was still in the future. `PhasedWorkers`
+allocates 180 seconds to local prepare/publication; `QueueState` separately grants
+180 seconds to the SDK phase at readiness. The test now observes their combined
+budget plus its existing 10-second settlement allowance. Neither production
+budget nor the test's 420-second outer bound changes. Success, exact two product
+submissions and rejection of mismatched guard metadata remain mandatory; this
+does not establish a native performance qualification.
+
 Run the build, lint, test typecheck, `test:regressions`, `test:scenarios:unit`,
 both component profiles, Python tests and the full CI matrix. Existing broker
 tests verify that project A can remain in offline preparation while B executes,
