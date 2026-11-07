@@ -1272,7 +1272,7 @@ test(
       "/api/v1/console/snapshot",
     );
     await page
-      .getByText("Nie można połączyć się z lokalnym panelem.")
+      .getByText("Nie można połączyć się z lokalnym panelem.", { exact: true })
       .waitFor();
     assert.ok(
       expectedNetworkFailures.some((request) =>

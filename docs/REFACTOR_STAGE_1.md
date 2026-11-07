@@ -3,6 +3,9 @@
 The reference is `a26222ff617b0e9597b2a91b50474bdca8d0a0ce`, before the
 TypeScript toolchain migration. Keychain had already been removed and is excluded.
 This stage establishes repeatable offline evidence; it does not certify Fusion.
+The complete historical comparison, backend design, dependency/acceptance plan
+and disposition of the remaining Beads scope are in
+[REFACTOR_COMPLETION_PLAN.md](REFACTOR_COMPLETION_PLAN.md).
 
 ## Changes and evidence
 
@@ -37,6 +40,10 @@ This stage establishes repeatable offline evidence; it does not certify Fusion.
 - Browser project filtering waits for the complete scoped result, because a
   matching row is already present before the scope change. The expected rows are
   unchanged.
+- CI supplies its read-only GitHub token for the pinned Autodesk API download.
+  The downloader sends it only to the exact HTTPS API origin, refuses redirects
+  and still verifies the pinned commit and every file hash. Tests cover both
+  authenticated and anonymous requests and ensure other origins receive no token.
 - Locale runtime, selector and catalogs come from archived commit
   `7f01c715b2c61835e8a797fbaf12a358e2af44d5`. The current four-view UI receives its
   localization wiring without that branch's system-control feature. The later

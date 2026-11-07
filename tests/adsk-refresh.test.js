@@ -274,6 +274,40 @@ test("cache rejects symlink files and snapshot directories", async (t) => {
   await fs.symlink(cache.directory + "-moved", cache.directory);
   await assert.rejects(verifyCache(root, policy), /directory/);
 });
+test("network adapter sends an optional token only to the HTTPS GitHub API", async (t) => {
+  const original = global.fetch;
+  const originalToken = process.env.GITHUB_TOKEN;
+  t.after(() => {
+    global.fetch = original;
+    if (originalToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = originalToken;
+  });
+  process.env.GITHUB_TOKEN = "fixture-token";
+  const requests = [];
+  global.fetch = async (url, options) => {
+    requests.push({
+      url,
+      headers: options.headers,
+      redirect: options.redirect,
+    });
+    return new Response("ok");
+  };
+  const urls = [
+    "https://api.github.com/repos/AutodeskFusion360/FusionAPIReference",
+    "https://raw.githubusercontent.com/AutodeskFusion360/FusionAPIReference/main/LICENSE",
+    "https://api.github.com.example.invalid/",
+    "http://api.github.com/",
+  ];
+  for (const url of urls) await network.get(url, 1024);
+  assert.equal(requests[0].headers.Authorization, "Bearer fixture-token");
+  for (const request of requests.slice(1))
+    assert.equal(request.headers.Authorization, undefined);
+  for (const request of requests) assert.equal(request.redirect, "error");
+  delete process.env.GITHUB_TOKEN;
+  await network.get(urls[0], 1024);
+  assert.equal(requests.at(-1).headers.Authorization, undefined);
+});
+
 test("network adapter rejects HTTP, deadline, size, redirect and truncation errors", async (t) => {
   const original = global.fetch;
   t.after(() => {
