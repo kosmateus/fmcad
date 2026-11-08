@@ -55,7 +55,7 @@ before any integration; record exact merged SHA and full matrix results here.
 | B       | PR #36 / #44 merged as `ecf4f60` | Claim plus tested persistence increment; shared reopen, assertion mapping, profiles and lifecycle/recovery proof remain B dependencies. |
 | C       | PR #37 `a4943f3`               | Claim only at observation; canonical modeling services, Python boundaries and negative/readback evidence required.    |
 | D       | PR #38 `ee0fd54`               | Claim only at observation; file/source/version/publication and recovery contracts required.                           |
-| E       | PR #39 `a66ea3c`               | Public/host work in progress; installed routes, declarations and consumer parity required.                            |
+| E       | PR #39 merged as `1023664`     | Tested image-command boundary only; remaining public routes and complete installed consumer parity stay open.         |
 | F       | PR #41 `a751396`               | Claim only at observation; production browser, retention and explicit UI retirement ledger required.                  |
 | G       | PR #40                         | Registration guard and inventories are an initial delivery, not G1–G4 completion.                                     |
 
@@ -222,3 +222,36 @@ result `NOTRUN`; native execution did not occur. The package allowlist remains
 published. No facade or loader is retired at this checkpoint. B's assertion and
 required-profile work remains an unmerged dependency and must be evaluated from
 its final merge SHA rather than an open branch.
+
+## Second merged A–F checkpoint — image command boundary
+
+Merged main `10236646df47dfab961c35fa41eb9e9888980d08` contains Agent E's
+first bounded public-host delivery from PR #39. All 22 CI jobs passed its exact
+implementation head `8a707c2dd8e2a5b70365ba26a279ecd2b7fe9582` in workflow
+`42524333282`. Main push workflow `42529116914` was cancelled on its first
+attempt and requeued; it is not successful merge-head evidence unless that exact
+SHA attempt completes. G's newer combined candidate likewise requires fresh CI.
+
+The delivery moves trace, optimize and boundary process orchestration into a
+typed image-command adapter while retaining the three public CommonJS loaders.
+Twenty-four frozen-predecessor comparisons preserve complete worker input,
+interpreter/feature selection, call counts, stdout, stderr, status and errors.
+The full `runtime-consumers.test.js` selection passes 38 tests with a writable
+workspace `TMPDIR`, including a tarball installed outside the repository and
+strict compilation of its exported adapter declarations. The first attempt on
+this host failed before assertions because `/tmp` did not exist; no assertion or
+production path was changed for the rerun.
+
+The combined build, strict test typecheck and 124 shared scenario tests pass.
+Static registration remains 487 sources / 224 registered / 263 explicit gaps;
+the runtime inventory increases to 651 files while public routes remain 420.
+The package allowlist increases to 1,571 files, 3,375,315 compressed bytes and
+16,628,068 unpacked bytes, reflecting the published adapter output. Simulator
+typing and the 58 method / 21 property API check remain clean. The 48-command
+native plan remains `NOTRUN` and offline acceptance remains `INCOMPLETE`.
+
+No facade is retired: installed and source consumers still enter through the
+public image loaders. E1–E4 remain open for CLI/MCP compatibility, configuration,
+client, reference, engineering, review, shot, UI and complete installed
+CLI/MCP/library/OpenCode qualification. Native Fusion/UI and image-quality checks
+remain separate from these offline process fixtures.

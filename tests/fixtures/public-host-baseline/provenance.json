@@ -1,0 +1,14 @@
+{
+  "src/image-trace.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "209adcd8787dfe1d13f1f79f4b1ef7ffb41fac31991d186bb49713cb4ddfcc6e"
+  },
+  "src/image-optimize.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "80db3a07d7fbf2a9f0c341ba263f37678ac3add353243059bf898aa9f17b7cde"
+  },
+  "src/image-boundaries.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "ce6b7bf329eddc85eb7000b9e4d8b37f5b399a5eb2db61fdba522b4166eeac4a"
+  }
+}

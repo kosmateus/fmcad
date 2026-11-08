@@ -154,3 +154,23 @@ The combined local checks pass 124 scenario tests, simulator strict typing and
 58 method / 21 property API shapes. Native commands remain unexecuted. Shared
 saved-reopen migration, receipt/restart recovery, assertion profiles and native
 archive/token behavior remain B dependencies, so neither B nor G is complete.
+
+### Second A–F merge checkpoint
+
+Merged main `1023664` adds Agent E's first bounded image-command delivery from
+PR #39. Its exact head `8a707c2` passed all 22 jobs in workflow `42524333282`.
+The merge-head workflow was cancelled and requeued, so it is not yet passing
+evidence. G integrates the merge only on a new candidate that must run fresh CI.
+
+The combined local tree passes build, strict test types, 124 scenario tests and
+all 38 runtime-consumer cases with an explicit writable workspace `TMPDIR`.
+Those cases include frozen predecessor comparisons and a tarball installed
+outside the repository with strict declaration compilation. The initial direct
+runtime-consumer invocation failed only because this host has no `/tmp`; the
+rerun changed no test or production assertion.
+
+Inventory is now 651 runtime files, 420 public routes and 487 test sources, with
+224 registered and 263 explicit gaps. The package contains 1,571 files. No image
+loader is retired because public and installed consumers still use it. Remaining
+E public surfaces, complete installed profiles, native UI/Fusion and image quality
+stay open; G and offline acceptance remain incomplete.
