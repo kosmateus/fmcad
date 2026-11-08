@@ -38,5 +38,41 @@
   "src/shot.js": {
     "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
     "sha256": "0cae669caf0a1f0e97764ceb95db98e841ef9ecb17f0632b085427052f286c3b"
+  },
+  "src/commands.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "dd63aa822e0f0a4ebaa83c24557f3747ae323101df21f50586bd7d9f8c15f605"
+  },
+  "src/help.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "e771c0253595afc566d4f6f0f3065682cbd1e8aa0dcfcc6919cfb311092eeb13"
+  },
+  "src/help-pl.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "64d366310535945f95147bde725bae3a934b3bdbd3db4d6564f46d2dd28aaa5e"
+  },
+  "src/help-details.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "3f7308673d91cb875c65d47531f0e84941b8af1b009c72db995f1b746f71c992"
+  },
+  "src/help-manual.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "1317b8cc510b88498d220b95b75a270ea93d1521edc2b5177050887e1368ab3e"
+  },
+  "src/help-guide.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "92274ace54c7a34100f0189c98787ba2ecb5e58f6bcc22fd91f3147606c45fff"
+  },
+  "src/help-format.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "ed1e7212b87c0dcfe0f57b79b9c4f56e38af256c853d6a4d2bb98c24ece2a735"
+  },
+  "src/legacy-manual.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "ed8282a2528d0737d6b28c45fc5dced586bebd8d25778c7616fcde3d56cc23ef"
+  },
+  "src/broker-manual.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "99464012b0bd93d2dbb102b4f2b22950019406fd1ea3cf163189ff71c911c861"
   }
 }
