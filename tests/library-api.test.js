@@ -185,6 +185,11 @@ test('outside-repository consumer imports built JS and declarations with no sour
       import { loadConfig } from './node_modules/fmcad/dist/src/dist/composition/library-configuration.js';
       void new McpClient({clientId: 'installed-owner'}).close();
       void loadConfig;
+      import { parseReviewArgs, reviewCmd } from './node_modules/fmcad/dist/src/dist/composition/library-review-command.js';
+      void parseReviewArgs; void reviewCmd;
+      import { shotCmd, type ShotClient } from './node_modules/fmcad/dist/src/dist/composition/library-shot.js';
+      declare const shotClient: ShotClient;
+      void shotCmd(shotClient, []);
       import type { FmcadOptions, ExecutionReceipt, ReviewRequest, ReviewServiceOptions, PythonCheckReport } from 'fmcad/api';
       declare const options: FmcadOptions;
       declare const reviewOptions: ReviewServiceOptions;
@@ -362,5 +367,51 @@ test('MCP reconciliation accepts advertised optional outcomes without resubmissi
     const result=await invoke(current,args);
     assert.match(result.body.error.message,/INVALID_QUEUE_PARAMS/);
     assert.deepEqual(result.calls,[]);
+  }
+});
+
+test('review CLI preserves historical parsing, script bytes and report validation', () => {
+  const historical=historicalPublicBoundary('review'),current=require('../src/review');
+  const base=['--doc','Part α','--doc-id','creation-1','--doc-file-id','file-1','--out','new review'];
+  for (const extra of [[],['--width','64','--height','96'],['--width','2.5'],['--height'],['--doc-id','duplicate'],['--recipes','{bad'],['--recipes','{}'],['--recipes','[]'],['--unknown','x']]) {
+    const observe=api=>{try{return {value:api.parseReviewArgs([...base,...extra])};}catch(error){return {error:error.message};}};
+    assert.deepEqual(observe(current),observe(historical));
+  }
+  const request={...current.parseReviewArgs(base),requestId:'review-owned',fusionOut:'C:\\review'};
+  assert.equal(current.buildReviewScript(request),historical.buildReviewScript(request));
+  for (const report of [null,{}, {schemaVersion:1,requestId:'foreign'}, {success:true,status:'captured'}]) {
+    const observe=api=>{try{return {value:api.verifyReport(report,request)};}catch(error){return {error:error.message};}};
+    assert.deepEqual(observe(current),observe(historical));
+  }
+  assert.deepEqual(current.flags,historical.flags);
+  assert.deepEqual(current.views,historical.views);
+});
+
+test('shot preserves historical single dispatch, response precedence and publication failures', async () => {
+  const historical = historicalPublicBoundary('shot');
+  const current = require('../src/shot');
+  const image = Buffer.from('image bytes').toString('base64');
+  const responses = [
+    { data: { base64Data: image } },
+    { text: JSON.stringify({ result: { content: [{ type: 'image', data: image }] } }) },
+    { data: { data: image }, text: '{bad' },
+    { failed: true, data: { base64Data: image }, text: 'unknown outcome' },
+    { text: '{bad' }, { data: { content: [null] } },
+    { data: { base64Data: { invalid: true } } },
+  ];
+  for (const response of responses) {
+    for (const failWrite of [false, true]) {
+      const observe = async api => {
+        const calls = [], writes = [], stdout = [], stderr = [];
+        const client = { callTool: async (...args) => { calls.push(args); return response; } };
+        const files = { writeFileSync: (file, bytes) => { writes.push([file, bytes.toString('hex')]); if (failWrite) throw new Error('disk full'); } };
+        const io = { stdout: { write: value => stdout.push(value) }, stderr: { write: value => stderr.push(value) } };
+        let code, error;
+        try { code = await api.shotCmd(client, ['--width','invalid','--dir','front','--transparent','--unknown'], io, files, () => 123); }
+        catch (caught) { error = { name: caught.name, message: caught.message }; }
+        return { calls, writes, stdout, stderr, code, error };
+      };
+      assert.deepEqual(await observe(current), await observe(historical));
+    }
   }
 });

@@ -57,3 +57,9 @@ previously failing consumer cases pass with unchanged assertions. A writable
 
 Remaining E1–E4 work in the table is open. Native Fusion/UI qualification and
 image quality are not inferred from process fixtures.
+
+Screenshot orchestration now uses `library-shot.ts` with explicit client, output,
+file and clock ports. It preserves existing permissive CLI parsing and Buffer
+decoding behavior; stricter screenshot input validation would be a separate
+behavior change. Historical malformed responses and write failures retain their
+errors, with no retry or extra backend call.
