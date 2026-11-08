@@ -1,7 +1,8 @@
 # Agent A — broker correctness, admission and recovery
 
-Status: **in progress — current coordinating agent**. A1 restores the missing
-broker gates; A2–A4 remain assigned here. Start at current `main` and preserve
+Status: **in progress — current coordinating agent**. A1 is merged in PR #42.
+A2 (PR #51) and A3.1/A4.1 (PR #56) await their remaining full CI checks;
+the rest of A3–A4 remains assigned here. Start at current `main` and preserve
 other agents' deliveries. The original audit reference is `3c7dc83`.
 Read [the shared plan](../REFACTOR_PARALLEL_PLAN.md) for source links and rules.
 
@@ -136,8 +137,13 @@ Recovery fixtures register cleanup before assertions.
 
 Local compiled historical/registration checks pass. The full broker selection
 requires real Linux `/proc` identity; no process or artifact guard is replaced
-to make this host pass. Full CI and final integration evidence will be recorded
-before this delivery is marked complete.
+to make this host pass. Full CI run
+[`42525055817`](https://github.com/kosmateus/fmcad/actions/runs/42525055817)
+passed all 24 jobs on `709741a4c083d59430479d00aa0b43c7abd17314`.
+PR #42 merged as `171c972c1de8845aa300371798dcb6be5fd5416a`.
+Before merge, the candidate with main `0d6f757` built successfully. The preceding
+main candidate passed all 124 scenario tests; all 12 affected inventory, history
+and registration checks passed after the latest main update. A1 is complete.
 
 Linux CI run `42524020203` executed 34 cases: 33 passed and the document
 scenario failed with `LOCAL_PHASE_TIMEOUT` during real Python preparation.
@@ -208,6 +214,11 @@ production observer cases pass. The offline npm consumer cannot resolve cached
 `basedpyright` metadata in this host, even after cache preparation, and remains a
 required Linux CI check. Process-identity broker cases also remain required on
 Linux. No host limitation changes a production guard or test assertion.
+
+Linux update: Node 24 broker job `128871346225` in run `42526553187` passed on
+`bed43003745b67d4d6795e600fc40af85fb1daa1`, including real Python checking and
+the offline installed-consumer test. The host cache limitation is therefore
+resolved by CI evidence; the remainder of the full matrix is still required.
 
 A3 (recovery/epoch/control migration) and A4 (concurrency and integration) remain
 assigned to A. Native Fusion qualification remains with B/G after offline
