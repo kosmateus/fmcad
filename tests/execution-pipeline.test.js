@@ -119,7 +119,7 @@ test('node worker rejects an invalid build/capability before calling its typed s
 test('broker CAD input planning retains file pins while projecting canonical worker metadata', t => {
   const fs = require('node:fs'), path = require('node:path');
   const { createHash } = require('node:crypto');
-  const dir = fs.mkdtempSync('/tmp/opencode/execution-input-');
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'execution-input-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, 'input.json');
   fs.writeFileSync(file, '{}');
