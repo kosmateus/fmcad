@@ -198,6 +198,8 @@ test('outside-repository consumer imports built JS and declarations with no sour
       void commands; void findCommand; void detail; void globalHelp;
       import { validateInvocation, executeCapability } from './node_modules/fmcad/dist/src/dist/composition/library-catalog-registry.js';
       void validateInvocation; void executeCapability;
+import { createQueuePost as queuePost, createForwarder as forwarder, responseMessages } from './node_modules/fmcad/dist/src/dist/composition/library-mcp-compat.js';
+void queuePost; void forwarder; void responseMessages;
       import type { FmcadOptions, ExecutionReceipt, ReviewRequest, ReviewServiceOptions, PythonCheckReport } from 'fmcad/api';
       declare const options: FmcadOptions;
       declare const reviewOptions: ReviewServiceOptions;
@@ -594,4 +596,73 @@ test('typed catalog composition preserves declarations, specialists and broker p
   assert.deepEqual(current.cli,historical.cli);
   assert.deepEqual(current.search,historical.search);
   assert.deepEqual(current.probes,historical.probes);
+});
+
+test('compatibility forwarder preserves framing, sessions, receipts and no-retry errors', async () => {
+  const historical = historicalPublicBoundary('mcp-stdio-compat').createForwarder;
+  const current = require('../src/mcp-stdio-compat').createForwarder;
+  async function observe(factory, request, response) {
+    const sent = [], logs = [], calls = [];
+    const forward = factory(async (...args) => {
+      calls.push(args);
+      if (response instanceof Error) throw response;
+      return structuredClone(response);
+    }, (message, frame) => sent.push({ message, frame }), line => logs.push(line), { headers: { Authorization: 'secret' } });
+    await forward(typeof request === 'string' ? request : JSON.stringify(request));
+    return { sent, logs, calls };
+  }
+  const requests = ['{', 'null', '[]', '{}', {jsonrpc:'1.0',id:1,method:'ping'},
+    {jsonrpc:'2.0',id:{},method:'ping'}, {jsonrpc:'2.0',id:null,method:'ping'},
+    {jsonrpc:'2.0',id:1,method:'ping'}, {jsonrpc:'2.0',method:'notifications/initialized'},
+    {jsonrpc:'2.0',id:1,method:'resources/templates/list'}, {jsonrpc:'2.0',id:1,method:'tools/list'}];
+  const responses = [{status:204,raw:''}, {status:500,raw:'secret'},
+    {status:200,raw:'invalid'}, {status:200,raw:'{"jsonrpc":"2.0","id":1,"result":{}}'},
+    {status:200,raw:'{"jsonrpc":"2.0","id":1,"error":{"code":-32601}}'},
+    {status:200,raw:'{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"foreign"},{"name":"fmcad_queue_result"}]}}',queueTools:true,queueReceipt:{jobId:'owned',requestId:'request'}},
+    {status:200,raw:'data: {"jsonrpc":"2.0","method":"notice"}\n\ndata: {"jsonrpc":"2.0","id":1,"result":{}}\n\n'},
+    {status:200,raw:'{"jsonrpc":"2.0","id":2,"result":{}}'},
+    {status:200,raw:'{"jsonrpc":"1.0","id":1,"result":{}}'},
+    new Error('authorization secret disconnected')];
+  for (const request of requests) for (const response of responses)
+    assert.deepEqual(await observe(current,request,response),await observe(historical,request,response));
+  async function sessions(factory) {
+    const calls=[], sent=[];
+    const forward=factory(async (request,session,version)=>{
+      calls.push({request,session,version});
+      return {status:200,sessionId:'retained-session',raw:JSON.stringify({jsonrpc:'2.0',id:request.id,result:{protocolVersion:'2025-03-26'}})};
+    }, message=>sent.push(message));
+    await forward('{"jsonrpc":"2.0","id":"init","method":"initialize"}');
+    await forward('{"jsonrpc":"2.0","id":"next","method":"ping"}');
+    return {calls,sent};
+  }
+  assert.deepEqual(await sessions(current),await sessions(historical));
+});
+
+test('MCP queue migration preserves single admission, recovery, receipts and disposal', async () => {
+  const historical=historicalPublicBoundary('mcp-stdio-compat'), current=require('../src/mcp-stdio-compat');
+  const catalog={tools:()=>[],list:()=>[],fromMcp:()=>assert.fail('raw RPC is not catalog'),isLocal:()=>false};
+  historical.configureCatalogServices(catalog);current.configureCatalogServices(catalog);
+  async function observe(api, scenario) {
+    const calls=[];
+    const job={id:'owned-job',requestId:'owned-request',clientId:'owner',state:scenario==='unknown'?'needs_reconciliation':scenario==='failed'?'failed':'succeeded',revision:3};
+    const value={job,rpc:{status:200,raw:JSON.stringify({jsonrpc:'2.0',id:1,result:{content:[{type:'text',text:'exact'}]}})}};
+    if(scenario==='missing') delete value.rpc;
+    if(scenario==='python') value.execution={pythonCheck:{status:'required'},code:'PYTHON_REQUIRED',executionOutcome:'not_started',mayHaveMutated:false};
+    const client={dir:'unused',auth:{clientId:'owner'},
+      register:async options=>{calls.push(['register',options]);if(scenario==='registration')throw new Error('registration failed');},
+      submit:async input=>{calls.push(['submit',input]);if(['recovered','lost','recovery-failed'].includes(scenario))throw new Error('acknowledgement lost');return job;},
+      findRequest:async requestId=>{calls.push(['findRequest',requestId]);if(scenario==='recovery-failed')throw new Error('recovery disconnected');return scenario==='recovered'?value:null;},
+      wait:async (id,{signal})=>{calls.push(['wait',id,signal.aborted]);return value;},
+      persistRequestContext:(...args)=>calls.push(['persist',...args]),
+      dispose:()=>calls.push(['dispose']),
+    };
+    const post=api.createQueuePost(client,{backend:'addin',timeoutMs:2000},3000,{sessionId:'owner-session',projectDirectory:root});
+    const response=await post({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'execute_python',arguments:{code:'unchanged'},_meta:{fmcad:{requestId:'owned-request',doc:'Exact',docId:'doc-pin',docFileId:'file-pin',projectId:'project-pin',purpose:'Inspect requested design',expectedRevision:3}}}},'wire-session','wire-version');
+    post.close();
+    assert.equal(calls.filter(c=>c[0]==='submit').length,scenario==='registration'?0:1);
+    assert.equal(calls.at(-1)[0],'dispose');
+    return {calls,response};
+  }
+  for(const scenario of ['success','failed','unknown','missing','python','recovered','lost','recovery-failed','registration'])
+    assert.deepEqual(await observe(current,scenario),await observe(historical,scenario),scenario);
 });
