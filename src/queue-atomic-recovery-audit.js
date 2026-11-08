@@ -114,15 +114,13 @@ function auditSummary(reply, identity) {
 // authorize one fixed scratch operation; the same gate/physical port still owns it.
 function createRecoveryAudit(p) {
   const kind = p.kind || 'atomic-recovery-audit';
-  let publication = null;
+  const publication = require('./dist/core/application/execution').createReceiptPublication(
+    (result, prior, receipt) => p.publishComplete(result, prior, receipt));
   async function publishComplete(result, prior, receipt) {
     if (!p.publishComplete) return;
-    // A poll can observe result.json while the original publication callback is
-    // awaiting offline evidence. Join it; never activate/rebind concurrently.
-    if (!publication) publication = Promise.resolve().then(() => p.publishComplete(result, prior, receipt));
-    const pending = publication;
-    try { return await pending; }
-    finally { if (publication === pending) publication = null; }
+    // Polls for one authenticated receipt join its original publication. A
+    // different job/owner must never inherit that activation or its failure.
+    return publication(receipt, result, prior, receipt);
   }
   async function handle(message, clientId) {
     const identifiers = p.priorObservationRequired === false ? [message.jobId, message.requestId]

@@ -277,3 +277,48 @@ Remaining A3 packages: atomic original-result/audit reconstruction; owner-bound
 epoch succession and runtime/checker upgrade controllers; saved-fixture control;
 physical instance identity/reset. A4 concurrency/restart interleavings and final
 cross-agent integration remain assigned to A. A3.1 is not the completion of A3.
+
+## A4.1 delivery record — isolate concurrent recovery publication
+
+The A3.1 recovery-evidence delivery also closes a cross-job publication defect.
+`createRecoveryAudit` held one pending publication promise for the whole
+controller. If owner A's completed result was awaiting local publication, a poll
+for owner B's different completed result could receive A's activation; A's
+publication failure could also reject B's otherwise valid result. Both request
+owners had passed validation, so a foreign-caller rejection test alone missed it.
+
+A strict typed `createReceiptPublication` policy in core execution now joins only
+polls for the same authenticated result receipt. Different receipts publish
+independently. The existing recovery controller validates owner, immutable request
+key and retained summary before entering this policy. Failed local publication
+may retry the same original evidence, but it never prepares or dispatches another
+SDK operation. Full controller/reader migration remains in A3; only this concurrency
+policy has moved in this delivery.
+
+Ten paired scenarios use frozen `5102259` and the current real controller over
+owned temporary stores. Before the fix the current implementation failed both
+cross-owner scenarios (8/10); after the fix all 10 pass. Assertions cover eight
+polls sharing one receipt, ten alternating polls across two owners, failure
+isolation, retry after local publication failure, and refusal of foreign callers.
+Original intent/result bytes are unchanged and the inspect/dispatch path is
+forbidden by the fixture. The historical branch deliberately records the wrong
+activation and coupled rejection; the new expectation follows per-job ownership.
+
+Archive source inspection traces the shared promise to `303ae42af273069dbe661b9a5eb1dec2dd2caf85`
+(31 October). The controller itself was introduced at `24eebce` (30 October),
+after the original `a26222f`; this is another defect in earlier refactor work,
+not an established native pre-refactor Fusion failure.
+
+The ten retained `queue-atomic-recovery-audit` tests are restored to the broker CI
+gate. All ten pass locally, including real-checker acceptance/rejection, source
+drift, final-byte tamper, untrusted remote outcome, same-receipt publication and
+lost scratch reply/no replay. Fixtures use owned temporary paths and the scoped
+WSL spelling adapter for their synthetic ports, without changing assertions.
+
+Existing `phased-queue` tests already cover concurrent project preparation,
+separate outputs, exactly one physical lane, worker death before/during execution,
+pause between checking and grant, late native destruction, reply loss, private
+results, context change between turns and restart without replay. They remain in
+`test:contracts` and must pass on the combined head. B/G still own qualification
+of the same saved-file scenarios on real Fusion at concurrency 1/2/10; offline
+broker and publication evidence is not a substitute for that run.

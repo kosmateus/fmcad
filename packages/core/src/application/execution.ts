@@ -54,6 +54,27 @@ export async function completeSdkTurn<Settled, Published>(
   return ports.finalize(settled);
 }
 
+/** Coalesce local publication only for one already authenticated receipt.
+ * Callers validate owner, request and result before entering this coordinator.
+ * Settling or failing publication never grants another physical execution. */
+export function createReceiptPublication<Args extends unknown[], Result>(
+  publish: (...args: Args) => Result | Promise<Result>,
+): (receipt: string, ...args: Args) => Promise<Result> {
+  const publications = new Map<string, Promise<Result>>();
+  return async (receipt, ...args) => {
+    let pending = publications.get(receipt);
+    if (!pending) {
+      pending = Promise.resolve().then(() => publish(...args));
+      publications.set(receipt, pending);
+    }
+    try {
+      return await pending;
+    } finally {
+      if (publications.get(receipt) === pending) publications.delete(receipt);
+    }
+  };
+}
+
 export interface ExecutionEvidence {
   transportFailed?: boolean | undefined;
   receiptOutcome?: string | undefined;

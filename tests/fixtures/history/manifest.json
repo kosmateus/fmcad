@@ -196,5 +196,11 @@
     "sourcePath": "src/queue-epoch-lineage.js",
     "file": "queue-epoch-lineage-bed430.js.txt",
     "sha256": "26bbfda46320693702dbda87d5743475c43e3b516969f3062121ccb1f20f07ed"
+  },
+  {
+    "revision": "5102259463ba490b942d4d94dc8db959bfcfbe0e",
+    "sourcePath": "src/queue-atomic-recovery-audit.js",
+    "file": "queue-atomic-recovery-audit-510.js.txt",
+    "sha256": "6735c34e918c70293fd26420dc80b43c300eaa04f405ff0d421e91d2afb68484"
   }
 ]
