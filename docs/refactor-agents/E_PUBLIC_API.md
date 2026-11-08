@@ -177,3 +177,7 @@ G was asked on #40 to register the retained review/application/shot suites plus
 installed MCP and both OpenCode adapters in the shared CI selection, with cache
 preparation and the existing Linux temporary fixture directory. Their assertions
 must execute before final qualification; a local pass is not full CI evidence.
+
+- PR #52 also types the screenshot boundary. Fourteen paired observations preserve
+  single dispatch, response precedence, malformed responses and publication errors;
+  the two retained screenshot tests pass. Installed declarations cover ShotClient.

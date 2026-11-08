@@ -34,5 +34,9 @@
   "src/review.js": {
     "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
     "sha256": "a5d02da3429ddf4dee4cb93b94870375ad53468e7654fb68d35497f799cce96e"
+  },
+  "src/shot.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "0cae669caf0a1f0e97764ceb95db98e841ef9ecb17f0632b085427052f286c3b"
   }
 }
