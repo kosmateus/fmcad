@@ -646,10 +646,14 @@ test("real non-atomic batch service journals a step intent and inspects its numb
   assert.ok(deps.batch);
   const catalog = require("../src/catalog").catalog;
   const batch = require("../src/batch");
+  let physicalCalls = 0;
   const result = await batch.runBatchEntry(
     null, batchData,
     { doc: document.name, docId: document.creationId, docFileId: document.fileId, projectId: document.projectId, preview: false },
-    async (_client, operation, data) => ({ success: true, operation, result: { created: data.name }, created: [{ name: data.name }] }),
+    async (_client, operation, data) => {
+      physicalCalls++;
+      return { success: true, operation, result: { created: data.name }, created: [{ name: data.name }] };
+    },
     catalog, deps.batch,
   );
   assert.equal(result.status, "success");
@@ -685,6 +689,24 @@ test("real non-atomic batch service journals a step intent and inspects its numb
   assert.equal(resumed.stages[0].status, "completed");
   assert.equal(resumed.replayAllowed, false);
   assert.equal(resumed.automaticResume, false);
+  // A stored flag cannot turn an undeclared negative outcome into completion.
+  // Inspection must only re-read evidence; it must never execute the batch again.
+  const terminalFile = path.join(reportPath, fs.readdirSync(reportPath).filter(name => /^\d{8}\.json$/.test(name)).sort().at(-1));
+  const terminalBytes = fs.readFileSync(terminalFile);
+  const contradictory = JSON.parse(terminalBytes.toString('utf8'));
+  contradictory.steps[0].expectFail = true;
+  contradictory.steps[0].output = { success: false, status: 'blocked' };
+  try {
+    fs.writeFileSync(terminalFile, JSON.stringify(contradictory));
+    const refused = deps.inspect();
+    assert.equal(refused.stages[0].status, 'unknown');
+    assert.equal(refused.replayAllowed, false);
+    assert.equal(physicalCalls, 1);
+  } finally {
+    fs.writeFileSync(terminalFile, terminalBytes);
+  }
+  assert.equal(deps.inspect().stages[0].status, 'completed');
+  assert.equal(physicalCalls, 1);
 });
 
 test("atomic batch stage accepts only the existing finalized native receipt history", async (t) => {

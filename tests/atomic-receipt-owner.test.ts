@@ -41,7 +41,10 @@ function historical(file: string): string {
 const sources = {
   introduced: historical("stage-dependencies-42fe.js.txt"),
   previous: historical("stage-dependencies-b50f.js.txt"),
-  current: fs.readFileSync(path.join(root, sourcePath), "utf8"),
+  current: fs.readFileSync(
+    path.join(root, "src/dist/composition/stage-dependencies.js"),
+    "utf8",
+  ),
 };
 
 function fixture(atomic: boolean | "default" = true) {
@@ -159,7 +162,13 @@ function inspect(
     ]),
   );
   const module: { exports: unknown } = { exports: {} };
+  const filename =
+    source === sources.current
+      ? path.join(root, "src/dist/composition/stage-dependencies.js")
+      : path.join(root, sourcePath);
+  const sourceLoad = createRequire(filename);
   const requireSource = (name: string): unknown => {
+    if (name === "node:module") return { createRequire: () => requireSource };
     if (name === "node:fs")
       return {
         realpathSync(directory: string) {
@@ -171,7 +180,7 @@ function inspect(
           return names;
         },
       };
-    if (name === "../dist/node-adapters/persistence/records")
+    if (/\/persistence\/records(?:\.js)?$/.test(name))
       return {
         readBytes(file: string) {
           const bytes = buffers.get(file);
@@ -179,15 +188,20 @@ function inspect(
           return bytes;
         },
       };
-    return load(name) as unknown;
+    return sourceLoad(name) as unknown;
   };
   const evaluate = vm.runInThisContext(
-    "(function(require, module) {\n" +
+    "(function(require, module, exports, __filename) {\n" +
       source +
       "\nmodule.exports = { batchReceipt };\n})",
-    { filename: sourcePath },
-  ) as (require: typeof requireSource, module: { exports: unknown }) => void;
-  evaluate(requireSource, module);
+    { filename },
+  ) as (
+    require: typeof requireSource,
+    module: { exports: unknown },
+    exports: unknown,
+    filename: string,
+  ) => void;
+  evaluate(requireSource, module, module.exports, filename);
   const api = module.exports as {
     batchReceipt(input: unknown): StageReceiptEvidence;
   };

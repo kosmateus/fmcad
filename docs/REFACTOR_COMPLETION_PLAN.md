@@ -372,3 +372,10 @@ Paired archived-source tests preserve complete worker envelopes, document and fi
 pins, purpose precedence and input-change rejections. Existing execution-pipeline
 and restart tests join regression CI with independent temporary fixtures.
 Stage dependencies, admission/recovery and broader shared scenario coverage remain open.
+
+[Stage 4r](REFACTOR_STAGE_4R.md) migrates authenticated stage composition to
+TypeScript. Paired historical cases preserve save/helper receipts, document pins
+and durable intent ordering. They also reproduce and fix an inherited ordinary
+batch completion defect: stored negative-test flags, blocked or unrestored outcomes
+and a foreign run ID can no longer certify completion. Admission/recovery and
+broader shared scenario coverage remain open.
