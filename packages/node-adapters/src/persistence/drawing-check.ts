@@ -1,3 +1,8 @@
+import type {
+  Model as DrawingModel,
+  Source,
+  CheckRow,
+} from "../../../core/src/application/drawing/types";
 import * as defaultFs from "node:fs";
 import * as path from "node:path";
 import { publishDirectory } from "./drawing-output";
@@ -6,8 +11,7 @@ import type {
   DrawingReport,
   DrawingExportPorts,
 } from "./drawing-export";
-interface Model {
-  documentIdentity: unknown;
+interface Model extends DrawingModel {
   scene: { sha256: string };
   sourceMap: unknown;
 }
@@ -19,9 +23,9 @@ export interface DrawingCheckPorts extends Pick<
     file: unknown,
     expected: string,
   ): { report: DrawingReport & { result: Model }; identity: unknown };
-  checkRows(model: Model): unknown[];
-  collectSources(model: Model): unknown[];
-  aggregateStatus(rows: unknown[], sources: unknown[]): string;
+  checkRows(model: Model): CheckRow[];
+  collectSources(model: Model): Source[];
+  aggregateStatus(rows: CheckRow[], sources: Source[]): string;
 }
 export function createDrawingChecker(
   ports: DrawingCheckPorts,

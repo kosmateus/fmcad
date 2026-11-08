@@ -1,26 +1,17 @@
 import * as defaultFs from "node:fs";
 import * as path from "node:path";
 import { publishDirectory } from "./drawing-output";
-export type Point = [number, number];
-export type Arc = {
-  type: "arc";
-  center: Point;
-  r: number;
-  startDeg: number;
-  sweepDeg: number;
-};
-export type Primitive =
-  | { type: "line" | "rect"; from: Point; to: Point; width?: number }
-  | { type: "circle"; center: Point; r: number }
-  | Arc
-  | { type: "polyline"; points: Point[]; closed?: boolean }
-  | { type: "solid"; points: [Point, Point, Point, ...Point[]] }
-  | { type: "text"; at: Point; text: string; height: number; align?: string };
-export interface Scene {
-  sheet: { sizeMm: Point };
-  semantics: { sourceMap: unknown };
-  primitives: Primitive[];
-}
+import type {
+  Point,
+  Arc,
+  Scene,
+} from "../../../core/src/application/drawing/types";
+export type {
+  Point,
+  Arc,
+  Primitive,
+  Scene,
+} from "../../../core/src/application/drawing/types";
 export type Format = "svg" | "pdf" | "dxf";
 export interface DrawingRequest {
   schemaVersion?: unknown;

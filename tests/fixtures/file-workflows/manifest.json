@@ -114,5 +114,17 @@
     "revision": "719acdf339b74cb54ba71d2280aedd5dc970f049",
     "sourcePath": "src/externalization.js",
     "sha256": "df9ac108f2e121e57239f93d17f8b844e39e2a66e27f6cbeb02e9c6692538b72"
+  },
+  {
+    "file": "baseline-drawing-package.js.txt",
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "src/drawing-package.js",
+    "sha256": "0f4a6f21952c60c6e5b3ab8ca23682b9e666e482694d72aeab8a0793dc97a992"
+  },
+  {
+    "file": "package-before-drawing-package.js.txt",
+    "revision": "8d6bf072043191a246a925adcd0d09668002d4b5",
+    "sourcePath": "src/drawing-package.js",
+    "sha256": "0f4a6f21952c60c6e5b3ab8ca23682b9e666e482694d72aeab8a0793dc97a992"
   }
 ]

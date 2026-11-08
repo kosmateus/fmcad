@@ -283,3 +283,28 @@ includes imports, references, externalization, save/publication and drawings.
   inventory/integration. Exact-head full CI and prior registry handoffs still
   block merging; native-format qualification remains pending and keychain stays
   excluded. The full package is not yet complete.
+
+### Delivery 6 — typed drawing model, scene and package publication
+
+- Parent: external input PR #55, `8d6bf072043191a246a925adcd0d09668002d4b5`.
+- All drawing model validation, scene preparation and report envelopes now live
+  in strict core modules. Typed package persistence owns readback, hashing and
+  publication; the JavaScript entry retains only descriptors and delegation.
+  Shared scene types now come from core. Public exports and successful complete
+  scene/report bytes and hashes match archived `a26222f` and predecessor `8d6bf`.
+- Paired tests cover default and detailed models, sections, hatch/arc/angle,
+  GD&T, uncertainty, native blocking, precise validation failures and readback
+  of missing/malformed/foreign packages without modifying original evidence.
+- Historical fault tests reproduce lost primary errors on cleanup failure,
+  deletion of a replacement directory, and a partial scene left behind when
+  report serialization fails. Publication now retains both errors, refuses
+  cleanup of foreign inode ownership and includes serialization in its owned
+  cleanup boundary. These are explicit inherited-defect corrections. An inode
+  lookup failure now refuses before writing, retaining the empty directory as
+  uncertain ownership evidence; older versions did not verify ownership.
+- Local drawing evidence: 45 Node tests and five Python drawing tests pass.
+  Full build, lint, strict test types and explicit new-module formatting pass.
+  Lint caught and removed an unused type import before final verification.
+- G's pending drawing regression registration also covers these appended tests.
+  No A primitive, B live scenario or E public registry was changed. Full CI on
+  exact heads remains mandatory. Native-format qualification remains pending.
