@@ -137,3 +137,11 @@ private exact-payload authorization comparisons and installed declarations/previ
 Five inherited temporary-directory assumptions are fixed after identical historical
 reproduction; the remaining owned-result `/proc` prerequisite stays enforced.
 The full admission/CI gates and B/G reconciliation are still open.
+
+
+The executed-registry audit additionally catches admission omissions independent
+of public family prefixes. Current scope is 272 descriptors (263 C, 9 shared),
+with 262 generated C programs. It adds checking `deliver` and presentation
+`visibility.finalize`; four ordinary visibility operations remain D-owned.
+Four loader/history/coverage tests and installed 272-contract/263-preview consumers
+pass. Full current-head CI and the corrected complete admission matrix remain open.

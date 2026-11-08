@@ -46,6 +46,34 @@ class ModelingLoaderTests(unittest.TestCase):
             oracle.test_every_retained_definition_has_exactly_its_previous_count()
             oracle.test_full_registry_and_handler_ownership_matches_retained_inventory()
 
+    def test_every_owned_python_handler_is_accounted_for_in_admission_inventory(self):
+        inventory = json.loads((ROOT / 'tests/fixtures/modeling-operation-contracts.json').read_text())
+        operations = {row['operation']: row for row in inventory['operations']}
+        owned_families = set(inventory['pythonFamilies'])
+        namespace = {'_FMCAD_RUNTIME_ROOT': str(ROOT)}
+        owners = {}
+        with patch.dict(sys.modules, runtime_inventory.fake_sdk()):
+            load_legacy_core(namespace, ROOT)
+            for source in sorted((ROOT / 'assets/cad').glob('*.py')):
+                if source.stem == 'core':
+                    continue
+                before = dict(namespace['CAD_HANDLERS'])
+                exec(compile(source.read_text(), str(source), 'exec'), namespace)
+                for operation, handler in namespace['CAD_HANDLERS'].items():
+                    if before.get(operation) is not handler:
+                        owners[operation] = source.stem
+        covered = {operation for operation, family in owners.items() if family in owned_families}
+        self.assertGreater(len(covered), 200)
+        self.assertEqual(covered - set(operations), set(), 'Owned handlers omitted from public admission inventory')
+        for operation in covered:
+            with self.subTest(operation=operation):
+                row = operations[operation]
+                if row['owner'] == 'C':
+                    self.assertEqual(row['nativeProgram'], operation)
+                    self.assertEqual(row['route'], 'generated-python')
+                else:
+                    self.assertTrue(row['coordination'], 'Shared handler needs an explicit owner handoff')
+
     def test_each_compatibility_entry_uses_canonical_handlers_from_foreign_cwd(self):
         original_cwd = os.getcwd()
         with tempfile.TemporaryDirectory(prefix='fmcad-modeling-loader-') as directory:
