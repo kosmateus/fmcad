@@ -226,3 +226,20 @@ production-journal publication/reopen baseline passed. An isolated uninstrumente
 MCP run reproduced the refusal; a stat-instrumented run passed. No lock deletion,
 retry or production persistence workaround has been introduced. Retain the
 concurrency test and resolve this discrepancy against ordinary CI before merge.
+
+## Delivery ledger — shared exclusive barriers
+
+PR #70 (`5f2bed1`) retains production definition/batch orchestration. The complete
+local scenario regression was 172/174; both failures concern the unresolved
+journal lock discrepancy above. Its exact-head CI, and CI for #58/#63, remain
+queued. No failing PR is merged. Main was fetched at `7ec4886`; A's retained
+broker gates and E's public-boundary changes are preserved.
+
+Shared scenarios now declare owned-document or exclusive-instance scope. The
+coordinator drains earlier cleanup before an exclusive case, blocks all later
+cases after exclusive failure or unsettled cleanup, and records durable not-run
+reports without requests. Recovery only settles the original fixture and never
+starts those blocked cases. Six focused integration/scheduling tests pass.
+This establishes scheduling, not native global-state restoration: each migrated
+global scenario still needs capture/restore assertions and its native assumptions.
+One coordinator per Fusion instance remains an explicit prerequisite.

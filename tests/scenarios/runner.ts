@@ -10,7 +10,7 @@ import type {
 } from "./contracts";
 import { record, text } from "./contracts";
 import * as programs from "./programs";
-import { boundedMap, concurrencyLimit, defaultConcurrency } from "./scheduling";
+import { scopedMap, concurrencyLimit, defaultConcurrency } from "./scheduling";
 import * as savedPrograms from "./saved-programs";
 import {
   cleanupSavedFile,
@@ -26,6 +26,7 @@ import { reopenProgram, recoveredReopen } from "./reopen";
 import { auditRecovery } from "./recovery-audit";
 
 export interface Scenario {
+  readonly scope?: "owned-document" | "exclusive-instance";
   readonly id: string;
   readonly requires: readonly string[];
   readonly fixture?: FixtureFolder;
@@ -39,7 +40,8 @@ export interface ScenarioReport {
   readonly protocol: ScenarioBackend["protocol"];
   readonly backendIdentity: string;
   readonly fixture?: FixtureFolder;
-  status: "running" | "passed" | "failed" | "unsupported";
+  status: "running" | "passed" | "failed" | "unsupported" | "not-run";
+  scope?: "owned-document" | "exclusive-instance";
   cleanup: "pending" | "complete" | "deferred" | "failed" | "not-created";
   document?: Document;
   originalDocument?: Document;
@@ -598,6 +600,7 @@ export async function runScenario(
     signal,
     scenario.fixture,
   );
+  session.report.scope = scenario.scope ?? "owned-document";
   if (
     scenario.requires.some(
       (capability) => !backend.capabilities.has(capability),
@@ -645,6 +648,11 @@ export async function runScenarios(
       ids.has(scenario.id)
     )
       throw new Error("Invalid or duplicate scenario id: " + scenario.id);
+    if (
+      scenario.scope !== undefined &&
+      !["owned-document", "exclusive-instance"].includes(scenario.scope)
+    )
+      throw new Error("Invalid scenario scope");
     ids.add(scenario.id);
   }
   const runId = randomUUID();
@@ -729,26 +737,53 @@ export async function runScenarios(
     scenarioIds: scenarios.map((s) => s.id),
     status: "running",
   });
-  const reports = await boundedMap(scenarios, concurrency, async (scenario) => {
+  const tasks = scenarios.map((scenario) => {
     const owner = {
       runId,
       scenarioId: scenario.id,
       clientId: "scenario:" + runId + ":" + scenario.id,
     };
-    return runScenario(
-      backend,
-      scenario,
-      owner,
-      path.join(runRoot, scenario.id),
-      signal,
-    );
+    const directory = path.join(runRoot, scenario.id);
+    return {
+      exclusive: scenario.scope === "exclusive-instance",
+      run: () => runScenario(backend, scenario, owner, directory, signal),
+      blocked: (reason: string): ScenarioReport => {
+        fs.mkdirSync(directory, { recursive: false, mode: 0o700 });
+        const report: ScenarioReport = {
+          owner,
+          directory,
+          mode: backend.mode,
+          qualification: backend.qualification,
+          backendIdentity: backend.identity,
+          protocol: backend.protocol,
+          scope: scenario.scope ?? "owned-document",
+          status: "not-run",
+          cleanup: "not-created",
+          requests: [],
+          error: reason,
+          ...(scenario.fixture ? { fixture: scenario.fixture } : {}),
+        };
+        persist(path.join(directory, "report.json"), report);
+        return report;
+      },
+    };
+  });
+  const reports = await scopedMap(tasks, concurrency, (report) => {
+    if (report.status === "passed" && report.cleanup === "complete")
+      return "passed";
+    if (report.cleanup === "complete" || report.cleanup === "not-created")
+      return "settled-failure";
+    return "unsettled";
   });
   let auditError: string | undefined;
   try {
     if (
       before &&
       reports.every(
-        (r) => r.cleanup === "complete" || r.status === "unsupported",
+        (r) =>
+          r.cleanup === "complete" ||
+          r.status === "unsupported" ||
+          (r.status === "not-run" && r.cleanup === "not-created"),
       )
     ) {
       const after = await observation("after", programs.snapshot());

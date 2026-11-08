@@ -125,3 +125,18 @@ backend receipts bind client/request, prior creation ID and exact file/version.
 A lost reply defers cleanup; recovery reads the original evidence and never repeats
 save/open/close. A failed receipt handoff cannot authorize deleting a different
 file. A revision has no native-format implication: model exports remain marked JSON.
+
+## Exclusive scenario barriers
+
+A shared scenario with `scope: "exclusive-instance"` runs only after every
+earlier scenario has completed its cleanup. Later fixtures are created only
+after it passes and completes cleanup. A failed or unsupported exclusive case
+blocks all later cases with durable `not-run` reports; those fail required
+profiles. An unsettled earlier cleanup also blocks the next group. Ordinary
+settled failures retain bounded concurrency and do not masquerade as success.
+
+Cleanup recovery resolves original requests only. It does not launch blocked
+scenarios or certify restoration of camera, workspace, material or motion state.
+The exclusive scenario must assert its own restoration before returning. This
+is a coordinator barrier, not an interprocess lock: use one coordinator per
+Fusion instance. Native global-state qualification remains deferred.
