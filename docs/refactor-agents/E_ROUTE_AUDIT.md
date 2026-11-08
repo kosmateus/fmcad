@@ -111,3 +111,11 @@ loaders for typed `library-*-registration` modules. Descriptors/manuals and
 reference catalog configuration match frozen predecessors. The retained
 library/registry/reference/review/image run passes 75 tests with two pre-existing
 environment-dependent skips, recorded separately from qualified coverage.
+
+Real reference-image tests now run with an explicit available interpreter: all
+three pass without skips. A reproduced historical CLI exit-code defect confused
+successful offline computation with unresolved image confidence. Narrow shared
+CLI/MCP reference policy preserves unknown evidence and all broker failure gates.
+The installed tarball runs the real worker offline with poisoned Fusion config,
+read-only package files and exact source-byte preservation; the full focused
+library/CLI/reference run passes all 43 tests.

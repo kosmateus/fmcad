@@ -341,3 +341,26 @@ the retained library/registry/reference/review/image run has 75 passes and two
 existing environment-dependent skips. Worker subprocess, no-config offline
 routing, preflight and unchanged outputs are exercised; skipped native/interpreter
 checks are not counted as qualified. No runtime assets or build lists changed.
+
+### Local reference completion versus unresolved evidence
+
+PR #76 preserves remaining host registrations. Selecting available Python image
+dependencies uncovered a pre-existing CLI regression: successful reference layout,
+calibration and comparison returned exit 1 solely because image confidence was
+`unknown`. The documented worker contract permits successful computation with
+unresolved evidence. A shared narrow predicate now accepts only the three exact
+schemaVersion-1, document-free reference envelopes with success:true and
+nativeAcceptance:notEvaluated. CLI uses it only for local receipts and the actual
+invocation operation; MCP retains failed transport/job precedence. Broker unknown
+outcomes and evidence values are unchanged. CLI also rejects explicit fail/blocked
+statuses even if a contradictory success flag is supplied.
+
+Historical code reproduces the exit-code defect. Negative cases retain rejection
+for wrong schema/operation, native identity/acceptance, failed/blocked statuses,
+unknown execution and reconciliation receipts. All 43 library/CLI/reference tests
+pass with no skips, including real image processing in an installed read-only
+tarball outside the repository with poisoned Fusion config and exact source-byte
+preservation. Build, lint and test typecheck pass. An initial installed check caught
+a workspace-only import; the CLI now consumes the existing staged composition
+boundary. Three CLI temp fixtures use os.tmpdir; the legacy WSL fixture uses the
+retained platform helper. Assertions and production platform detection are intact.

@@ -415,7 +415,10 @@ export async function main(
           toWindowsPath(value: string, facts: unknown): string;
         } = require("../../dist/config-platform");
         const windowsPath = (value: string) =>
-          platform.toWindowsPath(path.resolve(value), platform.detectPlatform());
+          platform.toWindowsPath(
+            path.resolve(value),
+            platform.detectPlatform(),
+          );
         if (entry.kind === "upload") windowsPath(args[0]!);
         else {
           const document = String(flags["--doc"]).replace(
@@ -568,7 +571,14 @@ export async function main(
               }) +
               "\n",
           );
-        const code = receiptExitCode(receipt);
+        const code = receiptExitCode(
+          receipt,
+          payload.kind === "cad"
+            ? payload.operation
+            : payload.kind === "cad-command"
+              ? payload.invocation.operation
+              : undefined,
+        );
         return fail(code);
       },
     );
@@ -586,7 +596,7 @@ export async function main(
             language.locale(),
           )
         : error instanceof Error &&
-            error.message.includes('routing=direct is no longer supported')
+            error.message.includes("routing=direct is no longer supported")
           ? renderMessage("direct", {}, language.locale())
           : error instanceof SyntaxError &&
               /^\s+at JSON\.parse \(/m.test(error.stack ?? "")

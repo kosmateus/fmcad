@@ -82,5 +82,9 @@
   "src/ui.js": {
     "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
     "sha256": "0bfa65e34ddc8af4e368135e8c2d9287aa26d63a3701310b182828ab55fdf34a"
+  },
+  "src/entrypoints/cli/application.ts": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "9afb3674c834fe1a42f513b7280050383d0b7723458594e9c2818a8a56a61d18"
   }
 }

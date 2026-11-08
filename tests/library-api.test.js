@@ -167,7 +167,7 @@ test('broker composition fences compatibility before credentials, submits typed 
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('outside-repository consumer imports built JS and declarations with no source or host SDK', () => {
+test('outside-repository consumer imports built JS and declarations with no source or host SDK', async t => {
   const directory = fs.mkdtempSync(path.join(tmpdir(), 'fmcad-consumer-'));
   let installed;
   try {
@@ -257,6 +257,20 @@ void executeUi; void armWatcher;
     assert.equal(help.stderr, '');
     assert.match(help.stdout, /Help: batch run/);
     assert.match(help.stdout, /Worked Workflow: Multi-component parametric sketch-to-solid/);
+    await t.test('installed reference worker preserves original bytes and unresolved evidence offline', {skip:!process.env.FMCAD_REFERENCE_PYTHON}, () => {
+      const python=process.env.FMCAD_REFERENCE_PYTHON;
+      const original=path.join(directory,'original.png');
+      execFileSync(python,['-I','-B','-c','from PIL import Image;import sys;Image.new("RGB",(100,200),"white").save(sys.argv[1])',original]);
+      const request=structuredClone(require(path.join(installed,'dist/src/catalog')).catalog['reference.layout'].example);
+      Object.assign(request,{python,original:{path:original,status:'ESTIMATED',uncertaintyPx:1},out:path.join(directory,'reference-output')});
+      const run=spawnSync(process.execPath,[path.join(directory,'node_modules/.bin/fmcad'),'reference','layout','--data',JSON.stringify(request)],{
+        cwd:directory,encoding:'utf8',env:{...process.env,FMCAD_CONFIG:poison},timeout:60000,
+      });
+      assert.equal(run.status,0,run.stderr);assert.equal(run.stderr,'');
+      const result=JSON.parse(run.stdout);
+      assert.equal(result.success,true);assert.equal(result.status,'unknown');assert.equal(result.nativeAcceptance,'notEvaluated');assert.equal(result.documentIdentity,null);
+      assert.deepEqual(fs.readFileSync(result.result.originalCopy.path),fs.readFileSync(original));
+    });
     assert(!fs.existsSync(path.join(installed, 'src')));
     assert(!fs.existsSync(path.join(directory, 'node_modules/@opencode-ai')));
     assert(!fs.existsSync(path.join(directory, 'node_modules/@opencode')));
@@ -846,5 +860,32 @@ test('remaining host registrations preserve public descriptors and manuals', () 
       const before=structuredClone(initial),after=structuredClone(initial);
       historical.configure(before);current.configure(after);assert.deepEqual(after,before);
     }
+  }
+});
+
+test('offline reference confidence remains unresolved without becoming a CLI or MCP execution failure', () => {
+  const source=fs.readFileSync(path.join(__dirname,'fixtures/public-host-baseline/cli-application.ts.txt'),'utf8');
+  assert.equal(require('node:crypto').createHash('sha256').update(source).digest('hex'),require('./fixtures/public-host-baseline/provenance.json')['src/entrypoints/cli/application.ts'].sha256);
+  const Module=require('node:module'),baseline=new Module(path.join(root,'src/dist/entrypoints/cli/application.js'),module);
+  baseline.filename=baseline.id;baseline.paths=Module._nodeModulePaths(root);
+  baseline._compile(require('typescript').transpileModule(source,{compilerOptions:{module:1,target:9}}).outputText,baseline.filename);
+  const {receiptExitCode}=require('../src/dist/entrypoints/cli/application');
+  const {catalogResult}=require('../src/dist/composition/library-mcp-catalog');
+  for(const operation of ['reference.layout','reference.calibrate','reference.compare']){
+    const result={schemaVersion:1,operation,success:true,status:'unknown',documentIdentity:null,nativeAcceptance:'notEvaluated',result:{confidence:'unknown'}};
+    const receipt={state:'local',jobId:null,result};
+    assert.equal(baseline.exports.receiptExitCode(receipt),1,'reproduce the historical CLI regression');
+    assert.equal(receiptExitCode(receipt,operation),0);
+    assert.equal(catalogResult(result,operation).isError,false);
+    assert.equal(result.status,'unknown');assert.equal(result.nativeAcceptance,'notEvaluated');
+    for(const patch of [{success:false},{status:'failed'},{status:'blocked'},{schemaVersion:2},{documentIdentity:{creationId:'native'}},{nativeAcceptance:'pass'},{outcome:'unknown'},{executionOutcome:'unknown'}]){
+      const invalid={...result,...patch};
+      assert.equal(receiptExitCode({...receipt,result:invalid},operation),1);
+      assert.equal(catalogResult(invalid,operation).isError,true);
+    }
+    assert.equal(receiptExitCode(receipt,'document.save_as'),1);
+    assert.equal(catalogResult(result,'document.save_as').isError,true);
+    assert.equal(catalogResult(result,operation,true).isError,true);
+    assert.equal(receiptExitCode({...receipt,state:'needs_reconciliation',outcome:{}},operation),1);
   }
 });
