@@ -181,6 +181,10 @@ test('outside-repository consumer imports built JS and declarations with no sour
     fs.chmodSync(installed, 0o555);
     fs.writeFileSync(path.join(directory, 'consumer.ts'), `
       import { createFmcad, createReviewServices, contractVersions } from 'fmcad/api';
+      import { McpClient } from './node_modules/fmcad/dist/src/dist/composition/library-client.js';
+      import { loadConfig } from './node_modules/fmcad/dist/src/dist/composition/library-configuration.js';
+      void new McpClient({clientId: 'installed-owner'}).close();
+      void loadConfig;
       import type { FmcadOptions, ExecutionReceipt, ReviewRequest, ReviewServiceOptions, PythonCheckReport } from 'fmcad/api';
       declare const options: FmcadOptions;
       declare const reviewOptions: ReviewServiceOptions;
@@ -234,4 +238,87 @@ test('outside-repository consumer imports built JS and declarations with no sour
     }
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+function historicalPublicBoundary(name) {
+  const fixture = path.join(__dirname, 'fixtures/public-host-baseline', name + '.js.txt');
+  const source = fs.readFileSync(fixture, 'utf8');
+  const expected = require('./fixtures/public-host-baseline/provenance.json')[`src/${name}.js`];
+  assert.equal(require('node:crypto').createHash('sha256').update(source).digest('hex'), expected.sha256);
+  const Module = require('node:module');
+  const baseline = new Module(path.join(root, 'src', name + '.js'), module);
+  baseline.filename = baseline.id;
+  baseline.paths = module.paths;
+  baseline._compile(source, baseline.filename);
+  return baseline.exports;
+}
+
+test('typed compatibility client preserves metadata and every historical denial without transport', async () => {
+  const historical = historicalPublicBoundary('client').McpClient;
+  const current = require('../src/client').McpClient;
+  async function observe(Client) {
+    const headers = { 'X-Fixture': 'żółć' };
+    const client = new Client({ clientId: 'fixture-owner', headers, url: 'http://127.0.0.1:1' });
+    headers['X-Fixture'] = 'changed';
+    assert.equal(client.invocationContext.clientId, 'fixture-owner');
+    assert.equal(client.invocationContext.source, 'mcp');
+    assert.equal(typeof client.invocationContext.instanceId, 'string');
+    const observations = { server: client.server, frozen: [Object.isFrozen(client.server), Object.isFrozen(client.server.headers)], denials: [] };
+    for (const method of ['initialize','notifications/initialized','ping','tools/list','resources/list','resources/templates/list','resources/read','tools/call',null]) {
+      try { await client.controlPost({ method, id: 'żółć', params: { documentId: 'foreign' } }); assert.fail('must reject'); }
+      catch (error) { observations.denials.push([error.code, error.message]); }
+    }
+    for (const method of ['_post','_openSession','callTool','listTools']) {
+      await assert.rejects(client[method]({ code: 'never execute' }), { code: 'QUEUE_REQUIRED' });
+    }
+    const context = { clientId: 'second-owner', documentId: 'doc-pin', requestId: 'request-pin', metadata: { project: 'żółć' } };
+    client.setInvocationContext(context);
+    assert.equal(client.invocationContext, context);
+    assert.equal(client.invocationMetadata, context.metadata);
+    client.setInvocationContext(null);
+    assert.equal(client.invocationContext, null);
+    assert.deepEqual(client.invocationMetadata, {});
+    assert.deepEqual(client._parse('{"id":0,"result":null}'), { id: 0, result: null });
+    assert.throws(() => client._parse('{invalid'), SyntaxError);
+    await client.close(); await client.close();
+    return observations;
+  }
+  assert.deepEqual(await observe(current), await observe(historical));
+});
+
+test('typed configuration matches historical validation, initialization and accepted service writes', t => {
+  const directory = fs.mkdtempSync(path.join(tmpdir(), 'public-config-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const program = `
+    const fs = require('node:fs'), path = require('node:path'), Module = require('node:module');
+    const baseline = new Module(${JSON.stringify(path.join(root, 'src/config.js'))});
+    baseline.filename = baseline.id; baseline.paths = module.paths;
+    baseline._compile(fs.readFileSync(${JSON.stringify(path.join(__dirname, 'fixtures/public-host-baseline/config.js.txt'))}, 'utf8'), baseline.filename);
+    const current = require(${JSON.stringify(path.join(root, 'src/config.js'))});
+    function observe(c, label) {
+      const config = path.join(process.env.HOME, label, 'config.json');
+      const result = { before: c.loadConfig({config}), initialized: c.initConfig({config}), bytes: fs.readFileSync(config,'utf8'), errors: [] };
+      for (const input of [null, [], {routing:'direct'}, {timeoutMs:-1}]) {
+        try { c.loadConfig(input); result.errors.push(null); } catch(e) { result.errors.push(e.message); }
+      }
+      try { c.initConfig({config}); } catch(e) { result.duplicate = e.message; }
+      result.forced = c.initConfig({config, force:true, backend:'mcp'});
+      result.loaded = c.loadConfig({config, url: "http://127.0.0.1:12345/mcp"});
+      for (const input of [null, {}, {version:2}, {version:1, controlCenter:{port:0}}]) {
+        try { c.writeAcceptedServiceConfiguration(input); result.errors.push(null); } catch(e) { result.errors.push(e.message); }
+      }
+      return JSON.parse(JSON.stringify(result).split(path.join(process.env.HOME, label)).join('<fixture>'));
+    }
+    const expected = observe(baseline.exports, 'before');
+    const actual = observe(current, 'after');
+    require('node:assert/strict').deepEqual(actual, expected);
+    baseline.exports.writeAcceptedServiceConfiguration({version:1, controlCenter:{port:4751}});
+    const serviceBytes = fs.readFileSync(baseline.exports.acceptedServiceConfigurationPath(), 'utf8');
+    current.writeAcceptedServiceConfiguration({version:1, controlCenter:{port:4751}});
+    require('node:assert/strict').equal(fs.readFileSync(current.acceptedServiceConfigurationPath(), 'utf8'), serviceBytes);
+    require('node:assert/strict').deepEqual(current.resolveRuntimePaths(), baseline.exports.resolveRuntimePaths());
+    process.stdout.write('matched');
+  `;
+  const env = { PATH: process.env.PATH, HOME: directory, XDG_CONFIG_HOME: path.join(directory,'config'), XDG_STATE_HOME: path.join(directory,'state') };
+  assert.equal(execFileSync(process.execPath, ['-e', program], { cwd: directory, env, encoding: 'utf8' }), 'matched');
 });

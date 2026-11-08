@@ -1,6 +1,7 @@
 # Agent E — public CLI, MCP, SDK and remaining host adapters
 
-Status: **available**. Claim this package, fetch current main and read
+Status: **claimed by Agent E**, 8 November 2026. Implementation branch:
+`refactor/agent-e-public-api`. Starting main: `0b84454`. Read
 [the shared plan](../REFACTOR_PARALLEL_PLAN.md).
 
 ## Outcome and ownership
@@ -92,3 +93,41 @@ errors are stable, host tools are migrated, packaged declarations/assets work
 outside the repository, and G has the full route/facade inventory. Record native
 UI/Fusion assumptions separately. Append PR/SHA and remaining groups after each
 delivery; do not stop after the first CLI facade extraction.
+
+## Delivery ledger
+
+- Claim: PR #39, starting main `0b84454`; package E is in progress.
+- Route inventory and outstanding groups: [E_ROUTE_AUDIT.md](E_ROUTE_AUDIT.md).
+- First boundary: image trace/optimize/boundaries command orchestration and
+  installed local-pipeline declarations. Historical process comparisons preserve
+  exact requests, output and call counts. Full CI and final SHA pending.
+- E1–E4 are not complete; remaining CLI/MCP compatibility, configuration/client,
+  engineering/reference/review/shot/UI orchestration and complete installed
+  CLI/MCP/library/OpenCode qualification remain assigned to E.
+
+### Public compatibility boundaries (next delivery)
+
+`library-client.ts` now owns the metadata-only compatibility client;
+`library-configuration.ts` owns configuration loading, initialization and accepted
+service validation. The old source paths remain small runtime loaders. Historical
+comparisons cover all control-method denials, immutable header snapshots, context
+replacement, repeated disposal, malformed configuration, forced initialization,
+accepted-service bytes and runtime anchors. The existing configuration suites
+pass 22 cases. Installed declaration coverage includes both new modules.
+
+### Offline engineering and reference composition (next delivery)
+
+`library-engineering.ts` owns CLI parsing, input-size checks and publication with
+explicit file ports. The existing typed calculation engine remains unchanged.
+`library-reference.ts` owns reference-image validation and synchronous interpreter
+preflight. Neither imports broker execution or acquires Fusion. Unknown engineering
+operation keys now produce an explicit unsupported-operation error before file
+work rather than an incidental missing-method TypeError; supported routes retain
+historical output and side effects.
+
+Paired tests preserve input bytes, schemas, calculation statuses, malformed-input
+errors, nonfinite rejection, output bytes and refusal to overwrite. Reference
+comparisons retain synchronous preflight failure and exact helper arguments.
+The existing six engineering/batch-local suites pass all 33 cases. Native image
+quality and Canvas semantics remain deferred. Declarative metadata is still a
+separate registration migration; these adapters do not close all of E3.

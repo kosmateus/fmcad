@@ -1,7 +1,6 @@
 const path = require('node:path');
 const { resolveRuntimePaths, resolvePython } = require('./dist/config-platform/index.js');
-const { runImagePipeline } = require('./dist/core/application/local-pipeline');
-const { createLocalWorker, localPipelineFiles } = require('./dist/python/local-pipeline');
+const { createImageCommand } = require('./dist/python/image-command');
 const { redactDiagnostic } = require('./diagnostics');
 
 const tunables = {
@@ -65,25 +64,7 @@ Select that interpreter with --python "$HOME/.venvs/fmcad-image/bin/python".
 See docs/IMAGE_OPTIMIZE.md for the local workflow and docs/IMAGE_TRACE.md for palette rules.`,
 };
 
-async function optimizeImage(args, deps) {
-  let setup;
-  const process = createLocalWorker({
-    redactDiagnostic,
-    resolveWorker: () => worker,
-    resolvePython: plan => {
-      const python = (deps.resolvePython || resolvePython)({ pythonPath: plan.python, feature: 'image-optimize' });
-      setup = `Image optimization dependencies: run ${JSON.stringify(python)} -m pip install -r ${JSON.stringify(requirements)} in your user-owned environment. Nothing was installed automatically.\n`;
-      return python;
-    },
-    ...(deps.spawnImageOptimize ? { spawn: deps.spawnImageOptimize } : {}),
-    stdout: chunk => deps.stdout.write(chunk),
-    stderr: chunk => deps.stderr.write(chunk),
-    startError: (error, plan) => new Error(`Cannot start local Python ${JSON.stringify(plan.python)}: ${error.message}. Select an installed interpreter with --python EXE.\n${setup}`),
-  });
-  const result = await runImagePipeline('optimize', args, localPipelineFiles, process);
-  if (result.code !== 0) deps.stderr.write(`image optimize worker failed (${result.signal || result.code}). ${setup}`);
-  return result.code === 0 ? 0 : 1;
-}
+const optimizeImage = createImageCommand({ mode: "optimize", worker, requirements, resolvePython, redactDiagnostic });
 
 const manual = {
   sections: [{ title: 'Local Return Contract', text: descriptor.desc }],

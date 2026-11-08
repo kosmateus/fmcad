@@ -1,6 +1,6 @@
 # Partial Fusion test model
 
-Model version 9 implements document identity/lifecycle, numeric user-parameter CRUD,
+Model version 10 implements document identity/lifecycle, numeric user-parameter CRUD,
 saved-file identity and deletion, and a **test state export**. The exported `.f3d` fixture contains a JSON marker
 `nativeF3d: false`; it is not a native Fusion archive and must not be imported into Fusion.
 Native export/import assertions require `native-f3d`, which this model does not advertise.
@@ -46,9 +46,13 @@ strings are model state hashes, not simulated Autodesk revision identifiers.
 
 Nonparallel midplanes, parameter-driven plane regeneration, referenced-plane
 cascading deletion, nonidentity component transforms and general feature rollback are
-explicitly unsupported. Geometry persistence/reopen and native F3D export are not
-implemented; saved fixtures exercise cloud ownership and cleanup, not geometry
-roundtrips. The shared document scenarios test geometry before closing the fixture.
+explicitly unsupported. The bounded design graph now persists to an isolated in-memory file snapshot.
+Opening the latest complete version creates a fresh document identity and restores
+modeled geometry, parameters, attributes, units and timeline state. Opening an
+already-open version returns that document; foreign, incomplete, deleting, deleted
+and superseded versions are rejected before document creation. Historical-version
+opening and native F3D import/export remain unsupported. This is a model capability;
+shared saved-reopen lifecycle migration still requires receipt-bound identity handoff.
 
 Cloud inventory adds project/folder/file enumeration, parent-folder paths and file
 extension/read-only metadata for the configured fixture project. It does not model
@@ -61,8 +65,8 @@ untapered new-body extrusion. Bounds and volume are calculated from the rectangl
 and extent; there is no geometry selected by scenario name. Timeline rollback
 hides/restores the extruded body. Other profile types, booleans, taper, constraints,
 cross-component creation, edits behind the timeline marker and general regeneration
-remain unsupported. Saves with geometry now fail explicitly before creating a file,
-rather than silently dropping geometry from parameter-only state persistence.
+remain unsupported. Saves preserve the supported graph without retaining subsequent live edits.
+Unsupported geometry creation still fails at the operation boundary.
 
 The deprecated `setDistanceExtent` method exists only to run the frozen historical
 box fixture. Shipped code uses the pinned `DistanceExtentDefinition` and
@@ -73,8 +77,9 @@ Body/component tokens resolve only within their owning open design. Attribute
 writes affect document dirty state and conservative body/component revisions.
 The shared scenarios retain the later live suite's write/update/readback assertions;
 paired handler tests also compare the frozen pre-refactor implementation.
-Attribute persistence, proxies, split/merged topology and token lifetime after
-reopen remain unsupported. The modeled 2 MiB limit counts UTF-8 bytes; native
+Attributes persist with modeled bodies. Tokens are retained by this in-memory
+model across reopen, but proxies, split/merged topology and native token lifetime
+remain unqualified. The modeled 2 MiB limit counts UTF-8 bytes; native
 encoding and boundary failure behavior still require qualification.
 
 Public rectangular-sketch scenarios add `Sketches.addWithoutEdges` on owned XY
@@ -100,3 +105,9 @@ coordinate and requires a failed proof with unchanged geometry. Child-component,
 offset-plane and occurrence transforms are explicitly unsupported by this model;
 no identity transform is silently substituted for those cases. Native orientation
 and world-coordinate behavior still need final Fusion qualification.
+
+The snapshot is a deep copy of modeled state with its document edge explicitly
+rebound on open. It never copies the application or other documents. This is not a
+Fusion serializer, disk durability guarantee or evidence of STEP/F3D validity.
+Native qualification must verify reopened creation identity, token resolution,
+active-document behavior, saved versions and delayed cloud visibility.

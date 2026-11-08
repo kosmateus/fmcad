@@ -39,18 +39,51 @@ test(
   "browser reads real registered SQLite histories through the installed production composition",
   { timeout: 45000 },
   async (t) => {
+    const artifacts = path.resolve(
+      process.env["FMCAD_CONTROL_CENTER_E2E_ARTIFACTS"] ??
+        path.join(os.tmpdir(), "opencode/fmcad-control-center-e2e"),
+      `production-${Date.now()}-${process.pid}`,
+    );
+    fs.mkdirSync(artifacts, { recursive: true });
+    const errors: string[] = [];
+    const failedRequests: { url: string; error: string }[] = [];
+    const badResponses: { url: string; status: number }[] = [];
     let composition:
       ReturnType<typeof createControlCenterComposition> | undefined;
     let server: ReturnType<typeof createControlCenterHttpServer> | undefined;
     let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
     t.after(async () => {
       try {
-        await browser?.close();
+        try {
+          if (browser) {
+            const context = browser.contexts()[0];
+            const page = context?.pages()[0];
+            if (page && !page.isClosed())
+              await page
+                .screenshot({
+                  path: path.join(artifacts, "final.png"),
+                  fullPage: true,
+                })
+                .catch(() => {});
+            await context?.tracing.stop({
+              path: path.join(artifacts, "trace.zip"),
+            });
+          }
+        } finally {
+          await browser?.close();
+        }
       } finally {
         try {
           await server?.close();
         } finally {
-          await composition?.close?.();
+          try {
+            await composition?.close?.();
+          } finally {
+            fs.writeFileSync(
+              path.join(artifacts, "report.json"),
+              JSON.stringify({ errors, failedRequests, badResponses }, null, 2),
+            );
+          }
         }
       }
     });
@@ -94,7 +127,19 @@ test(
       locale: "pl-PL",
       viewport: { width: 1440, height: 960 },
     });
-    const errors: string[] = [];
+    await page
+      .context()
+      .tracing.start({ screenshots: true, snapshots: true, sources: true });
+    page.on("requestfailed", (request) =>
+      failedRequests.push({
+        url: request.url(),
+        error: request.failure()?.errorText ?? "unknown",
+      }),
+    );
+    page.on("response", (response) => {
+      if (response.status() >= 400)
+        badResponses.push({ url: response.url(), status: response.status() });
+    });
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
       if (message.type() === "error")
@@ -135,16 +180,22 @@ test(
         .locator(`[data-action="task"][data-id="task-${projectId}"]`)
         .waitFor();
     }
-    const artifacts = path.resolve(
-      process.env["FMCAD_CONTROL_CENTER_E2E_ARTIFACTS"] ??
-        path.join(os.tmpdir(), "opencode/fmcad-control-center-e2e"),
-    );
-    fs.mkdirSync(artifacts, { recursive: true });
     await page.screenshot({
       path: path.join(artifacts, "production-sqlite-project.png"),
       fullPage: true,
     });
     assert.deepEqual(errors, []);
+    assert.deepEqual(badResponses, []);
+    assert.deepEqual(
+      failedRequests.filter(
+        (request) =>
+          !(
+            request.url.includes("/api/v1/console/events") &&
+            request.error === "net::ERR_ABORTED"
+          ),
+      ),
+      [],
+    );
     assert.equal(fs.existsSync(path.join(fixture.root, "absent-queue")), false);
   },
 );
