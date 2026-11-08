@@ -59,9 +59,10 @@ before any integration; record exact merged SHA and full matrix results here.
 | F       | PR #41 `a751396`               | Claim only at observation; production browser, retention and explicit UI retirement ledger required.                  |
 | G       | PR #40                         | Registration guard and inventories are an initial delivery, not G1–G4 completion.                                     |
 
-Base-main CI run `42523257166` was still running when inspected. The planning PR's
-recorded 22 green jobs do not prove this newer merge head passed. Merge neither
-this delivery nor another owner's work on stale or partial checks.
+Base-main CI run `42523257166` subsequently completed with all 22 jobs successful
+on `0b84454d8e5d22abb23bcf52999c506894ebf5bf`. G's own exact-head workflows still
+need their independent complete results. Merge neither this delivery nor another
+owner's work on stale or partial checks.
 
 ## Archive and Beads reconciliation
 
@@ -140,3 +141,29 @@ refactor manifest and its safety holds must not be removed by this inventory.
   is justified yet; retain model default `min(2, CPU)` and one physical SDK lane.
 - G4: publish one accepted integrated SHA only after every A–F checklist and G1–G3
   closes. Finalize all native assertions, then qualify separately with real Fusion.
+
+## Initial local verification and unresolved findings
+
+- `npm run build` and `npm run typecheck:tests`: passed.
+- Registration units: 8 passed, including rejection of compile-only/name-filtered
+  selections and commented or quoted wrapper imports. Inventory check passed.
+- Shared scenario units: 123 passed, zero failed/skipped. Simulator typecheck:
+  zero errors/warnings. API verifier: 57 methods and 21 property accessor shapes.
+- Native plan: 48 command arrays validated by the existing CLI parser, not run.
+- Installed MCP test: initial attempt failed on missing offline npm metadata.
+  Preparing cache and executing in the same host invocation resolves that setup
+  problem, then the unchanged test fails its empty-stderr assertion with
+  `fmcad: Control Center unavailable; MCP remains available.` E/F must diagnose
+  the lifecycle/platform prerequisite before registration; expectations retained.
+- Installed OpenCode tests initially failed dependency-cache setup; checker and
+  admission packaging tests also encounter npm-pack JSON parsing. These attempts
+  are failures, not installed acceptance; rerun with isolated prerequisites and
+  retain complete stdout/stderr before attributing product versus fixture drift.
+- Retained final-benchmark harness: three tests pass; its multi-client worker
+  fails because `process.memoryUsage()` returns `ENOENT: uv_resident_set_memory`
+  in this host, after setting a writable TMPDIR. RSS measurement is unavailable
+  here; do not invent values, relax thresholds, or change concurrency defaults.
+  Repeat on Linux CI with process/RSS evidence. No comparative timing claim made.
+
+The dependency table is a timestamped observation, not a moving branch status.
+Later A–F proposals must be fetched and verified before their status changes here.

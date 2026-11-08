@@ -62,7 +62,7 @@ class RegistrationTests(unittest.TestCase):
                 'package.json': json.dumps({'scripts': {'test:ci': 'node --test tests/a.test.js', 'test:unused': 'node --test tests/orphan.test.js'}}),
                 '.github/workflows/ci.yml': 'jobs:\n  test:\n    steps:\n      - run: npm run test:ci\n',
                 'tests/a.test.js': "require('../dist/tests/a.test.js');",
-                'tests/a.test.ts': '',
+                'tests/a.test.ts': "// require('../tests/orphan.test.js');\nconst snippet = \"require('../tests/orphan.test.js');\";",
                 'tests/orphan.test.js': '',
             }
             for path, text in content.items():

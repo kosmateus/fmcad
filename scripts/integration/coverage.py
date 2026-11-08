@@ -18,7 +18,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 TEST = re.compile(r"(?:\.test\.(?:[cm]?[jt]s)|_test\.py)$")
 NPM = re.compile(r"\bnpm run ([\w:-]+)")
-IMPORT = re.compile(r"(?:require\(\s*|(?:import|from)\s*)['\"]([^'\"]+)['\"]")
+WRAPPER = re.compile(
+    r"\s*(?:(?:'use strict'|\"use strict\");?\s*)?"
+    r"(?://[^\n]*\n\s*)*require\(\s*['\"]([^'\"]+)['\"]\s*\);?\s*"
+)
 
 
 def tracked(root: Path) -> list[str]:
@@ -134,7 +137,8 @@ def audit(root: Path, files: list[str]) -> dict:
         for source in tests:
             if not reached[source]:
                 continue
-            for relative in IMPORT.findall((root / source).read_text()):
+            wrapper = WRAPPER.fullmatch((root / source).read_text())
+            for relative in ([wrapper[1]] if wrapper else []):
                 if not relative.startswith('.'):
                     continue
                 target = posixpath.normpath(posixpath.join(posixpath.dirname(source), relative))
