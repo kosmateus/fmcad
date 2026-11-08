@@ -66,5 +66,17 @@
     ],
     "file": "before-externalization-planning.py.txt",
     "sha256": "42a9db3cf7fe0d30c557bbb92f2db3117f740f170ffee4a726c5b0a0f92581e3"
+  },
+  {
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "src/data-import.js",
+    "file": "baseline-data-import.js.txt",
+    "sha256": "20fd2265983b3ede61eb6531f2f544723bc858ac6ff6d881444f736bd1cafcc3"
+  },
+  {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sourcePath": "src/data-import.js",
+    "file": "before-data-import.js.txt",
+    "sha256": "3877895e094b33e9f0a15f23946e34ee8cdac669d94b4b31b89a79bdb21ad680"
   }
 ]

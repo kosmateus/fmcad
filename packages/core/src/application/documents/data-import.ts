@@ -121,7 +121,7 @@ export interface ImportGeometry {
   transform(value: unknown): ImportTransform;
   multiply(a: number[], b: number[]): number[];
   inverse(a: number[]): number[];
-  stable(value: unknown): string;
+  stable(value: unknown): string | undefined;
 }
 /** Supplied observations remain historical evidence, never live model acceptance. */
 export function offlineImportResult(

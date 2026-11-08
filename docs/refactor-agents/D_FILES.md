@@ -182,3 +182,37 @@ includes imports, references, externalization, save/publication and drawings.
   from the existing slot call without changing runtime behavior; rerun lint
   and the externalization tests before updating #49. The earlier blanket lint
   pass statement was premature.
+
+### Delivery 3 — typed import workflow
+
+- Parent: external evidence correction `ffe5d1e642669e5adeb082df6404262101c2849d`.
+  Main remains `0b84454` at the latest fetch; deliveries #38 and #49 are not merged.
+- Moved all remaining import preparation behavior into strict core modules:
+  CSV/canonical values and rigid transforms, source snapshots/schema mappings,
+  model/mass/provenance evidence, catalog/instance and purchase ledgers,
+  parameter/placement/replacement records, and synchronous workflow composition.
+  `src/data-import.js` retains public descriptors/manuals and delegates behavior.
+  Public routes, source read order, ownership/revision fields and plan digests
+  remain unchanged. No new save, mutation, fallback or retry is introduced.
+- SHA-256 checked fixtures retain `a26222f` and `0b84454` complete import sources.
+  Paired tests compare complete plans, offline results, source hashes, CSV line
+  provenance, unit transforms, source schema errors, catalog refusal branches,
+  replacement datum maps, missing model evidence and model hash refusals.
+  A source changed immediately after reading still yields exactly one read and
+  the matching original rows/hash. Read failure propagates the same error object
+  with one attempt. No changed historical expectation is needed for this delivery.
+- Local evidence: 104 import/reference/drawing/publication Node tests passed,
+  including all 25 import tests; 18 existing Python import SDK-double tests passed.
+  Pinned full build, strict test types, repository lint, formatting and explicit
+  formatting of the new core modules passed. Externalization follow-up passed
+  all 50 Node tests, including the real checker (67 seconds for admission).
+- G's regression command already selects `tests/data_import.test.js`; no shared
+  configuration was changed. B should retain the exact source/version and
+  single-snapshot assertions when integrating shared import scenarios; E's public
+  descriptor names, signatures and offline/live dispatch contract are unchanged.
+- Still open: reference validation/planning composition, drawing package scene
+  preparation/verification, remaining externalization and Python lifecycle
+  boundaries, and full shared lifecycle/native assertion inventory. D1–D4 are
+  not complete. Full CI on each exact merge head and the G registry handoff remain
+  mandatory. Genuine native-format qualification remains explicitly pending;
+  these text/model doubles do not qualify Fusion geometry or exported formats.
