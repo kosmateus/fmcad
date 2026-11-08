@@ -58,6 +58,14 @@ export async function openExternalizationJournal(
   }
   if (stored) {
     if (
+      stored.operationId !== data.operationId ||
+      typeof stored.sessionNonce !== "string" ||
+      stored.sessionNonce.length === 0
+    )
+      throw new Error(
+        "Externalization manifest owner mismatch; outcome unknown",
+      );
+    if (
       stored.requestHash !== requestHash ||
       port.hash(stored.manifest) !== requestHash
     )
@@ -84,6 +92,14 @@ export async function openExternalizationJournal(
     source: data.source,
   };
   const records = await port.read(directory, binding, io);
+  for (const record of records) {
+    if (
+      record.result?.operationId !== data.operationId ||
+      record.result.operation !== "component.externalize" ||
+      record.result.schemaVersion !== 1
+    )
+      throw new Error("Externalization result owner mismatch; outcome unknown");
+  }
   let sequence = records.length;
   const lockPath = path.join(directory, "run.lock");
   return {
@@ -105,6 +121,34 @@ export async function openExternalizationJournal(
       } catch (error) {
         if (code(error) === "EEXIST") return null;
         throw error;
+      }
+      // The caller derived its continuation before acquiring this lock. A
+      // writer may have settled in between; stale evidence is not authority
+      // to repeat its mutation. Require a fresh invocation to read that result.
+      try {
+        const current = await port.read(directory, binding, io);
+        const manifest = JSON.parse(
+          await io.readFile(manifestPath, "utf8"),
+        ) as unknown;
+        if (
+          port.hash(current) !== port.hash(records) ||
+          port.hash(manifest) !== port.hash(stored)
+        )
+          throw new Error(
+            "Externalization evidence changed before admission; inspect, do not replay",
+          );
+      } catch (original) {
+        try {
+          await lock.close();
+          await io.unlink(lockPath);
+        } catch (cleanup) {
+          throw new AggregateError(
+            [original, cleanup],
+            "Externalization admission and lock cleanup failed",
+            { cause: original },
+          );
+        }
+        throw original;
       }
       return async () => {
         await lock.close();

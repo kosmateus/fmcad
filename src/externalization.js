@@ -1,8 +1,9 @@
+const { restoreKnownPendingEvidence, preserveKnownCursor, restoreBlockedCheckpoints, copyIntent } = require('./dist/core/application/documents/externalization-evidence');
 const { hash } = require('./engineering-common');
 const { publishComplete } = require('./publish');
 const { readOperationJournal, writeOperationRecord } = require('./dist/node-adapters/persistence/operation-journal');
 const { openExternalizationJournal } = require('./dist/node-adapters/persistence/externalization');
-const { initial, slot, completeMigration, phaseOrder } = require('./dist/core/application/documents/externalization');
+const { initial, slot, completeMigration } = require('./dist/core/application/documents/externalization');
 
 const modes = ['copyAndReplace', 'replaceFromExisting', 'composeNew', 'replaceExternal'];
 const phases = ['run', 'copy', 'verify', 'stage', 'retire', 'finalize', 'inspect'];
@@ -227,71 +228,6 @@ function validate(input) {
   return data;
 }
 function manifest(data) { return Object.fromEntries(immutableKeys.filter(k=>data[k]!==undefined).map(k=>[k,clone(data[k])])); }
-function restoreKnownPendingEvidence(result,records) {
-  const pending=result.pending;
-  if(!pending)return;
-  const current=slot(result.byItem[pending.itemId],pending.phase);
-  if(current?.status!=='unknown')return;
-  for(let index=records.length-1;index>=0;index--){
-    const priorResult=records[index].result;
-    if(priorResult?.pending?.itemId!==pending.itemId || priorResult.pending.phase!==pending.phase)continue;
-    const prior=slot(priorResult.byItem?.[pending.itemId],pending.phase);
-    if(prior?.status!=='pending' || !Array.isArray(prior.receipt?.checks))continue;
-    current.receipt={...prior.receipt,...(current.receipt ?? {}),
-      checks:current.receipt?.checks ?? prior.receipt.checks};
-    return;
-  }
-}
-function preserveKnownCursor(state,output) {
-  const previous=state.receipt?.cursor,current=output.receipt?.cursor;
-  if(['blocked','pending'].includes(output.status) && (output.notStarted===true || output.receipt?.notStarted===true) && Number.isSafeInteger(previous) &&
-     Number.isSafeInteger(current) && current<previous)
-    output.receipt={...output.receipt,cursor:previous};
-}
-function restoreBlockedCheckpoints(result,records) {
-  for(const [itemId,item] of Object.entries(result.byItem ?? {})) for(const phase of phaseOrder){
-    const state=slot(item,phase);
-    if(!state || state.status!=='blocked' || state.receipt?.notStarted!==true)continue;
-    const cursor=state.receipt.cursor;
-    if(!Number.isSafeInteger(cursor))continue;
-    for(let index=records.length-1;index>=0;index--){
-      const prior=records[index].result;
-      const priorState=slot(prior?.byItem?.[itemId] ?? {},phase);
-      if(!['pending','complete'].includes(priorState.status) ||
-          !Number.isSafeInteger(priorState.receipt?.cursor) || priorState.receipt.cursor<=cursor)continue;
-      const checks=new Map();
-      for(const check of [...(priorState.receipt.checks ?? []),...(state.receipt.checks ?? [])])checks.set(check.checkId,check);
-      state.receipt={...priorState.receipt,...state.receipt,cursor:priorState.receipt.cursor,
-        ...(checks.size?{checks:[...checks.values()]}:{})};
-      break;
-    }
-  }
-}
-function copyIntent(stored, item, state, result) {
-  if (stored.copyProtocol !== 1 || item.dataFileId) return undefined;
-  const cursor=state.receipt?.cursor ?? 0;
-  const group=item.groupId && stored.manifest.extractionGroups.find(g=>g.id===item.groupId);
-  const purpose=cursor===0 ? (group?'groupParent':'component') :
-    group && cursor===group.members.length+5 ? 'groupChild' : null;
-  if (!purpose) return undefined;
-  let source=clone(stored.manifest.source),component=item.selection;
-  for (const row of Object.values(result.byItem)) {
-    const published=row.phaseResults.finalize.receipt?.file;
-    if (published?.fileId===source.fileId) source.version=Math.max(source.version,published.version);
-  }
-  if (purpose==='groupParent') component={parentOf:clone(group.members)};
-  if (purpose==='groupChild') {
-    requireThat(state.receipt?.stagingSource && state.receipt?.stagingComponent,'Missing exact staged group source receipt');
-    source=clone(state.receipt.stagingSource);component=clone(state.receipt.stagingComponent);
-  }
-  const destination={...item.destination,...(purpose==='groupParent'?
-    {fileName:item.destination.fileName+'__'+stored.operationId+'__staging'}:{})};
-  const binding={operationId:stored.operationId,itemId:item.itemId,purpose,source,component,destination};
-  const nonce=hash({sessionNonce:stored.sessionNonce,requestHash:stored.requestHash,...binding});
-  const finalDescription=purpose==='component'?'Native externalization '+stored.operationId:
-    purpose==='groupParent'?'Isolated native group staging':'Native extraction group';
-  return {...binding,nonce,finalDescription,description:finalDescription+' [fmcad-copy:'+nonce+']'};
-}
 
 async function execute(client, input, context, deps) {
   const { executeExternalization } = require('./dist/core/application/documents/externalization');

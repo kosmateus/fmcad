@@ -23,6 +23,14 @@ module.exports = (label, sourcePath, overrides = {}) => {
   const load = Module.createRequire(filename);
   isolated.require = (id) =>
     Object.hasOwn(overrides, id) ? overrides[id] : load(id);
-  isolated._compile(bytes.toString("utf8"), filename);
+  const source = sourcePath.endsWith(".ts")
+    ? require("typescript").transpileModule(bytes.toString("utf8"), {
+        compilerOptions: {
+          module: require("typescript").ModuleKind.CommonJS,
+          target: require("typescript").ScriptTarget.ES2022,
+        },
+      }).outputText
+    : bytes.toString("utf8");
+  isolated._compile(source, filename);
   return isolated.exports;
 };

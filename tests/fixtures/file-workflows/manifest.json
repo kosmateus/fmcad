@@ -22,5 +22,49 @@
     "sourcePath": "src/drawing-check.js",
     "file": "before-drawing-check.js.txt",
     "sha256": "392bde17c3e0a931597e7b333af584a891aec9a3d81b33ffb4b863b4518ff014"
+  },
+  {
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "src/externalization.js",
+    "file": "baseline-externalization.js.txt",
+    "sha256": "7e09b4c30a1e4b83289ca3482d296c859256b3748a4df2fa466df8fbd830e109"
+  },
+  {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sourcePath": "src/externalization.js",
+    "file": "before-externalization.js.txt",
+    "sha256": "15ea56ad2d8cb65fab7dd60682963170d381731a267e904b478696e80b3f1dfa"
+  },
+  {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sourcePath": "packages/node-adapters/src/persistence/externalization.ts",
+    "file": "before-externalization-store.ts.txt",
+    "sha256": "b82a641fe2778b3b074c0aea4d4b582eab931bc80edd7f0e5a7f89b8f9fbd69b"
+  },
+  {
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "assets/cad/externalization.py",
+    "symbols": [
+      "_external_probe_refresh_bindings",
+      "_external_probe_refresh_bindings_payload",
+      "_external_probe_refresh_plan_request",
+      "_external_probe_validate_refresh_plan",
+      "_external_probe_refresh_apply_request"
+    ],
+    "file": "baseline-externalization-planning.py.txt",
+    "sha256": "e68184208a02e2430614763133f4f493e091a27b82245ceb284951de333b7150"
+  },
+  {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sourcePath": "runtime/python/fmcad/adapters/fusion/externalization.py",
+    "symbols": [
+      "_external_probe_refresh_bindings",
+      "_external_probe_refresh_bindings_payload",
+      "_external_probe_refresh_plan_request",
+      "_external_probe_validate_refresh_plan",
+      "_external_probe_refresh_apply_request"
+    ],
+    "file": "before-externalization-planning.py.txt",
+    "sha256": "42a9db3cf7fe0d30c557bbb92f2db3117f740f170ffee4a726c5b0a0f92581e3"
   }
 ]

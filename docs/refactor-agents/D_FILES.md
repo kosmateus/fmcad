@@ -130,3 +130,42 @@ includes imports, references, externalization, save/publication and drawings.
   and reference validation/planning composition, externalization policy/Python
   boundaries, source/destination receipt fault inventory and B integration.
   D1–D4 remain open; this bounded delivery does not complete the package.
+
+### Delivery 2 — original externalization evidence
+
+- Stacked on drawing delivery `9a7432ba1268a29c2cc1d7395cc0070ddb3b4511`.
+  Comparison sources remain `a26222f` (archived monolithic workflow) and
+  `0b84454` (pre-change composition plus persistence adapter).
+- Reject a foreign manifest operation, a foreign operation result inside an
+  otherwise correctly bound journal, and a manifest/record snapshot changed
+  between reading the continuation and acquiring its lock. These are D-owned
+  result checks; A's journal envelope and stage primitives are unchanged.
+- Both historical readers accept the substituted owner and changed manifest in
+  the same fault tests. They also return foreign completion results. These are
+  inherited validation gaps. The required result is refusal with zero further
+  SDK calls, preserved original bytes and no new mutation/replay.
+- Cursor restoration and original copy-intent construction now have one strict
+  typed core implementation. A seeded-session comparison preserves full copy
+  payloads, source/destination pins, nonces and phase results across all readers.
+- Five Python driver-refresh planning functions moved unchanged from the Fusion
+  adapter into the pure domain. Historical function-body fixtures are SHA-256
+  checked and carry exact revision/source/symbol provenance. Positive forward
+  and restore requests, ambiguous bindings, changed producer/consumer versions
+  and unrelated dependency drift retain behavior without SDK globals.
+- Local evidence: 49 externalization Node tests, 93 existing Python SDK-double
+  tests, six new paired pure-planning/boundary tests, pinned build, lint, formatting and
+  strict test types passed. The new production basedpyright bundle admission
+  gate also passed (74 seconds, no skipped analysis). Full CI remains the merge
+  gate for this exact delivery.
+- Failure during admission cleanup retains both the original evidence error and
+  the lock-cleanup error; the retained lock remains explicit recovery evidence.
+- Remaining D1–D4 work is unchanged apart from these extracted boundaries. Full
+  import/reference validators and planners, drawing package model verification,
+  remaining Python orchestration and shared lifecycle fixtures are still open.
+
+- The new real-checker gate exposed two JSON-to-TypedDict argument errors in
+  the pre-existing `_external_refresh_internal` signature (present at `0b84454`).
+  Its wire entry now validates action and object shape before decoding into the
+  internal operation record. Malformed inputs fail before registry/SDK access.
+  A duplicate cast import introduced by the extraction was caught and removed.
+  No checker strictness or admission requirement was reduced.
