@@ -1,0 +1,343 @@
+{
+  "schemaVersion": 1,
+  "nativeExecution": "deferred-until-offline-complete",
+  "profiles": {
+    "required-model": {
+      "required": true,
+      "qualification": "modeled-behavior-only",
+      "cases": [
+        {
+          "id": "foundation",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite foundation --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "saved",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite saved --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "parameters",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite parameters --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "documents",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite documents --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "cloud",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite cloud --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "boxes",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite boxes --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "attributes",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite attributes --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "sketches",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite sketches --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        }
+      ]
+    },
+    "native-qualification": {
+      "required": true,
+      "qualification": "pending",
+      "scope": "exclusive-instance",
+      "cases": [
+        {
+          "id": "animation-methods",
+          "source": "tests/live-animation-methods.js",
+          "disposition": "native-only",
+          "obligation": "Storyboard creation, animation actions and frame export",
+          "command": "node tests/live-animation-methods.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "backend-adapter",
+          "source": "tests/live-backend-adapter.js",
+          "disposition": "migration-pending",
+          "obligation": "Backend capabilities, progress, transport limits and read-only soak",
+          "command": "node tests/live-backend-adapter.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "batch-reference",
+          "source": "tests/live-batch-reference.js",
+          "disposition": "migration-pending",
+          "obligation": "Batch reference resolution, propagation and failure stop",
+          "command": "node tests/live-batch-reference.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "cad",
+          "source": "tests/live-cad.js",
+          "disposition": "migration-pending",
+          "obligation": "Dimension regeneration, bodies, holes, patterns, fillets and checkpoints",
+          "command": "node tests/live-cad.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "camera-probe",
+          "source": "tests/live-camera-probe.js",
+          "disposition": "native-only",
+          "obligation": "Camera projection, orientation, capture and restoration",
+          "command": "node tests/live-camera-probe.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "component-hierarchy",
+          "source": "tests/live-component-hierarchy.js",
+          "disposition": "migration-pending",
+          "obligation": "Nested occurrences, component lookup and transforms",
+          "command": "node tests/live-component-hierarchy.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "data-import",
+          "source": "tests/live-data-import.ts",
+          "disposition": "migration-pending",
+          "obligation": "Versioned catalog import, replacement, lineage and native geometry",
+          "command": "node dist/tests/live-data-import.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "definitions",
+          "source": "tests/live-definitions.js",
+          "disposition": "migration-pending",
+          "obligation": "Literal definitions, idempotent run IDs and failed-check stop",
+          "command": "node tests/live-definitions.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "design-styles",
+          "source": "tests/live-design-styles.js",
+          "disposition": "migration-pending",
+          "obligation": "Material/appearance editing, scope and retained design state",
+          "command": "node tests/live-design-styles.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "engineering-analytics",
+          "source": "tests/live-engineering-analytics.js",
+          "disposition": "migration-pending",
+          "obligation": "Engineering calculations with native geometry/measurement readback",
+          "command": "node tests/live-engineering-analytics.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "entity-attributes",
+          "source": "tests/live-entity-attributes.js",
+          "disposition": "migration-pending",
+          "obligation": "Entity identity, attributes and selection behavior",
+          "command": "node tests/live-entity-attributes.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "extended",
+          "source": "tests/live-extended.js",
+          "disposition": "migration-pending",
+          "obligation": "Sweep, loft, shell, chamfer, combine, split, draft, joints and interference",
+          "command": "node tests/live-extended.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "feature-modes",
+          "source": "tests/live-feature-modes.js",
+          "disposition": "migration-pending",
+          "obligation": "Extrusion, hole, sweep and loft variants; geometry and timeline health",
+          "command": "node tests/live-feature-modes.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "file-exports",
+          "source": "tests/live-file-exports.js",
+          "disposition": "migration-pending",
+          "obligation": "Native export artifacts, paths and file checks",
+          "command": "node tests/live-file-exports.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "joint-limits-probe",
+          "source": "tests/live-joint-limits-probe.js",
+          "disposition": "native-only",
+          "obligation": "Joint limit setup, readback and pose ordering",
+          "command": "node tests/live-joint-limits-probe.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "legacy",
+          "source": "tests/live-legacy.js",
+          "disposition": "migration-pending",
+          "obligation": "Document/parameter/plane/component CLI, units, box, rollback and exports",
+          "command": "node tests/live-legacy.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "mcp-stdio",
+          "source": "tests/live-mcp-stdio.js",
+          "disposition": "migration-pending",
+          "obligation": "Installed stdio discovery and live Fusion tool invocation",
+          "command": "node tests/live-mcp-stdio.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "motion-animation",
+          "source": "tests/live-motion-animation.js",
+          "disposition": "native-only",
+          "obligation": "Joint limits, five motion frames, storyboard and workspace restoration",
+          "command": "node tests/live-motion-animation.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "normal-multidocument",
+          "source": "tests/live-normal-multidocument.ts",
+          "disposition": "migration-pending",
+          "obligation": "Normal document operations with interleaving and exact document ownership",
+          "command": "node dist/tests/live-normal-multidocument.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "pose-methods",
+          "source": "tests/live-pose-methods.js",
+          "disposition": "native-only",
+          "obligation": "Pose creation/application, capture and restoration",
+          "command": "node tests/live-pose-methods.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "response-recovery",
+          "source": "tests/live-response-recovery.ts",
+          "disposition": "migration-pending",
+          "obligation": "Accepted response loss, original receipt recovery and no mutation replay",
+          "command": "node dist/tests/live-response-recovery.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "rpc-recovery",
+          "source": "tests/live-rpc-recovery.js",
+          "disposition": "migration-pending",
+          "obligation": "RPC reply loss, broker settlement and original result recovery",
+          "command": "node tests/live-rpc-recovery.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "shape-native-solids",
+          "source": "tests/live-shape-native-solids.js",
+          "disposition": "migration-pending",
+          "obligation": "Native solid creation and geometric properties",
+          "command": "node tests/live-shape-native-solids.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "sketch-operations",
+          "source": "tests/live-sketch-operations.ts",
+          "disposition": "migration-pending",
+          "obligation": "Sketch creation, curves, dimensions, constraints, edits and readback",
+          "command": "node dist/tests/live-sketch-operations.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "style-save",
+          "source": "tests/live-style-save.js",
+          "disposition": "migration-pending",
+          "obligation": "Style precedence, mass, unsaved state and local archive roundtrip",
+          "command": "node tests/live-style-save.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "thicken-slot-pattern",
+          "source": "tests/live-thicken-slot-pattern.js",
+          "disposition": "migration-pending",
+          "obligation": "Thicken, slots and pattern geometry with rejected inputs",
+          "command": "node tests/live-thicken-slot-pattern.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        },
+        {
+          "id": "thread-method",
+          "source": "tests/live-thread-method.js",
+          "disposition": "migration-pending",
+          "obligation": "Thread selection, creation and native feature readback",
+          "command": "node tests/live-thread-method.js --run",
+          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+        }
+      ]
+    },
+    "diagnostics": {
+      "required": false,
+      "cases": [
+        {
+          "id": "data-import-fixed",
+          "source": "tests/live-data-import-fixed.ts",
+          "kind": "external-fixture",
+          "prerequisites": "Externally prepared exact document, client, runtime and Fusion version",
+          "execution": "explicit-owned-scope-only"
+        },
+        {
+          "id": "gm07",
+          "source": "tests/live-gm07.js",
+          "kind": "external-fixture",
+          "prerequisites": "Externally prepared exact document, client, runtime and Fusion version",
+          "execution": "explicit-owned-scope-only"
+        },
+        {
+          "id": "gm12-spring",
+          "source": "tests/live-gm12-spring.js",
+          "kind": "external-fixture",
+          "prerequisites": "Externally prepared exact document, client, runtime and Fusion version",
+          "execution": "explicit-owned-scope-only"
+        },
+        {
+          "id": "import-receipts",
+          "source": "tests/live-import-receipts.ts",
+          "kind": "helper",
+          "prerequisites": "Caller-supplied owned request",
+          "execution": "explicit-owned-scope-only"
+        },
+        {
+          "id": "recovery-ports",
+          "source": "tests/live-recovery-ports.ts",
+          "kind": "helper",
+          "prerequisites": "Caller-supplied owned request",
+          "execution": "explicit-owned-scope-only"
+        },
+        {
+          "id": "ui-host-inspect",
+          "source": "tests/live-ui-host-inspect.js",
+          "kind": "helper",
+          "prerequisites": "Caller-supplied owned request",
+          "execution": "explicit-owned-scope-only"
+        },
+        {
+          "id": "ui-observed-watcher",
+          "source": "tests/live-ui-observed-watcher.js",
+          "kind": "helper",
+          "prerequisites": "Caller-supplied owned request",
+          "execution": "explicit-owned-scope-only"
+        },
+        {
+          "id": "ui-respond-host",
+          "source": "tests/live-ui-respond-host.js",
+          "kind": "helper",
+          "prerequisites": "Caller-supplied owned request",
+          "execution": "explicit-owned-scope-only"
+        },
+        {
+          "id": "ui-watcher-host",
+          "source": "tests/live-ui-watcher-host.js",
+          "kind": "helper",
+          "prerequisites": "Caller-supplied owned request",
+          "execution": "explicit-owned-scope-only"
+        }
+      ]
+    }
+  }
+}

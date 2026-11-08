@@ -11,6 +11,12 @@ SPEC = importlib.util.spec_from_file_location(
 coverage = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(coverage)
 
+NATIVE_SPEC = importlib.util.spec_from_file_location(
+    'integration_native_plan', Path(__file__).resolve().parents[1] / 'scripts/integration/native-plan.py'
+)
+native_plan = importlib.util.module_from_spec(NATIVE_SPEC)
+NATIVE_SPEC.loader.exec_module(native_plan)
+
 
 class RegistrationTests(unittest.TestCase):
     def test_compilation_and_echo_do_not_count_as_execution(self):
@@ -76,6 +82,23 @@ class RegistrationTests(unittest.TestCase):
         report = {'gaps': ['tests/new.test.js'], 'tests': [{'path': 'tests/new.test.js'}]}
         self.assertEqual(len(coverage.violations(report, baseline)), 2)
         self.assertEqual(coverage.violations({'gaps': [], 'tests': [{'path': 'tests/old.test.js'}]}, baseline), [])
+
+    def test_native_obligations_remain_not_run_and_reject_shell_or_waived_cases(self):
+        profile = {'required': True, 'qualification': 'pending', 'cases': [{
+            'id': 'owned', 'source': 'tests/live-owned.js', 'disposition': 'migration-pending',
+            'obligation': 'Owned mutation and cleanup', 'command': 'node tests/live-owned.js --run',
+            'prerequisites': 'Exact owned fixture and recovery receipts',
+        }]}
+        rows = native_plan.native_obligations(profile, {'owned'})
+        self.assertEqual(rows[0]['argv'], ['node', 'tests/live-owned.js', '--run'])
+        self.assertEqual(rows[0]['status'], 'NOTRUN')
+        profile['cases'][0]['command'] = 'node tests/live-owned.js --run && node replay.js'
+        with self.assertRaises(ValueError):
+            native_plan.native_obligations(profile, {'owned'})
+        profile['cases'][0]['command'] = 'node tests/live-owned.js --run'
+        profile['cases'][0]['disposition'] = 'passed'
+        with self.assertRaises(ValueError):
+            native_plan.native_obligations(profile, {'owned'})
 
 
 if __name__ == '__main__':

@@ -134,8 +134,7 @@ remain in progress; final removal and acceptance depend on A–F evidence.
 ### Verified archive reconciliation
 
 A disposable embedded-Dolt copy was read with the checksum-verified Dolt 2.7.2
-binary. Counts match the historical ledger: 150 tasks, 104 closed and 46 remaining
-(22 open, 11 in progress, 9 deferred, 4 blocked), plus 307 dependency edges.
+binary. Counts match the historical ledger: 150 tasks, 104 closed and 46 remaining.
 Detailed task records and relationships remain outside the public repository;
 automatic approval review rejected their publication from the private archive.
 The acceptance ledger publishes aggregate verification and already-public scope
@@ -174,3 +173,31 @@ Inventory is now 651 runtime files, 420 public routes and 487 test sources, with
 loader is retired because public and installed consumers still use it. Remaining
 E public surfaces, complete installed profiles, native UI/Fusion and image quality
 stay open; G and offline acceptance remain incomplete.
+
+### Third A–F merge checkpoint
+
+Merged main `0d6f757` adds Agent B's assertion audit and required profiles from
+PR #45. Its exact head `895eb69` passed all 22 CI jobs in workflow `42524676732`.
+The merge-head workflow `42530438963` is queued, so this is not yet successful
+merge-head evidence. G's new combined candidate requires fresh full CI.
+
+The audit freezes 1,588 static sites across 39 live sources. Of 613 historical
+sites, 612 are unchanged and the one recorded change is the public MCP server
+name. This is an anti-omission gate, not semantic per-assertion disposition.
+Required profiles now separate eight supported model families, 27 retained
+native obligations and nine diagnostic/helper cases. Legacy native suites execute
+behind exclusive barriers; uncertain restoration blocks later work as `not-run`.
+
+G's native manifest now consumes that merged profile. It validates and emits 48
+shared MCP/addin command arrays for concurrency 1/2/10, all 27 native obligations
+as explicit argument arrays with status `NOTRUN`, and the nine diagnostics as
+non-substituting cases. Every legacy obligation keeps lifecycle/cleanup migration
+as a blocking prerequisite. Native Fusion remains unexecuted.
+
+The combined local tree passes build, strict test types, nine registration tests,
+129 scenario tests and required-profile listing. Inventory is 651 runtime files,
+420 public routes and 489 test sources, with 226 registered and 263 explicit gaps.
+The package remains 1,571 files and unchanged in size because B's ledgers and test
+sources are not published. No facade is retired. Semantic mapping, shared reopen,
+transactional migration and global-state restoration remain B dependencies, so
+B, G and offline acceptance remain incomplete.

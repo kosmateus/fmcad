@@ -3,10 +3,35 @@
 import argparse
 import hashlib
 import json
+import shlex
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def native_obligations(profile, inventory_ids):
+    if profile.get('required') is not True or profile.get('qualification') != 'pending':
+        raise ValueError('Native qualification profile must remain required and pending')
+    obligations = []
+    for case in profile.get('cases', []):
+        if case.get('id') not in inventory_ids:
+            raise ValueError(f"Native case is absent from the live inventory: {case.get('id')}")
+        if case.get('disposition') not in ('migration-pending', 'native-only'):
+            raise ValueError(f"Native case has a nonblocking disposition: {case.get('id')}")
+        argv = shlex.split(case.get('command', ''))
+        if not argv or argv[0] != 'node' or argv[-1] != '--run':
+            raise ValueError(f"Native case is not an explicit Node --run command: {case.get('id')}")
+        if any(token in {'|', '||', '&&', ';', '>', '>>', '<'} for token in argv):
+            raise ValueError(f"Native case contains shell control syntax: {case.get('id')}")
+        obligations.append({
+            'id': case['id'], 'source': case['source'],
+            'status': 'NOTRUN', 'disposition': case['disposition'],
+            'obligation': case['obligation'], 'argv': argv,
+            'prerequisites': case['prerequisites'],
+            'cleanupRecovery': 'PENDING-MIGRATION: supply exact owned creation/file/version receipts and restoration proof before execution.',
+        })
+    return obligations
 
 
 def main():
@@ -39,6 +64,20 @@ process.stdout.write(JSON.stringify(rows.map(([suite, file, name]) => {
     suites = json.loads(subprocess.check_output(['node', '-e', program, json.dumps(folder)], cwd=ROOT, text=True))
     inventory_path = ROOT / 'tests/live-suite-inventory.json'
     inventory = json.loads(inventory_path.read_text())
+    inventory_ids = {row['id'] for row in inventory['entries']}
+    profiles_path = ROOT / 'tests/live-required-profiles.json'
+    profiles = json.loads(profiles_path.read_text())
+    if profiles.get('nativeExecution') != 'deferred-until-offline-complete':
+        raise ValueError('Native execution must remain deferred until offline completion')
+    required_model = profiles['profiles']['required-model']
+    required_ids = [row['id'] for row in required_model['cases']]
+    suite_ids = [row['suite'] for row in suites]
+    if required_model.get('required') is not True or required_ids != suite_ids:
+        raise ValueError(f'Required model profile differs from scenario suites: {required_ids} != {suite_ids}')
+    obligations = native_obligations(profiles['profiles']['native-qualification'], inventory_ids)
+    diagnostics = profiles['profiles']['diagnostics']
+    if diagnostics.get('required') is not False:
+        raise ValueError('Diagnostics must not substitute for required qualification cases')
     commands = []
     for suite in suites:
         for protocol in ('mcp', 'addin'):
@@ -50,17 +89,20 @@ process.stdout.write(JSON.stringify(rows.map(([suite, file, name]) => {
                     'cases': suite['cases'],
                 })
     report = {
-        'schemaVersion': 1,
+        'schemaVersion': 2,
         'sourceSha': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
         'workingTreeStatus': subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).splitlines(),
         'offlineAcceptance': 'INCOMPLETE', 'nativeQualification': 'NOTRUN',
         'executionGate': 'Do not run until A–F completion, full CI on the integrated SHA, installed-package acceptance and real Fusion access are evidenced.',
-        'scope': 'Current shared scenarios only. This is not the final complete native assertion manifest.',
+        'scope': 'Merged required model profile plus every retained native obligation. Per-assertion semantic mapping and legacy lifecycle migration remain incomplete.',
         'fixtureFolder': folder, 'defaultConcurrency': 10,
         'liveInventorySha256': hashlib.sha256(inventory_path.read_bytes()).hexdigest(),
+        'requiredProfilesSha256': hashlib.sha256(profiles_path.read_bytes()).hexdigest(),
         'commands': commands,
+        'nativeObligations': obligations,
+        'diagnosticCases': diagnostics['cases'],
         'remainingInventory': inventory['entries'],
-        'remainingOwner': 'B/G: reconcile every individual assertion, special fixture and global UI scope before final qualification.',
+        'remainingOwner': 'B/G: map every static assertion semantically, migrate retained native lifecycle/cleanup, and prove global UI restoration before qualification.',
         'requiredEvidence': ['integrated SHA', 'Fusion build/API version', 'installed runtime build/source hashes', 'scenario inputs and assertion outcomes', 'run/client/request IDs', 'creation/file/version identities', 'physical RPC and mutation counts', 'original receipts and primary errors', 'cleanup errors and recovery manifests', 'before/after document and folder inventory', 'active-document restoration', 'native exports and screenshots where required'],
         'cleanup': {
             'policy': 'Keep original reports and receipts. Read original outcomes; never replay an uncertain mutation. Recovered cleanup does not pass unexecuted assertions.',
@@ -70,7 +112,9 @@ process.stdout.write(JSON.stringify(rows.map(([suite, file, name]) => {
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')
-    print(json.dumps({'commands': len(commands), 'status': 'NOTRUN', 'offlineAcceptance': 'INCOMPLETE'}))
+    print(json.dumps({'commands': len(commands), 'nativeObligations': len(obligations),
+                      'diagnosticCases': len(diagnostics['cases']), 'status': 'NOTRUN',
+                      'offlineAcceptance': 'INCOMPLETE'}))
 
 
 if __name__ == '__main__':

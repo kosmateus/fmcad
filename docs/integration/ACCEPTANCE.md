@@ -52,7 +52,7 @@ before any integration; record exact merged SHA and full matrix results here.
 | Package | Observed delivery              | Required evidence / remaining disposition                                                                             |
 | ------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
 | A       | PR #42 `270096c`               | Broker gates first; A2–A4 admission/recovery/concurrency still required.                                              |
-| B       | PR #36 / #44 merged as `ecf4f60` | Claim plus tested persistence increment; shared reopen, assertion mapping, profiles and lifecycle/recovery proof remain B dependencies. |
+| B       | PR #36 / #44 / #45 merged through `0d6f757` | Persistence plus anti-omission/profile increments; semantic mapping, shared reopen and lifecycle/recovery proof remain open. |
 | C       | PR #37 `a4943f3`               | Claim only at observation; canonical modeling services, Python boundaries and negative/readback evidence required.    |
 | D       | PR #38 `ee0fd54`               | Claim only at observation; file/source/version/publication and recovery contracts required.                           |
 | E       | PR #39 merged as `1023664`     | Tested image-command boundary only; remaining public routes and complete installed consumer parity stay open.         |
@@ -89,11 +89,10 @@ Dolt 2.7.2 Linux binary, verified its release SHA-256
 and queried a disposable copy of the embedded database using a writable TMPDIR.
 No issue or archived database was mutated.
 
-The independent query confirms **150 tasks: 104 closed, 22 open, 11 in progress,
-9 deferred and 4 blocked**, with **307 dependency edges**. The earlier 104/46
-split is now verified. Detailed task text and relationships remain outside the
-public repository; the table below retains only the scope already published in
-the completion plan. Historical closed state is not current acceptance evidence.
+The independent query confirms **150 tasks: 104 closed and 46 remaining**. The
+earlier 104/46 split is now verified. Detailed task text and relationships remain
+outside the public repository; the table below retains only the scope already
+published in the completion plan. Historical closed state is not current acceptance evidence.
 No new task closure is inferred or written.
 
 Automatic approval review rejected publication of the detailed archive-derived
@@ -255,3 +254,35 @@ public image loaders. E1–E4 remain open for CLI/MCP compatibility, configurati
 client, reference, engineering, review, shot, UI and complete installed
 CLI/MCP/library/OpenCode qualification. Native Fusion/UI and image-quality checks
 remain separate from these offline process fixtures.
+
+## Third merged A–F checkpoint — assertion profiles
+
+Merged main `0d6f75748da5e43ee7aaf4138d3bc523147a70ac` contains Agent B's
+assertion audit and required-profile delivery from PR #45. All 22 CI jobs passed
+its exact head `895eb69da90bd0f426d8760431c3604e2f30d8ef` in workflow
+`42524676732`. Merge-head workflow `42530438963` remains queued and is not yet
+passing evidence. G's combined candidate must receive its own complete checks.
+
+The audit freezes 1,588 static assertion/helper sites across 39 live sources.
+It records 612 of 613 historical sites unchanged and retains the one intentional
+MCP server-name change. Static equality is an anti-omission gate; semantic
+per-assertion mapping and later immediate-predecessor comparisons remain open.
+The required-profile manifest accounts for eight supported model families, 27
+retained native obligations and nine diagnostic/helper cases. Diagnostics cannot
+substitute for a required case, and uncertain exclusive-suite restoration blocks
+later work with failing `not-run` results.
+
+G's schema-2 native plan now consumes the merged required profiles. It validates
+48 shared MCP/addin command arrays at concurrency 1/2/10, emits all 27 retained
+native commands as argument arrays with status `NOTRUN`, and carries the nine
+diagnostics separately. Every native obligation retains exact-owned-fixture and
+lifecycle/cleanup migration prerequisites. The plan still reports offline
+acceptance `INCOMPLETE`; no Fusion command was executed.
+
+The combined build and strict test typecheck pass, as do nine registration tests
+and 129 scenario tests. Static registration is now 489 sources / 226 registered /
+263 explicit gaps. Runtime/public inventory remains 651/420. Package inspection
+remains 1,571 files, 3,375,315 compressed bytes and 16,628,068 unpacked bytes;
+the new audit and test sources are excluded from publication. No facade is
+retired. Shared reopen, transactional/file migration, semantic dispositions and
+global-state restoration remain B dependencies, so neither B nor G is complete.
