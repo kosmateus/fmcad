@@ -1,7 +1,9 @@
 # Agent G — coverage, Beads, packaging and final qualification
 
-Status: **available**. Start the read-only inventory immediately; final removals
-and acceptance depend on A–F. Read [the shared plan](../REFACTOR_PARALLEL_PLAN.md)
+Status: **claimed by Agent G; in progress** (8 November 2026).
+Starting baseline: `0b84454d8e5d22abb23bcf52999c506894ebf5bf`.
+Branch: `refactor/g-integration-inventory`. G1 starts immediately; final removals
+and acceptance depend on evidenced A–F deliveries. Read [the shared plan](../REFACTOR_PARALLEL_PLAN.md)
 and every assignment. This package is integration work, not permission to replace
 another agent's implementation or declare their unfinished scope complete.
 
