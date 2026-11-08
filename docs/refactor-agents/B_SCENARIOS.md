@@ -1,0 +1,101 @@
+# Agent B — shared Fusion backend and live scenario migration
+
+Status: **available**. Claim this package in a short PR; inspect current main
+before starting. Read [the shared plan](../REFACTOR_PARALLEL_PLAN.md).
+
+## Outcome and ownership
+
+Extend the existing model and shared scenario framework until every historical
+and later live assertion has an explicit disposition. Use one scenario body for
+the model and real Fusion: identical operations, expected values and tolerances.
+Backends provide transport, capabilities, paths and environment identifiers only.
+
+Own `tests/support/fusion-simulator/**`, `tests/scenarios/**`, `tests/live-*`,
+`tests/helpers/live-*`, `tests/run-live.js`, `tests/live-suite-inventory.json`,
+their inventory tests and scenario documentation. Do not modify A's broker or
+C/D's production runtime to fit the simulator. Send minimal production bug
+reproducers to its owner. G integrates shared CI/build registrations.
+
+## B1 — complete assertion inventory and fixture contract
+
+Start from the 36-entry inventory: 21 pending, 4 partial, 5 native-only and 6
+helpers. Map individual assertions, not just filenames, to scenario IDs and
+capabilities. Compare all historical tests at `a26222f` and later changes. Include
+backend-adapter, definitions, batch-reference, multidocument/recovery, newer
+sketch/component/attribute, import/export, feature, style and motion suites.
+Do not mark a suite done because a single representative operation exists.
+
+Retain completed foundation/saved/parameters/documents/cloud/boxes/attributes/
+sketches. Inspect their remaining omissions. Every normal scenario creates its
+own saved file in an explicitly supplied project/folder, uses exact creation and
+file/version identity, and removes only that file after completion. Unsaved/export
+assertions remain separately named lifecycle cases, not an excuse to omit saved
+fixtures for other scenarios.
+
+Strengthen setup/finally/recovery tests at every boundary: accepted creation/save,
+operation error, assertion error, close/delete loss, false deletion, delayed cloud
+visibility, changed version, foreign receipt, cancellation and process restart.
+Keep primary and cleanup errors separate, hold the concurrency slot through
+cleanup, and audit original documents/files plus active-document restoration.
+Unknown mutation/cleanup does not permit replay and never counts as success.
+
+## B2 — migrate transactional and file scenarios
+
+Move normal multidocument, response/RPC recovery, definitions, batch-reference
+and batch negative-check scenarios onto shared saved fixtures. Verify idempotent
+run IDs, stop-after-failure, original receipt recovery, zero duplicate mutations
+and wrong-owner isolation. Coordinate transport fault injection with A.
+
+Implement model version/reopen state and import/export lifecycle contracts with
+D. The current model archive is marked JSON, not genuine F3D. Never use its bytes
+as evidence for STEP/F3D/native rendering validity. Keep lineage, replacement,
+source pins, persistence and cleanup testable offline; native format assertions
+remain explicit pending obligations in the same scenario catalog.
+
+## B3 — extend defensible geometry and model state
+
+Work with C on sketches beyond rectangle/root-XY: additional curves, dimensions,
+constraints, transforms, profiles, regeneration, components/occurrences and
+entity identity. Start with bounded analytical behavior justified by historical
+tests. Add shape/feature modes with independent geometric expectations where
+defensible (for example simple extrude/revolve and known volumes/bounds).
+
+Audit `live-cad`, `live-extended`, `live-feature-modes`, native solids, thicken/slot/
+patterns, thread, engineering analytics and fixed GM fixtures. General topology,
+solver behavior and arbitrary BRep cannot be inferred from type definitions.
+Reject unsupported capabilities honestly and keep those native scenario
+assertions intact. Do not encode canned output for one fixture or weaken checks
+so unsupported geometry appears to pass.
+
+Use pinned Autodesk commit `07814d19ac63bb3ff0d55e3d35517cf3a71bad8c` and snapshot
+`83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179` for interfaces.
+Extend type/shape checks when adding a modeled API. Behavior comes from historical
+assertions and explicit assumptions, not method signatures alone.
+
+## B4 — global-state profiles and registration
+
+Extract camera, styles/materials/mass, motion/pose/joint limits, animation and UI
+setup/error/cleanup contracts. Global UI/workspace state needs an exclusive scope
+and verified restoration; do not run old exclusive suites blindly in parallel.
+Fixed external fixture diagnostics require their own explicit owned copy or
+profile and cannot mutate an unrelated user's model.
+
+Create a single required-profile manifest with supported shared cases, native-only
+obligations and diagnostic helpers clearly separated. A required supported case
+that is blocked/unsupported/not-run fails its profile. The legacy `all` runner
+must not imply full concurrent or full-model coverage. Provide migration-safe
+commands and CI registration patches to G.
+
+## Completion and evidence
+
+Run scenario units, simulator strict types/API verifier, real production checker,
+both component profiles and real broker/model MCP+addin profiles at 1/2/10.
+Retain deterministic A-to-B target/receipt substitution with independent B
+readback. Keep model default `min(2, CPU)` until memory measurements justify more;
+native default remains 10. Coordinate with A's single physical SDK lane.
+
+Exit only when every inventory assertion maps to a shared tested scenario or an
+explicit, justified native-only obligation, fixture isolation/cleanup is proven,
+all required model capabilities pass, and G has a runnable final native manifest.
+Native execution is deferred until the offline refactor is complete. Record
+PR/SHA, per-family checks, assumptions and remaining cases after every delivery.
