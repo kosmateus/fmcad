@@ -16,7 +16,7 @@ Public signatures and catalog registration remain unchanged; E owns registration
 This delivery does **not** complete C1–C4. Metadata-only wrappers, policy extraction,
 generated programs and native modeling must not be counted as equivalent evidence.
 
-## Inventory and remaining boundaries
+## Inventory at package claim (superseded by the delivery records below)
 
 | Family | Existing implementation and boundary | Remaining work |
 | --- | --- | --- |
@@ -232,7 +232,7 @@ feature rework, entity, selection, regional geometry and measured fasteners.
 | Components/occurrences/joints | Ambiguous names must fail; child-local transforms and root occurrence transforms are distinct. Preserve exactly one intended mutation and verify the protected document independently. Joint reports distinguish requested/evaluated setter values from post-capture readback. | `python_assembly_parity_test.py`, `assembly_test.py`, `manual_assembly_test.py` |
 | Entity/selection | A foreign native token/proxy cannot change ownership. Preserve zero/multiple-match rules and attribute readback. Artifact ownership includes project/file/creation identity. Missing artifacts do not invoke Fusion; inspection never writes; uncertain native outcomes are never replayed. | `entity_query_test.py`, `selection_rules_test.py`, `selection-rules-e2e.test.js`, `modeling-artifact-history.test.js` |
 | Measurements/geometry evidence | Length/area/volume internal values use cm/cm²/cm³; outputs default to mm/mm²/mm³, mass kg, angle degrees. Valid zero stays zero; unavailable/nonfinite readings remain errors. Temporary booleans must not add design bodies. Parameter probes restore original expressions even after callback/recompute failure. | `measure_test.py`, `python_measurement_runtime_test.py`, `regional_geometry_test.py`, `brep-baseline-service.test.js` |
-| Appearance/material/attributes | Appearance and physical material are separate; inspect the concrete face/body override. Missing density/coating is not invented. Preserve deterministic ambiguity reporting and source IDs. | `appearance_test.py`, `attributes_test.py`, document-I/O-family runtime replay |
+| Appearance/material/attributes | Appearance and physical material are separate; inspect the concrete face/body override. Missing density/coating is not invented. Preserve deterministic ambiguity reporting and source IDs. | `appearance_test.py` (including attributes/texture), document-I/O-family runtime replay |
 | Engineering/motion/model state | Preserve explicit dimensional units, hand/lead, material assumptions and reference ownership. Analytic predictions and stored states are not solver or physical qualification. Native MotionLink, joints, sheet metal and native regeneration retain their explicit capability/refusal contracts. | `python_assembly_parity_test.py`, `measured_fasteners_test.py`, engineering family suites and original native assertion ledger |
 
 B owns new simulator implementations and shared scenario files. This table and the
@@ -309,3 +309,33 @@ previews outside the checkout, with no backend construction or native execution.
 Snapshot capture uses its example scope identity and rejects foreign document pins.
 All 266 public example schemas and strict consumer declarations also pass. These
 checks cover installed host contracts, not native geometry or solver qualification.
+
+
+## Current integration evidence
+
+The C stack is #37 → #47 → #57 → #61 → #65; #66 is the isolated shared-gate
+proposal. Runtime head `c61a2515` is integrated with fetched main `5d5a793` in
+#66 at `39103d1e`. The package-script conflict was resolved by retaining every
+main entry and appending the C entries; no test was removed. Runtime Python,
+CAD assets and modeling/checker implementations are unchanged by that merge.
+
+A fresh geometry/assembly audit runs the retained statement/registration oracles,
+historical SDK effect transcripts and modeling fixtures together: 274 tests,
+273 pass and one existing installed-Fusion-SDK test skipped. The selection includes
+geometry and assembly parity, model, datum, surface, feature rework, sketch/proof,
+shapes and curves. An initial command used three nonexistent module names; that
+harness error was corrected to the actual suite names without editing assertions.
+
+B's `refactor/b-rectangle-dimensions` supplies bounded rectangle regeneration and
+saved-reopen scenarios with independent dimensions and volume readback, plus
+foreign/driven/duplicate/unsupported dimension negatives. This is reviewed source,
+not a C execution result or general sketch-solver claim. Dimension plan/apply and
+advanced geometry obligations in the handoff table remain separately accountable.
+
+On the integrated tree, the pinned full build, test types, lint and formatting
+pass. All 306 C JavaScript/TypeScript historical, retained and installed-consumer
+tests pass, and all 129 currently integrated shared scenario unit tests pass.
+
+Full current-head CI, all 260 admission cases on both supported Node lines, shared
+gate integration and B/G assertion reconciliation remain open. Native Fusion solver,
+topology, joints and physical-property qualification remain stage 3.
