@@ -120,6 +120,8 @@ export const simulatorCapabilities = new Set([
   "literal-length-parameters",
   "fixture-export",
   "saved-fixtures",
+  "saved-reopen",
+  "saved-revisions",
   "parameter-crud",
   "parameter-expressions",
   "construction-planes",

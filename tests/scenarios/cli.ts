@@ -16,6 +16,7 @@ import { documentScenarios } from "./document-cases";
 import { cloudScenarios } from "./cloud-cases";
 import { boxScenarios } from "./box-cases";
 import { attributeScenarios } from "./attribute-cases";
+import { reopenScenarios, revisionScenarios } from "./reopen-cases";
 import { sketchScenarios } from "./sketch-cases";
 import { runScenarios, resumeCleanup } from "./runner";
 import { concurrencyLimit, defaultConcurrency, sourceHash } from "./scheduling";
@@ -41,6 +42,8 @@ interface Options {
     | "cloud"
     | "boxes"
     | "attributes"
+    | "revisions"
+    | "reopen"
     | "sketches"
     | "all";
   folder?: FixtureFolder;
@@ -85,6 +88,8 @@ export function parse(argv: string[]): Options {
         value === "cloud" ||
         value === "boxes" ||
         value === "attributes" ||
+        value === "revisions" ||
+        value === "reopen" ||
         value === "sketches" ||
         value === "all")
     )
@@ -321,6 +326,14 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           ...((options.suite === "attributes" || options.suite === "all") &&
           options.folder
             ? attributeScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "revisions" || options.suite === "all") &&
+          options.folder
+            ? revisionScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "reopen" || options.suite === "all") &&
+          options.folder
+            ? reopenScenarios(options.folder, options.owners)
             : []),
           ...((options.suite === "sketches" || options.suite === "all") &&
           options.folder

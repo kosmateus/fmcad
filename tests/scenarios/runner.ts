@@ -21,6 +21,8 @@ import {
   UnsettledCloudOperation,
   SavedEvidenceError,
 } from "./saved-files";
+import { revisionProgram, recoverRevision } from "./revision";
+import { reopenProgram, recoveredReopen } from "./reopen";
 import { auditRecovery } from "./recovery-audit";
 
 export interface Scenario {
@@ -40,6 +42,7 @@ export interface ScenarioReport {
   status: "running" | "passed" | "failed" | "unsupported";
   cleanup: "pending" | "complete" | "deferred" | "failed" | "not-created";
   document?: Document;
+  originalDocument?: Document;
   readonly requests: { requestId: string; phase: string; result?: Execution }[];
   error?: string;
   cleanupError?: string;
@@ -130,6 +133,10 @@ export class ScenarioSession {
         "cleanup",
         "save",
         "save-observe",
+        "reopen-close",
+        "reopen-open",
+        "revision-save",
+        "revision-observe",
         "cleanup-close",
         "cleanup-delete",
         "cleanup-observe",
@@ -303,6 +310,131 @@ export class ScenarioSession {
       this.signal?.throwIfAborted();
     }
   }
+  async saveRevision(): Promise<void> {
+    this.signal?.throwIfAborted();
+    if (!this.document.file)
+      throw new Error("Revision requires a saved fixture");
+    if (
+      this.report.requests.some(
+        (r) => r.phase.startsWith("revision-") || r.phase.startsWith("reopen-"),
+      )
+    )
+      throw new Error(
+        "Save one revision before reopening; recover original evidence instead of retrying",
+      );
+    const original = this.document;
+    this.report.originalDocument = original;
+    this.persist();
+    try {
+      await this.#dispatch(
+        "revision-save",
+        (requestId) =>
+          revisionProgram(
+            original,
+            this.report.owner,
+            requestId,
+            this.backend.fusionPath(path.join(this.directory, "revision.json")),
+          ),
+        original,
+      );
+      this.#document = await recoverRevision(
+        original,
+        this.report.owner,
+        this.report.requests,
+        this.directory,
+        this.#dispatch.bind(this),
+      );
+      this.report.document = this.#document;
+      this.persist();
+      this.signal?.throwIfAborted();
+    } catch (error) {
+      if (!this.#uncertain) {
+        try {
+          this.#document = await recoverRevision(
+            original,
+            this.report.owner,
+            this.report.requests,
+            this.directory,
+            this.#dispatch.bind(this),
+          );
+          this.report.document = this.#document;
+        } catch {
+          this.#uncertain = true;
+        }
+      }
+      this.persist();
+      throw error;
+    }
+  }
+  /** Read-only receipt recovery may poll publication; it never resubmits save/open/close. */
+  async recoverSavedTransitions(): Promise<void> {
+    const original = this.document;
+    const revised = await recoverRevision(
+      original,
+      this.report.owner,
+      this.report.requests,
+      this.directory,
+      this.#dispatch.bind(this),
+    );
+    this.#document = recoveredReopen(
+      revised,
+      this.report.owner,
+      this.report.requests,
+      this.directory,
+    );
+    this.report.originalDocument = original;
+    this.report.document = this.#document;
+    this.persist();
+  }
+  /** Close once and reopen the exact completed file. Unknown results never retry. */
+  async reopen(): Promise<void> {
+    this.signal?.throwIfAborted();
+    if (!this.document.file) throw new Error("Reopen requires a saved fixture");
+    if (this.report.requests.some((r) => r.phase.startsWith("reopen-")))
+      throw new Error(
+        "A scenario may reopen only once; recover original evidence instead",
+      );
+    const original = this.document;
+    this.report.originalDocument = original;
+    this.persist();
+    try {
+      await this.#dispatch("reopen-close", programs.close(original), original);
+      this.signal?.throwIfAborted();
+      await this.#dispatch("reopen-open", (requestId) =>
+        reopenProgram(
+          original,
+          this.report.owner,
+          requestId,
+          this.backend.fusionPath(path.join(this.directory, "reopen.json")),
+        ),
+      );
+      this.#document = recoveredReopen(
+        original,
+        this.report.owner,
+        this.report.requests,
+        this.directory,
+      );
+      this.report.document = this.#document;
+      this.persist();
+      this.signal?.throwIfAborted();
+    } catch (error) {
+      // Even a settled Python failure may occur after native open. Only original
+      // receipts can authorize a handoff; failed assertions never permit replay.
+      try {
+        this.#document = recoveredReopen(
+          original,
+          this.report.owner,
+          this.report.requests,
+          this.directory,
+        );
+        this.report.document = this.#document;
+      } catch {
+        this.#uncertain = true;
+      }
+      this.persist();
+      throw error;
+    }
+  }
   async cleanup(): Promise<void> {
     if (this.report.cleanup === "complete") return;
     // A malformed creation result can still leave a durable identity written by the exact original request.
@@ -332,7 +464,7 @@ export class ScenarioSession {
       try {
         const folder = saveIntent(
           this.directory,
-          this.#document,
+          this.report.originalDocument ?? this.#document,
           this.report.owner,
           this.report.requests,
         );
@@ -733,7 +865,10 @@ export async function resumeCleanup(
     const saved = recoveredFile(document, folder, recovered);
     if (saved) document = Object.freeze({ ...document, file: saved });
   }
+  const originalDocument = document;
+
   const report: ScenarioReport = {
+    originalDocument,
     owner: Object.freeze(owner),
     directory,
     mode: backend.mode,
@@ -758,9 +893,15 @@ export async function resumeCleanup(
     folder,
     report,
   );
+  await session.recoverSavedTransitions();
   try {
     await session.cleanup();
   } catch (error) {
+    if (
+      error instanceof SavedEvidenceError ||
+      error instanceof UnsettledCloudOperation
+    )
+      report.cleanup = "deferred";
     if (report.cleanup !== "deferred") report.cleanup = "failed";
     report.cleanupError = errorText(error);
   }
