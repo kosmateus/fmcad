@@ -71,7 +71,9 @@
     "texture",
     "definition",
     "check",
-    "evidence"
+    "evidence",
+    "deliver",
+    "visibility"
   ],
   "operations": [
     {
@@ -553,6 +555,14 @@
       "declaredReadOnly": false,
       "route": "generated-python",
       "nativeProgram": "definition.regenerate"
+    },
+    {
+      "operation": "deliver",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "deliver"
     },
     {
       "operation": "diff",
@@ -2201,6 +2211,86 @@
       "declaredReadOnly": true,
       "route": "generated-python",
       "nativeProgram": "undercut.check"
+    },
+    {
+      "operation": "visibility.finalize",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "visibility.finalize"
+    },
+    {
+      "operation": "visibility.hide",
+      "owner": "D",
+      "coordination": "Document/I/O visibility state and restoration",
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "visibility.hide"
+    },
+    {
+      "operation": "visibility.isolate",
+      "owner": "D",
+      "coordination": "Document/I/O visibility state and restoration",
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "visibility.isolate"
+    },
+    {
+      "operation": "visibility.restore",
+      "owner": "D",
+      "coordination": "Document/I/O visibility state and restoration",
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "visibility.restore"
+    },
+    {
+      "operation": "visibility.show",
+      "owner": "D",
+      "coordination": "Document/I/O visibility state and restoration",
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "visibility.show"
     }
+  ],
+  "pythonFamilies": [
+    "animation",
+    "animation2",
+    "appearance",
+    "assembly",
+    "attributes",
+    "cam",
+    "checking",
+    "containment",
+    "curve",
+    "datum",
+    "definitions",
+    "dfm",
+    "entity",
+    "explode",
+    "fastener",
+    "feature",
+    "fpc_pcb",
+    "gear",
+    "interference",
+    "marking",
+    "measure",
+    "mechanism",
+    "model",
+    "optics",
+    "pose",
+    "presentation",
+    "route3d",
+    "seal",
+    "sequence",
+    "shapes",
+    "sheetmetal",
+    "simulation",
+    "sketch",
+    "sketch_plan",
+    "spring",
+    "surface",
+    "texture",
+    "thread"
   ]
 }

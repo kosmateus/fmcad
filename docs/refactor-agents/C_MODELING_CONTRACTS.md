@@ -350,3 +350,25 @@ existing regression selection. No new test entrypoint is needed for the addition
 historical scenarios or installed declarations. The proposal remains separate from
 G's main integration. Full current-head CI and exhaustive admission are pending;
 native solver/geometry qualification remains stage 3.
+
+
+## Reverse-registry admission audit
+
+A second inventory pass starts with the executed Python handler registry rather
+than public operation-name prefixes. It exposed two omitted C operations:
+`deliver` belongs to checking, and `visibility.finalize` belongs to presentation.
+The anti-omission test reproduces exactly those two missing rows with the old
+inventory and passes after correction. It records 38 C Python families and requires
+every handler they register to have an admission entry or explicit shared owner.
+
+The current inventory supersedes earlier counts: **272 public descriptors, 263 C
+and 9 shared; 262 C native programs (256 direct plus six coordinator turns), and
+one offline baseline inspection**. The four other visibility operations are D's
+I/O state/restore handlers and are explicit shared rows. No production handler,
+mutation count, ownership guard or readback changed in this audit.
+
+All four canonical-loader/registry/history tests pass on the integrated alias
+proposal. The installed consumer passes all 272 example contracts and 263 previews
+through each CLI and MCP path. The two added real admission cases are required in
+the full matrix; their focused result is recorded separately. Earlier partial
+260-program runs do not establish completion of the corrected matrix.
