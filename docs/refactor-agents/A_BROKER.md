@@ -138,3 +138,11 @@ Local compiled historical/registration checks pass. The full broker selection
 requires real Linux `/proc` identity; no process or artifact guard is replaced
 to make this host pass. Full CI and final integration evidence will be recorded
 before this delivery is marked complete.
+
+Linux CI run `42524020203` executed 34 cases: 33 passed and the document
+scenario failed with `LOCAL_PHASE_TIMEOUT` during real Python preparation.
+Its legacy two-second submitted command budget now also bounds the local worker
+(`phased-workers.ts`, `localRemaining: job.timeoutMs`). This scenario does not
+assert a deadline: it verifies A/B/A document ownership and no fourth execution.
+The fixture submits 60 seconds and observes both local and SDK budgets; physical
+backend timeout and every production deadline remain unchanged.

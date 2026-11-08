@@ -62,11 +62,14 @@ test('broker admits unchanged A after B, and returns changed A data in the same 
   const a = { clientId: 'a', clientToken: 'private-a' }, b = { clientId: 'b', clientToken: 'private-b' };
   await request(dir, { action: 'register', ...a }); await request(dir, { action: 'register', ...b });
   const call = (auth, action, values = {}) => request(dir, { auth, action, ...values });
+  // This scenario verifies document ownership, not a two-second preparation deadline.
+  // Real Python admission now runs in the local worker before the fake SDK turn.
+  const commandTimeoutMs = 60000;
   async function run(auth, name, sequence) {
     const job = await call(auth, 'submit', { request: { requestId: randomUUID(), kind: 'command', cwd: dir,
-      argv: ['stats', '--doc', name], timeoutMs: 2000, ...(sequence ? { sequence } : {}) } });
-    // Offline admission has its own preparation budget, separate from the SDK turn.
-    const deadline = Date.now() + 180000 + 2000 + 10000;
+      argv: ['stats', '--doc', name], timeoutMs: commandTimeoutMs, ...(sequence ? { sequence } : {}) } });
+    // The worker and SDK phases each have the submitted command budget.
+    const deadline = Date.now() + 2 * commandTimeoutMs + 10000;
     while (Date.now() < deadline) {
       const result = await call(auth, 'result', { jobId: job.id });
       if (['succeeded', 'failed', 'needs_reconciliation'].includes(result.job.state)) return result;
