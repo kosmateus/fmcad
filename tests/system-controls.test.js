@@ -102,7 +102,7 @@ async function startLifecycleProcess(
     ...(buildHash ? [`--build-hash=${buildHash}`] : []),
   ];
   const child = fork(
-    path.join(__dirname, "fixtures/lifecycle-process.cjs"),
+    path.join(__dirname, "fixtures/system-controls-lifecycle.cjs"),
     args,
     {
       env: {

@@ -7,8 +7,11 @@ Keychain is excluded. Modeling and Fusion mutation routes are unchanged.
 
 ## Archived scope and current dispositions
 
-Archived task identifiers below follow the completion plan. The embedded Dolt
-store was extracted separately; no independent task-status export has been made.
+Archived task identifiers below were verified by querying the extracted Dolt
+store with Dolt 2.7.2 on a disposable copy. The original database was untouched.
+`web-query-api` and `web-service` were closed; `web-system-controls` was blocked;
+`browser-console` and `log-retention` were open; the other listed UI tasks were
+in progress. Archived status is not current acceptance.
 Archived branch commits are source evidence, not proof of successful qualification.
 
 | Archived task / feature | Current production evidence | Disposition / remaining work |
@@ -120,3 +123,18 @@ pass. The browser ESM dependency graph loads 20 modules and the manifest has 31
 resources. The restored System suite has 19 tests; five local tests pass and 14
 real IPC tests fail before assertions because this host cannot read `/proc/PID/stat`.
 Full CI/Chromium on this delivery remains required before merging or TUI deletion.
+
+## Verified archived acceptance gaps
+
+The Dolt task `fmcad-log-retention` requires bounded private temporary service
+diagnostics, ownership-safe cleanup, redaction, bounded writer queues and
+disk-full/restart tests. SQLite quota alone does not satisfy it. Existing
+`observer-errors.log` remains unbounded and durable project logs must not be
+deleted when implementing that diagnostic policy.
+
+`fmcad-web-system-controls` explicitly limits the primary panel to
+pause/drain/resume and guarded STOPPED start, forbids reimplementing restart in
+HTTP, and requires original receipt recovery. Terminal inspect/stop/restart/reload
+therefore remain an explicit retirement decision with A/E rather than silently
+being included in the web controls. `web-telemetry` records authoritative phase
+boundaries as a remaining producer gap; polling timestamps must not fill it.
