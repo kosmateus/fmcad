@@ -176,3 +176,9 @@ includes imports, references, externalization, save/publication and drawings.
   outside the checkout. All registry, source-map and no-filesystem-load
   assertions are unchanged. G should also register `tests/python-document-io.test.js`.
 - PR #49 carries this delivery; full CI and #38 remain merge dependencies.
+
+- Follow-up gate correction: the final lint rerun caught an optional-chain
+  non-null assertion in the extracted pending-evidence reader. Split the lookup
+  from the existing slot call without changing runtime behavior; rerun lint
+  and the externalization tests before updating #49. The earlier blanket lint
+  pass statement was premature.

@@ -35,7 +35,8 @@ export function restoreKnownPendingEvidence(
       priorResult.pending.phase !== pending.phase
     )
       continue;
-    const prior = slot(priorResult.byItem?.[pending.itemId]!, pending.phase);
+    const priorItem = priorResult.byItem?.[pending.itemId];
+    const prior = slot(priorItem!, pending.phase);
     if (prior?.status !== "pending" || !Array.isArray(prior.receipt?.checks))
       continue;
     current.receipt = {
