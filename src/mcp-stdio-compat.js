@@ -26,20 +26,7 @@ function responseMessages(raw) {
   return require('./dist/entrypoints/mcp-framing').parseMcpResponseMessages(raw);
 }
 
-const queueTools = [
-  ['begin', 'Begin an explicit queue sequence lease; returns sequenceId and revision.', {}],
-  ['end', 'Release an idle queue sequence lease.', { sequenceId: { type: 'string', minLength: 1, maxLength: 256 } }],
-  ['status', 'Read broker queue status and revision.', {}],
-  ['result', 'Read an owned queue job and its available result.', { jobId: { type: 'string', minLength: 1, maxLength: 256 } }],
-  ['request', 'Recover this client’s existing job by stable requestId; never resubmit it.', { requestId: { type: 'string', minLength: 1, maxLength: 256 } }],
-  ['reconcile', 'Reconcile an owned uncertain job without replay. Optional acceptedOutcome explicitly acknowledges the exact scoped atomic proof; it never verifies rollback or model state.', {
-    jobId: { type: 'string', minLength: 1, maxLength: 256 },
-    acceptedOutcome: { type: 'string', enum: ['committed', 'aborted'] },
-  }, ['jobId']],
-].map(([name, description, properties, required]) => ({
-  name: 'fmcad_queue_' + name, description,
-  inputSchema: { type: 'object', properties, required: required || Object.keys(properties), additionalProperties: false },
-}));
+const { queueTools, validateQueueHelperArguments } = require('./dist/composition/library-mcp-tools');
 const QUEUED_ACCEPT_MS = 1000;
 const MAX_OWNED_MCP_RESPONSE_BYTES = 128 * 1024 * 1024;
 // Log before OpenCode's 10 MiB read-buffer ceiling, with a 2 MiB safety margin.
@@ -125,11 +112,7 @@ function createQueuePost(client, cfg, queueTimeoutMs, context = {}) {
       if (helper) {
         if (!Object.hasOwn(request, 'id')) throw Object.assign(new Error('Queue helpers require a request id'), { code: 'unsupported_queue_route' });
         if (request.params?._meta && Object.hasOwn(request.params._meta, 'fmcad')) invalidQueueParams('Queue helper tools do not accept fmcad metadata');
-        const args = request.params.arguments === undefined ? {} : request.params.arguments;
-        const keys = helper.inputSchema.required;
-        if (!object(args) || Object.keys(args).some(key => !keys.includes(key)) || keys.some(key => !identifier(args[key]))) {
-          invalidQueueParams(helper.name + ' requires exactly: ' + (keys.join(', ') || 'empty arguments'));
-        }
+        const args = validateQueueHelperArguments(helper, request.params.arguments);
         await ready(helper.name === 'fmcad_queue_begin');
         switch (helper.name) {
           case 'fmcad_queue_end': return helperResult(await client.call('release', { sequenceId: args.sequenceId }));

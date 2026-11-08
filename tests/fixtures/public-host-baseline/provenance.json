@@ -26,5 +26,9 @@
   "src/reference.js": {
     "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
     "sha256": "0c5f2a43e23bec804082396a24c779c79acb3b6f985a3aee5861373f7a216373"
+  },
+  "src/mcp-stdio-compat.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "62800cfc0c5c6fc088522306bb1fd775662844388ce88cbf6fac4c612523fdd3"
   }
 }
