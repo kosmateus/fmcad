@@ -154,5 +154,11 @@
     "sourcePath": "src/invocation.js",
     "file": "invocation-2a51.js.txt",
     "sha256": "48a757c5054505b4d844df053149d13aa94849bb48e5db10ee689cec850d1755"
+  },
+  {
+    "revision": "f336653148a53d539c60fcba9e3394da49a66105",
+    "sourcePath": "src/composition/execution-request.js",
+    "file": "execution-request-f336.js.txt",
+    "sha256": "12a3702d7a3a27773aad58fb4c1a5728b82a8047b67e4face73b72e97c416f59"
   }
 ]

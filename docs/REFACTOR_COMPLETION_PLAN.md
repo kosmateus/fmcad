@@ -366,3 +366,9 @@ and invocation-local storage to TypeScript. Historical comparisons preserve
 complete SDK bytes, provenance, stage order and results; installed declarations
 resolve outside the workspace. Other service families and facade retirement
 remain open.
+
+[Stage 4q](REFACTOR_STAGE_4Q.md) moves broker request preparation to TypeScript.
+Paired archived-source tests preserve complete worker envelopes, document and file
+pins, purpose precedence and input-change rejections. Existing execution-pipeline
+and restart tests join regression CI with independent temporary fixtures.
+Stage dependencies, admission/recovery and broader shared scenario coverage remain open.
