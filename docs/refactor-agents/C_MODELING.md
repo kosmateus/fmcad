@@ -96,3 +96,10 @@ code have justified regressions, and B/G can account for every modeling live
 assertion. Record native-only gaps without treating them as completion evidence.
 Append PR/SHA, exact checks and remaining scope here after each family and
 continue through the whole package, not just sketch migration.
+
+## Active delivery
+
+Claim: PR #37. Initial policy extraction and remaining ownership/dependencies are
+tracked in [the modeling contracts ledger](C_MODELING_CONTRACTS.md).
+The package remains in progress; no C1–C4 completion is claimed. G must integrate
+the new runtime test gates before the policy delivery can merge.
