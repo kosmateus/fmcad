@@ -100,3 +100,24 @@ A/E/G coordination: [issue #43](https://github.com/kosmateus/fmcad/issues/43).
 No broker semantics, public entrypoints or shared packaging files are changed by
 this delivery. No obsolete terminal implementation is deleted before its controls
 and project/config behavior have verified web equivalents. F1–F4 remain open.
+
+Second delivery: [PR #60](https://github.com/kosmateus/fmcad/pull/60) integrates
+localized operational/System/agents/projects views, guarded production SQLite
+mutations, lazy broker controls and the registered-project launcher for E.
+Packaged contracts and five new resources are explicit allowlist entries.
+Installed alias authorization, passive history isolation and asset integrity
+checks pass locally. Full CI/Chromium remains pending; no TUI deletion is claimed.
+The original embedded Beads database has now been queried on a disposable copy;
+its open retention task is broader than SQLite quotas.
+
+Diagnostic retention follow-up: [policy and evidence](../CONTROL_CENTER_RETENTION.md).
+Five new limit/redaction/ownership/disk-full/recovery tests and three existing
+file-rotation tests pass. The observer IPC test is blocked by this host's Linux
+abstract-socket `EPERM`, with a retained bounded diagnostic and explicit failed
+readiness. This is not a CI pass.
+
+Remaining package gates: production Chromium on the integration head, full CI
+before each merge, A's authoritative phase/activity-fence boundary, E's public
+launcher transition, the explicit terminal administration retirement decision,
+and G's CI inventory/dependency integration. Native Fusion/platform launch
+qualification remains required separately. Modeling delivery stays independent.

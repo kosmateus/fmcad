@@ -10,6 +10,9 @@ const net = require('node:net');
 const { spawn } = require('node:child_process');
 const { createHash, randomBytes, randomUUID, timingSafeEqual } = require('node:crypto');
 const { createTelemetryEventSink } = require('../dist/node-adapters/telemetry/event-sink');
+const { createDiagnosticLog } = require('../dist/node-adapters/telemetry/diagnostic-log');
+let diagnosticLog;
+function diagnosticWriter() { return diagnosticLog ||= createDiagnosticLog('project-observer'); }
 
 const SDK_ROOT = path.resolve(__dirname, '..');
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'expired']);
@@ -146,13 +149,12 @@ async function ensureProjectLogger(options = {}) {
   }
   try { return await ready(); } catch { /* Only the passive observer is started. */ }
   privateDirectory(config.stateDir);
-  const stderr = fs.openSync(path.join(config.stateDir, 'observer-errors.log'), fs.constants.O_APPEND | fs.constants.O_CREAT | fs.constants.O_WRONLY | fs.constants.O_NOFOLLOW, 0o600);
-  try {
-    const child = spawn(options.nodePath || process.execPath, [__filename, '--observe', JSON.stringify(config)],
-      { detached: true, shell: false, stdio: ['ignore', 'ignore', stderr], env: { ...process.env } });
-    child.on('error', () => {}); child.unref();
-  } finally { fs.closeSync(stderr); }
+  const child = spawn(options.nodePath || process.execPath, [__filename, '--observe', JSON.stringify(config)],
+    { detached: true, shell: false, stdio: ['ignore', 'ignore', 'ignore'], env: { ...process.env } });
+  child.on('error', error => diagnosticWriter().write(line('observer_start_failed', { code: safeCode(error.code) }, true)));
+  child.unref();
   for (let i = 0; i < 12; i++) { await sleep(100); try { return await ready(); } catch { /* Concurrent loaders share one abstract socket. */ } }
+  diagnosticWriter().write(line('observer_start_unavailable', { code: 'LOGGER_NOT_READY' }, true));
   return { enabled: false, code: 'LOGGER_NOT_READY' };
 }
 
@@ -208,10 +210,12 @@ async function observe(config) {
     writeErrors++;
     if (lastErrors.get(file) === code) return;
     lastErrors.set(file, code);
-    fs.appendFile(path.join(config.stateDir, 'observer-errors.log'), line('project_log_unavailable', { code, project: sha(file).slice(0, 12) }, true), () => {});
+    if (lastErrors.size > 128) lastErrors.delete(lastErrors.keys().next().value);
+    diagnosticWriter().write(line('project_log_unavailable', { code, project: sha(file).slice(0, 12) }, true));
   }
   function write(file, event, fields, warn) {
     if (!file) return;
+    if (!projects.has(file) && projects.size >= 64) { dropped++; return; }
     projects.add(file);
     const record = writers.get(file) || { pending: 0, promise: Promise.resolve() };
     if (record.pending >= 128) { dropped++; return; }
@@ -348,7 +352,8 @@ async function observe(config) {
       const text = buffer.slice(0, buffer.indexOf('\n')); buffer = '';
       try {
         const message = JSON.parse(text);
-        if (message.method === 'status') return socket.end(JSON.stringify({ ok: true, pid: process.pid, lastTick, projects: projects.size, writeErrors, dropped }) + '\n');
+        if (message.method === 'status') return socket.end(JSON.stringify({ ok: true, pid: process.pid, lastTick, projects: projects.size, writeErrors, dropped,
+          diagnostics: diagnosticLog?.stats() ?? { pending: 0, dropped: 0, errors: 0 } }) + '\n');
         const supplied = Buffer.from(typeof message.token === 'string' ? message.token : ''), expected = Buffer.from(token);
         if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return socket.end('{"ok":false}\n');
         if (message.method === 'diagnostic') {
@@ -424,6 +429,7 @@ async function observe(config) {
     server.close();
     for (const dashboard of dashboards.values()) dashboard.provider.close();
     await Promise.race([Promise.allSettled([...writers.values()].map(value => value.promise)), sleep(2000)]);
+    await diagnosticLog?.close();
   }
   for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, () => { void stop(); });
 }
@@ -463,7 +469,13 @@ if (require.main === module) {
   const run = mode === '--observe' ? observe(options) : mode === '--stop' ? stopProjectLogger(options) :
     mode === '--status' ? ipc(locations(options.queueDir)) : ensureProjectLogger(options);
   Promise.resolve(run).then(value => { if (mode !== '--observe') console.log(JSON.stringify(value)); },
-    error => { console.error('FMCAD_LOGGER ' + safeCode(error.code)); process.exitCode = 1; });
+    async error => {
+      if (mode === '--observe') {
+        diagnosticWriter().write('FMCAD_LOGGER ' + safeCode(error.code));
+        await diagnosticLog.close();
+      } else console.error('FMCAD_LOGGER ' + safeCode(error.code));
+      process.exitCode = 1;
+    });
 }
 
 module.exports = { ensureProjectLogger, attachProject, clientEvent, createEventSink, stopProjectLogger, locations, workspaceLog, appendSafe };
