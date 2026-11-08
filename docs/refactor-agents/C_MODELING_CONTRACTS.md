@@ -134,3 +134,24 @@ G should also register `tests/fastener.test.js`, `tests/feature-rework.test.js` 
 `tests/measured-fasteners-bundle.test.js`. Full exact-head CI is still mandatory.
 The remaining curve/datum/surface and selection/BRep composition work, exhaustive
 Python admission inventory and native obligations remain open.
+
+## Third delivery: curve preparation, datums and surfaces
+
+Curve preparation now runs through pure typed sample policy and an injected,
+synchronous Node source adapter. The existing CSV parser is supplied as a port;
+its D-owned implementation is not copied. Full prepared outputs (including source
+hash, file path, row/index provenance, units, winding and endpoint snapping) and
+negative outcomes are compared against both historical sources. Source preflight
+still completes before any native submission. No retry or background file read
+was introduced.
+
+Datum and surface validation/configuration are canonical typed core implementations.
+The existing frame dialect, matrix tolerance, reflection/shear refusal, snapshot
+requirements, trim plan/apply distinction, protected-zone guards and native-only
+representation remain unchanged. These validators do not prove solver validity.
+
+Evidence: 218 historical/policy tests; 18 retained curve/datum/surface JavaScript
+tests; 43 Python tests. The representative admission test list now also includes
+curve.fit, datum.transform, surface.patch, fastener.measured-check and feature.edit;
+their run result is recorded in the PR after completion. G should register existing
+`tests/datum.test.js` and `tests/surface.test.js`; curve.test.js is already selected.

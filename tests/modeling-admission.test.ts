@@ -19,6 +19,11 @@ for (const operation of [
   "thread.custom-profile",
   "seal.evaluate",
   "cam.evaluate",
+  "curve.fit",
+  "datum.transform",
+  "surface.patch",
+  "fastener.measured-check",
+  "feature.edit",
 ]) {
   test(
     `${operation}: generated public program passes pinned production admission`,

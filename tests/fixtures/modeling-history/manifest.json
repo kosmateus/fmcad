@@ -94,5 +94,41 @@
     "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
     "file": "feature-rework-0b84454.js.txt",
     "sha256": "79b7854762dc2b292414e67a5d4831751ffc8352ba48007c33354af9eee5f1d3"
+  },
+  {
+    "family": "curve",
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "file": "curve-a26222f.js.txt",
+    "sha256": "7ace1999deae36d196ab34818aa672e1bf386b7314eb61b3315f5c85bb4e6d93"
+  },
+  {
+    "family": "curve",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "file": "curve-0b84454.js.txt",
+    "sha256": "7ace1999deae36d196ab34818aa672e1bf386b7314eb61b3315f5c85bb4e6d93"
+  },
+  {
+    "family": "datum",
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "file": "datum-a26222f.js.txt",
+    "sha256": "c87ccb5457d8f8271c66bfc3e5f6cdd13c9af0c0736315e865809b67b1efe31e"
+  },
+  {
+    "family": "datum",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "file": "datum-0b84454.js.txt",
+    "sha256": "c87ccb5457d8f8271c66bfc3e5f6cdd13c9af0c0736315e865809b67b1efe31e"
+  },
+  {
+    "family": "surface",
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "file": "surface-a26222f.js.txt",
+    "sha256": "b93c55070c8f112eb21b41f29ad3357b33a6cecaa23108b02fa2f35c94a07c12"
+  },
+  {
+    "family": "surface",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "file": "surface-0b84454.js.txt",
+    "sha256": "b93c55070c8f112eb21b41f29ad3357b33a6cecaa23108b02fa2f35c94a07c12"
   }
 ]

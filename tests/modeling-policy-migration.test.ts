@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import { createHash } from "node:crypto";
@@ -9,6 +10,7 @@ import { createRequire } from "node:module";
 const root = process.cwd();
 const load = createRequire(path.join(root, "package.json"));
 interface Policy {
+  prepare?: (operation: string, data: Record<string, unknown>) => unknown;
   validate(operation: string, data: unknown): void;
   descriptors?: Record<string, unknown>;
 }
@@ -28,7 +30,11 @@ const catalog = (
 function historical(entry: Fixture): Policy {
   const bytes = fs.readFileSync(path.join(folder, entry.file));
   assert.equal(createHash("sha256").update(bytes).digest("hex"), entry.sha256);
-  const context = { module: { exports: {} } };
+  const context = {
+    module: { exports: {} },
+    require: createRequire(path.join(root, "src", entry.family + ".js")),
+    process,
+  };
   vm.runInNewContext(bytes.toString("utf8"), context, { filename: entry.file });
   return context.module.exports as Policy;
 }
@@ -298,6 +304,102 @@ const cases: Record<string, [string, unknown][]> = {
       },
     ],
   ],
+  datum: [
+    [
+      "datum.transform",
+      {
+        from: "component",
+        to: "root",
+        points: [["1 mm", "2 mm", "3 mm"]],
+        vectors: [[0, 0, 0]],
+      },
+    ],
+    [
+      "datum.transform",
+      {
+        from: "component",
+        to: "root",
+        differences: [
+          { from: ["0 mm", "0 mm", "0 mm"], to: ["1 mm", "2 mm", "3 mm"] },
+        ],
+      },
+    ],
+    [
+      "datum.plane-on-path",
+      {
+        path: { curves: ["curve"] },
+        position: { mode: "proportional", value: "1.1" },
+      },
+    ],
+    ["datum.point", { frame: "root", associativity: "live" }],
+    [
+      "occurrence.transform",
+      {
+        placement: {
+          matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+          translationUnits: "mm",
+        },
+      },
+    ],
+    [
+      "occurrence.transform",
+      {
+        placement: {
+          matrix: [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+          translationUnits: "mm",
+        },
+      },
+    ],
+    ["joint.revolute", { frame: "root", associativity: "snapshot" }],
+    ["joint.revolute", { frame: "root", axis: "Z", associativity: "snapshot" }],
+  ],
+  surface: [
+    [
+      "surface.trim",
+      {
+        schemaVersion: 1,
+        frame: "component",
+        mode: "apply",
+        plan: {},
+        removeCells: [0, 0],
+      },
+    ],
+    [
+      "surface.trim",
+      { schemaVersion: 1, frame: "component", mode: "plan", removeCells: [0] },
+    ],
+    [
+      "surface.extend",
+      {
+        schemaVersion: 1,
+        frame: "component",
+        distance: "2 mm",
+        protected: ["B"],
+        tangentChain: true,
+      },
+    ],
+    [
+      "surface.check",
+      {
+        schemaVersion: 1,
+        frame: "component",
+        seams: [{ edgeA: "a", faceA: "A", edgeB: "b", faceB: "B" }],
+      },
+    ],
+    [
+      "model.loft",
+      {
+        solid: false,
+        endConditions: { start: { type: "direction", angle: "10 deg" } },
+      },
+    ],
+    ["model.loft", { solid: false, endConditions: "bad" }],
+    [
+      "model.loft",
+      { solid: false, endConditions: { start: { type: "free", weight: "1" } } },
+    ],
+    ["model.loft", { solid: true, schemaVersion: 1 }],
+  ],
   seal: [],
   cam: [],
 };
@@ -353,3 +455,119 @@ for (const op of ["sketch.coordinate-check", "sketch.profile-query"]) {
 test("public sketch entrypoint is the canonical compiled policy", () => {
   assert.equal(sketch, load("./src/dist/core/application/modeling/sketch"));
 });
+
+for (const fixture of manifest.filter((entry) => entry.family === "curve")) {
+  test(`curve: complete source plans and failures at ${fixture.revision.slice(0, 7)}`, (t) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "curve-history-"));
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    const old = historical(fixture),
+      current = load("./src/curve") as Policy;
+    assert.ok(old.prepare);
+    assert.ok(current.prepare);
+    const base = {
+      schemaVersion: 1,
+      sketch: "Profile",
+      frame: "sketch",
+      plane: "sketchXY",
+      units: { length: "mm" },
+      columns: { x: "x", y: "y" },
+      closed: false,
+      records: [
+        { x: 0, y: 0 },
+        { x: 10, y: 5 },
+      ],
+    };
+    const { records, ...fileBase } = base;
+    fs.writeFileSync(
+      path.join(directory, "points.json"),
+      JSON.stringify({ data: records }),
+    );
+    fs.writeFileSync(
+      path.join(directory, "points.csv"),
+      "theta;r;state\n0;10;ESTIMATED\n90;10;CONFIRMED\n",
+    );
+    const inputs: Record<string, unknown>[] = [
+      base,
+      {
+        ...base,
+        columns: { x: 0, y: 1 },
+        records: [
+          [0, 0],
+          [10, 5],
+        ],
+      },
+      { ...base, columns: { x: 0, y: 1 }, records: ["12", "34"] },
+      {
+        ...base,
+        closed: true,
+        winding: "cw",
+        records: [
+          { x: 0, y: 0 },
+          { x: 2, y: 0 },
+          { x: 0, y: 2 },
+          { x: 0.0001, y: 0 },
+        ],
+      },
+      { ...base, interpolation: "spline" },
+      {
+        ...base,
+        records: [
+          { x: 0, y: 0 },
+          { x: 0, y: 0 },
+        ],
+      },
+      { ...base, closed: true },
+      { ...base, units: { length: "deg" } },
+      {
+        ...base,
+        records: [
+          { x: "", y: 0 },
+          { x: 1, y: 2 },
+        ],
+      },
+      { ...base, maxSamples: 1 },
+      { ...base, plane: "XY" },
+      {
+        ...base,
+        columns: { x: "x", y: "y", z: "z" },
+        records: [
+          { x: 0, y: 0, z: 1 },
+          { x: 1, y: 2, z: 0 },
+        ],
+      },
+      {
+        ...fileBase,
+        baseDir: directory,
+        source: "points.json",
+        recordsPath: "data",
+      },
+      {
+        ...fileBase,
+        baseDir: directory,
+        source: "points.csv",
+        delimiter: ";",
+        columns: { angle: "theta", radius: "r", status: "state" },
+        units: { length: "mm", angle: "deg" },
+      },
+    ];
+    const observe = (
+      prepare: NonNullable<Policy["prepare"]>,
+      input: Record<string, unknown>,
+    ) => {
+      const copy = structuredClone(input),
+        before = JSON.stringify(copy);
+      try {
+        return { output: JSON.stringify(prepare("curve.fit", copy)) };
+      } catch (error) {
+        return { error: String((error as { message: string }).message) };
+      } finally {
+        assert.equal(JSON.stringify(copy), before);
+      }
+    };
+    for (const input of inputs)
+      assert.deepEqual(
+        observe(current.prepare, input),
+        observe(old.prepare, input),
+      );
+  });
+}
