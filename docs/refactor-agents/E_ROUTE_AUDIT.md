@@ -20,8 +20,8 @@ must not be cleared by offline entrypoint checks.
 | OpenCode V2 | `packages/opencode-adapter/src/v2`, root entrypoint | adapter and installed consumer tests | Verify supported >=2.1.3 <3 installed factory path |
 | Configuration and compatibility client | `src/config.js`, `src/client.js`; typed config domain/platform | runtime-consumers, config and client tests | Typed composition implemented in the next delivery; direct transport remains denied |
 | Image trace/optimize/boundaries | `src/image-*.js` metadata/composition; typed local pipeline and Python process ports | runtime-consumers paired historical observations; image command suites | First delivery moves command orchestration into `python/image-command.ts`; full image/native quality qualification is separate |
-| Reference images | `src/reference.js`; typed reference/local-worker pipeline | reference, reference_images, runtime-consumers | Type metadata, validation and synchronous preflight composition; distinct from D's references-refresh |
-| Engineering local | `src/engineering-local.js`; typed engineering core | engineering-fit/thermal/mass/fluid/hydraulic, batch-local | Type remaining CLI parsing/publication composition; keep offline routing |
+| Reference images | `src/reference.js`; typed reference/local-worker pipeline | reference, reference_images, runtime-consumers | Validation and synchronous preflight composition typed in the next host delivery; metadata remains; distinct from D's references-refresh |
+| Engineering local | `src/engineering-local.js`; typed engineering core | engineering-fit/thermal/mass/fluid/hydraulic, batch-local | CLI parsing/publication composition typed in the next host delivery; metadata remains; offline routing retained |
 | Screenshot/review | `src/shot.js`, `src/review.js`; typed review core/adapters | shot, review, review-application | Type CLI boundaries and preserve one-call, partial failures and restoration evidence |
 | Native UI command orchestration | `src/ui.js` | ui, retained-origin-ui-guard and native receipt tests | Type request/lifecycle boundary, coordinate watcher receipts with A and UI implementation with F |
 

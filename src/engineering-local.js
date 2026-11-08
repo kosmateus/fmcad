@@ -1,7 +1,4 @@
-const fs = require('node:fs/promises');
-const path = require('node:path');
-const { checkPublishTarget, publishComplete } = require('./publish');
-const { units } = require('./engineering-common');
+const { createEngineeringCommand } = require('./dist/composition/library-engineering');
 const fit = require('./engineering-fit');
 const hydraulic = require('./engineering-hydraulic');
 const thermal = require('./engineering-thermal');
@@ -66,43 +63,5 @@ const manuals = Object.fromEntries(Object.entries(descriptors).map(([key, descri
   },
 }]));
 
-async function execute(key, argv, deps) {
-  const flags = {};
-  for (let i = 0; i < argv.length; i++) {
-    const flag = argv[i];
-    if (!['--file', '--data', '--json', '--out', '--schema'].includes(flag)) throw new Error(`Unknown local engineering option: ${flag}`);
-    if (Object.hasOwn(flags, flag)) throw new Error(`Duplicate option: ${flag}`);
-    if (['--json', '--schema'].includes(flag)) flags[flag] = true;
-    else {
-      if (!argv[i + 1] || argv[i + 1].startsWith('--')) throw new Error(`Missing value for ${flag}`);
-      flags[flag] = argv[++i];
-    }
-  }
-  if (flags['--schema']) {
-    if (flags['--file'] || flags['--data'] || flags['--out']) throw new Error('--schema cannot be combined with input/output');
-    deps.stdout.write(JSON.stringify({ schemaVersion: 1, operation: key, common: 'schemaVersion, identity:{model,revision}, frame, assumptions, budget?', fields: methods[key].fields,
-      quantities: units, documentation: 'docs/ENGINEERING_LOCAL.md' }, null, 2) + '\n');
-    return 0;
-  }
-  if (Number(!!flags['--file']) + Number(!!flags['--data']) !== 1) throw new Error('Exactly one of --file or --data is required');
-  let raw = flags['--data'];
-  let sourcePath = null;
-  if (flags['--file']) {
-    sourcePath = path.resolve(flags['--file']);
-    if ((await fs.stat(sourcePath)).size > 1024 * 1024) throw new Error('Input exceeds 1 MiB');
-    raw = await fs.readFile(sourcePath, 'utf8');
-  }
-  if (Buffer.byteLength(raw) > 1024 * 1024) throw new Error('Input exceeds 1 MiB');
-  const data = JSON.parse(raw);
-  const result = methods[key].run(data, deps.engineeringRuntime || { clock: { now: () => performance.now() } });
-  result.provenance.inputPath = sourcePath;
-  const contents = JSON.stringify(result, null, flags['--json'] ? 0 : 2) + '\n';
-  if (flags['--out']) {
-    const target = path.resolve(flags['--out']);
-    await checkPublishTarget(target);
-    await publishComplete(target, contents);
-  }
-  deps.stdout.write(contents);
-  return ['fail', 'blocked', 'unknown'].includes(result.status) ? 1 : 0;
-}
+const execute = createEngineeringCommand(methods);
 module.exports = { methods, descriptors, execute, localOperations, run, manuals };
