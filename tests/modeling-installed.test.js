@@ -16,6 +16,14 @@ test('installed modeling contracts validate every assigned public example outsid
   execFileSync('npm', ['install', '--offline', '--prefix', directory, '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(directory, packed[0].filename)], { cwd: directory, encoding: 'utf8', timeout: 120000 });
   const installed = path.join(directory, 'node_modules/fmcad');
   assert.equal(fs.existsSync(path.join(installed, 'src')), false);
+  assert.equal(fs.existsSync(path.join(installed, 'tests')), false);
+  const loaders = require('./fixtures/modeling-python-history/manifest.json');
+  for (const entry of Object.values(loaders)) {
+    assert.equal(fs.readFileSync(path.join(installed, 'dist', entry.source), 'utf8'),
+      fs.readFileSync(path.join(root, entry.source), 'utf8'), entry.source);
+    for (const unit of entry.units) assert.ok(fs.existsSync(path.join(installed, 'dist', unit)), unit);
+  }
+
   fs.writeFileSync(path.join(directory, 'inventory.json'), JSON.stringify(inventory));
   const declarations = [
     ...['sketch', 'curve', 'surface', 'datum', 'entity-query', 'spring', 'thread', 'seal', 'cam', 'fastener', 'feature-rework', 'selection-service'].map(name => 'core/application/modeling/' + name),

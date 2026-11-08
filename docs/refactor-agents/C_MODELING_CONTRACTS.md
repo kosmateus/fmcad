@@ -261,3 +261,44 @@ internal-program preparations pass. The existing cross-family AST parity test no
 fails only at the proposed measurement import-alias normalization; D/G's one-line
 integration remains an explicit dependency, not a suppressed failure. The complete
 260-program matrix is ready to run in shared CI; results remain pending.
+
+## Canonical Python compatibility paths and discovered entity regression
+
+Nineteen remaining C-owned `assets/cad` implementations are now thin compatibility
+loaders for the already-typed runtime: animation/animation2, appearance/attributes,
+cam/seal, checking/containment/dfm/interference, entity/measure, explode/fpc_pcb,
+marking/optics/presentation, simulation and texture. D/A assets are untouched.
+The installed assets no longer carry a second maintained handler implementation.
+Loaders support an explicit `_FMCAD_RUNTIME_ROOT` from a foreign cwd and become no-ops
+when canonical handlers are already present. Prepared native bundles still use the
+manifest-declared runtime units directly and do not execute filesystem loaders.
+
+Original bytes are retained under `tests/fixtures/modeling-python-history` with
+revision/path/SHA-256 metadata. The C loader suite reuses the existing full function
+body/count and registry-ownership oracles with those frozen inputs; a new loader can
+never serve as its own historical reference. The D-owned comparator is not edited
+by this delivery beyond the separately proposed math-alias integration.
+
+Switching retained tests to the real canonical entity adapter exposed a production
+regression from the earlier typing migration. `_entity_describe` emits a geometry
+`frame` object (kind plus owned reference), and `_EntityGeometry.frame` declares
+that object, but `_entity_geometry` incorrectly included `frame` among text fields.
+Consequently 14 of 22 existing entity-query tests failed before a result could be
+returned. The same 22 tests pass with the frozen original implementation.
+
+The correction validates `frame` as a JSON object and retains it unchanged. All 22
+existing assertions pass again. A new public-query regression verifies root/component
+frame metadata, cm/rad units, document creation/file identity, empty affected list
+and unchanged native geometry/attribute writes. That identical scenario passes on
+`a26222f`, fails on the typed `0b84454` implementation with “geometry frame must be
+text”, and passes after correction. No assertion was relaxed and no native solver
+behavior was inferred. Across the now-canonical modeling family fixtures, 297 tests
+pass, including appearance/texture, measurements, query/model integration and numerical
+engineering contracts. The three loader/history tests pass with the proposed shared
+math-alias normalization. Updated real admission and integrated CI remain mandatory.
+
+A separate audit of the retained full `cad.test.js` reproduces the same three failures
+with old and new C wrappers: two assume WSL path translation, and the CLI-preview case
+uses a newline-containing display name without an immutable document pin. A proposed
+fixture integration will use the existing fake-WSL spelling fixture and explicit
+creation/file IDs; it will retain the quoted/newline display name and all assertions.

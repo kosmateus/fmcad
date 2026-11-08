@@ -121,3 +121,10 @@ admission matrix (254 direct + six authorized coordinator programs), installed-p
 modeling validation and the measurement unit-policy boundary. The complete matrix is
 not yet a passing result. D must integrate the measurement math-alias normalization;
 G must register disjoint admission shards and installed/history tests before merge.
+
+The Python delivery additionally converts 19 C compatibility assets to canonical
+loaders and freezes their original bytes as independent test evidence. This exposed
+and fixes an inherited entity geometry-frame regression: 14 existing query cases
+failed on the typed adapter although the historical implementation passed. All 22
+retained cases plus a new paired frame/identity/zero-mutation regression pass after
+the correction; 297 canonical modeling-family tests pass. See the contracts ledger.

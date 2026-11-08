@@ -61,6 +61,23 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(result['documentIdentity']['version'], 7)
         self.assertEqual(result['associativity'], 'snapshot')
 
+    def test_geometry_frame_metadata_survives_query_filters_without_mutation(self):
+        before = (list(self.a.edges.items), self.e1.geometry.radius,
+                  self.e1.geometry.normal.z, self.a.attributes.writes, list(self.ctx.created))
+        for frame in ('component', 'root'):
+            result = self.query(frame=frame, filters={'geometry': 'circle'}, expect=3)
+            self.assertTrue(result['success'])
+            self.assertEqual(result['affected'], [])
+            self.assertEqual(result['documentIdentity']['creationId'], 'creation-test')
+            self.assertEqual(result['documentIdentity']['fileId'], 'file-test')
+            for row in result['entities']:
+                self.assertEqual(row['geometry']['frame'], {'kind': frame, 'ref': self.ctx.ref(self.root)})
+                self.assertEqual(row['geometry']['frame'], row['frame'])
+                self.assertEqual(row['geometry']['lengthUnits'], 'cm')
+                self.assertEqual(row['geometry']['angleUnits'], 'rad')
+        self.assertEqual((list(self.a.edges.items), self.e1.geometry.radius,
+                          self.e1.geometry.normal.z, self.a.attributes.writes, list(self.ctx.created)), before)
+
     def test_zero_multiple_expected_count_and_no_first_match(self):
         all_rows = self.query(expect=1)
         self.assertFalse(all_rows['success'])
