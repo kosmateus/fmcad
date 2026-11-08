@@ -27,7 +27,9 @@ test('isolated canonical family manifest preserves inventory and dependency orde
   }
 });
 
-test('real prepared bundle loads isolated family once without checkout access and exports owned handlers', () => {
+test('real prepared bundle loads isolated family once without checkout access and exports owned handlers', (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-section-bundle-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const units = cadBundleUnits(root, 'full', cadBundleManifest);
   const artifact = preparePythonArtifact(units);
   const baseManifest = cadBundleManifest.filter(unit => !unit.id.startsWith('section-witness'));
@@ -71,7 +73,7 @@ print(len(registry))
 `;
   const result = spawnSync('python3', ['-B', '-c', script], {
     input: JSON.stringify({ baseline: baseline.script, family: artifact.script }),
-    encoding: 'utf8', cwd: '/tmp/opencode', maxBuffer: 8 * 1024 * 1024,
+    encoding: 'utf8', cwd: directory, maxBuffer: 8 * 1024 * 1024,
   });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.ok(Number(result.stdout.trim()) > 250);

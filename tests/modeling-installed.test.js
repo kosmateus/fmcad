@@ -75,6 +75,16 @@ test(
       "node-adapters/persistence/selection-service",
       "node-adapters/persistence/brep-baseline-service",
       "python/curve-source",
+      ...[
+        "native-drive",
+        "regional-geometry",
+        "section-witness",
+        "semantic-model-state",
+        "selection-rules",
+        "brep-baseline",
+      ].map((name) => "core/application/modeling/" + name + "-policy"),
+      "core/application/modeling/selection-rules-internal",
+      "core/application/modeling/brep-baseline-internal",
     ];
     fs.writeFileSync(
       path.join(directory, "consumer.ts"),

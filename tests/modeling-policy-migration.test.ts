@@ -571,3 +571,301 @@ for (const fixture of manifest.filter((entry) => entry.family === "curve")) {
       );
   });
 }
+
+interface SpecialistFixture {
+  path: string;
+  revision: string;
+  sha256: string;
+}
+const specialistFolder = path.join(
+  root,
+  "tests/fixtures/modeling-specialist-history",
+);
+const specialistHistory: Record<string, SpecialistFixture> = JSON.parse(
+  fs.readFileSync(path.join(specialistFolder, "manifest.json"), "utf8"),
+);
+const specialistOperations: Record<string, string[]> = {
+  "native-drive": ["mechanism.drive-test", "mechanism.motion-link.create"],
+  "regional-geometry": ["geometry.delta", "geometry.compare-region"],
+  "section-witness": ["measure.section-series", "measure.witness-check"],
+  "semantic-model-state": [
+    "frame.context_audit",
+    "snapshot.capture_v2",
+    "snapshot.diff_v2",
+  ],
+  "selection-rules": [
+    "selection.rule.define",
+    "selection.rule.inspect",
+    "selection.rule.resolve",
+    "selection.rule.check",
+  ],
+  "brep-baseline": [
+    "measure.baseline.capture",
+    "measure.baseline.inspect",
+    "measure.baseline.compare",
+  ],
+};
+function specialistOutcome(
+  policy: Policy,
+  operation: string,
+  value: unknown,
+): unknown {
+  const data: unknown = structuredClone(value),
+    before = structuredClone(data);
+  try {
+    return { value: policy.validate(operation, data) };
+  } catch (error) {
+    assert.ok(
+      error &&
+        typeof error === "object" &&
+        "message" in error &&
+        "name" in error,
+    );
+    return { name: error.name, message: error.message };
+  } finally {
+    assert.deepEqual(data, before, "specialist validation mutated its input");
+  }
+}
+function* specialistInputs(
+  example: unknown,
+): Generator<{ label: string; data: unknown }> {
+  yield { label: "valid public example", data: example };
+  const replacements: unknown[] = [
+    null,
+    false,
+    0,
+    -1,
+    "",
+    "foreign",
+    [],
+    {},
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+  ];
+  for (const replacement of replacements)
+    yield { label: "root=" + String(replacement), data: replacement };
+  function* walk(value: unknown, parts: string[]): Generator<string[]> {
+    if (!value || typeof value !== "object" || parts.length >= 8) return;
+    for (const [key, child] of Object.entries(value)) {
+      const next = [...parts, key];
+      yield next;
+      yield* walk(child, next);
+    }
+  }
+  for (const parts of walk(example, [])) {
+    for (const replacement of [undefined, ...replacements]) {
+      const data: unknown = structuredClone(example);
+      let parent: unknown = data;
+      for (const part of parts.slice(0, -1)) {
+        assert.ok(parent && typeof parent === "object");
+        parent = Reflect.get(parent, part);
+      }
+      assert.ok(parent && typeof parent === "object");
+      const key = parts.at(-1);
+      assert.ok(key);
+      if (replacement === undefined) Reflect.deleteProperty(parent, key);
+      else Reflect.set(parent, key, replacement);
+      yield { label: parts.join(".") + "=" + String(replacement), data };
+    }
+  }
+}
+for (const [family, entry] of Object.entries(specialistHistory)) {
+  test(`specialist ${family}: every public example and nested negative preserves historical errors and no mutation`, (t) => {
+    let comparisons = 0;
+    const source = fs.readFileSync(
+      path.join(specialistFolder, family + ".js.txt"),
+    );
+    assert.equal(
+      createHash("sha256").update(source).digest("hex"),
+      entry.sha256,
+    );
+    const context = { module: { exports: {} } };
+    vm.runInNewContext(source.toString("utf8"), context, {
+      filename: entry.path,
+    });
+    const previous = context.module.exports as Policy;
+    const current = load("./" + entry.path) as Policy;
+    for (const operation of specialistOperations[family] ?? []) {
+      const example = catalog[operation]?.example;
+      assert.ok(example, operation);
+      assert.deepEqual(specialistOutcome(previous, operation, example), {
+        value: undefined,
+      });
+      for (const { label, data } of specialistInputs(example)) {
+        comparisons++;
+        assert.deepEqual(
+          specialistOutcome(current, operation, data),
+          specialistOutcome(previous, operation, data),
+          operation + " " + label,
+        );
+      }
+    }
+    assert.deepEqual(
+      specialistOutcome(current, "unrelated.operation", null),
+      specialistOutcome(previous, "unrelated.operation", null),
+    );
+    t.diagnostic(`${comparisons} paired input scenarios`);
+  });
+}
+
+interface PrivateSpecialist {
+  isInternal(operation: string): boolean;
+  authorize(...args: unknown[]): void;
+  validateInternal(operation: string, data: unknown): unknown;
+}
+const privateSpecialistHistory: Record<string, SpecialistFixture> = JSON.parse(
+  fs.readFileSync(path.join(specialistFolder, "private-manifest.json"), "utf8"),
+);
+function observeSpecialistCall(call: () => unknown): unknown {
+  try {
+    return { value: JSON.stringify(call()) };
+  } catch (error) {
+    assert.ok(
+      error &&
+        typeof error === "object" &&
+        "message" in error &&
+        "name" in error,
+    );
+    return { name: error.name, message: error.message };
+  }
+}
+for (const [family, entry] of Object.entries(privateSpecialistHistory)) {
+  test(`private ${family}: exact payload capability, validation and descriptor match history`, () => {
+    const source = fs.readFileSync(
+      path.join(specialistFolder, family + ".js.txt"),
+    );
+    assert.equal(
+      createHash("sha256").update(source).digest("hex"),
+      entry.sha256,
+    );
+    const context = {
+      module: { exports: {} },
+      require(specifier: string): unknown {
+        if (specifier === "../dist/core/catalog")
+          return load("./src/dist/core/catalog");
+        const name = specifier.slice(2);
+        const bytes = fs.readFileSync(
+          path.join(specialistFolder, name + ".js.txt"),
+        );
+        const dependency = specialistHistory[name];
+        assert.ok(dependency);
+        assert.equal(
+          createHash("sha256").update(bytes).digest("hex"),
+          dependency.sha256,
+        );
+        const nested = { module: { exports: {} } };
+        vm.runInNewContext(bytes.toString("utf8"), nested);
+        return nested.module.exports;
+      },
+    };
+    vm.runInNewContext(source.toString("utf8"), context, {
+      filename: entry.path,
+    });
+    const previous = context.module.exports as PrivateSpecialist;
+    const current = load("./" + entry.path) as PrivateSpecialist;
+    const selection = family === "selection-rules-internal";
+    const binding = selection
+      ? { version: 1, service: "selection-rules" }
+      : {
+          version: 1,
+          session: "owned-session",
+          stagePaths: ["/owned/baseline.smt"],
+          maxBytes: 1024,
+          workBudgetMs: 1000,
+          manifest: { version: 1, scope: "durable", bodies: [{}] },
+        };
+    const examples: Record<string, unknown> = selection
+      ? {
+          "selection.rule.define_internal": {
+            definition: catalog["selection.rule.define"]?.example,
+            _trustedBinding: binding,
+          },
+          "selection.rule.inspect_internal": {
+            manifest: {},
+            _trustedBinding: binding,
+          },
+          "selection.rule.resolve_internal": {
+            manifest: {},
+            _trustedBinding: binding,
+          },
+          "selection.rule.check_internal": {
+            manifest: {},
+            _trustedBinding: binding,
+          },
+        }
+      : {
+          "measure.baseline.capture_internal": {
+            bodies: [{ role: "body", body: "owned-body" }],
+            frame: "assembly",
+            scope: "durable",
+            _trustedBinding: binding,
+          },
+          "measure.baseline.compare_internal": {
+            baseline: {
+              version: 1,
+              scope: "durable",
+              owner: "a".repeat(64),
+              id: "owned",
+              sha256: "b".repeat(64),
+            },
+            bodies: [{ role: "body", body: "owned-body" }],
+            tolerances: { volume: "0 cm^3", length: "0 cm", angle: "0 rad" },
+            _trustedBinding: binding,
+          },
+        };
+    const authorize = (
+      policy: PrivateSpecialist,
+      operation: string,
+      data: unknown,
+    ) =>
+      selection ? policy.authorize(operation, data) : policy.authorize(data);
+    for (const [operation, example] of Object.entries(examples)) {
+      assert.equal(current.isInternal(operation), true);
+      assert.equal(previous.isInternal(operation), true);
+      for (const { label, data } of specialistInputs(example)) {
+        const observe = (policy: PrivateSpecialist) => {
+          const payload: unknown = structuredClone(data),
+            before = structuredClone(payload);
+          const denied = observeSpecialistCall(() =>
+            policy.validateInternal(operation, payload),
+          );
+          const authorized = observeSpecialistCall(() =>
+            authorize(policy, operation, payload),
+          );
+          const validated = observeSpecialistCall(() =>
+            policy.validateInternal(operation, payload),
+          );
+          const cloned = observeSpecialistCall(() =>
+            policy.validateInternal(operation, structuredClone(payload)),
+          );
+          assert.deepEqual(payload, before);
+          return { denied, authorized, validated, cloned };
+        };
+        assert.deepEqual(
+          observe(current),
+          observe(previous),
+          operation + " " + label,
+        );
+      }
+      const payload = structuredClone(example);
+      authorize(current, operation, payload);
+      assert.ok(current.validateInternal(operation, payload));
+      assert.throws(
+        () => current.validateInternal(operation, structuredClone(payload)),
+        /owned coordinator capability/,
+      );
+      if (selection) {
+        const other = Object.keys(examples).find((key) => key !== operation);
+        assert.ok(other);
+        assert.throws(
+          () => current.validateInternal(other, payload),
+          /owned coordinator capability/,
+        );
+      }
+    }
+    assert.equal(
+      current.isInternal("unknown.operation"),
+      previous.isInternal("unknown.operation"),
+    );
+  });
+}

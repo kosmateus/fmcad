@@ -339,3 +339,44 @@ tests pass, and all 129 currently integrated shared scenario unit tests pass.
 Full current-head CI, all 260 admission cases on both supported Node lines, shared
 gate integration and B/G assertion reconciliation remain open. Native Fusion solver,
 topology, joints and physical-property qualification remain stage 3.
+
+
+## Sixth delivery: remaining specialist and private-turn policies
+
+The final JavaScript inventory found six additional modeling validators under
+`src/catalog`: native-drive, regional geometry, section/witness, semantic model
+state, selection-rule definitions/artifacts and BRep baseline input. Their pure
+logic now lives in strict core policies. Two private selection/BRep catalogs also
+use one typed core implementation, including their exact-object WeakMap/WeakSet
+capabilities. JavaScript files are compatibility facades. E's registry composition,
+public names, private declaration metadata and configuration order are unchanged.
+
+All eight original sources are retained byte-for-byte with `0b84454` SHA-256
+provenance under `tests/fixtures/modeling-specialist-history`. None of these source
+files exists at `a26222f`; this delivery therefore uses the actual pre-delivery
+implementation rather than claiming an unavailable earlier comparison.
+
+The existing policy entrypoint now includes 2,651 paired public input scenarios
+across all 16 affected public operations: positive examples, removed fields and
+nested invalid/zero/nonfinite values, identical error names/messages and no input
+mutation. Private cases additionally compare all six turns, unauthorized payloads,
+cloned payloads, wrong selection operation capabilities and exact declarations.
+All 251 policy/history/installed-consumer tests pass, including 261 CLI and 261 MCP
+previews and strict installed declarations for all eight new core modules.
+
+The six retained specialist integration/bundle suites initially produced the same
+10 pass / 6 failure against both frozen and migrated sources. Five failures were
+hard-coded `/tmp` or `/tmp/opencode` fixture directories; those fixtures now create
+and remove owned temporary directories. No filesystem-denial or handler/readback
+assertion changed. The resulting 15 pass / 1 failure includes an unchanged Linux
+storage prerequisite: the large native-drive MCP result reaches
+`describeOwnedResult`, whose verification of `/proc/self/fd` fails on this host.
+The exact historical source reproduces it. Required CI must run that assertion;
+no owner guard or externalization-success assertion is weakened.
+
+G should add native-drive-integration, native-drive-bundle, regional-geometry,
+section-witness-bundle, semantic-model-state and semantic-model-state-e2e to the
+existing regression selection. No new test entrypoint is needed for the additional
+historical scenarios or installed declarations. The proposal remains separate from
+G's main integration. Full current-head CI and exhaustive admission are pending;
+native solver/geometry qualification remains stage 3.

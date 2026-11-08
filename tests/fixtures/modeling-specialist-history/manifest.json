@@ -1,0 +1,32 @@
+{
+  "native-drive": {
+    "path": "src/catalog/native-drive.js",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "f4ae85ab599f11d544bd1857929747b1d67f51235ad0cdd51878cbb117183259"
+  },
+  "regional-geometry": {
+    "path": "src/catalog/regional-geometry.js",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "0b39336b5dfc1ce45391c867e6932b0fc9f84c4360666322fdb3bebeb9dc380a"
+  },
+  "section-witness": {
+    "path": "src/catalog/section-witness.js",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "f5c1c7aad90da499733d1c06eafde239516d74b8829c0f86bd7c3c23b52206ad"
+  },
+  "semantic-model-state": {
+    "path": "src/catalog/semantic-model-state.js",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "da9bb450935a6325110226b4ebfa0cffe17d37a259a7a3b7bf602494005e620e"
+  },
+  "selection-rules": {
+    "path": "src/catalog/selection-rules.js",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "8e619a435002236b2c8baec32d0b9eead7acc22c3618d042ef58be565d122b9b"
+  },
+  "brep-baseline": {
+    "path": "src/catalog/brep-baseline.js",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "836fac9a0508dafbf751bddbf5e1143a8b30b16ad9a1e143b98246b48e30c5ba"
+  }
+}

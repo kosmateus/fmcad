@@ -128,3 +128,12 @@ and fixes an inherited entity geometry-frame regression: 14 existing query cases
 failed on the typed adapter although the historical implementation passed. All 22
 retained cases plus a new paired frame/identity/zero-mutation regression pass after
 the correction; 297 canonical modeling-family tests pass. See the contracts ledger.
+
+
+The sixth delivery finishes the remaining catalog specialist policies and private
+selection/BRep capability catalogs in typed core. Eight compatibility facades retain
+public/private exports. There are 2,651 paired public negative/positive scenarios,
+private exact-payload authorization comparisons and installed declarations/previews.
+Five inherited temporary-directory assumptions are fixed after identical historical
+reproduction; the remaining owned-result `/proc` prerequisite stays enforced.
+The full admission/CI gates and B/G reconciliation are still open.

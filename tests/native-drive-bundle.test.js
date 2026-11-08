@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const fs = require("node:fs");
+const os = require("node:os");
 const { spawnSync } = require("node:child_process");
 const {
   cadBundleManifest,
@@ -66,7 +67,9 @@ test("canonical native-drive manifest includes prerequisites once and preserves 
   }
 });
 
-test("prepared artifact dispatches driver and MotionLink handlers without checkout reads", () => {
+test("prepared artifact dispatches driver and MotionLink handlers without checkout reads", (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-drive-bundle-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const units = cadBundleUnits(root, "full");
   const artifact = preparePythonArtifact(units);
   const baseline = preparePythonArtifact(
@@ -88,7 +91,7 @@ test("prepared artifact dispatches driver and MotionLink handlers without checko
       handlers: nativeDriveHandlers,
     }),
     encoding: "utf8",
-    cwd: "/tmp",
+    cwd: directory,
     maxBuffer: 8 * 1024 * 1024,
   });
   assert.equal(result.status, 0, result.stdout + result.stderr);
