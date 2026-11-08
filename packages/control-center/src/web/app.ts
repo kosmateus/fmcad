@@ -1057,6 +1057,8 @@ export class ControlCenterApp {
     if (this.#frozen) this.#notice = localeText.t("ui.freeze.banner");
     if (this.#systemControlsInitialized)
       await this.#refreshSystemControls(false);
+    if (generation !== this.#loadGeneration || this.#listeners.signal.aborted)
+      return;
     this.#render();
     if (this.#view === "agents") this.#loadAgentsView();
     this.#renderModal();
@@ -2208,6 +2210,7 @@ export class ControlCenterApp {
   }
 
   #loadAgentsView(): void {
+    if (this.#listeners.signal.aborted) return;
     const serial = ++this.#agentViewLoad;
     this.#technicalSessions = null;
     this.#technicalSessionsSource = localeText.t("common.loading");
@@ -3728,7 +3731,11 @@ export class ControlCenterApp {
         dialog.action === "archive"
           ? await this.#agentsProjects.archiveProject(id, dialog.revision)
           : await this.#agentsProjects.restoreProject(id, dialog.revision);
-      this.#projectActionDialog = { ...dialog, status: result };
+      if (
+        this.#projectActionDialog === dialog &&
+        !this.#listeners.signal.aborted
+      )
+        this.#projectActionDialog = { ...dialog, status: result };
       this.#toast(
         renderProjectActionStatus(
           result,
@@ -3916,6 +3923,10 @@ export class ControlCenterApp {
 
   async #changeScope(scope: QueryScope): Promise<void> {
     this.#closeModalSurface();
+    this.#agentViewLoad += 1;
+    this.#workingAgentLoad += 1;
+    this.#technicalSessions = null;
+    this.#workingAgents = null;
     this.#scope = scope;
     this.#mobile = false;
     this.#page = 1;
