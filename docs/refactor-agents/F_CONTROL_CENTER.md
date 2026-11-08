@@ -1,6 +1,7 @@
 # Agent F — Control Center completion and TUI retirement
 
-Status: **available**. Claim this package, inspect current main and read
+Status: **claimed by Agent F** on 8 November 2026. Starting from main
+`0b84454d8e5d22abb23bcf52999c506894ebf5bf` (PR #35). Read
 [the shared plan](../REFACTOR_PARALLEL_PLAN.md). Modeling remains the product
 priority; console work must not require unrelated changes to the modeling path.
 
@@ -86,3 +87,16 @@ data, controls preserve A's contracts, lifecycle/locales/retention are verified,
 obsolete UI retirement is complete and installed assets work. Native Fusion UI
 interaction remains in B/G's final qualification where required. Append PR/SHA,
 browser evidence and remaining scope here after each delivery.
+
+## Agent F evidence and remaining scope
+
+Claim: PR #41, starting from `0b84454d`. The first delivery fixes inherited
+browser disposal and delayed detail-response defects, adds quota/reopen protection
+coverage and retains production browser network/console traces.
+See [the feature migration ledger](F_UI_LEDGER.md) for archived source mappings,
+local measurements, test limitations and the required remaining work.
+
+A/E/G coordination: [issue #43](https://github.com/kosmateus/fmcad/issues/43).
+No broker semantics, public entrypoints or shared packaging files are changed by
+this delivery. No obsolete terminal implementation is deleted before its controls
+and project/config behavior have verified web equivalents. F1–F4 remain open.
