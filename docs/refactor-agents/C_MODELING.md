@@ -111,3 +111,7 @@ on #37; integration remains blocked on G's runtime gates and full exact-head CI.
 The third delivery separates typed curve sample policy from host source adaptation
 and types datum/surface policies. It preserves 218 historical comparisons plus
 18 JavaScript and 43 Python tests. See the contracts ledger for B/G handoffs.
+
+The fourth delivery types selection orchestration and BRep host composition.
+Twenty-four paired historical cases preserve outputs and call order. Five retained
+artifact tests require Linux `/proc`; this host limitation is not a waiver for CI.

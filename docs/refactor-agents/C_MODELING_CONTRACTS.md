@@ -155,3 +155,32 @@ tests; 43 Python tests. The representative admission test list now also includes
 curve.fit, datum.transform, surface.patch, fastener.measured-check and feature.edit;
 their run result is recorded in the PR after completion. G should register existing
 `tests/datum.test.js` and `tests/surface.test.js`; curve.test.js is already selected.
+
+## Fourth delivery: selection and BRep orchestration
+
+Selection orchestration now lives in typed core policy with artifact/native ports;
+its Node adapter owns path resolution, artifact clients and request identity.
+The BRep entrypoint delegates to typed Node composition of the existing typed core
+service. Catalog authorization remains injected by the facade. A single request
+context is retained across each selection read/update and each operation submits
+at most one native call. Missing artifacts do not invoke Fusion; inspection does
+not write; unresolved responses do not update the stored manifest.
+
+`modeling-artifact-history.test.js` verifies SHA-256-bound pre-migration source
+and compares 24 identical scenarios, outputs and ordered side effects. Its injected
+stores isolate orchestration; they are not evidence for real filesystem ownership.
+The retained real-store/service suites pass 10 of 15 cases locally; five fail on
+this host's unavailable `/proc` identity verification. Those guards and assertions
+are unchanged and must pass in Linux CI. No native BRep roundtrip is claimed.
+
+G: register `tests/modeling-artifact-history.test.js`, `tests/brep-baseline.test.js`
+and `tests/brep-baseline-service.test.js`; selection store/e2e already run in the
+regression gate. New service declarations use the existing persistence staging
+rewrite and require no new package export. B should retain foreign-owner/hash,
+missing-artifact, uncertain outcome and exactly-one-native-turn assertions.
+
+Fourth-delivery checks: pinned full build and strict test compilation pass;
+24 historical orchestration cases pass. Running the identical real-store suites
+with the previous wrappers produces the same 10 passes / 5 `/proc` failures.
+Targeted TypeScript lint passes. The five additional admission cases from the third
+delivery passed (393.5 seconds total); all eleven representative cases are green.
