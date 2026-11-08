@@ -1,0 +1,547 @@
+'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+const { createHash, randomUUID } = require('node:crypto');
+const { performance } = require('node:perf_hooks');
+function monotonicEpoch() { const epoch = Date.now(), start = performance.now(); return () => Math.floor(epoch + performance.now() - start); }
+
+const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'expired']);
+const STATES = new Set(['preparing', 'processing', 'queued', 'running', 'sending', 'needs_reconciliation', ...TERMINAL]);
+const terminal = state => TERMINAL.has(state);
+const copy = value => JSON.parse(JSON.stringify(value));
+const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
+const identifier = value => typeof value === 'string' && value.trim().length > 0 && value.length <= 256;
+const integer = value => Number.isSafeInteger(value) && value >= 0;
+
+// Only JSON data crosses this boundary; canonicalize every immutable input field.
+function canonical(value, ancestors = new Set()) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
+  if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value);
+  if (!value || typeof value !== 'object' || ancestors.has(value) ||
+      (!Array.isArray(value) && ![Object.prototype, null].includes(Object.getPrototypeOf(value)))) {
+    fail('INVALID_REQUEST', 'Use finite JSON values without cycles or live objects');
+  }
+  ancestors.add(value);
+  const result = Array.isArray(value)
+    ? '[' + Array.from(value, item => canonical(item, ancestors)).join(',') + ']'
+    : '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonical(value[key], ancestors)).join(',') + '}';
+  ancestors.delete(value);
+  return result;
+}
+
+class QueueState {
+  // The broker exclusively owns this directory. No cross-process lock or timers.
+  constructor(dir, { maxQueued = 1000, maxPerClient = 100, idleMs = 60000, leaseMs = 600000, now = monotonicEpoch() } = {}) {
+    for (const value of [maxQueued, maxPerClient, idleMs, leaseMs]) {
+      if (!integer(value) || value === 0) fail('INVALID_OPTIONS', 'Limits and lease durations must be positive safe integers');
+    }
+    if (typeof now !== 'function') fail('INVALID_OPTIONS', 'now must be a clock function');
+    Object.assign(this, { maxQueued, maxPerClient, idleMs, leaseMs, now });
+    this.dir = path.resolve(dir);
+    this.file = path.join(this.dir, 'queue-state.json');
+    const created = fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    fs.chmodSync(this.dir, 0o700);
+    // Persist newly created directory links, including recursive parents.
+    if (created) {
+      for (let current = this.dir; ; current = path.dirname(current)) {
+        const parent = fs.openSync(path.dirname(current), 'r');
+        try { fs.fsyncSync(parent); } finally { fs.closeSync(parent); }
+        if (current === created || current === path.dirname(current)) break;
+      }
+    }
+    this.data = { version: 1, paused: false, revision: 0, epoch: 0, blocked: null, active: null, lease: null, jobs: {}, lastClient: null };
+    let saved = null;
+    try {
+      const fd = fs.openSync(this.file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      try {
+        fs.fchmodSync(fd, 0o600);
+        saved = fs.readFileSync(fd, 'utf8');
+        this.data = JSON.parse(saved);
+      } finally { fs.closeSync(fd); }
+    } catch (error) {
+      if (error.code !== 'ENOENT') fail('CORRUPT_STATE', `Cannot restore queue snapshot: ${error.message}`);
+    }
+    const d = this.data;
+    if (!d || d.version !== 1 || typeof d.paused !== 'boolean' || !integer(d.revision) || !integer(d.epoch) ||
+        !d.jobs || typeof d.jobs !== 'object' || Array.isArray(d.jobs) ||
+        (d.active !== null && !identifier(d.active)) || (d.lastClient !== null && !identifier(d.lastClient))) {
+      fail('CORRUPT_STATE', 'Unsupported queue snapshot');
+    }
+    const jobs = Object.values(d.jobs);
+    if (jobs.some(j => !j || !identifier(j.id) || d.jobs[j.id] !== j || !STATES.has(j.state) ||
+        !j.request || !identifier(j.clientId) || !integer(j.order) || !identifier(j.requestId) ||
+        j.request.requestId !== j.requestId || j.request.clientId !== j.clientId ||
+        !identifier(j.hash))) fail('CORRUPT_STATE', 'Invalid persisted job');
+    if (d.lease && (!identifier(d.lease.id) || !identifier(d.lease.clientId) || d.lease.epoch !== d.epoch ||
+        ![d.lease.createdAt, d.lease.idleUntil, d.lease.holdUntil].every(integer))) {
+      fail('CORRUPT_STATE', 'Invalid sequence lease');
+    }
+    const uncertain = jobs.filter(j => ['running', 'sending', 'needs_reconciliation'].includes(j.state));
+    if (uncertain.length > 1 || (d.active && !uncertain.some(j => j.id === d.active)) ||
+        (d.blocked && !uncertain.some(j => j.id === d.blocked.id))) fail('CORRUPT_STATE', 'Inconsistent active job; recovery required');
+    if (uncertain.length) {
+      const job = uncertain[0];
+      job.state = 'needs_reconciliation';
+      job.sequenceState = job.sequenceId ? 'needs_reconciliation' : null;
+      d.active = job.id;
+      d.blocked = d.blocked || { id: job.id, reason: 'Broker restarted with an unfinished job', at: this._time() };
+    }
+    for (const job of jobs) {
+      if (job.request.phased && job.id !== d.localUnknown?.id && ['preparing', 'processing', 'queued'].includes(job.state)) {
+        Object.assign(job, { state: 'failed', code: 'LOCAL_WORKER_INTERRUPTED', finishedAt: this._time(),
+          sequenceState: job.sequenceId ? 'ended' : null });
+        if (d.lease?.clientId === job.clientId) d.lease = null;
+      }
+    }
+    this._promoteLocalUnknown(d);
+    this._serialized = saved;
+    this._commit(() => null);
+  }
+
+  _time() {
+    const value = this.now();
+    if (!integer(value)) fail('INVALID_CLOCK', 'now() must return nonnegative integer milliseconds');
+    return value;
+  }
+
+  _commit(change) {
+    if (this._fault) fail('STORAGE_UNAVAILABLE', 'A durable write failed; reopen and reconcile this queue before continuing');
+    if (this._writing) fail('WRITE_IN_PROGRESS', 'QueueState writes cannot be reentered');
+    this._writing = true;
+    try {
+      const draft = copy(this.data);
+      const result = change(draft);
+      const text = JSON.stringify(draft);
+      if (text !== this._serialized) {
+        const temp = path.join(this.dir, `.queue-state.${randomUUID()}.tmp`);
+        try {
+          const fd = fs.openSync(temp, 'wx', 0o600);
+          try { fs.writeFileSync(fd, text); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+          fs.renameSync(temp, this.file);
+          const directory = fs.openSync(this.dir, 'r');
+          try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
+        } catch (error) {
+          this._fault = error;
+          try { fs.unlinkSync(temp); } catch (cleanup) { if (cleanup.code !== 'ENOENT') this._cleanupError = cleanup; }
+          fail('STORAGE_UNAVAILABLE', `Durability is uncertain; reopen and reconcile: ${error.message}`);
+        }
+        this._serialized = text;
+      }
+      this.data = draft;
+      // Rebuild only after a real transaction. Idle scheduling must never copy
+      // or scan the retained terminal history on every broker timer tick.
+      this._waiting = Object.values(draft.jobs).filter(job => job.state === 'queued');
+      return copy(result);
+    } finally { this._writing = false; }
+  }
+
+  _job(d, id) {
+    if (!Object.hasOwn(d.jobs, id)) fail('JOB_NOT_FOUND', 'Unknown job id');
+    return d.jobs[id];
+  }
+
+  _active(d, id, recovering = false) {
+    const job = this._job(d, id);
+    if (terminal(job.state) || d.active !== id) fail('NOT_ACTIVE', 'Only the active, unfinished job can be updated');
+    if (d.blocked && !recovering) fail('RECONCILIATION_REQUIRED', 'Resolve the blocked active job using proven recovery evidence');
+    return job;
+  }
+
+  _promoteLocalUnknown(d) {
+    if (!d.localUnknown || d.active || d.blocked) return;
+    const record = d.localUnknown, job = this._job(d, record.id);
+    job.state = 'needs_reconciliation'; job.sequenceState = job.sequenceId ? 'needs_reconciliation' : null;
+    d.active = job.id; d.blocked = record; delete d.localUnknown;
+  }
+
+  blockLocal(id, reason) {
+    return this._commit(d => {
+      const job = this._job(d, id);
+      if (!job.request.phased || terminal(job.state)) fail('INVALID_STATE', 'Only an unfinished phased command can remain unknown');
+      if (d.localUnknown && d.localUnknown.id !== id) fail('RECONCILIATION_REQUIRED', 'Another workflow already awaits reconciliation');
+      d.localUnknown = { id, reason, at: this._time() };
+      this._promoteLocalUnknown(d);
+      return this._public(job);
+    });
+  }
+
+  // Public views are allowlists: requests, tokens, hashes and opaque worker details stay private.
+  _public(job) {
+    const result = {};
+    for (const key of ['id', 'requestId', 'clientId', 'description', 'kind', 'state', 'order', 'submittedAt', 'queueDeadline',
+      'startedAt', 'finishedAt', 'timeoutMs', 'runDeadline', 'code', 'sequenceId', 'sequenceState', 'revision', 'contextRefreshRequired', 'physicalTurns', 'sdkRemainingMs', 'sdkReadyAt']) {
+      if (job[key] !== undefined) result[key] = job[key];
+    }
+    if (job.sequenceMode) result.sequenceMode = job.sequenceMode;
+    if (job.dispatch) result.dispatch = {
+      dispatchCount: job.dispatch.dispatchCount, rpcCount: job.dispatch.rpcCount,
+      completedCount: job.dispatch.completedCount, updatedAt: job.dispatch.updatedAt
+    };
+    for (const key of ['executionOutcome', 'userScriptSubmitted', 'mayHaveMutated', 'preflightCompleted']) {
+      if (['string', 'boolean'].includes(typeof job.details?.[key])) result[key] = job.details[key];
+    }
+    return result;
+  }
+
+  _matches(d, request, time) {
+    const lease = d.lease;
+    return !!(lease && request.sequence.id === lease.id && request.clientId === lease.clientId &&
+      (request.ownerToken ?? null) === lease.ownerToken && lease.epoch === d.epoch &&
+      (d.active || ((d.paused ? d.pauseStartedAt ?? time : time) < lease.idleUntil && (d.paused ? d.pauseStartedAt ?? time : time) < lease.holdUntil)));
+  }
+
+  _sequenceHead(d, id) {
+    let head;
+    for (const job of Object.values(d.jobs)) {
+      if (job.sequenceId === id && (!head || job.order > head.order)) head = job;
+    }
+    return head;
+  }
+
+  _automaticMatches(d, job, time) {
+    const parent = d.jobs[job.sequenceParentId];
+    return !!(parent && parent.sequenceMode === 'automatic' && parent.sequenceState === 'yielded' &&
+      parent.state === 'succeeded' && parent.sequenceId === job.sequenceId && parent.clientId === job.clientId &&
+      (parent.request.ownerToken ?? null) === (job.request.ownerToken ?? null) && (this.data.paused ? this.data.pauseStartedAt ?? time : time) < parent.finishedAt + (parent.sequencePauseMs || 0) + this.leaseMs);
+  }
+
+  _expire(d, time) {
+    if (d.paused) return;
+    if (d.lease && !d.active && !d.blocked && (time >= d.lease.idleUntil || time >= d.lease.holdUntil)) d.lease = null;
+    for (const job of Object.values(d.jobs)) {
+      if (job.state !== 'queued') continue;
+      const r = job.request;
+      const code = job.contextEnded ? 'SEQUENCE_EXPIRED' : job.queueDeadline !== null && time >= job.queueDeadline ? 'QUEUE_EXPIRED'
+        : !job.physicalTurns && r.expectedRevision !== undefined && r.expectedRevision !== d.revision ? 'STALE_REVISION'
+          : !(r.phased && job.physicalTurns && job.sequenceMode === 'automatic') && r.sequence && r.sequence.action !== 'begin' && !(job.sequenceMode === 'automatic'
+            ? this._automaticMatches(d, job, time) : this._matches(d, r, time)) ? 'SEQUENCE_EXPIRED' : null;
+      if (code) Object.assign(job, { state: code === 'QUEUE_EXPIRED' ? 'expired' : 'failed', code,
+        finishedAt: time, revision: d.revision, sequenceState: job.sequenceId ? 'ended' : null,
+        details: { executionOutcome: job.physicalTurns ? 'previous_turns_complete_current_not_started' : 'not_started',
+          userScriptSubmitted: !!job.dispatch?.rpcCount, mayHaveMutated: !!job.dispatch?.rpcCount } });
+    }
+  }
+
+  submit(request) {
+    const text = canonical(request);
+    const r = JSON.parse(text);
+    if (!r || !identifier(r.requestId) || !identifier(r.clientId) || !['command', 'rpc'].includes(r.kind)) {
+      fail('INVALID_REQUEST', 'requestId, clientId and kind (command or rpc) are required');
+    }
+    if (r.description !== undefined) r.description = require('./invocation').description(r.description);
+    if (!integer(r.timeoutMs) || r.timeoutMs === 0 || (r.queueTimeoutMs !== undefined && !integer(r.queueTimeoutMs)) ||
+        (r.expectedRevision !== undefined && !integer(r.expectedRevision)) ||
+        (r.ownerToken !== undefined && !identifier(r.ownerToken))) fail('INVALID_REQUEST', 'Invalid timeout, revision or owner token');
+    if (r.kind === 'command' && (!Array.isArray(r.argv) || !r.argv.length ||
+        r.argv.some(arg => typeof arg !== 'string') || typeof r.cwd !== 'string' || !r.cwd.trim())) fail('INVALID_REQUEST', 'Commands require argv and cwd');
+    if (r.kind === 'rpc' && (!r.payload || typeof r.payload !== 'object' || Array.isArray(r.payload))) {
+      fail('INVALID_REQUEST', 'RPC jobs require a JSON object payload');
+    }
+    if (r.phased !== undefined && (r.phased !== true || r.kind !== 'command')) fail('INVALID_REQUEST', 'Only command jobs support phased execution');
+    const seq = r.sequence;
+    if (seq !== undefined && (!seq || !['begin', 'continue', 'end'].includes(seq.action) ||
+        (seq.action === 'begin' ? seq.id !== undefined : !identifier(seq.id)) ||
+        seq.mode !== undefined && !['automatic', 'exclusive'].includes(seq.mode))) fail('INVALID_SEQUENCE', 'Begin without id, or continue/end with an id; mode is automatic or exclusive');
+    const identity = { ...r }; delete identity.description;
+    const hash = createHash('sha256').update(canonical(identity)).digest('hex');
+    const existing = Object.values(this.data.jobs).find(job => job.requestId === r.requestId);
+    if (existing) {
+      if (existing.hash !== hash) fail('REQUEST_CONFLICT', 'requestId already exists with different immutable input');
+      return this.status(existing.id);
+    }
+    // Expiry is its own transaction so rejected submissions cannot undo maintenance.
+    this._commit(d => { this._expire(d, this._time()); return null; });
+    return this._commit(d => {
+      const time = this._time();
+      if (r.expectedRevision !== undefined && r.expectedRevision !== d.revision) fail('STALE_REVISION', 'Read status and submit a new requestId with the current revision');
+      let sequenceMode = seq?.mode || 'automatic', sequenceParent;
+      if (seq && seq.action !== 'begin') {
+        if (Object.values(d.jobs).some(j => !terminal(j.state) && j.sequenceId === seq.id)) {
+          fail('SEQUENCE_BUSY', 'Wait for the outstanding sequence job before submitting its continuation');
+        }
+        sequenceParent = this._sequenceHead(d, seq.id);
+        sequenceMode = sequenceParent?.sequenceMode || 'exclusive';
+        if (seq.mode && seq.mode !== sequenceMode) fail('SEQUENCE_MISMATCH', 'Cannot change sequence mode');
+        const automatic = sequenceMode === 'automatic';
+        if (!(automatic ? this._automaticMatches(d, { sequenceParentId: sequenceParent?.id, sequenceId: seq.id,
+          clientId: r.clientId, request: r }, time) : this._matches(d, r, time))) {
+          fail('SEQUENCE_MISMATCH', 'Sequence expired, ended or belongs to another client/owner');
+        }
+      } else if (seq && d.lease && d.lease.clientId === r.clientId) fail('SEQUENCE_MISMATCH', 'Release or finish the held sequence before beginning another');
+      const queued = Object.values(d.jobs).filter(job => ['preparing', 'processing', 'queued'].includes(job.state));
+      if (queued.length >= this.maxQueued) fail('QUEUE_FULL', 'Global queue limit reached');
+      if (queued.filter(job => job.clientId === r.clientId).length >= this.maxPerClient) fail('CLIENT_QUEUE_FULL', 'Client queue limit reached');
+      const job = { id: randomUUID(), requestId: r.requestId, clientId: r.clientId, kind: r.kind,
+        request: r, hash, order: Math.max(0, ...Object.values(d.jobs).map(j => j.order)) + 1, state: r.phased ? 'preparing' : 'queued', submittedAt: time,
+        queueDeadline: r.phased || r.queueTimeoutMs === undefined ? null : time + r.queueTimeoutMs, timeoutMs: r.timeoutMs,
+        sequenceId: seq && seq.action !== 'begin' ? seq.id : null, sequenceState: seq ? 'queued' : null };
+      if (r.description) job.description = r.description;
+      if (seq) job.sequenceMode = sequenceMode;
+      if (sequenceParent && sequenceMode === 'automatic') {
+        job.sequenceParentId = sequenceParent.id;
+      }
+      d.jobs[job.id] = job;
+      return this._public(job);
+    });
+  }
+
+  next() {
+    if (this._fault) fail('STORAGE_UNAVAILABLE', 'A durable write failed; reopen and reconcile this queue before continuing');
+    if (this._writing) fail('WRITE_IN_PROGRESS', 'QueueState writes cannot be reentered');
+    const d = this.data, time = this._time();
+    if (d.paused || d.controlBlocked || d.localUnknown) return null;
+    const leaseDue = d.lease && !d.active && !d.blocked && (time >= d.lease.idleUntil || time >= d.lease.holdUntil);
+    const canGrant = !d.blocked && !d.paused && !d.active;
+    const workDue = this._waiting.some(job => {
+      const r = job.request;
+      return job.queueDeadline !== null && time >= job.queueDeadline ||
+        !job.physicalTurns && r.expectedRevision !== undefined && r.expectedRevision !== d.revision ||
+        !(r.phased && job.physicalTurns && job.sequenceMode === 'automatic') && r.sequence && r.sequence.action !== 'begin' && !(job.sequenceMode === 'automatic'
+          ? this._automaticMatches(d, job, time) : this._matches(d, r, time)) ||
+        canGrant && (!d.lease || r.sequence && r.sequence.action !== 'begin' && this._matches(d, r, time) ||
+          r.phased && job.physicalTurns && d.lease?.id === job.sequenceId && d.lease.clientId === job.clientId);
+    });
+    if (!leaseDue && !workDue) return null;
+    return this._commit(d => {
+      const time = this._time();
+      this._expire(d, time);
+      if (d.blocked || d.paused || d.active) return null;
+      const eligible = Object.values(d.jobs).filter(j => j.state === 'queued' && (!d.lease ||
+        (j.request.sequence && j.request.sequence.action !== 'begin' && this._matches(d, j.request, time)) ||
+        (j.request.phased && j.physicalTurns && d.lease?.id === j.sequenceId && d.lease.clientId === j.clientId)));
+      const clients = [...new Set(eligible.map(j => j.clientId))].sort();
+      if (!clients.length) return null;
+      const client = clients.find(id => d.lastClient === null || id > d.lastClient) || clients[0];
+      const job = eligible.filter(j => j.clientId === client).sort((a, b) => a.order - b.order)[0];
+      const r = job.request;
+      if (r.sequence && r.sequence.action === 'begin' && !job.sequenceId) {
+        job.sequenceId = randomUUID();
+        if (job.sequenceMode !== 'automatic') {
+          d.lease = { id: job.sequenceId, clientId: client, ownerToken: r.ownerToken ?? null, epoch: ++d.epoch,
+            createdAt: time, idleUntil: time + Math.min(this.idleMs, this.leaseMs), holdUntil: time + this.leaseMs };
+        }
+      }
+      Object.assign(job, { state: 'running', startedAt: job.startedAt ?? time, runDeadline: time + (job.sdkRemainingMs ?? job.timeoutMs),
+        sequenceState: job.sequenceId ? 'active' : null, revision: d.revision });
+      d.active = job.id;
+      d.lastClient = client;
+      return job; // Detached INTERNAL job, including request, only after durable commit.
+    });
+  }
+
+  readyTurn(id) {
+    return this._commit(d => {
+      const job = this._job(d, id);
+      if (!job.request.phased || !['preparing', 'processing'].includes(job.state)) fail('INVALID_STATE', 'Worker is not preparing an SDK turn');
+      if (job.contextEnded) fail('SEQUENCE_EXPIRED', 'The owner ended this command context before another SDK turn');
+      if (job.sdkRemainingMs === 0) fail('RUN_TIMEOUT', 'The command has exhausted its SDK execution budget');
+      const time = this._time();
+      Object.assign(job, { state: 'queued', order: Math.max(0, ...Object.values(d.jobs).map(j => j.order)) + 1,
+        sdkReadyAt: time,
+        queueDeadline: job.request.queueTimeoutMs === undefined ? null : time + job.request.queueTimeoutMs });
+      return this._public(job);
+    });
+  }
+
+  releaseTurn(id, sdkRemainingMs) {
+    if (!integer(sdkRemainingMs)) fail('INVALID_TIMEOUT', 'SDK remaining budget must be nonnegative');
+    return this._commit(d => {
+      const job = this._active(d, id);
+      if (!job.request.phased) fail('INVALID_STATE', 'Not a phased command');
+      Object.assign(job, { state: 'processing', sdkRemainingMs, physicalTurns: (job.physicalTurns || 0) + 1,
+        revision: ++d.revision, sequenceState: job.sequenceId ? (d.lease ? 'held' : 'yielded') : null });
+      d.active = null;
+      if (d.lease) d.lease.idleUntil = Math.min(this._time() + this.idleMs, d.lease.holdUntil);
+      this._promoteLocalUnknown(d);
+      return this._public(job);
+    });
+  }
+
+  finishLocal(id, { state = 'succeeded', ...details } = {}) {
+    if (!['succeeded', 'failed'].includes(state)) fail('INVALID_STATE', 'Finish local work with a proven terminal result');
+    return this._commit(d => {
+      const job = this._job(d, id);
+      if (!job.request.phased || !['preparing', 'processing', 'queued'].includes(job.state) || d.active === id) fail('NOT_LOCAL', 'SDK work is not settled');
+      Object.assign(job, { state, details: copy(details), finishedAt: this._time(), revision: d.revision });
+      if (details.code) job.code = details.code;
+      if (d.lease?.id === job.sequenceId && (state === 'failed' || job.request.sequence?.action === 'end')) d.lease = null;
+      job.sequenceState = job.sequenceId ? (state === 'succeeded' && !job.contextEnded && job.request.sequence?.action !== 'end' ? (d.lease?.id === job.sequenceId ? 'held' : 'yielded') : 'ended') : null;
+      return this._public(job);
+    });
+  }
+
+  finish(id, { state = 'succeeded', ...details } = {}) {
+    if (!['succeeded', 'failed', 'needs_reconciliation'].includes(state)) fail('INVALID_STATE', 'Finish with succeeded, failed or needs_reconciliation');
+    const record = JSON.parse(canonical(details));
+    return this._commit(d => {
+      const job = this._active(d, id);
+      const time = this._time();
+      Object.assign(job, { state, details: record, revision: ++d.revision });
+      if (typeof record.code === 'string') job.code = record.code;
+      if (state === 'needs_reconciliation') {
+        d.blocked = { id, reason: record.reason || 'Worker outcome is unknown', at: time };
+        job.sequenceState = job.sequenceId ? 'needs_reconciliation' : null;
+      } else {
+        d.active = null;
+        job.finishedAt = time;
+        if (state === 'failed' || !job.request.sequence || job.request.sequence.action === 'end') d.lease = null;
+        if (d.lease) {
+          if (d.paused) {
+            d.lease.holdUntil += Math.max(0, time - Math.max(d.pauseStartedAt ?? time, d.lease.pauseBase || d.lease.createdAt));
+            d.lease.pauseBase = time;
+          }
+          d.lease.idleUntil = Math.min(time + this.idleMs, d.lease.holdUntil);
+          if (time >= d.lease.holdUntil && !d.paused) d.lease = null;
+        }
+        job.sequenceState = job.sequenceId ? (job.sequenceMode === 'automatic' && state === 'succeeded' &&
+          job.request.sequence.action !== 'end' ? 'yielded' : d.lease ? 'held' : 'ended') : null;
+        this._promoteLocalUnknown(d);
+      }
+      return this._public(job);
+    });
+  }
+
+  markDispatch(id, details = {}) {
+    const record = JSON.parse(canonical(details));
+    if (!record || Array.isArray(record) || typeof record !== 'object') fail('INVALID_DISPATCH', 'Dispatch details must be an object');
+    return this._commit(d => {
+      const job = this._active(d, id);
+      const old = job.dispatch || { dispatchCount: 0, rpcCount: 0, completedCount: 0 };
+      const rpcCount = record.rpcCount ?? old.rpcCount + 1;
+      const completedCount = record.completedCount ?? old.completedCount;
+      if (!integer(rpcCount) || rpcCount < old.rpcCount || !integer(completedCount) ||
+          completedCount < old.completedCount || completedCount > rpcCount) fail('INVALID_DISPATCH', 'RPC counters must be monotonic and completedCount <= rpcCount');
+      job.dispatch = { rpcState: record.rpcState ?? record.state ?? 'sending', dispatchCount: old.dispatchCount + 1,
+        rpcCount, completedCount, updatedAt: this._time(), details: record };
+      job.state = 'sending';
+      return this._public(job);
+    });
+  }
+
+  advanceInstanceEpoch(transitionId) {
+    if (!identifier(transitionId)) fail('INVALID_TRANSITION', 'A stable instance transition id is required');
+    return this._commit(d => {
+      if (d.paused) fail('MANUAL_PAUSE', 'Automatic instance recovery does not clear a manual pause');
+      if (d.active || d.blocked || d.lease || Object.values(d.jobs).some(job => !terminal(job.state))) {
+        fail('QUEUE_NOT_QUIESCENT', 'Automatic instance recovery requires terminal jobs and no active job, block or lease');
+      }
+      if (d.lastInstanceTransitionId === transitionId) return { alreadyApplied: true, revision: d.revision, epoch: d.epoch };
+      const previous = { revision: d.revision, epoch: d.epoch };
+      d.revision++;
+      d.epoch++;
+      d.lastInstanceTransitionId = transitionId;
+      return { alreadyApplied: false, previous, revision: d.revision, epoch: d.epoch };
+    });
+  }
+
+  block(id, reason) {
+    return this.finish(id, { state: 'needs_reconciliation', reason: JSON.parse(canonical(reason)) });
+  }
+
+  resolve(id, details) {
+    const record = JSON.parse(canonical(details));
+    if (!record || !['succeeded', 'failed'].includes(record.state)) fail('INVALID_STATE', 'Recovery must explicitly provide state succeeded or failed');
+    return this._commit(d => {
+      const job = this._active(d, id, true);
+      if (!d.blocked || d.blocked.id !== id || job.state !== 'needs_reconciliation') fail('NOT_BLOCKED', 'Only the blocked active job can be resolved');
+      Object.assign(job, { state: record.state, details: record, finishedAt: this._time(), revision: ++d.revision,
+        sequenceState: job.sequenceId ? 'ended' : null });
+      if (typeof record.code === 'string') job.code = record.code;
+      d.blocked = d.active = d.lease = null;
+      this._promoteLocalUnknown(d);
+      return this._public(job);
+    });
+  }
+
+  cancel(id, clientId) {
+    return this._commit(d => {
+      const job = this._job(d, id);
+      if (job.clientId !== clientId) fail('NOT_OWNER', 'Only the submitting client can cancel this job');
+      if (job.state !== 'queued') fail('NOT_QUEUED', 'Only queued jobs can be cancelled');
+      if (job.physicalTurns || job.dispatch?.rpcCount) fail('ALREADY_STARTED', 'Cannot cancel a command after its first SDK turn');
+      Object.assign(job, { state: 'cancelled', finishedAt: this._time(), revision: d.revision,
+        code: 'CANCELLED', details: { executionOutcome: 'not_started', userScriptSubmitted: false, mayHaveMutated: false },
+        sequenceState: job.sequenceId ? 'ended' : null });
+      return this._public(job);
+    });
+  }
+
+  release(sequenceId, clientId) {
+    this._commit(d => { this._expire(d, this._time()); return null; });
+    return this._commit(d => {
+      if (d.active || d.blocked) fail('QUEUE_BUSY', 'Cannot release while a job is active or requires reconciliation');
+      if (!d.lease || d.lease.id !== sequenceId) {
+        const head = this._sequenceHead(d, sequenceId);
+        if (head?.sequenceMode === 'automatic' && head.sequenceState === 'yielded') {
+          if (head.clientId !== clientId) fail('NOT_OWNER', 'Only the sequence owner can release it');
+          head.sequenceState = 'ended';
+          for (const job of Object.values(d.jobs)) if (job.sequenceId === sequenceId && !terminal(job.state)) job.contextEnded = true;
+          this._expire(d, this._time());
+          return { sequenceId, sequenceState: 'released', revision: d.revision };
+        }
+      }
+      if (!d.lease || d.lease.id !== sequenceId) fail('SEQUENCE_MISMATCH', 'Sequence is no longer held');
+      if (d.lease.clientId !== clientId) fail('NOT_OWNER', 'Only the sequence owner can release it');
+      d.lease = null;
+      for (const job of Object.values(d.jobs)) if (job.sequenceId === sequenceId && !terminal(job.state)) {
+        job.contextEnded = true; job.sequenceState = 'ended';
+      }
+      this._expire(d, this._time());
+      return { sequenceId, sequenceState: 'released', revision: d.revision };
+    });
+  }
+
+  summary() {
+    if (this._fault) fail('STORAGE_UNAVAILABLE', 'Reopen and reconcile after the failed durable write');
+    const d = this.data;
+    const lease = d.lease && { id: d.lease.id, clientId: d.lease.clientId, epoch: d.lease.epoch,
+      createdAt: d.lease.createdAt, idleUntil: d.lease.idleUntil, holdUntil: d.lease.holdUntil };
+    return copy({ version: d.version, paused: d.paused, revision: d.revision, epoch: d.epoch, active: d.active,
+      blocked: d.blocked && { id: d.blocked.id, code: 'NEEDS_RECONCILIATION', at: d.blocked.at }, lease,
+      lastClient: d.lastClient });
+  }
+
+  status(id) {
+    if (this._fault) fail('STORAGE_UNAVAILABLE', 'Reopen and reconcile after the failed durable write');
+    if (id !== undefined) return copy(this._public(this._job(this.data, id)));
+    return { ...this.summary(), jobs: Object.fromEntries(Object.values(this.data.jobs).map(j => [j.id, copy(this._public(j))])) };
+  }
+
+  pause(paused, requestId) {
+    if (typeof paused !== 'boolean') fail('INVALID_PAUSE', 'pause expects a boolean');
+    this._commit(d => {
+      const time = this._time();
+      if (paused !== d.paused) {
+        if (paused) d.pauseStartedAt = time;
+        else {
+          const start = d.pauseStartedAt ?? time;
+          for (const job of Object.values(d.jobs)) {
+            if (['queued', 'preparing', 'processing'].includes(job.state)) {
+              job.contextRefreshRequired = true;
+              if (job.state === 'queued' && job.queueDeadline !== null) job.queueDeadline += Math.max(0, time - Math.max(start, job.sdkReadyAt ?? job.submittedAt));
+            }
+            if (job.sequenceState === 'yielded' && integer(job.finishedAt)) job.sequencePauseMs = (job.sequencePauseMs || 0) + Math.max(0, time - Math.max(start, job.finishedAt));
+          }
+          if (d.lease) {
+            const elapsed = Math.max(0, time - Math.max(start, d.lease.pauseBase || d.lease.createdAt));
+            d.lease.idleUntil += elapsed; d.lease.holdUntil += elapsed; delete d.lease.pauseBase;
+          }
+          d.contextEpoch = (d.contextEpoch || 0) + 1;
+          delete d.pauseStartedAt;
+        }
+        d.paused = paused; d.controlGeneration = (d.controlGeneration || 0) + 1;
+      }
+      if (requestId) {
+        d.controlRequests ||= {};
+        Object.defineProperty(d.controlRequests, requestId, { value: { paused, generation: d.controlGeneration || 0 }, enumerable: true, configurable: true, writable: true });
+        const keys = Object.keys(d.controlRequests);
+        for (const key of keys.slice(0, Math.max(0, keys.length - 128))) delete d.controlRequests[key];
+      }
+      return null;
+    });
+    return this.status();
+  }
+}
+
+module.exports = { QueueState, terminal };

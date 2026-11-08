@@ -201,3 +201,24 @@ The package remains 1,571 files and unchanged in size because B's ledgers and te
 sources are not published. No facade is retired. Semantic mapping, shared reopen,
 transactional migration and global-state restoration remain B dependencies, so
 B, G and offline acceptance remain incomplete.
+
+### Fourth A–F merge checkpoint
+
+Merged main `171c972` adds Agent A's A1 broker-regression gates from PR #42.
+Its exact head `709741a` passed the expanded 24-job matrix in workflow
+`42525055817`, including dedicated Node 22.13 and 24 broker jobs. Merge-head
+workflow `42531784829` is queued, so it is not yet successful merge-head evidence.
+
+The named selection registers all six retained queue families, an execution-path
+guard and compiled historical scheduling comparisons. Coverage is now 491 test
+sources, 234 registered and 257 open gaps. G removes the six closed gaps from the
+explicit debt ledger and pins that ledger to merged main `171c972`; nothing is
+waived. The combined build, strict types, nine registration tests and 129 scenario
+tests pass locally.
+
+The broker command passes 27 of 34 cases in this container; seven stop at missing
+`/proc` process evidence. Those assertions are unchanged and pass in the exact
+PR-head Linux matrix. Package allowlisting remains 1,571 files; only published
+package metadata changes, to 3,375,397 compressed bytes and 16,628,497 unpacked
+bytes. Runtime payloads and facade dispositions are unchanged. A1 is integrated,
+while A2–A4, G and offline acceptance remain incomplete; Fusion was not run.

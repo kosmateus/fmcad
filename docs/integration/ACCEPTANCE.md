@@ -32,10 +32,11 @@ Node test selections, Python package discovery and literal test-wrapper imports.
 Build/typecheck commands alone do not count. Dynamic dispatch, conditional jobs,
 per-case skips, matrix completeness and actual results still require log review.
 
-[Registration debt](ci-registration-gaps.json) names every initial missing source,
-its triage owner and next action. This is open debt, not a waiver. New unregistered
-sources and unexplained removal of listed gaps fail the separate integration
-workflow. Existing gaps can become registered without rewriting the baseline.
+[Registration debt](ci-registration-gaps.json) names every currently missing
+source, its triage owner and next action. This is open debt, not a waiver. New
+unregistered sources and unexplained removal of listed gaps fail the separate
+integration workflow. The A1 gate closes six initial gaps, reducing the current
+ledger from 263 to 257 entries.
 Do not add a blanket glob: `tests/integration` mixes native mutations and local
 checks; `tests/native` also contains offline harness tests. Review each selection.
 
@@ -51,7 +52,7 @@ before any integration; record exact merged SHA and full matrix results here.
 
 | Package | Observed delivery              | Required evidence / remaining disposition                                                                             |
 | ------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| A       | PR #42 `270096c`               | Broker gates first; A2–A4 admission/recovery/concurrency still required.                                              |
+| A       | PR #42 merged as `171c972`     | A1 broker gates restored; A2–A4 admission/recovery/concurrency still required.                                        |
 | B       | PR #36 / #44 / #45 merged through `0d6f757` | Persistence plus anti-omission/profile increments; semantic mapping, shared reopen and lifecycle/recovery proof remain open. |
 | C       | PR #37 `a4943f3`               | Claim only at observation; canonical modeling services, Python boundaries and negative/readback evidence required.    |
 | D       | PR #38 `ee0fd54`               | Claim only at observation; file/source/version/publication and recovery contracts required.                           |
@@ -121,15 +122,16 @@ Generate commands with real dedicated fixture identifiers after the pinned build
 python3 -B scripts/integration/native-plan.py --project-id PROJECT_ID --folder-id FOLDER_ID --output .test-artifacts/integration/native-plan.json
 ```
 
-This command only constructs existing scenario objects and validates CLI arguments;
-it does not connect to Fusion, start a broker or execute a scenario. It produces
-48 command arrays: eight current shared families, MCP/addin, and concurrency
-1/2/10 with ten owners. It records their actual scenario IDs/capabilities, source
-SHA, dirty state, current live inventory, required receipts and cleanup command.
-It is a runnable **partial** handoff, not the final assertion-complete manifest.
-B's later required-profile/assertion manifest must replace this bounded family
-selection before final acceptance. Global UI restoration and fixed owned fixture
-copies remain explicit B/F dependencies; native export geometry is not model JSON.
+This command only constructs scenario objects and validates CLI arguments; it
+does not connect to Fusion, start a broker or execute a scenario. Schema 2 consumes
+B's merged required-profile manifest. It produces 48 shared command arrays for
+eight model families, MCP/addin and concurrency 1/2/10 with ten owners; it also
+retains 27 native obligations as `NOTRUN` argument arrays and nine diagnostics as
+non-substituting cases. It records source/profile hashes, dirty state, receipts
+and cleanup policy. Semantic per-assertion mapping and legacy lifecycle migration
+are still incomplete, so this remains a runnable **partial** handoff. Global UI
+restoration and fixed owned fixture copies remain explicit B/F dependencies;
+native export geometry is not model JSON.
 
 Do not dispatch until offline acceptance is complete and the installed broker
 matches the integrated source/build. Use the dedicated project/folder, verify the
@@ -286,3 +288,32 @@ remains 1,571 files, 3,375,315 compressed bytes and 16,628,068 unpacked bytes;
 the new audit and test sources are excluded from publication. No facade is
 retired. Shared reopen, transactional/file migration, semantic dispositions and
 global-state restoration remain B dependencies, so neither B nor G is complete.
+
+## Fourth merged A–F checkpoint — retained broker gates
+
+Merged main `171c972c1de8845aa300371798dcb6be5fd5416a` contains Agent A's A1
+broker-regression delivery from PR #42. Its exact final head
+`709741a4c083d59430479d00aa0b43c7abd17314` passed all 24 CI jobs in
+workflow `42525055817`, including dedicated `broker-regressions` jobs on Node
+22.13 and 24. Merge-head workflow `42531784829` remains queued and does not yet
+provide successful exact-merge evidence. G's combined candidate needs fresh CI.
+
+The named broker selection registers the six retained queue files plus its
+registration guard and compiled `a26222f` sequence comparisons. Static coverage
+now reports 491 test sources, 234 registered and 257 open gaps: two new tests are
+registered and all six previously missing broker families leave the debt ledger.
+The explicit debt baseline is updated to the merged main SHA; no gap is waived.
+
+The combined build, strict test typecheck, nine registration tests and 129
+scenario tests pass locally. The broker selection passes 27 of 34 cases here;
+the seven failures stop at unavailable `/proc` process evidence, matching the
+documented host limitation. Assertions remain unchanged. The exact PR-head Linux
+matrix passes both broker jobs and all 24 jobs, which is the applicable evidence.
+
+Runtime/public inventory remains 651/420. Package allowlisting remains 1,571
+files; the added development script changes package metadata to 3,375,397
+compressed bytes, 16,628,497 unpacked bytes and shasum
+`ca5bcec226058425f7fd80924919bda6d8429077`. Runtime payloads are unchanged,
+tests and historical fixtures remain excluded, and no facade is retired. A1 is
+integrated, but A2–A4 and offline acceptance remain incomplete. Native Fusion
+was not executed.
