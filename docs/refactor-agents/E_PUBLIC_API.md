@@ -449,3 +449,21 @@ Merged after exact-head full CI: #50 at 2463569 and #52 at cf3e6ad, following
 #39/#46/#48. #62 is now based on main and ready; later E deliveries remain
 queued for full CI. #83/#84/#85 contain the shared gate, F integration and final
 public locale/reporter migration. No queued run is recorded as passing.
+
+### Default MCP producer composition
+
+The final F handoff audit found that only injected tests constructed the MCP
+telemetry producer. The default process root now consumes F's actual
+createMcpStdioTelemetry with the existing client/instance identity and queue
+directory. Existing owned-result reporting remains the sole event path here:
+no extra polling, admission, registration fallback or inferred phase is added.
+Injected runtimes retain explicit ports. Construction failures remain bounded
+diagnostics and close remains independent via allSettled.
+
+A process-level lifecycle fixture checks exact construction identity/directory,
+once-only close, failing create/close, clean JSON-RPC stdout and early help/error
+returns without producer construction. Actual installed MCP discovery exercises
+the real producer constructor with poisoned application configuration.
+
+Producer validation: full build and targeted lint pass; all 18 default-process,
+stdio/framing and actual installed MCP tests pass with zero skips.
