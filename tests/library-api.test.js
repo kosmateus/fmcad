@@ -834,3 +834,17 @@ test('unchanged retained UI suite also passes against the frozen historical impl
     assert.match(output,/(?:fail 0|# fail 0)/);
   }finally{fs.rmSync(directory,{recursive:true,force:true});}
 });
+
+test('remaining host registrations preserve public descriptors and manuals', () => {
+  for(const name of ['image-trace','image-optimize','image-boundaries','engineering-local','reference','review']){
+    const historical=historicalPublicBoundary(name),current=require('../src/'+name);
+    for(const key of ['descriptor','manual','descriptors','manuals','localOperations'])
+      assert.deepEqual(current[key],historical[key],name+':'+key);
+    if(current.methods)assert.deepEqual(Object.fromEntries(Object.entries(current.methods).map(([key,{run,...metadata}])=>[key,metadata])),Object.fromEntries(Object.entries(historical.methods).map(([key,{run,...metadata}])=>[key,metadata])));
+    if(name==='reference'){
+      const initial={'reference.image':{inputs:{},required:[],limitations:[]}};
+      const before=structuredClone(initial),after=structuredClone(initial);
+      historical.configure(before);current.configure(after);assert.deepEqual(after,before);
+    }
+  }
+});

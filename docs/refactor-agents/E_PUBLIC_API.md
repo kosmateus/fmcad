@@ -326,3 +326,18 @@ retained UI suite also passes in a separate process against the frozen predecess
 Build, lint and test typecheck pass. The historical subprocess explicitly clears
 NODE_TEST_CONTEXT so Node actually runs the child suite; no test is skipped.
 PR #48 passed full CI 42525428442 and merged as `5d5a793`; #50 now targets main.
+
+### Remaining host registration modules
+
+PR #73 contains complete typed UI orchestration. Image trace/optimize/boundaries,
+engineering-local, reference-image and review registration modules now contain
+only loaders at the old JS paths. Typed registration modules retain their actual
+composition and all descriptors/manuals. Direct typed engineering composition
+also exposed a weak provenance type; it now permits the existing structured
+provenance fields alongside the optional CLI inputPath, without runtime changes.
+
+Full build, lint and test typecheck pass. Historical metadata comparisons pass;
+the retained library/registry/reference/review/image run has 75 passes and two
+existing environment-dependent skips. Worker subprocess, no-config offline
+routing, preflight and unchanged outputs are exercised; skipped native/interpreter
+checks are not counted as qualified. No runtime assets or build lists changed.
