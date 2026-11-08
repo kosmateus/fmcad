@@ -131,3 +131,33 @@ comparisons retain synchronous preflight failure and exact helper arguments.
 The existing six engineering/batch-local suites pass all 33 cases. Native image
 quality and Canvas semantics remain deferred. Declarative metadata is still a
 separate registration migration; these adapters do not close all of E3.
+
+### MCP helper schema parity
+
+The frozen predecessor rejects the advertised optional `acceptedOutcome` on
+`fmcad_queue_reconcile` because it treats `required` as the allowed-field list.
+Typed helper declarations and validation now distinguish allowed and required
+fields and enforce the advertised committed/aborted enum. Paired tests preserve
+the no-outcome response, reject malformed/foreign fields before registration,
+and require one reconcile call plus one owned status read with zero submit/wait
+calls. Request/document/file context stays bound to the owned job. Agent A was
+notified on PR #42; no broker policy or receipt validation changed.
+
+Build, lint and test typecheck pass. The focused library/framing/catalog set has
+32 passes and five host-limited failures: one retained fixture requires
+`/tmp/opencode`, and four artifact checks require `/proc` inode verification
+(the last manifests as missing success output after that rejection). Relevant
+framing, owned-artifact and retained test sources are unchanged from `0b84454`.
+No path/ownership assertion was relaxed. Linux CI remains the qualification gate.
+
+## Published sequence and dependencies
+
+- #39: `8a707c2`, image host orchestration and declarations; CI pending.
+- #46: `94cb3f1`, public client/configuration; stacked on #39.
+- #48: `ae3faff`, offline engineering/reference; stacked on #46.
+- MCP helper parity follows #48; full compatibility orchestration remains open.
+- F's issue #43 owns the web lifecycle contract needed before retiring public
+  console/diagnostic terminal launch. E requested URL/project selection,
+  readiness failure and disposal semantics before changing `src/console.js`.
+- G was given staging/test registration and writable npm cache findings on #40.
+  Existing source facades remain until complete installed-consumer qualification.
