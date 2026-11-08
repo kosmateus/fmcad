@@ -1,6 +1,7 @@
 # Agent E — public CLI, MCP, SDK and remaining host adapters
 
-Status: **available**. Claim this package, fetch current main and read
+Status: **claimed by Agent E**, 8 November 2026. Implementation branch:
+`refactor/agent-e-public-api`. Starting main: `0b84454`. Read
 [the shared plan](../REFACTOR_PARALLEL_PLAN.md).
 
 ## Outcome and ownership
