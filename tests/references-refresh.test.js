@@ -906,3 +906,115 @@ test('unknown native command leaves the owned .11 watcher armed for reconciliati
   assert.equal(events.includes('watcher.disarm'), false);
   assert.equal(events.includes('save'), false);
 });
+
+const referenceHistory = require('./fixtures/file-workflows/load.cjs');
+const referenceVersions = [
+  ['pre-refactor', referenceHistory('baseline', 'src/references-refresh.js')],
+  ['before extraction', referenceHistory('before', 'src/references-refresh.js')],
+  ['typed planning', refresh],
+];
+function referenceObservation(fn) {
+  try { return { value: fn() }; }
+  catch (error) { return { error: error.message, readOnlyFailure: error.fmcadReadOnlyFailure }; }
+}
+test('typed reference validation retains exact normalized requests and deterministic refusals', () => {
+  for (const data of [request(), request({ policy: 'preserve' }), request({ phase: 'apply', confirm: true, planId: 'a'.repeat(64) }),
+    null, request({ root: { ...root, version: 0 } }), request({ allowedProjectIds: ['foreign'] }),
+    request({ maxUpdates: 5, maxFiles: 2 }), request({ pins: [{ edgeId: 'e', sourceFileId: 's', version: 0 }] }),
+    request({ parameterBindings: [{ edgeId: 'e', sourceParameter: 'p' }] }), request({ uiLeases: { foreign: {} } }),
+    request({ phase: 'inspect' }), request({ phase: 'apply', confirm: false })]) {
+    const results = referenceVersions.map(([, api]) => referenceObservation(() => api.validate(structuredClone(data))));
+    assert.deepEqual(results[1], results[0]); assert.deepEqual(results[2], results[0]);
+  }
+});
+test('typed reference plans retain complete graph pins, blockers, ordering and snapshot effects', () => {
+  const graphs = [
+    snapshot(['root-file', 'child'], [edge('root-file', 'child')]),
+    snapshot(['root-file', 'left', 'right', 'shared'], [edge('root-file', 'left'), edge('root-file', 'right'), edge('left', 'shared'), edge('right', 'shared')]),
+    snapshot(['root-file', 'child'], [edge('root-file', 'child'), edge('child', 'root-file')]),
+    snapshot(['root-file'], [edge('root-file', 'root-file', { selfReference: true })]),
+    snapshot(['root-file', 'child'], [edge('root-file', 'child'), edge('root-file', 'child')]),
+    snapshot(['root-file'], [edge('root-file', 'missing')]),
+    snapshot(['root-file', 'child'], [edge('root-file', 'child', { sourceProjectId: 'foreign' })]),
+  ];
+  for (const graph of graphs) for (const options of [{}, { policy: 'preserve' }, { maxFiles: 1 }, { nativeFallback: 'qualifiedOnce' }]) {
+    const results = referenceVersions.map(([, api]) => referenceObservation(() => {
+      const copy = structuredClone(graph), input = api.validate(request(options));
+      const plan = api.makePlan(copy, input);
+      return { plan, snapshotAfter: copy };
+    }));
+    assert.deepEqual(results[1], results[0]); assert.deepEqual(results[2], results[0]);
+  }
+});
+test('typed reference freshness refuses changed identities, versions, health and edge evidence identically', () => {
+  const graph = snapshot(['root-file', 'child'], [edge('root-file', 'child')]);
+  const mutations = [() => {}, g => { g.documents[0].version = 2; }, g => { g.documents[0].projectId = 'foreign'; },
+    g => { g.documents[0].latestVersion = 4; }, g => { g.documents[0].modified = true; },
+    g => { g.documents[0].readOnly = true; }, g => { g.documents[0].health.healthy = false; },
+    g => { g.edges[0].sourceFileId = 'foreign'; }, g => { g.edges[0].latestVersion = 7; },
+    g => { g.edges.length = 0; }, g => { g.documents.length = 0; }];
+  for (const mutate of mutations) {
+    const results = referenceVersions.map(([, api]) => {
+      const plan = api.makePlan(structuredClone(graph), api.validate(request())), fresh = structuredClone(graph);
+      mutate(fresh);
+      return { freshness: api.planFreshness(plan, fresh), step: api.staleBeforeStep(plan, fresh, 'root-file') };
+    });
+    assert.deepEqual(results[1], results[0]); assert.deepEqual(results[2], results[0]);
+  }
+});
+
+test('reference apply keeps historical mutation counts and reopens receipts for settled and uncertain outcomes', async t => {
+  for (const outcome of ['complete', 'unknown-update', 'failed-save', 'processing-save']) {
+    const observations = [];
+    for (const [label, api] of referenceVersions) {
+      const reportPath = await fs.mkdtemp(path.join(os.tmpdir(), 'refs-paired-lifecycle-'));
+      t.after(() => fs.rm(reportPath, { recursive: true, force: true }));
+      const graph = snapshot(['root-file', 'child'], [edge('root-file', 'child')]);
+      const plan = api.makePlan(structuredClone(graph), api.validate(request({ requestId: 'original-plan', reportPath, lifecycle: 'openOwned', durability: 'cloud' })));
+      const original = structuredClone(plan), planId = await api.writePlan(reportPath, plan);
+      const inputData = request({ phase: 'apply', requestId: 'owned-apply', reportPath, planId, scopeFileId: root.fileId, confirm: true, lifecycle: 'openOwned', durability: 'cloud' });
+      const input = api.validate(inputData), calls = [];
+      const deps = { now: () => 100, step: async action => {
+        calls.push(action);
+        if (action === 'preflight') return { document: doc('root-file'), edges: graph.edges, openedByRequest: true, identity: { creationId: 'owned-root' } };
+        if (action === 'sdkUpdate') return outcome === 'unknown-update' ? { status: 'unknown', outcome: 'unknown', modified: true } :
+          { status: 'complete', modified: true, checks: checkPass(), identity: { creationId: 'owned-root' }, openedByRequest: true };
+        if (action === 'save') {
+          if (outcome === 'failed-save') return { status: 'failed', error: 'injected save refusal' };
+          if (outcome === 'processing-save') return { status: 'pending', resultingVersion: 2 };
+          return { status: 'complete', resultingVersion: 2, parameters: [], metadataCoverage: { component: 'complete' } };
+        }
+        if (action === 'graph') return snapshot(['root-file', 'child'], [edge('root-file', 'child', { baselineVersion: 2, latestVersion: 2, status: 'current' })]);
+        throw new Error('Unexpected mutation after ' + outcome + ': ' + action);
+      } };
+      const result = await api.apply(null, input, plan, deps);
+      assert.deepEqual(plan, original, label + ': apply must not mutate the immutable plan');
+      assert.deepEqual(await api.readPlan(reportPath, planId), original);
+      const beforeReopen = [...calls];
+      const replayed = await api.execute(null, input, {}, deps);
+      assert.equal(replayed.invocationStatus, result.invocationStatus);
+      assert.deepEqual(calls, beforeReopen, label + ': receipt replay must not submit again');
+      const inspected = await api.execute(null, { ...input, phase: 'inspect' }, {}, { step: async () => { throw new Error('receipt reopen must not call Fusion'); } });
+      assert.equal(inspected.latestReceipt.result.invocationStatus, result.invocationStatus);
+      assert.deepEqual(calls, beforeReopen);
+      assert.equal(calls.filter(a => a === 'sdkUpdate').length, 1);
+      assert.equal(calls.filter(a => a === 'save').length, outcome === 'unknown-update' ? 0 : 1);
+      observations.push({ calls, status: result.invocationStatus, success: result.success,
+        completed: result.completed, failed: result.failed, unknown: result.unknown,
+        documents: result.documents.map(d => ({ fileId: d.fileId, version: d.resultingVersion, status: d.status, saveStatus: d.saveStatus })) });
+    }
+    assert.deepEqual(observations[1], observations[0], outcome);
+    assert.deepEqual(observations[2], observations[0], outcome);
+  }
+});
+
+test('production checker admits the public reference action wrapper against pinned Python interfaces', { timeout: 180000 }, async () => {
+  const { prepareCadBundle } = require('../packages/node-adapters/dist/python/bundle');
+  const { createPythonChecker } = require('../packages/node-adapters/dist/python/checker');
+  const project = path.resolve(__dirname, '..'), typingRoot = path.join(project, 'dist/runtime/python/typing');
+  const artifact = prepareCadBundle(project, '\n\n_FMCAD_REFERENCE_REQUEST: JsonObject = {"action": "graph", "data": {}}\ndef run(_context: str) -> None:\n    import json\n    _request = _FMCAD_REFERENCE_REQUEST\n    _result = _references_refresh_internal(_request["action"], _request["data"])\n    print("FMCAD_RESULT " + json.dumps(_cad_json(_result), allow_nan=False))\n');
+  const checker = createPythonChecker({ typingRoot, definitionsRoot: typingRoot, pythonPlatform: 'Windows' });
+  const report = await checker.check({ artifact, context: { kind: 'bundle' } });
+  assert.equal(report.status, 'passed', JSON.stringify(report));
+  assert.equal(report.provenance.checker, 'basedpyright');
+});

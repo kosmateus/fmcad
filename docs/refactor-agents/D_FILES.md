@@ -216,3 +216,45 @@ includes imports, references, externalization, save/publication and drawings.
   not complete. Full CI on each exact merge head and the G registry handoff remain
   mandatory. Genuine native-format qualification remains explicitly pending;
   these text/model doubles do not qualify Fusion geometry or exported formats.
+
+### Delivery 4 — typed reference workflow and Python wire admission
+
+- Parent: import PR #53, `b768425071db4cd73c660a61e60040731b2512e7`.
+- Migrated all remaining reference input validation, dependency planning,
+  explicit binding coverage and freshness decisions into strict core modules.
+  Typed host wiring now binds existing reference application services to the
+  unchanged plan/receipt store. The public entry retains configuration/exports.
+- The strict wiring exposed inaccurate existing declarations: planned versions,
+  methods and fallback can be null; the top-level plan budget and a missing
+  journal's writerActive can be absent. Types now describe actual serialized
+  behavior. The budget comparison retains JavaScript's numeric coercion.
+  Journal formats and A-owned primitives are unchanged.
+- Frozen full sources from `a26222f` and `0b84454` compare normalized inputs,
+  complete plans and snapshot effects, pins, diamond/cyclic graphs, duplicate
+  identities, inaccessible sources, health/version drift and freshness refusal.
+  Paired lifecycle tests compare success, unknown update, failed save and
+  accepted-but-processing save; each submits one update and at most one save.
+  Immutable plans remain byte-equivalent, reopening uses persisted receipts,
+  and repeated apply performs no additional native step in every outcome.
+- Moved the pure Python occurrence-state projection unchanged into the domain.
+  Archived function-body hashes and paired tests verify ordering, missing token
+  evidence and no mutation without SDK globals.
+- Real production admission initially reproduced two pre-existing JsonValue
+  argument errors in the reference wrapper at `0b84454`: action:str and
+  data:_ReferencesInput. The Python wire entry now validates the action and
+  object payload before decoding or touching SDK context. Invalid payloads get
+  an explicit refusal instead of a later attribute/type error. Unknown actions
+  retain the original error. Valid action semantics are unchanged.
+- Final local evidence: 159 family Node tests passed, including 42 reference
+  tests and both real basedpyright bundle checks (reference admission 67 seconds,
+  externalization admission 68 seconds). All 27 Python reference tests passed.
+  Full pinned build, repository lint, strict test types, repository formatting,
+  explicit new-module formatting and diff checks passed. No test was skipped.
+- The new reference tests extend an already selected regression file. B can
+  reuse the paired save/reopen/replay assertions; E's public API is unchanged.
+  Full CI on exact merge heads and G's earlier drawing/document-I/O registry
+  additions remain required. No delivery has been merged prematurely.
+- Remaining: drawing package scene/model preparation and verification, the
+  externalization input/composition boundary, remaining Python lifecycle
+  separation and shared D1/D4 inventory/integration. Native Fusion and genuine
+  native-format qualification remain pending. The whole D package is still open.

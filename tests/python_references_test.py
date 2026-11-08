@@ -44,6 +44,41 @@ class Collection:
 
 
 class ReferencesRuntimeTests(unittest.TestCase):
+    def test_occurrence_snapshot_rule_matches_archived_sources_without_sdk(self):
+        import copy
+        import json
+        base = ROOT / 'tests/fixtures/file-workflows'
+        manifest = json.loads((base / 'manifest.json').read_text())
+        rules = []
+        for label in ('baseline', 'before'):
+            row = next(row for row in manifest if row['file'] == label + '-reference-occurrence.py.txt')
+            source = (base / row['file']).read_bytes()
+            self.assertEqual(hashlib.sha256(source).hexdigest(), row['sha256'])
+            namespace = {'_cad_cast': cast}
+            exec(compile(source, row['sourcePath'], 'exec'), namespace)
+            rules.append(namespace['_references_occurrence_states'])
+        rules.append(load_module(ROOT / 'runtime/python/fmcad/domain/references.py', {'_cad_cast': cast})['_references_occurrence_states'])
+        cases = [{}, {'occurrences': [{'token': ''}]}, {'occurrences': [
+            {'token': 'z', 'nativeToken': 'native-z', 'transform': [1, 2], 'contextKind': 'owned', 'isDerived': False},
+            {'token': 'a', 'nativeToken': 'native-a', 'isReferencedComponent': True}]}]
+        for value in cases:
+            observations = []
+            for rule in rules:
+                copied = copy.deepcopy(value)
+                observations.append(rule(copied))
+                self.assertEqual(copied, value)
+            self.assertEqual(observations[0], observations[1])
+            self.assertEqual(observations[0], observations[2])
+
+    def test_private_reference_wire_refuses_invalid_payload_before_sdk(self):
+        runtime = load_module(ROOT / 'runtime/python/fmcad/adapters/fusion/references.py', {'_cad_cast': cast})
+        for action in (None, [], 'foreign'):
+            with self.assertRaisesRegex(ValueError, 'Unknown private references.refresh SDK action'):
+                runtime['_references_refresh_internal'](action, {})
+        for action in ('graph', 'preflight', 'sdkUpdate', 'nativeUpdate', 'save', 'coldVerify'):
+            with self.assertRaisesRegex(ValueError, 'references.refresh data must be an object'):
+                runtime['_references_refresh_internal'](action, None)
+
     def test_domain_edge_identity_snapshot_and_private_field_projection(self):
         rules = load_module(ROOT / 'runtime/python/fmcad/domain/references.py', {'_cad_cast': cast})
         edge_id = rules['_references_edge_id']('owner', 'linked', 'source', 'token')

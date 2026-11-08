@@ -78,5 +78,35 @@
     "sourcePath": "src/data-import.js",
     "file": "before-data-import.js.txt",
     "sha256": "3877895e094b33e9f0a15f23946e34ee8cdac669d94b4b31b89a79bdb21ad680"
+  },
+  {
+    "file": "baseline-references-refresh.js.txt",
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "src/references-refresh.js",
+    "sha256": "062619f983cba91a6a1ee9d2e7f95781a4c85e509fa234c8ad2cadaa03504a36"
+  },
+  {
+    "file": "before-references-refresh.js.txt",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sourcePath": "src/references-refresh.js",
+    "sha256": "3b956346a30fe1b74c1891dc3dcb321456391105f9d55a0b8042f82cc7194f63"
+  },
+  {
+    "file": "baseline-reference-occurrence.py.txt",
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "assets/cad/references.py",
+    "symbols": [
+      "_references_occurrence_states"
+    ],
+    "sha256": "c2182c786ebbe4e3676063f9fd261b6d85ea03df51f057483d4e76f341a3da91"
+  },
+  {
+    "file": "before-reference-occurrence.py.txt",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sourcePath": "runtime/python/fmcad/adapters/fusion/references.py",
+    "symbols": [
+      "_references_occurrence_states"
+    ],
+    "sha256": "f0416fed97c360f1df2b62088617e43adbc435a9399f72e79825e2137a12fc35"
   }
 ]

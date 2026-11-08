@@ -23,12 +23,12 @@ export interface ReferencePlan {
   root: ReferenceRoot;
   scopeFileId: string;
   options?: Record<string, unknown> & { timeBudgetMs?: number };
-  timeBudgetMs: number;
+  timeBudgetMs?: number;
   policy: string;
   lifecycle: string;
   nativeFallback: string;
   durability: string;
-  updates: { fileId: string; method?: string; fallback?: string }[];
+  updates: { fileId: string; method?: string; fallback?: string | null }[];
   blocked: unknown[];
   skipped: unknown[];
   notPlanned: unknown[];
@@ -38,7 +38,7 @@ export interface ReferenceReport {
   [key: string]: unknown;
 }
 export interface ReferenceJournal {
-  writerActive: boolean;
+  writerActive?: boolean;
   report?: {
     requestHash: string;
     inProgress?: unknown;
@@ -203,7 +203,8 @@ export async function executeReferences(
     }
     if (
       typeof data["timeBudgetMs"] === "number" &&
-      data["timeBudgetMs"] > (plan.options?.timeBudgetMs ?? plan.timeBudgetMs)
+      data["timeBudgetMs"] >
+        Number(plan.options?.timeBudgetMs ?? plan.timeBudgetMs)
     )
       throw new Error("apply cannot expand the immutable plan timeBudgetMs");
     input = services.validate({

@@ -16,7 +16,7 @@ interface Identity {
   sessionNonce: string;
   documentIdentity: { expected: unknown; resolved: unknown };
 }
-interface Receipt extends Record<string, unknown> {
+export interface Receipt extends Record<string, unknown> {
   version: number;
   operation: string;
   sequence: number;
