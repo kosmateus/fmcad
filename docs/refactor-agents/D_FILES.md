@@ -169,3 +169,10 @@ includes imports, references, externalization, save/publication and drawings.
   internal operation record. Malformed inputs fail before registry/SDK access.
   A duplicate cast import introduced by the extraction was caught and removed.
   No checker strictness or admission requirement was reduced.
+- Final staged checks also pass 20 native-action wrapper comparisons and all
+  three document-I/O bundle tests. The bundle fixture formerly hardcoded
+  `/tmp/opencode`; on this host spawn failed before Python execution because
+  that directory is absent. It now uses the host temporary directory, still
+  outside the checkout. All registry, source-map and no-filesystem-load
+  assertions are unchanged. G should also register `tests/python-document-io.test.js`.
+- PR #49 carries this delivery; full CI and #38 remain merge dependencies.

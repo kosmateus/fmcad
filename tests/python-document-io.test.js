@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
+const os = require("node:os");
 const { spawnSync } = require("node:child_process");
 const {
   cadBundleManifest,
@@ -142,7 +143,7 @@ assert simulation['productAccessed'] is False
       input: prepared.script,
       encoding: "utf8",
       maxBuffer: 4 * 1024 * 1024,
-      cwd: "/tmp/opencode",
+      cwd: os.tmpdir(),
     },
   );
   assert.equal(result.status, 0, result.stderr);
@@ -257,7 +258,7 @@ assert result['error']['message'] == 'readback unavailable'
   const result = spawnSync("python3", ["-B", "-c", script], {
     input: source,
     encoding: "utf8",
-    cwd: "/tmp/opencode",
+    cwd: os.tmpdir(),
   });
   assert.equal(result.status, 0, result.stderr);
 });
