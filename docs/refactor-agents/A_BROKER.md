@@ -213,3 +213,67 @@ A3 (recovery/epoch/control migration) and A4 (concurrency and integration) remai
 assigned to A. Native Fusion qualification remains with B/G after offline
 integration. This delivery must not be marked complete until its full CI matrix
 passes on the final merge head.
+
+## A3.1 delivery record — process observations and authenticated epoch evidence
+
+This bounded recovery delivery depends on A2 (PR #51); A1 is PR #42. Canonical
+`queue-instance-liveness.ts` and `queue-epoch-lineage.ts` replace their handwritten
+JavaScript. The build stages exact emitted runtime bytes and portable declarations
+at both existing runtime paths. Broker process observations use the emitted
+module's actual type. Structural evidence checks reject malformed JSON before
+using it as authority; they do not reinterpret historical operation outcomes.
+
+The frozen immediate predecessor is `bed43003745b67d4d6795e600fc40af85fb1daa1`.
+The 54 paired cases cover owner/build/qualification bindings, preserved running
+and unknown histories, immutable pointer archives, changed grants, cycles,
+process death/liveness/unknown observations and point-in-time observations.
+Three deterministic filesystem races reproduce prior defects:
+
+- A failed installed-qualification record was hashed, then a separately reopened
+  record with `passed: true` was accepted. The repaired verifier hashes and parses
+  one bounded byte buffer obtained through the existing opened-descriptor guard.
+- After authenticating the predecessor identity, the old return path reopened it
+  without verification. A third read could return a foreign build. The verifier
+  now returns the same authenticated identity object it used for comparison.
+- The old authority reader derived the journal from an unverified first request
+  ID, then accepted a different authenticated request ID under that journal.
+  The repaired reader derives the namespace from the authenticated record only.
+
+Historical cases explicitly assert the old acceptance; typed cases assert the
+required refusal or unchanged authenticated identity. This is a justified
+expectation change: a digest authorizes exact bytes, and a request's authority
+must reside in that same request's journal. No test makes an old unknown outcome
+successful or permits a new model command. File replacement is injected at real
+open/close boundaries; real hashing, file reads and directory/descriptor guards
+remain active.
+
+These are defects in mechanisms added during earlier refactor work, not proven
+regressions against original Fusion behavior. The original lineage module was
+added in archive commit `649c9d0cc7c27edeaf6df622ee0f3f6177f311bb` (4 November);
+source inspection confirms all three separate-read patterns there. Process-loss
+liveness was added at `843ce0d` (31 October). Neither module exists in the original
+`a26222f`. The executable comparisons establish the defects in the immediate
+predecessor. No native Fusion evidence is needed to demonstrate these file races;
+native process and recovery qualification remains a separate B/G obligation.
+
+The broker gate also restores three retained integration suites:
+`dead-epoch-successor`, `closed-epoch-successor`, `instance-loss-recovery`.
+Their expected outcomes are unchanged. Fixtures allocate owned temporary roots
+and restore the scoped Windows-path spelling adapter; the endpoint receipt test
+uses the supported path adapter instead of changing already generated Python.
+The real audit preflight checks the original endpoint binding and leaves its
+owned output directory empty. No SDK traffic is issued in these offline fixtures.
+
+Local evidence: full `build:code`, lint, format and test typing passed; all five
+staging/declaration/registration checks passed; four retained process/audit checks
+passed with the real Python checker. The complete paired run reports 37/54 pass;
+all 17 typed lineage cases stop at `STORAGE_UNAVAILABLE` because this host lacks
+Linux `/proc/self/fd`. They remain mandatory, unskipped Linux CI cases. Do not
+substitute a fake path/identity verifier. All retained successor integration
+checks and the whole CI matrix must pass before merge; no native qualification
+is claimed by this record.
+
+Remaining A3 packages: atomic original-result/audit reconstruction; owner-bound
+epoch succession and runtime/checker upgrade controllers; saved-fixture control;
+physical instance identity/reset. A4 concurrency/restart interleavings and final
+cross-agent integration remain assigned to A. A3.1 is not the completion of A3.

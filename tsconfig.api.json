@@ -44,7 +44,9 @@
     "src/composition/execution-request.ts",
     "src/composition/stage-dependencies.ts",
     "src/queue-admission.ts",
-    "src/queue-fixed-fixture-admission.ts"
+    "src/queue-fixed-fixture-admission.ts",
+    "src/queue-instance-liveness.ts",
+    "src/queue-epoch-lineage.ts"
   ],
   "references": [
     {

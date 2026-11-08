@@ -184,5 +184,17 @@
     "sourcePath": "src/queue-fixed-fixture-admission.js",
     "file": "queue-fixed-fixture-admission-270.js.txt",
     "sha256": "ebc96b24a478fcb57d2cd892aa366f0fe069e3af9c99cad7c5b12741aa11e128"
+  },
+  {
+    "revision": "bed43003745b67d4d6795e600fc40af85fb1daa1",
+    "sourcePath": "src/queue-instance-liveness.js",
+    "file": "queue-instance-liveness-bed430.js.txt",
+    "sha256": "cd93bfc192d98b603829ea131e25a0efd64813acd003b73f168210c1d5009ad5"
+  },
+  {
+    "revision": "bed43003745b67d4d6795e600fc40af85fb1daa1",
+    "sourcePath": "src/queue-epoch-lineage.js",
+    "file": "queue-epoch-lineage-bed430.js.txt",
+    "sha256": "26bbfda46320693702dbda87d5743475c43e3b516969f3062121ccb1f20f07ed"
   }
 ]

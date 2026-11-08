@@ -27,6 +27,8 @@ test("queue staging publishes exact compiler bytes and preserves unrelated files
     "queue-scratch-control",
     "queue-admission",
     "queue-fixed-fixture-admission",
+    "queue-instance-liveness",
+    "queue-epoch-lineage",
   ];
   for (const name of names)
     for (const extension of [".js", ".d.ts"]) {
@@ -90,11 +92,14 @@ test("legacy fixture consumers receive emitted CJS from canonical CTS, not handw
     );
 });
 
-test("admission declarations resolve against the installed runtime providers", () => {
+test("queue declarations resolve against the installed runtime providers", () => {
   const root = path.resolve(__dirname, "../..");
-  const files = ["queue-admission", "queue-fixed-fixture-admission"].map(
-    (name) => path.join(root, "dist/src", name + ".d.ts"),
-  );
+  const files = [
+    "queue-admission",
+    "queue-fixed-fixture-admission",
+    "queue-instance-liveness",
+    "queue-epoch-lineage",
+  ].map((name) => path.join(root, "dist/src", name + ".d.ts"));
   for (const file of files)
     assert.doesNotMatch(fs.readFileSync(file, "utf8"), /packages\/|@fmcad\//);
   const program = ts.createProgram(files, {

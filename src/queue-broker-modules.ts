@@ -402,11 +402,7 @@ export interface BrokerModules {
     auditUpgradeApproval(approved: unknown, dir: string): { purpose: string };
     auditUpgradeStillCurrent(upgrade: unknown): boolean;
   };
-  "./queue-instance-liveness": {
-    processLossAudit(upgrade: unknown): boolean;
-    requireRecoveryProcesses(original: P.Instance, upgrade: unknown): void;
-    processTuple(instance: P.Instance): unknown;
-  };
+  "./queue-instance-liveness": typeof import("./queue-instance-liveness");
   "./queue-atomic-recovery-audit": {
     createRecoveryAudit(ports: AuditPorts): Control;
   };

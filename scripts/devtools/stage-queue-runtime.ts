@@ -9,6 +9,8 @@ const modules = [
   "queue-scratch-control",
   "queue-admission",
   "queue-fixed-fixture-admission",
+  "queue-instance-liveness",
+  "queue-epoch-lineage",
 ] as const;
 
 /** Publish compiler output, never a handwritten compatibility implementation. */
