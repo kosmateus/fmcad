@@ -104,3 +104,13 @@ delivery; do not stop after the first CLI facade extraction.
 - E1–E4 are not complete; remaining CLI/MCP compatibility, configuration/client,
   engineering/reference/review/shot/UI orchestration and complete installed
   CLI/MCP/library/OpenCode qualification remain assigned to E.
+
+### Public compatibility boundaries (next delivery)
+
+`library-client.ts` now owns the metadata-only compatibility client;
+`library-configuration.ts` owns configuration loading, initialization and accepted
+service validation. The old source paths remain small runtime loaders. Historical
+comparisons cover all control-method denials, immutable header snapshots, context
+replacement, repeated disposal, malformed configuration, forced initialization,
+accepted-service bytes and runtime anchors. The existing configuration suites
+pass 22 cases. Installed declaration coverage includes both new modules.

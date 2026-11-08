@@ -10,5 +10,13 @@
   "src/image-boundaries.js": {
     "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
     "sha256": "ce6b7bf329eddc85eb7000b9e4d8b37f5b399a5eb2db61fdba522b4166eeac4a"
+  },
+  "src/config.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "749781398f749f9788e7fd1b302198c43872c1b158bb0803c1bb68e3560dea66"
+  },
+  "src/client.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "fadc8b3ea57a257b040eee3e3023aebedb7ad991de878f612e0982e8fe3f9397"
   }
 }
