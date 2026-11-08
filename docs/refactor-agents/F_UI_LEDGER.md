@@ -87,3 +87,36 @@ Additional archived integration source: `delivery/console-ui-locales` at
 project and System views. This is a recovery reference for the next integration;
 it must be merged selectively with current artifact/identity behavior and the
 new lifecycle guards, not copied over main as a complete application.
+
+## Operational integration delivery (in progress)
+
+The localized archived views are selectively merged with current artifact and
+identity handling and the lifecycle fixes. System controls consume the unchanged
+BrokerControl/QueueClient ports, retain durable request receipts and generation
+fences, and perform no startup action when opening the page. Browser disposal
+invalidates System reads and prevents a pending status read from dispatching a
+control after disposal or a project-scope change.
+
+Production composition now injects SQLite project/agent alias and restore
+handlers. Archival deliberately remains blocked: legacy queue admission and
+presence writers do not participate in the project-history activity fence.
+Issue #43 requests A's production fence adapter; idle telemetry alone cannot
+establish safe archival. Isolated storage compositions never connect controls
+to a different default broker directory.
+
+The public launcher for E is `openControlCenter({port, projectPath?})`, returning
+`{url, projectId, dispose}` after authenticated readiness. A supplied canonical
+path must match exactly one registered project. The URL selects that registered
+identity, with server-side authorization retained. Caller disposal does not stop
+the shared detached service or broker.
+
+Installed asset validation caught and fixed the archived root-level contract
+placement: System contracts now live under `contracts/`, with all five new
+resources explicitly allowlisted. No staging wildcard or integrity relaxation.
+Local checks: strict build and typecheck, locale keys/parameters, all eight
+agents/projects regressions, installed alias authorization and blocked archive,
+passive history isolation, static tamper rejection and real HTTP asset serving
+pass. The browser ESM dependency graph loads 20 modules and the manifest has 31
+resources. The restored System suite has 19 tests; five local tests pass and 14
+real IPC tests fail before assertions because this host cannot read `/proc/PID/stat`.
+Full CI/Chromium on this delivery remains required before merging or TUI deletion.

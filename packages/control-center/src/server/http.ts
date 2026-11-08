@@ -1,3 +1,8 @@
+import {
+  SYSTEM_CONTROLS_API_PATH,
+  type SystemControlsRouteRequest,
+  type SystemControlsRouteResponse,
+} from "./system-controls.js";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
   createServer,
@@ -58,6 +63,9 @@ interface SessionRecord {
 
 export interface ControlCenterHttpOptions {
   readonly identity: ConsoleHttpIdentity;
+  readonly systemControls?: (
+    request: SystemControlsRouteRequest,
+  ) => Promise<SystemControlsRouteResponse | null>;
   readonly query: ConsoleHttpQueryPort;
   readonly resolvePrincipal: (
     session: ConsoleHttpSession,
@@ -1008,6 +1016,48 @@ function createRequestHandler(
     }
 
     const principal = await principalFor(record);
+    if (response.destroyed) return;
+    const controlReceiptPrefix = `${SYSTEM_CONTROLS_API_PATH}/receipts/`;
+    if (
+      path === SYSTEM_CONTROLS_API_PATH ||
+      path.startsWith(controlReceiptPrefix)
+    ) {
+      const verifyCsrf = () =>
+        checkCsrf(request, record, options.identity.port);
+      if (method === "POST") verifyCsrf();
+      const input = {
+        method,
+        pathname: path,
+        query: url.searchParams,
+        principal,
+        checkCsrf: verifyCsrf,
+        ...(method === "POST" ? { body: await readJsonBody(request) } : {}),
+      } satisfies SystemControlsRouteRequest;
+      if (!options.systemControls) {
+        sendJson(response, 503, {
+          version: CONTROL_CENTER_PROTOCOL_VERSION,
+          state: "unavailable",
+          code: "SYSTEM_CONTROLS_UNAVAILABLE",
+          message: "System controls are not connected to the broker lifecycle",
+        });
+        return;
+      }
+      const result = await timeout(
+        options.systemControls(input),
+        API_TIMEOUT_MS,
+      );
+      if (!result) {
+        sendJson(response, 404, {
+          version: CONTROL_CENTER_PROTOCOL_VERSION,
+          state: "error",
+          code: "NOT_FOUND",
+          message: "Route not found",
+        });
+        return;
+      }
+      sendJson(response, result.status, result.body);
+      return;
+    }
     if (response.destroyed) return;
     if (path === PROJECT_ACTIONS_ROUTE) {
       if (method !== "POST") return methodNotAllowed(response, "POST");

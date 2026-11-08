@@ -41,7 +41,7 @@ test("installed root stages the trusted service entrypoint and verified static c
     },
   );
   t.after(() => composition.close());
-  assert.equal(composition.assets.length, 26);
+  assert.equal(composition.assets.length, 31);
   for (const module of [
     "web/agents-projects.js",
     "contracts/project-actions.js",

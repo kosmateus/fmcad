@@ -9,6 +9,10 @@ const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_ASSET_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_ASSET_BYTES = 32 * 1024 * 1024;
 const KNOWN_MODULES = [
+  "locale-agents-projects.js",
+  "locale-app-extra.js",
+  "locale-types.js",
+  "system-controls.js",
   "agents-projects.js",
   "api.js",
   "app.js",
@@ -32,6 +36,13 @@ const KNOWN_FONTS = [
   "ibm-plex-mono-latin.woff2",
 ] as const;
 const KNOWN_ASSETS = new Map<string, { file: string; contentType: string }>([
+  [
+    "/assets/control-center/contracts/system-controls.js",
+    {
+      file: "contracts/system-controls.js",
+      contentType: "text/javascript; charset=utf-8",
+    },
+  ],
   [
     "/index.html",
     { file: "index.html", contentType: "text/html; charset=utf-8" },

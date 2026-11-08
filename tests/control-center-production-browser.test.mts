@@ -119,6 +119,9 @@ test(
       },
       ...(composition.assets ? { assets: composition.assets } : {}),
       query: composition.query,
+      ...(composition.projectActions
+        ? { projectActions: composition.projectActions }
+        : {}),
       resolvePrincipal: composition.resolvePrincipal,
     });
     await server.start();
@@ -184,6 +187,40 @@ test(
       path: path.join(artifacts, "production-sqlite-project.png"),
       fullPage: true,
     });
+    await page.locator('[data-action="view"][data-view="projects"]').click();
+    const form = page.locator(
+      'form[data-action="project-alias-form"][data-project="browser-project-a"]',
+    );
+    await form.locator('input[name="alias"]').fill("Production browser alias");
+    const saved = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/console/project-actions") &&
+        response.request().method() === "POST",
+    );
+    await form.locator('[type="submit"]').click();
+    assert.equal((await (await saved).json()).state, "ok");
+    await page
+      .locator(
+        'aside [data-action="scope"][data-id="browser-project-a"] .project-name',
+      )
+      .filter({ hasText: "Production browser alias" })
+      .waitFor();
+    await page.goto(`http://localhost:${port}/?project=browser-project-a`);
+    await page.waitForFunction(() => {
+      const rows = [...document.querySelectorAll('[data-action="task"]')];
+      return (
+        rows.length === 1 &&
+        rows[0]?.getAttribute("data-project") === "browser-project-a"
+      );
+    });
+    assert.equal(
+      await page
+        .locator(
+          'aside [data-action="scope"][data-id="browser-project-a"] .project-name',
+        )
+        .textContent(),
+      "Production browser alias",
+    );
     assert.deepEqual(errors, []);
     assert.deepEqual(badResponses, []);
     assert.deepEqual(
