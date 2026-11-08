@@ -201,3 +201,5 @@ export async function openControlCenter(options: {
     },
   };
 }
+
+export { createMcpStdioTelemetry } from "./control-center-telemetry.js";

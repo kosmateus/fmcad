@@ -131,3 +131,17 @@ licensed Greek/Cyrillic WOFF2 fallback fonts and registers the restored System,
 diagnostic retention and existing observer rotation tests in the contracts gate.
 The small shared script/build-list changes are an explicit proposal for G,
 following coordination on PR #40; they are not independently accepted packaging.
+
+Producer integration audit: the default MCP root only invokes an injected telemetry
+factory; production queue snapshots and owned-result history therefore still need
+the E-owned hookup. Recovered the archived `46e13fa` registered-project runtime
+as TypeScript and added a typed installed composition factory. It bounds project
+producers to 64, rejects unregistered explicit identities without path fallback,
+pins registry identity, defers event I/O, retains admission checks and source gaps,
+and drains once on close without starting a web service or broker. Four local
+integration tests pass for overflow, changed bindings, cross-project rejection,
+close draining and the installed factory. The unchanged owned-file test reaches
+this host's missing `/proc` guard; it remains required in CI. Strict compilation,
+focused lint and the complete code build pass. This is not evidence that default
+MCP or authoritative phase timing is connected yet. The extra tsconfig source
+and CI test entries are concrete shared-configuration proposals for G.
