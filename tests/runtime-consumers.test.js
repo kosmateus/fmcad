@@ -11,7 +11,7 @@ function fixture(t, missing = []) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const python = path.join(root, 'selected python');
   const log = path.join(root, 'calls.jsonl');
-  fs.writeFileSync(python, `#!${process.execPath}
+  fs.writeFileSync(python, `#!${path.isAbsolute(process.execPath) ? process.execPath : "/usr/bin/env node"}
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args)+'\\n');
@@ -146,4 +146,100 @@ test('queue directory normalizes relative XDG state against HOME rather than cwd
   });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, path.join(f.root, 'relative state/fmcad/queue'));
+});
+
+// Execute frozen pre-extraction adapters with the same typed pipeline and ports.
+// Comparing complete observations preserves bytes, interpreter selection and calls.
+for (const [moduleName, exported, flags] of modules) {
+  const mode = moduleName.slice('image-'.length);
+  const baselinePath = path.join(__dirname, 'fixtures/public-host-baseline', moduleName + '.js.txt');
+  const source = fs.readFileSync(baselinePath, 'utf8');
+  const provenance = require('./fixtures/public-host-baseline/provenance.json');
+  assert.equal(require('node:crypto').createHash('sha256').update(source).digest('hex'), provenance[`src/${moduleName}.js`].sha256);
+  const Module = require('node:module');
+  const baseline = new Module(path.resolve(__dirname, '../src', moduleName + '.js'), module);
+  baseline.filename = baseline.id;
+  baseline.paths = module.paths;
+  baseline._compile(source, baseline.filename);
+  for (const scenario of ['success', 'failure', 'signal', 'spawn-error', 'preflight-error', 'invalid-json', 'duplicate', 'detail']) {
+    test(`${moduleName} preserves historical ${scenario} effects and diagnostics`, async () => {
+      async function observe(fn) {
+        const state = { calls: [], preflight: [], stdout: '', stderr: '' };
+        const deps = {
+          stdout: { write: chunk => { state.stdout += chunk; } },
+          stderr: { write: chunk => { state.stderr += chunk; } },
+          resolvePython: options => {
+            state.preflight.push(options);
+            if (scenario === 'preflight-error') throw new Error('Missing Python dependencies: fixture');
+            return '/selected python/żółć';
+          },
+        };
+        const spawnName = { trace: 'spawnImageTrace', optimize: 'spawnImageOptimize', boundaries: 'spawnImageBoundaries' }[mode];
+        deps[spawnName] = (python, args, options) => {
+          const child = new (require('node:events').EventEmitter)();
+          const { PassThrough } = require('node:stream');
+          child.stdin = new PassThrough(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+          child.exitCode = 0;
+          let input = '';
+          child.stdin.on('data', chunk => { input += chunk; });
+          child.stdin.on('finish', () => {
+            state.calls.push({ python, args, options, input });
+            if (scenario === 'spawn-error') { child.emit('error', new Error('fixture spawn failed')); return; }
+            child.stdout.write(scenario === 'invalid-json' ? '{"value":1e999}' : '{"success":true,"label":"żółć"}\n');
+            child.stderr.write('fixture diagnostic\n');
+            child.emit('close', scenario === 'failure' ? 7 : scenario === 'signal' ? null : 0, scenario === 'signal' ? 'SIGTERM' : null);
+          });
+          return child;
+        };
+        const argv = [...flags, '--python', '/requested python/żółć'];
+        if (scenario === 'duplicate') argv.push('--out', 'another');
+        if (scenario === 'detail' && mode === 'trace') argv.push('--trace-detail-area-px2', '12');
+        try { state.code = await fn(argv, deps); }
+        catch (error) { state.error = error.message; }
+        return state;
+      }
+      const historical = await observe(baseline.exports[exported]);
+      const current = await observe(require(`../src/${moduleName}`)[exported]);
+      assert.deepEqual(current, historical);
+      assert.equal(current.calls.length, ['preflight-error', 'duplicate'].includes(scenario) ? 0 : 1);
+      if (scenario === 'preflight-error' || scenario === 'duplicate') {
+        assert.equal(current.stdout, ''); assert.equal(current.stderr, '');
+      }
+      if (scenario === 'success') { assert.equal(current.code, 0); assert.equal(current.stdout, '{"success":true,"label":"żółć"}\n'); }
+      if (scenario === 'failure' || scenario === 'signal') assert.equal(current.code, 1);
+      if (scenario === 'invalid-json') { assert.match(current.error, /finite JSON/); assert.equal(current.stdout, ''); }
+    });
+  }
+}
+
+test('installed image adapter retains runtime assets and closed declarations outside the workspace', { timeout: 120000 }, async t => {
+  const { execFileSync } = require('node:child_process');
+  const root = path.resolve(__dirname, '..');
+  const f = fixture(t);
+  const packed = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', f.root], { cwd: root, encoding: 'utf8' }))[0];
+  execFileSync('npm', ['install', '--prefer-offline', '--ignore-scripts', '--no-audit', '--no-fund', '--prefix', f.root, path.join(f.root, packed.filename)], { cwd: f.root, encoding: 'utf8' });
+  const installed = path.join(f.root, 'node_modules/fmcad');
+  const adapter = path.join(installed, 'dist/src/dist/python/image-command.js');
+  const ts = require('typescript');
+  const entry = path.join(f.root, 'consumer.cts');
+  fs.writeFileSync(entry, `import { createImageCommand, type ImageCommandOptions } from ${JSON.stringify(adapter)};\ndeclare const options: ImageCommandOptions;\nconst command = createImageCommand(options);\nvoid command;\n`);
+  const program = ts.createProgram([entry], { noEmit: true, strict: true, skipLibCheck: false, target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext, types: ['node'], typeRoots: [path.join(root, 'node_modules/@types')] });
+  const diagnostics = ts.getPreEmitDiagnostics(program);
+  assert.equal(diagnostics.length, 0, ts.formatDiagnostics(diagnostics, { getCanonicalFileName: f => f, getCurrentDirectory: () => f.root, getNewLine: () => '\n' }));
+  fs.writeFileSync(path.join(f.root, 'invalid-config.json'), '{invalid');
+  for (const [moduleName, , flags, worker] of modules) {
+    assert.ok(fs.existsSync(path.join(installed, 'dist/assets', worker)));
+    const run = spawnSync(process.execPath, [path.join(installed, 'dist/bin/fmcad.js'), 'image', moduleName.slice(6), ...flags, '--python', f.python], {
+      cwd: f.root, encoding: 'utf8', timeout: 15000,
+      env: { ...process.env, NODE_PATH: '', FMCAD_CONFIG: path.join(f.root, 'invalid-config.json'), FMCAD_BACKEND: 'must-not-read' },
+    });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(JSON.parse(run.stdout).success, true);
+  }
+  const calls = f.calls();
+  assert.equal(calls.length, 6);
+  for (let i = 0; i < 6; i += 2) {
+    assert.ok(calls[i].includes('-c'));
+    assert.ok(calls[i + 1][1].startsWith(path.join(installed, 'dist/assets') + path.sep));
+  }
 });

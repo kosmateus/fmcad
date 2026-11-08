@@ -93,3 +93,14 @@ errors are stable, host tools are migrated, packaged declarations/assets work
 outside the repository, and G has the full route/facade inventory. Record native
 UI/Fusion assumptions separately. Append PR/SHA and remaining groups after each
 delivery; do not stop after the first CLI facade extraction.
+
+## Delivery ledger
+
+- Claim: PR #39, starting main `0b84454`; package E is in progress.
+- Route inventory and outstanding groups: [E_ROUTE_AUDIT.md](E_ROUTE_AUDIT.md).
+- First boundary: image trace/optimize/boundaries command orchestration and
+  installed local-pipeline declarations. Historical process comparisons preserve
+  exact requests, output and call counts. Full CI and final SHA pending.
+- E1–E4 are not complete; remaining CLI/MCP compatibility, configuration/client,
+  engineering/reference/review/shot/UI orchestration and complete installed
+  CLI/MCP/library/OpenCode qualification remain assigned to E.
