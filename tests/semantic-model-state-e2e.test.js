@@ -1,5 +1,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 const test = require('node:test');
 
@@ -65,14 +67,19 @@ const inputs = {
 };
 
 function python(script, input = '') {
-  const result = spawnSync('python3', ['-B', '-c', script], {
-    input,
-    encoding: 'utf8',
-    cwd: '/tmp/opencode',
-    maxBuffer: 8 * 1024 * 1024,
-  });
-  assert.equal(result.status, 0, result.stdout + result.stderr);
-  return result.stdout.trim();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-semantic-python-'));
+  try {
+    const result = spawnSync('python3', ['-B', '-c', script], {
+      input,
+      encoding: 'utf8',
+      cwd: directory,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    return result.stdout.trim();
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 test('canonical manifest inserts owned semantic handlers without changing other bundle families', () => {
@@ -227,8 +234,12 @@ test('public CLI and MCP use the common immutable artifact path once per pinned 
 
   const { main: cliMain } = require('../src/cli');
   const oldCwd = process.cwd();
-  process.chdir('/tmp/opencode');
-  t.after(() => process.chdir(oldCwd));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-semantic-cli-'));
+  process.chdir(directory);
+  t.after(() => {
+    process.chdir(oldCwd);
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
   let stdout = '', stderr = '';
   const cliCode = await cliMain([
     'frame', 'context_audit', '--doc', target.doc, '--doc-id', target.docId,
