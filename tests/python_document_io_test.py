@@ -125,6 +125,21 @@ class RuntimeInventoryTests(unittest.TestCase):
             # retained function's executable definition and decorator structure.
             def behavior_dump(node):
                 node = copy.deepcopy(node)
+                if node.name == '_references_refresh_internal' and node.args.args[-1].arg == 'payload':
+                    # D's wire admission intentionally adds these exact guards.
+                    # Paired runtime tests cover their errors and zero SDK effects;
+                    # continue comparing the entire retained operation body below.
+                    prefix = ast.parse("""
+if not isinstance(action, str) or action not in ('graph', 'preflight', 'sdkUpdate', 'nativeUpdate', 'save', 'coldVerify'):
+    raise ValueError('Unknown private references.refresh SDK action')
+if not isinstance(payload, dict):
+    raise ValueError('references.refresh data must be an object')
+data = _cad_cast("_ReferencesInput", payload)
+""").body
+                    self.assertEqual([ast.dump(statement) for statement in node.body[:3]],
+                                     [ast.dump(statement) for statement in prefix])
+                    node.body = node.body[3:]
+                    node.args.args[-1].arg = 'data'
                 node.returns = None
                 node.type_comment = None
                 arguments = node.args
