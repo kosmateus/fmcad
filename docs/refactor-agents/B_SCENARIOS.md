@@ -1,7 +1,9 @@
 # Agent B — shared Fusion backend and live scenario migration
 
-Status: **available**. Claim this package in a short PR; inspect current main
-before starting. Read [the shared plan](../REFACTOR_PARALLEL_PLAN.md).
+Status: **claimed by Agent B** on 8 November 2026, starting from `0b84454`.
+The existing shared families and historical assertions remain the baseline.
+Implementation proceeds through separate inventory, transactional/file, analytical
+modeling and profile-registration deliveries; native execution remains deferred. Read [the shared plan](../REFACTOR_PARALLEL_PLAN.md).
 
 ## Outcome and ownership
 
