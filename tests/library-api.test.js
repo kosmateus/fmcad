@@ -185,6 +185,8 @@ test('outside-repository consumer imports built JS and declarations with no sour
       import { loadConfig } from './node_modules/fmcad/dist/src/dist/composition/library-configuration.js';
       void new McpClient({clientId: 'installed-owner'}).close();
       void loadConfig;
+      import { parseReviewArgs, reviewCmd } from './node_modules/fmcad/dist/src/dist/composition/library-review-command.js';
+      void parseReviewArgs; void reviewCmd;
       import type { FmcadOptions, ExecutionReceipt, ReviewRequest, ReviewServiceOptions, PythonCheckReport } from 'fmcad/api';
       declare const options: FmcadOptions;
       declare const reviewOptions: ReviewServiceOptions;
@@ -363,4 +365,21 @@ test('MCP reconciliation accepts advertised optional outcomes without resubmissi
     assert.match(result.body.error.message,/INVALID_QUEUE_PARAMS/);
     assert.deepEqual(result.calls,[]);
   }
+});
+
+test('review CLI preserves historical parsing, script bytes and report validation', () => {
+  const historical=historicalPublicBoundary('review'),current=require('../src/review');
+  const base=['--doc','Part α','--doc-id','creation-1','--doc-file-id','file-1','--out','new review'];
+  for (const extra of [[],['--width','64','--height','96'],['--width','2.5'],['--height'],['--doc-id','duplicate'],['--recipes','{bad'],['--recipes','{}'],['--recipes','[]'],['--unknown','x']]) {
+    const observe=api=>{try{return {value:api.parseReviewArgs([...base,...extra])};}catch(error){return {error:error.message};}};
+    assert.deepEqual(observe(current),observe(historical));
+  }
+  const request={...current.parseReviewArgs(base),requestId:'review-owned',fusionOut:'C:\\review'};
+  assert.equal(current.buildReviewScript(request),historical.buildReviewScript(request));
+  for (const report of [null,{}, {schemaVersion:1,requestId:'foreign'}, {success:true,status:'captured'}]) {
+    const observe=api=>{try{return {value:api.verifyReport(report,request)};}catch(error){return {error:error.message};}};
+    assert.deepEqual(observe(current),observe(historical));
+  }
+  assert.deepEqual(current.flags,historical.flags);
+  assert.deepEqual(current.views,historical.views);
 });
