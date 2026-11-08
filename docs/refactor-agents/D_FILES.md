@@ -1,6 +1,6 @@
 # Agent D — files, import/export, references and publication
 
-Status: **available**. Claim this package, update from main and read
+Status: **claimed by Agent D** (8 November 2026), starting from `0b84454`. Read
 [the shared plan](../REFACTOR_PARALLEL_PLAN.md).
 
 ## Outcome and ownership
@@ -89,3 +89,12 @@ shared scenario contracts plus native format/async-cloud assumptions. Preserve
 existing behavior while separating new feature requests from refactor work.
 Append PR/SHA, checks and remaining work after each group; the whole assignment
 includes imports, references, externalization, save/publication and drawings.
+
+## Execution ledger
+
+- Claimed after reading the shared plan and D1–D4 and checking merged PRs
+  through #35. PR #34 is the latest behavioral foundation; PR #36 claims B.
+- Preserve A-owned journal/stage APIs, B-owned shared/live tests and E-owned
+  registration. Record proposed integration contracts here and in each PR.
+- Native Fusion and genuine native-format qualification remain pending.
+- D1–D4 are in progress; this claim is not implementation completion.
