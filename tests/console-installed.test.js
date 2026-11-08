@@ -11,12 +11,12 @@ async function run(){
  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'fmcad-console-installed-'));
  const children=[];
  const originalSpawn=cp.spawn;
- const previous=new Map(['XDG_DATA_HOME','XDG_STATE_HOME','XDG_CONFIG_HOME','HOME'].map(key=>[key,process.env[key]]));
+ const previous=new Map(['XDG_DATA_HOME','XDG_STATE_HOME','XDG_CONFIG_HOME','HOME','LC_ALL'].map(key=>[key,process.env[key]]));
  try {
   fs.writeFileSync(path.join(directory,'package.json'),'{"private":true}');
   const packed=JSON.parse(cp.execFileSync('npm',['pack','--ignore-scripts','--json','--pack-destination',directory],{cwd:source,encoding:'utf8'}));
   cp.execFileSync('npm',['install','--offline','--ignore-scripts','--omit=dev','--no-audit','--no-fund',path.join(directory,packed[0].filename)],{cwd:directory,stdio:'pipe'});
-  Object.assign(process.env,{XDG_DATA_HOME:path.join(directory,'data'),XDG_STATE_HOME:path.join(directory,'state'),XDG_CONFIG_HOME:path.join(directory,'config'),HOME:directory});
+  Object.assign(process.env,{XDG_DATA_HOME:path.join(directory,'data'),XDG_STATE_HOME:path.join(directory,'state'),XDG_CONFIG_HOME:path.join(directory,'config'),HOME:directory,LC_ALL:"en_US.UTF-8"});
   const project=path.join(directory,'registered project');fs.mkdirSync(project);
   const installed=path.join(directory,'node_modules/fmcad');
   const registry=require(path.join(installed,'dist/src/dist/node-adapters/persistence/project-history/registry.js')).openProjectRegistry();

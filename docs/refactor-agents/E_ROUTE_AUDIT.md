@@ -17,6 +17,8 @@ must not be cleared by offline entrypoint checks.
 | MCP framing/catalog/queue | `entrypoints/mcp*`, `library-mcp-*` | 110 paired wire cases, nine queue outcomes, strict metadata, process framing and installed MCP | Linux process/artifact ownership tests |
 | SDK and declarations | `src/api`, `composition/library*` | Strict external consumer compilation, read-only installed package, no host SDK/startup effects, disposal | Final integrated full CI |
 | OpenCode V1/V2 | `packages/opencode-adapter/src/v1` and `/v2` | Installed object/factory loaders, context, permission denial, unknown outcomes and owned cleanup | G cache/gate integration and Linux presence identity |
+| Help locale / preferences | `library-i18n` | All translations, plural/number/duration formatting, malformed config and exclusive-write history | Final full CI |
+| OpenCode reporter / retained hooks | `library-opencode-presence` | Historical identities/events, host mapping, local abort and independent disposal failures | Real process-birth presence remains a Linux gate |
 | Config / compatibility client | `library-configuration`, `library-client` | Historical validation/config writes and all direct-dispatch denials | Merged #46; retained gates stay enabled |
 | Image tools | Typed Python image command and `library-image-*-registration` | Historical argv/preflight/output, real synthetic images and installed assets | Native/image quality qualification is separate |
 | Reference images | Typed local reference pipeline and registration | Real Python worker; original bytes and unknown evidence preserved; installed poison-config test | Full CI with explicit Python interpreter |

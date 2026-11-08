@@ -423,3 +423,19 @@ Integrated validation: full build, lint, formatting and test typecheck pass.
 All 36 focused console/library/installed-consumer tests pass with zero skips,
 including actual Python reference processing and strict external declarations.
 Full GitHub CI, G's shared-gate acceptance and predecessor merges remain open.
+
+### Final locale and OpenCode reporter inventory
+
+The residual source audit identified i18n.js and opencode/presence.cjs as real
+public implementations, despite their typed consumers. Both now load strict
+library-i18n/library-opencode-presence composition. Translation tables, locale
+precedence, plural/number/duration formatting, config preference preservation,
+exclusive locks and atomic writes match frozen historical behavior. Reporter
+events preserve identity hashes and request/document/turn metadata, best-effort
+failures and independent resource cleanup; retained V1/V2 hooks preserve mapping
+and local subscription abort. Production process-birth checks are unchanged.
+
+Nine retained terminal/historical reporter tests pass. The public gate retains
+these comparisons; installed strict declarations cover both new modules. F has
+been notified that direct-telemetry.js and opencode/project-logger.cjs remain
+shared passive producer boundaries outside this public reporter migration.

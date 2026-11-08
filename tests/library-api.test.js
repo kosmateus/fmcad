@@ -209,6 +209,9 @@ import { execute as executeUi, armWatcher } from './node_modules/fmcad/dist/src/
 void executeUi; void armWatcher;
 import { consoleCommand, type OpenControlCenter } from './node_modules/fmcad/dist/src/dist/composition/library-console.js';
 import { resolveProject } from './node_modules/fmcad/dist/src/dist/composition/library-console-project.js';
+import { t, preferences, savePreferences } from './node_modules/fmcad/dist/src/dist/composition/library-i18n.js';
+import { createReporter, setupV1, setupV2 } from './node_modules/fmcad/dist/src/dist/composition/library-opencode-presence.js';
+void t; void preferences; void savePreferences; void createReporter; void setupV1; void setupV2;
 declare const openControlCenter: OpenControlCenter;
 void consoleCommand(['--web'], {stdout:{write(text:string){void text;}},openControlCenter});
 void resolveProject;
@@ -910,5 +913,41 @@ test('typed console preserves terminal parsing, project discovery and launch con
     async function observe(api,isTTY){const calls=[];const deps={cwd:directory,stdin:{isTTY},stdout:{isTTY,write(){}},signals:{fixture:true},loadConfig:()=>assert.fail('terminal composition does not load config'),launchConsole:async options=>{calls.push({...options,stdin:isTTY,stdout:isTTY,loadConfig:typeof options.loadConfig});return 0;}};try{return {code:await api.consoleCommand(['--config','settings.json'],deps),calls};}catch(error){return {error:error.message,calls};}}
     assert.deepEqual(await observe(current,true),await observe(historical,true));
     assert.deepEqual(await observe(current,false),await observe(historical,false));
+  }finally{fs.rmSync(directory,{recursive:true,force:true});}
+});
+
+test('typed locale boundary preserves all translations, formatting, preference validation and atomic writes', () => {
+  const before=historicalPublicBoundary('i18n'),after=require('../src/i18n');
+  assert.deepEqual(after.en,before.en);assert.deepEqual(after.pl,before.pl);
+  for(const language of ['en','pl'])for(const key of Object.keys(before.en))for(const count of [0,1,2,5,1.5]){
+    const params={count,reason:'reason',path:'/with space/α'};
+    assert.equal(after.t(key,params,language),before.t(key,params,language));
+  }
+  for(const env of [{LANG:'pl_PL.UTF-8'},{LC_ALL:'C',LANG:'pl_PL'},{LC_MESSAGES:'pl@variant',LANG:'en_US'},{LANG:'de_DE'}]){
+    assert.equal(after.detected(env),before.detected(env));
+    for(const language of ['auto','en','pl'])assert.equal(after.locale({language},env),before.locale({language},env));
+  }
+  for(const language of ['en','pl'])for(const value of [0,999,1000,60000,3600000,-1,1.5,Infinity]){
+    assert.equal(after.number(value,language),before.number(value,language));
+    assert.equal(after.duration(value,language),before.duration(value,language));
+  }
+  const directory=fs.mkdtempSync(path.join(tmpdir(),'fmcad-locale-parity-')),file=path.join(directory,'config.json');
+  const observe=fn=>{try{return {value:fn()};}catch(error){return {message:error.message,code:error.code};}};
+  try{
+    for(const content of [null,'{broken','null','{}','{"console":{"language":"other","color":"off","frames":"ascii"}}']){
+      if(content===null)fs.rmSync(file,{force:true});else fs.writeFileSync(file,content);
+      assert.deepEqual(after.preferences(file),before.preferences(file));
+    }
+    for(const patch of [{language:'pl',color:'off',frames:'ascii'},{language:'invalid'},{color:null},{frames:42},{extension:{retained:true}}]){
+      const results=[];
+      for(const api of [before,after]){
+        fs.writeFileSync(file,'{"unrelated":true,"console":{"language":"en"}}');
+        results.push({result:observe(()=>api.savePreferences(patch,file)),bytes:fs.readFileSync(file,'utf8'),files:fs.readdirSync(directory)});
+      }
+      assert.deepEqual(results[1],results[0]);
+    }
+    fs.writeFileSync(file+'.console-lock','owned');
+    assert.deepEqual(observe(()=>after.savePreferences({language:'pl'},file)),observe(()=>before.savePreferences({language:'pl'},file)));
+    assert.equal(fs.readFileSync(file+'.console-lock','utf8'),'owned');
   }finally{fs.rmSync(directory,{recursive:true,force:true});}
 });

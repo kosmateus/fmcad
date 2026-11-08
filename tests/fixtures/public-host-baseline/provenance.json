@@ -94,5 +94,13 @@
   "src/console-project.js": {
     "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
     "sha256": "db5b27d93d2ab8308d5e51486fb21d9cabbc32999c1ebce1cc9a98bc46b2eb90"
+  },
+  "src/i18n.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "88e159c2a64fe65589b2696fa79cdcdd467ca0e7af0709334bbcd0020fd81e44"
+  },
+  "src/opencode/presence.cjs": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "3ce3b706253f373dc9916363bd191e37937ba2da90e493568baa6816811e9b54"
   }
 }
