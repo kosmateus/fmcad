@@ -17,7 +17,7 @@ test('passive read port exposes missing, stale, available and error without conv
 });
 
 test('fresh control status is re-read immediately, even when last displayed state differs', async () => {
-  const { BrokerControl } = require('../src/console-controller');
+  const { BrokerObservation: BrokerControl } = require('../packages/node-adapters/dist/control-center/broker-observation');
   let generation = 0, mutations = 0;
   const control = new BrokerControl(() => ({ register: async () => {}, call: async (method, payload) => {
     if (method === 'control-status') return { instanceId: 'broker', generation: generation++ };
@@ -32,7 +32,7 @@ test('fresh control status is re-read immediately, even when last displayed stat
 });
 
 test('failed authoritative refresh refuses control without a mutation or replay', async () => {
-  const { BrokerControl } = require('../src/console-controller');
+  const { BrokerObservation: BrokerControl } = require('../packages/node-adapters/dist/control-center/broker-observation');
   let reads = 0, mutations = 0;
   const control = new BrokerControl(() => ({ register: async () => {}, call: async method => {
     if (method !== 'control-status') { mutations++; return {}; }

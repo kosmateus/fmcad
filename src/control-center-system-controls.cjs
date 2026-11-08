@@ -3,7 +3,9 @@
 const os = require("node:os");
 const { createHash } = require("node:crypto");
 const { QueueClient } = require("./queue-client");
-const { BrokerControl } = require("./console-controller");
+const {
+  BrokerObservation,
+} = require("./dist/node-adapters/control-center/broker-observation");
 const { createServices } = require("./console-services");
 const { buildHash } = require("./queue-instance");
 const {
@@ -41,7 +43,7 @@ function createControlCenterSystemControlsRuntime(cfg, registeredProjectIds) {
           if (!startService || startServiceClient !== client) {
             startService = createServices({
               cfg,
-              control: new BrokerControl(() => client),
+              control: new BrokerObservation(() => client),
             });
             startServiceClient = client;
           }

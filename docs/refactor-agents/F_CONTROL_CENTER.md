@@ -145,3 +145,11 @@ this host's missing `/proc` guard; it remains required in CI. Strict compilation
 focused lint and the complete code build pass. This is not evidence that default
 MCP or authoritative phase timing is connected yet. The extra tsconfig source
 and CI test entries are concrete shared-configuration proposals for G.
+
+Terminal retirement now has a [behavior/test deletion ledger](F_TUI_RETIREMENT.md).
+The System composition no longer loads the legacy terminal controller: shared
+fresh observation/fencing is extracted into a typed node adapter, with the
+terminal facade retained for compatibility. All three existing passive/fresh-read/
+failed-refresh tests pass against the extracted adapter. No terminal UI or
+meaningful assertion is deleted before the listed launcher, browser and broker
+administration acceptance gates.
