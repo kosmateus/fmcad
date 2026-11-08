@@ -140,3 +140,17 @@ Detailed task records and relationships remain outside the public repository;
 automatic approval review rejected their publication from the private archive.
 The acceptance ledger publishes aggregate verification and already-public scope
 only. Native and separate-feature obligations remain explicit; no task was closed.
+
+### First A–F merge checkpoint
+
+Merged main `ecf4f60` contains Agent B's claim (PR #36) and its first bounded
+persistence delivery (PR #44). All 22 CI jobs passed the implementation head
+`fe1c66f` in workflow `42524121814`; the only intervening main change is the
+claim. G's combined candidate still requires its own full CI and merge-head CI.
+
+The integrated inventory recognizes the new persistence test through the
+existing scenario-unit glob: 487 test sources, 224 registered, 263 explicit gaps.
+The combined local checks pass 124 scenario tests, simulator strict typing and
+58 method / 21 property API shapes. Native commands remain unexecuted. Shared
+saved-reopen migration, receipt/restart recovery, assertion profiles and native
+archive/token behavior remain B dependencies, so neither B nor G is complete.

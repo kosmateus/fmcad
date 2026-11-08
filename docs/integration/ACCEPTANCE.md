@@ -52,7 +52,7 @@ before any integration; record exact merged SHA and full matrix results here.
 | Package | Observed delivery              | Required evidence / remaining disposition                                                                             |
 | ------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
 | A       | PR #42 `270096c`               | Broker gates first; A2–A4 admission/recovery/concurrency still required.                                              |
-| B       | PR #36 claim; PR #44 `fe1c66f` | Persistence increment; complete assertion mapping, shared profiles and lifecycle/cleanup proof remain B dependencies. |
+| B       | PR #36 / #44 merged as `ecf4f60` | Claim plus tested persistence increment; shared reopen, assertion mapping, profiles and lifecycle/recovery proof remain B dependencies. |
 | C       | PR #37 `a4943f3`               | Claim only at observation; canonical modeling services, Python boundaries and negative/readback evidence required.    |
 | D       | PR #38 `ee0fd54`               | Claim only at observation; file/source/version/publication and recovery contracts required.                           |
 | E       | PR #39 `a66ea3c`               | Public/host work in progress; installed routes, declarations and consumer parity required.                            |
@@ -63,6 +63,14 @@ Base-main CI run `42523257166` subsequently completed with all 22 jobs successfu
 on `0b84454d8e5d22abb23bcf52999c506894ebf5bf`. G's own exact-head workflows still
 need their independent complete results. Merge neither this delivery nor another
 owner's work on stale or partial checks.
+
+The first A–F integration checkpoint is Agent B's merged `ecf4f60d1e597a5dfe2e7736509eb0c97025a2ba`.
+PR #36 contributes only the package claim. PR #44 contributes saved-design
+persistence at `fe1c66f74d61b0899f1aef64c501e7152b8166ad`; all 22 CI jobs passed
+that exact head in workflow `42524121814`. The merge commit's only intervening
+parent is the claim, so this ledger accepts the PR-head result for this bounded
+delivery while still requiring push CI on the integrated G candidate and its
+eventual merge head.
 
 ## Archive and Beads reconciliation
 
@@ -187,3 +195,30 @@ Package inspection at `f1bed91f1e2c51ec33123f7b7d1fdfc758fbd64c`:
 node_modules, archive ZIPs or investigation artifacts occur in the package list.
 This checks the allowlist only; it does not replace installed behavior tests or
 establish a before/after performance comparison.
+
+## First merged A–F checkpoint — saved-design persistence
+
+G rebased the initial inventory delivery onto merged main `ecf4f60`. The pinned
+build and strict test typecheck pass. The shared scenario selection now contains
+124 passing tests, including two model-only persistence cases. Simulator strict
+types report zero diagnostics; the pinned API verifier now covers 58 methods and
+21 property accessors. Static registration moves from 486/223 to 487/224 test
+sources/registered sources, while the explicit debt remains 263: the new
+`tests/scenarios/persistence.test.ts` is reached by the existing scenario-unit
+glob and needs no new CI registration.
+
+This bounded delivery deep-copies the supported in-memory design graph and
+restores geometry, attributes, parameters and timeline state under a new modeled
+document identity. It rejects foreign, incomplete, deleting, deleted and
+superseded files before document creation. It does not qualify disk durability,
+native F3D/STEP, historical-version opening or Fusion token continuity. It also
+does not add a shared saved-reopen case: receipt-bound creation identity,
+lost-reply/restart recovery and cleanup ownership remain required before that
+scenario can run through both production transport profiles.
+
+The native-plan generator still validates 48 command arrays and keeps every
+result `NOTRUN`; native execution did not occur. The package allowlist remains
+1,567 files and unchanged in size because tests and simulator sources are not
+published. No facade or loader is retired at this checkpoint. B's assertion and
+required-profile work remains an unmerged dependency and must be evaluated from
+its final merge SHA rather than an open branch.

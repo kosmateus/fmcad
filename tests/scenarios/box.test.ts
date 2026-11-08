@@ -73,31 +73,3 @@ print(json.dumps(dict(output=output.getvalue(), sketches=design.rootComponent.sk
   assert.equal(results[0]?.["volume"], 1);
   assert.deepEqual(results[0]?.["max"], [1, 1, 1]);
 });
-
-test("the model refuses unsupported geometry persistence before creating a file", async (t) => {
-  const { model } = await fixture(t);
-  const source = read("assets/scripts/box.py").replace(
-    /def run\(_context: str\) -> None:/,
-    "def _box_run(_context: str) -> None:",
-  );
-  const result = await model.execute(
-    source +
-      "\n" +
-      program(`import adsk.core, contextlib, io
-app = adsk.core.Application.get()
-doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
-with contextlib.redirect_stdout(io.StringIO()):
-    _box_run('')
-folder = app.data.dataProjects.item(0).rootFolder
-try:
-    doc.saveAs('Unsupported', folder, '', '')
-except NotImplementedError:
-    pass
-else:
-    raise AssertionError('Geometry must not silently disappear on save')
-assert folder.dataFiles.count == 0
-assert not doc.isSaved
-assert doc.products.product.rootComponent.bRepBodies.count == 1`),
-  );
-  assert.equal(result.success, true, result.error);
-});
