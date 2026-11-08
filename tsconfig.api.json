@@ -38,7 +38,9 @@
     "src/composition/execution-worker.ts",
     "src/composition/batch-atomic.ts",
     "src/composition/batch.ts",
-    "src/composition/document-stages.ts"
+    "src/composition/document-stages.ts",
+    "src/composition/cad-service.ts",
+    "src/composition/catalog-execution.ts"
   ],
   "references": [
     {

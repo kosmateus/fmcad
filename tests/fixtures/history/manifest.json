@@ -136,5 +136,23 @@
     "sourcePath": "packages/core/src/application/cad/worker-command.ts",
     "file": "worker-command-0e9.ts.txt",
     "sha256": "6619c07d166f31149c58f1e759b2c19894d31992a338df325a6e2814024ab664"
+  },
+  {
+    "revision": "2a51000dabc73e16bf7eec560b563dc8638db2fe",
+    "sourcePath": "src/cad-service.js",
+    "file": "cad-service-2a51.js.txt",
+    "sha256": "08744bc72713b6ace3fff627e5d39f50eeda50da0563f2688b5ae2cff4d7170c"
+  },
+  {
+    "revision": "2a51000dabc73e16bf7eec560b563dc8638db2fe",
+    "sourcePath": "src/catalog/execute.js",
+    "file": "catalog-execution-2a51.js.txt",
+    "sha256": "81809651420f2cc6d1330b44ea489d5ff9e67d459bfb8a732db3c9ef93081cbb"
+  },
+  {
+    "revision": "2a51000dabc73e16bf7eec560b563dc8638db2fe",
+    "sourcePath": "src/invocation.js",
+    "file": "invocation-2a51.js.txt",
+    "sha256": "48a757c5054505b4d844df053149d13aa94849bb48e5db10ee689cec850d1755"
   }
 ]

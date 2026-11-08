@@ -360,3 +360,9 @@ Original reports stay byte-identical; no mutation is retried.
 submission evidence. Paired pre-refactor/typed-worker cases and the actual add-in
 wrapper on the model distinguish a proven rejection from unknown submission.
 The original UI suite is included in CI with explicit offline host fixtures.
+
+[Stage 4p](REFACTOR_STAGE_4P.md) migrates command composition, catalog execution
+and invocation-local storage to TypeScript. Historical comparisons preserve
+complete SDK bytes, provenance, stage order and results; installed declarations
+resolve outside the workspace. Other service families and facade retirement
+remain open.
