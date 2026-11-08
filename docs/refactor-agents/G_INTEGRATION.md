@@ -114,3 +114,19 @@ repeat required qualification on the fixed integrated build.
 - Native runbook with machine-readable required cases and cleanup recovery.
 - Separate final statuses: offline refactor complete; native qualification
   pending or passed with actual evidence. Append PR/SHA and blockers throughout.
+
+## Initial integration delivery (PR #40)
+
+The [acceptance ledger](../integration/ACCEPTANCE.md) records the starting SHA,
+A–F dependencies, archive fingerprint and unverified Beads statuses. A separate
+registration workflow detects newly orphaned test sources without executing live
+helpers. The initial 263-file registration debt has explicit owners/next actions;
+this is not a coverage waiver or completion claim. Inventory commands expose
+runtime files and actual public registry metadata. The native plan generator
+validates current shared-family commands and keeps all native results NOTRUN.
+
+Local validation: pinned build, strict test typecheck, registration checker units,
+registration inventory and native CLI argument generation. Installed consumer
+checks and full exact-head CI are tracked in the acceptance ledger as they settle.
+No production implementation or another agent's owned file was changed. G1–G4
+remain in progress; final removal and acceptance depend on A–F evidence.

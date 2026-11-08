@@ -1,0 +1,1585 @@
+{
+  "schemaVersion": 1,
+  "baselineSha": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+  "meaning": "Explicit open registration debt, never a passing coverage waiver. New orphan files fail CI. Closing an existing gap is allowed without baseline churn.",
+  "gaps": {
+    "tests/addin-bridge.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/animation-sequence.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/appearance.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/assembly-nested-preflight.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/atomic-audit-upgrade.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/atomic-migration.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/atomic-observation-binding.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/atomic-runtime-abi.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/atomic-workflow-recovery.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/audit-facts-capture.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/audit-response-proof.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/backend-cli.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/backend-config.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/backend-response.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/brep-baseline-service.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/brep-baseline.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/broker-composition.test.ts": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/broker-manual-contracts.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/broker-only.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/build-hash-cache.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/build-preflight-rejection.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/cad-worker-service.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/cad.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/cam.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/checking.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/cli-adapter.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/client-presence.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/closed-epoch-broker.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/closed-epoch-proof.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/closed-epoch-successor.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/command-catalog.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/config-portable.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-bootstrap.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-bounded-read.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-components.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-data.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-details.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-document.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-filters.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-interface.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-metrics-port.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-offline.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-read-model.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-read-port.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-response.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-snapshot-readers.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-source.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-task-events.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/console-visual-models.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/containment.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/contract-model.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/contracts/refactor-final-benchmark.test.ts": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/curl-transport.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/cwg-governance.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/datum.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/dead-epoch-successor-bootstrap.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/dead-epoch-successor-control.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/dead-epoch-successor.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/definitions-scoped.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/diagnostics.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/distributed-native-evidence.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/document-application.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/document-clear.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/document-commands.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/document-identity.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/document-persistence-faults.test.js": {
+      "owner": "D",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and D: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/drawing.test.js": {
+      "owner": "D",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and D: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/drive-fixed-program.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/drive-precision-fixture.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/engineering-fit.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/engineering-fluid.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/engineering-hydraulic.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/engineering-mass.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/engineering-thermal.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/entity-query.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/epoch-dead-process.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/epoch-prerequisite.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/epoch-runtime-startup.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/epoch-runtime-upgrade.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/execution-store-integration.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/execution-store.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/explode.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/fastener.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/feature-rework.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/fixed-import-checker.test.ts": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/fixed-native-program-source.test.ts": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/fpc-pcb.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/fusion-transport.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/generic-controls.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/gm06-sketch.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/gm12-fixed-result.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/help-details.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/helpers.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/host-workers.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/idle-build-refresh.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/image-boundaries.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/image-optimize.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/image-trace.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/inspection.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/install-queue-phases.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/installed-launcher-runtime.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/instance-loss-recovery.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/integration/atomic-cwg-regression.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/atomic-isolation.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/atomic-transaction.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm01-definition.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm02-data-import.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm03-entity.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm04-datum.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm05-reference.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm06-sketch.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm07-profile-curve.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm08-surface.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm09-feature.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm10-shapes.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm11-gear.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm12-spring.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm13-thread.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm14-cam.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm15-seal.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm16-fasteners.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm17-mechanism.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm18-pose.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm19-interference.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm20-containment.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm21-fit-stack.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm22-mass.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm23-fluid.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm24-hydraulic.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm25-routing.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm26-fpc-pcb.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm27-assembly.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm28-optics.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm29-appearance.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm30-presentation.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm31-dfm.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm32-sheetmetal.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm33-thermal.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm34-marking.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm35-drawing.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm36-explode-animation.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/gm37-checking-evidence.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/integration/recipes.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/interference.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/isolated-document-guard.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/isolated-epoch.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/json-diagnostics.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/library-api-broker.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/library-api-review.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/live-broker.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and B: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/live-import-receipt.test.ts": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and B: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/live-sketch-operations.test.ts": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and B: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/local-build-recovery.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/local-pipeline-installed.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/local-pipelines.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/manual-core.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/manual-coverage.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/manual-io.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/manual-measure.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/manual-model.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/manual-shapes.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/manual-usability.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/manufacturing.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/marking.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/mcp-application.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/mcp-catalog.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/mcp-client-context.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/mcp-installed-package.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/mcp-stdio-queue-lifecycle.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/mcp-stdio.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/measure.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/measured-fasteners-bundle.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/mechanism.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/model.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/native-drive-bundle.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/native-drive-integration.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/native-fixture-grant.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/native/integrated-qualification-first-smoke.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/native/integrated-qualification.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/native/iw7.4_parameter_test.py": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/native/regional-typed.test.js": {
+      "owner": "B",
+      "status": "unregistered",
+      "reason": "Suite is outside automatic discovery and may contain native or mixed offline/native cases; no blanket execution is authorized by this inventory.",
+      "nextAction": "B/G: inspect each case and lifecycle; extract supported offline coverage or map its assertions to owned native qualification before registration."
+    },
+    "tests/observation-ports.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/offline-timeout.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/opencode-adapters.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/opencode-presence.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/opencode-web-ensure.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/optics.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/outcome.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/param-add.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/pose.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/presentation.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/preview-dispatch.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/project-logger-rotation.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/project-responses.test.js": {
+      "owner": "F",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and F: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/publish.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-admission-broker.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-admission-observer.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-admission-packaging.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-admission-ports.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-admission-transport.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-admission.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-assembly-bundle.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-catalog-checker-recovery.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-checker-completeness.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-checker-packaging.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-checker.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-compatibility-preparation.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-context-binding.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-document-io.test.js": {
+      "owner": "D",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and D: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python-geometry.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/python.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/queue-atomic-control.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/queue-atomic-recovery-audit.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/queue-cloud-save.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/queue-config-identity.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/queue-document.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/queue-domain.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/queue-local-fence-outcome.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/queue-native-receipt.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/queue-probe-recovery.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/queue-scheduling.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/queue-snapshot-size.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/queue-summary.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/queue-version-transition.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/read-audit-response-cli.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/recovery-isolation.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/reference.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/regional-geometry.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/registry.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/review-application.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/review-pixels.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/review.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/route3d.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/runner-stream.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/runtime-paths.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/saved-audit-key.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/saved-audit-path.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/saved-destination-approval.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/saved-document-guard.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/saved-first-save-evidence.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/saved-first-save-scope.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/saved-fixture-control.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/saved-fixture-reader.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/scratch-qualification.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/sdk-probe-port.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/seal.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/section-witness-bundle.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/semantic-model-state-e2e.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/semantic-model-state.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/sequence.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/server-metadata.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/settled-epoch-evidence.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/settled-epoch-startup.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/shape-library.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/sheetmetal.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/shot.test.js": {
+      "owner": "E",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/sketch-geometry-proof-bundle.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/spring.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/style-motion-inputs.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/successor-process-guard.test.js": {
+      "owner": "A",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/surface.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/thread.test.js": {
+      "owner": "C",
+      "status": "unregistered",
+      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
+      "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
+    },
+    "tests/upstream-queue-regressions.test.js": {
+      "owner": "G",
+      "status": "unregistered",
+      "reason": "Legacy dynamic installed-suite wrapper is not reached by CI and references execution-budget.test.js after its TS migration.",
+      "nextAction": "G/A: migrate or explicitly retire this wrapper after retaining every original test through canonical compiled paths."
+    }
+  }
+}
