@@ -1,7 +1,8 @@
 # Agent A — broker correctness, admission and recovery
 
-Status: **reserved for the current coordinating agent**. Implementation is not
-claimed complete by this plan. Start at current `main`, audited at `3c7dc83`.
+Status: **in progress — current coordinating agent**. A1 restores the missing
+broker gates; A2–A4 remain assigned here. Start at current `main` and preserve
+other agents' deliveries. The original audit reference is `3c7dc83`.
 Read [the shared plan](../REFACTOR_PARALLEL_PLAN.md) for source links and rules.
 
 ## Outcome and ownership
@@ -116,3 +117,24 @@ change for G. Facade retirement waits for public consumers and final integration
 - B/G receive native assumptions and outstanding performance/timeout evidence.
 - Append PR/SHA/checks/remaining work here after each delivery; continue through
   A1–A4 rather than treating the first six-file repair as the whole assignment.
+
+## A1 delivery record
+
+The named `test:broker-regressions` command executes all six retained files,
+its registration check and compiled historical queue comparisons. Two dedicated
+Linux CI jobs cover Node 22.13 and 24. The retained queue implementation is frozen
+verbatim from `a26222f`, with a manifest hash, so shallow checkouts can compare
+the same owner/release, dependent sequence and administrative-pause scenarios.
+
+Fixture changes retain the original behavioral assertions. Linux receipt tests
+use the supported path adapter rather than editing the generated wrapper after
+preparation. The document fixture understands the typed selector expression and
+physical RPC envelope, records bound receipts and verifies three successful
+operations before refusing changed A without a fourth operation. Its observer
+allows the separate local preparation budget; production deadlines are unchanged.
+Recovery fixtures register cleanup before assertions.
+
+Local compiled historical/registration checks pass. The full broker selection
+requires real Linux `/proc` identity; no process or artifact guard is replaced
+to make this host pass. Full CI and final integration evidence will be recorded
+before this delivery is marked complete.

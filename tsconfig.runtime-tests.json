@@ -69,7 +69,8 @@
     "tests/run-guard-receipts.test.ts",
     "tests/command-services-migration.test.ts",
     "tests/execution-request-migration.test.ts",
-    "tests/stage-dependencies-migration.test.ts"
+    "tests/stage-dependencies-migration.test.ts",
+    "tests/queue-scheduling-history.test.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]
 }
