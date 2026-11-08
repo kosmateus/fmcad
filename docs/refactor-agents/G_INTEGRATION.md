@@ -118,7 +118,7 @@ repeat required qualification on the fixed integrated build.
 ## Initial integration delivery (PR #40)
 
 The [acceptance ledger](../integration/ACCEPTANCE.md) records the starting SHA,
-A–F dependencies, archive fingerprint and unverified Beads statuses. A separate
+A–F dependencies, archive fingerprint and independently exported Beads statuses. A separate
 registration workflow detects newly orphaned test sources without executing live
 helpers. The initial 263-file registration debt has explicit owners/next actions;
 this is not a coverage waiver or completion claim. Inventory commands expose
@@ -130,3 +130,13 @@ registration inventory and native CLI argument generation. Installed consumer
 checks and full exact-head CI are tracked in the acceptance ledger as they settle.
 No production implementation or another agent's owned file was changed. G1–G4
 remain in progress; final removal and acceptance depend on A–F evidence.
+
+### Verified archive reconciliation
+
+A disposable embedded-Dolt copy was read with the checksum-verified Dolt 2.7.2
+binary. Counts match the historical ledger: 150 tasks, 104 closed and 46 remaining
+(22 open, 11 in progress, 9 deferred, 4 blocked), plus 307 dependency edges.
+Detailed task records and relationships remain outside the public repository;
+automatic approval review rejected their publication from the private archive.
+The acceptance ledger publishes aggregate verification and already-public scope
+only. Native and separate-feature obligations remain explicit; no task was closed.

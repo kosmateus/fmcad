@@ -74,25 +74,37 @@ are historical references, not 168 active deliverables. No archive, Git store,
 worktree or Beads database is included in the source changes.
 
 `.beads/metadata.json` identifies an embedded Dolt database named `fmcad`;
-`.beads/.local_version` is `1.3.1`. No JSON/JSONL issue export was present in the
-archive. Neither `bd` nor `dolt` is installed in this execution environment.
-The prior **150 total / 104 closed / 46 remaining** split is therefore **not
-independently re-exported or verified**. No task is closed on that basis.
-Re-export from a disposable copy using compatible tooling, retain task text and
-dependencies, and compare against exact merge/acceptance evidence before closure.
+`.beads/.local_version` is `1.3.1`. No JSON/JSONL issue export was present.
+The initial environment lacked a reader. G subsequently downloaded the official
+Dolt 2.7.2 Linux binary, verified its release SHA-256
+`72825a65d96bf0a0967ec408ad43bc21afc9b1c899b84cb84344a35f567fb11f`,
+and queried a disposable copy of the embedded database using a writable TMPDIR.
+No issue or archived database was mutated.
+
+The independent query confirms **150 tasks: 104 closed, 22 open, 11 in progress,
+9 deferred and 4 blocked**, with **307 dependency edges**. The earlier 104/46
+split is now verified. Detailed task text and relationships remain outside the
+public repository; the table below retains only the scope already published in
+the completion plan. Historical closed state is not current acceptance evidence.
+No new task closure is inferred or written.
+
+Automatic approval review rejected publication of the detailed archive-derived
+ledger to this public repository. This delivery publishes aggregate verification
+only. A public per-task dependency ledger remains withheld; do not reconstruct
+it from this summary or claim that its publication succeeded.
 
 All identifiers below have the `fmcad-` prefix. This preserves the earlier scope
 without pretending that historical statuses or later fixes complete an epic.
 
-| Archived scope                                                                                                                                                                                                                                                                                                      | Owner      | Evidence and disposition                                                                                                                                    |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `69j`, `69j.2`                                                                                                                                                                                                                                                                                                      | A/E/G      | Completion plan links `8b2c237` for doc-id handling. Verify installed route and original task conditions; no duplicate implementation or closure yet.       |
-| `cb4`, `cb4.2`, `cb4.4`–`cb4.8`                                                                                                                                                                                                                                                                                     | B/G        | Existing shared scenario families are partial. Await assertion-level inventory and required-profile results.                                                |
-| `e4m`, `e4m.2`, `hex-integration`                                                                                                                                                                                                                                                                                   | G with A–F | Reconcile current runtime boundaries and public consumers; archive status unverified.                                                                       |
-| `control-center`, `control-center.1`, `locale-catalogs`, `locale-selection`, `web-system-controls`, `web-agents-projects`, `web-bundle`, `web-operational-views`, `web-telemetry`, `browser-console`, `log-retention`                                                                                               | F/G        | Existing browser/locales/history are foundations. F must supply parity, retention/disposal, real browser and retirement evidence.                           |
-| `isc`, `dru`, `dru.2`, `dru.2.5`, `dru.2.6`, `native-drive-test`, `live-acceptance`, `hex-integration.2`                                                                                                                                                                                                            | A/B/G      | Preserve current recovery/native prerequisites; native acceptance deferred until offline completion and actual Fusion access.                               |
-| `brep-baselines`, `capture-integrity`, `selection-rules`, `semantic-model-state`, `attachment-check`, `channel-check`, `geometry-evidence`, `regional-contacts`, `adaptive-clearance`, `invariants-parameters`, `native-interfaces`, `native-route-check`, `qualified-recipes`, `rework-plan`, `verify-saved-model` | C/D/E/G    | Separate feature backlog. Protect existing behavior; do not claim new feature completion through the refactor. Resolve exact owner from exported task text. |
-| Keychain                                                                                                                                                                                                                                                                                                            | excluded   | Deliberately removed before the historical baseline; do not restore.                                                                                        |
+| Archived scope                                                                                                                                                                                                                                                                                                      | Owner      | Evidence and disposition                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `69j`, `69j.2`                                                                                                                                                                                                                                                                                                      | A/E/G      | Completion plan links `8b2c237` for doc-id handling. Verify installed route and original task conditions; no duplicate implementation or closure yet.                                                  |
+| `cb4`, `cb4.2`, `cb4.4`–`cb4.8`                                                                                                                                                                                                                                                                                     | B/G        | Existing shared scenario families are partial. Await assertion-level inventory and required-profile results.                                                                                           |
+| `e4m`, `e4m.2`, `hex-integration`                                                                                                                                                                                                                                                                                   | G with A–F | Reconcile current runtime boundaries and public consumers; archived states verified; current completion remains open.                                                                                  |
+| `control-center`, `control-center.1`, `locale-catalogs`, `locale-selection`, `web-system-controls`, `web-agents-projects`, `web-bundle`, `web-operational-views`, `web-telemetry`, `browser-console`, `log-retention`                                                                                               | F/G        | Existing browser/locales/history are foundations. F must supply parity, retention/disposal, real browser and retirement evidence.                                                                      |
+| `isc`, `dru`, `dru.2`, `dru.2.5`, `dru.2.6`, `native-drive-test`, `live-acceptance`, `hex-integration.2`                                                                                                                                                                                                            | A/B/G      | Preserve current recovery/native prerequisites; native acceptance deferred until offline completion and actual Fusion access.                                                                          |
+| `brep-baselines`, `capture-integrity`, `selection-rules`, `semantic-model-state`, `attachment-check`, `channel-check`, `geometry-evidence`, `regional-contacts`, `adaptive-clearance`, `invariants-parameters`, `native-interfaces`, `native-route-check`, `qualified-recipes`, `rework-plan`, `verify-saved-model` | C/D/E/G    | Separate feature backlog. Protect existing behavior; do not claim new feature completion through the refactor. Retain the existing separate-feature scope; detailed archive records are not published. |
+| Keychain                                                                                                                                                                                                                                                                                                            | excluded   | Deliberately removed before the historical baseline; do not restore.                                                                                                                                   |
 
 ## Qualification preparation
 
@@ -132,7 +144,8 @@ refactor manifest and its safety holds must not be removed by this inventory.
 ## Remaining integration work
 
 - G1: resolve semantic family ownership, per-method effects/negative coverage,
-  actual job results, assertion mapping from B and independent Beads export.
+  actual job results and assertion mapping from B. Beads export is verified;
+  semantic reconciliation and current closure evidence remain open.
 - G2: register reviewed offline selections, migrate handwritten tests in bounded
   groups, and integrate delivered A–F contracts on current main with full CI.
 - G3: complete installed CLI/MCP/SDK/OpenCode/declarations/assets checks, clean and
@@ -167,3 +180,10 @@ refactor manifest and its safety holds must not be removed by this inventory.
 
 The dependency table is a timestamped observation, not a moving branch status.
 Later A–F proposals must be fetched and verified before their status changes here.
+
+Package inspection at `f1bed91f1e2c51ec33123f7b7d1fdfc758fbd64c`:
+`npm pack --dry-run --ignore-scripts --json` reports 1,567 files,
+3,374,032 compressed bytes and 16,624,667 unpacked bytes. No tests, Beads, Git,
+node_modules, archive ZIPs or investigation artifacts occur in the package list.
+This checks the allowlist only; it does not replace installed behavior tests or
+establish a before/after performance comparison.
