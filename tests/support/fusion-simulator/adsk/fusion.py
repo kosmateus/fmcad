@@ -12,6 +12,7 @@ from typing import ClassVar
 from . import core
 from ._expressions import UNITS, Quantity, evaluate
 from ._model_geometry import (BRepBodies as BRepBodies, BRepBody as BRepBody,
+    CalculationAccuracy as CalculationAccuracy,
     PhysicalProperties as PhysicalProperties, Sketch as Sketch, Sketches as Sketches,
     SketchCurves as SketchCurves, SketchCurve as SketchCurve, SketchLines as SketchLines, SketchLine as SketchLine,
     SketchLineList as SketchLineList, SketchPoint as SketchPoint, Profile as Profile,
@@ -28,6 +29,8 @@ from ._model_geometry import (BRepBodies as BRepBodies, BRepBody as BRepBody,
 
 class UserParameter(core.Base):
     def __init__(self, owner: UserParameters, name: str, expression: str, unit: str, comment: str) -> None:
+        self.objectType: str = "adsk::fusion::UserParameter"
+        self.attributes: core.Attributes = core.Attributes(owner.doc)
         self.userParameters: UserParameters = owner
         self.model_name: str = name
         self.model_expression: str = expression

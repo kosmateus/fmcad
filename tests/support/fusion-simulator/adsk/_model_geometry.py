@@ -363,6 +363,13 @@ class ExtrudeFeatureInput(core.Base):
         return self.setOneSideExtent(DistanceExtentDefinition.create(distance), ExtentDirections.PositiveExtentDirection)
 
 
+class CalculationAccuracy:
+    LowCalculationAccuracy: ClassVar[int] = 0
+    MediumCalculationAccuracy: ClassVar[int] = 1
+    HighCalculationAccuracy: ClassVar[int] = 2
+    VeryHighCalculationAccuracy: ClassVar[int] = 3
+
+
 class PhysicalProperties(core.Base):
     def __init__(self, volume: float) -> None:
         self.volume: float = volume
@@ -398,6 +405,23 @@ class BRepBody(core.Base):
         return core.BoundingBox3D.create(
             core.Point3D(min(first.x, second.x)+origin.x, min(first.y, second.y)+origin.y, origin.z+min(0, distance)),
             core.Point3D(max(first.x, second.x)+origin.x, max(first.y, second.y)+origin.y, origin.z+max(0, distance)))
+
+    @property
+    def preciseBoundingBox(self) -> core.BoundingBox3D:
+        return self.boundingBox
+
+    def getPhysicalProperties(self, accuracy: int = CalculationAccuracy.LowCalculationAccuracy) -> PhysicalProperties:
+        if accuracy not in (0, 1, 2, 3):
+            raise ValueError("Invalid calculation accuracy")
+        return self.physicalProperties
+
+    @property
+    def volume(self) -> float:
+        return self.physicalProperties.volume
+
+    @property
+    def isSolid(self) -> bool:
+        return True
 
     @property
     def physicalProperties(self) -> PhysicalProperties:

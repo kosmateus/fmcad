@@ -148,12 +148,28 @@ export class ScenarioSession {
       throw new Error("Target does not belong to this scenario");
     return this.#dispatch(phase, source, owned, true, helpers);
   }
+  async cad(
+    phase: string,
+    operation: string,
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    this.signal?.throwIfAborted();
+    if (!this.document.file)
+      throw new Error("CAD scenarios require a saved fixture");
+    if (!phase.startsWith("cad-"))
+      throw new Error("CAD phase must use cad- prefix");
+    return this.#dispatch(phase, "", this.document, true, undefined, {
+      operation,
+      data: structuredClone(data),
+    });
+  }
   async #dispatch(
     phase: string,
     source: string | ((requestId: string) => string),
     target?: Document,
     routeTarget = true,
     helpers?: "cad-v1",
+    command?: { operation: string; data: Record<string, unknown> },
   ): Promise<Record<string, unknown>> {
     if (this.#uncertain)
       throw new Error(
@@ -171,6 +187,7 @@ export class ScenarioSession {
         source: typeof source === "string" ? source : source(requestId),
         directory: this.directory,
         ...(helpers ? { helpers } : {}),
+        ...(command ? { command } : {}),
         ...(target && routeTarget ? { target } : {}),
       });
     } catch (error) {
@@ -193,6 +210,33 @@ export class ScenarioSession {
       !execution.mayHaveMutated
     )
       this.report.cleanup = "not-created";
+    if (command && execution.stdout.trim()) {
+      const output = record(JSON.parse(execution.stdout) as unknown);
+      if (typeof output["success"] !== "boolean")
+        throw new Error("CAD result has no explicit outcome");
+      if (!target) throw new Error("CAD command has no owned target");
+      if (output["context"] !== undefined) {
+        const context = record(output["context"]);
+        if (
+          context["doc"] !== target?.name ||
+          context["docId"] !== target.creationId ||
+          context["docFileId"] !== target.file?.fileId
+        ) {
+          this.#uncertain = true;
+          throw new Error(
+            "Foreign CAD context; recover the original command before cleanup",
+          );
+        }
+      } else if (
+        output["success"] === true &&
+        !["preview", "validate"].includes(String(command.data["mode"])) &&
+        ["definition.instantiate", "batch.run"].includes(command.operation)
+      ) {
+        this.#uncertain = true;
+        throw new Error("Successful batch has no pinned context");
+      }
+      return output;
+    }
     if (execution.state !== "succeeded")
       throw new Error(execution.error || "Fusion operation failed");
     const lines = execution.stdout

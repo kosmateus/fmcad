@@ -1,0 +1,340 @@
+{
+  "schemaVersion": 1,
+  "status": "partial-migration",
+  "meaning": "Only explicitly reviewed mappings are covered. Every other frozen assertion remains an open migration or native-classification obligation.",
+  "mappings": [
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "9ecf19e6113ce10a9e3b-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "75b7a2b1dc50f06e286e-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "23ab543c285561ad5ee3-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "b1fb42c54ec65d1bf69c-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "19eec74bfe74b4567dc2-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "f646fc375a7735b2f99e-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "c16a2560f30f96f9dbca-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "65ab0f29f06642ea85b8-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "4b25eb646b8dbe904ae8-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "13cd31e8328d3a9273da-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "dd477b9e8c9ac81ad873-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "628dd53ee2258a988bb3-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "d9b98cd6769a430156b5-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "a70c5b234736d6f5e9a8-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "47b1c3ad31e4780fc567-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "e91b39dc5e74c74ea7b9-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transactions.test.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "48ef7f4741d57871fe8f-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "b611390e6d08a45d3e16-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "0550b149eea85eb76d5a-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "ca38862997346eea2af3-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "63356a20dd24d5307d1d-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transactions.test.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "082bca5a5438fce85d20-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "9a6924f0d4537a98ec55-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "79a76158a4839b9b62c8-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "6d3184b192ae4054acf3-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "778c601834eaabc0b82f-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "147fb5751fdb9e197e43-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "9a8642282da56f2aef0f-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "ae15b48888e63673c182-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "082bca5a5438fce85d20-2",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "274257801b659207a170-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "63356a20dd24d5307d1d-2",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transactions.test.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "a17f10bcb62d4dd413aa-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "082bca5a5438fce85d20-3",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "6ff6db77566e396477b3-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "0475cb342588c0b562e1-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "6d3184b192ae4054acf3-2",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    }
+  ]
+}

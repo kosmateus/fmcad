@@ -9,6 +9,7 @@ import {
   prepareScenarioHelpers,
 } from "./simulator";
 import * as programs from "./programs";
+import { componentCommand } from "./component-command";
 const root = path.resolve(__dirname, "../../..");
 export async function fixture(t: TestContext, protocol: Protocol = "mcp") {
   const parent = path.join(root, ".test-artifacts/scenario-unit");
@@ -29,6 +30,24 @@ export async function fixture(t: TestContext, protocol: Protocol = "mcp") {
     capabilities: simulatorCapabilities,
     fusionPath: (local) => local,
     async execute(request) {
+      if (request.command) {
+        const result = await componentCommand(
+          root,
+          request,
+          async (call) => {
+            const source =
+              call.object.script + (protocol === "addin" ? '\nrun("")\n' : "");
+            const output = await model.execute(source, protocol === "mcp");
+            return {
+              text: output.stdout + (output.success ? "" : output.error),
+              failed: !output.success,
+            };
+          },
+          protocol,
+        );
+        retained.set(request.owner.clientId + "/" + request.requestId, result);
+        return result;
+      }
       const source =
         (prepareScenarioHelpers(root, request)?.script ?? request.source) +
         (protocol === "addin" ? '\nrun("")\n' : "");

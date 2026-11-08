@@ -1,6 +1,6 @@
 # Partial Fusion test model
 
-Model version 11 implements document identity/lifecycle, numeric user-parameter CRUD,
+Model version 12 implements document identity/lifecycle, numeric user-parameter CRUD,
 saved-file identity and deletion, and a **test state export**. The exported `.f3d` fixture contains a JSON marker
 `nativeF3d: false`; it is not a native Fusion archive and must not be imported into Fusion.
 Native export/import assertions require `native-f3d`, which this model does not advertise.
@@ -127,3 +127,19 @@ This is not a general geometric constraint solver. Native orientation convention
 Fusion recomputation timing, constraint health and topology remain native-only
 qualification assumptions. Parameter deletion/rename dependency rewriting and
 arbitrary direct point editing are outside this bounded capability.
+
+## Definition and batch component path
+
+Shared transaction scenarios call the production Node CAD coordinator. Component
+profiles preserve prepared artifact provenance through the production checker;
+broker profiles submit the normal pinned `cad` command. The simulator supplies
+only SDK results. Definition substitution, report hashing, replay and negative
+step scheduling are not reimplemented in the scenario backend. Command inputs
+are copied at the component boundary, matching the serialized broker boundary.
+
+The analytical model additionally supplies exact rectangular-prism precise bounds
+and volume for the production measurement handlers, numeric parameter attributes,
+and explicit squared/cubed length literals. Native physical accuracy, general
+BRep topology, audit completeness and atomic command-event rollback remain separate
+qualification obligations. This family retains the historical non-atomic
+`onExisting: reuse` definition flow and explicitly non-atomic negative check.

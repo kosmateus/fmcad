@@ -197,3 +197,32 @@ Local rectangle delivery validation: all 163 scenario unit tests pass, simulator
 strict typing reports zero errors, and the expanded API verifier passes. The
 six rectangle transport/concurrency combinations cover 60 owned saved fixtures;
 a separate negative test checks unsupported, foreign and duplicate dimensions.
+
+## Delivery ledger — shared definition and batch orchestration
+
+PR #63 (`9be5e0f`) passed the production-checker rectangle component profile on
+MCP and addin in the immutable verification checkout; both before/after source
+hashes match. CI is queued and remains required before merge.
+
+The transaction family retains literal definition parameters, feature/body result
+references, 23/11/7 mm bounds and 1771 mm³ volume, exact successful replay, changed
+run-ID rejection, negative-check skip behavior, 18/9/12 mm driven bounds and 1944
+mm³ volume, unsupported parameter syntax, and literal code-like string rejection.
+Its shared journal checks bind request/context/hash/steps and confirm lock removal.
+Separate model transport tests count physical SDK executions for replay/rejection
+and exercise lost completed results and foreign context recovery without replay.
+
+The first 37 individual historical definition assertion sites are mapped in
+`tests/scenarios/assertion-dispositions.json`; unlisted sites remain open. Whole
+native audit snapshots and CLI/backend-specific lifecycle assertions are not
+silently replaced by simpler geometry checks. Atomic command-event rollback,
+full global-state profile extraction, import/export migration and the remaining
+semantic inventory are still outstanding. Native execution remains deferred.
+
+Concurrency investigation: the first full transaction matrix passed MCP/addin at
+1/2 and addin at 10; MCP at 10 intermittently reported `EEXIST` reopening a journal
+whose prior close/unlink completed. A direct 500-lock baseline and a ten-owner
+production-journal publication/reopen baseline passed. An isolated uninstrumented
+MCP run reproduced the refusal; a stat-instrumented run passed. No lock deletion,
+retry or production persistence workaround has been introduced. Retain the
+concurrency test and resolve this discrepancy against ordinary CI before merge.

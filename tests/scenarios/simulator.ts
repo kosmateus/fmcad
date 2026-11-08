@@ -20,6 +20,7 @@ import type {
   ScriptRequest,
 } from "./contracts";
 import { record, text } from "./contracts";
+import { componentCommand } from "./component-command";
 
 interface PythonResult {
   readonly success: boolean;
@@ -123,6 +124,7 @@ export const simulatorCapabilities = new Set([
   "saved-reopen",
   "saved-revisions",
   "dimensioned-rectangle",
+  "cad-commands",
   "parameter-crud",
   "parameter-expressions",
   "construction-planes",
@@ -224,6 +226,44 @@ export class CheckedSimulatorBackend implements ScenarioBackend {
       this.#results.set(key, result);
       return result;
     };
+    if (request.command) {
+      return retain(
+        await componentCommand(
+          this.root,
+          request,
+          async (call, _tool, manifest) => {
+            const source =
+              call.object.script +
+              (this.protocol === "addin" ? '\nrun("")\n' : "");
+            const wire = this.#python.preparePythonArtifact([
+              { id: "command", filename: "command.py", role: "user", source },
+            ]);
+            const artifact = manifest
+              ? this.#python.retainPythonOrigin(wire, manifest)
+              : wire;
+            const check = await this.#checker.check({
+              artifact,
+              context: { kind: manifest ? "bundle" : "raw" },
+              unitContexts: this.#python.pythonUnitContexts(artifact),
+            });
+            if (check.status !== "passed")
+              return {
+                failed: true,
+                text: "Python admission rejected: " + JSON.stringify(check),
+              };
+            const result = await this.model.execute(
+              source,
+              this.protocol === "mcp",
+            );
+            return {
+              failed: !result.success,
+              text: result.stdout + (result.success ? "" : result.error),
+            };
+          },
+          this.protocol,
+        ),
+      );
+    }
     // The add-in executes code directly; the official backend calls the run entrypoint.
     const prepared = prepareScenarioHelpers(this.root, request);
     const source =

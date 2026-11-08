@@ -18,7 +18,7 @@ METHODS: dict[str, dict[str, list[str]]] = {
              "Products": ["itemByProductType"], "ValueInput": ["createByString", "createByReal"],
              "Data": ["findFileById"], "DataProjects": ["itemById"], "DataFolders": ["itemById", "itemByName", "add"],
              "DataFiles": ["itemById"], "DataFile": ["deleteMe"]},
-    "fusion": {"SketchPoint": ["cast"], "GeometricConstraints": ["addCoincident"],
+    "fusion": {"BRepBody": ["getPhysicalProperties"], "SketchPoint": ["cast"], "GeometricConstraints": ["addCoincident"],
                "SketchDimensions": ["addDistanceDimension"], "Sketches": ["add", "addWithoutEdges"], "SketchLines": ["addTwoPointRectangle"],
                "Sketch": ["sketchToModelSpace", "modelToSketchSpace"],
                "DistanceExtentDefinition": ["create"], "ExtrudeFeatureInput": ["setOneSideExtent"],

@@ -32,3 +32,10 @@ Add `rectangles` to the same required MCP/addin, concurrency 1/2/10 matrix.
 The scenario always uses ten owners in the unit matrix and validates analytical
 regeneration before and after owned saved-file reopening. Native execution stays
 deferred; model geometry is not native kernel qualification.
+
+Add `transactions` to required profiles for both protocols at concurrency 1/2/10.
+It invokes the production definition/batch coordinator, not a Python-only facade.
+Native command-event atomic rollback is not implied by this legacy definition
+family. The ten-owner case is more expensive because each definition retains its
+full original reference/measurement/replay/rejection sequence; measure job time
+before assigning the final CI timeout instead of dropping assertions.
