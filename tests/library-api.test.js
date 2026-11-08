@@ -196,6 +196,8 @@ test('outside-repository consumer imports built JS and declarations with no sour
       import { commands, findCommand } from './node_modules/fmcad/dist/src/dist/composition/library-commands.js';
       import { detail, globalHelp } from './node_modules/fmcad/dist/src/dist/composition/library-help.js';
       void commands; void findCommand; void detail; void globalHelp;
+      import { validateInvocation, executeCapability } from './node_modules/fmcad/dist/src/dist/composition/library-catalog-registry.js';
+      void validateInvocation; void executeCapability;
       import type { FmcadOptions, ExecutionReceipt, ReviewRequest, ReviewServiceOptions, PythonCheckReport } from 'fmcad/api';
       declare const options: FmcadOptions;
       declare const reviewOptions: ReviewServiceOptions;
@@ -541,4 +543,55 @@ test('typed help preserves every registered English and Polish page and text lay
     guide.sections = guide.sections.map(section => ({...section,text:section.text.replace('Legacy --doc operations activate the FIRST case-insensitive document match, not a uniqueness-safe selector.','Legacy --doc operations require one case-insensitive open-document name match; ambiguous names fail before activation.')}));
     assert.deepEqual(require('../src/help-guide'),guide);
   } finally { for (const [key,value] of Object.entries(original)) { if(value === undefined) delete process.env[key]; else process.env[key]=value; } }
+});
+
+test('typed catalog composition preserves declarations, specialists and broker probe pins', () => {
+  async function observeCatalog(root, historical) {
+    const path = require('node:path'), fs = require('node:fs');
+    const filename = path.join(root, 'src/catalog/index.js');
+    let api;
+    if (historical) {
+      const source = fs.readFileSync(path.join(root,'tests/fixtures/public-host-baseline/catalog/index.js.txt'),'utf8');
+      const provenance = require(path.join(root,'tests/fixtures/public-host-baseline/provenance.json'))['src/catalog/index.js'];
+      require('node:assert/strict').equal(require('node:crypto').createHash('sha256').update(source).digest('hex'),provenance.sha256);
+      const Module = require('node:module'), baseline = new Module(filename, module);
+      baseline.filename = filename;
+      baseline.paths = Module._nodeModulePaths(path.dirname(filename));
+      require.cache[filename] = baseline;
+      baseline._compile(source,filename);
+      api = baseline.exports;
+    } else api = require(filename);
+    const observe = fn => {try{return {value:fn()};}catch(error){return {error:{name:error.name,message:error.message,code:error.code}};}};
+    const operations = {};
+    for (const [operation,declaration] of Object.entries(api.catalog)) {
+      const input={version:1,kind:'cad',operation,data:declaration.example,doc:'Model',docId:'creation',docFileId:'file'};
+      operations[operation]={declaration,contract:api.contracts[operation],
+        validation:[declaration.example,{unknown:true},null].map(data=>observe(()=>api.validateCad(operation,structuredClone(data)))),
+        invocation:observe(()=>api.validateInvocation(structuredClone(input))),
+        local:[false,true].map(preview=>observe(()=>api.localInvocation({...input,preview}))) };
+    }
+    const tools = Object.fromEntries(api.mcpTools.map(tool=>[tool.name,{tool,
+      calls:[undefined,{},null,[],{data:{},doc:'Model',docId:'creation',docFileId:'file',preview:true}].map(args=>observe(()=>api.mcpInvocation(tool.name,structuredClone(args))))}]));
+    const search = [{query:'sketch'},{query:'żółć'},{limit:101},null].map(data=>observe(()=>api.executeCapability('capabilities.inspect',data)));
+    const probes=[];
+    for (const backend of ['mcp','addin','invalid']) {
+      const calls=[];
+      const brokerSdkProbePort={boundary:'fmcad-broker',kind:'sdk-probe',probe:async request=>{calls.push(request);return {capabilityId:request.capabilityId,status:'pass',precision:'pass',coverage:'pass',build:'fixture',identity:'verified',mutation:'none',restoration:'not_applicable',limitations:[]};}};
+      try {probes.push({value:await api.executeCapability('capabilities.probe',{capabilityId:'entity.list'},{docId:'creation',docFileId:'file'},{backend,brokerSdkProbePort}),calls});}
+      catch(error){probes.push({error:{name:error.name,message:error.message},calls});}
+    }
+    const reserved = require(path.join(root,'src/commands')).legacyCommands.flatMap(command=>[command.key,...(command.aliases||[])]);
+    return {operations,tools,search,probes,cli:api.cliContracts(reserved)};
+  }
+  const observe = historical => JSON.parse(execFileSync(process.execPath,['-e',
+    '('+observeCatalog.toString()+')('+JSON.stringify(root)+','+historical+').then(result=>process.stdout.write(JSON.stringify(result)),error=>{console.error(error);process.exitCode=1})'],
+    {cwd:root,encoding:'utf8',maxBuffer:32*1024*1024}));
+  const historical=observe(true),current=observe(false);
+  assert.deepEqual(Object.keys(current.operations),Object.keys(historical.operations));
+  for(const [operation,value] of Object.entries(historical.operations)) assert.deepEqual(current.operations[operation],value,operation);
+  assert.deepEqual(Object.keys(current.tools),Object.keys(historical.tools));
+  for(const [tool,value] of Object.entries(historical.tools)) assert.deepEqual(current.tools[tool],value,tool);
+  assert.deepEqual(current.cli,historical.cli);
+  assert.deepEqual(current.search,historical.search);
+  assert.deepEqual(current.probes,historical.probes);
 });

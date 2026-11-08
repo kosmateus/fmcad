@@ -252,3 +252,14 @@ consumer additionally runs the npm-created `fmcad` executable link for detailed
 batch help with poisoned configuration, no source tree/host SDK and a read-only
 package; it returns complete bundled workflow help with empty stderr. Historical
 hashes of all nine migrated modules match the recorded `0b84454` git bytes.
+
+### Catalog registry composition
+
+PR #64 contains command registration and bilingual help. Catalog assembly now
+uses `library-catalog-registry.ts`, retaining specialist configuration order,
+validation, local classification, capability authorization and pinned probes.
+Frozen/current catalogs run in separate processes because specialist configure
+functions mutate loaded declaration objects. Every operation, MCP projection,
+invalid argument outcome and CLI contract is compared without shared state.
+Build and lint pass; 33 catalog/library/installed-consumer tests pass, including
+strict declarations for the registry. No A/C/D specialist policy changes.
