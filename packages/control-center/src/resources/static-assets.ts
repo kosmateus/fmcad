@@ -28,6 +28,8 @@ const KNOWN_MODULES = [
   "table-model.js",
 ] as const;
 const KNOWN_FONTS = [
+  "dejavu-sans.woff2",
+  "dejavu-sans-bold.woff2",
   "dm-sans-latin-ext.woff2",
   "dm-sans-latin.woff2",
   "ibm-plex-mono-latin-ext-medium.woff2",
@@ -102,6 +104,7 @@ const KNOWN_NOTICES = [
   "ASSET-NOTICES.md",
   "assets/fonts/DM-Sans-OFL.txt",
   "assets/fonts/IBM-Plex-Mono-OFL.txt",
+  "assets/fonts/DejaVu-LICENSE.txt",
   "assets/vendor/highlight-LICENSE.txt",
 ] as const;
 

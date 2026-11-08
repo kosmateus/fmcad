@@ -155,7 +155,7 @@ test("browser build emits standalone ESM and a hash-bound static allowlist", asy
   assert.equal(manifest.entrypoint, "/assets/control-center/web/index.js");
   // The agents/projects feature added a browser module and a runtime route contract.
   // Both are emitted by the browser build and must be in the exact server allowlist.
-  assert.equal(manifest.assets.length, 31);
+  assert.equal(manifest.assets.length, 33);
   for (const file of [
     "web/agents-projects.js",
     "contracts/project-actions.js",
@@ -168,7 +168,7 @@ test("browser build emits standalone ESM and a hash-bound static allowlist", asy
       file,
     );
   }
-  assert.equal(manifest.notices.length, 4);
+  assert.equal(manifest.notices.length, 5);
   assert.deepEqual(
     manifest.assets.map((asset) => asset.path),
     [...manifest.assets.map((asset) => asset.path)].sort(),
@@ -180,7 +180,7 @@ test("browser build emits standalone ESM and a hash-bound static allowlist", asy
   assert.equal(
     manifest.assets.filter((asset) => asset.contentType === "font/woff2")
       .length,
-    6,
+    8,
   );
   const serialized = fs.readFileSync(
     path.join(assetRoot, "asset-manifest.json"),
@@ -549,7 +549,7 @@ test(
       runtimeBuild.fingerprint,
     );
     const assets = installedResolver.loadConsoleHttpAssets(installedDist);
-    assert.equal(assets.length, 31);
+    assert.equal(assets.length, 33);
     for (const module of [
       "web/agents-projects.js",
       "contracts/project-actions.js",

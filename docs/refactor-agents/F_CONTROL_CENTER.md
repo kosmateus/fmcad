@@ -121,3 +121,13 @@ before each merge, A's authoritative phase/activity-fence boundary, E's public
 launcher transition, the explicit terminal administration retirement decision,
 and G's CI inventory/dependency integration. Native Fusion/platform launch
 qualification remains required separately. Modeling delivery stays independent.
+
+First delivery merged as `04a42b4c1b300fa2222d39ab9a78b7c86d345e2e` after all
+22 checks passed on `7f0ab88`, including Chromium. The merge candidate against
+fetched main had no changes to the affected Control Center/history sources.
+Operational integration now includes a separate session-filter race regression
+and retains the historical-agent assertions. The locale/CI proposal packages
+licensed Greek/Cyrillic WOFF2 fallback fonts and registers the restored System,
+diagnostic retention and existing observer rotation tests in the contracts gate.
+The small shared script/build-list changes are an explicit proposal for G,
+following coordination on PR #40; they are not independently accepted packaging.

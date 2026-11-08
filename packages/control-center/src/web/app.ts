@@ -4056,6 +4056,7 @@ export class ControlCenterApp {
         modal.agent,
         { offset, limit: 8 },
       );
+      if (this.#modal !== loading || this.#listeners.signal.aborted) return;
       const taskIds = taskPage.rows
         .map((task) => task["id"])
         .filter((id): id is string => nonemptyId(id));
@@ -4203,6 +4204,7 @@ export class ControlCenterApp {
   }
 
   async #openAgentFileTask(button: HTMLElement): Promise<void> {
+    const generation = ++this.#modalGeneration;
     const projectId = button.dataset["project"];
     const taskId = button.dataset["taskId"];
     const artifactId = button.dataset["artifactId"];
@@ -4214,6 +4216,7 @@ export class ControlCenterApp {
         { projectId, taskId, artifactId },
         snapshotToken,
       );
+      if (!this.#currentModal(generation)) return;
       if (detail.artifactUnavailable) {
         this.#toast(
           detail.unavailableMessage ??
