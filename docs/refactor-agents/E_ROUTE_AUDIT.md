@@ -125,8 +125,8 @@ library/CLI/reference run passes all 43 tests.
 ## Current delivery and handoff status
 
 Merged after full CI: #39 image command adapter, #46 config/client, #48 host
-commands, #50 optional MCP recovery outcome contract. Subsequent coherent PRs
-#52, #62, #64, #67, #68, #71, #73, #76, #80 and #81 implement the remaining
+commands, #50 optional MCP recovery outcome contract, #52 review/shot boundary.
+Subsequent coherent PRs #62, #64, #67, #68, #71, #73, #76, #80 and #81 implement the remaining
 typed surfaces above. #83 is the isolated proposal for G's shared CI/cache files.
 Those unmerged PRs remain subject to full CI, not just local targeted results.
 

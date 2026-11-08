@@ -439,3 +439,13 @@ Nine retained terminal/historical reporter tests pass. The public gate retains
 these comparisons; installed strict declarations cover both new modules. F has
 been notified that direct-telemetry.js and opencode/project-logger.cjs remain
 shared passive producer boundaries outside this public reporter migration.
+
+Latest installed host rerun after reporter migration: all ten MCP/OpenCode
+V1/V2 consumer tests pass, zero skips. The actual packed plugin verifies owner
+context, permission denial, no replay after unknown outcomes, standalone imports
+and owned cleanup. Full lint and build pass.
+
+Merged after exact-head full CI: #50 at 2463569 and #52 at cf3e6ad, following
+#39/#46/#48. #62 is now based on main and ready; later E deliveries remain
+queued for full CI. #83/#84/#85 contain the shared gate, F integration and final
+public locale/reporter migration. No queued run is recorded as passing.
