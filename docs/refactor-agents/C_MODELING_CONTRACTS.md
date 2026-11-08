@@ -184,3 +184,80 @@ Fourth-delivery checks: pinned full build and strict test compilation pass;
 with the previous wrappers produces the same 10 passes / 5 `/proc` failures.
 Targeted TypeScript lint passes. The five additional admission cases from the third
 delivery passed (393.5 seconds total); all eleven representative cases are green.
+
+## Complete public modeling inventory and admission obligations
+
+`tests/fixtures/modeling-operation-contracts.json` inventories 266 public descriptors
+in the assigned modeling/engineering families at the baseline. Each record includes
+its public operation, requested read-only classification, route and native program.
+The runtime test refuses additions/removals outside that inventory. The five shared
+routes are explicitly assigned: D externalization and sketch file adaptation;
+A/E definition host inspection/expansion/instantiation. C retains native recipe and
+regeneration behavior. A host coordinator is not counted as a generic Python call.
+
+There are 254 direct C Python operations, six selection/BRep coordinator-generated
+internal programs, and one C offline baseline-inspection service. The six internal
+fixtures invoke the actual typed core coordinator and authorization boundary before
+preparing its program. Fixture artifact ports supply evidence inputs; they do not
+claim durable storage, native serialization or geometry success. Existing real-store
+regression tests independently cover those boundaries.
+
+`modeling-admission.test.ts` now defaults to all 260 generated programs. G should run
+8 disjoint jobs with `FMCAD_MODELING_ADMISSION_SHARD=0/8` through `7/8` after the pinned
+build; every job uses the production checker without cache/limit exceptions. Each
+report must pass and identify the prepared artifact hash and pinned definitions.
+Do not also run the unsharded suite in the ordinary regression job. Merely preparing
+all examples or starting the matrix is not a full admission pass.
+
+`modeling-installed.test.js` installs the packed package with npm `--offline` outside
+the checkout. Its public API validates every inventory example without mutation,
+backend startup or checkout reads. It checks strict declarations for the migrated
+core policies, persistence composition and curve source adapter. G should register
+this test in the existing installed-consumer/regression job with offline cache setup.
+
+## Python boundary audit and B scenario handoff
+
+Existing geometry, assembly and document-I/O-family extraction tests already verify
+handler registration, retained function bodies, SDK-free domain imports and historical
+fake-SDK effects. These are retained, not replaced with file-placement assertions.
+The audit ran 154 geometry/assembly/appearance/measurement tests and 218 further
+runtime/boundary tests successfully. The latter includes sketch, curve, datum, surface,
+feature rework, entity, selection, regional geometry and measured fasteners.
+
+| Family | Independent state/effect contract for B | Existing behavioral evidence |
+| --- | --- | --- |
+| Sketches/dimensions | Dimension plan is read-only; apply validates document/sketch/fingerprint and accepted IDs. Read actual dimension expressions, driving flags, geometry and profiles after mutation. Preserve original solver errors if readback also fails. A denied/invalid plan must add no dimension. | `gm06_sketch_test.py`, `sketch_geometry_proof_test.py`, `typesgeometry/python_types_geometry_sketch_test.py` |
+| Curves/datums | Preserve source rows/hashes and explicit frames; transformed occurrences must retain the root/component frame distinction. Compare endpoint/axis/frame readback rather than only response count. Do not infer spline or surface validity from samples. | `gm07_curve_test.py`, `datum_test.py`, `modeling-policy-migration.test.ts` |
+| Model/shapes/surface/features | Reject malformed inputs before an SDK add. False/null SDK results are errors. Read owned ModelParameter expressions, timeline health and unaffected bodies; restore timeline position on failures. Fillets, lofts, sweeps, shells, splits and topology remain native qualifications. | `python_geometry_test.py`, `feature_rework_test.py`, `surface_test.py`, `typesgeometry/python_types_shapes_test.py` |
+| Components/occurrences/joints | Ambiguous names must fail; child-local transforms and root occurrence transforms are distinct. Preserve exactly one intended mutation and verify the protected document independently. Joint reports distinguish requested/evaluated setter values from post-capture readback. | `python_assembly_parity_test.py`, `assembly_test.py`, `manual_assembly_test.py` |
+| Entity/selection | A foreign native token/proxy cannot change ownership. Preserve zero/multiple-match rules and attribute readback. Artifact ownership includes project/file/creation identity. Missing artifacts do not invoke Fusion; inspection never writes; uncertain native outcomes are never replayed. | `entity_query_test.py`, `selection_rules_test.py`, `selection-rules-e2e.test.js`, `modeling-artifact-history.test.js` |
+| Measurements/geometry evidence | Length/area/volume internal values use cm/cm²/cm³; outputs default to mm/mm²/mm³, mass kg, angle degrees. Valid zero stays zero; unavailable/nonfinite readings remain errors. Temporary booleans must not add design bodies. Parameter probes restore original expressions even after callback/recompute failure. | `measure_test.py`, `python_measurement_runtime_test.py`, `regional_geometry_test.py`, `brep-baseline-service.test.js` |
+| Appearance/material/attributes | Appearance and physical material are separate; inspect the concrete face/body override. Missing density/coating is not invented. Preserve deterministic ambiguity reporting and source IDs. | `appearance_test.py`, `attributes_test.py`, document-I/O-family runtime replay |
+| Engineering/motion/model state | Preserve explicit dimensional units, hand/lead, material assumptions and reference ownership. Analytic predictions and stored states are not solver or physical qualification. Native MotionLink, joints, sheet metal and native regeneration retain their explicit capability/refusal contracts. | `python_assembly_parity_test.py`, `measured_fasteners_test.py`, engineering family suites and original native assertion ledger |
+
+B owns new simulator implementations and shared scenario files. This table and the
+operation inventory specify handoff requirements, not a claim that B's model covers
+all listed methods. G must reconcile each retained live assertion with B's ledger.
+
+## Measurement policy boundary
+
+The existing unit conversion table/function move from the Fusion measurement adapter
+to its domain module. Both the original `a26222f` and pre-delivery `0b84454` versions
+are SHA-256-bound fixtures. Identical zero, signed, ordinary, nonfinite, missing-value,
+unsupported-unit and all supported-unit cases retain values/errors. No SDK call or
+unit factor changes. A unique math import prevents a flattened-program duplicate;
+the initial duplicate-import diagnostic was fixed, not suppressed. The real checker
+passes the corrected program and 69 retained measurement tests pass.
+
+D coordination is required for the existing cross-family AST parity test's alias map:
+`_measurement_rules_math` must normalize to `math`, exactly like the other existing
+pure-domain aliases. The shared file is left to D/G. This is a structural name change;
+all behavioral comparisons remain required. Package C is still in progress pending
+full exhaustive admission, shared gates, exact-head CI/merges and B/G reconciliation.
+
+Fifth-delivery local checks: pinned full build, strict test types, targeted TypeScript
+lint and the installed 266-example/strict-declaration consumer pass. Six authorized
+internal-program preparations pass. The existing cross-family AST parity test now
+fails only at the proposed measurement import-alias normalization; D/G's one-line
+integration remains an explicit dependency, not a suppressed failure. The complete
+260-program matrix is ready to run in shared CI; results remain pending.

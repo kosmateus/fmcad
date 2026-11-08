@@ -115,3 +115,9 @@ and types datum/surface policies. It preserves 218 historical comparisons plus
 The fourth delivery types selection orchestration and BRep host composition.
 Twenty-four paired historical cases preserve outputs and call order. Five retained
 artifact tests require Linux `/proc`; this host limitation is not a waiver for CI.
+
+The fifth delivery adds the 266-operation public inventory, 260-case exhaustive real
+admission matrix (254 direct + six authorized coordinator programs), installed-package
+modeling validation and the measurement unit-policy boundary. The complete matrix is
+not yet a passing result. D must integrate the measurement math-alias normalization;
+G must register disjoint admission shards and installed/history tests before merge.

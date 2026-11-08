@@ -1,0 +1,2206 @@
+{
+  "version": 1,
+  "baseline": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+  "families": [
+    "sketch",
+    "curve",
+    "surface",
+    "shape",
+    "spring",
+    "thread",
+    "cam",
+    "seal",
+    "dock",
+    "mount",
+    "fastener",
+    "bearing",
+    "shaft",
+    "retention",
+    "snap",
+    "animation",
+    "motion",
+    "appearance",
+    "material",
+    "styles",
+    "component",
+    "occurrence",
+    "joint",
+    "assembly",
+    "feature",
+    "history",
+    "change",
+    "entity",
+    "measure",
+    "selection",
+    "datum",
+    "explode",
+    "fpc",
+    "pcb",
+    "port",
+    "connector",
+    "pack",
+    "keepout",
+    "gear",
+    "inspect",
+    "clearance",
+    "section",
+    "undercut",
+    "manufacturing",
+    "marking",
+    "geometry",
+    "parameter",
+    "audit",
+    "snapshot",
+    "diff",
+    "status",
+    "report",
+    "mechanism",
+    "path",
+    "model",
+    "pattern",
+    "optics",
+    "sensor",
+    "pose",
+    "route",
+    "frame",
+    "service",
+    "tool",
+    "fixture",
+    "sheet",
+    "simulation",
+    "texture",
+    "definition",
+    "check",
+    "evidence"
+  ],
+  "operations": [
+    {
+      "operation": "animation.activate",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "animation.activate"
+    },
+    {
+      "operation": "animation.capabilities",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "animation.capabilities"
+    },
+    {
+      "operation": "animation.create",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "animation.create"
+    },
+    {
+      "operation": "animation.export",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "animation.export"
+    },
+    {
+      "operation": "animation.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "animation.inspect"
+    },
+    {
+      "operation": "animation.joints",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "animation.joints"
+    },
+    {
+      "operation": "animation.list",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "animation.list"
+    },
+    {
+      "operation": "animation.play",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "animation.play"
+    },
+    {
+      "operation": "animation.seek",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "animation.seek"
+    },
+    {
+      "operation": "animation.sequence",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "animation.sequence"
+    },
+    {
+      "operation": "animation.workspace",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "animation.workspace"
+    },
+    {
+      "operation": "appearance.assign",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "appearance.assign"
+    },
+    {
+      "operation": "appearance.assign-map",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "appearance.assign-map"
+    },
+    {
+      "operation": "appearance.clear",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "appearance.clear"
+    },
+    {
+      "operation": "appearance.create",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "appearance.create"
+    },
+    {
+      "operation": "appearance.edit",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "appearance.edit"
+    },
+    {
+      "operation": "appearance.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "appearance.inspect"
+    },
+    {
+      "operation": "appearance.list",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "appearance.list"
+    },
+    {
+      "operation": "appearance.projection",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "appearance.projection"
+    },
+    {
+      "operation": "appearance.texture",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "appearance.texture"
+    },
+    {
+      "operation": "assembly.clearance",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "assembly.clearance"
+    },
+    {
+      "operation": "assembly.ground",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "assembly.ground"
+    },
+    {
+      "operation": "assembly.interference",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "assembly.interference"
+    },
+    {
+      "operation": "assembly.motion_check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "assembly.motion_check"
+    },
+    {
+      "operation": "assembly.parts",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "assembly.parts"
+    },
+    {
+      "operation": "assembly.rigid_group",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "assembly.rigid_group"
+    },
+    {
+      "operation": "assembly.sequence",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "assembly.sequence"
+    },
+    {
+      "operation": "assembly.unground",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "assembly.unground"
+    },
+    {
+      "operation": "audit",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "audit"
+    },
+    {
+      "operation": "bearing.stack-check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "bearing.stack-check"
+    },
+    {
+      "operation": "cam.cycle-check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "cam.cycle-check"
+    },
+    {
+      "operation": "cam.evaluate",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "cam.evaluate"
+    },
+    {
+      "operation": "cam.profile",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "cam.profile"
+    },
+    {
+      "operation": "change.preview",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "change.preview"
+    },
+    {
+      "operation": "check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "check"
+    },
+    {
+      "operation": "check.set",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "check.set"
+    },
+    {
+      "operation": "clearance.grid",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "clearance.grid"
+    },
+    {
+      "operation": "component.create",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "component.create"
+    },
+    {
+      "operation": "component.externalize",
+      "owner": "shared",
+      "coordination": "D: document externalization",
+      "declaredReadOnly": false,
+      "route": "host-service",
+      "nativeProgram": null
+    },
+    {
+      "operation": "component.from_bodies",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "component.from_bodies"
+    },
+    {
+      "operation": "component.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "component.inspect"
+    },
+    {
+      "operation": "component.rename",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "component.rename"
+    },
+    {
+      "operation": "component.reparent",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "component.reparent"
+    },
+    {
+      "operation": "connector.mate-check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "connector.mate-check"
+    },
+    {
+      "operation": "curve.fit",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "curve.fit"
+    },
+    {
+      "operation": "curve.helix",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "curve.helix"
+    },
+    {
+      "operation": "curve.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "curve.inspect"
+    },
+    {
+      "operation": "curve.offset",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "curve.offset"
+    },
+    {
+      "operation": "curve.offset-edit",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "curve.offset-edit"
+    },
+    {
+      "operation": "datum.axis",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "datum.axis"
+    },
+    {
+      "operation": "datum.frame",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "datum.frame"
+    },
+    {
+      "operation": "datum.plane",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "datum.plane"
+    },
+    {
+      "operation": "datum.plane-on-path",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "datum.plane-on-path"
+    },
+    {
+      "operation": "datum.point",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "datum.point"
+    },
+    {
+      "operation": "datum.transform",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "datum.transform"
+    },
+    {
+      "operation": "definition.expand",
+      "owner": "shared",
+      "coordination": "A: batch execution; E: offline definition host routes; C: native recipe/regeneration",
+      "declaredReadOnly": true,
+      "route": "host-service",
+      "nativeProgram": null
+    },
+    {
+      "operation": "definition.inspect",
+      "owner": "shared",
+      "coordination": "A: batch execution; E: offline definition host routes; C: native recipe/regeneration",
+      "declaredReadOnly": true,
+      "route": "host-service",
+      "nativeProgram": null
+    },
+    {
+      "operation": "definition.instantiate",
+      "owner": "shared",
+      "coordination": "A: batch execution; E: offline definition host routes; C: native recipe/regeneration",
+      "declaredReadOnly": false,
+      "route": "host-service",
+      "nativeProgram": null
+    },
+    {
+      "operation": "definition.recipe",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "definition.recipe"
+    },
+    {
+      "operation": "definition.regenerate",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "definition.regenerate"
+    },
+    {
+      "operation": "diff",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "diff"
+    },
+    {
+      "operation": "dock.sequence-check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "dock.sequence-check"
+    },
+    {
+      "operation": "entity.alias",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "entity.alias"
+    },
+    {
+      "operation": "entity.attribute.get",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "entity.attribute.get"
+    },
+    {
+      "operation": "entity.attribute.set",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "entity.attribute.set"
+    },
+    {
+      "operation": "entity.find",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "entity.find"
+    },
+    {
+      "operation": "entity.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "entity.inspect"
+    },
+    {
+      "operation": "entity.list",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "entity.list"
+    },
+    {
+      "operation": "entity.stats",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "entity.stats"
+    },
+    {
+      "operation": "evidence.check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "evidence.check"
+    },
+    {
+      "operation": "evidence.package",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "evidence.package"
+    },
+    {
+      "operation": "explode.plan",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "explode.plan"
+    },
+    {
+      "operation": "explode.render",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "explode.render"
+    },
+    {
+      "operation": "fastener.check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "fastener.check"
+    },
+    {
+      "operation": "fastener.measured-check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "fastener.measured-check"
+    },
+    {
+      "operation": "fastener.schedule",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "fastener.schedule"
+    },
+    {
+      "operation": "fastener.stack",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "fastener.stack"
+    },
+    {
+      "operation": "feature.dependencies",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "feature.dependencies"
+    },
+    {
+      "operation": "feature.edit",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "feature.edit"
+    },
+    {
+      "operation": "feature.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "feature.inspect"
+    },
+    {
+      "operation": "feature.list",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "feature.list"
+    },
+    {
+      "operation": "feature.suppress",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "feature.suppress"
+    },
+    {
+      "operation": "feature.unsuppress",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "feature.unsuppress"
+    },
+    {
+      "operation": "fixture.access",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "fixture.access"
+    },
+    {
+      "operation": "fpc.flatten",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "fpc.flatten"
+    },
+    {
+      "operation": "fpc.fold",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "fpc.fold"
+    },
+    {
+      "operation": "frame.context_audit",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "frame.context_audit"
+    },
+    {
+      "operation": "gear.pair-check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "gear.pair-check"
+    },
+    {
+      "operation": "geometry.compare-region",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "geometry.compare-region"
+    },
+    {
+      "operation": "geometry.delta",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "geometry.delta"
+    },
+    {
+      "operation": "history.check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "history.check"
+    },
+    {
+      "operation": "history.recompute",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "history.recompute"
+    },
+    {
+      "operation": "inspect.pack",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "inspect.pack"
+    },
+    {
+      "operation": "joint.cylindrical",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "joint.cylindrical"
+    },
+    {
+      "operation": "joint.drive",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "joint.drive"
+    },
+    {
+      "operation": "joint.edit",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "joint.edit"
+    },
+    {
+      "operation": "joint.frame",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "joint.frame"
+    },
+    {
+      "operation": "joint.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "joint.inspect"
+    },
+    {
+      "operation": "joint.limits",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "joint.limits"
+    },
+    {
+      "operation": "joint.revolute",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "joint.revolute"
+    },
+    {
+      "operation": "joint.rigid",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "joint.rigid"
+    },
+    {
+      "operation": "joint.slider",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "joint.slider"
+    },
+    {
+      "operation": "keepout.check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "keepout.check"
+    },
+    {
+      "operation": "manufacturing.check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "manufacturing.check"
+    },
+    {
+      "operation": "manufacturing.zone",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "manufacturing.zone"
+    },
+    {
+      "operation": "marking.check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "marking.check"
+    },
+    {
+      "operation": "marking.create",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "marking.create"
+    },
+    {
+      "operation": "material.assign",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "material.assign"
+    },
+    {
+      "operation": "material.assign-map",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "material.assign-map"
+    },
+    {
+      "operation": "material.create",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "material.create"
+    },
+    {
+      "operation": "material.edit",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "material.edit"
+    },
+    {
+      "operation": "material.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "material.inspect"
+    },
+    {
+      "operation": "material.list",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "material.list"
+    },
+    {
+      "operation": "measure.angle",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.angle"
+    },
+    {
+      "operation": "measure.area",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.area"
+    },
+    {
+      "operation": "measure.baseline.capture",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "host-service",
+      "nativeProgram": "measure.baseline.capture_internal"
+    },
+    {
+      "operation": "measure.baseline.compare",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "host-service",
+      "nativeProgram": "measure.baseline.compare_internal"
+    },
+    {
+      "operation": "measure.baseline.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "host-service",
+      "nativeProgram": null
+    },
+    {
+      "operation": "measure.bounds",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.bounds"
+    },
+    {
+      "operation": "measure.contains",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.contains"
+    },
+    {
+      "operation": "measure.corridor",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.corridor"
+    },
+    {
+      "operation": "measure.diameter",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.diameter"
+    },
+    {
+      "operation": "measure.distance",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.distance"
+    },
+    {
+      "operation": "measure.draft",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.draft"
+    },
+    {
+      "operation": "measure.length",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.length"
+    },
+    {
+      "operation": "measure.mass",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.mass"
+    },
+    {
+      "operation": "measure.radius",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.radius"
+    },
+    {
+      "operation": "measure.region",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.region"
+    },
+    {
+      "operation": "measure.section",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.section"
+    },
+    {
+      "operation": "measure.section-series",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.section-series"
+    },
+    {
+      "operation": "measure.thickness",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.thickness"
+    },
+    {
+      "operation": "measure.volume",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.volume"
+    },
+    {
+      "operation": "measure.wall-map",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.wall-map"
+    },
+    {
+      "operation": "measure.witness-check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "measure.witness-check"
+    },
+    {
+      "operation": "mechanism.couple",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "mechanism.couple"
+    },
+    {
+      "operation": "mechanism.drive-test",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "mechanism.drive-test"
+    },
+    {
+      "operation": "mechanism.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "mechanism.inspect"
+    },
+    {
+      "operation": "mechanism.motion-link.create",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "mechanism.motion-link.create"
+    },
+    {
+      "operation": "mechanism.stop-check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "mechanism.stop-check"
+    },
+    {
+      "operation": "model.chamfer",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "model.chamfer"
+    },
+    {
+      "operation": "model.combine",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "model.combine"
+    },
+    {
+      "operation": "model.draft",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "model.draft"
+    },
+    {
+      "operation": "model.extrude",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "model.extrude"
+    },
+    {
+      "operation": "model.fillet",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "model.fillet"
+    },
+    {
+      "operation": "model.hole",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "model.hole"
+    },
+    {
+      "operation": "model.loft",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "model.loft"
+    },
+    {
+      "operation": "model.mirror",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "model.mirror"
+    },
+    {
+      "operation": "model.revolve",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "model.revolve"
+    },
+    {
+      "operation": "model.shell",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "model.shell"
+    },
+    {
+      "operation": "model.split",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "model.split"
+    },
+    {
+      "operation": "model.sweep",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "model.sweep"
+    },
+    {
+      "operation": "model.thicken",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "model.thicken"
+    },
+    {
+      "operation": "model.thread",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "model.thread"
+    },
+    {
+      "operation": "motion.envelope",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "motion.envelope"
+    },
+    {
+      "operation": "motion.sample",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "motion.sample"
+    },
+    {
+      "operation": "mount.check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "mount.check"
+    },
+    {
+      "operation": "mount.create",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "mount.create"
+    },
+    {
+      "operation": "occurrence.add",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "occurrence.add"
+    },
+    {
+      "operation": "occurrence.align",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "occurrence.align"
+    },
+    {
+      "operation": "occurrence.duplicate",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "occurrence.duplicate"
+    },
+    {
+      "operation": "occurrence.insert_external",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "occurrence.insert_external"
+    },
+    {
+      "operation": "occurrence.transform",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "occurrence.transform"
+    },
+    {
+      "operation": "optics.coverage",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "optics.coverage"
+    },
+    {
+      "operation": "optics.frustum",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "optics.frustum"
+    },
+    {
+      "operation": "optics.occlusion",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "optics.occlusion"
+    },
+    {
+      "operation": "pack.cross-section",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "pack.cross-section"
+    },
+    {
+      "operation": "parameter.test",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "parameter.test"
+    },
+    {
+      "operation": "path.create",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "path.create"
+    },
+    {
+      "operation": "path.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "path.inspect"
+    },
+    {
+      "operation": "pattern.circular",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "pattern.circular"
+    },
+    {
+      "operation": "pattern.path",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "pattern.path"
+    },
+    {
+      "operation": "pattern.rectangular",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "pattern.rectangular"
+    },
+    {
+      "operation": "pcb.check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "pcb.check"
+    },
+    {
+      "operation": "pcb.mechanical-exchange",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "pcb.mechanical-exchange"
+    },
+    {
+      "operation": "port.define",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "port.define"
+    },
+    {
+      "operation": "pose.apply",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "pose.apply"
+    },
+    {
+      "operation": "pose.delete",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "pose.delete"
+    },
+    {
+      "operation": "pose.evaluate",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "pose.evaluate"
+    },
+    {
+      "operation": "pose.list",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "pose.list"
+    },
+    {
+      "operation": "pose.save",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "pose.save"
+    },
+    {
+      "operation": "report",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "report"
+    },
+    {
+      "operation": "retention.bayonet",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "retention.bayonet"
+    },
+    {
+      "operation": "route.create3d",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "route.create3d"
+    },
+    {
+      "operation": "route.cut-list",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "route.cut-list"
+    },
+    {
+      "operation": "route.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "route.inspect"
+    },
+    {
+      "operation": "route.motion-states",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "route.motion-states"
+    },
+    {
+      "operation": "seal.evaluate",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "seal.evaluate"
+    },
+    {
+      "operation": "seal.gland",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "seal.gland"
+    },
+    {
+      "operation": "seal.profile",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "seal.profile"
+    },
+    {
+      "operation": "section.edit",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "section.edit"
+    },
+    {
+      "operation": "section.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "section.inspect"
+    },
+    {
+      "operation": "section.view",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "section.view"
+    },
+    {
+      "operation": "selection.highlight",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "selection.highlight"
+    },
+    {
+      "operation": "selection.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "selection.inspect"
+    },
+    {
+      "operation": "selection.rule.check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "host-service",
+      "nativeProgram": "selection.rule.check_internal"
+    },
+    {
+      "operation": "selection.rule.define",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "host-service",
+      "nativeProgram": "selection.rule.define_internal"
+    },
+    {
+      "operation": "selection.rule.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "host-service",
+      "nativeProgram": "selection.rule.inspect_internal"
+    },
+    {
+      "operation": "selection.rule.resolve",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "host-service",
+      "nativeProgram": "selection.rule.resolve_internal"
+    },
+    {
+      "operation": "sensor.alignment-check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "sensor.alignment-check"
+    },
+    {
+      "operation": "service.path-check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "service.path-check"
+    },
+    {
+      "operation": "shaft.interface",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "shaft.interface"
+    },
+    {
+      "operation": "shape.annular_segment",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.annular_segment"
+    },
+    {
+      "operation": "shape.arc_strip",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.arc_strip"
+    },
+    {
+      "operation": "shape.bolt_circle",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.bolt_circle"
+    },
+    {
+      "operation": "shape.boss_pattern",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.boss_pattern"
+    },
+    {
+      "operation": "shape.box",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.box"
+    },
+    {
+      "operation": "shape.can",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.can"
+    },
+    {
+      "operation": "shape.cone",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.cone"
+    },
+    {
+      "operation": "shape.cylinder",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.cylinder"
+    },
+    {
+      "operation": "shape.gear",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.gear"
+    },
+    {
+      "operation": "shape.helix",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.helix"
+    },
+    {
+      "operation": "shape.hose_barb",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.hose_barb"
+    },
+    {
+      "operation": "shape.impeller",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.impeller"
+    },
+    {
+      "operation": "shape.o_ring",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.o_ring"
+    },
+    {
+      "operation": "shape.revolved_profile",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.revolved_profile"
+    },
+    {
+      "operation": "shape.rib",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.rib"
+    },
+    {
+      "operation": "shape.ring",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.ring"
+    },
+    {
+      "operation": "shape.route",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.route"
+    },
+    {
+      "operation": "shape.slot",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.slot"
+    },
+    {
+      "operation": "shape.slot_pattern",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.slot_pattern"
+    },
+    {
+      "operation": "shape.spring",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.spring"
+    },
+    {
+      "operation": "shape.tube",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.tube"
+    },
+    {
+      "operation": "shape.web",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "shape.web"
+    },
+    {
+      "operation": "sheet.bends",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "sheet.bends"
+    },
+    {
+      "operation": "sheet.flat",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "sheet.flat"
+    },
+    {
+      "operation": "sheet.form",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "sheet.form"
+    },
+    {
+      "operation": "simulation.capabilities",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "simulation.capabilities"
+    },
+    {
+      "operation": "sketch.build",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "sketch.build"
+    },
+    {
+      "operation": "sketch.check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "sketch.check"
+    },
+    {
+      "operation": "sketch.constrain",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "sketch.constrain"
+    },
+    {
+      "operation": "sketch.coordinate-check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "sketch.coordinate-check"
+    },
+    {
+      "operation": "sketch.create",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "sketch.create"
+    },
+    {
+      "operation": "sketch.dimension",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "sketch.dimension"
+    },
+    {
+      "operation": "sketch.dimension-apply",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "sketch.dimension-apply"
+    },
+    {
+      "operation": "sketch.dimension-plan",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "sketch.dimension-plan"
+    },
+    {
+      "operation": "sketch.edit",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "sketch.edit"
+    },
+    {
+      "operation": "sketch.geometry",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "sketch.geometry"
+    },
+    {
+      "operation": "sketch.inspect",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "sketch.inspect"
+    },
+    {
+      "operation": "sketch.mirror",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "sketch.mirror"
+    },
+    {
+      "operation": "sketch.offset",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "sketch.offset"
+    },
+    {
+      "operation": "sketch.pattern",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "sketch.pattern"
+    },
+    {
+      "operation": "sketch.profile-file",
+      "owner": "shared",
+      "coordination": "D: file adaptation; C: sketch construction",
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "sketch.profile-file"
+    },
+    {
+      "operation": "sketch.profile-query",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "sketch.profile-query"
+    },
+    {
+      "operation": "sketch.project",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "sketch.project"
+    },
+    {
+      "operation": "sketch.transform",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "sketch.transform"
+    },
+    {
+      "operation": "snap.define",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "snap.define"
+    },
+    {
+      "operation": "snap.evaluate",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "snap.evaluate"
+    },
+    {
+      "operation": "snapshot",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "snapshot"
+    },
+    {
+      "operation": "snapshot.capture_v2",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "snapshot.capture_v2"
+    },
+    {
+      "operation": "snapshot.diff_v2",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "snapshot.diff_v2"
+    },
+    {
+      "operation": "spring.configure",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "spring.configure"
+    },
+    {
+      "operation": "spring.evaluate",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "spring.evaluate"
+    },
+    {
+      "operation": "status",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "status"
+    },
+    {
+      "operation": "styles.report",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "styles.report"
+    },
+    {
+      "operation": "surface.check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "surface.check"
+    },
+    {
+      "operation": "surface.extend",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "surface.extend"
+    },
+    {
+      "operation": "surface.offset",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "surface.offset"
+    },
+    {
+      "operation": "surface.patch",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "surface.patch"
+    },
+    {
+      "operation": "surface.stitch",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "surface.stitch"
+    },
+    {
+      "operation": "surface.trim",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "surface.trim"
+    },
+    {
+      "operation": "texture.heightmap",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": false,
+      "route": "generated-python",
+      "nativeProgram": "texture.heightmap"
+    },
+    {
+      "operation": "thread.catalog",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "thread.catalog"
+    },
+    {
+      "operation": "thread.custom-profile",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "thread.custom-profile"
+    },
+    {
+      "operation": "thread.pair-check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "thread.pair-check"
+    },
+    {
+      "operation": "tool.access",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "tool.access"
+    },
+    {
+      "operation": "undercut.check",
+      "owner": "C",
+      "coordination": null,
+      "declaredReadOnly": true,
+      "route": "generated-python",
+      "nativeProgram": "undercut.check"
+    }
+  ]
+}
