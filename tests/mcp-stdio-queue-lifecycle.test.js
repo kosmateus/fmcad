@@ -168,7 +168,7 @@ test('actual McpClient denies resources/read without transport or header changes
 });
 
 test('queue-mode resources/read fails locally before admission or physical dispatch', async t => {
-  const dir = fs.mkdtempSync('/tmp/opencode/catalog-broker-');
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'catalog-broker-'));
   let physicalCalls = 0;
   let startupProbes = 0;
   const broker = await serve({ backend: 'addin', timeoutMs: 1000 }, {
@@ -260,7 +260,7 @@ test('unsupported resources/subscribe request and notification fail closed; a la
 });
 
 test('CLI child reports stopped broker without direct fallback and handles local requests', { timeout: 10000 }, async t => {
-  const dir = fs.mkdtempSync('/tmp/opencode/catalog-child-');
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'catalog-child-'));
   const seen = [];
   const server = http.createServer((req, res) => {
     let body = '';
@@ -298,7 +298,7 @@ test('CLI child reports stopped broker without direct fallback and handles local
     url: `http://127.0.0.1:${server.address().port}/mcp`, transport: 'node', timeoutMs: 1000,
     queue: { autoStart: false, autoRecover: false } }));
   child = spawn(process.execPath, [path.resolve(__dirname, '../bin/fmcad-mcp.js'), '--project-directory', dir], {
-    cwd: dir, env: { HOME: dir, XDG_CONFIG_HOME: dir, FMCAD_CONFIG: fixtureConfig },
+    cwd: dir, env: { PATH: process.env.PATH, HOME: dir, XDG_CONFIG_HOME: dir, FMCAD_CONFIG: fixtureConfig },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   const closed = once(child, 'close');

@@ -381,3 +381,28 @@ registration module discovered by the full lint gate.
 
 The web route must remain draft until integrated with F's production launcher
 and qualified as an installed consumer. Native qualification remains deferred.
+
+### Shared public-consumer gate proposal for G
+
+The isolated proposal registers 33 retained public suites in a separate Node
+22.13.0/24.x CI job, installs the image test requirements and explicitly sets
+FMCAD_REFERENCE_PYTHON=python3. It warms the optional supported OpenCode V1 host
+metadata in the disposable offline cache without adding production dependencies.
+TERM=xterm describes the injected interactive-terminal fixture. Three temporary
+directories use os.tmpdir and the isolated child preserves PATH for hosts where
+process.execPath is relative; all behavioral assertions are unchanged.
+
+Local initial gate: 227 tests, 220 passed, seven failed, zero skips. Three
+failures require /proc (broker birth/artifact identity), two were hard-coded
+/tmp fixtures corrected here, and two presence reporters cannot establish birth
+identity on this host. Corrected broker fixture reruns reach the retained /proc
+guard; the stopped-broker child reaches a sandbox Unix-socket EPERM rather than
+the Linux ENOENT contract. The additional review/UI/retained-origin run has 34
+passes and one corrected temporary-directory failure; its broker rerun reaches
+the same /proc guard. These are not green qualification claims. Full Linux CI
+must run unchanged assertions before merging.
+
+The isolated E/F integration tree builds and its installed tarball passes real
+console readiness, static assets, registered/global URL selection, both aliases,
+caller disposal and shared-service reuse. The diagnostic compatibility warning
+introduced by F is retained. No terminal implementation is retired.

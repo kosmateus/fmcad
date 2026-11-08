@@ -145,3 +145,35 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
       - run: npm run test:regressions
+
+  public-consumers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            tests/python-requirements.txt
+            tests/python-constraints.txt
+            assets/*requirements.txt
+      - run: python -m pip install -r tests/python-requirements.txt
+      - run: npm ci
+      - run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: npm run test:prepare-offline
+      - run: timeout --signal=TERM --kill-after=15s 18m npm run test:public-consumers
+        env:
+          FMCAD_REFERENCE_PYTHON: python3
+          TERM: xterm
