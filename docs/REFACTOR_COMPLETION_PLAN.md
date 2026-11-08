@@ -1,5 +1,11 @@
 # fmcad refactor completion plan
 
+**Current execution plan:** [parallel work packages and merge order](REFACTOR_PARALLEL_PLAN.md),
+audited through PR #34 on 8 November 2026. It assigns the remaining work to
+agents A–G and supersedes the older delivery order below. This file retains the
+historical baseline, defect evidence and completed-stage ledger; old statements
+that a later-completed stage is still pending are historical, not new assignments.
+
 Reference: GitHub `a80b7753e47b8260c2de362b6c4fad04025ab1b2` and the original
 archive, including Git history, worktrees and Beads. Keychain was deliberately
 removed; neither its implementation nor its tests will be restored.
