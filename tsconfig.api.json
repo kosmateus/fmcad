@@ -41,7 +41,8 @@
     "src/composition/document-stages.ts",
     "src/composition/cad-service.ts",
     "src/composition/catalog-execution.ts",
-    "src/composition/execution-request.ts"
+    "src/composition/execution-request.ts",
+    "src/composition/stage-dependencies.ts"
   ],
   "references": [
     {

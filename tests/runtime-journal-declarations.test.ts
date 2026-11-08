@@ -22,7 +22,12 @@ for (const [group, modules] of Object.entries({
     "sdk-probe",
     "worker",
   ],
-  composition: ["cad-service", "catalog-execution", "execution-request"],
+  composition: [
+    "cad-service",
+    "catalog-execution",
+    "execution-request",
+    "stage-dependencies",
+  ],
 }))
   test(`staged ${group} declarations resolve without workspace package types`, (t) => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "runtime-types-"));

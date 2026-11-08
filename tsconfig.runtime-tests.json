@@ -68,7 +68,8 @@
     "tests/batch-replay-compatibility.test.ts",
     "tests/run-guard-receipts.test.ts",
     "tests/command-services-migration.test.ts",
-    "tests/execution-request-migration.test.ts"
+    "tests/execution-request-migration.test.ts",
+    "tests/stage-dependencies-migration.test.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]
 }

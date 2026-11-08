@@ -160,5 +160,11 @@
     "sourcePath": "src/composition/execution-request.js",
     "file": "execution-request-f336.js.txt",
     "sha256": "12a3702d7a3a27773aad58fb4c1a5728b82a8047b67e4face73b72e97c416f59"
+  },
+  {
+    "revision": "938643314c76fd6503fd4e44720eca13edc7bfd0",
+    "sourcePath": "src/composition/stage-dependencies.js",
+    "file": "stage-dependencies-9386.js.txt",
+    "sha256": "c08b7ae433baa3da3bc8f9563c613c7dbab5d60da72d3f848b1f6e2eec123723"
   }
 ]
