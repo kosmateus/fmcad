@@ -122,6 +122,7 @@ export const simulatorCapabilities = new Set([
   "saved-fixtures",
   "saved-reopen",
   "saved-revisions",
+  "dimensioned-rectangle",
   "parameter-crud",
   "parameter-expressions",
   "construction-planes",

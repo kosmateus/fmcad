@@ -27,3 +27,8 @@ For component admission, the same commands use `test:scenarios:component`.
 For final native qualification use `test:scenarios:live`, `--run`, an explicit
 `--project-id` and `--folder-id`, and the matching installed build. Do not run native
 qualification until the offline refactor is complete.
+
+Add `rectangles` to the same required MCP/addin, concurrency 1/2/10 matrix.
+The scenario always uses ten owners in the unit matrix and validates analytical
+regeneration before and after owned saved-file reopening. Native execution stays
+deferred; model geometry is not native kernel qualification.

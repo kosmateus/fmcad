@@ -1,6 +1,6 @@
 # Partial Fusion test model
 
-Model version 10 implements document identity/lifecycle, numeric user-parameter CRUD,
+Model version 11 implements document identity/lifecycle, numeric user-parameter CRUD,
 saved-file identity and deletion, and a **test state export**. The exported `.f3d` fixture contains a JSON marker
 `nativeF3d: false`; it is not a native Fusion archive and must not be imported into Fusion.
 Native export/import assertions require `native-f3d`, which this model does not advertise.
@@ -111,3 +111,19 @@ rebound on open. It never copies the application or other documents. This is not
 Fusion serializer, disk durability guarantee or evidence of STEP/F3D validity.
 Native qualification must verify reopened creation identity, token resolution,
 active-document behavior, saved versions and delayed cloud visibility.
+
+## Bounded dimensioned rectangles
+
+The model supports the production `shape.box` recipe on the root XY plane:
+one positive-quadrant rectangle, its first point coincident with the sketch
+origin, and one driving aligned/horizontal width and aligned/vertical depth.
+Parameters and extrusion distance use the existing dimensional expression
+interpreter. Bounds and volume regenerate analytically from the retained
+expressions, including after saved-file reopen. Dimensions have owned tokens;
+foreign endpoints, repeated dimensions, driven dimensions, incompatible
+orientations, nonpositive dimensions and surface extrusions are rejected.
+
+This is not a general geometric constraint solver. Native orientation conventions,
+Fusion recomputation timing, constraint health and topology remain native-only
+qualification assumptions. Parameter deletion/rename dependency rewriting and
+arbitrary direct point editing are outside this bounded capability.
