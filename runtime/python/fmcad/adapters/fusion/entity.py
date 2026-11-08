@@ -213,7 +213,9 @@ def _entity_geometry(value: "JsonValue") -> "_EntityGeometry":
             if isinstance(number, bool) or not isinstance(number, (int, float)) or not math.isfinite(number):
                 raise ValueError('geometry ' + key + ' must be finite and numeric')
             geometry[key] = float(number)
-    for key in ('space', 'frame', 'directionUnits', 'lengthUnits', 'angleUnits'):
+    if 'frame' in geometry:
+        geometry['frame'] = _entity_json_object(geometry['frame'], 'geometry frame')
+    for key in ('space', 'directionUnits', 'lengthUnits', 'angleUnits'):
         if key in geometry and not isinstance(geometry[key], str):
             raise ValueError('geometry ' + key + ' must be text')
     return _cad_cast("_EntityGeometry", geometry)
