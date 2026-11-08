@@ -322,3 +322,45 @@ test('typed configuration matches historical validation, initialization and acce
   const env = { PATH: process.env.PATH, HOME: directory, XDG_CONFIG_HOME: path.join(directory,'config'), XDG_STATE_HOME: path.join(directory,'state') };
   assert.equal(execFileSync(process.execPath, ['-e', program], { cwd: directory, env, encoding: 'utf8' }), 'matched');
 });
+
+test('MCP reconciliation accepts advertised optional outcomes without resubmission', async () => {
+  const historical = historicalPublicBoundary('mcp-stdio-compat');
+  const current = require('../src/mcp-stdio-compat');
+  assert.deepEqual(current.queueTools,historical.queueTools);
+  const catalog = {tools:()=>[],list:()=>[],fromMcp:()=>assert.fail('helper is not a CAD call'),isLocal:()=>false};
+  historical.configureCatalogServices(catalog); current.configureCatalogServices(catalog);
+  async function invoke(api, args) {
+    const calls = [];
+    const job = {id:'job-owned',requestId:'request-owned',clientId:'owner',state:'needs_reconciliation',revision:7};
+    const context = {clientId:'owner',requestId:'request-owned',docId:'document-pin',docFileId:'file-pin',sessionId:'session-owned'};
+    const client = {
+      auth:{clientId:'owner'},
+      register:async options=>calls.push(['register',options]),
+      call:async (method,input)=> { calls.push([method,input]); return method==='status'?job:{...job,acceptedOutcome:input.acceptedOutcome}; },
+      readRequestContext: id=>{assert.equal(id,'request-owned');return context;},
+      submit:()=>assert.fail('reconcile must never submit'),
+      wait:()=>assert.fail('reconcile must never replay or wait for a new job'),
+    };
+    const response = await api.createQueuePost(client,{},undefined)({jsonrpc:'2.0',id:'reconcile-response',method:'tools/call',params:{name:'fmcad_queue_reconcile',arguments:args}});
+    return {calls,response,body:JSON.parse(response.raw)};
+  }
+  assert.deepEqual(await invoke(current,{jobId:'job-owned'}),await invoke(historical,{jobId:'job-owned'}));
+  for (const acceptedOutcome of ['committed','aborted']) {
+    const before = await invoke(historical,{jobId:'job-owned',acceptedOutcome});
+    assert.match(before.body.error.message,/INVALID_QUEUE_PARAMS/);
+    assert.deepEqual(before.calls,[]); // Reproduces the inherited required-only allowlist defect.
+    const after = await invoke(current,{jobId:'job-owned',acceptedOutcome});
+    assert.equal(after.body.id,'reconcile-response');
+    assert.equal(after.body.error,undefined);
+    assert.deepEqual(after.calls,[['register',{autoStart:false}],['reconcile',{jobId:'job-owned',acceptedOutcome}],['status',{jobId:'job-owned'}]]);
+    assert.equal(after.response.queueReceipt.requestId,'request-owned');
+    assert.equal(after.response.queueReceipt.context.docId,'document-pin');
+    assert.equal(after.response.queueReceipt.context.docFileId,'file-pin');
+    assert.equal(after.body.result.structuredContent.acceptedOutcome,acceptedOutcome);
+  }
+  for (const args of [{jobId:'job-owned',acceptedOutcome:'success'},{jobId:'job-owned',acceptedOutcome:null},{jobId:'job-owned',acceptedOutcome:42},{jobId:'job-owned',foreign:true},{acceptedOutcome:'committed'},{jobId:' '}]) {
+    const result=await invoke(current,args);
+    assert.match(result.body.error.message,/INVALID_QUEUE_PARAMS/);
+    assert.deepEqual(result.calls,[]);
+  }
+});

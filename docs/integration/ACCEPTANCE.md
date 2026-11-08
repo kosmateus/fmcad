@@ -56,7 +56,7 @@ before any integration; record exact merged SHA and full matrix results here.
 | B       | PR #36 / #44 / #45 merged through `0d6f757` | Persistence plus anti-omission/profile increments; semantic mapping, shared reopen and lifecycle/recovery proof remain open. |
 | C       | PR #37 `a4943f3`               | Claim only at observation; canonical modeling services, Python boundaries and negative/readback evidence required.    |
 | D       | PR #38 `ee0fd54`               | Claim only at observation; file/source/version/publication and recovery contracts required.                           |
-| E       | PR #39 / #46 / #48 merged through `5d5a793` | Image, client/configuration, engineering and reference boundaries; remaining public routes and complete installed parity stay open. |
+| E       | PR #39 / #46 / #48 / #50 merged through `2463569` | Image, client/configuration, engineering/reference and MCP reconciliation helper boundaries; remaining public routes and complete installed parity stay open. |
 | F       | PR #41 merged as `04a42b4`     | First lifecycle/race delivery and UI ledger; controls, production broker parity, retention and TUI retirement remain open. |
 | G       | PR #40                         | Registration guard and inventories are an initial delivery, not G1–G4 completion.                                     |
 
@@ -378,3 +378,38 @@ compressed bytes, 16,640,729 unpacked bytes and shasum
 `afdd52049a4cb6138d0a6fb9e9460b7d81170cf2`. No source loader is retired because
 the installed and source consumers still use them. E1–E4, F1–F4, G and offline
 acceptance remain incomplete; Fusion was not executed.
+
+## Eighth merged A–F checkpoint — MCP reconciliation helper parity
+
+Merged main `246356900061f7b95dc6bcddc6c067aaad72ceb0` contains Agent E's
+MCP reconciliation helper correction from PR #50. Its exact head
+`138059934f3bf2be649816161fb4e1ecdabf35b9` passed all 22 jobs in workflow
+`42525845618`. No workflow run is registered for the merge SHA, so the exact
+combined G candidate and its eventual merge head still require fresh full CI.
+
+The public helper now treats `acceptedOutcome` as the optional field its schema
+advertises and admits only `committed` or `aborted`. Paired historical/current
+tests require exactly one reconciliation call and one owned-status read, with no
+submission, replay or wait. Invalid outcomes, unknown fields and missing job
+identity still reject before registration. Request, document and file pins remain
+owned by the accepted job; broker policy and receipt validation are unchanged.
+
+The combined pinned build, lint, formatting and strict test typecheck pass. The
+changed library selection passes all nine cases, including an unchanged tarball
+installation outside the repository after explicit offline-cache preparation.
+The companion framing/catalog selection passes 18 of 24 cases on this host; all
+six failures stop at unavailable `/proc` process or artifact verification. No
+assertion was changed or waived, and the exact PR-head Linux matrix is the
+applicable delivery evidence. All 129 shared scenario cases, simulator strict
+typing and the 58-method / 21-property API shape check also pass.
+
+Static registration remains 491 sources / 234 registered / 257 explicit gaps;
+the modified library test was already selected. Runtime inventory increases to
+656 files for the canonical typed helper module, while public routes remain 420.
+Package inspection reports 1,581 files, 3,377,886 compressed bytes and 16,642,858
+unpacked bytes, shasum `0c80e85af09e93821e6cec3149c32870674c6d2c`.
+
+`src/mcp-stdio-compat.js` remains the active public loader and is not retired.
+E1–E4, F1–F4, G and offline acceptance remain incomplete. The schema-2 native
+handoff remains preparation only; Fusion was not executed and every native
+obligation remains `NOTRUN` pending offline completion and real Fusion access.

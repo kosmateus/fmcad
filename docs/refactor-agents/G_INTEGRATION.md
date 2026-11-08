@@ -279,3 +279,31 @@ Engineering/reference loaders remain active consumers and are not retired.
 Remaining metadata, MCP, review/shot/UI, Control Center parity and complete
 installed CLI/MCP/OpenCode evidence keep E1–E4, F1–F4, G and offline acceptance
 open. Native image/Canvas/UI/Fusion qualification was not run.
+
+### Eighth A–F merge checkpoint
+
+Merged main `2463569` adds Agent E's MCP reconciliation helper parity from PR
+#50. Its exact head `1380599` passed all 22 jobs in workflow `42525845618`; no
+merge-SHA workflow is registered. Fresh full CI is required on this combined G
+candidate and on its eventual merge head.
+
+The typed helper schema now distinguishes allowed and required fields, accepts
+only the advertised `committed`/`aborted` optional outcomes and preserves owned
+request/document/file pins. Paired tests require one reconcile plus one owned
+status read and prohibit submit or wait. Unknown fields and invalid outcomes
+still reject before registration; broker policy and receipt validation did not
+move.
+
+The combined build, lint, formatting, strict test types, nine changed library
+cases, 129 scenarios, simulator typing and 58-method / 21-property API shape
+check pass. The library test keeps its external offline tarball installation
+unchanged. The companion framing/catalog selection passes 18 of 24 locally; six
+cases stop only at unavailable `/proc` verification and remain asserted for the
+Linux matrix.
+
+Inventory is 656 runtime files, 420 public routes and 491 test sources, with 234
+registered and 257 explicit gaps. Package inspection reports 1,581 files,
+3,377,886 compressed bytes and 16,642,858 unpacked bytes, shasum
+`0c80e85af09e93821e6cec3149c32870674c6d2c`. The compatibility loader remains an
+active public consumer and is not retired. E1–E4, F1–F4, G and offline acceptance
+remain open; native preparation remains `NOTRUN` and Fusion was not executed.

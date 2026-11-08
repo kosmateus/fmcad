@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "baselineSha": "5d5a793e7f5569608355415b3fb35fab1ef077be",
+  "baselineSha": "246356900061f7b95dc6bcddc6c067aaad72ceb0",
   "meaning": "Explicit open registration debt at the latest G checkpoint, never a passing coverage waiver. New orphan files fail CI.",
   "gaps": {
     "tests/addin-bridge.test.js": {
