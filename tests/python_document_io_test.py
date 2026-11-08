@@ -150,6 +150,7 @@ class RuntimeInventoryTests(unittest.TestCase):
                             '_fpc_domain_math': 'math', '_fpc_adapter_math': 'math',
                             '_seal_rules_math': 'math', '_seal_adapter_math': 'math',
                             '_presentation_math': 'math',
+                            '_measurement_rules_math': 'math',
                             '_optics_domain_math': 'math', '_optics_adapter_math': 'math',
                             '_explode_domain_math': 'math', '_explode_adapter_math': 'math',
                             '_anim2_domain_math': 'math', '_anim2_adapter_math': 'math',
