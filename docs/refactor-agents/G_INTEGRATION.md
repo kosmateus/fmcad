@@ -1,4 +1,4 @@
-# Agent G — coverage, Beads, packaging and final qualification
+# Agent G — coverage, backlog, packaging and final qualification
 
 Status: **claimed by Agent G; in progress** (8 November 2026).
 Starting baseline: `0b84454d8e5d22abb23bcf52999c506894ebf5bf`.
@@ -11,7 +11,7 @@ another agent's implementation or declare their unfinished scope complete.
 
 Account for the entire remaining refactor and integrate its deliveries on main.
 Close gaps between tests that exist and tests that execute. Finish packaging,
-architecture enforcement, historical/Beads reconciliation, obsolete-path removal,
+architecture enforcement, aggregate backlog reconciliation, obsolete-path removal,
 measurements and the native qualification handoff.
 
 Own root shared configuration: `package.json`/lock, workspace manifests when
@@ -22,7 +22,7 @@ gate repair; coordinate before overlapping edits. B owns live inventory/scenario
 E owns public route metadata; F owns console implementation. Gather their
 manifests and integrate them without independent competing edits.
 
-## G1 — complete inventory and Beads reconciliation
+## G1 — complete inventory and aggregate backlog reconciliation
 
 Enumerate tracked runtime families, facades, generated loaders, public methods,
 non-live tests, live assertions and actual CI reachability. File-extension or line
@@ -31,20 +31,19 @@ tests/effects/readback and negative coverage, or a precise gap with next action.
 Build a coverage-registration check that detects newly orphaned required files.
 Avoid executing destructive/manual/live helpers through an indiscriminate glob.
 
-Inspect the archive's Git branches/worktrees and Beads embedded Dolt data in a
-separate copy. Re-export status if tooling is available; otherwise state exactly
-which old status is unverified. The earlier plan reports 150 tasks (104 closed,
-46 remaining), but later code may implement open tasks. Reconcile `69j`, `cb4`,
-`e4m`, `hex-integration`, Control Center and qualification tasks against commits
-and evidence. Record duplicates/superseded work without silently dropping scope.
-Keep new features separate; preserve existing behavior. Keychain remains excluded.
+The approved aggregate is 150 total, 104 closed and 46 remaining, but historical
+status is not current acceptance evidence. Reconcile the public package plans
+against commits and tests without publishing underlying records, identifiers or
+relationships. Record duplicate or superseded public scope without silently
+dropping work. Keep new features separate; preserve existing behavior. Keychain
+remains excluded.
 
 ## G2 — continuously integrate contracts and test execution
 
 Track A–F PR dependencies, public signature changes and required registry/build
 patches. Merge only after the full CI matrix passes the exact head; if main has
 advanced, verify the merge candidate and rerun affected checks. Do not force-push
-over other agents or replace current main with an archive branch.
+over other agents or replace current main with a historical branch.
 
 Keep Node 22.13/24, Python, Chromium, strict admission, both physical transport
 models and installed-package coverage. Register A's broker gate and B's expanded
@@ -64,7 +63,7 @@ Install a built tarball outside the monorepo. Validate CLI/MCP/SDK/OpenCode
 entrypoints, declarations, Python runtime, pinned type definitions, browser
 assets, source provenance and export allowlists. Verify clean and incremental
 builds, missing dependency errors and absence of private workspace imports.
-Do not package tests, Beads, archives, worktrees or generated investigation data.
+Do not package tests, private backlog records or generated investigation data.
 
 With A–F approval, remove transitional JavaScript facades, obsolete loaders and
 stale staging paths after all consumers move. Preserve necessary platform
@@ -108,7 +107,8 @@ repeat required qualification on the fixed integrated build.
 ## Required final deliverables
 
 - Integrated main with all package completion ledgers and green full CI.
-- Runtime/public-method/test/Beads disposition matrix with no unassigned scope.
+- Runtime/public-method/test disposition matrix plus aggregate backlog reconciliation,
+  with no unassigned public scope.
 - Installed-package and architecture/facade-retirement evidence.
 - Reproducible measurements and explicit native assumptions.
 - Native runbook with machine-readable required cases and cleanup recovery.
@@ -118,7 +118,7 @@ repeat required qualification on the fixed integrated build.
 ## Initial integration delivery (PR #40)
 
 The [acceptance ledger](../integration/ACCEPTANCE.md) records the starting SHA,
-A–F dependencies, archive fingerprint and independently exported Beads statuses. A separate
+A–F dependencies and the independently verified backlog aggregate. A separate
 registration workflow detects newly orphaned test sources without executing live
 helpers. The initial 263-file registration debt has explicit owners/next actions;
 this is not a coverage waiver or completion claim. Inventory commands expose
@@ -131,14 +131,11 @@ checks and full exact-head CI are tracked in the acceptance ledger as they settl
 No production implementation or another agent's owned file was changed. G1–G4
 remain in progress; final removal and acceptance depend on A–F evidence.
 
-### Verified archive reconciliation
+### Verified aggregate reconciliation
 
-A disposable embedded-Dolt copy was read with the checksum-verified Dolt 2.7.2
-binary. Counts match the historical ledger: 150 tasks, 104 closed and 46 remaining.
-Detailed task records and relationships remain outside the public repository;
-automatic approval review rejected their publication from the private archive.
-The acceptance ledger publishes aggregate verification and already-public scope
-only. Native and separate-feature obligations remain explicit; no task was closed.
+The approved aggregate is independently confirmed: 150 total, 104 closed and 46
+remaining. Underlying records, identifiers and relationships are not published.
+Native and separate-feature obligations remain explicit, and no task was closed.
 
 ### First A–F merge checkpoint
 
@@ -152,14 +149,15 @@ existing scenario-unit glob: 487 test sources, 224 registered, 263 explicit gaps
 The combined local checks pass 124 scenario tests, simulator strict typing and
 58 method / 21 property API shapes. Native commands remain unexecuted. Shared
 saved-reopen migration, receipt/restart recovery, assertion profiles and native
-archive/token behavior remain B dependencies, so neither B nor G is complete.
+file/token behavior remain B dependencies, so neither B nor G is complete.
 
 ### Second A–F merge checkpoint
 
 Merged main `1023664` adds Agent E's first bounded image-command delivery from
 PR #39. Its exact head `8a707c2` passed all 22 jobs in workflow `42524333282`.
-The merge-head workflow was cancelled and requeued, so it is not yet passing
-evidence. G integrates the merge only on a new candidate that must run fresh CI.
+Merge-head workflow `42529116914` ended with `startup_failure` on its second
+attempt, so it is not passing evidence. G integrates the merge only on a new
+candidate that must run fresh CI.
 
 The combined local tree passes build, strict test types, 124 scenario tests and
 all 38 runtime-consumer cases with an explicit writable workspace `TMPDIR`.
@@ -178,7 +176,7 @@ stay open; G and offline acceptance remain incomplete.
 
 Merged main `0d6f757` adds Agent B's assertion audit and required profiles from
 PR #45. Its exact head `895eb69` passed all 22 CI jobs in workflow `42524676732`.
-The merge-head workflow `42530438963` is queued, so this is not yet successful
+The merge-head workflow `42530438963` was cancelled, so this is not successful
 merge-head evidence. G's new combined candidate requires fresh full CI.
 
 The audit freezes 1,588 static sites across 39 live sources. Of 613 historical
@@ -207,7 +205,7 @@ B, G and offline acceptance remain incomplete.
 Merged main `171c972` adds Agent A's A1 broker-regression gates from PR #42.
 Its exact head `709741a` passed the expanded 24-job matrix in workflow
 `42525055817`, including dedicated Node 22.13 and 24 broker jobs. Merge-head
-workflow `42531784829` is queued, so it is not yet successful merge-head evidence.
+workflow `42531784829` was cancelled, so it is not successful merge-head evidence.
 
 The named selection registers all six retained queue families, an execution-path
 guard and compiled historical scheduling comparisons. Coverage is now 491 test
@@ -222,3 +220,62 @@ PR-head Linux matrix. Package allowlisting remains 1,571 files; only published
 package metadata changes, to 3,375,397 compressed bytes and 16,628,497 unpacked
 bytes. Runtime payloads and facade dispositions are unchanged. A1 is integrated,
 while A2–A4, G and offline acceptance remain incomplete; Fusion was not run.
+
+### Fifth A–F merge checkpoint
+
+Merged main `7ec4886` adds Agent E's typed compatibility client and configuration
+composition from PR #46. Its exact head `94cb3f1` passed all 22 jobs in workflow
+`42524870768`. No workflow run is registered for the merge SHA, so G requires a
+fresh complete matrix on its combined candidate and eventual merge head.
+
+The public `client.js` and `config.js` paths remain deliberate runtime loaders;
+their canonical metadata/validation composition now lives in two strict typed
+modules. Eight library tests preserve historical denial, metadata, context,
+configuration, initialization and accepted-service behavior and install a tarball
+outside the repository with strict declaration compilation. The 22 existing
+configuration cases also pass. Local setup required an explicit writable sibling
+`TMPDIR` and prepared npm cache; assertions were unchanged.
+
+Inventory is now 653 runtime files, 420 public routes and 491 test sources, with
+234 registered and 257 explicit gaps. The package contains 1,575 files,
+3,376,304 compressed bytes and 16,631,918 unpacked bytes, shasum
+`9a90747a162a58f72cc4233469b86f6ae28a11df`. No facade is retired because both
+loaders remain active consumers. Remaining public surfaces and complete installed
+CLI/MCP/OpenCode parity keep E1–E4 open. Offline acceptance is incomplete and
+Fusion was not run.
+
+### Sixth A–F merge checkpoint
+
+Merged main `04a42b4` adds Agent F's first Control Center lifecycle delivery from
+PR #41. Its exact head `7f0ab88` passed all 22 jobs in workflow `42525302616`,
+including Linux Chromium. No merge-SHA workflow is registered, so the combined G
+candidate and eventual merge head still require fresh full CI.
+
+The delivery rejects late snapshot/detail work after disposal or dialog closure,
+shares startup and clears timers. Fourteen combined project/history/agent cases
+pass locally with a writable sibling `TMPDIR`; the initial direct invocation only
+failed because `/tmp` is absent. The UI ledger retains system controls, richer
+project/localization behavior, production-broker browser evidence, retention and
+terminal retirement as open work. No TUI or public entrypoint is retired, so
+F1–F4 remain incomplete.
+
+### Seventh A–F merge checkpoint
+
+Merged main `5d5a793` adds Agent E's typed engineering and reference host-command
+composition from PR #48. Its exact head `ae3faff` passed all 22 jobs in workflow
+`42525428442`; no merge-SHA workflow is registered. Both adapters remain offline,
+preserve historical input/output/preflight effects and acquire neither broker nor
+Fusion.
+
+All 33 engineering/batch-local cases pass. The combined installed library/runtime
+consumer selection passes 48 cases after explicit offline-cache preparation and
+installs its tarball outside the repository; declarations and packaged host assets
+are exercised unchanged. Inventory is 655 runtime files, 420 public routes and
+491 test sources, with 234 registered and 257 explicit gaps. Package inspection
+reports 1,579 files, 3,377,457 compressed bytes and 16,640,729 unpacked bytes,
+shasum `afdd52049a4cb6138d0a6fb9e9460b7d81170cf2`.
+
+Engineering/reference loaders remain active consumers and are not retired.
+Remaining metadata, MCP, review/shot/UI, Control Center parity and complete
+installed CLI/MCP/OpenCode evidence keep E1–E4, F1–F4, G and offline acceptance
+open. Native image/Canvas/UI/Fusion qualification was not run.

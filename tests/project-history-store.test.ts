@@ -238,3 +238,78 @@ test("missing registered history is not recreated and retained project files rem
     queueBefore,
   );
 });
+
+test("quota exhaustion preserves unresolved history, foreign projects and committed revisions across reopen", (t) => {
+  const fixture = setupProjects(t, ["quota-owner", "quota-foreign"]);
+  const project = registeredProject(fixture.registry, "quota-owner");
+  const foreign = openHistory(
+    fixture.registry,
+    registeredProject(fixture.registry, "quota-foreign"),
+    { readOnly: true },
+  );
+  t.after(() => foreign.close());
+  const protectedForeign = foreign.readSnapshot();
+  const core = require(
+    path.join(repositoryRoot, "packages/core/dist/index.js"),
+  ) as typeof import("../packages/core/dist/index.js");
+  let store = openHistory(fixture.registry, project);
+  t.after(() => store.close());
+  store.ingest([
+    core.normalizeConsoleTelemetryJob(
+      {
+        id: "uncertain-job",
+        requestId: "original-request",
+        clientId: "quota-client",
+        state: "needs_reconciliation",
+        submittedAt: FIXTURE_NOW,
+        request: {
+          clientContext: { projectId: project.projectId },
+          inputFiles: [],
+        },
+      },
+      {
+        sourceId: "quota-original-source",
+        epoch: "quota-epoch",
+        sequence: 1,
+        revision: 1,
+        observedAtMs: FIXTURE_NOW,
+        readAtMs: FIXTURE_NOW,
+        projectId: project.projectId,
+        transport: "mcp",
+      },
+    ),
+  ]);
+  const protectedHistory = store.readSnapshot();
+  assert.ok(protectedHistory.jobs.some((job) => job.jobId === "uncertain-job"));
+  store.close();
+  // Existing pages remain; the cap must refuse growth rather than discard evidence.
+  store = openHistory(fixture.registry, project, { maxDatabasePages: 1 });
+  let committed = store.snapshot(FIXTURE_NOW);
+  let exhausted = false;
+  for (let index = 0; index < 2000; index++) {
+    committed = store.snapshot(FIXTURE_NOW);
+    try {
+      store.setAlias(`quota-${index}-${"x".repeat(110)}`, FIXTURE_NOW);
+    } catch (error) {
+      assert.equal((error as { code?: string }).code, "HISTORY_DB_FULL");
+      exhausted = true;
+      break;
+    }
+  }
+  assert.equal(
+    exhausted,
+    true,
+    "stable bounded fixture must reach the SQLite page cap",
+  );
+  assert.deepEqual(store.snapshot(FIXTURE_NOW), committed);
+  store.close();
+  store = openHistory(fixture.registry, project, { readOnly: true });
+  const reopened = store.readSnapshot();
+  assert.deepEqual(reopened.jobs, protectedHistory.jobs);
+  assert.deepEqual(reopened.events, protectedHistory.events);
+  assert.deepEqual(reopened.fileReferences, protectedHistory.fileReferences);
+  assert.deepEqual(store.snapshot(FIXTURE_NOW), committed);
+  assert.deepEqual(foreign.readSnapshot(), protectedForeign);
+  assert.throws(() => store.listEvents({ limit: 501 }));
+  assert.throws(() => store.readSnapshot(1));
+});

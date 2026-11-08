@@ -104,3 +104,30 @@ delivery; do not stop after the first CLI facade extraction.
 - E1–E4 are not complete; remaining CLI/MCP compatibility, configuration/client,
   engineering/reference/review/shot/UI orchestration and complete installed
   CLI/MCP/library/OpenCode qualification remain assigned to E.
+
+### Public compatibility boundaries (next delivery)
+
+`library-client.ts` now owns the metadata-only compatibility client;
+`library-configuration.ts` owns configuration loading, initialization and accepted
+service validation. The old source paths remain small runtime loaders. Historical
+comparisons cover all control-method denials, immutable header snapshots, context
+replacement, repeated disposal, malformed configuration, forced initialization,
+accepted-service bytes and runtime anchors. The existing configuration suites
+pass 22 cases. Installed declaration coverage includes both new modules.
+
+### Offline engineering and reference composition (next delivery)
+
+`library-engineering.ts` owns CLI parsing, input-size checks and publication with
+explicit file ports. The existing typed calculation engine remains unchanged.
+`library-reference.ts` owns reference-image validation and synchronous interpreter
+preflight. Neither imports broker execution or acquires Fusion. Unknown engineering
+operation keys now produce an explicit unsupported-operation error before file
+work rather than an incidental missing-method TypeError; supported routes retain
+historical output and side effects.
+
+Paired tests preserve input bytes, schemas, calculation statuses, malformed-input
+errors, nonfinite rejection, output bytes and refusal to overwrite. Reference
+comparisons retain synchronous preflight failure and exact helper arguments.
+The existing six engineering/batch-local suites pass all 33 cases. Native image
+quality and Canvas semantics remain deferred. Declarative metadata is still a
+separate registration migration; these adapters do not close all of E3.

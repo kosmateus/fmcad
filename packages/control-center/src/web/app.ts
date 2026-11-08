@@ -344,6 +344,9 @@ export class ControlCenterApp {
   #localeSelector: LocaleSelectorHandle | null = null;
   #unsubscribeLocale: (() => void) | null = null;
   #started = false;
+  #startPromise: Promise<void> | null = null;
+  #modalGeneration = 0;
+  #toastTimer: number | null = null;
   #localeRenderQueued = false;
   #scope: QueryScope = { kind: "global" };
   #view: View = "overview";
@@ -424,16 +427,29 @@ export class ControlCenterApp {
     void this.start();
   }
 
-  async start(): Promise<void> {
+  start(): Promise<void> {
+    if (this.#listeners.signal.aborted) return Promise.resolve();
+    if (this.#startPromise) return this.#startPromise;
     this.#started = true;
     this.#syncDocumentLocale();
     this.#render();
-    await this.#load(this.#scope, false);
-    this.#watch();
+    this.#startPromise = this.#load(this.#scope, false).then(() =>
+      this.#watch(),
+    );
+    return this.#startPromise;
   }
 
   dispose(): void {
+    if (this.#listeners.signal.aborted) return;
     this.#listeners.abort();
+    this.#modalGeneration += 1;
+    this.#globalSearchSerial += 1;
+    this.#artifactLoadSerial += 1;
+    this.#modal = null;
+    this.#latest = null;
+    this.#visible = null;
+    if (this.#toastTimer !== null) window.clearTimeout(this.#toastTimer);
+    document.getElementById("toast")?.classList.remove("visible");
     this.#loadGeneration += 1;
     this.#unsubscribeLocale?.();
     this.#unsubscribeLocale = null;
@@ -459,6 +475,7 @@ export class ControlCenterApp {
   }
 
   async #load(scope: QueryScope, background: boolean): Promise<void> {
+    if (this.#listeners.signal.aborted) return;
     const generation = ++this.#loadGeneration;
     const next: LoadState = {
       scope,
@@ -501,17 +518,20 @@ export class ControlCenterApp {
       }
     }
 
+    if (generation !== this.#loadGeneration) return;
     const token = next.snapshotToken;
     if (scope.kind === "global" && token) {
       await this.#query(next, "projects", { limit: 200 });
+      if (generation !== this.#loadGeneration) return;
       if (next.pages.projects) {
         this.#projects = next.pages.projects.rows;
         this.#projectTotal = knownTotal(next.pages.projects);
       }
     } else if (this.#projects.length === 0) {
-      await this.#loadProjects();
+      await this.#loadProjects(generation);
     }
 
+    if (generation !== this.#loadGeneration) return;
     if (token) {
       await Promise.all([
         this.#query(next, "overview", { limit: 1 }),
@@ -521,6 +541,7 @@ export class ControlCenterApp {
         this.#query(next, "system", { limit: 1 }),
         this.#loadChartRows(next, next.capturedAt ?? Date.now()),
       ]);
+      if (generation !== this.#loadGeneration) return;
       await this.#loadRecentLogs(next, next.capturedAt ?? Date.now());
     }
 
@@ -535,9 +556,10 @@ export class ControlCenterApp {
     this.#renderModal();
   }
 
-  async #loadProjects(): Promise<void> {
+  async #loadProjects(generation: number): Promise<void> {
     try {
       const globalSnapshot = await this.#api.snapshot({ kind: "global" });
+      if (generation !== this.#loadGeneration) return;
       const page = await this.#api.query<Row>({
         version: API_VERSION,
         scope: { kind: "global" },
@@ -545,6 +567,7 @@ export class ControlCenterApp {
         snapshotToken: globalSnapshot.snapshotToken,
         limit: 200,
       });
+      if (generation !== this.#loadGeneration) return;
       this.#projects = page.rows;
       this.#projectTotal = knownTotal(page);
     } catch {
@@ -562,7 +585,7 @@ export class ControlCenterApp {
       >
     > = {},
   ): Promise<void> {
-    if (!target.snapshotToken) return;
+    if (this.#listeners.signal.aborted || !target.snapshotToken) return;
     const request: QueryRequest = {
       version: API_VERSION,
       scope: target.scope,
@@ -584,7 +607,7 @@ export class ControlCenterApp {
   }
 
   async #loadChartRows(target: LoadState, capturedAt: number): Promise<void> {
-    if (!target.snapshotToken) return;
+    if (this.#listeners.signal.aborted || !target.snapshotToken) return;
     try {
       const page = await this.#api.query<Row>({
         version: API_VERSION,
@@ -618,7 +641,7 @@ export class ControlCenterApp {
   }
 
   async #loadRecentLogs(target: LoadState, capturedAt: number): Promise<void> {
-    if (!target.snapshotToken) return;
+    if (this.#listeners.signal.aborted || !target.snapshotToken) return;
     const logsPage = target.pages.logs;
     if (!logsPage) {
       target.recentLogCount = null;
@@ -659,6 +682,7 @@ export class ControlCenterApp {
   }
 
   #watch(): void {
+    if (this.#listeners.signal.aborted) return;
     const revision = this.#latest?.revision ?? null;
     this.#source?.close();
     try {
@@ -666,6 +690,7 @@ export class ControlCenterApp {
         this.#scope,
         revision,
         (event) => {
+          if (this.#listeners.signal.aborted) return;
           const relevant =
             event.scope.kind === "global" ||
             (this.#scope.kind === "project" &&
@@ -688,6 +713,7 @@ export class ControlCenterApp {
           this.#scheduleRefresh();
         },
         () => {
+          if (this.#listeners.signal.aborted) return;
           if (this.#visible) {
             this.#visible = { ...this.#visible, stale: true };
             this.#render();
@@ -705,7 +731,7 @@ export class ControlCenterApp {
   }
 
   #scheduleRefresh(): void {
-    if (this.#refreshTimer !== null) return;
+    if (this.#listeners.signal.aborted || this.#refreshTimer !== null) return;
     this.#refreshTimer = window.setTimeout(() => {
       this.#refreshTimer = null;
       void this.#load(this.#scope, true).then(() => this.#watch());
@@ -1381,6 +1407,12 @@ export class ControlCenterApp {
     return `<div class="empty-state">${icon(image)}<strong>${esc(title)}</strong><span>${esc(description)}</span></div>`;
   }
 
+  #currentModal(generation: number): boolean {
+    return (
+      !this.#listeners.signal.aborted && generation === this.#modalGeneration
+    );
+  }
+
   async #openTask(id: string): Promise<void> {
     const state = this.#state();
     const task = (state?.pages.tasks?.rows ?? []).find(
@@ -1398,6 +1430,7 @@ export class ControlCenterApp {
       this.#toast(localeText.t("ui.project.task.sourceMissing"));
       return;
     }
+    const generation = ++this.#modalGeneration;
     try {
       const scope = { kind: "project" as const, projectId: owner };
       let token =
@@ -1418,6 +1451,7 @@ export class ControlCenterApp {
         revision = snapshot.revision;
         sources = snapshot.sources;
       }
+      if (!this.#currentModal(generation)) return;
       const page = await this.#api.query<Row>({
         version: API_VERSION,
         scope,
@@ -1426,6 +1460,7 @@ export class ControlCenterApp {
         filters: { id },
         limit: 1,
       });
+      if (!this.#currentModal(generation)) return;
       const selected = page.rows.find((row) => rowTaskId(row) === id) ?? task;
       this.#showTask(
         selected,
@@ -1436,6 +1471,7 @@ export class ControlCenterApp {
         sources,
       );
     } catch (error) {
+      if (!this.#currentModal(generation)) return;
       this.#toast(this.#error(error));
     }
   }
@@ -1717,6 +1753,7 @@ export class ControlCenterApp {
   }
 
   #closeModalSurface(): void {
+    this.#modalGeneration += 1;
     this.#selects.close(false);
     const host = document.getElementById("overlay-root");
     if (host) host.innerHTML = "";
@@ -1955,11 +1992,16 @@ export class ControlCenterApp {
   }
 
   #toast(message: string): void {
+    if (this.#listeners.signal.aborted) return;
     const toast = document.getElementById("toast");
     if (!toast) return;
     toast.textContent = message;
     toast.classList.add("visible");
-    window.setTimeout(() => toast.classList.remove("visible"), 3500);
+    if (this.#toastTimer !== null) window.clearTimeout(this.#toastTimer);
+    this.#toastTimer = window.setTimeout(() => {
+      this.#toastTimer = null;
+      toast.classList.remove("visible");
+    }, 3500);
   }
 
   async #copy(value: string): Promise<void> {
@@ -2012,6 +2054,7 @@ export class ControlCenterApp {
     };
     try {
       const result = await this.#api.export({ ...request, format });
+      if (this.#listeners.signal.aborted) return;
       const mime =
         format === "csv"
           ? "text/csv;charset=utf-8"
@@ -2433,6 +2476,7 @@ export class ControlCenterApp {
   }
 
   async #changeScope(scope: QueryScope): Promise<void> {
+    this.#closeModalSurface();
     this.#scope = scope;
     this.#mobile = false;
     this.#page = 1;
@@ -2451,11 +2495,13 @@ export class ControlCenterApp {
     const modal = { ...state, loading: true };
     this.#modal = modal;
     this.#renderModal();
+    const generation = ++this.#modalGeneration;
     try {
       const snapshot = await this.#api.snapshot({
         kind: "project",
         projectId: modal.projectId,
       });
+      if (!this.#currentModal(generation)) return;
       const page = await this.#api.query<Row>({
         version: API_VERSION,
         scope: { kind: "project", projectId: modal.projectId },
@@ -2464,6 +2510,7 @@ export class ControlCenterApp {
         limit: 1,
         filters: { id },
       });
+      if (!this.#currentModal(generation)) return;
       const fresh = page.rows.find((row) => rowTaskId(row) === id);
       if (fresh) {
         this.#modal = {
@@ -2485,6 +2532,7 @@ export class ControlCenterApp {
         );
       }
     } catch (error) {
+      if (!this.#currentModal(generation)) return;
       this.#modal = { ...modal, loading: false };
       this.#toast(this.#error(error));
     }
@@ -2500,9 +2548,11 @@ export class ControlCenterApp {
       this.#toast(localeText.t("ui.agent.identity.unavailable"));
       return;
     }
+    const generation = ++this.#modalGeneration;
     try {
       const scope = { kind: "project" as const, projectId: owner };
       const snapshot = await this.#api.snapshot(scope);
+      if (!this.#currentModal(generation)) return;
       const page = await this.#api.query<Row>({
         version: API_VERSION,
         scope,
@@ -2511,6 +2561,7 @@ export class ControlCenterApp {
         filters: { id },
         limit: 8,
       });
+      if (!this.#currentModal(generation)) return;
       const agent = page.rows.find((row) =>
         [row["id"], row["clientId"], row["sessionId"]].some(
           (candidate) => nonemptyId(candidate) && candidate === id,
@@ -2530,6 +2581,7 @@ export class ControlCenterApp {
       };
       this.#renderModal(true);
     } catch (error) {
+      if (!this.#currentModal(generation)) return;
       this.#toast(this.#error(error));
     }
   }
@@ -2543,9 +2595,11 @@ export class ControlCenterApp {
       this.#toast("Zdarzenie nie ma niepustego task ID ani request ID.");
       return;
     }
+    const generation = ++this.#modalGeneration;
     try {
       const scope = { kind: "project" as const, projectId: logModal.projectId };
       const snapshot = await this.#api.snapshot(scope);
+      if (!this.#currentModal(generation)) return;
       const page = await this.#api.query<Row>({
         version: API_VERSION,
         scope,
@@ -2556,6 +2610,7 @@ export class ControlCenterApp {
           : { requestId: requestId as string },
         limit: 1,
       });
+      if (!this.#currentModal(generation)) return;
       const task = page.rows.find((row) =>
         nonemptyId(taskId)
           ? rowTaskId(row) === taskId
@@ -2574,6 +2629,7 @@ export class ControlCenterApp {
         snapshot.sources,
       );
     } catch (error) {
+      if (!this.#currentModal(generation)) return;
       this.#toast(this.#error(error));
     }
   }
@@ -2601,9 +2657,11 @@ export class ControlCenterApp {
       return;
     }
     if (kind !== "task") return;
+    const generation = ++this.#modalGeneration;
     try {
       const scope = { kind: "project" as const, projectId: owner };
       const snapshot = await this.#api.snapshot(scope);
+      if (!this.#currentModal(generation)) return;
       const page = await this.#api.query<Row>({
         version: API_VERSION,
         scope,
@@ -2612,6 +2670,7 @@ export class ControlCenterApp {
         filters: { id },
         limit: 1,
       });
+      if (!this.#currentModal(generation)) return;
       const task = page.rows.find((row) => rowTaskId(row) === id);
       if (task)
         this.#showTask(
@@ -2624,6 +2683,7 @@ export class ControlCenterApp {
         );
       else this.#toast(localeText.t("ui.project.task.unavailable"));
     } catch (error) {
+      if (!this.#currentModal(generation)) return;
       this.#toast(this.#error(error));
     }
   }
@@ -3010,6 +3070,8 @@ export class ControlCenterApp {
     );
     try {
       const snapshot = await this.#api.snapshot({ kind: "global" });
+      if (this.#listeners.signal.aborted || serial !== this.#globalSearchSerial)
+        return;
       const page = await this.#api.query<Row>({
         version: API_VERSION,
         scope: { kind: "global" },

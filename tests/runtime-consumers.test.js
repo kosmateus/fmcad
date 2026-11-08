@@ -236,10 +236,93 @@ test('installed image adapter retains runtime assets and closed declarations out
     assert.equal(run.status, 0, run.stderr);
     assert.equal(JSON.parse(run.stdout).success, true);
   }
+  const engineering = path.join(installed, 'dist/src/dist/composition/library-engineering.js');
+  const reference = path.join(installed, 'dist/src/dist/composition/library-reference.js');
+  fs.appendFileSync(entry, `import * as engineering from ${JSON.stringify(engineering)};\nimport * as reference from ${JSON.stringify(reference)};\nvoid engineering; void reference;\n`);
+  const hostProgram = ts.createProgram([entry], program.getCompilerOptions());
+  assert.equal(ts.getPreEmitDiagnostics(hostProgram).length, 0, 'installed host declarations must close over staged types');
+  const schema = spawnSync(process.execPath, [path.join(installed, 'dist/bin/fmcad.js'), 'fit', 'stack', '--schema'], {cwd:f.root,encoding:'utf8',env:{...process.env,FMCAD_CONFIG:path.join(f.root,'invalid-config.json')}});
+  assert.equal(schema.status,0,schema.stderr); assert.equal(JSON.parse(schema.stdout).operation,'fit stack');
+  assert.equal((await require(reference).execute('reference.layout',{python:f.python})).success,true);
   const calls = f.calls();
-  assert.equal(calls.length, 6);
-  for (let i = 0; i < 6; i += 2) {
+  assert.equal(calls.length, 8);
+  for (let i = 0; i < 8; i += 2) {
     assert.ok(calls[i].includes('-c'));
-    assert.ok(calls[i + 1][1].startsWith(path.join(installed, 'dist/assets') + path.sep));
+    assert.ok(calls[i + 1].some(arg => arg.startsWith(path.join(installed, 'dist/assets') + path.sep)));
   }
+});
+
+test('engineering CLI preserves historical schema, calculation, failure and publication effects', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'engineering-public-'));
+  t.after(() => fs.rmSync(directory, {recursive:true, force:true}));
+  const source = fs.readFileSync(path.join(__dirname, 'fixtures/public-host-baseline/engineering-local.js.txt'), 'utf8');
+  assert.equal(require('node:crypto').createHash('sha256').update(source).digest('hex'), require('./fixtures/public-host-baseline/provenance.json')['src/engineering-local.js'].sha256);
+  const Module = require('node:module');
+  const baseline = new Module(path.resolve(__dirname, '../src/engineering-local.js'), module);
+  baseline.filename = baseline.id; baseline.paths = module.paths; baseline._compile(source, baseline.filename);
+  const current = require('../src/engineering-local');
+  const payload = {schemaVersion:1, identity:{model:'żółć',revision:'1'}, frame:'datum:A', assumptions:['Explicit bounds'], terms:[{id:'gap',sign:1,nominal:'5 mm',minus:'0.4 mm',plus:'0.2 mm'}], minimum:'4 mm'};
+  const input = path.join(directory, 'input żółć.json');
+  const bytes = JSON.stringify(payload); fs.writeFileSync(input, bytes);
+  const cases = [
+    ['schema', ['--schema']], ['inline', ['--data', bytes, '--json']],
+    ['file', ['--file',input]], ['unknown', ['--wat']], ['duplicate', ['--json','--json']],
+    ['missing', ['--file']], ['two-inputs', ['--file',input,'--data',bytes]],
+    ['schema-input', ['--schema','--data',bytes]], ['malformed-json', ['--data','{invalid']],
+    ['nonfinite', ['--data',bytes.replace('"5 mm"','1e999')]],
+    ['oversize', ['--data',' '.repeat(1024*1024+1)]],
+    ['failed-fit', ['--data', JSON.stringify({...payload, minimum:'6 mm'})]],
+  ];
+  async function observe(api, argv) {
+    const result = {stdout:''};
+    try { result.code = await api.execute('fit stack',argv,{stdout:{write:s=>{result.stdout+=s;}},engineeringRuntime:{clock:{now:()=>0}}}); }
+    catch(error) { result.error = error.message; }
+    return result;
+  }
+  for (const [name, argv] of cases) {
+    const old = await observe(baseline.exports, argv), migrated = await observe(current, argv);
+    assert.deepEqual(migrated, old, name);
+    if (name === 'inline') { assert.equal(migrated.code,0); assert.equal(JSON.parse(migrated.stdout).documentIdentity,null); }
+    if (name === 'failed-fit') assert.equal(migrated.code,1);
+    if (migrated.error) assert.equal(migrated.stdout,'');
+  }
+  const oldOut = path.join(directory,'old.json'), newOut = path.join(directory,'new.json');
+  assert.deepEqual(await observe(current,['--file',input,'--out',newOut]),await observe(baseline.exports,['--file',input,'--out',oldOut]));
+  assert.equal(fs.readFileSync(newOut,'utf8'),fs.readFileSync(oldOut,'utf8'));
+  const repeat = await observe(current,['--file',input,'--out',newOut]);
+  assert.match(repeat.error,/refusing to replace/); assert.equal(repeat.stdout,'');
+  assert.equal(fs.readFileSync(input,'utf8'),bytes);
+  assert.equal(fs.readFileSync(newOut,'utf8'),fs.readFileSync(oldOut,'utf8'));
+});
+
+test('reference wrapper preserves historical validation and synchronous preflight', async t => {
+  const source = fs.readFileSync(path.join(__dirname,'fixtures/public-host-baseline/reference.js.txt'),'utf8');
+  assert.equal(require('node:crypto').createHash('sha256').update(source).digest('hex'), require('./fixtures/public-host-baseline/provenance.json')['src/reference.js'].sha256);
+  const Module = require('node:module');
+  const baseline = new Module(path.resolve(__dirname,'../src/reference.js'), module);
+  baseline.filename = baseline.id; baseline.paths = module.paths; baseline._compile(source, baseline.filename);
+  const current = require('../src/reference');
+  for (const [operation,data] of [
+    ['reference.layout',{schemaVersion:1}], ['reference.layout',{}],
+    ['reference.calibrate',{schemaVersion:2}], ['reference.compare',{schemaVersion:1}],
+    ['reference.image',{mode:'inspect',ref:'canvas'}], ['reference.image',{mode:'inspect',ref:'canvas',extra:1}],
+    ['reference.image',{mode:'bad'}], ['reference.image',{mode:'calibrate',ref:'canvas'}],
+    ['reference.image',{mode:'calibrate',ref:'canvas',segment:[],length:'10 mm',anchor:[]}],
+  ]) {
+    const snapshot=JSON.stringify(data);
+    const observe = api => { try { api.validate(operation,data); return null; } catch(error) { return error.message; } };
+    assert.equal(observe(current),observe(baseline.exports));
+    assert.equal(JSON.stringify(data),snapshot);
+  }
+  const f = fixture(t);
+  const request = {python:f.python,schemaVersion:1,out:'new output żółć'};
+  assert.deepEqual(await current.execute('reference.layout',request),await baseline.exports.execute('reference.layout',request));
+  assert.deepEqual(f.calls().slice(0,2),f.calls().slice(2,4));
+  assert.equal(request.python,f.python);
+  const missing=fixture(t,['scipy']);
+  for (const api of [baseline.exports,current]) {
+    // assert.throws deliberately protects the synchronous boundary.
+    assert.throws(()=>api.execute('reference.layout',{python:missing.python}),/Missing Python dependencies.*scipy/);
+  }
+  assert.equal(missing.calls().length,2);
 });
