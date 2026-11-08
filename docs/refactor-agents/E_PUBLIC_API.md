@@ -406,3 +406,20 @@ The isolated E/F integration tree builds and its installed tarball passes real
 console readiness, static assets, registered/global URL selection, both aliases,
 caller disposal and shared-service reuse. The diagnostic compatibility warning
 introduced by F is retained. No terminal implementation is retired.
+
+### Final E/F public-console integration
+
+The integration combines E's public boundary and G proposal with F's published
+terminal-boundary branch (7cc23f1), preserving all F telemetry/build additions.
+It retains the real installed-console probe as tests/console-installed.test.js
+and selects it in the public consumer gate. The test uses the actual launcher,
+registration store and HTTP assets, checks both aliases and global/project URLs,
+and verifies a single shared service survives caller disposal. Cleanup owns the
+spawned child handle and restores test environment; it never trusts a PID from
+discovery. The route audit table now records implemented surfaces separately
+from outstanding full-CI, shared integration and native qualification gates.
+
+Integrated validation: full build, lint, formatting and test typecheck pass.
+All 36 focused console/library/installed-consumer tests pass with zero skips,
+including actual Python reference processing and strict external declarations.
+Full GitHub CI, G's shared-gate acceptance and predecessor merges remain open.

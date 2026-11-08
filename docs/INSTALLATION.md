@@ -159,8 +159,23 @@ Offline installed-artifact tests validate packaging, local CLI/MCP startup,
 catalog schemas, and bounded local workers; they do not validate a physical
 Fusion model. A CAD smoke test is separate and should be performed only after
 explicit authorization, with the add-in and compatible broker available and a
-noncritical, explicitly pinned test document. There is no ready web panel
-claimed by this guide; web-panel/browser launch is a separate follow-up.
+noncritical, explicitly pinned test document.
+
+### Console entrypoints
+
+`fmcad console` keeps the interactive terminal console. `fmcad diagnostic` is a
+compatibility alias. The terminal can discover the nearest parent containing
+fmcad workflow artifacts; `--project PATH` selects an explicit artifact project.
+
+`fmcad console --web [--config PATH] [--project PATH]` prints the Control Center
+URL after the configured service is ready. It works without an interactive
+terminal and does not open a browser automatically. Without `--project`, the URL
+selects the global view. An explicit path must resolve to exactly one registered
+Control Center project; an arbitrary artifact directory is not a substitute.
+
+Closing this command releases only its caller resources. The shared service
+continues running and broker state is unchanged. Terminal administration remains
+available in the default console while the separate retirement audit is open.
 
 Useful references: [package README](../README.md), [runtime/platform support](RUNTIME_PATHS.md),
 [CLI command reference](COMMAND_REFERENCE.md), [MCP application](MCP_APPLICATION.md),

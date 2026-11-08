@@ -11,6 +11,9 @@ import { chromium } from "playwright";
 
 const load = createRequire(import.meta.url);
 const repository = process.cwd();
+const { LOCALE_CODES } = load(
+  path.join(repository, "packages/control-center/dist/web/locale-catalogs.js"),
+) as typeof import("../packages/control-center/dist/web/locale-catalogs.js");
 const { setupProjects } = load(
   path.join(repository, "dist/tests/control-center-test-support.js"),
 ) as typeof import("./control-center-test-support.js");
@@ -37,20 +40,53 @@ async function availablePort(): Promise<number> {
 
 test(
   "browser reads real registered SQLite histories through the installed production composition",
-  { timeout: 45000 },
+  { timeout: 90000 },
   async (t) => {
+    const artifacts = path.resolve(
+      process.env["FMCAD_CONTROL_CENTER_E2E_ARTIFACTS"] ??
+        path.join(os.tmpdir(), "opencode/fmcad-control-center-e2e"),
+      `production-${Date.now()}-${process.pid}`,
+    );
+    fs.mkdirSync(artifacts, { recursive: true });
+    const errors: string[] = [];
+    const failedRequests: { url: string; error: string }[] = [];
+    const badResponses: { url: string; status: number }[] = [];
     let composition:
       ReturnType<typeof createControlCenterComposition> | undefined;
     let server: ReturnType<typeof createControlCenterHttpServer> | undefined;
     let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
     t.after(async () => {
       try {
-        await browser?.close();
+        try {
+          if (browser) {
+            const context = browser.contexts()[0];
+            const page = context?.pages()[0];
+            if (page && !page.isClosed())
+              await page
+                .screenshot({
+                  path: path.join(artifacts, "final.png"),
+                  fullPage: true,
+                })
+                .catch(() => {});
+            await context?.tracing.stop({
+              path: path.join(artifacts, "trace.zip"),
+            });
+          }
+        } finally {
+          await browser?.close();
+        }
       } finally {
         try {
           await server?.close();
         } finally {
-          await composition?.close?.();
+          try {
+            await composition?.close?.();
+          } finally {
+            fs.writeFileSync(
+              path.join(artifacts, "report.json"),
+              JSON.stringify({ errors, failedRequests, badResponses }, null, 2),
+            );
+          }
         }
       }
     });
@@ -86,6 +122,9 @@ test(
       },
       ...(composition.assets ? { assets: composition.assets } : {}),
       query: composition.query,
+      ...(composition.projectActions
+        ? { projectActions: composition.projectActions }
+        : {}),
       resolvePrincipal: composition.resolvePrincipal,
     });
     await server.start();
@@ -94,7 +133,19 @@ test(
       locale: "pl-PL",
       viewport: { width: 1440, height: 960 },
     });
-    const errors: string[] = [];
+    await page
+      .context()
+      .tracing.start({ screenshots: true, snapshots: true, sources: true });
+    page.on("requestfailed", (request) =>
+      failedRequests.push({
+        url: request.url(),
+        error: request.failure()?.errorText ?? "unknown",
+      }),
+    );
+    page.on("response", (response) => {
+      if (response.status() >= 400)
+        badResponses.push({ url: response.url(), status: response.status() });
+    });
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
       if (message.type() === "error")
@@ -135,16 +186,102 @@ test(
         .locator(`[data-action="task"][data-id="task-${projectId}"]`)
         .waitFor();
     }
-    const artifacts = path.resolve(
-      process.env["FMCAD_CONTROL_CENTER_E2E_ARTIFACTS"] ??
-        path.join(os.tmpdir(), "opencode/fmcad-control-center-e2e"),
-    );
-    fs.mkdirSync(artifacts, { recursive: true });
     await page.screenshot({
       path: path.join(artifacts, "production-sqlite-project.png"),
       fullPage: true,
     });
+    await page.locator('[data-action="view"][data-view="projects"]').click();
+    const form = page.locator(
+      'form[data-action="project-alias-form"][data-project="browser-project-a"]',
+    );
+    await form.locator('input[name="alias"]').fill("Production browser alias");
+    const saved = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/console/project-actions") &&
+        response.request().method() === "POST",
+    );
+    await form.locator('[type="submit"]').click();
+    assert.equal((await (await saved).json()).state, "ok");
+    await page
+      .locator(
+        'aside [data-action="scope"][data-id="browser-project-a"] .project-name',
+      )
+      .filter({ hasText: "Production browser alias" })
+      .waitFor();
+    await page.goto(`http://localhost:${port}/?project=browser-project-a`);
+    await page.waitForFunction(() => {
+      const rows = [...document.querySelectorAll('[data-action="task"]')];
+      return (
+        rows.length === 1 &&
+        rows[0]?.getAttribute("data-project") === "browser-project-a"
+      );
+    });
+    assert.equal(
+      await page
+        .locator(
+          'aside [data-action="scope"][data-id="browser-project-a"] .project-name',
+        )
+        .textContent(),
+      "Production browser alias",
+    );
+    for (const locale of LOCALE_CODES) {
+      await page.locator("#locale-selector-trigger").click();
+      await page
+        .locator(`[role="menuitemradio"][data-locale="${locale}"]`)
+        .click();
+      await page.waitForFunction(
+        (expected) => document.documentElement.lang === expected,
+        locale,
+      );
+      for (const view of ["tasks", "overview"]) {
+        await page
+          .locator(`.tabs [data-action="view"][data-view="${view}"]`)
+          .click();
+        await page
+          .locator('[data-action="task"][data-id="task-browser-project-a"]')
+          .first()
+          .waitFor();
+      }
+      if (["de", "fi", "el", "uk"].includes(locale)) {
+        await page.setViewportSize({ width: 390, height: 844 });
+        const overflow = await page.evaluate(
+          () => document.documentElement.scrollWidth > window.innerWidth + 1,
+        );
+        assert.equal(overflow, false, `${locale} must fit the mobile viewport`);
+        await page.screenshot({
+          path: path.join(artifacts, `locale-${locale}.png`),
+          fullPage: true,
+        });
+        await page.setViewportSize({ width: 1440, height: 960 });
+      }
+    }
+    const fonts = await page.evaluate(async () => {
+      const regular = await document.fonts.load(
+        '14px "Fmcad Unicode"',
+        "Ελληνικά Українська Български",
+      );
+      const bold = await document.fonts.load(
+        '700 14px "Fmcad Unicode"',
+        "Ελληνικά Українська Български",
+      );
+      return {
+        regular: regular.map((font) => font.status),
+        bold: bold.map((font) => font.status),
+      };
+    });
+    assert.deepEqual(fonts, { regular: ["loaded"], bold: ["loaded"] });
     assert.deepEqual(errors, []);
+    assert.deepEqual(badResponses, []);
+    assert.deepEqual(
+      failedRequests.filter(
+        (request) =>
+          !(
+            request.url.includes("/api/v1/console/events") &&
+            request.error === "net::ERR_ABORTED"
+          ),
+      ),
+      [],
+    );
     assert.equal(fs.existsSync(path.join(fixture.root, "absent-queue")), false);
   },
 );

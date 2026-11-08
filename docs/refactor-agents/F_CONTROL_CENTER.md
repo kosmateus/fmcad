@@ -1,6 +1,7 @@
 # Agent F — Control Center completion and TUI retirement
 
-Status: **available**. Claim this package, inspect current main and read
+Status: **claimed by Agent F** on 8 November 2026. Starting from main
+`0b84454d8e5d22abb23bcf52999c506894ebf5bf` (PR #35). Read
 [the shared plan](../REFACTOR_PARALLEL_PLAN.md). Modeling remains the product
 priority; console work must not require unrelated changes to the modeling path.
 
@@ -86,3 +87,69 @@ data, controls preserve A's contracts, lifecycle/locales/retention are verified,
 obsolete UI retirement is complete and installed assets work. Native Fusion UI
 interaction remains in B/G's final qualification where required. Append PR/SHA,
 browser evidence and remaining scope here after each delivery.
+
+## Agent F evidence and remaining scope
+
+Claim: PR #41, starting from `0b84454d`. The first delivery fixes inherited
+browser disposal and delayed detail-response defects, adds quota/reopen protection
+coverage and retains production browser network/console traces.
+See [the feature migration ledger](F_UI_LEDGER.md) for archived source mappings,
+local measurements, test limitations and the required remaining work.
+
+A/E/G coordination: [issue #43](https://github.com/kosmateus/fmcad/issues/43).
+No broker semantics, public entrypoints or shared packaging files are changed by
+this delivery. No obsolete terminal implementation is deleted before its controls
+and project/config behavior have verified web equivalents. F1–F4 remain open.
+
+Second delivery: [PR #60](https://github.com/kosmateus/fmcad/pull/60) integrates
+localized operational/System/agents/projects views, guarded production SQLite
+mutations, lazy broker controls and the registered-project launcher for E.
+Packaged contracts and five new resources are explicit allowlist entries.
+Installed alias authorization, passive history isolation and asset integrity
+checks pass locally. Full CI/Chromium remains pending; no TUI deletion is claimed.
+The original embedded Beads database has now been queried on a disposable copy;
+its open retention task is broader than SQLite quotas.
+
+Diagnostic retention follow-up: [policy and evidence](../CONTROL_CENTER_RETENTION.md).
+Five new limit/redaction/ownership/disk-full/recovery tests and three existing
+file-rotation tests pass. The observer IPC test is blocked by this host's Linux
+abstract-socket `EPERM`, with a retained bounded diagnostic and explicit failed
+readiness. This is not a CI pass.
+
+Remaining package gates: production Chromium on the integration head, full CI
+before each merge, A's authoritative phase/activity-fence boundary, E's public
+launcher transition, the explicit terminal administration retirement decision,
+and G's CI inventory/dependency integration. Native Fusion/platform launch
+qualification remains required separately. Modeling delivery stays independent.
+
+First delivery merged as `04a42b4c1b300fa2222d39ab9a78b7c86d345e2e` after all
+22 checks passed on `7f0ab88`, including Chromium. The merge candidate against
+fetched main had no changes to the affected Control Center/history sources.
+Operational integration now includes a separate session-filter race regression
+and retains the historical-agent assertions. The locale/CI proposal packages
+licensed Greek/Cyrillic WOFF2 fallback fonts and registers the restored System,
+diagnostic retention and existing observer rotation tests in the contracts gate.
+The small shared script/build-list changes are an explicit proposal for G,
+following coordination on PR #40; they are not independently accepted packaging.
+
+Producer integration audit: the default MCP root only invokes an injected telemetry
+factory; production queue snapshots and owned-result history therefore still need
+the E-owned hookup. Recovered the archived `46e13fa` registered-project runtime
+as TypeScript and added a typed installed composition factory. It bounds project
+producers to 64, rejects unregistered explicit identities without path fallback,
+pins registry identity, defers event I/O, retains admission checks and source gaps,
+and drains once on close without starting a web service or broker. Four local
+integration tests pass for overflow, changed bindings, cross-project rejection,
+close draining and the installed factory. The unchanged owned-file test reaches
+this host's missing `/proc` guard; it remains required in CI. Strict compilation,
+focused lint and the complete code build pass. This is not evidence that default
+MCP or authoritative phase timing is connected yet. The extra tsconfig source
+and CI test entries are concrete shared-configuration proposals for G.
+
+Terminal retirement now has a [behavior/test deletion ledger](F_TUI_RETIREMENT.md).
+The System composition no longer loads the legacy terminal controller: shared
+fresh observation/fencing is extracted into a typed node adapter, with the
+terminal facade retained for compatibility. All three existing passive/fresh-read/
+failed-refresh tests pass against the extracted adapter. No terminal UI or
+meaningful assertion is deleted before the listed launcher, browser and broker
+administration acceptance gates.
