@@ -1,7 +1,6 @@
 const path = require('node:path');
 const { resolveRuntimePaths, resolvePython } = require('./dist/config-platform/index.js');
-const { runImagePipeline } = require('./dist/core/application/local-pipeline');
-const { createLocalWorker, localPipelineFiles } = require('./dist/python/local-pipeline');
+const { createImageCommand } = require('./dist/python/image-command');
 const { redactDiagnostic } = require('./diagnostics');
 
 const tunables = {
@@ -66,25 +65,7 @@ Palette example: fmcad image trace --input palette-image.png --out palette-trace
 See docs/IMAGE_TRACE.md for palette schema, preprocessing, scaling and explicit import workflow.`,
 };
 
-async function traceImage(args, deps) {
-  let setup;
-  const process = createLocalWorker({
-    redactDiagnostic,
-    resolveWorker: () => worker,
-    resolvePython: plan => {
-      const python = (deps.resolvePython || resolvePython)({ pythonPath: plan.python, feature: Number(plan.request.traceDetailAreaPx2) > 0 ? 'image-detail' : 'image-trace' });
-      setup = `Image tracing dependencies: run ${JSON.stringify(python)} -m pip install -r ${JSON.stringify(requirements)} in your user-owned environment. CairoSVG also needs the system Cairo library. Nothing was installed automatically.\n`;
-      return python;
-    },
-    ...(deps.spawnImageTrace ? { spawn: deps.spawnImageTrace } : {}),
-    stdout: chunk => deps.stdout.write(chunk),
-    stderr: chunk => deps.stderr.write(chunk),
-    startError: (error, plan) => new Error(`Cannot start local Python ${JSON.stringify(plan.python)}: ${error.message}. Select an installed interpreter with --python PATH.\n${setup}`),
-  });
-  const result = await runImagePipeline('trace', args, localPipelineFiles, process);
-  if (result.code !== 0) deps.stderr.write(`image trace worker failed (${result.signal || result.code}). ${setup}`);
-  return result.code === 0 ? 0 : 1;
-}
+const traceImage = createImageCommand({ mode: "trace", worker, requirements, resolvePython, redactDiagnostic });
 
 const manual = {
   sections: [{ title: 'Local Return Contract', text: descriptor.desc }],
