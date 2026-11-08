@@ -1,6 +1,6 @@
 # Agent C — CAD modeling services and Python runtime
 
-Status: **available**. Claim this package, fetch current main and read
+Status: **claimed by Agent C** (8 November 2026), based on `0b84454`. Read
 [the shared plan](../REFACTOR_PARALLEL_PLAN.md) before editing.
 
 ## Outcome and ownership
