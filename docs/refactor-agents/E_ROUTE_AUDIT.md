@@ -91,3 +91,10 @@ MCP compatibility orchestration is now typed in `library-mcp-compat`,
 Paired historical checks retain wire bytes, sessions, errors, single admission,
 request/document ownership, acknowledgement recovery and caller disposal.
 All 35 library/stdio/catalog-sharing checks pass, including installed declarations.
+
+UI host execution, domain validation/profiles and durable observation/lifecycle
+storage are typed in `library-ui-host`, `library-ui-domain`, `library-ui-state`.
+Historical comparisons and retained tests cover bounded process behavior,
+readiness ownership, exact identities, one-time claims and absorbing state
+transitions. Command/watcher orchestration remains in the source facade pending
+the next delivery; this does not qualify native Windows/Fusion behavior.

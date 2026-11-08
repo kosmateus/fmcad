@@ -78,5 +78,9 @@
   "src/catalog/index.js": {
     "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
     "sha256": "6ceefc220d4f3b4631a59f132327b8b54a0c97e8793fc2bf90cfaa9473afbe00"
+  },
+  "src/ui.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "0bfa65e34ddc8af4e368135e8c2d9287aa26d63a3701310b182828ab55fdf34a"
   }
 }

@@ -284,3 +284,23 @@ tests pass, including installed strict declarations for the complete compatibili
 module. Existing frame bytes, bounded metadata diagnostics, no-retry errors and
 accepted-running-job assertions pass unchanged. Native ownership/inode checks
 remain CI qualification rather than locally weakened assertions.
+
+### UI host, domain and durable state boundaries
+
+PR #68 contains complete typed MCP compatibility orchestration; retained gate
+registration and full CI remain pending.
+
+UI helper execution, request/identity/profile logic and durable observation/
+lifecycle storage now have typed implementations. The host adapter preserves
+bounded argv/output, exact request/lifecycle readiness, and the crucial distinction
+between stopping an owned action helper and detaching a read-only status helper.
+The state store exposes an explicit file port, retaining exclusive claims,
+fsync-before-publication and absorbing unknown/finished transitions.
+
+Historical parity covers 13 host scenarios, UI validation/identity/probe bytes,
+profile declarations and observation/lifecycle files. All 53 library/UI cases pass
+(the new store fixture's missing os import was corrected without assertion
+changes); the retained real add-in guard also passes. Build, lint and test
+compilation pass. Installed declarations cover all three modules. UI command
+orchestration, watcher recovery and public console integration are still open;
+no native Fusion/Windows qualification is claimed.

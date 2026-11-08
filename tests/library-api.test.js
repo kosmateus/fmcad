@@ -200,6 +200,11 @@ test('outside-repository consumer imports built JS and declarations with no sour
       void validateInvocation; void executeCapability;
 import { createQueuePost as queuePost, createForwarder as forwarder, responseMessages } from './node_modules/fmcad/dist/src/dist/composition/library-mcp-compat.js';
 void queuePost; void forwarder; void responseMessages;
+import { startHostHelper } from './node_modules/fmcad/dist/src/dist/composition/library-ui-host.js';
+void startHostHelper;
+import { createUiStateStore } from './node_modules/fmcad/dist/src/dist/composition/library-ui-state.js';
+import { validate as validateUi } from './node_modules/fmcad/dist/src/dist/composition/library-ui-domain.js';
+void createUiStateStore; void validateUi;
       import type { FmcadOptions, ExecutionReceipt, ReviewRequest, ReviewServiceOptions, PythonCheckReport } from 'fmcad/api';
       declare const options: FmcadOptions;
       declare const reviewOptions: ReviewServiceOptions;
@@ -264,7 +269,7 @@ void queuePost; void forwarder; void responseMessages;
   }
 });
 
-function historicalPublicBoundary(name, additionalExports = '') {
+function historicalPublicBoundary(name, additionalExports = '', overrides = {}) {
   const fixture = path.join(__dirname, 'fixtures/public-host-baseline', name + '.js.txt');
   const source = fs.readFileSync(fixture, 'utf8');
   const expected = require('./fixtures/public-host-baseline/provenance.json')[`src/${name}.js`];
@@ -273,6 +278,8 @@ function historicalPublicBoundary(name, additionalExports = '') {
   const baseline = new Module(path.join(root, 'src', name + '.js'), module);
   baseline.filename = baseline.id;
   baseline.paths = module.paths;
+  const originalRequire = baseline.require.bind(baseline);
+  baseline.require = id => Object.hasOwn(overrides,id) ? overrides[id] : originalRequire(id);
   baseline._compile(source + additionalExports, baseline.filename);
   return baseline.exports;
 }
@@ -665,4 +672,119 @@ test('MCP queue migration preserves single admission, recovery, receipts and dis
   }
   for(const scenario of ['success','failed','unknown','missing','python','recovered','lost','recovery-failed','registration'])
     assert.deepEqual(await observe(current,scenario),await observe(historical,scenario),scenario);
+});
+
+test('UI host helper preserves argv, bounded output, readiness and timeout ownership', async () => {
+  const restore=require('./fixtures/fake-wsl-platform.cjs')();
+  try {
+    const {EventEmitter}=require('node:events');
+    async function observe(which,scenario) {
+      const calls=[], ready=[];
+      const spawn=(executable,args,options)=>{
+        calls.push({executable,args,options});
+        if(scenario==='spawn-error')throw new Error('spawn failed');
+        const child=new EventEmitter();
+        child.exitCode=null;child.stdout=new EventEmitter();child.stderr=new EventEmitter();
+        child.unref=()=>calls.push('detach-child');child.stdout.unref=()=>calls.push('detach-stdout');child.stderr.unref=()=>calls.push('detach-stderr');
+        child.kill=()=>{calls.push('kill');queueMicrotask(()=>child.emit('close',null));};
+        setTimeout(()=>{
+          if(scenario==='timeout')return;
+          if(scenario==='status-timeout'){child.exitCode=0;child.emit('close',0);return;}
+          if(scenario==='error'){child.emit('error',new Error('host error'));return;}
+          if(scenario==='watch'){
+            child.stdout.emit('data',Buffer.from('FMCAD_UI_WATCHER_READY {"requestId":"foreign","lifecycleId":"lifecycle"}\n'));
+            // A complete foreign first marker is deliberately not accepted.
+          }
+          if(scenario==='ready')child.stdout.emit('data',Buffer.from('FMCAD_UI_WATCHER_READY {"requestId":"request","lifecycleId":"lifecycle"}\n'));
+          child.stdout.emit('data',Buffer.from(scenario==='oversized'?'x'.repeat(256*1024+1):scenario==='invalid'?'FMCAD_UI_RESULT {bad}\n':'FMCAD_UI_RESULT {"status":"ready","actionSubmitted":false}\n'));
+          if(scenario==='stderr')child.stderr.emit('data',Buffer.from('diagnostic'));
+          child.exitCode=scenario==='exit-failure'?1:0;child.emit('close',child.exitCode);
+        },scenario==='status-timeout'?20:0);
+        return child;
+      };
+      const factory=which==='historical'?historicalPublicBoundary('ui','\nmodule.exports.startHostHelper=startHostHelper;',{'node:child_process':{spawn}}).startHostHelper:require('../src/dist/composition/library-ui-host').startHostHelper;
+      const mode=scenario==='status-timeout'?'watch-status':['ready','watch'].includes(scenario)?'watch':'inspect';
+      const request={requestId:'request',lifecycleId:'lifecycle',timeBudgetMs:['timeout','status-timeout'].includes(scenario)?1:1000};
+      if(scenario==='argv')request.payload='x'.repeat(17*1024);
+      if(scenario==='deadline')request.timeBudgetMs=120001;
+      const handle=factory(mode,request,{powershellPath:'powershell.exe',helperPath:path.join(root,'assets/ui_dialog.ps1'),spawnHost:spawn});
+      handle.ready?.then(value=>ready.push(value));
+      const result=await handle.completion;
+      if(scenario==='status-timeout')assert(!calls.includes('kill'),'status timeout must never stop the host process');
+      if(scenario==='timeout')assert.equal(calls.filter(x=>x==='kill').length,1);
+      if(scenario==='watch')assert.deepEqual(ready,[],'foreign readiness must not arm this request');
+      if(scenario==='ready')assert.equal(ready.length,1);
+      return {calls,ready,result};
+    }
+    for(const scenario of ['normal','stderr','invalid','exit-failure','spawn-error','error','oversized','argv','deadline','watch','ready','timeout','status-timeout'])
+      assert.deepEqual(await observe('current',scenario),await observe('historical',scenario),scenario);
+  } finally {restore();}
+});
+
+test('UI domain preserves validation, exact identity, profiles and probe bytes', () => {
+  const historical=historicalPublicBoundary('ui','\nObject.assign(module.exports,{buildProbe,targetIdentity,decorateSnapshot,structuralDialogs,exactControl});');
+  const current=require('../src/dist/composition/library-ui-domain');
+  assert.deepEqual(current.PROFILES,historical.profiles);
+  const target={name:'Żółć',creationId:'creation',fileId:'file',commandId:'command'};
+  const base={requestId:'request',lease:{id:'lease',requestId:'request',operationId:'operation',expiresAt:2000000000000,target},target,intent:'confirmRequestedUpdate'};
+  function outcome(fn){try{return {value:fn()};}catch(error){return {name:error.name,message:error.message};}}
+  for(const operation of ['ui.inspect','ui.respond','ui.resolve','unknown']){
+    const inputs=[null,[],{},base,{...base,foreign:true}];
+    for(const key of Object.keys(base)){const input=structuredClone(base);delete input[key];inputs.push(input);}
+    for(const patch of [{requestId:'bad space'},{intent:'foreign'},{lease:{...base.lease,target:{...target,fileId:'other'}}},{maxControls:513},{observationId:'not-uuid'},{allowedProfiles:['']},{maxActions:11},{timeBudgetMs:120001},{expectedCommandId:''}]) inputs.push({...base,...patch});
+    inputs.push({...base,observationId:'00000000-0000-4000-8000-000000000000',action:'confirm',profileId:'update-all-latest'});
+    for(const input of inputs)assert.deepEqual(outcome(()=>current.validate(operation,input)),outcome(()=>historical.validate(operation,input)),operation);
+  }
+  for(const context of [{doc:'Żółć',docId:'creation',docFileId:'file'},{doc:'other'},{doc:'Żółć',docId:'other'},{doc:'Żółć',docFileId:'other'}])
+    assert.deepEqual(outcome(()=>current.targetIdentity(base,context)),outcome(()=>historical.targetIdentity(base,context)));
+  const identity=current.targetIdentity(base,{doc:'Żółć'});
+  assert.equal(current.buildProbe(identity),historical.buildProbe(identity));
+  for(const documents of [[],[target],[{...target,isActive:true}],[target,target],[{...target,name:'other'}]])
+    for(const unavailableEvidence of [[],['unavailable']])
+      assert.deepEqual(current.resolveProbeDocuments({documents,unavailableEvidence},identity),historical.resolveProbeDocuments({documents,unavailableEvidence},identity));
+  const crypto=require('node:crypto'),original=crypto.randomUUID;
+  function decorate(api){let index=0;crypto.randomUUID=()=>`fixture-${++index}`;return api.decorateSnapshot({status:'ready',locale:'pl-PL',windows:[{handle:100,controls:[{name:'secret',isPassword:true},{name:'Żółć',runtimeId:[1,2],parentPath:['a'],semanticRole:'confirm'}]}]});}
+  try {assert.deepEqual(decorate(current),decorate(historical));}finally{crypto.randomUUID=original;}
+});
+
+test('UI observation and lifecycle store preserves one-time claims and absorbing states', async () => {
+  const historical=historicalPublicBoundary('ui','\nObject.assign(module.exports,{writeWatcherLifecycle,watcherLifecycleBinding,saveObservation,getObservation,claimObservation,finishObservation,writeExclusive});');
+  const current=require('../src/dist/composition/library-ui-state');
+  const crypto=require('node:crypto'),originalUuid=crypto.randomUUID,originalNow=Date.now;
+  async function observe(api) {
+    const directory=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'fmcad-ui-state-parity-'));
+    let sequence=0;
+    crypto.randomUUID=()=>`00000000-0000-4000-8000-${String(++sequence).padStart(12,'0')}`;
+    Date.now=()=>1800000000000;
+    const options={stateDir:directory,now:Date.now};
+    try {
+      const target={name:'Żółć',creationId:'creation',fileId:'file'};
+      const request={requestId:'request',lease:{id:'lease',requestId:'request',operationId:'operation',target,expiresAt:1800000060000},expectedIdentity:target,intent:'confirmRequestedUpdate',profileId:'update-all-latest'};
+      const binding=api.watcherLifecycleBinding(request),results=[];
+      results.push(await api.writeWatcherLifecycle(directory,binding,false));
+      results.push(await api.writeWatcherLifecycle(directory,binding,true));
+      results.push(await api.writeWatcherLifecycle(directory,binding,true));
+      results.push(await api.writeWatcherLifecycle(directory,binding,false,{state:'running'}));
+      results.push(await api.writeWatcherLifecycle(directory,binding,false,{state:'unknown'}));
+      results.push(await api.writeWatcherLifecycle(directory,binding,false,{state:'finished'}));
+      results.push(await api.writeWatcherLifecycle(directory,{...binding,requestId:'foreign'},false,{state:'finished'}));
+      const second={...binding,lifecycleId:'second'};
+      results.push(await api.writeWatcherLifecycle(directory,second,true));
+      results.push(await api.writeWatcherLifecycle(directory,second,false,{state:'finished',result:{status:'unknown',actionSubmitted:null}}));
+      results.push(await api.writeWatcherLifecycle(directory,second,false,{state:'running'}));
+      const token=await api.saveObservation({requestId:'request',leaseHash:'hash',target,windows:[],truncated:false,intent:'confirmRequestedUpdate'},options);
+      const loaded=await api.getObservation(token.observationId,options);results.push(loaded);
+      const claim=await api.claimObservation(token.observationId,loaded,'request');
+      await assert.rejects(api.claimObservation(token.observationId,loaded,'request'),{code:'EEXIST'});
+      results.push(await api.getObservation(token.observationId,options));
+      results.push(await api.finishObservation(token.observationId,loaded,claim,{status:'unknown',actionSubmitted:null}));
+      results.push(await api.getObservation(token.observationId,options));
+      await assert.rejects(api.writeExclusive(path.join(directory,'oversized'),'x'.repeat(512*1024)),/bounded size/);
+      assert(!fs.existsSync(path.join(directory,'oversized')));
+      const files=Object.fromEntries(fs.readdirSync(directory).sort().map(name=>[name,fs.readFileSync(path.join(directory,name),'utf8')]));
+      return JSON.parse(JSON.stringify({results,files}).replaceAll(directory,'<state>'));
+    }finally{fs.rmSync(directory,{recursive:true,force:true});}
+  }
+  try {assert.deepEqual(await observe(current),await observe(historical));}
+  finally {crypto.randomUUID=originalUuid;Date.now=originalNow;}
 });
