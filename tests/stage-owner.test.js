@@ -698,14 +698,14 @@ test("real non-atomic batch service journals a step intent and inspects its numb
   contradictory.steps[0].output = { success: false, status: 'blocked' };
   try {
     fs.writeFileSync(terminalFile, JSON.stringify(contradictory));
-    const refused = deps.inspect();
+    const refused = deps.journalInspect();
     assert.equal(refused.stages[0].status, 'unknown');
     assert.equal(refused.replayAllowed, false);
     assert.equal(physicalCalls, 1);
   } finally {
     fs.writeFileSync(terminalFile, terminalBytes);
   }
-  assert.equal(deps.inspect().stages[0].status, 'completed');
+  assert.equal(deps.journalInspect().stages[0].status, 'completed');
   assert.equal(physicalCalls, 1);
 });
 
@@ -928,7 +928,7 @@ test("Public Fmcad stage/journalInspect/resumePlan bind only the authenticated c
   const load = Module._load;
   Module._load = function(name, parent, ...args) {
     if (name.endsWith("/queue-connection")) return { queueDirectory: () => f.broker };
-    if (name.endsWith("/queue-instance")) return {
+    if (/\/queue-instance(?:\.js)?$/.test(name)) return {
       buildHash: () => f.build,
       brokerConfigHash: () => configHash,
       sameInstance: instance.sameInstance,
@@ -955,7 +955,7 @@ test("Public Fmcad stage/journalInspect/resumePlan bind only the authenticated c
     await api.start();
     const stage = await api.stage(f.job.id);
     const inspected = stage.journalInspect();
-    assert.equal(inspected.stages[0].status, "completed");
+    assert.equal(inspected.stages[0].status, "completed", JSON.stringify(inspected));
     assert.equal((await api.journalInspect(f.job.id)).head, inspected.head);
     assert.equal((await api.resumePlan(f.job.id)).replayAllowed, false);
     await assert.rejects(api.stage("00000000-0000-4000-8000-000000000000"), /Foreign job denied/);

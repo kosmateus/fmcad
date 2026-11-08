@@ -48,6 +48,8 @@ existing integration suites in full CI.
 The real non-atomic stage-owner integration now also replaces its terminal report
 with contradictory negative-test evidence, requires unknown/no replay, restores
 the original bytes and verifies that the physical call count stays at one.
+The public API fixture supplies the same configured build identity for CommonJS
+imports with or without `.js`; its client, build and receipt assertions remain.
 
 The focused set passes 97 tests, including atomic ownership, declaration
 consumers and worker stage ordering. The pinned build, lint and test types pass.
