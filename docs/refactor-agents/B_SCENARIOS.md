@@ -101,3 +101,28 @@ explicit, justified native-only obligation, fixture isolation/cleanup is proven,
 all required model capabilities pass, and G has a runnable final native manifest.
 Native execution is deferred until the offline refactor is complete. Record
 PR/SHA, per-family checks, assumptions and remaining cases after every delivery.
+
+## Delivery ledger — bounded model persistence
+
+Starting point: `0b84454`; claim PR #36 (`ce68130`). The pinned build and all
+123 existing scenario tests passed before changes. Original archive Git history
+was recovered separately; its AGENTS.md diagnosis rules were read. No archived
+worktrees or database are added to the repository.
+
+The model now snapshots its supported design graph and opens the latest complete
+file into a new document identity. Regression tests prove rectangular geometry,
+attributes, parameters and timeline survive close/reopen, unsaved edits do not
+leak into snapshots, modified/no-op save version behavior, and refusal of foreign,
+incomplete, deleting, deleted and superseded files without creating documents.
+The old refusal test is replaced because bounded geometry persistence is now
+implemented, not because an unsupported native format is accepted.
+
+Validation: strict simulator types (zero errors); pinned API shape verifier
+(58 methods / 21 property accessors); two new persistence tests pass. Full scenario
+and CI evidence will be recorded before merge.
+
+Remaining B1–B4 work is still open. In particular this delivery does not yet add a
+shared saved-reopen scenario: the runner needs a receipt-bound creation-identity
+handoff and loss/restart tests before reopening is safe under its cleanup contract.
+Historical-version opening and native archive formats remain explicit unsupported
+capabilities. Token continuity here is a model assumption requiring native checks.
