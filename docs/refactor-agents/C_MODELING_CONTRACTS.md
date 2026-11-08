@@ -299,6 +299,13 @@ math-alias normalization. Updated real admission and integrated CI remain mandat
 
 A separate audit of the retained full `cad.test.js` reproduces the same three failures
 with old and new C wrappers: two assume WSL path translation, and the CLI-preview case
-uses a newline-containing display name without an immutable document pin. A proposed
-fixture integration will use the existing fake-WSL spelling fixture and explicit
-creation/file IDs; it will retain the quoted/newline display name and all assertions.
+uses a newline-containing display name without an immutable document pin. A trial using the existing fake-WSL fixture and explicit creation/file IDs exposed
+an additional shared catalog.import preview contract: success=true/status=unknown
+with exit code 1 for an unresolved source. The trial was reverted and handed to E/D;
+no production outcome or retained assertion was changed by C.
+
+The installed consumer independently passes all 261 C CLI previews and all 261 C MCP
+previews outside the checkout, with no backend construction or native execution.
+Snapshot capture uses its example scope identity and rejects foreign document pins.
+All 266 public example schemas and strict consumer declarations also pass. These
+checks cover installed host contracts, not native geometry or solver qualification.
