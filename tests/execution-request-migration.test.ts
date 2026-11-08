@@ -5,11 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import type { AcceptedCommandRequest } from "../src/composition/execution-request";
+// Consume staged declarations so test compilation cannot overwrite the runtime facade.
+import type { AcceptedCommandRequest } from "../src/dist/composition/execution-request";
 
 const root = path.resolve(__dirname, "../..");
 const load = createRequire(path.join(root, "package.json"));
-type Adapter = typeof import("../src/composition/execution-request");
+type Adapter = typeof import("../src/dist/composition/execution-request");
 const current = load("./src/composition/execution-request.js") as Adapter;
 const historical = load("./tests/fixtures/historical-module.cjs") as (
   revision: string,
@@ -235,6 +236,20 @@ const successCases: [string, string[]][] = [
   ],
   ["legacy help", ["help", "run"]],
 ];
+
+test("staged runtime request edge preserves historical projections", (t) => {
+  const staged = load("./dist/src/composition/execution-request.js") as Adapter;
+  const cwd = fixture(t);
+  for (const [label, argv] of successCases) {
+    const input = request(cwd, argv);
+    freeze(input);
+    assert.deepEqual(
+      staged.prepareRequest({ request: input }),
+      previous.prepareRequest({ request: input }),
+      label,
+    );
+  }
+});
 
 for (const [label, argv] of successCases) {
   test(`request migration preserves ${label} and the accepted owner`, (t) => {
