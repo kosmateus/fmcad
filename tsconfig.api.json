@@ -42,7 +42,9 @@
     "src/composition/cad-service.ts",
     "src/composition/catalog-execution.ts",
     "src/composition/execution-request.ts",
-    "src/composition/stage-dependencies.ts"
+    "src/composition/stage-dependencies.ts",
+    "src/queue-admission.ts",
+    "src/queue-fixed-fixture-admission.ts"
   ],
   "references": [
     {

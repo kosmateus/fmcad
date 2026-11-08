@@ -7,6 +7,8 @@ const modules = [
   "queue-closed-epoch-proof",
   "queue-isolated-epoch",
   "queue-scratch-control",
+  "queue-admission",
+  "queue-fixed-fixture-admission",
 ] as const;
 
 /** Publish compiler output, never a handwritten compatibility implementation. */
@@ -20,7 +22,22 @@ export function stageQueueRuntime(root: string): void {
       const file = path.join(source, filename);
       if (!fs.statSync(file).isFile())
         throw new Error("Missing emitted queue module: " + file);
-      return { filename, bytes: fs.readFileSync(file) };
+      const emitted = fs.readFileSync(file);
+      // Admission declarations must resolve inside an installed runtime, where
+      // the source workspace packages are absent. Executable bytes stay exact.
+      const bytes =
+        name === "queue-admission" && extension === ".d.ts"
+          ? Buffer.from(
+              emitted
+                .toString("utf8")
+                .replaceAll("../packages/core/src", "./dist/core")
+                .replaceAll(
+                  "../packages/node-adapters/src/python",
+                  "./dist/python",
+                ),
+            )
+          : emitted;
+      return { filename, bytes };
     }),
   );
   // The broker's public declaration references its private DTO declarations.

@@ -146,3 +146,62 @@ Its legacy two-second submitted command budget now also bounds the local worker
 assert a deadline: it verifies A/B/A document ownership and no fourth execution.
 The fixture submits 60 seconds and observes both local and SDK budgets; physical
 backend timeout and every production deadline remain unchanged.
+
+## A2 delivery record — typed admission and evidence fences
+
+`queue-admission.ts` and `queue-fixed-fixture-admission.ts` are now the canonical
+implementations. The build emits the original module paths, including the actual
+implementation used for `sourceModuleHash`; there is no facade hash standing in
+for executable code. Admission declarations resolve through the staged runtime
+providers. The broker imports the real admission type, including optional local
+cancellation, rather than a handwritten duplicate method inventory.
+
+The admission source in archive commit `843ce0d` is byte-identical to the immediate
+predecessor `270096c`. Its frozen fixture and the predecessor fixed-fixture source
+are recorded in the historical manifest. The paired scenarios use the same
+prepared artifacts, real installed Python checker, steps and assertions. Valid
+Python and wire bytes stay unchanged. Explicit historical defect cases establish
+these intended differences:
+
+- The old observer accepted equal-value object replacements during asynchronous
+  analysis. It also accepted a changed receipt path or dispatch timeout. The
+  typed implementation binds object identity and the entire retained record
+  before analysis, checks them afterwards and checks them again before dispatch.
+- The old observer accepted a changed `jobId`, `requestHash` or an extra receipt
+  binding field even though the prepared artifact retained the original binding.
+  Admission now requires exact canonical equality with that retained binding.
+  A certificate for one request cannot authorize evidence for another request.
+- The old recovery preflight could return a changed source hash after checking
+  the original source. Audit preflight now binds its original record, artifact,
+  request and build across asynchronous checking. It retains canonical reader
+  reconstruction and never interprets an old transactional result as a new one.
+
+These are pre-existing defects, not regressions introduced by the TypeScript
+conversion. Historical cases deliberately record the old acceptance and require
+the new implementation to refuse it before any execution. No mutation is replayed.
+
+The expanded `test:broker-regressions` also runs the new admission comparisons,
+fixed-source scope comparisons and existing seven production observer cases.
+Coverage includes foreign identities/builds/source receipts, artifact metadata,
+unknown binding fields, certificate object replacement, real cancellation,
+changed typing-resource fingerprints, source-module identity, current-only audit
+preflight and offline installed-package admission. Fixed program grants retain
+source hashes, exact arguments, policy argv and owned document/process pins.
+
+The shared offline observer fixture uses the supported receipt path adapter.
+Its installed-package case packs the already built artifact with `--ignore-scripts`:
+CI builds first, and the scenario checks the installed bytes and real checker,
+not a second nested build inside a 15-second pack deadline. It still installs with
+`--offline`, executes valid and invalid Python checks, and asserts zero receipts.
+
+Local evidence: 81 paired/admission cases passed, followed by both added resource
+fingerprint cases; strict API/test typing, lint and formatting pass. Six retained
+production observer cases pass. The offline npm consumer cannot resolve cached
+`basedpyright` metadata in this host, even after cache preparation, and remains a
+required Linux CI check. Process-identity broker cases also remain required on
+Linux. No host limitation changes a production guard or test assertion.
+
+A3 (recovery/epoch/control migration) and A4 (concurrency and integration) remain
+assigned to A. Native Fusion qualification remains with B/G after offline
+integration. This delivery must not be marked complete until its full CI matrix
+passes on the final merge head.

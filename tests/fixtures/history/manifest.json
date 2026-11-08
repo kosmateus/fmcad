@@ -172,5 +172,17 @@
     "sourcePath": "src/queue-state.js",
     "file": "queue-state-a262.js.txt",
     "sha256": "a4f9422c8f12a169ffe0168ff7353e21c676fca6a8d13313c32e55fcc1c7b4c0"
+  },
+  {
+    "revision": "843ce0dc98d512f88c3c42124ad4f6909b69cc91",
+    "sourcePath": "src/queue-admission.js",
+    "file": "queue-admission-843.js.txt",
+    "sha256": "4b7c58db6908cf0307ff121c07e462a6e1d344acddc70d2c187d733a8ad99c93"
+  },
+  {
+    "revision": "270096ca6aaa4dfe67d68c89f0eec898a8845ebb",
+    "sourcePath": "src/queue-fixed-fixture-admission.js",
+    "file": "queue-fixed-fixture-admission-270.js.txt",
+    "sha256": "ebc96b24a478fcb57d2cd892aa366f0fe069e3af9c99cad7c5b12741aa11e128"
   }
 ]
