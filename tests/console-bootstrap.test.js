@@ -81,3 +81,37 @@ test('aliases dispatch the same bootstrap; invalid explicit project cannot launc
   assert.equal(await main(['console', '--unexpected'], io.deps), 1);
   assert.equal(launches, 2);
 });
+
+test('explicit web console uses configured readiness without TTY and releases caller resources', async t => {
+  const {root}=fixture(t);
+  for(const alias of ['console','diagnostic']){
+    const calls=[];
+    const io=dependencies({cwd:root,
+      loadConfig:options=>{calls.push(['config',options]);return {cfg:{controlCenter:{port:4951}}};},
+      openControlCenter:async options=>{calls.push(['open',options]);return {url:'http://localhost:4951/?project=registered',projectId:'registered',dispose:()=>calls.push(['dispose'])};},
+    });
+    assert.equal(await main([alias,'--web','--config','selected.json','--project','registered-project'],io.deps),0);
+    assert.equal(io.result().output,'http://localhost:4951/?project=registered\n');
+    assert.deepEqual(calls,[['config',{config:'selected.json'}],['open',{port:4951,projectPath:path.join(root,'registered-project')}],['dispose']]);
+  }
+});
+
+test('web global view has no implicit artifact project and readiness errors retain failure', async t => {
+  const {project}=fixture(t);
+  const io=dependencies({cwd:project,loadConfig:()=>({cfg:{controlCenter:{port:4952}}}),openControlCenter:async options=>{
+    assert.deepEqual(options,{port:4952});throw Object.assign(new Error('registered project is unavailable'),{code:'CONTROL_CENTER_PROJECT_UNREGISTERED'});
+  }});
+  assert.equal(await main(['console','--web'],io.deps),1);
+  assert.equal(io.result().output,'');assert.match(io.result().error,/registered project is unavailable/);
+});
+
+test('console web option rejects duplicates before configuration and disposes after output failure', async () => {
+  const {consoleCommand}=require('../src/console');
+  for(const args of [['--web','--web'],['--web','--project'],['--web','--unknown']]){
+    const io=dependencies();assert.equal(await main(['console',...args],io.deps),1);
+    assert.equal(io.result().output,'');
+  }
+  let disposed=0;
+  await assert.rejects(consoleCommand(['--web'],{stdout:{write(){throw Error('closed output');}},loadConfig:()=>({cfg:{controlCenter:{port:4953}}}),openControlCenter:async()=>({url:'http://localhost:4953/',projectId:null,dispose(){disposed++;}})}),/closed output/);
+  assert.equal(disposed,1);
+});

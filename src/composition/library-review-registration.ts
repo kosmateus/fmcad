@@ -1,6 +1,5 @@
 import type { CommandDescriptor } from "./library-commands";
 import type { CommandManual } from "./library-help-manual";
-("use strict");
 import {
   reviewCmd,
   parseReviewArgs,

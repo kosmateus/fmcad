@@ -207,6 +207,11 @@ import { validate as validateUi } from './node_modules/fmcad/dist/src/dist/compo
 void createUiStateStore; void validateUi;
 import { execute as executeUi, armWatcher } from './node_modules/fmcad/dist/src/dist/composition/library-ui-command.js';
 void executeUi; void armWatcher;
+import { consoleCommand, type OpenControlCenter } from './node_modules/fmcad/dist/src/dist/composition/library-console.js';
+import { resolveProject } from './node_modules/fmcad/dist/src/dist/composition/library-console-project.js';
+declare const openControlCenter: OpenControlCenter;
+void consoleCommand(['--web'], {stdout:{write(text:string){void text;}},openControlCenter});
+void resolveProject;
       import type { FmcadOptions, ExecutionReceipt, ReviewRequest, ReviewServiceOptions, PythonCheckReport } from 'fmcad/api';
       declare const options: FmcadOptions;
       declare const reviewOptions: ReviewServiceOptions;
@@ -558,8 +563,9 @@ test('typed help preserves every registered English and Polish page and text lay
       assert.equal(help.detail('missing','route'),oldHelp.detail('missing','route'));
     }
     for (const entry of commands) {
-      assert.equal(polish.description(entry),oldPolish.description(entry),entry.key);
-      assert.equal(polish.detail(entry),oldPolish.detail(entry),entry.key);
+      const webPolish = ' --web wypisuje adres gotowego Control Center bez wymagania terminala; bez --project wybiera widok globalny, a jawna ścieżka wymaga dokładnie jednego zarejestrowanego projektu.';
+      assert.equal(polish.description(entry),(entry.key==='console'?oldPolish.description(entry)+webPolish:oldPolish.description(entry)),entry.key);
+      assert.equal(polish.detail(entry),entry.key==='console'?oldPolish.detail(entry).replace(oldPolish.description(entry),oldPolish.description(entry)+webPolish):oldPolish.detail(entry),entry.key);
       assert.equal(details.contextualHelp(entry),oldDetails.contextualHelp(entry),entry.key);
       assert.equal(manual.manualHelp(entry),oldManual.manualHelp(entry),entry.key);
     }
@@ -888,4 +894,21 @@ test('offline reference confidence remains unresolved without becoming a CLI or 
     assert.equal(catalogResult(result,operation,true).isError,true);
     assert.equal(receiptExitCode({...receipt,state:'needs_reconciliation',outcome:{}},operation),1);
   }
+});
+
+test('typed console preserves terminal parsing, project discovery and launch contracts', async () => {
+  const historical=historicalPublicBoundary('console'),current=require('../src/console');
+  const historicalProject=historicalPublicBoundary('console-project'),currentProject=require('../src/console-project');
+  function outcome(fn){try{return {value:fn()};}catch(error){return {name:error.name,message:error.message};}}
+  for(const argv of [[],['--project','Żółć'],['--config','settings.json'],['--project'],['--config','--project'],['--project','a','--project','b'],['--unknown']])
+    assert.deepEqual(outcome(()=>current.parse(argv)),outcome(()=>historical.parse(argv)));
+  const directory=fs.mkdtempSync(path.join(tmpdir(),'fmcad-console-parity-'));
+  try{
+    fs.mkdirSync(path.join(directory,'.fmcad-batch'));fs.mkdirSync(path.join(directory,'nested'));
+    for(const options of [{cwd:directory},{cwd:path.join(directory,'nested')},{cwd:directory,project:'.'},{cwd:directory,project:'missing'}])
+      assert.deepEqual(outcome(()=>currentProject.resolveProject(options)),outcome(()=>historicalProject.resolveProject(options)));
+    async function observe(api,isTTY){const calls=[];const deps={cwd:directory,stdin:{isTTY},stdout:{isTTY,write(){}},signals:{fixture:true},loadConfig:()=>assert.fail('terminal composition does not load config'),launchConsole:async options=>{calls.push({...options,stdin:isTTY,stdout:isTTY,loadConfig:typeof options.loadConfig});return 0;}};try{return {code:await api.consoleCommand(['--config','settings.json'],deps),calls};}catch(error){return {error:error.message,calls};}}
+    assert.deepEqual(await observe(current,true),await observe(historical,true));
+    assert.deepEqual(await observe(current,false),await observe(historical,false));
+  }finally{fs.rmSync(directory,{recursive:true,force:true});}
 });

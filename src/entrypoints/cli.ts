@@ -1,3 +1,8 @@
+import type {
+  ConsoleInput,
+  ConsoleLaunchOptions,
+  OpenControlCenter,
+} from "../composition/library-console";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -38,6 +43,11 @@ interface CadInput extends Omit<
 }
 type LocalCommand = (argv: string[], deps: CliDependencies) => Promise<number>;
 export interface CliDependencies extends CliApplicationPorts {
+  cwd?: string;
+  stdin?: ConsoleInput;
+  signals?: unknown;
+  launchConsole?: (options: ConsoleLaunchOptions) => number | Promise<number>;
+  openControlCenter?: OpenControlCenter;
   stdout?: Sink;
   stderr?: Sink;
   setExitCode?: (code: number) => void;

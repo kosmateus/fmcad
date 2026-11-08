@@ -364,3 +364,20 @@ preservation. Build, lint and test typecheck pass. An initial installed check ca
 a workspace-only import; the CLI now consumes the existing staged composition
 boundary. Three CLI temp fixtures use os.tmpdir; the legacy WSL fixture uses the
 retained platform helper. Assertions and production platform detection are intact.
+
+### Public console boundary and explicit web launch
+
+The console/project entrypoints now contain typed implementations behind small
+compatibility loaders. Terminal defaults, diagnostic alias, artifact discovery,
+TTY errors and injected launch contracts are compared against frozen historical
+implementations. Explicit `--web` consumes F's published openControlCenter port:
+configured readiness, global view without an implicit project, exact registered
+project selection and caller-only disposal, including output failures. English
+and Polish help explain the distinction. Installed declarations include the
+console ports without private workspace dependencies. Terminal administration
+remains available until F/G's retirement gate resolves; no HTTP broker policy is
+added. This delivery also removes a redundant string expression from the review
+registration module discovered by the full lint gate.
+
+The web route must remain draft until integrated with F's production launcher
+and qualified as an installed consumer. Native qualification remains deferred.
