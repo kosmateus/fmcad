@@ -108,5 +108,11 @@
       "_references_occurrence_states"
     ],
     "sha256": "f0416fed97c360f1df2b62088617e43adbc435a9399f72e79825e2137a12fc35"
+  },
+  {
+    "file": "input-before-externalization.js.txt",
+    "revision": "719acdf339b74cb54ba71d2280aedd5dc970f049",
+    "sourcePath": "src/externalization.js",
+    "sha256": "df9ac108f2e121e57239f93d17f8b844e39e2a66e27f6cbeb02e9c6692538b72"
   }
 ]

@@ -258,3 +258,28 @@ includes imports, references, externalization, save/publication and drawings.
   externalization input/composition boundary, remaining Python lifecycle
   separation and shared D1/D4 inventory/integration. Native Fusion and genuine
   native-format qualification remain pending. The whole D package is still open.
+
+### Delivery 5 — typed externalization input and composition
+
+- Parent: reference PR #54, `719acdf339b74cb54ba71d2280aedd5dc970f049`.
+- Moved the remaining externalization validator, immutable manifest projection
+  and host composition into strict core/adapter modules. The public facade now
+  only re-exports typed implementations. Exact source/reuse/destination pins,
+  copy/replace/retirement authorization, extraction groups, mapping bijections,
+  caller namespaces, dimensional bounds and driver-probe lease checks remain in
+  their original order. A-owned journal code is unchanged.
+- Added an immediate-predecessor `719acdf` fixture alongside archived `a26222f`.
+  Paired comparisons cover all four modes, complete normalized inputs/manifests,
+  phase/invocation controls, exact refusal messages, and isolation from later
+  caller mutation. Invocation cursors do not change immutable manifests.
+- The 50 existing externalization tests pass, including original-evidence owner
+  faults, delayed publication, partial/unknown outcomes, no replay and production
+  Python admission; all three new paired input tests pass separately. Full build,
+  lint, strict test types, new-module formatting and diff checks pass. No Python
+  or shared build configuration changed in this delivery.
+- D2 import/reference and externalization Node services now each have one typed
+  behavioral implementation. Remaining work is drawing package model/scene and
+  publication verification, Python lifecycle separation and the D1/D4 shared
+  inventory/integration. Exact-head full CI and prior registry handoffs still
+  block merging; native-format qualification remains pending and keychain stays
+  excluded. The full package is not yet complete.

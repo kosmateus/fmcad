@@ -709,3 +709,52 @@ test('production checker admits the extracted externalization planning through t
   assert.equal(report.status, 'passed', JSON.stringify(report));
   assert.equal(report.provenance.checker, 'basedpyright');
 });
+
+const inputVersions = [
+  loadFileHistory('baseline', 'src/externalization.js'),
+  loadFileHistory('input-before', 'src/externalization.js'),
+  external,
+];
+function inputObservation(api, request) {
+  try {
+    const data = api.validate(request);
+    return { data, manifest: api.manifest(data) };
+  } catch (error) { return { error: error.message }; }
+}
+test('typed externalization inputs preserve complete normalized manifests and source/destination pins', () => {
+  for (const mode of ['copyAndReplace', 'replaceFromExisting', 'composeNew', 'replaceExternal']) {
+    for (const changes of [{}, { phase: 'inspect', resume: true }, { phase: 'verify', verificationScope: 'sources', save: false }, { maxItems: 1, maxChecks: 1, timeBudgetMs: 25 }]) {
+      const request = input(mode, changes);
+      const results = inputVersions.map(api => inputObservation(api, structuredClone(request)));
+      assert.deepEqual(results[1], results[0]); assert.deepEqual(results[2], results[0]);
+      assert.equal(results[2].data.source.fileId, 'source');
+      assert.equal(results[2].data.source.version, 1);
+    }
+  }
+});
+test('typed externalization refusal order retains historical ownership, bounds and map errors', () => {
+  const requests = [input('replaceExternal', { confirmReplace: false }), input('copyAndReplace', { confirmRetire: false }),
+    input('composeNew', { phase: 'retire' }), input('composeNew', { phase: 'verify' }), input('composeNew', { save: false }),
+    input('composeNew', { unexpected: true }), input('composeNew', { source: { projectId: 'project', fileId: 'source', version: 1 } }),
+    input('composeNew', { itemIds: ['foreign'] }), input('composeNew', { expectedInventory: { foreign: { bodies: 1 } } })];
+  for (const key of ['maxItems', 'maxChecks', 'timeBudgetMs']) for (const value of [null, true, 0, -1, 1.5]) requests.push(input('composeNew', { [key]: value }));
+  for (const map of [[{ sourceIndex: -1, targetIndex: 0 }], [{ sourceIndex: 0, targetIndex: 0 }, { sourceIndex: 0, targetIndex: 1 }]]) {
+    const data = input(); data.items[0].occurrenceMap = map; requests.push(data);
+  }
+  for (const request of requests) {
+    const results = inputVersions.map(api => inputObservation(api, structuredClone(request)));
+    assert.ok(results[0].error);
+    assert.deepEqual(results[1], results[0]); assert.deepEqual(results[2], results[0]);
+  }
+});
+test('typed externalization manifest excludes invocation cursors and cannot be changed through caller input', () => {
+  const results = inputVersions.map(api => {
+    const request = input(), validated = api.validate(request), original = api.manifest(validated);
+    request.source.version = 99; request.items[0].dataFileId = 'foreign'; request.expectedInventory.module.bodies = 999;
+    assert.deepEqual(api.manifest(validated), original);
+    validated.phase = 'inspect'; validated.resume = true; validated.maxChecks = 1; validated.itemIds = ['module'];
+    assert.deepEqual(api.manifest(validated), original);
+    return original;
+  });
+  assert.deepEqual(results[1], results[0]); assert.deepEqual(results[2], results[0]);
+});
