@@ -124,5 +124,17 @@
     "sourcePath": "packages/core/src/application/cad/batch.ts",
     "file": "batch-e57.ts.txt",
     "sha256": "71661a7ded17b962e1863d6a6716c5efc9ecaafead3def58bc56e9390f3f7932"
+  },
+  {
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "src/cli.js",
+    "file": "cli-a262.js.txt",
+    "sha256": "c2bbceaf681b28ea937ed7c9043ee4929711d2f6d629d3e3dc2097aef54804f1"
+  },
+  {
+    "revision": "0e9afe17d5aa1f73660ffee18f0bbefa878b9b22",
+    "sourcePath": "packages/core/src/application/cad/worker-command.ts",
+    "file": "worker-command-0e9.ts.txt",
+    "sha256": "6619c07d166f31149c58f1e759b2c19894d31992a338df325a6e2814024ab664"
   }
 ]

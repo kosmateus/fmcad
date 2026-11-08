@@ -355,3 +355,8 @@ open. Unsupported frames are refused explicitly by the model.
 null/absent optional selectors with unchanged document/file pins. It also rejects
 contradictory success and step metadata that both historical policies accepted.
 Original reports stay byte-identical; no mutation is retried.
+
+[Stage 4o](REFACTOR_STAGE_4O.md) fixes the inherited inversion of run guard
+submission evidence. Paired pre-refactor/typed-worker cases and the actual add-in
+wrapper on the model distinguish a proven rejection from unknown submission.
+The original UI suite is included in CI with explicit offline host fixtures.

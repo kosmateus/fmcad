@@ -6,8 +6,10 @@ const os = require('node:os');
 const path = require('node:path');
 const ui = require('../src/ui');
 const { catalog, validateCad, executeCad } = require('../src/cad');
-const { main } = require('../src/cli');
 const { detail } = require('../src/help');
+
+// Host responses below are synthetic Windows fixtures; restore path emulation after each test.
+test.beforeEach(t => t.after(require('./fixtures/fake-wsl-platform.cjs')()));
 
 const now = 1800000000000;
 const target = { name: 'Scratch', creationId: 'creation-1', fileId: 'file-1' };
@@ -491,31 +493,6 @@ test('unknown action outcome is recorded and not retried', async t => {
   assert.equal(result.actionSubmitted, null);
   assert.equal(repeated.replayedReceipt, true);
   assert.equal(calls.filter(call => call.mode === 'respond').length, 1);
-});
-
-test('ordinary run guard receipt is structured and distinct from underlying operation outcome', async () => {
-  let submitted = 0, exitCode;
-  let output = '';
-  const result = await main(['run', 'planned.py', '--doc', target.name, '--doc-id', target.creationId], {
-    stdout: { write: value => { output += value; } }, stderr: { write() {} },
-    setExitCode: code => { exitCode = code; },
-    loadConfig: () => ({ cfg: { backend: 'addin' } }),
-    createBackend: () => ({ callTool: async () => {
-      submitted++;
-      return { failed: true, text: 'interactive command open', uiGuard: {
-        status: 'rejected-before-mutation', notStarted: true, activeCommand: 'MoveCommand', identityAvailable: true,
-      } };
-    } }),
-    buildRunScript: () => 'def run(_context): pass',
-  });
-  const receipt = JSON.parse(output);
-  assert.equal(result, 1);
-  assert.equal(exitCode, 1);
-  assert.equal(submitted, 1);
-  assert.equal(receipt.userCodeSubmitted, true);
-  assert.equal(receipt.activeCommand, 'MoveCommand');
-  assert.equal(receipt.originalOperationOutcome, 'notEvaluated');
-  assert.deepEqual(receipt.suggestedRecovery, ['ui.inspect', 'ui.resolve']);
 });
 
 test('bounded resolver composes one qualified action and replays its receipt without retry', async t => {
