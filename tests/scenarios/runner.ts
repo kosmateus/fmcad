@@ -1,3 +1,4 @@
+import { commandResult } from "./command-result";
 import * as fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -215,31 +216,22 @@ export class ScenarioSession {
     )
       this.report.cleanup = "not-created";
     if (command && execution.stdout.trim()) {
-      const output = record(JSON.parse(execution.stdout) as unknown);
-      if (typeof output["success"] !== "boolean")
-        throw new Error("CAD result has no explicit outcome");
       if (!target) throw new Error("CAD command has no owned target");
-      if (output["context"] !== undefined) {
-        const context = record(output["context"]);
+      try {
+        const output = commandResult(execution.stdout, [target]);
         if (
-          context["doc"] !== target?.name ||
-          context["docId"] !== target.creationId ||
-          context["docFileId"] !== target.file?.fileId
-        ) {
-          this.#uncertain = true;
-          throw new Error(
-            "Foreign CAD context; recover the original command before cleanup",
-          );
-        }
-      } else if (
-        output["success"] === true &&
-        !["preview", "validate"].includes(String(command.data["mode"])) &&
-        ["definition.instantiate", "batch.run"].includes(command.operation)
-      ) {
+          output["context"] === undefined &&
+          output["success"] === true &&
+          !["preview", "validate"].includes(String(command.data["mode"])) &&
+          ["definition.instantiate", "batch.run"].includes(command.operation)
+        )
+          throw new Error("Successful batch has no pinned context");
+        return output;
+      } catch (error) {
         this.#uncertain = true;
-        throw new Error("Successful batch has no pinned context");
+        this.persist();
+        throw error;
       }
-      return output;
     }
     if (execution.state !== "succeeded")
       throw new Error(execution.error || "Fusion operation failed");
@@ -917,6 +909,8 @@ export async function resumeCleanup(
         "Original request remains unsettled; cleanup must stay deferred: " +
           entry.requestId,
       );
+    if (entry.phase.startsWith("cad-") && result.stdout.trim())
+      commandResult(result.stdout);
     recovered.push({ ...entry, result });
   }
   const creation = recovered.filter((entry) => entry.phase === "create");
@@ -975,6 +969,19 @@ export async function resumeCleanup(
     report,
   );
   await session.recoverSavedTransitions();
+  try {
+    for (const entry of recovered)
+      if (entry.phase.startsWith("cad-") && entry.result?.stdout.trim())
+        commandResult(entry.result.stdout, [
+          originalDocument,
+          session.document,
+        ]);
+  } catch (error) {
+    report.cleanup = "deferred";
+    report.cleanupError = errorText(error);
+    session.persist();
+    throw error;
+  }
   try {
     await session.cleanup();
   } catch (error) {

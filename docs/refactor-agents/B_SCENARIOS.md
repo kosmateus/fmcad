@@ -274,3 +274,29 @@ reviewed shared ledger to 40 sites. Neighboring shot-pack/PNG/ViewCube assertion
 remain open native obligations. No rendering, smooth transitions, fit, arbitrary
 aspect-ratio behavior or camera persistence across reopen is simulated or claimed.
 Global material/motion/UI contracts and the remaining B1–B4 migration remain open.
+
+## Delivery ledger — command settlement and recovery
+
+Camera PR #75 (`b35d82a`) passed 184/186 local scenario tests. Both failures are
+journal lock refusals in the transaction family at concurrency ten, now reproduced
+on MCP and addin. Camera tests pass; the production-checker camera profile runs
+separately in an immutable checkout. Full CI is still required before any merge.
+
+Before migrating native command-event cases, the shared runner now distinguishes
+transport completion from the command's own settlement. Explicit unknown/running/
+pending outcomes and incomplete results defer cleanup even if the transport says
+settled. Recovery rechecks original command control fields and document context
+against receipt-proven owned identities; a foreign or still-unknown original
+result cannot authorize cleanup. Literal input fields named status do not affect
+this control decision. Four transport/defect integration cases and one control
+parsing test pass, including independent retained-document readback and cleanup
+only after the original known evidence is supplied. No mutation is replayed.
+
+The stronger settlement gate exposed a concrete production dependency, documented
+with the original literal request in [B_COMMAND_SETTLEMENT_BLOCKER.md](B_COMMAND_SETTLEMENT_BLOCKER.md).
+Five selected transaction tests now stop at the coordinator's explicit unknown
+no-eval outcome; two recovery tests still pass. Do not weaken the gate or call
+that unknown mutation successful. C/G must provide a receipt-proven rejection
+contract before these required cases can pass. The independent immutable addin
+component run also reproduced the separate journal lock refusal with one owner;
+MCP passed. Both source hashes remained stable. These PRs remain blocked to merge.
