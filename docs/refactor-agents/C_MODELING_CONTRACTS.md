@@ -106,3 +106,31 @@ geometry failure. Each engineering fixture now scopes its own existing SDK mock
 with `patch.dict` while loading the canonical runtime. No handler or assertion
 changed. The identical combined selection passes all 109 tests after the repair.
 The separate document-runtime inventory rerun passed after staging completed.
+
+## Second delivery: fastener and feature rework
+
+The next stacked delivery moves `fastener` and `feature-rework` policy into the
+same strict core boundary. Catalog registration remains unchanged; feature
+configuration keeps the existing one-time replacement behavior. This includes
+measured-fastener nested references and tool-access structures, legacy declared
+stacks, feature parameter entries, extent mode exclusivity, operation changes
+and native-edit exclusivity.
+
+The pre-TypeScript fastener reference predates `fastener.measured-check`.
+Historical descriptor comparisons explicitly exclude only that later route at
+that revision; pre-migration main covers the complete descriptor set. Existing
+legacy examples and negative inputs run against both references unchanged.
+The expanded historical suite passes 156 tests. Retained fastener/rework/bundle
+JavaScript suites pass 12 tests; their Python suites pass 67 tests.
+
+The measured-fastener bundle test used a hard-coded `/tmp/opencode` working
+directory. The same test on pre-delivery source fails to start its child when
+that directory is absent. It now owns a temporary directory and cleans it in
+`t.after`; the denial of checkout filesystem access and every registry/handler
+assertion are unchanged. This is an inherited fixture assumption, not a change
+to production execution or native qualification.
+
+G should also register `tests/fastener.test.js`, `tests/feature-rework.test.js` and
+`tests/measured-fasteners-bundle.test.js`. Full exact-head CI is still mandatory.
+The remaining curve/datum/surface and selection/BRep composition work, exhaustive
+Python admission inventory and native obligations remain open.

@@ -76,7 +76,11 @@ test("canonical family manifest includes measured fasteners once after its prere
   }
 });
 
-test("canonical prepared artifact exports the owned handler without checkout access", () => {
+test("canonical prepared artifact exports the owned handler without checkout access", (t) => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "measured-fastener-bundle-"),
+  );
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const units = cadBundleUnits(root, "full", cadBundleManifest);
   const artifact = preparePythonArtifact(units);
   const baseline = preparePythonArtifact(
@@ -120,7 +124,7 @@ print(len(registry))
       bundle: artifact.script,
     }),
     encoding: "utf8",
-    cwd: "/tmp/opencode",
+    cwd: directory,
     maxBuffer: 8 * 1024 * 1024,
   });
   assert.equal(result.status, 0, result.stdout + result.stderr);

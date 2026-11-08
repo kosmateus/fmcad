@@ -103,3 +103,7 @@ Claim: PR #37. Initial policy extraction and remaining ownership/dependencies ar
 tracked in [the modeling contracts ledger](C_MODELING_CONTRACTS.md).
 The package remains in progress; no C1–C4 completion is claimed. G must integrate
 the new runtime test gates before the policy delivery can merge.
+
+The second delivery migrates fastener and feature-rework policy, extends paired
+history to 156 tests and retains 12 JavaScript / 67 Python tests. It is stacked
+on #37; integration remains blocked on G's runtime gates and full exact-head CI.

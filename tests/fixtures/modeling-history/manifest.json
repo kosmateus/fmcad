@@ -70,5 +70,29 @@
     "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
     "file": "entity-query-0b84454.js.txt",
     "sha256": "645525bb6839d3287e63da068c1dc43132959b27392f33c6b3c775d5667cf8cb"
+  },
+  {
+    "family": "fastener",
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "file": "fastener-a26222f.js.txt",
+    "sha256": "f60093854c6a288828ae0bf694c1c95a476e984efedadcb8c4baf749a51ab9bb"
+  },
+  {
+    "family": "fastener",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "file": "fastener-0b84454.js.txt",
+    "sha256": "708f592080b4a2dc3a77b8a3bac73b7e4ac1145da072edf1b9b9f6ae8cd80b9e"
+  },
+  {
+    "family": "feature-rework",
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "file": "feature-rework-a26222f.js.txt",
+    "sha256": "79b7854762dc2b292414e67a5d4831751ffc8352ba48007c33354af9eee5f1d3"
+  },
+  {
+    "family": "feature-rework",
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "file": "feature-rework-0b84454.js.txt",
+    "sha256": "79b7854762dc2b292414e67a5d4831751ffc8352ba48007c33354af9eee5f1d3"
   }
 ]
