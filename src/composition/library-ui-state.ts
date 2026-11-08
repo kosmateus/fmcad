@@ -39,27 +39,31 @@ export interface UiProcessIdentity {
   osBuild?: string | undefined;
   locale?: string | undefined;
 }
-export interface UiActionResult extends UiHostResult {
-  success?: boolean;
-  operation?: string;
-  observationId?: string | null;
-  requestId?: string;
-  windows?: UiWindow[];
-  profiles?: UiProfileCandidate[];
-  identityVerified?: boolean;
-  resolutionStatus?: string;
-  profileId?: string;
-  dialogClosed?: boolean | null;
-  nativeCommandId?: string | null;
-  activeCommand?: UiCommand | null;
-  idle?: boolean | null;
-  terminationReason?: string | null;
-  terminationObservationAvailable?: boolean | null;
-  modelUnchanged?: boolean | null;
-  watcherState?: string;
-  hostProcessStatus?: string;
-  watcherResult?: UiActionResult | null;
-  result?: UiActionResult | null;
+export interface UiActionResult extends UiHostResult, UiProcessIdentity {
+  truncated?: boolean | undefined;
+  success?: boolean | undefined;
+  operation?: string | undefined;
+  observationId?: (string | null) | undefined;
+  requestId?: string | undefined;
+  windows?: UiWindow[] | undefined;
+  profiles?:
+    | (Omit<UiProfileCandidate, "windowHandle" | "fingerprint"> &
+        Partial<Pick<UiProfileCandidate, "windowHandle" | "fingerprint">>)[]
+    | undefined;
+  identityVerified?: boolean | undefined;
+  resolutionStatus?: string | undefined;
+  profileId?: string | undefined;
+  dialogClosed?: (boolean | null) | undefined;
+  nativeCommandId?: (string | null) | undefined;
+  activeCommand?: (UiCommand | null) | undefined;
+  idle?: (boolean | null) | undefined;
+  terminationReason?: (string | null) | undefined;
+  terminationObservationAvailable?: (boolean | null) | undefined;
+  modelUnchanged?: (boolean | null) | undefined;
+  watcherState?: string | undefined;
+  hostProcessStatus?: string | undefined;
+  watcherResult?: (UiActionResult | null) | undefined;
+  result?: (UiActionResult | null) | undefined;
 }
 export interface UiLifecycleBinding {
   lifecycleId: string;
@@ -79,29 +83,29 @@ export interface UiLifecycleRecord extends UiLifecycleBinding {
   fusionProcess: UiProcessIdentity | null;
   hostProcess: unknown;
   result: UiActionResult | null;
-  continuationOf?: string | null;
-  renewalAuthorized?: boolean;
-  originalLeaseIdHash?: string | null;
+  continuationOf?: (string | null) | undefined;
+  renewalAuthorized?: boolean | undefined;
+  originalLeaseIdHash?: (string | null) | undefined;
 }
 export interface UiLifecyclePatch {
   state?: string;
   fusionProcess?: UiProcessIdentity | null;
-  hostProcess?: unknown;
+  hostProcess?: unknown | undefined;
   result?: UiActionResult | null;
-  continuationOf?: string | null;
-  renewalAuthorized?: boolean;
-  originalLeaseIdHash?: string | null;
+  continuationOf?: (string | null) | undefined;
+  renewalAuthorized?: boolean | undefined;
+  originalLeaseIdHash?: (string | null) | undefined;
   operationId?: string;
-  nativeCommandId?: string;
+  nativeCommandId?: string | undefined;
 }
 export interface UiObservation extends UiProcessIdentity {
   requestId: string;
   leaseHash: string;
   intent: string | null;
   target: UiTarget;
-  backend?: string;
-  sessionFingerprint?: string;
-  activeCommand?: UiCommand | null;
+  backend?: string | undefined;
+  sessionFingerprint?: string | undefined;
+  activeCommand?: (UiCommand | null) | undefined;
   windows: UiWindow[];
   truncated: boolean;
   observationId: string;
@@ -113,8 +117,8 @@ export interface UiObservationClaim {
   requestId: string;
   state: string;
   claimedAt: number;
-  result?: UiActionResult;
-  finishedAt?: number;
+  result?: UiActionResult | undefined;
+  finishedAt?: number | undefined;
 }
 export type UiObservationLookup =
   | { status: "fresh"; directory: string; record: UiObservation }
@@ -125,8 +129,8 @@ export type UiObservationLookup =
     }
   | { status: "expired" | "missing"; directory: string };
 export interface UiStateDependencies {
-  stateDir?: string | null;
-  now?: () => number;
+  stateDir?: (string | null) | undefined;
+  now?: (() => number) | undefined;
 }
 export interface UiLifecycleWrite {
   status: string;

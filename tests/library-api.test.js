@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { tmpdir } = require('node:os');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 const config = { backend: 'addin', url: 'http://localhost:1/mcp', headers: {}, timeoutMs: 1000,
@@ -205,6 +205,8 @@ void startHostHelper;
 import { createUiStateStore } from './node_modules/fmcad/dist/src/dist/composition/library-ui-state.js';
 import { validate as validateUi } from './node_modules/fmcad/dist/src/dist/composition/library-ui-domain.js';
 void createUiStateStore; void validateUi;
+import { execute as executeUi, armWatcher } from './node_modules/fmcad/dist/src/dist/composition/library-ui-command.js';
+void executeUi; void armWatcher;
       import type { FmcadOptions, ExecutionReceipt, ReviewRequest, ReviewServiceOptions, PythonCheckReport } from 'fmcad/api';
       declare const options: FmcadOptions;
       declare const reviewOptions: ReviewServiceOptions;
@@ -787,4 +789,48 @@ test('UI observation and lifecycle store preserves one-time claims and absorbing
   }
   try {assert.deepEqual(await observe(current),await observe(historical));}
   finally {crypto.randomUUID=originalUuid;Date.now=originalNow;}
+});
+
+test('qualified native cancellation fixes the historical missing serializer without bypassing guards', async () => {
+  const historical=historicalPublicBoundary('ui');
+  const repairedHistorical=historicalPublicBoundary('ui','\nconst pythonValue=pythonLiteral; module.exports.terminationScript=terminationScript;');
+  const current=require('../src/ui');
+  const identity={name:'Żółć "quoted"',creationId:'creation',fileId:'file',commandId:'FusionMoveCommand',identityPinned:true};
+  const profile={qualified:true,nativeCommandId:'FusionMoveCommand',commandIds:['FusionMoveCommand']};
+  let calls=0,source;
+  const client={capabilities:{backend:'addin'},executeUiGuardedScript:async script=>{calls++;source=script;return {text:'FMCAD_UI_ACTION {"status":"unknown","actionSubmitted":null,"operationOutcome":"notEvaluated"}'};}};
+  await assert.rejects(historical.terminateNativeCommand(client,identity,{},profile),/pythonValue is not defined/);
+  assert.equal(calls,0,'historical defect occurs before the guarded route');
+  const result=await current.terminateNativeCommand(client,identity,{},profile);
+  assert.equal(calls,1);assert.equal(result.status,'unknown');assert.equal(result.actionSubmitted,null);
+  assert.equal(source,repairedHistorical.terminationScript(identity,profile.nativeCommandId));
+  const checked=spawnSync('python3',['-c','import ast,sys; ast.parse(sys.stdin.read())'],{input:source,encoding:'utf8'});
+  assert.equal(checked.status,0,checked.stderr);
+  const denied=await current.terminateNativeCommand(client,identity,{}, {...profile,qualified:false});
+  assert.equal(denied.status,'blocked');assert.equal(calls,1,'unqualified cancellation cannot reach the backend');
+});
+
+test('unchanged retained UI suite also passes against the frozen historical implementation', () => {
+  const directory=fs.mkdtempSync(path.join(tmpdir(),'fmcad-ui-historical-'));
+  const preload=path.join(directory,'preload.cjs');
+  const fixture=path.join(__dirname,'fixtures/public-host-baseline/ui.js.txt');
+  const target=path.join(root,'src/ui.js');
+  fs.writeFileSync(preload,`
+    const Module=require('node:module'),fs=require('node:fs'),crypto=require('node:crypto');
+    const target=${JSON.stringify(target)}, source=fs.readFileSync(${JSON.stringify(fixture)},'utf8');
+    const expected=require(${JSON.stringify(path.join(__dirname,'fixtures/public-host-baseline/provenance.json'))})['src/ui.js'];
+    require('node:assert/strict').equal(crypto.createHash('sha256').update(source).digest('hex'),expected.sha256);
+    const baseline=new Module(target,module); baseline.filename=target; baseline.paths=Module._nodeModulePaths(${JSON.stringify(root)});
+    baseline._compile(source,target);
+    const load=Module._load;
+    Module._load=function(request,parent,isMain){
+      if ((request==='./ui'||request.endsWith('/ui')||request.endsWith('/ui.js'))&&Module._resolveFilename(request,parent)===target)return baseline.exports;
+      return load.call(this,request,parent,isMain);
+    };
+  `);
+  try {
+    const env={...process.env}; delete env.NODE_TEST_CONTEXT;
+    const output=execFileSync(process.execPath,['--require',preload,'--test',path.join(__dirname,'ui.test.js')],{cwd:root,env,encoding:'utf8',timeout:60000});
+    assert.match(output,/(?:fail 0|# fail 0)/);
+  }finally{fs.rmSync(directory,{recursive:true,force:true});}
 });

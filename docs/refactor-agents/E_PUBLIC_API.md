@@ -304,3 +304,25 @@ changes); the retained real add-in guard also passes. Build, lint and test
 compilation pass. Installed declarations cover all three modules. UI command
 orchestration, watcher recovery and public console integration are still open;
 no native Fusion/Windows qualification is claimed.
+
+### Complete UI command and watcher orchestration
+
+PR #71 contains typed host/domain/state boundaries. `library-ui-command.ts` now
+owns inspect/respond/resolve, SDK probes, native command script preparation,
+watcher status, arming and authorized continuation. The JS path is a loader.
+Existing lease, exact identity/profile, one-time claim and unknown-outcome guards
+remain in place; no retry or native qualification is introduced.
+
+Strict compilation exposed a historical native cancellation defect:
+`terminationScript` called undefined `pythonValue` despite importing
+`pythonLiteral`. Existing tests injected terminateNative, hiding the actual-path
+failure. A regression reproduces the old failure before dispatch, then requires
+one guarded call with the existing serializer and zero calls for unqualified
+profiles. Script bytes match the historical generator with only that missing
+binding repaired; Python AST parsing succeeds. A was notified on #42.
+
+All 55 library/UI tests pass, including installed declarations. The unchanged
+retained UI suite also passes in a separate process against the frozen predecessor.
+Build, lint and test typecheck pass. The historical subprocess explicitly clears
+NODE_TEST_CONTEXT so Node actually runs the child suite; no test is skipped.
+PR #48 passed full CI 42525428442 and merged as `5d5a793`; #50 now targets main.

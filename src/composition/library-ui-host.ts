@@ -10,18 +10,18 @@ interface Platform {
 }
 const hostPlatform = hostRequire("../config-platform") as Platform;
 export interface UiHostRequest extends Record<string, unknown> {
-  timeBudgetMs?: number;
-  requestId?: string;
-  lifecycleId?: string;
+  timeBudgetMs?: number | undefined;
+  requestId?: string | undefined;
+  lifecycleId?: string | undefined;
 }
 export interface UiHostResult extends Record<string, unknown> {
-  status?: string;
-  requestId?: string;
-  lifecycleId?: string;
-  actionSubmitted?: boolean | null;
-  operationOutcome?: string;
-  unavailableEvidence?: string[];
-  helperDiagnostic?: string;
+  status?: string | undefined;
+  requestId?: string | undefined;
+  lifecycleId?: string | undefined;
+  actionSubmitted?: (boolean | null) | undefined;
+  operationOutcome?: string | undefined;
+  unavailableEvidence?: string[] | undefined;
+  helperDiagnostic?: string | undefined;
 }
 interface HostStream {
   on(
@@ -45,21 +45,25 @@ interface SpawnOptions {
   stdio: ["ignore", "pipe", "pipe"];
 }
 export interface UiHostDependencies {
-  powershellPath?: string;
-  helperPath?: string;
-  runHost?: (
-    mode: string,
-    request: UiHostRequest,
-  ) => UiHostResult | Promise<UiHostResult>;
-  spawnHost?: (
-    executable: string,
-    args: string[],
-    options: SpawnOptions,
-  ) => UiHostProcess;
+  powershellPath?: string | undefined;
+  helperPath?: string | undefined;
+  runHost?:
+    | ((
+        mode: string,
+        request: UiHostRequest,
+      ) => UiHostResult | Promise<UiHostResult>)
+    | undefined;
+  spawnHost?:
+    | ((
+        executable: string,
+        args: string[],
+        options: SpawnOptions,
+      ) => UiHostProcess)
+    | undefined;
 }
 export interface UiHostHandle {
-  child?: UiHostProcess;
-  ready?: Promise<UiHostResult>;
+  child?: UiHostProcess | undefined;
+  ready?: Promise<UiHostResult> | undefined;
   completion: Promise<UiHostResult>;
   stop(): Promise<UiHostResult | null>;
 }

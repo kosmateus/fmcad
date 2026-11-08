@@ -2,12 +2,12 @@ import crypto from "node:crypto";
 import { pythonLiteral } from "../../packages/node-adapters/src/python/artifact";
 export interface UiTarget {
   name: string;
-  creationId?: string | null;
-  fileId?: string | null;
-  commandId?: string | null;
-  isSaved?: boolean;
-  isActive?: boolean;
-  isModified?: boolean;
+  creationId?: (string | null) | undefined;
+  fileId?: (string | null) | undefined;
+  commandId?: (string | null) | undefined;
+  isSaved?: boolean | undefined;
+  isActive?: boolean | undefined;
+  isModified?: boolean | undefined;
 }
 export interface UiLease {
   id: string;
@@ -20,27 +20,27 @@ export interface UiRequest {
   requestId: string;
   lease: UiLease;
   target: UiTarget;
-  intent?: string;
-  expectedCommandId?: string;
-  maxControls?: number;
-  observationId?: string;
-  action?: string;
-  selectionMode?: string;
-  profileId?: string;
-  controlRef?: string;
-  controlName?: string;
-  controlType?: string;
-  containerRef?: string;
-  observedAutomationId?: string;
-  allowedProfiles?: string[];
-  maxActions?: number;
-  timeBudgetMs?: number;
+  intent?: string | undefined;
+  expectedCommandId?: string | undefined;
+  maxControls?: number | undefined;
+  observationId?: string | undefined;
+  action?: string | undefined;
+  selectionMode?: string | undefined;
+  profileId?: string | undefined;
+  controlRef?: string | undefined;
+  controlName?: string | undefined;
+  controlType?: string | undefined;
+  containerRef?: string | undefined;
+  observedAutomationId?: string | undefined;
+  allowedProfiles?: string[] | undefined;
+  maxActions?: number | undefined;
+  timeBudgetMs?: number | undefined;
 }
 export interface UiContext {
-  doc?: string;
-  docId?: string;
-  docFileId?: string;
-  projectId?: string;
+  doc?: string | undefined;
+  docId?: string | undefined;
+  docFileId?: string | undefined;
+  projectId?: string | undefined;
 }
 export interface UiIdentity {
   name: string;
@@ -51,42 +51,48 @@ export interface UiIdentity {
 }
 export interface UiCommand {
   id: string;
-  isNative?: boolean | null;
-  name?: string | null;
+  isNative?: (boolean | null) | undefined;
+  name?: (string | null) | undefined;
 }
 export interface UiProbe {
-  status?: string;
-  documents?: UiTarget[];
-  unavailableEvidence?: string[];
-  processId?: number;
-  activeCommand?: UiCommand | null;
-  fusionVersion?: string;
-  identity?: UiTarget;
-  identityPinned?: boolean;
-  backend?: string;
-  sessionFingerprint?: string;
+  status?: string | undefined;
+  documents?: UiTarget[] | undefined;
+  unavailableEvidence?: string[] | undefined;
+  processId?: number | undefined;
+  activeCommand?: (UiCommand | null) | undefined;
+  fusionVersion?: string | undefined;
+  identity?: UiTarget | undefined;
+  identityPinned?: boolean | undefined;
+  backend?: string | undefined;
+  sessionFingerprint?: string | undefined;
 }
 export interface UiProfile {
   intent: string;
   action: string;
-  commandId?: string;
-  titleAutomationId?: string;
-  messageAutomationId?: string;
+  commandId?: string | undefined;
+  titleAutomationId?: string | undefined;
+  messageAutomationId?: string | undefined;
   buttonAutomationId: string;
-  dialogClass?: string;
-  existingTargetOnly?: boolean;
-  preservesUnderlyingFailure?: boolean;
-  localized?: Record<
-    string,
-    { title?: string; message?: string; button: string }
-  >;
+  dialogClass?: string | undefined;
+  existingTargetOnly?: boolean | undefined;
+  preservesUnderlyingFailure?: boolean | undefined;
+  localized?:
+    | Record<
+        string,
+        {
+          title?: string | undefined;
+          message?: string | undefined;
+          button: string;
+        }
+      >
+    | undefined;
 }
 export interface UiQualification {
   profileId: string;
   fusionVersion: string;
   osBuild: string;
   locale: string;
-  commandIds?: string[];
+  commandIds?: string[] | undefined;
 }
 export interface UiControl {
   windowHandle: number;
@@ -119,16 +125,16 @@ export interface UiWindow {
   controls: UiControl[];
 }
 export interface UiSnapshot {
-  status?: string;
+  status?: string | undefined;
   windows: UiWindow[];
   truncated: boolean;
-  controlCount?: number;
-  locale?: string;
-  osBuild?: string;
-  processId?: number;
-  processStartTicks?: string;
-  mainWindowHandle?: number;
-  unavailableEvidence?: string[];
+  controlCount?: number | undefined;
+  locale?: string | undefined;
+  osBuild?: string | undefined;
+  processId?: number | undefined;
+  processStartTicks?: string | undefined;
+  mainWindowHandle?: number | undefined;
+  unavailableEvidence?: string[] | undefined;
 }
 export interface UiProfileCandidate {
   profileId: string;
@@ -137,48 +143,48 @@ export interface UiProfileCandidate {
   matchingMethod: string;
   languageIndependent: boolean;
   qualified: boolean;
-  qualification?: UiQualification | null;
-  actualLocale?: string | null;
+  qualification?: (UiQualification | null) | undefined;
+  actualLocale?: (string | null) | undefined;
   windowHandle: number | null;
-  containerRef?: string;
+  containerRef?: string | undefined;
   controlRef: string | null;
-  controlName?: string;
-  controlType?: string;
-  automationId?: string;
-  fingerprint?: string;
-  preservesUnderlyingFailure?: boolean;
-  requiredCommandId?: string | null;
-  nativeCommandId?: string | null;
-  commandIds?: string[];
+  controlName?: string | undefined;
+  controlType?: string | undefined;
+  automationId?: string | undefined;
+  fingerprint?: string | undefined;
+  preservesUnderlyingFailure?: boolean | undefined;
+  requiredCommandId?: (string | null) | undefined;
+  nativeCommandId?: (string | null) | undefined;
+  commandIds?: string[] | undefined;
 }
 interface RawControl {
-  runtimeId?: unknown[];
-  parentPath?: unknown[];
-  containerKey?: unknown;
-  automationId?: unknown;
-  name?: unknown;
-  controlType?: unknown;
-  className?: unknown;
-  enabled?: unknown;
-  offscreen?: unknown;
-  isPassword?: unknown;
-  invokeAvailable?: unknown;
-  isModal?: unknown;
-  semanticRole?: unknown;
+  runtimeId?: unknown[] | undefined;
+  parentPath?: unknown[] | undefined;
+  containerKey?: unknown | undefined;
+  automationId?: unknown | undefined;
+  name?: unknown | undefined;
+  controlType?: unknown | undefined;
+  className?: unknown | undefined;
+  enabled?: unknown | undefined;
+  offscreen?: unknown | undefined;
+  isPassword?: unknown | undefined;
+  invokeAvailable?: unknown | undefined;
+  isModal?: unknown | undefined;
+  semanticRole?: unknown | undefined;
 }
 interface RawWindow {
-  handle?: unknown;
-  rootContainerKey?: unknown;
-  controls?: RawControl[];
-  className?: unknown;
-  title?: unknown;
-  isMain?: unknown;
-  isModal?: unknown;
-  ownerHandle?: unknown;
+  handle?: unknown | undefined;
+  rootContainerKey?: unknown | undefined;
+  controls?: RawControl[] | undefined;
+  className?: unknown | undefined;
+  title?: unknown | undefined;
+  isMain?: unknown | undefined;
+  isModal?: unknown | undefined;
+  ownerHandle?: unknown | undefined;
 }
 interface RawSnapshot extends Omit<UiSnapshot, "windows" | "truncated"> {
   windows: RawWindow[];
-  truncated?: unknown;
+  truncated?: unknown | undefined;
 }
 export const INTENTS = new Set([
   "confirmRequestedUpdate",
@@ -516,7 +522,7 @@ export function targetIdentity(
   };
 }
 
-export function buildProbe(identity: UiIdentity) {
+export function buildProbe(identity: UiTarget) {
   const request = {
     name: identity.name,
     creationId: identity.creationId,
@@ -557,7 +563,7 @@ def run(_context: str) -> None:
 `;
 }
 
-export function resolveProbeDocuments(probe: UiProbe, identity: UiIdentity) {
+export function resolveProbeDocuments(probe: UiProbe, identity: UiTarget) {
   const rows = Array.isArray(probe.documents)
     ? probe.documents.filter(object)
     : [];
