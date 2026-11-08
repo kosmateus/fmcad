@@ -397,10 +397,21 @@ export function startStdio(
         /* Diagnostics cannot interrupt CAD or write to MCP stdout. */
       }
     };
+    // Companion startup must not make offline discovery depend on application
+    // configuration. Preserve the original validation error for the first queued
+    // operation; a valid configuration still starts the companion exactly once.
+    let companionConfig: FmcadConfiguration | undefined;
     try {
-      void ensureWeb(configuration()).catch(reportConsoleFailure);
+      companionConfig = configuration();
     } catch {
-      reportConsoleFailure();
+      // No service was started. Configuration errors belong to queued requests.
+    }
+    if (companionConfig) {
+      try {
+        void ensureWeb(companionConfig).catch(reportConsoleFailure);
+      } catch {
+        reportConsoleFailure();
+      }
     }
   }
   let telemetry: McpStdioTelemetry | undefined;

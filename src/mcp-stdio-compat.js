@@ -4,7 +4,6 @@ const { resolveMcpProjectDirectory } = require('./queue-client');
 const { mcpRequestState } = require('./invocation');
 const { redactDiagnostic, formatJsonError } = require('./diagnostics');
 let libraryCatalog, mcpTools, byMcpName, contracts, mcpInvocation, localInvocation;
-const { executeInvocation, invocationFailed } = require('./catalog/execute');
 
 function configureCatalogServices(catalog, tools = catalog.tools(), catalogContracts = catalog.list()) {
   libraryCatalog = catalog;
@@ -38,7 +37,6 @@ const SAFE_DIAGNOSTIC_METHODS = new Set([
 ]);
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const identifier = value => typeof value === 'string' && value.trim().length > 0 && value.length <= 256;
 const invalidQueueParams = message => { throw Object.assign(new Error(message), { code: 'INVALID_QUEUE_PARAMS' }); };
 
 function receipt(job) {
@@ -46,48 +44,7 @@ function receipt(job) {
     sequenceState: job.sequenceState ?? null, state: job.state };
 }
 
-function queueMetadata(request) {
-  const meta = request.params?._meta;
-  if (request.method !== 'tools/call' || !object(meta) || !Object.hasOwn(meta, 'fmcad')) return { payload: request, options: {} };
-  const options = meta.fmcad;
-  if (!object(options) || Object.keys(options).some(key => !['sequence', 'expectedRevision', 'requestId', 'description', 'projectDirectory', 'roots', 'sessionId', 'doc', 'docId', 'docFileId', 'projectId', 'purpose'].includes(key))) {
-    invalidQueueParams('params._meta.fmcad accepts only queue options and validated client context fields');
-  }
-  if (options.description !== undefined) require('./invocation').description(options.description);
-  if (options.sequence !== undefined) {
-    const seq = options.sequence;
-    if (!object(seq) || Object.keys(seq).some(key => !['action', 'id'].includes(key)) ||
-        !['continue', 'end'].includes(seq.action) || !identifier(seq.id)) {
-      invalidQueueParams('sequence requires action continue|end and id; begin with fmcad_queue_begin');
-    }
-  }
-  if (options.expectedRevision !== undefined && (!Number.isSafeInteger(options.expectedRevision) || options.expectedRevision < 0)) {
-    invalidQueueParams('expectedRevision must be a nonnegative safe integer');
-  }
-  if (options.requestId !== undefined && !identifier(options.requestId)) invalidQueueParams('requestId must contain 1..256 characters');
-  if (options.sessionId !== undefined && !identifier(options.sessionId)) invalidQueueParams('sessionId must contain 1..256 characters');
-  for (const key of ['doc', 'docId', 'docFileId', 'projectId']) {
-    if (options[key] !== undefined && !identifier(options[key])) invalidQueueParams(key + ' must contain 1..256 characters');
-  }
-  if (options.purpose !== undefined) require('./invocation').description(options.purpose);
-  if (options.description !== undefined && options.purpose !== undefined && options.description !== options.purpose) {
-    invalidQueueParams('Conflicting purpose and description');
-  }
-  if (options.projectDirectory !== undefined && (!identifier(options.projectDirectory) || options.projectDirectory.length > 4096)) {
-    invalidQueueParams('projectDirectory must contain 1..4096 characters');
-  }
-  if (options.roots !== undefined && (!Array.isArray(options.roots) || options.roots.length > 32 || options.roots.some(root =>
-    !object(root) || Object.keys(root).some(key => !['uri', 'name'].includes(key)) || !identifier(root.uri) ||
-    (root.name !== undefined && typeof root.name !== 'string')))) {
-    invalidQueueParams('roots must be at most 32 local MCP root hints with a URI and optional name');
-  }
-  const upstreamMeta = { ...meta };
-  delete upstreamMeta.fmcad;
-  const params = { ...request.params, _meta: upstreamMeta };
-  if (!Object.keys(upstreamMeta).length) delete params._meta;
-  return { payload: { ...request, params }, options: { ...options,
-    ...(options.description !== undefined ? { description: require('./invocation').description(options.description) } : {}) } };
-}
+const { queueMetadata } = require('./dist/composition/library-mcp-metadata');
 
 function createQueuePost(client, cfg, queueTimeoutMs, context = {}) {
   let registration;
@@ -305,59 +262,12 @@ function createQueuePost(client, cfg, queueTimeoutMs, context = {}) {
   return post;
 }
 
-function catalogResult(result, operation, failed = false) {
-  if (!object(result)) throw new Error('Invalid catalog application result');
-  return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result,
-    isError: failed || invocationFailed(result, operation) };
-}
-
-/** Application catalog routes are local metadata and typed CAD requests. Raw
- * backend requests retain the transport path, sessions and owned-artifact reads. */
-function createCatalogPost(post, { queued, cfg = {},
-  execute = executeInvocation } = {}) {
-  return async (request, session, version) => {
+const { catalogResult, createCatalogPost: typedCatalogPost } = require('./dist/composition/library-mcp-catalog');
+function createCatalogPost(post, options) {
+  return typedCatalogPost(post, options, () => {
     ensureCatalogServices();
-    const reply = result => ({ status: 200, raw: JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) });
-    if (request.method === 'tools/list') return Object.hasOwn(request, 'id')
-      ? reply({ tools: [...mcpTools, ...(queued ? queueTools : [])] }) : { status: 204, raw: '' };
-    const name = request.params?.name;
-    if (request.method !== 'tools/call' || typeof name !== 'string' || !name.startsWith('fmcad_cad_')) return post(request, session, version);
-    let call, options;
-    try {
-      if (!Object.hasOwn(request, 'id')) throw new Error('Catalog calls require a request id');
-      options = queueMetadata(request).options;
-      const args = request.params.arguments;
-      if (options.description !== undefined && args?.purpose !== undefined &&
-          require('./invocation').description(args.purpose) !== options.description) throw new Error('Conflicting purpose and metadata description');
-      call = mcpInvocation(name, { ...args, ...(options.description !== undefined ? { purpose: options.description } : {}) });
-      if (!localInvocation(call.invocation)) {
-        if (!contracts[call.operation].requirements.backends.includes(cfg.backend || 'mcp')) throw new Error(call.operation + ' requires the addin backend; no fallback');
-        if (queued && call.operation === 'animation.play') throw new Error('unsupported_queue_route: asynchronous animation.play has no terminal queue receipt');
-      }
-    } catch (error) {
-      if (!Object.hasOwn(request, 'id')) throw error;
-      return { status: 200, raw: JSON.stringify({ jsonrpc: '2.0', id: request.id,
-        error: { code: -32602, message: redactDiagnostic(error.message, cfg) } }) };
-    }
-    if (queued && !localInvocation(call.invocation)) {
-      return post({ ...request, params: { ...request.params, arguments: {
-        ...request.params.arguments, ...(call.invocation.purpose !== undefined ? { purpose: call.invocation.purpose } : {}),
-      } } }, session, version);
-    }
-    if (options.sequence || options.expectedRevision !== undefined) {
-      return { status: 200, raw: JSON.stringify({ jsonrpc: '2.0', id: request.id,
-        error: { code: -32602, message: 'Local/direct catalog execution does not accept queue sequence or revision metadata' } }) };
-    }
-    try {
-      if (!localInvocation(call.invocation)) {
-        throw new Error('unsupported_queue_route: MCP SDK execution requires the broker');
-      }
-      return reply(catalogResult(await execute(call.invocation, null), call.operation));
-    } catch (error) {
-      return { status: 200, raw: JSON.stringify({ jsonrpc: '2.0', id: request.id,
-        error: { code: -32000, message: redactDiagnostic(error.message, cfg) } }) };
-    }
-  };
+    return { tools: mcpTools, contracts, fromMcp: mcpInvocation, isLocal: localInvocation };
+  });
 }
 
 // Framing only: preserve responses from the catalog/application or physical post.
