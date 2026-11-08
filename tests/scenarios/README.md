@@ -140,3 +140,11 @@ scenarios or certify restoration of camera, workspace, material or motion state.
 The exclusive scenario must assert its own restoration before returning. This
 is a coordinator barrier, not an interprocess lock: use one coordinator per
 Fusion instance. Native global-state qualification remains deferred.
+
+`--suite camera` is an exclusive shared saved-fixture family for explicit camera
+pose/lens, independent readback, invalid/foreign-state rejection and verified
+restoration. It is also part of `all`. Its model does not render images or simulate
+ViewCube/fit behavior. A failed assertion still attempts restoration after known
+settlement; an unknown write stops further mutations, retains both primary and
+restoration errors, and blocks subsequent scenarios. Recovery does not upgrade
+that result to a passed camera qualification.

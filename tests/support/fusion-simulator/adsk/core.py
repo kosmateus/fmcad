@@ -346,6 +346,7 @@ class Document(Base):
         self.allDocumentReferences: Collection[object] = Collection()
         self.documentReferences: Collection[object] = Collection()
         self.products: Products = Products(Design(self))
+        self.model_viewport: Viewport = Viewport(self)
 
     def _snapshot(self, file: DataFile) -> None:
         from .fusion import Design
@@ -445,15 +446,157 @@ class Documents(Collection[Document]):
         return doc
 
 
+class CameraTypes:
+    OrthographicCameraType = 0
+    PerspectiveCameraType = 1
+    PerspectiveWithOrthoFacesCameraType = 2
+
+
+class Camera(Base):
+    """Detached camera state only; no renderer, fitting or ViewCube solver."""
+    def __init__(self) -> None:
+        self.model_eye = Point3D(10., 10., 10.)
+        self.model_target = Point3D(0., 0., 0.)
+        self.model_upVector = Vector3D(0., 0., 1.)
+        self.model_cameraType: int = CameraTypes.OrthographicCameraType
+        self.model_perspectiveAngle: float = math.pi / 4
+        self.model_extents: tuple[float, float] = (10., 10.)
+        self.model_isFitView: bool = False
+        self.model_isSmoothTransition: bool = False
+
+    @staticmethod
+    def create() -> Camera:
+        return Camera()
+
+    def getExtents(self) -> tuple[bool, float, float]:
+        if self.cameraType != CameraTypes.OrthographicCameraType:
+            return (False, 0., 0.)
+        return (True, *self.model_extents)
+
+    def setExtents(self, width: float, height: float) -> bool:
+        if self.cameraType != CameraTypes.OrthographicCameraType:
+            return False
+        if not all(math.isfinite(v) and v > 0 for v in (width, height)):
+            return False
+        self.model_extents = (width, height)
+        return True
+
+    @property
+    def eye(self) -> Point3D:
+        return deepcopy(self.model_eye)
+
+    @eye.setter
+    def eye(self, value: Point3D) -> None:
+        self.model_eye = deepcopy(value)
+
+    @property
+    def target(self) -> Point3D:
+        return deepcopy(self.model_target)
+
+    @target.setter
+    def target(self, value: Point3D) -> None:
+        self.model_target = deepcopy(value)
+
+    @property
+    def upVector(self) -> Vector3D:
+        return deepcopy(self.model_upVector)
+
+    @upVector.setter
+    def upVector(self, value: Vector3D) -> None:
+        self.model_upVector = deepcopy(value)
+
+    @property
+    def cameraType(self) -> int:
+        return self.model_cameraType
+
+    @cameraType.setter
+    def cameraType(self, value: int) -> None:
+        if value not in (0, 1, 2):
+            raise ValueError("Unknown camera projection")
+        self.model_cameraType = value
+
+    @property
+    def perspectiveAngle(self) -> float:
+        if self.cameraType == CameraTypes.OrthographicCameraType:
+            raise ValueError("Perspective angle requires perspective projection")
+        return self.model_perspectiveAngle
+
+    @perspectiveAngle.setter
+    def perspectiveAngle(self, value: float) -> None:
+        if self.cameraType == CameraTypes.OrthographicCameraType or not 0 < value < math.pi:
+            raise ValueError("Invalid perspective angle or projection")
+        self.model_perspectiveAngle = value
+
+    @property
+    def isFitView(self) -> bool:
+        return self.model_isFitView
+
+    @isFitView.setter
+    def isFitView(self, value: bool) -> None:
+        self.model_isFitView = value
+
+    @property
+    def isSmoothTransition(self) -> bool:
+        return self.model_isSmoothTransition
+
+    @isSmoothTransition.setter
+    def isSmoothTransition(self, value: bool) -> None:
+        self.model_isSmoothTransition = value
+
+    @property
+    def viewOrientation(self) -> int:
+        raise NotImplementedError("ViewCube orientation is not modeled")
+
+    @viewOrientation.setter
+    def viewOrientation(self, value: int) -> None:
+        raise NotImplementedError("ViewCube orientation is not modeled")
+
+
+class Viewport(Base):
+    def __init__(self, document: Document) -> None:
+        self.model_document: Document = document
+        self.model_camera: Camera = Camera.create()
+
+    @property
+    def parentDocument(self) -> Document:
+        return self.model_document
+
+    @property
+    def camera(self) -> Camera:
+        self.model_validate()
+        return deepcopy(self.model_camera)
+
+    @camera.setter
+    def camera(self, value: Camera) -> None:
+        self.model_validate()
+        if value.isFitView or value.isSmoothTransition:
+            raise NotImplementedError("Fit and animated camera transitions require native Fusion")
+        if value.cameraType == CameraTypes.OrthographicCameraType:
+            _, width, height = value.getExtents()
+            if width != height:
+                raise NotImplementedError("Only square viewport extents are modeled")
+        self.model_camera = deepcopy(value)
+
+    def model_validate(self) -> None:
+        if not self.model_document.isValid:
+            raise ValueError("Viewport document is closed")
+
+
 class Application(Base):
     _instance: ClassVar[Application | None] = None
 
     def __init__(self) -> None:
-        self.version: str = "fmcad-simulator-v12-not-Fusion"
+        self.version: str = "fmcad-simulator-v13-not-Fusion"
         self.activeDocument: Document | None = None
         self.documents: Documents = Documents(self)
         self.userInterface: UserInterface = UserInterface()
         self.data: Data = Data(self)
+
+    @property
+    def activeViewport(self) -> Viewport:
+        if self.activeDocument is None:
+            raise ValueError("No active viewport")
+        return self.activeDocument.model_viewport
 
     @property
     def activeProduct(self) -> Product | None:

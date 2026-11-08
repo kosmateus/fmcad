@@ -243,3 +243,34 @@ starts those blocked cases. Six focused integration/scheduling tests pass.
 This establishes scheduling, not native global-state restoration: each migrated
 global scenario still needs capture/restore assertions and its native assumptions.
 One coordinator per Fusion instance remains an explicit prerequisite.
+
+## Delivery ledger — explicit camera state
+
+PR #72 (`68d4e4d`) contains shared exclusive scheduling; 28 focused runner and
+scheduling tests passed. Full CI remains queued. The immutable PR #70 transaction
+component profile passed through MCP with identical source hashes before/after
+(`37185e8e...`); addin verification is running. The concurrency journal discrepancy
+remains open and no production guard has changed.
+
+The camera shared family preserves the historical perspective projection,
+40-degree lens, 80/60/50 mm eye, 10/6/5 mm target and 0.00001 internal-unit
+assertions on an owned saved fixture. It verifies independent readback,
+foreign/invalid-state rejection without view changes, and restoration. An
+assertion failure restores before close; a lost write blocks restoration/new
+mutations and later scenarios. Recovery reads the original receipt and closes
+only its owned file; it does not claim camera restoration or qualification.
+Aggregate errors retain both the original and restoration failure messages.
+
+Model v13 supplies detached camera snapshots and document-owned viewport state,
+with explicit square framing assumptions. All six MCP/addin concurrency 1/2/10
+camera combinations pass. Detached-copy/isolation, assertion-failure restoration
+and loss/recovery tests pass. The failure-injection fixture was corrected to
+preserve the separate FMCAD_RESULT receipt line rather than parsing all stdout
+as one JSON value. Strict simulator typing has zero errors; pinned API checks
+cover 65 methods and 41 property accessors. Full regression is running.
+
+Three exact live-extended camera assertions are mapped, bringing the individually
+reviewed shared ledger to 40 sites. Neighboring shot-pack/PNG/ViewCube assertions
+remain open native obligations. No rendering, smooth transitions, fit, arbitrary
+aspect-ratio behavior or camera persistence across reopen is simulated or claimed.
+Global material/motion/UI contracts and the remaining B1–B4 migration remain open.

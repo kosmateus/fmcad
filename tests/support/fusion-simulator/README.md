@@ -143,3 +143,24 @@ and explicit squared/cubed length literals. Native physical accuracy, general
 BRep topology, audit completeness and atomic command-event rollback remain separate
 qualification obligations. This family retains the historical non-atomic
 `onExisting: reuse` definition flow and explicitly non-atomic negative check.
+
+### Explicit camera state (model v13)
+
+Camera snapshots are detached values, and each document owns a viewport. The
+model supports explicit pose and perspective lens values, square orthographic
+extents, exact document-bound restore, and rejection without changing the view.
+The shared case retains the historical 40-degree lens and 80/60/50 mm eye with
+0.00001 internal-unit tolerance. Its coordinator scope is exclusive-instance.
+The API verifier checks the added method and property accessor shapes against the
+same pinned Autodesk snapshot; unit tests independently check copy semantics,
+cross-document state and refusal after document closure.
+
+Native-only assumptions: projection/FOV application may move the eye, so the
+production handler's two-stage apply still needs live verification; restoring
+captured extents depends on the actual viewport aspect ratio. The model's square
+viewport and initial pose are test inputs, not claimed Fusion defaults. Camera
+persistence across save/reopen is not implemented or claimed. Fit, ViewCube
+orientations, smooth transitions, rendered images, PNG bytes and shot packs are
+unsupported; no placeholder pixels qualify those historical assertions. Unknown
+camera writes are never replayed. Recovery can close the original owned document
+from settled receipts, but does not certify camera restoration or run later cases.

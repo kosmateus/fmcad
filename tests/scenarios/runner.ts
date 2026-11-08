@@ -50,6 +50,8 @@ export interface ScenarioReport {
   cleanupError?: string;
 }
 function errorText(error: unknown): string {
+  if (error instanceof AggregateError)
+    return error.message + ": " + error.errors.map(errorText).join("; ");
   return error instanceof Error ? error.message : String(error);
 }
 function creationProof(

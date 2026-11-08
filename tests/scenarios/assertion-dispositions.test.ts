@@ -39,7 +39,11 @@ test("reviewed assertion mappings name retained individual assertions and real e
     mapped.add(key);
     assert.equal(row["disposition"], "shared");
     assert.ok(fs.existsSync(path.join(root, text(row["evidence"]))));
-    assert.equal(row["scenario"], "definition-transaction-*");
+    assert.ok(
+      ["definition-transaction-*", "camera-state-*"].includes(
+        text(row["scenario"]),
+      ),
+    );
     assert.ok(text(row["reason"]).length > 40);
   }
   assert.ok(

@@ -39,3 +39,9 @@ Native command-event atomic rollback is not implied by this legacy definition
 family. The ten-owner case is more expensive because each definition retains its
 full original reference/measurement/replay/rejection sequence; measure job time
 before assigning the final CI timeout instead of dropping assertions.
+
+Add `camera` for both protocols and concurrency 1/2/10. It intentionally uses
+exclusive-instance barriers even when the configured owner limit is ten. Keep
+native rendering, ViewCube, fit and shot-pack obligations separate; this family
+qualifies explicit state and lifecycle only. Never run two coordinators against
+one Fusion instance.

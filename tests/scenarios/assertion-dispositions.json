@@ -335,6 +335,33 @@
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
       "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+    },
+    {
+      "source": "tests/live-extended.js",
+      "assertionId": "64a4ae2d9e00c29d9819-1",
+      "disposition": "shared",
+      "scenario": "camera-state-*",
+      "capabilities": ["camera-state"],
+      "evidence": "tests/scenarios/camera-cases.ts",
+      "reason": "Retains the exact perspective projection, 40-degree angle, 80/60/50 mm eye and 0.00001 internal-unit tolerance from this assertion. This mapping excludes neighboring shot.pack, PNG and ViewCube assertions; native viewport behavior remains unqualified."
+    },
+    {
+      "source": "tests/live-extended.js",
+      "assertionId": "8c8916192fe0a670922a-1",
+      "disposition": "shared",
+      "scenario": "camera-state-*",
+      "capabilities": ["camera-state"],
+      "evidence": "tests/scenarios/camera-cases.ts",
+      "reason": "Retains the exact perspective projection, 40-degree angle, 80/60/50 mm eye and 0.00001 internal-unit tolerance from this assertion. This mapping excludes neighboring shot.pack, PNG and ViewCube assertions; native viewport behavior remains unqualified."
+    },
+    {
+      "source": "tests/live-extended.js",
+      "assertionId": "8188a68fc7baef64c140-1",
+      "disposition": "shared",
+      "scenario": "camera-state-*",
+      "capabilities": ["camera-state"],
+      "evidence": "tests/scenarios/camera-cases.ts",
+      "reason": "Retains the exact perspective projection, 40-degree angle, 80/60/50 mm eye and 0.00001 internal-unit tolerance from this assertion. This mapping excludes neighboring shot.pack, PNG and ViewCube assertions; native viewport behavior remains unqualified."
     }
   ]
 }
