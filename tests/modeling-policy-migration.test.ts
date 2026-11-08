@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 
 const root = process.cwd();
@@ -869,3 +870,66 @@ for (const [family, entry] of Object.entries(privateSpecialistHistory)) {
     );
   });
 }
+
+test(
+  "specialist migration preserves exact generated artifacts through real public and private composition",
+  { timeout: 180000 },
+  () => {
+    const operations = Object.values(specialistOperations)
+      .flat()
+      .filter((operation) => operation !== "measure.baseline.inspect");
+    assert.equal(operations.length, 15);
+    const script = `
+    const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
+    const Module = require('node:module');
+    const root = process.cwd(), folder = path.join(root, 'tests/fixtures/modeling-specialist-history');
+    const entries = {...JSON.parse(fs.readFileSync(path.join(folder, 'manifest.json'))), ...JSON.parse(fs.readFileSync(path.join(folder, 'private-manifest.json')))};
+    const sources = new Map(Object.entries(entries).map(([name, entry]) => {
+      const source = fs.readFileSync(path.join(folder, name + '.js.txt'));
+      if (crypto.createHash('sha256').update(source).digest('hex') !== entry.sha256) throw Error('Historical source changed: ' + name);
+      return [path.join(root, entry.path), source.toString('utf8')];
+    }));
+    if (process.argv[1] === 'historical') {
+      const original = Module._load, cached = new Map();
+      Module._load = function(request, parent, isMain) {
+        const filename = Module._resolveFilename(request, parent, isMain);
+        if (!sources.has(filename)) return original.call(this, request, parent, isMain);
+        if (!cached.has(filename)) {
+          const historical = new Module(filename, parent);
+          historical.filename = filename;
+          historical.paths = Module._nodeModulePaths(path.dirname(filename));
+          cached.set(filename, historical);
+          historical._compile(sources.get(filename), filename);
+        }
+        return cached.get(filename).exports;
+      };
+    }
+    (async () => {
+      const {catalog, prepareCadScript} = require(path.join(root, 'src/cad'));
+      const {admissionContext, prepareCoordinatedModelingProgram} = await import(require('node:url').pathToFileURL(path.join(root, 'tests/modeling-admission-fixtures.ts')));
+      const reports = [];
+      for (const operation of JSON.parse(process.argv[2])) {
+        const coordinated = operation.startsWith('selection.rule.') || operation.startsWith('measure.baseline.');
+        const artifact = coordinated ? await prepareCoordinatedModelingProgram(operation) : prepareCadScript(operation, catalog[operation].example, admissionContext);
+        reports.push({operation, artifactHash: artifact.artifactHash, sourceHash: artifact.sha256, units: artifact.units.length});
+      }
+      process.stdout.write(JSON.stringify(reports));
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `;
+    const observe = (mode: string): unknown =>
+      JSON.parse(
+        execFileSync(
+          process.execPath,
+          [
+            "--experimental-strip-types",
+            "-e",
+            script,
+            mode,
+            JSON.stringify(operations),
+          ],
+          { cwd: root, encoding: "utf8", timeout: 80000 },
+        ),
+      );
+    assert.deepEqual(observe("current"), observe("historical"));
+  },
+);

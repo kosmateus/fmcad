@@ -402,3 +402,15 @@ proposal. The installed consumer passes all 272 example contracts and 263 previe
 through each CLI and MCP path. The two added real admission cases are required in
 the full matrix; their focused result is recorded separately. Earlier partial
 260-program runs do not establish completion of the corrected matrix.
+
+
+An additional isolated-process historical comparison passes the exact artifact and
+source hashes for all 15 generated public/coordinator operations affected by the
+specialist extraction. Each child uses the real public preparation and private
+coordinator paths; one substitutes the eight SHA-verified original specialists,
+the other uses the typed modules. No production checker is mocked or relaxed.
+The combined policy/history/installed selection now passes 252 tests. Both added
+registry-audit operations (`deliver`, `visibility.finalize`) also pass real pinned
+admission. Long local shard processes lost their runner sessions without a final
+result; their partial logs are not recorded as completed shards. Full CI remains
+the authoritative complete-matrix gate.
