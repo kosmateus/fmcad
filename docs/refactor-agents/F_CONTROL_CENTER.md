@@ -1,6 +1,7 @@
 # Agent F — Control Center completion and TUI retirement
 
-Status: **available**. Claim this package, inspect current main and read
+Status: **claimed by Agent F** on 8 November 2026. Starting from main
+`0b84454d8e5d22abb23bcf52999c506894ebf5bf` (PR #35). Read
 [the shared plan](../REFACTOR_PARALLEL_PLAN.md). Modeling remains the product
 priority; console work must not require unrelated changes to the modeling path.
 
