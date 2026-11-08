@@ -98,3 +98,35 @@ includes imports, references, externalization, save/publication and drawings.
   registration. Record proposed integration contracts here and in each PR.
 - Native Fusion and genuine native-format qualification remain pending.
 - D1–D4 are in progress; this claim is not implementation completion.
+
+### Delivery 1 — drawing check/export boundary (PR #38)
+
+- Starting main: `0b84454d8e5d22abb23bcf52999c506894ebf5bf`.
+- Strict typed drawing check/export implementations retain public signatures and
+  complete SVG/PDF/DXF bytes. JavaScript entries delegate to the typed factory.
+- Frozen, SHA-256 checked comparisons cover pre-refactor `a26222f` and immediate
+  predecessor `0b84454`. The original archive Git history was downloaded and read
+  separately; no archive or repository metadata is included in this PR.
+- Historical cleanup loses the original publication error when removal fails.
+  Both historical versions reproduce it. The new boundary returns AggregateError
+  with the original cause and cleanup error, and refuses to delete a replacement
+  directory with another inode. This is an inherited defect, not attributed to
+  the TypeScript migration. Successful bytes and ordinary failure remain equal.
+- Baseline pinned build and 114 family tests passed. Initial tests failed because
+  this host lacks `/tmp`; rerunning with a writable TMPDIR passed unchanged.
+- New paired/fault tests: 20 passed; existing drawing suite: 12 passed. Strict
+  adapter compilation and repository lint passed. Full CI remains the merge gate.
+- Integration request for G: add `tests/drawing.test.js` and
+  `tests/drawing-migration.test.js` to `package.json` `test:regressions` in a small
+  registry commit. They are discovered by `npm test`, which current CI does not
+  invoke. Shared configuration has not been edited by D.
+- B fixture contract: drawing reports retain `nativeAcceptance:notEvaluated`,
+  source-map identity and content hashes. These are genuine external sheet
+  artifacts, not native Fusion drawings or F3D/STEP/STL/PNG qualification.
+- E: public `descriptors`, `validate`, `execute` and emitter exports are unchanged;
+  installed factories and declarations stage under node-adapters/persistence.
+- A: no journal primitives, stage ownership or receipt formats changed.
+- Remaining: drawing package model/scene preparation and verification, full import
+  and reference validation/planning composition, externalization policy/Python
+  boundaries, source/destination receipt fault inventory and B integration.
+  D1–D4 remain open; this bounded delivery does not complete the package.

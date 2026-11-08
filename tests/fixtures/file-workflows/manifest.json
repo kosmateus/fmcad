@@ -1,0 +1,26 @@
+[
+  {
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "src/drawing-export.js",
+    "file": "baseline-drawing-export.js.txt",
+    "sha256": "9fc1da6b5db71294977f8fc5e88033e77f0aea4f607a85081d74a58f8d114d07"
+  },
+  {
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "src/drawing-check.js",
+    "file": "baseline-drawing-check.js.txt",
+    "sha256": "392bde17c3e0a931597e7b333af584a891aec9a3d81b33ffb4b863b4518ff014"
+  },
+  {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sourcePath": "src/drawing-export.js",
+    "file": "before-drawing-export.js.txt",
+    "sha256": "9fc1da6b5db71294977f8fc5e88033e77f0aea4f607a85081d74a58f8d114d07"
+  },
+  {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sourcePath": "src/drawing-check.js",
+    "file": "before-drawing-check.js.txt",
+    "sha256": "392bde17c3e0a931597e7b333af584a891aec9a3d81b33ffb4b863b4518ff014"
+  }
+]
