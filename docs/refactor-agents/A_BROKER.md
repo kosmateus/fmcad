@@ -176,9 +176,17 @@ these intended differences:
   request and build across asynchronous checking. It retains canonical reader
   reconstruction and never interprets an old transactional result as a new one.
 
-These are pre-existing defects, not regressions introduced by the TypeScript
-conversion. Historical cases deliberately record the old acceptance and require
-the new implementation to refuse it before any execution. No mutation is replayed.
+These defects predate this TypeScript conversion, but they are **not attributed
+to the original pre-refactor broker**. `a26222f` does not contain this admission
+module. Archive ancestry places its addition at `8aa30bf940c1799318f9e395b2400b665b5d43ad`
+(29 October), after both `a26222f` and toolchain migration `8b0be07`; the original
+observer already has the incomplete checks shown above. Recovery preflight was
+added at `ce72485`. Executable paired evidence establishes the defects in retained
+`843ce0d` (31 October) and the immediate predecessor; it does not establish their
+manifestation in a real pre-refactor Fusion run. These are defects in mechanisms
+added during earlier refactor work. Historical cases deliberately record the old
+acceptance and require the new implementation to refuse it before any execution.
+No mutation is replayed.
 
 The expanded `test:broker-regressions` also runs the new admission comparisons,
 fixed-source scope comparisons and existing seven production observer cases.
