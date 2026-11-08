@@ -126,3 +126,15 @@ shared saved-reopen scenario: the runner needs a receipt-bound creation-identity
 handoff and loss/restart tests before reopening is safe under its cleanup contract.
 Historical-version opening and native archive formats remain explicit unsupported
 capabilities. Token continuity here is a model assumption requiring native checks.
+
+## Delivery ledger — assertion audit and exclusive legacy profiles
+
+[Assertion audit](B_ASSERTION_AUDIT.md) freezes 1,588 static sites across 39 live
+sources and compares 613 historical sites (612 unchanged; one explicit MCP name
+change). It adds an anti-omission unit gate and a required-profile manifest, while
+leaving semantic per-assertion dispositions explicitly pending. Legacy global-state
+suites now have exclusive barriers and block later work after an uncertain failure.
+This is an intermediate B1/B4 delivery, not package completion or native evidence.
+
+Persistence PR #44 (`fe1c66f`) passed all 124 scenario unit tests locally; full CI
+is pending. The archive contains the pre-refactor Git baseline and is kept separate.

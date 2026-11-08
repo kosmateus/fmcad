@@ -52,7 +52,32 @@ async function runBatch(names, routing, launch, concurrency = 10) {
     catch (error) { return { suite: name, exitCode: 1, error: error.message }; }
   };
   if (routing !== 'queue') throw new Error('routing=direct is no longer supported; use shared broker admission');
-  return boundedMap(names, concurrency, one);
+  // Legacy suites have not proved restoration of shared UI/workspace state.
+  // Treat each registered native suite as an exclusive barrier until migration
+  // supplies a narrower verified scope. The child's finally runs before exit.
+  concurrencyLimit(concurrency);
+  const exclusive = new Set([...suites, ...scopedSuites]);
+  const results = [];
+  let pending = [];
+  const flush = async () => {
+    results.push(...await boundedMap(pending, concurrency, one));
+    pending = [];
+  };
+  for (const [index, name] of names.entries()) {
+    if (!exclusive.has(name)) { pending.push(name); continue; }
+    await flush();
+    const result = await one(name);
+    results.push(result);
+    if (result.exitCode !== 0) {
+      // A failed legacy child cannot establish restoration. Do not let a later
+      // suite mutate that uncertain global state or report it as a pass.
+      results.push(...names.slice(index + 1).map(suite => ({ suite, exitCode: 1,
+        status: 'not-run', error: 'Blocked by failed exclusive suite: ' + name })));
+      return results;
+    }
+  }
+  await flush();
+  return results;
 }
 
 function runChild(script, env) {
@@ -98,6 +123,11 @@ print(json.dumps(dict(documents=[dict(creationId=d.creationId,name=d.name,saved=
 }
 
 async function run(argv = process.argv.slice(2), settings = {}) {
+  if (argv.includes('--list-profiles')) {
+    if (argv.length !== 1) throw new Error('--list-profiles cannot be combined with execution options');
+    console.log(JSON.stringify(require('./live-required-profiles.json'), null, 2));
+    return 0;
+  }
   if (argv.includes('--list')) {
     if (argv.length !== 1) throw new Error('--list cannot be combined with execution options');
     console.log(JSON.stringify(inventory, null, 2));
@@ -126,7 +156,8 @@ async function run(argv = process.argv.slice(2), settings = {}) {
     }
     const sourceAfter = testSourceHash();
     results.push({ suite: 'live-test-source-stability', exitCode: sourceBefore === sourceAfter ? 0 : 1 });
-    console.log(JSON.stringify({ routing, scheduling: 'bounded-parallel', concurrency,
+    console.log(JSON.stringify({ routing, scheduling: 'exclusive-legacy-suites', concurrency,
+      coverage: 'registered legacy subset; not full-model or concurrent qualification',
       sourceBefore, sourceAfter, baselineFile, results }, null, 2));
     return results.some(result => result.exitCode !== 0) ? 1 : 0;
   }
