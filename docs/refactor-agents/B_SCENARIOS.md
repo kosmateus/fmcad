@@ -433,3 +433,35 @@ extremum. B_NATIVE_SOLIDS_ASSUMPTIONS.md records the calculation and production
 recipe boundary. The expectation and tolerance are preserved; qualification is
 blocked pending an evidenced C/G review. This is separate from transaction
 settlement and journal blockers. Native execution remains deferred.
+
+## Delivery ledger — restore creation-time active-document proof
+
+Native solid catalog PR #93 (`b73f7f4`) registers the saved native sequence and
+its explicit bound conflict. The non-transaction regression ran 204 tests: 203
+passed and one could not create a temporary directory because this host has no
+`/tmp`. All three tests in that same broker-path file passed unchanged with an
+explicit workspace TMPDIR. This does not include the blocked transaction file.
+
+The removed legacy active-document assertion is now restored at creation
+completion, before any later guarded activation can mask failure. Both the returned
+result and durable creation receipt record the observed active creation ID. A
+known inactive creation fails before export/save, then closes only its proven
+owned document. Contradictory observations defer cleanup; recovery reads the
+original successful result without replay or promotion to a passed scenario.
+
+Four new MCP/addin fault tests and 22 existing runner tests pass. They retain a
+separate saved document with independently verified parameter state and active
+identity. The historical mapping names the exact predecessor SHA, not a fabricated
+current assertion ID. Saved/reopen/revision/recovery regression is running. Native
+activation semantics still require later qualification.
+
+Creation-proof regression: all 58 saved/reopen/revision/command-settlement tests
+pass, plus all three disposition/predecessor checks. Together with the 26 runner
+and new activation tests this is 87 passing focused tests. Runtime-test compilation
+passes. These results do not include or resolve the blocked positive transaction
+profile, and exact-head full CI remains required before merge.
+
+The immutable pose component profile at `c51dacf` has now passed both MCP and
+addin with complete cleanup. Source hashes before and after both runs are identical:
+`9109371b62dcd5f3f08995d5aa08ced778b1b01964c966df8f2ad7e8513db653`.
+This is production-checker/model evidence, not native Fusion qualification.

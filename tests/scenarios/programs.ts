@@ -55,7 +55,7 @@ app = adsk.core.Application.get()
 assert not any(d.name == ${quoted(name)} for d in app.documents)
 doc = app.documents.add(cast(adsk.core.DocumentTypes, adsk.core.DocumentTypes.FusionDesignDocumentType))
 doc.name = ${quoted(name)}
-identity: dict[str, object] = dict(creationId=doc.creationId, name=doc.name, requestId=${quoted(binding.requestId)}, clientId=${quoted(binding.clientId)})
+identity: dict[str, object] = dict(creationId=doc.creationId, name=doc.name, activeCreationId=app.activeDocument.creationId if app.activeDocument else None, requestId=${quoted(binding.requestId)}, clientId=${quoted(binding.clientId)})
 with open(${quoted(receipt)}, 'x', encoding='utf-8') as stream:
     _ = stream.write(json.dumps(identity))
 ${emit("identity")}`);

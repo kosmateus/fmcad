@@ -105,8 +105,9 @@ Reviewed non-port changes:
 - Extended CAD makes the failed-check batch explicitly non-atomic, preserving its
   per-step output contract. Atomic rollback remains a separate open obligation.
 - Legacy removes `assert.equal(state.active, name)` without a replacement at the
-  same point. Preserve this removed expression as an open migration obligation;
-  unchanged current-source hashes alone cannot certify this history.
+  same point. The shared creation receipt now restores that immediate observation
+  before guarded target selection, with a mapping to the exact predecessor commit;
+  unchanged current-source hashes alone could not certify this history.
 - Motion removes the `--after-styles` precondition while keeping explicit `--run`.
   The new exclusive barrier prevents overlap but does not establish this historical
   ordering prerequisite or prove native state restoration.

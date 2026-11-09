@@ -21,6 +21,25 @@ test("reviewed assertion mappings name retained individual assertions and real e
     for (const site of source["assertions"])
       available.add(text(source["source"]) + ":" + text(record(site)["id"]));
   }
+  const predecessors = JSON.parse(
+    fs.readFileSync(
+      path.join(root, "tests/live-assertion-predecessors.json"),
+      "utf8",
+    ),
+  ) as {
+    sources: {
+      source: string;
+      predecessor: string;
+      comparison: { removed: { id: string }[] };
+    }[];
+  };
+  const historical = new Set(
+    predecessors.sources.flatMap((source) =>
+      source.comparison.removed.map(
+        (site) => source.source + ":" + source.predecessor + ":" + site.id,
+      ),
+    ),
+  );
   const dispositions = record(
     JSON.parse(
       fs.readFileSync(
@@ -33,8 +52,12 @@ test("reviewed assertion mappings name retained individual assertions and real e
   const mapped = new Set<string>();
   for (const value of dispositions["mappings"]) {
     const row = record(value),
-      key = text(row["source"]) + ":" + text(row["assertionId"]);
-    assert.ok(available.has(key), key);
+      key =
+        text(row["source"]) +
+        ":" +
+        (row["historicalCommit"] ? text(row["historicalCommit"]) + ":" : "") +
+        text(row["assertionId"]);
+    assert.ok((row["historicalCommit"] ? historical : available).has(key), key);
     assert.ok(!mapped.has(key), "Duplicate semantic disposition: " + key);
     mapped.add(key);
     assert.ok(["shared", "native-only"].includes(text(row["disposition"])));
@@ -54,6 +77,7 @@ test("reviewed assertion mappings name retained individual assertions and real e
         "pose-visibility-*",
         "animation-plan-*",
         "native-solids-*",
+        "document-lifecycle",
       ].includes(text(row["scenario"])),
     );
     assert.ok(text(row["reason"]).length > 40);

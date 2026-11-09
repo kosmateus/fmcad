@@ -270,13 +270,14 @@ export class ScenarioSession {
     try {
       const requestId = text(this.report.requests.at(-1)?.requestId);
       const returned = creationProof(value, this.report.owner, requestId);
-      const durable = creationProof(
-        readCreation(this.directory),
-        this.report.owner,
-        requestId,
-      );
+      const durableValue = readCreation(this.directory);
+      const durable = creationProof(durableValue, this.report.owner, requestId);
       if (returned.creationId !== durable.creationId)
         throw new Error("Returned and durable creation identities differ");
+      if (value["activeCreationId"] !== durableValue["activeCreationId"])
+        throw new Error(
+          "Returned and durable creation active observations differ",
+        );
       this.#document = returned;
     } catch (error) {
       this.#uncertain = true;
@@ -284,6 +285,10 @@ export class ScenarioSession {
     }
     this.report.document = this.#document;
     this.persist();
+    if (value["activeCreationId"] !== this.document.creationId)
+      throw new Error(
+        "Newly created document was not active at creation completion",
+      );
     this.signal?.throwIfAborted();
     await this.#dispatch(
       "export",

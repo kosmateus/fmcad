@@ -1027,6 +1027,17 @@
       "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
       "qualification": "blocked-historical-bound-expectation",
       "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "historicalCommit": "5f438c678ec09179aca098ae6171a7250c358860",
+      "assertionId": "3f0599354f7eabef6e66-1",
+      "disposition": "shared",
+      "scenario": "document-lifecycle",
+      "capabilities": ["documents"],
+      "evidence": "tests/scenarios/creation-active.test.ts",
+      "reason": "Restores the removed historical creation-active assertion using the original successful creation observation before any guarded activation can mask it. Returned and durable observations must agree; known inactive creation cleans only its proven owned document, while contradictory observations defer cleanup.",
+      "qualification": "offline-tested-native-pending"
     }
   ]
 }
