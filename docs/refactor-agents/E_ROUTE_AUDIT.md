@@ -19,6 +19,8 @@ must not be cleared by offline entrypoint checks.
 | OpenCode V1/V2 | `packages/opencode-adapter/src/v1` and `/v2` | Installed object/factory loaders, context, permission denial, unknown outcomes and owned cleanup | G cache/gate integration and Linux presence identity |
 | Help locale / preferences | `library-i18n` | All translations, plural/number/duration formatting, malformed config and exclusive-write history | Final full CI |
 | OpenCode reporter / retained hooks | `library-opencode-presence` | Historical identities/events, host mapping, local abort and independent disposal failures | Real process-birth presence remains a Linux gate |
+| OpenCode passive event client | `library-project-events` | Historical IPC framing, bounds, private token reads, errors, disabling and disposal; installed declarations | Real observer startup remains a Linux gate; observer policy stays with F |
+| Default MCP telemetry producer | MCP process root delegates to F's `createMcpStdioTelemetry` | Once-only construction/cleanup, failure isolation, clean protocol stdout, installed discovery | Full integrated Linux CI; no inferred execution phases |
 | Config / compatibility client | `library-configuration`, `library-client` | Historical validation/config writes and all direct-dispatch denials | Merged #46; retained gates stay enabled |
 | Image tools | Typed Python image command and `library-image-*-registration` | Historical argv/preflight/output, real synthetic images and installed assets | Native/image quality qualification is separate |
 | Reference images | Typed local reference pipeline and registration | Real Python worker; original bytes and unknown evidence preserved; installed poison-config test | Full CI with explicit Python interpreter |
@@ -72,8 +74,8 @@ metadata comparisons retain private-field stripping without mutating callers.
 Installed verification passes 17 library/MCP/companion tests and 9 OpenCode
 V1/V2 tests. The companion poison-config regression is fixed without changing
 existing assertions. Full CI and G's retained-gate registration remain required.
-Legacy queue submission/recovery and compatibility framing orchestration still
-remain in `mcp-stdio-compat.js`; they are not declared migrated by this extraction.
+Queue submission/recovery and compatibility framing were completed separately
+in the typed modules described below; `mcp-stdio-compat.js` is now a loader.
 
 Command registration and help composition use typed `library-commands` and
 `library-help*` modules, including typed legacy/broker manuals. The paired route
@@ -98,8 +100,8 @@ UI host execution, domain validation/profiles and durable observation/lifecycle
 storage are typed in `library-ui-host`, `library-ui-domain`, `library-ui-state`.
 Historical comparisons and retained tests cover bounded process behavior,
 readiness ownership, exact identities, one-time claims and absorbing state
-transitions. Command/watcher orchestration remains in the source facade pending
-the next delivery; this does not qualify native Windows/Fusion behavior.
+transitions. Command/watcher orchestration was completed in the following delivery;
+this does not qualify native Windows/Fusion behavior.
 
 UI command/watch orchestration is now typed in `library-ui-command`; `src/ui.js`
 is a loader. Fifty-five library/UI tests pass, and the retained UI suite also
@@ -124,11 +126,24 @@ library/CLI/reference run passes all 43 tests.
 
 ## Current delivery and handoff status
 
-Merged after full CI: #39 image command adapter, #46 config/client, #48 host
-commands, #50 optional MCP recovery outcome contract, #52 review/shot boundary.
-Subsequent coherent PRs #62, #64, #67, #68, #71, #73, #76, #80 and #81 implement the remaining
-typed surfaces above. #83 is the isolated proposal for G's shared CI/cache files.
-Those unmerged PRs remain subject to full CI, not just local targeted results.
+Merged after full exact-head CI: #39 image command adapter, #46 config/client,
+#48 host commands, #50 optional MCP recovery outcome contract, #52 review/shot,
+#62 MCP metadata/catalog, #64 command/help registration, #67 catalog assembly
+and #68 complete MCP compatibility orchestration.
+
+PRs #71, #73, #76 and #80 contain the remaining UI/host/reference changes.
+#81 preserves the public console boundary; #83 isolates shared CI/cache changes;
+#84 combines the actual F launcher; #85 migrates locale/reporter implementations;
+#86 connects the default MCP telemetry producer; #87 extracts the passive event
+client. These deliveries are implemented and locally verified, but remain subject
+to full Linux CI before merging. Package E is not yet fully qualified.
+
+The final integration includes main `9daedef`, retaining A's broker-regression
+gate alongside E's public-consumer gate. Conflict resolution preserves both
+scripts and all test registrations. Build, lint, formatting and test types pass;
+42 historical, installed-consumer and gate-registration tests pass with zero
+skips. The final CI matrix has 26 jobs, including both Node lines for broker and
+public-consumer regressions. Queued jobs are not passing evidence.
 
 E/F integration consumes F's actual launcher and terminal-observation boundary;
 it does not duplicate browser, telemetry or broker policy. Its retained installed

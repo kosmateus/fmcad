@@ -4,6 +4,11 @@ Status: **claimed by Agent E**, 8 November 2026. Implementation branch:
 `refactor/agent-e-public-api`. Starting main: `0b84454`. Read
 [the shared plan](../REFACTOR_PARALLEL_PLAN.md).
 
+Current delivery: E1–E4 implementations and installed-consumer comparisons are
+published through PR #87. Full Linux CI and the remaining merges are still open.
+The sections below preserve the chronological delivery evidence; use
+[the route audit](E_ROUTE_AUDIT.md) for the current surface/handoff inventory.
+
 ## Outcome and ownership
 
 Finish public and host-side migration so the installed package exposes the same
@@ -484,3 +489,27 @@ startup test cannot create its control file on this host. Both the frozen
 original and migrated implementation return LOGGER_NOT_READY; an independent
 abstract-socket bind reproduces EPERM. The retained observer test is unchanged
 and remains a Linux CI gate.
+
+### Current-main integration and completed CI merges
+
+Fetched main `9daedef` into #83 and propagated the merge through #84–#87.
+The adjacent package-script conflict was resolved by retaining both A's
+broker-regressions and E's public-consumers, all script tokens, both CI jobs,
+and A/B's completed migrations. The final tree merges cleanly against main.
+Build, lint, formatting and test types pass. All 42 combined historical,
+installed CLI/library/MCP/OpenCode/console/event-client and gate-registration
+checks pass with zero skips. Linux CI now contains 26 jobs; none may be inferred
+from the restricted-host results.
+
+Additional exact-head full-CI merges:
+
+- #62: run 42530327335, merge `9daedef`.
+- #64: run 42531269978, merge `cafe9404`.
+- #67: run 42531860636, merge `be50c47d`.
+- #68: run 42532613149, merge `54b31e48`.
+
+Each run completed all 22 jobs successfully before its expected-head merge.
+Remaining #71/#73/#76/#80 and E/F/shared-gate integration are pending full CI.
+Native qualification, keychain and terminal retirement remain outside this
+completion claim. G has the current route inventory, preserved gate changes
+and exact validation evidence in #40.
