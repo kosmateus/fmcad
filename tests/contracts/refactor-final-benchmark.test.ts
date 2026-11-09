@@ -1,17 +1,22 @@
-const data =
-  require("../../scripts/refactor-benchmark-data.ts") as typeof import("../../scripts/refactor-benchmark-data");
-const test = require("node:test") as typeof import("node:test");
-const assert: typeof import("node:assert/strict") = require("node:assert/strict");
-const { mkdtempSync, mkdirSync, rmSync, readFileSync } =
-  require("node:fs") as typeof import("node:fs");
-const { resolve, join } = require("node:path") as typeof import("node:path");
-const { tmpdir } = require("node:os") as typeof import("node:os");
-const { command } =
-  require("../../scripts/refactor-baseline.ts") as import("../../scripts/refactor-baseline").Harness;
-const { isCompleteFinalRuntime, isWithin, summarizeSamples } =
-  require("../../scripts/refactor-baseline-benchmark.ts") as import("../../scripts/refactor-baseline-benchmark").FinalBenchmarkHarness;
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync, readFileSync } from "node:fs";
+import { resolve, join } from "node:path";
+import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
+// This repository contract runs directly through Node's TypeScript loader.
+const root = process.cwd();
+const load = createRequire(join(root, "package.json"));
+const data = load(
+  "./scripts/refactor-benchmark-data.ts",
+) as typeof import("../../scripts/refactor-benchmark-data");
+const { command } = load(
+  "./scripts/refactor-baseline.ts",
+) as import("../../scripts/refactor-baseline").Harness;
+const { isCompleteFinalRuntime, isWithin, summarizeSamples } = load(
+  "./scripts/refactor-baseline-benchmark.ts",
+) as import("../../scripts/refactor-baseline-benchmark").FinalBenchmarkHarness;
 
-const root = resolve(__dirname, "../..");
 const fixtureInput = data.record(
   data.json(
     readFileSync(

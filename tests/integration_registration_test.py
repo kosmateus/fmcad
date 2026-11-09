@@ -1,5 +1,6 @@
 """Protect CI registration against false-green discovery and compile-only paths."""
 import importlib.util
+import copy
 import json
 import tempfile
 import unittest
@@ -48,6 +49,20 @@ class RegistrationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             list(coverage.expand('npm run loop', {'loop': 'npm run loop'}))
 
+    def test_npm_script_arguments_do_not_execute_additional_suites(self):
+        scripts = {
+            'test:first': 'node --test tests/first.test.js',
+            'test:second': 'node --test tests/second.test.js',
+        }
+        sources = ['tests/first.test.js', 'tests/second.test.js']
+
+        def reached(command):
+            return set().union(*(coverage.selected(value, sources, set(sources))
+                                 for value in coverage.expand(command, scripts)))
+
+        self.assertEqual(reached('npm run test:first test:second'), {sources[0]})
+        self.assertEqual(reached('npm run test:first && npm run test:second'), set(sources))
+
     def test_workflow_commands_ignore_comments_and_parse_blocks(self):
         workflow = '''jobs:
   audit:
@@ -95,10 +110,58 @@ class RegistrationTests(unittest.TestCase):
         profile['cases'][0]['command'] = 'node tests/live-owned.js --run && node replay.js'
         with self.assertRaises(ValueError):
             native_plan.native_obligations(profile, {'owned'})
+
         profile['cases'][0]['command'] = 'node tests/live-owned.js --run'
         profile['cases'][0]['disposition'] = 'passed'
         with self.assertRaises(ValueError):
             native_plan.native_obligations(profile, {'owned'})
+
+    def test_node_paths_after_python_are_not_execution_and_default_script_has_no_such_tail(self):
+        source = 'tests/example.test.ts'
+        command = "python3 -B -m unittest discover -s tests -p '*_test.py' dist/tests/example.test.js"
+        self.assertEqual(coverage.selected(command, [source], {source}), set())
+        scripts = json.loads((coverage.ROOT / 'package.json').read_text())['scripts']
+        for segment in scripts['test'].split('&&'):
+            if segment.strip().startswith(('python ', 'python3 ')):
+                self.assertNotIn('.test.js', segment)
+
+    def test_owned_native_handoff_keeps_explicit_run_and_recovery_gate(self):
+        profile = {'required': True, 'qualification': 'pending', 'cases': [{
+            'id': 'owned', 'source': 'tests/live-owned.js', 'disposition': 'native-only',
+            'obligation': 'Retained native assertions with exact ownership',
+            'command': 'node dist/tests/scenarios/cli.js --run --project-id PROJECT --folder-id FOLDER',
+            'prerequisites': 'Full offline CI and exact installed runtime',
+            'runnerStatus': 'owned-handoff-source-ready', 'qualification': 'not-run',
+        }]}
+        row = native_plan.native_obligations(profile, {'owned'})[0]
+        self.assertEqual(row['status'], 'NOTRUN')
+        self.assertEqual(row['qualification'], 'not-run')
+        self.assertTrue(row['runnableAfterOfflineGate'])
+        self.assertIn('deferred cleanup', row['cleanupRecovery'])
+        self.assertEqual(row['argv'][-2:], ['--folder-id', 'FOLDER'])
+        profile['cases'][0]['command'] += ' --run'
+        with self.assertRaises(ValueError):
+            native_plan.native_obligations(profile, {'owned'})
+
+    def test_native_fixture_profile_retains_sources_and_restoration_continuation(self):
+        profiles = json.loads((coverage.ROOT / 'tests/live-required-profiles.json').read_text())
+        profile = profiles['profiles']['native-fixtures']
+        rows = native_plan.native_fixture_obligations(profile)
+        self.assertEqual({row['id'] for row in rows}, {'native-integration', 'iw74-parameter-test'})
+        self.assertTrue(all(row['status'] == 'NOTRUN' for row in rows))
+        changed = copy.deepcopy(profile)
+        changed['cases'][0]['sourceSha256'] = '0' * 64
+        with self.assertRaises(ValueError):
+            native_plan.native_fixture_obligations(changed)
+        changed = copy.deepcopy(profile)
+        parameter = next(row for row in changed['cases'] if row['id'] == 'iw74-parameter-test')
+        parameter.pop('continuationSource')
+        with self.assertRaises(ValueError):
+            native_plan.native_fixture_obligations(changed)
+        changed = copy.deepcopy(profile)
+        changed['cases'].pop()
+        with self.assertRaises(ValueError):
+            native_plan.native_fixture_obligations(changed)
 
 
 if __name__ == '__main__':

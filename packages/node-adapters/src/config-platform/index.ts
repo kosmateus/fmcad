@@ -141,8 +141,6 @@ function numericAliases(source: NodeJS.ProcessEnv): RecordValue {
     ["FMCAD_TIMEOUT_MS", "timeoutMs"],
     ["FMCAD_TIMEOUT", "timeout"],
     ["FMCAD_CONTROL_CENTER_PORT", "controlCenterPort"],
-    ["FMCAD_QUEUE_STARTUP_TIMEOUT_MS", "startupTimeoutMs"],
-    ["FMCAD_QUEUE_WAIT_TIMEOUT_MS", "waitTimeoutMs"],
   ] as const) {
     const value = source[environmentName];
     if (value !== undefined) values[key] = parsedNumber(value);
@@ -180,6 +178,15 @@ function readEnvironment(): RecordValue {
   }
 
   const queue: RecordValue = {};
+  for (const [environmentName, key] of [
+    ["FMCAD_QUEUE_STARTUP_TIMEOUT_MS", "startupTimeoutMs"],
+    ["FMCAD_QUEUE_WAIT_TIMEOUT_MS", "waitTimeoutMs"],
+    ["FMCAD_QUEUE_PREPARATION_CONCURRENCY", "preparationConcurrency"],
+  ] as const) {
+    const value = source[environmentName];
+    if (value !== undefined) queue[key] = parsedNumber(value);
+  }
+
   for (const [environmentName, key] of [
     ["FMCAD_QUEUE_AUTO_START", "autoStart"],
     ["FMCAD_QUEUE_AUTO_RECOVER", "autoRecover"],

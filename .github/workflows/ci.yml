@@ -55,7 +55,6 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck:tests
-      - run: npm run test:scenarios:unit
       - run: npm run typecheck:simulator
       - run: node dist/tests/scenarios/verify-api.js
       - run: npm run test:scenarios:component -- --protocol mcp --owners 2 --suite foundation
@@ -63,6 +62,32 @@ jobs:
       - run: npm run test:prepare-offline
       - run: mkdir -p /tmp/opencode
       - run: timeout --signal=TERM --kill-after=15s 15m npm run test:contracts
+
+  scenario-model:
+    runs-on: ubuntu-24.04
+    # Retained GM cases alone measured 690 seconds for one protocol before
+    # checker integration. Keep this growing behavioral grid out of the
+    # contracts job's 20-minute budget and avoid competing model processes.
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: mkdir -p /tmp/opencode
+      - run: npm run test:scenarios:unit
 
   python:
     runs-on: ubuntu-24.04
@@ -112,52 +137,103 @@ jobs:
 
   scenario-broker:
     runs-on: ubuntu-24.04
-    # The saved/reopen families exercise the real checker and serialized SDK lane.
-    # Budgets use the retained 10-owner artifacts from run 42563032582; they do
-    # not relax any scenario, admission or benchmark assertion.
-    timeout-minutes: ${{ matrix.suite == 'thread-recipes' && 72 || matrix.suite == 'rectangles' && 65 || matrix.suite == 'reopen' && 40 || matrix.suite == 'revisions' && 46 || matrix.suite == 'sketches' && 22 || 16 }}
+    # Actual owned fixture populations are pinned to the required profile.
+    # Preparation remains parallel and SDK work stays in the one broker lane.
+    # Job budgets include build/cleanup; SDK deadlines and assertions are unchanged.
+    timeout-minutes: ${{ matrix.suite.jobMinutes }}
     strategy:
       fail-fast: false
       matrix:
         protocol: [mcp, addin]
-        concurrency: [10]
+        concurrency: [1, 2, 10]
         suite:
-          [
-            foundation,
-            saved,
-            parameters,
-            documents,
-            cloud,
-            boxes,
-            attributes,
-            sketches,
-            reopen,
-            revisions,
-            rectangles,
-            thread-recipes,
-            gear-pair,
-          ]
-        include:
-          - { protocol: mcp, suite: reopen, concurrency: 1 }
-          - { protocol: mcp, suite: reopen, concurrency: 2 }
-          - { protocol: addin, suite: reopen, concurrency: 1 }
-          - { protocol: addin, suite: reopen, concurrency: 2 }
-          - { protocol: mcp, suite: revisions, concurrency: 1 }
-          - { protocol: mcp, suite: revisions, concurrency: 2 }
-          - { protocol: addin, suite: revisions, concurrency: 1 }
-          - { protocol: addin, suite: revisions, concurrency: 2 }
-          - { protocol: mcp, suite: rectangles, concurrency: 1 }
-          - { protocol: mcp, suite: rectangles, concurrency: 2 }
-          - { protocol: addin, suite: rectangles, concurrency: 1 }
-          - { protocol: addin, suite: rectangles, concurrency: 2 }
-          - { protocol: mcp, suite: thread-recipes, concurrency: 1 }
-          - { protocol: mcp, suite: thread-recipes, concurrency: 2 }
-          - { protocol: addin, suite: thread-recipes, concurrency: 1 }
-          - { protocol: addin, suite: thread-recipes, concurrency: 2 }
-          - { protocol: mcp, suite: gear-pair, concurrency: 1 }
-          - { protocol: mcp, suite: gear-pair, concurrency: 2 }
-          - { protocol: addin, suite: gear-pair, concurrency: 1 }
-          - { protocol: addin, suite: gear-pair, concurrency: 2 }
+          - { id: foundation, owners: 10, timeoutMinutes: 12, jobMinutes: 18 }
+          - { id: saved, owners: 10, timeoutMinutes: 25, jobMinutes: 31 }
+          - { id: parameters, owners: 3, timeoutMinutes: 30, jobMinutes: 36 }
+          - { id: documents, owners: 4, timeoutMinutes: 35, jobMinutes: 41 }
+          - { id: cloud, owners: 10, timeoutMinutes: 18, jobMinutes: 24 }
+          - { id: boxes, owners: 5, timeoutMinutes: 18, jobMinutes: 24 }
+          - { id: attributes, owners: 10, timeoutMinutes: 65, jobMinutes: 71 }
+          - { id: sketches, owners: 10, timeoutMinutes: 60, jobMinutes: 66 }
+          - { id: reopen, owners: 10, timeoutMinutes: 34, jobMinutes: 40 }
+          - { id: revisions, owners: 10, timeoutMinutes: 40, jobMinutes: 46 }
+          - { id: rectangles, owners: 10, timeoutMinutes: 58, jobMinutes: 64 }
+          - { id: transactions, owners: 10, timeoutMinutes: 40, jobMinutes: 46 }
+          - { id: camera, owners: 10, timeoutMinutes: 25, jobMinutes: 31 }
+          - { id: poses, owners: 10, timeoutMinutes: 30, jobMinutes: 36 }
+          - { id: animation, owners: 10, timeoutMinutes: 35, jobMinutes: 41 }
+          - { id: materials, owners: 10, timeoutMinutes: 25, jobMinutes: 31 }
+          - { id: appearances, owners: 10, timeoutMinutes: 25, jobMinutes: 31 }
+          - {
+              id: style-assignments,
+              owners: 10,
+              timeoutMinutes: 45,
+              jobMinutes: 51,
+            }
+          - {
+              id: thread-recipes,
+              owners: 10,
+              timeoutMinutes: 65,
+              jobMinutes: 71,
+            }
+          - { id: gear-pair, owners: 10, timeoutMinutes: 45, jobMinutes: 51 }
+          - {
+              id: engineering-declarations,
+              owners: 10,
+              timeoutMinutes: 30,
+              jobMinutes: 36,
+            }
+          - {
+              id: mechanical-declarations,
+              owners: 10,
+              timeoutMinutes: 35,
+              jobMinutes: 41,
+            }
+          - {
+              id: retained-thread,
+              owners: 2,
+              timeoutMinutes: 45,
+              jobMinutes: 51,
+            }
+          - { id: retained-seal, owners: 2, timeoutMinutes: 45, jobMinutes: 51 }
+          - {
+              id: retained-fasteners,
+              owners: 1,
+              timeoutMinutes: 45,
+              jobMinutes: 51,
+            }
+          - {
+              id: retained-mechanism,
+              owners: 2,
+              timeoutMinutes: 45,
+              jobMinutes: 51,
+            }
+          - { id: retained-pose, owners: 2, timeoutMinutes: 45, jobMinutes: 51 }
+          - {
+              id: retained-interference,
+              owners: 2,
+              timeoutMinutes: 45,
+              jobMinutes: 51,
+            }
+          - {
+              id: retained-containment,
+              owners: 2,
+              timeoutMinutes: 45,
+              jobMinutes: 51,
+            }
+          - {
+              id: retained-gm-contracts,
+              owners: 1,
+              timeoutMinutes: 180,
+              jobMinutes: 186,
+            }
+          - {
+              id: retained-engineering,
+              owners: 1,
+              timeoutMinutes: 45,
+              jobMinutes: 51,
+            }
+          - { id: child-cli, owners: 10, timeoutMinutes: 25, jobMinutes: 31 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -168,14 +244,12 @@ jobs:
       - run: npm run build
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      # Sketches check four full helper programs per owner. Reopen/revision/
-      # rectangle jobs retain ten owners at 1/2/10 concurrency and enough time
-      # for settled cleanup through the single physical SDK lane.
-      - run: timeout --signal=TERM --kill-after=15s ${{ matrix.suite == 'thread-recipes' && '65m' || matrix.suite == 'rectangles' && '58m' || matrix.suite == 'reopen' && '34m' || matrix.suite == 'revisions' && '40m' || matrix.suite == 'sketches' && '18m' || '12m' }} npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite }} --concurrency ${{ matrix.concurrency }} --owners ${{ (matrix.suite == 'saved' || matrix.suite == 'attributes' || matrix.suite == 'sketches') && 2 || 10 }}
+      # Keep the complete MCP/addin × 1/2/10 grid for every family.
+      - run: timeout --signal=TERM --kill-after=15s ${{ matrix.suite.timeoutMinutes }}m npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite.id }} --concurrency ${{ matrix.concurrency }} --owners ${{ matrix.suite.owners }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: scenario-broker-${{ matrix.protocol }}-${{ matrix.suite }}-c${{ matrix.concurrency }}
+          name: scenario-broker-${{ matrix.protocol }}-${{ matrix.suite.id }}-c${{ matrix.concurrency }}
           path: .test-artifacts/scenarios/
           include-hidden-files: true
 

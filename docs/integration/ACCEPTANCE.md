@@ -5,6 +5,31 @@ Agent G owns this ledger. Starting source is
 **Offline refactor: incomplete. Native qualification: not run.**
 A claim, static registration, compilation or model output is not acceptance.
 
+## Current continuation checkpoint — 9 November 2026
+
+The current work continues PR #104 from `dce47c5`; remote main remains
+`330849f`. The live status and executed evidence are recorded in
+[OFFLINE_CLOSURE.md](OFFLINE_CLOSURE.md). Entries below this checkpoint preserve
+historical observations; they do not override current source or establish final
+acceptance. All remaining work is gated by actual execution on the final published
+commit, including installed consumers, the full browser suite and both CI Node
+versions. Native Fusion qualification remains **NOTRUN**.
+
+The required model grid contains 32 shared scenario families, MCP/addin and
+concurrency 1/2/10, each with at least ten actual owned fixtures. The native plan
+also retains the 27 original live obligations, 251 integration cases and IW7.4
+parameter/restoration bodies. The nine diagnostics cannot replace required cases.
+Source hashes and ownership/receipt/cleanup checks remain mandatory. The existing
+simulator and ScenarioSession are the only execution architecture.
+
+Twenty-one checked-in generated outputs were retired only after tracing their
+compiler/staging producers; clean build and installed behavior must still prove
+their compatibility paths. Preparation concurrency is configurable from 1 to 10,
+with a CPU-aware default of one on four CPUs. This does not change the Fusion
+owner default of ten, the single SDK lane, or engine and mutation deadlines.
+
+## Historical acceptance observations
+
 ## Reproducible inventory
 
 After `npm ci && npm run build`, run:

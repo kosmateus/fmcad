@@ -35,6 +35,7 @@ const CONFIG_ENV = [
   "FMCAD_QUEUE_STARTUP_TIMEOUT_MS",
   "FMCAD_QUEUE_WAIT_TIMEOUT_MS",
   "FMCAD_QUEUE_CLIENT",
+  "FMCAD_QUEUE_PREPARATION_CONCURRENCY",
   "XDG_CONFIG_HOME",
   "XDG_STATE_HOME",
   "WSL_DISTRO_NAME",
@@ -461,4 +462,54 @@ test("JSONC diagnostics report only a location, never malformed secret fragments
       return true;
     },
   );
+});
+
+test("offline preparation concurrency is bounded and follows adapter/environment/file precedence", (t) => {
+  const directory = fixture(t);
+  assert.equal(loadConfig().cfg.queue.preparationConcurrency, undefined);
+  const config = writeConfig(directory, {
+    queue: { preparationConcurrency: 2 },
+  });
+  assert.equal(loadConfig({ config }).cfg.queue.preparationConcurrency, 2);
+  process.env["FMCAD_QUEUE_PREPARATION_CONCURRENCY"] = "4";
+  process.env["FMCAD_QUEUE_STARTUP_TIMEOUT_MS"] = "5000";
+  process.env["FMCAD_QUEUE_WAIT_TIMEOUT_MS"] = "9000";
+  assert.deepEqual(loadConfig({ config }).cfg.queue, {
+    preparationConcurrency: 4,
+    startupTimeoutMs: 5000,
+    waitTimeoutMs: 9000,
+  });
+  assert.equal(
+    loadConfig({ config, queue: { preparationConcurrency: 1 } }).cfg.queue
+      .preparationConcurrency,
+    1,
+  );
+  for (const value of [1, 2, 10]) {
+    process.env["FMCAD_QUEUE_PREPARATION_CONCURRENCY"] = String(value);
+    assert.equal(
+      loadConfig({ config }).cfg.queue.preparationConcurrency,
+      value,
+    );
+  }
+  for (const value of ["0", "-1", "11", "1.5", "NaN", "Infinity", "bad", ""]) {
+    process.env["FMCAD_QUEUE_PREPARATION_CONCURRENCY"] = value;
+    assert.throws(() => loadConfig({ config }), /queue.preparationConcurrency/);
+  }
+  delete process.env["FMCAD_QUEUE_PREPARATION_CONCURRENCY"];
+  for (const value of [
+    null,
+    false,
+    "2",
+    0,
+    11,
+    1.5,
+    Number.MAX_SAFE_INTEGER + 1,
+  ]) {
+    assert.throws(
+      () => loadConfig({ config, queue: { preparationConcurrency: value } }),
+      /queue.preparationConcurrency/,
+    );
+    writeConfig(directory, { queue: { preparationConcurrency: value } });
+    assert.throws(() => loadConfig({ config }), /queue.preparationConcurrency/);
+  }
 });
