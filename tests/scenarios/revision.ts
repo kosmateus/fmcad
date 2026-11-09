@@ -77,6 +77,7 @@ function expectedRevision(
     JSON.parse(fs.readFileSync(filename, "utf8")) as unknown,
   );
   const { accepted: _accepted, ...identity } = value;
+  void _accepted;
   if (
     Object.keys(durable).length !== Object.keys(identity).length ||
     Object.entries(identity).some(

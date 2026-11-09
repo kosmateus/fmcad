@@ -10,13 +10,6 @@ const at = (v: unknown, ...keys: (string | number)[]): unknown => {
     v = typeof key === "number" ? list(v)[key] : record(v)[key];
   return v;
 };
-const includes = (v: unknown, item: unknown): boolean =>
-  typeof v === "string" ? v.includes(text(item)) : list(v).includes(item);
-const near = (actual: unknown, expected: number, tol = 1e-6, msg = "") =>
-  assert.ok(
-    Math.abs(number(actual) - expected) <= tol,
-    `${msg} expected ${expected}, got ${String(actual)}`,
-  );
 
 export const cases: readonly DeclarationCase[] = [
   {

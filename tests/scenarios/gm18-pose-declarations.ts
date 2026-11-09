@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { number, record, text } from "./contracts";
+import { record, text } from "./contracts";
 import type { DeclarationCase } from "./retained-declaration-cases";
 const list = (v: unknown): unknown[] => {
   assert.ok(Array.isArray(v));
@@ -10,13 +10,6 @@ const at = (v: unknown, ...keys: (string | number)[]): unknown => {
     v = typeof key === "number" ? list(v)[key] : record(v)[key];
   return v;
 };
-const includes = (v: unknown, item: unknown): boolean =>
-  typeof v === "string" ? v.includes(text(item)) : list(v).includes(item);
-const near = (actual: unknown, expected: number, tol = 1e-6, msg = "") =>
-  assert.ok(
-    Math.abs(number(actual) - expected) <= tol,
-    `${msg} expected ${expected}, got ${String(actual)}`,
-  );
 const servicePose = (name: string, extra: Record<string, unknown> = {}) => ({
   schemaVersion: 1,
   frame: "component",

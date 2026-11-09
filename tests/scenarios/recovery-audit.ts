@@ -24,6 +24,7 @@ function inventory(value: unknown, identity: string): string {
       .map(record)
       .map((item) => {
         const { complete: _complete, ...stable } = item;
+        void _complete;
         return stable;
       })
       .sort((a, b) => text(a[identity]).localeCompare(text(b[identity]))),
