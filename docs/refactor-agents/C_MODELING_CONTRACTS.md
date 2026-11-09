@@ -497,3 +497,28 @@ The follow-up feature/hierarchy supplement accounts for another 266 frozen sites
 and mutable hierarchy suite globals remain explicitly listed migration
 prerequisites, not native-ready runners. Across both C supplements, all 1,228
 assigned sites are identified without modifying their frozen sources.
+
+### Retained coordinators and inspection consumers
+
+Eleven further handwritten suites now compile strictly: inspection, definition-mode,
+definitions-scoped, cad-application, batch-atomic, batch-local, batch, capabilities,
+contract-model, outcome and preview-dispatch. All 111 original case titles and
+assertion methods remain, and embedded program literal content is unchanged.
+The fixtures use canonical module/port types and checked unknown-result access;
+invalid input mutations still reach the real runtime validators. Atomic fault
+injection now restores the caller's prior environment value after each test.
+
+One historical coverage defect is corrected: the final four capabilities cases
+called `catalog.validateCad`, although `catalog` is a declaration record. They
+could pass on a missing-method TypeError. They now invoke the registry's real
+`validateCad` export with the same four inputs and require the matching query,
+limit, offset or unknown-input diagnostic. Expected product behavior is unchanged.
+
+Strict compilation and ESLint pass. The six pure coordinator/contract families
+execute 39 cases with zero failures/skips; the focused capabilities validation
+case also passes. These runs use emitted CommonJS against the actual staged
+runtime. The first emitted attempt exposed import initialization order and was
+corrected before the passing run. The other 71 cases, including Python-backed
+inspection/atomic outcomes, remain pending the coordinated stable-build run;
+they are not qualified by registration or compilation. This checkpoint does
+not close the installed, checker, browser or native Fusion gates.

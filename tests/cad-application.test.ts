@@ -1,22 +1,55 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const { spawnSync } = require("node:child_process");
-const core = require("../src/dist/core/application/cad");
-const { clone } = require("../src/dist/core/application/cad/json");
-const { catalog, validateCad } = require("../src/catalog");
-const {
-  pythonLiteral,
-  pythonValue,
-  preparePythonArtifact,
-} = require("../src/python");
+import path from "node:path";
+import type {
+  CadServices,
+  CadExecutionRequest,
+  CadExecutionPort,
+  BatchServices,
+  BatchReport,
+  AtomicServices,
+  AtomicReport,
+} from "../packages/core/src/application/cad/index.js";
+import type { PreparedPythonArtifact } from "../packages/core/src/domain/python-artifact.js";
+import type { InvocationStore } from "../packages/node-adapters/src/execution/invocation.js";
+import fs from "node:fs";
+import os from "node:os";
+import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
+import type { CadData, CadContext } from "@fmcad/core";
+import {
+  object,
+  array,
+  field,
+  string,
+  present,
+} from "./modeling-unit-test-support.js";
+import test from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+
+const fixtureDirectory = path.join(process.cwd(), "tests");
+const load = createRequire(
+  path.join(fixtureDirectory, "cad-application.test.ts"),
+);
+const core = load(
+  "../src/dist/core/application/cad",
+) as typeof import("../packages/core/src/application/cad/index.js");
+const { clone } = load(
+  "../src/dist/core/application/cad/json",
+) as typeof import("../packages/core/src/application/cad/json.js");
+const { catalog, validateCad } = load(
+  "../src/catalog",
+) as typeof import("../src/composition/library-catalog-registry.js");
+const { pythonLiteral, pythonValue, preparePythonArtifact } = load(
+  "../src/python",
+) as typeof import("../packages/node-adapters/src/python/artifact.js");
 
 const context = { doc: "Model Ż", docId: "creation-1", docFileId: "file-1" };
-function artifact(operation, data, ctx) {
+function artifact(operation: string, data: CadData, ctx: CadContext) {
   const plan = core.planCadScript(
     operation,
     data,
     ctx,
-    catalog[operation],
+    present(catalog[operation]),
     pythonLiteral,
   );
   return preparePythonArtifact(
@@ -31,27 +64,27 @@ function artifact(operation, data, ctx) {
     { request: plan.request, context: ctx },
   );
 }
-function services(overrides = {}) {
+function services(overrides: Partial<CadServices> = {}): CadServices {
   return {
     validate: validateCad,
     prepare: artifact,
     dispatch: () => undefined,
     sketchValidates: () => false,
-    failed: (value) => value.success === false,
+    failed: (value) => core.record(value) && value["success"] === false,
     execution: { execute: async () => assert.fail("unexpected SDK turn") },
     ...overrides,
   };
 }
 
 test("strict CAD use case passes a pinned immutable artifact through one execution port for real read/mutation wrappers", async () => {
-  const calls = [];
-  const port = {
+  const calls: CadExecutionRequest[] = [];
+  const port: CadExecutionPort = {
     execute: async (request) => {
       calls.push(request);
       assert.ok(Object.isFrozen(request.artifact.bytes));
       assert.deepEqual(
-        request.artifact.request.data,
-        catalog[request.operation].example,
+        field(request.artifact.request, "data"),
+        present(catalog[request.operation]).example,
       );
       // Execute the actual prepared wrapper against a deliberately small fake SDK
       // context, rather than returning an unrelated canned transport result.
@@ -82,36 +115,38 @@ print(json.dumps({'text':output.getvalue(),'events':events}))
         ],
         { input: request.artifact.script, encoding: "utf8" },
       );
-      assert.equal(result.status, 0, result.stderr);
-      const executed = JSON.parse(result.stdout);
-      assert.deepEqual(executed.events[0], [
+      assert.equal(field(result, "status"), 0, result.stderr);
+      const executed = object(JSON.parse(result.stdout));
+      assert.deepEqual(field(executed, "events", 0), [
         "context",
         context.doc,
         context.docId,
         context.docFileId,
       ]);
       assert.equal(
-        executed.events.some((event) => event[0] === "activate"),
+        array(executed["events"]).some(
+          (event) => field(event, 0) === "activate",
+        ),
         !request.readOnly,
       );
-      assert.deepEqual(executed.events.at(-1), [
+      assert.deepEqual(array(executed["events"]).at(-1), [
         "call",
         request.operation,
-        catalog[request.operation].example,
+        present(catalog[request.operation]).example,
       ]);
-      return { text: executed.text };
+      return { text: string(executed["text"]) };
     },
   };
   for (const operation of ["document.status", "sketch.create"]) {
     const output = await core.executeCad(
       operation,
-      catalog[operation].example,
+      present(catalog[operation]).example,
       context,
       services({ execution: port }),
     );
-    assert.equal(output.success, true);
+    assert.equal(output["success"], true);
     if (operation === "sketch.create")
-      assert.deepEqual(output.affected, [{ token: "actual-fake-token" }]);
+      assert.deepEqual(output["affected"], [{ token: "actual-fake-token" }]);
   }
   assert.deepEqual(
     calls.map((call) => call.readOnly),
@@ -134,12 +169,12 @@ test("invalid and preview CAD never prepare or execute, and unknown SDK outcomes
     { ...context, preview: true },
     noPreparation,
   );
-  assert.equal(preview.mutation, false);
-  assert.equal(preview.state, "input-validated-only");
+  assert.equal(preview["mutation"], false);
+  assert.equal(preview["state"], "input-validated-only");
   await assert.rejects(
     core.executeCad(
       "sketch.create",
-      catalog["sketch.create"].example,
+      present(catalog["sketch.create"]).example,
       context,
       services({
         execution: {
@@ -156,9 +191,9 @@ test("invalid and preview CAD never prepare or execute, and unknown SDK outcomes
 });
 
 test("SDK route binds caller input to its artifact before the first asynchronous boundary", async () => {
-  const data = clone(catalog["sketch.create"].example);
+  const data = clone(present(catalog["sketch.create"]).example);
   const original = clone(data);
-  let accepted;
+  let accepted: PreparedPythonArtifact | undefined;
   const pending = core.executeCad(
     "sketch.create",
     data,
@@ -172,18 +207,24 @@ test("SDK route binds caller input to its artifact before the first asynchronous
       },
     }),
   );
-  data.name = "changed after calling";
+  data["name"] = "changed after calling";
   await pending;
-  assert.deepEqual(accepted.request.data, original);
+  assert.deepEqual(field(present(accepted).request, "data"), original);
 });
 
-function memoryServices(overrides = {}) {
-  const snapshots = [],
-    calls = [];
+function memoryServices(
+  overrides: Omit<Partial<BatchServices>, "execute"> & {
+    execute?: NonNullable<BatchServices["execute"]>;
+  } = {},
+) {
+  const snapshots: BatchReport[] = [],
+    calls: { operation: string; data: CadData; context: CadContext }[] = [];
   let opened = 0,
     closed = 0,
     preserve = false;
-  const services = {
+  const services: BatchServices & {
+    execute: NonNullable<BatchServices["execute"]>;
+  } = {
     catalog: {
       "test.read": { readOnly: true, inputs: {}, required: [] },
       "test.mutate": { readOnly: false, inputs: { source: "" }, required: [] },
@@ -191,7 +232,10 @@ function memoryServices(overrides = {}) {
     isLocal: () => false,
     local: () => assert.fail("not local"),
     execute: async (operation, data, ctx) => {
-      assert.equal(snapshots.at(-1).steps[calls.length].status, "running");
+      assert.equal(
+        field(snapshots.at(-1), "steps", calls.length, "status"),
+        "running",
+      );
       calls.push({ operation, data, context: ctx });
       return {
         success: true,
@@ -204,7 +248,7 @@ function memoryServices(overrides = {}) {
     now: () => 0,
     timestamp: () => "2026-10-25T00:00:00.000Z",
     redact: String,
-    failed: (value) => value?.success === false,
+    failed: (value) => core.record(value) && value["success"] === false,
     open: async () => {
       opened++;
       return {
@@ -215,7 +259,7 @@ function memoryServices(overrides = {}) {
         },
         close: async (flag) => {
           closed++;
-          preserve = flag;
+          preserve = flag === true;
         },
       };
     },
@@ -258,14 +302,14 @@ const batch = {
 test("memory-only multi-turn batch retains pre-RPC intent, references, exact replay and stops on unknown", async () => {
   const memory = memoryServices();
   const result = await core.runBatchEntry(batch, context, memory.services);
-  assert.equal(result.success, true);
+  assert.equal(field(result, "success"), true);
   assert.equal(memory.calls.length, 3);
   assert.deepEqual(
     memory.calls.map((call) => call.data),
     [{}, { source: "fake-1" }, { source: "fake-2" }],
   );
   const replay = await core.runBatchEntry(batch, context, memory.services);
-  assert.equal(replay.replayed, true);
+  assert.equal(field(replay, "replayed"), true);
   assert.equal(memory.calls.length, 3);
   assert.equal(memory.closed, 2);
   const uncertain = memoryServices();
@@ -276,10 +320,10 @@ test("memory-only multi-turn batch retains pre-RPC intent, references, exact rep
   };
   const unknown = await core.runBatchEntry(batch, context, uncertain.services);
   assert.deepEqual(
-    unknown.steps.map((step) => step.status),
+    array(field(unknown, "steps")).map((step) => field(step, "status")),
     ["success", "unknown", "skipped"],
   );
-  assert.equal(unknown.steps[1].mutationStatus, "unknown");
+  assert.equal(field(unknown, "steps", 1, "mutationStatus"), "unknown");
   await assert.rejects(
     core.runBatchEntry(batch, context, uncertain.services),
     /no automatic retry/,
@@ -294,8 +338,8 @@ test("batch validation and scoped expansion use no file/store/SDK service", asyn
     context,
     memory.services,
   );
-  assert.equal(result.success, true);
-  assert.equal(result.atomic.effective, false);
+  assert.equal(field(result, "success"), true);
+  assert.equal(field(result, "atomic", "effective"), false);
   const expanded = core.expandDefinition({
     formatVersion: 1,
     runId: "scoped",
@@ -314,7 +358,9 @@ test("batch validation and scoped expansion use no file/store/SDK service", asyn
     ],
   });
   assert.deepEqual(
-    expanded.operations.map((step) => step.data.source),
+    array(field(expanded, "operations")).map((step) =>
+      field(step, "data", "source"),
+    ),
     [0, 1],
   );
   assert.throws(
@@ -337,7 +383,7 @@ test("run service prepares embedded original-source unit and executes via the sa
     helperVersion: "cad-v1",
     readOnlyOperations: ["document.status"],
   };
-  let seen;
+  let seen: CadExecutionRequest | undefined;
   const reply = await core.executeRun(
     request,
     {
@@ -364,18 +410,18 @@ test("run service prepares embedded original-source unit and executes via the sa
     },
   );
   assert.equal(reply.text, "retained stdout");
-  assert.equal(seen.operation, "run");
-  assert.equal(seen.readOnly, true);
-  assert.equal(seen.context.docId, context.docId);
+  assert.equal(present(seen).operation, "run");
+  assert.equal(present(seen).readOnly, true);
+  assert.equal(present(seen).context.docId, context.docId);
   assert.ok(
-    seen.artifact.units.some(
+    present(seen).artifact.units.some(
       (unit) => unit.role === "user" && unit.filename === "trusted.py",
     ),
   );
-  assert.match(seen.artifact.script, /facade\.terminal\(\)/);
-  assert.match(seen.artifact.script, /facade\.has_emitted/);
-  assert.match(seen.artifact.script, /dont_inherit=True/);
-  assert.ok(Object.isFrozen(seen.artifact.bytes));
+  assert.match(present(seen).artifact.script, /facade\.terminal\(\)/);
+  assert.match(present(seen).artifact.script, /facade\.has_emitted/);
+  assert.match(present(seen).artifact.script, /dont_inherit=True/);
+  assert.ok(Object.isFrozen(present(seen).artifact.bytes));
 });
 
 test("CAD input planning separates file selection from verified byte decoding", () => {
@@ -404,11 +450,11 @@ test("CAD input planning separates file selection from verified byte decoding", 
   );
 });
 
-function atomicMemory(overrides = {}) {
-  const snapshots = [],
-    operations = [];
+function atomicMemory(overrides: Partial<AtomicServices> = {}) {
+  const snapshots: BatchReport[] = [],
+    operations: unknown[] = [];
   let preserved = false;
-  const services = {
+  const services: AtomicServices = {
     catalog: { "test.mutate": { readOnly: false } },
     backend: "addin",
     supported: true,
@@ -434,13 +480,13 @@ function atomicMemory(overrides = {}) {
       ),
     execution: {
       execute: async (request) => {
-        const args = request.artifact.request;
-        operations.push(args.operation);
-        assert.equal(request.operation, args.operation);
+        const args = object(request.artifact.request);
+        operations.push(args["operation"]);
+        assert.equal(request.operation, args["operation"]);
         assert.ok(Object.isFrozen(request.artifact.bytes));
-        if (args.operation === "atomic_resolve") {
+        if (args["operation"] === "atomic_resolve") {
           assert.equal(
-            snapshots.at(-1).journal.event,
+            field(snapshots.at(-1), "journal", "event"),
             "identity_resolution_uncertain",
           );
           return {
@@ -455,13 +501,16 @@ function atomicMemory(overrides = {}) {
               }),
           };
         }
-        if (args.operation === "atomic_start") {
-          assert.equal(snapshots.at(-1).journal.event, "submit_uncertain");
+        if (args["operation"] === "atomic_start") {
+          assert.equal(
+            field(snapshots.at(-1), "journal", "event"),
+            "submit_uncertain",
+          );
           return { text: "FMCAD_RESULT {}" };
         }
-        if (args.operation === "atomic_status")
+        if (args["operation"] === "atomic_status")
           return { text: 'FMCAD_RESULT {"destroyed":true}' };
-        assert.equal(args.operation, "atomic_finalize");
+        assert.equal(args["operation"], "atomic_finalize");
         return {
           text:
             "FMCAD_RESULT " +
@@ -478,9 +527,11 @@ function atomicMemory(overrides = {}) {
     open: async () => ({
       latest: async () => undefined,
       assertEmpty: async () => {},
-      publish: async (report) => snapshots.push(clone(report)),
+      publish: async (report) => {
+        snapshots.push(clone(report));
+      },
       close: async (preserve) => {
-        preserved = preserve;
+        preserved = preserve === true;
       },
     }),
     ...overrides,
@@ -511,7 +562,7 @@ test("typed atomic use case never degrades to per-step and commit survives publi
     return {
       ...port,
       publish: async (report) => {
-        if (report.outcome === "committed") throw new Error("disk full");
+        if (report["outcome"] === "committed") throw new Error("disk full");
         return port.publish(report);
       },
     };
@@ -522,9 +573,9 @@ test("typed atomic use case never degrades to per-step and commit survives publi
     validation,
     memory.services,
   );
-  assert.equal(result.outcome, "committed");
-  assert.equal(result.success, true);
-  assert.equal(result.publication.status, "failed");
+  assert.equal(field(result, "outcome"), "committed");
+  assert.equal(field(result, "success"), true);
+  assert.equal(field(result, "publication", "status"), "failed");
   assert.equal(memory.preserved, true);
   assert.deepEqual(memory.operations, [
     "atomic_resolve",
@@ -532,7 +583,9 @@ test("typed atomic use case never degrades to per-step and commit survives publi
     "atomic_status",
     "atomic_finalize",
   ]);
-  assert.deepEqual(result.steps[0].output.result, { token: "committed" });
+  assert.deepEqual(field(result, "steps", 0, "output", "result"), {
+    token: "committed",
+  });
 });
 test("atomic unknown submit stays unknown without poll/finalize/replay; unsupported rejects before store", async () => {
   const memory = atomicMemory();
@@ -555,20 +608,40 @@ test("atomic unknown submit stays unknown without poll/finalize/replay; unsuppor
     validation,
     memory.services,
   );
-  assert.equal(result.outcome, "unknown");
-  assert.equal(memory.snapshots.at(-1).journal.event, "submit_unknown");
+  assert.equal(field(result, "outcome"), "unknown");
+  assert.equal(
+    field(memory.snapshots.at(-1), "journal", "event"),
+    "submit_unknown",
+  );
   assert.deepEqual(memory.operations, ["atomic_resolve", "atomic_start"]);
   const rejected = await core.runAtomicBatch(atomicBatch, context, validation, {
     ...memory.services,
     supported: false,
     open: () => assert.fail("preflight must not open journal"),
   });
-  assert.equal(rejected.outcome, "rejected");
-  assert.equal(rejected.mutated, false);
+  assert.equal(field(rejected, "outcome"), "rejected");
+  assert.equal(field(rejected, "mutated"), false);
 });
 test("finalize of acknowledged commit is idempotent and never prepares or executes a script", async () => {
-  const report = {
-    documentIdentity: { resolved: { creationId: context.docId } },
+  const report: AtomicReport = {
+    version: 2,
+    success: true,
+    operation: "batch.run",
+    runId: "already-finalized",
+    requestHash: "fixture-hash",
+    request: {},
+    context,
+    status: "success",
+    reportPath: "unused",
+    steps: [],
+    commandId: "fixture-command",
+    sessionNonce: "fixture-session",
+    atomic: { effective: true, supported: true, backend: "addin" },
+    documentIdentity: {
+      expected: {},
+      assertionsOnly: false,
+      resolved: { creationId: context.docId },
+    },
     outcome: "committed",
     journal: { event: "finalize_ack" },
     cleanupCompleted: true,
@@ -577,22 +650,19 @@ test("finalize of acknowledged commit is idempotent and never prepares or execut
     report,
     {
       supported: true,
+      timestamp: () => assert.fail("no publication"),
+      redact: () => assert.fail("no diagnostics"),
       prepare: () => assert.fail("no replay"),
       execution: { execute: () => assert.fail("no replay") },
     },
     () => assert.fail("no lock theft"),
   );
-  assert.equal(result.status, "already_finalized");
-  assert.equal(result.outcome, "committed");
+  assert.equal(field(result, "status"), "already_finalized");
+  assert.equal(field(result, "outcome"), "committed");
 });
 
 test("run adapter pins accepted raw bytes before UTF-8 decoding and argument injection", (t) => {
-  const fs = require("node:fs");
-  const path = require("node:path");
-  const { createHash } = require("node:crypto");
-  const dir = fs.mkdtempSync(
-    path.join(require("node:os").tmpdir(), "cad-source-bytes-"),
-  );
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cad-source-bytes-"));
   const file = path.join(dir, "trusted.py");
   const bytes = Buffer.concat([
     Buffer.from("# "),
@@ -604,30 +674,31 @@ test("run adapter pins accepted raw bytes before UTF-8 decoding and argument inj
     fs.unlinkSync(file);
     fs.rmdirSync(dir);
   });
-  const previous = process.env.FMCAD_QUEUE_WORKER_JOB;
-  process.env.FMCAD_QUEUE_WORKER_JOB = "test-accepted-bytes";
+  const previous = process.env["FMCAD_QUEUE_WORKER_JOB"];
+  process.env["FMCAD_QUEUE_WORKER_JOB"] = "test-accepted-bytes";
   t.after(() => {
-    if (previous === undefined) delete process.env.FMCAD_QUEUE_WORKER_JOB;
-    else process.env.FMCAD_QUEUE_WORKER_JOB = previous;
+    if (previous === undefined) delete process.env["FMCAD_QUEUE_WORKER_JOB"];
+    else process.env["FMCAD_QUEUE_WORKER_JOB"] = previous;
   });
   let verified = 0;
   t.mock.method(
-    require("../src/queue-client"),
+    load("../src/queue-client"),
     "verifyInputBytes",
-    (sourcePath, acceptedBytes) => {
+    (sourcePath: string, acceptedBytes: Buffer) => {
       verified++;
       assert.equal(sourcePath, file);
       assert.deepEqual(acceptedBytes, bytes);
     },
   );
-  const invocation = {};
-  require("../src/invocation").context.run(invocation, () => {
-    const prepared = require("../src/run").prepareRunScript(
-      file,
-      { injected: "Ż $&" },
-      true,
-      "Model",
-    );
+  const invocation: InvocationStore = {};
+  (
+    load(
+      "../src/invocation",
+    ) as typeof import("../packages/node-adapters/src/execution/invocation.js")
+  ).context.run(invocation, () => {
+    const prepared = (
+      load("../src/run") as typeof import("../src/composition/run.js")
+    ).prepareRunScript(file, { injected: "Ż $&" }, true, "Model");
     assert.equal(invocation.sourcePath, file);
     assert.equal(
       invocation.sourceHash,
@@ -640,7 +711,6 @@ test("run adapter pins accepted raw bytes before UTF-8 decoding and argument inj
 });
 
 test("host-independent canonical provenance matches the retained Node SHA-256 bytes", () => {
-  const { createHash } = require("node:crypto");
   const value = {
     nested: { z: [null, true, -0, "Żółć 🧪 \ud800"], a: "first" },
     other: 1.25,
