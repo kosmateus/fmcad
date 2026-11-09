@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
-const root = path.resolve(__dirname, "../../..");
+const root = process.cwd();
 const runtimeRequire = createRequire(
   path.join(root, "tests/contracts/saved-proof-migration.test.js"),
 );
