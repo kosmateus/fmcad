@@ -404,6 +404,19 @@ test("export creates a candidate only under a supplied offline destination", (t)
   assert.equal(manifest["state"], "verified_candidate_not_installed");
   assert.equal(manifest["fusionCalls"], 0);
   assert.equal(manifest["passedTests"], 3);
+  writeJson(verification, {
+    ...report,
+    counts: { fail: 0, cancelled: 0, skipped: 0 },
+  });
+  assert.throws(
+    () =>
+      exporter.exportQueuePhases(
+        { verification, archive },
+        { projectRoot, destinationRoot, buildHash: () => "fixture-build" },
+      ),
+    /Runtime no longer matches the passing verification/,
+  );
+  writeJson(verification, report);
   assert.equal(
     fs.readFileSync(
       path.join(text(manifest["path"]), "files/src/fixture.js"),

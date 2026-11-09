@@ -69,9 +69,10 @@ export function exportQueuePhases(
   const currentBuildHash = dependencies.buildHash ?? buildHash;
   const report = asVerificationReport(readJson(options.verification));
   if (
-    !report.verified ||
+    report.verified !== true ||
     report.testExitCode !== 0 ||
     report.counts.fail !== 0 ||
+    !Number.isSafeInteger(report.counts.tests) ||
     report.counts.tests < 1 ||
     report.counts.pass !== report.counts.tests ||
     report.counts.cancelled !== 0 ||
