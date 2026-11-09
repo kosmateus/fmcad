@@ -794,3 +794,15 @@ original retained cases with zero skips (verified historical fingerprint
 This is a pre-final diagnostic with the current staged reader. The same retained
 suite must rerun after final staging and on the exact final commit; neither this
 run nor the portable fixture qualifies real Fusion.
+
+Seven additional retained recovery suites now have canonical strict TypeScript
+sources: audit-response proof/CLI, atomic runtime ABI, closed epoch successor,
+first-save evidence, physical reset and large queue snapshot. All 126 original
+assertion calls and 45 cases (including parameterized cases) are retained, with
+two additional explicit boundary assertions. Malformed persisted-input tests keep
+their deliberately incomplete inputs; no invented approval fields were added to
+make types pass. The reset fixture now restores its synthetic WSL path adapter
+after each case. Strict compilation and focused lint pass. Execution of this new
+emitted batch remains required after the current integration staging; historical
+runtime-dependent cases require the private fixture in addition to the thirteen
+public portable cases described above.
