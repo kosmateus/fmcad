@@ -522,3 +522,20 @@ corrected before the passing run. The other 71 cases, including Python-backed
 inspection/atomic outcomes, remain pending the coordinated stable-build run;
 they are not qualified by registration or compilation. This checkpoint does
 not close the installed, checker, browser or native Fusion gates.
+
+### Delegated persistence/build regression migrations
+
+The retained execution-store, execution-store-integration and
+build-preflight-rejection suites now compile strictly. Existing fault locations,
+owner/scope/hash checks, symlink races, accepted-source provenance, no-retry
+assertions and child-process program literal content remain intact. Filesystem
+faults wrap the actual methods with typed proxies; no filesystem-wide type cast
+or replacement implementation was introduced. Both existing fake-WSL fixtures
+are preserved. Unused backend methods fail explicitly if unexpectedly reached.
+
+Strict compilation and ESLint pass. The execution-store suite executes all 15
+cases, including the restarted reader/large stdio response and foreign-reference
+rejection; the two pure persisted-state integration cases also pass. All 17 have
+zero skips. The remaining real broker restart case and two build/admission cases
+await the coordinated stable-build run. These results do not qualify those
+three pending cases or native Fusion execution.
