@@ -132,9 +132,79 @@ class Materials(Collection[Material]):
         return material
 
 
+class Appearance(Base):
+    def __init__(self, owner: Appearances, name: str) -> None:
+        self.model_owner: Appearances = owner
+        self.model_id: str = "model-appearance:" + str(uuid4())
+        self.model_name: str = name
+        self.model_properties: Properties = Properties()
+
+    def model_valid(self) -> None:
+        doc = self.model_owner.model_document
+        if doc is not None and not doc.isValid:
+            raise ValueError("Appearance belongs to a closed document")
+
+    @property
+    def id(self) -> str:
+        self.model_valid()
+        return self.model_id
+
+    @property
+    def name(self) -> str:
+        self.model_valid()
+        return self.model_name
+
+    @name.setter
+    def name(self, value: str) -> None:
+        self.model_valid()
+        doc = self.model_owner.model_document
+        if doc is None:
+            raise ValueError("Modeled library appearances are read-only")
+        if not value.strip() or any(item is not self and item.name == value for item in self.model_owner):
+            raise ValueError("Appearance name is empty or already exists")
+        self.model_name = value
+        doc.isModified = True
+
+    @property
+    def appearanceProperties(self) -> Properties:
+        self.model_valid()
+        return self.model_properties
+
+    @property
+    def parent(self) -> Base:
+        return self.model_owner.model_parent
+
+
+class Appearances(Collection[Appearance]):
+    def __init__(self, parent: Base, document: Document | None) -> None:
+        super().__init__()
+        self.model_parent: Base = parent
+        self.model_document: Document | None = document
+
+    def itemById(self, id: str) -> Appearance | None:
+        return next((item for item in self.values if item.id == id), None)
+
+    def itemByName(self, name: str) -> Appearance | None:
+        return next((item for item in self.values if item.name == name), None)
+
+    def addByCopy(self, appearanceToCopy: Appearance, name: str) -> Appearance:
+        if self.model_document is None or not self.model_document.isValid:
+            raise ValueError("Appearance copies require an open target document")
+        if not name.strip() or self.itemByName(name) is not None:
+            raise ValueError("Appearance copy name is empty or already exists")
+        appearanceToCopy.model_valid()
+        appearance = Appearance(self, name)
+        appearance.model_properties = deepcopy(appearanceToCopy.appearanceProperties)
+        self.values.append(appearance)
+        self.model_document.isModified = True
+        return appearance
+
+
 class MaterialLibrary(Base):
     def __init__(self) -> None:
         self.model_materials: Materials = Materials(self, None)
+        self.model_appearances: Appearances = Appearances(self, None)
+        self.model_appearances.values.append(Appearance(self.model_appearances, "Model metadata appearance"))
         self.model_materials.values.append(Material(self.model_materials, "Model metadata material", "No physical properties or native library identity implied"))
 
     @property
@@ -148,6 +218,10 @@ class MaterialLibrary(Base):
     @property
     def materials(self) -> Materials:
         return self.model_materials
+
+    @property
+    def appearances(self) -> Appearances:
+        return self.model_appearances
 
 
 class MaterialLibraries(Collection[MaterialLibrary]):
@@ -711,7 +785,7 @@ class Application(Base):
     _instance: ClassVar[Application | None] = None
 
     def __init__(self) -> None:
-        self.version: str = "fmcad-simulator-v15-not-Fusion"
+        self.version: str = "fmcad-simulator-v16-not-Fusion"
         self.activeDocument: Document | None = None
         self.documents: Documents = Documents(self)
         self.userInterface: UserInterface = UserInterface()

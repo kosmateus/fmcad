@@ -113,6 +113,7 @@ test("required profiles account for every retained live suite and separate diagn
       "poses",
       "animation",
       "materials",
+      "appearances",
     ],
   );
 });

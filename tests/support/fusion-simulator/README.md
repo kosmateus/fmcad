@@ -195,8 +195,18 @@ saved revisions and rebinds the document when reopened.
 
 The fixture exposes no physical or visual properties. An empty property collection
 means no such fixture data is modeled, not that a real library material has no
-properties. Density/mass, assignments/inheritance, appearances, textures, rendering,
+properties. Density/mass, assignments/inheritance, visual appearance properties, textures, rendering,
 cloud material catalogs and property editing remain unsupported. The shared material
 case chooses an exact available library item, as the historical test did, and uses
 production list/create/edit handlers; expected IDs and names follow that selection.
 Actual native copy/rename/persistence behavior remains a qualification assumption.
+
+## Design-local appearance metadata (v16)
+
+Appearance/Appearances mirror the pinned API for ID, name, parent, property lookup
+and detached addByCopy. A synthetic immutable library appearance has no visual
+properties. Reading projection therefore returns null for this fixture; no texture,
+projection algorithm, rendered image, assignment or inheritance is simulated.
+Local resources persist in the supported saved graph and rebind to the reopened
+document. Library writes and writes through a closed document are refused.
+Native copy/rename/projection/persistence remain explicitly unqualified.

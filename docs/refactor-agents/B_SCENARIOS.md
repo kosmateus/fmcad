@@ -544,3 +544,30 @@ can pass. Keep its positive tests required, preserve original literals/assertion
 and do not replace the unknown result with a synthetic known rejection. Native
 Fusion stays deferred and keychain remains excluded. The material production-checker
 profile at `ce0cef6` is still running in the immutable verification checkout.
+
+## Appearance metadata prefix — v16
+
+The shared appearance family retains the original live-design-styles local/library
+list, safe source ID selection, actual copy ID, copiedFrom, rename, changed-fields
+and nullable projection assertions. Twelve individual frozen assertions map to
+this prefix; wrapper sites and the later texture/assignment sequence remain open.
+Independent metadata readback and saved revision/reopen extend the original checks.
+The model provides immutable synthetic library metadata and detached local copies;
+null projection is absent fixture data, not a rendered or texture simulation.
+
+Both backends use one scenario body. Required-model registration now proposes 17
+families; native execution remains deferred. The pinned SDK verifies 75 methods and
+65 property accessors and strict model typing reports zero errors. Validation also
+includes foreign saved-document IDs, lost-copy receipt recovery without mutation
+replay, closed/library writes, assertion cleanup and rejection of a boolean
+projection. Full exact-head CI remains mandatory before merging this dependent
+stack; the production command-settlement blocker is unchanged.
+
+Focused appearance validation: six transport/concurrency cases (28 owned saved
+fixtures), both lost-copy recovery cases, assertion cleanup, foreign-ID isolation,
+read-only/closed resource protection and the boolean-projection regression pass.
+The first guard-test run used the nonexistent appearanceLibraries name; correcting
+the test to the documented Application.materialLibraries made both failing checks
+pass without changing model behavior. Three profile-registration checks and the
+individual-disposition gate pass. The broader nontransaction regression is running;
+required transaction tests remain failing for the documented production blocker.

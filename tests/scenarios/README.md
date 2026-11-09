@@ -181,3 +181,9 @@ rename, collision rejection and list readback on saved fixtures, then independen
 checks metadata after revision/reopen. Source library selection is environmental;
 steps, expected local IDs/names and assertions are identical on both backends.
 Physical properties, appearances, assignments and rendering remain separate work.
+
+`--suite appearances` preserves the historical local/library list, safe source
+selection by actual ID, copy, rename and nullable projection-read prefix. The same
+steps and assertions run on both backends; independent metadata and revision/reopen
+checks use owned saved files. Texture and assignment checks from the remainder of
+live-design-styles remain open. Model null projection means absent fixture data.

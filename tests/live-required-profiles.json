@@ -85,6 +85,11 @@
           "id": "materials",
           "scope": "owned-document",
           "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite materials --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "appearances",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite appearances --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
         }
       ]
     },

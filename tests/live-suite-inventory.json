@@ -129,7 +129,7 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": ["materials"]
+      "sharedScenarios": ["materials", "appearances"]
     },
     {
       "id": "engineering-analytics",

@@ -65,3 +65,8 @@ qualification blocker, not an optional skip; see B_NATIVE_SOLIDS_ASSUMPTIONS.md.
 Add `materials` to required supported-model profiles for MCP/addin and concurrency
 1/2/10. It covers local material metadata copy/rename/collision/readback and saved
 revision/reopen, not physical properties or appearance/assignment inheritance.
+
+Add `appearances` as the seventeenth supported model family, with the same MCP/addin
+and concurrency 1/2/10 broker matrix. Unit tests also cover lost-copy recovery without
+replay, foreign-document IDs, closed/library writes and assertion-failure cleanup.
+Native visual/texture/assignment qualification is not covered by this registration.

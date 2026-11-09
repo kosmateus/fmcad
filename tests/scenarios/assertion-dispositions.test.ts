@@ -79,6 +79,7 @@ test("reviewed assertion mappings name retained individual assertions and real e
         "native-solids-*",
         "document-lifecycle",
         "material-metadata-*",
+        "appearance-metadata-*",
         "parameter-crud",
         "construction-planes",
         "component-tree",

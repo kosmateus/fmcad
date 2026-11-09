@@ -1378,6 +1378,174 @@
       "evidence": "tests/scenarios/box-cases.ts",
       "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
       "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "581a3978028f74b1fe0f-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "5c3e06df44dd7f5adbb0-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "9df307b202557a30074f-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "bb1968b673591a8009b8-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "d2d56b1e947b6c4f62d2-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "6a270193649aa8ee1a2b-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "2d674eb2edca27c171b6-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "627853d627497c8864a4-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "aab0c7057ab6a6baaf1e-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "0310575908d43bcf18a1-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "61d9ec1c7a3454b898cb-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "73c19dd66a316b510022-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
     }
   ]
 }
