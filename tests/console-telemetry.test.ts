@@ -1,13 +1,31 @@
-"use strict";
+import { createRequire } from "node:module";
+import type {
+  ObservationEvent,
+  ConsoleTelemetryTimingSample,
+  ProcessIdentity,
+} from "@fmcad/core";
 
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const { randomUUID } = require("node:crypto");
-const core = require("../packages/core/dist");
-const adapters = require("../packages/node-adapters/dist/telemetry");
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+const load = createRequire(
+  path.join(process.cwd(), "tests/console-telemetry.test.ts"),
+);
+const core = load("../packages/core/dist") as typeof import("@fmcad/core");
+const adapters = load(
+  "../packages/node-adapters/dist/telemetry",
+) as typeof import("../packages/node-adapters/src/telemetry");
+
+function present<T>(value: T | null | undefined): T {
+  assert.ok(
+    value !== null && value !== undefined,
+    "Expected observed telemetry value",
+  );
+  return value;
+}
 
 const readAtMs = 10_000;
 const base = {
@@ -21,7 +39,11 @@ const base = {
   transport: "mcp",
 };
 
-function job(id, state, overrides = {}) {
+function job(
+  id: string,
+  state: string,
+  overrides: Record<string, unknown> = {},
+) {
   return {
     id,
     requestId: "request-" + id,
@@ -71,19 +93,25 @@ test("job normalizer preserves source identities, purpose, file provenance and d
   assert.equal(normalized.actor.model.availability, "missing");
   assert.equal(normalized.actor.role.availability, "missing");
   assert.equal(normalized.physicalTurns.value, 0);
-  assert.equal(normalized.sourceFiles.value.length, 1);
-  assert.equal(normalized.sourceFiles.value[0].sha256.value, "a".repeat(64));
+  assert.equal(present(normalized.sourceFiles.value).length, 1);
   assert.equal(
-    normalized.sourceFiles.value[0].provenance.value,
+    present(present(normalized.sourceFiles.value)[0]).sha256.value,
+    "a".repeat(64),
+  );
+  assert.equal(
+    present(present(normalized.sourceFiles.value)[0]).provenance.value,
     "queue-state.job.request.inputFiles",
   );
-  assert.equal(normalized.outputFiles.value.length, 1);
-  assert.equal(normalized.outputFiles.value[0].artifactId.value, "artifact-7");
+  assert.equal(present(normalized.outputFiles.value).length, 1);
+  assert.equal(
+    present(present(normalized.outputFiles.value)[0]).artifactId.value,
+    "artifact-7",
+  );
   assert.equal(normalized.timings.totalWorkflowMs.value, 900);
   assert.equal(normalized.timings.queueWaitMs.value, null);
   assert.equal(normalized.timings.queueWaitMs.availability, "missing");
   assert.equal(normalized.timings.sdkActiveMs.value, 0);
-  assert.match(normalized.metadata.eventId.value, /job-1$/u);
+  assert.match(present(normalized.metadata.eventId.value), /job-1$/u);
   for (const field of [
     normalized.identity.jobId,
     normalized.identity.purpose,
@@ -147,7 +175,7 @@ test("phase mapping covers lifecycle, terminal and unresolved states; legacy mis
     ["failed", "terminal"],
     ["cancelled", "terminal"],
     ["needs_reconciliation", "unresolved"],
-  ];
+  ] as const;
   for (const [state, phase] of states) {
     const normalized = core.normalizeConsoleTelemetryJob(
       job("state", state),
@@ -192,7 +220,7 @@ test("OpenCode source aliases remain reported aliases and do not become client/s
     source: "opencode",
     purpose: "declared purpose",
   });
-  const event = {
+  const event: ObservationEvent = {
     version: 1,
     invocation,
     atMs: 9_900,
@@ -265,11 +293,14 @@ test("current counts require complete state and percentiles use the whole in-win
     ).availability,
     "unknown",
   );
-  const all = Array.from({ length: 200 }, (_, index) => ({
-    kind: "queueWait",
-    valueMs: index + 1,
-    observedAtMs: readAtMs,
-  }));
+  const all: ConsoleTelemetryTimingSample[] = Array.from(
+    { length: 200 },
+    (_, index) => ({
+      kind: "queueWait",
+      valueMs: index + 1,
+      observedAtMs: readAtMs,
+    }),
+  );
   all.push({
     kind: "queueWait",
     valueMs: 10_000,
@@ -439,7 +470,7 @@ test("canonical Overview fields map to complete scoped counts and retained queue
   assert.equal(global.overview.pendingProject.value, 2);
   assert.equal(global.overview.pendingProject.scope, "broker");
   assert.deepEqual(
-    global.events.value.map((event) => event.identity.projectId.value),
+    present(global.events.value).map((event) => event.identity.projectId.value),
     ["project:p1", "project:p1", "project:p2"],
   );
 });
@@ -512,7 +543,7 @@ test("presence merges duplicate process observations by PID and birth, scopes pr
   assert.equal(noOpenCode.sessionCount.availability, "missing");
   const reused = core.summarizeConsolePresence(
     "project:one",
-    [{ ...presence[0], alive: false }],
+    [{ ...present(presence[0]), alive: false }],
     true,
     readAtMs,
   );
@@ -520,7 +551,7 @@ test("presence merges duplicate process observations by PID and birth, scopes pr
   assert.equal(reused.clientCount.value, 0);
   const stale = core.summarizeConsolePresence(
     "project:one",
-    [{ ...presence[0], observedAtMs: readAtMs - 20_000 }],
+    [{ ...present(presence[0]), observedAtMs: readAtMs - 20_000 }],
     true,
     readAtMs,
   );
@@ -528,7 +559,7 @@ test("presence merges duplicate process observations by PID and birth, scopes pr
   assert.equal(stale.processCount.availability, "stale");
   const unknown = core.summarizeConsolePresence(
     "project:one",
-    [{ ...presence[0], alive: null }],
+    [{ ...present(presence[0]), alive: null }],
     true,
     readAtMs,
   );
@@ -611,16 +642,23 @@ test("host, panel, worker, lock and OpenCode sources keep explicit units and ava
   assert.equal(processes.processes.panel.kind, "panel");
   assert.equal(processes.processes.panel.identity.pid.value, process.pid);
   assert.equal(processes.processes.panel.rssBytes.value, 0);
-  assert.equal(processes.processes.workers.value[0].kind, "worker");
   assert.equal(
-    processes.processes.workers.value[0].rssBytes.availability,
+    present(present(processes.processes.workers.value)[0]).kind,
+    "worker",
+  );
+  assert.equal(
+    present(present(processes.processes.workers.value)[0]).rssBytes
+      .availability,
     "unknown",
   );
   assert.equal(processes.locks.status.value, "unknown");
-  assert.match(processes.locks.status.reason, /ABSENCE_IS_NOT_UNLOCKED/u);
+  assert.match(
+    present(processes.locks.status.reason),
+    /ABSENCE_IS_NOT_UNLOCKED/u,
+  );
   assert.equal(processes.gaps.value, null);
   assert.equal(processes.gaps.availability, "unknown");
-  assert.equal(processes.events.value.length, 0);
+  assert.equal(present(processes.events.value).length, 0);
   assert.equal(processes.timingPercentiles.sampleCount.value, 0);
 });
 
@@ -703,16 +741,25 @@ test("OpenCode presence uses the process birth and explicit declarations without
     (identity) => identity.birth === "boot:88",
   );
   assert.equal(records.length, 1);
-  assert.equal(records[0].sessionId, undefined);
-  assert.equal(records[0].clientId, undefined);
-  assert.equal(records[0].reportedSessionId, "hashed-session-source-id");
-  assert.equal(records[0].reportedClientId, "opencode:hashed-client-source-id");
-  assert.equal(records[0].agent, "Planner");
-  assert.equal(records[0].model, undefined);
-  assert.equal(records[0].presence, "observed");
+  assert.equal(present(records[0]).sessionId, undefined);
+  assert.equal(present(records[0]).clientId, undefined);
+  assert.equal(
+    present(records[0]).reportedSessionId,
+    "hashed-session-source-id",
+  );
+  assert.equal(
+    present(records[0]).reportedClientId,
+    "opencode:hashed-client-source-id",
+  );
+  assert.equal(present(records[0]).agent, "Planner");
+  assert.equal(present(records[0]).model, undefined);
+  assert.equal(present(records[0]).presence, "observed");
+  const withoutAgent = { ...present(records[0]) };
+  // Retain the historical explicit-undefined input at this runtime boundary.
+  Reflect.set(withoutAgent, "agent", undefined);
   const noAgent = core.summarizeConsolePresence(
     "project:fixture",
-    [{ ...records[0], agent: undefined }],
+    [withoutAgent],
     { clients: "available", openCode: "available" },
     readAtMs,
   );
@@ -731,7 +778,7 @@ test("event cursors preserve epoch, identify gaps and enforce bounded replay", (
       eventId: `source:epoch:sequence:${sequence}:job-${sequence}`,
     }),
   );
-  const cursor = core.consoleTelemetryEventCursor(events[1]);
+  const cursor = present(core.consoleTelemetryEventCursor(present(events[1])));
   assert.equal(cursor.position, 2);
   assert.equal(cursor.epoch, "broker-epoch-1");
   const replay = core.boundedConsoleTelemetryReplay(
@@ -740,9 +787,12 @@ test("event cursors preserve epoch, identify gaps and enforce bounded replay", (
     1,
     readAtMs,
   );
-  assert.equal(replay.events.value.length, 1);
-  assert.equal(replay.events.value[0].metadata.sequence.value, 5);
-  assert.deepEqual(replay.gaps.value[0], {
+  assert.equal(present(replay.events.value).length, 1);
+  assert.equal(
+    present(present(replay.events.value)[0]).metadata.sequence.value,
+    5,
+  );
+  assert.deepEqual(present(replay.gaps.value)[0], {
     sourceId: "queue:fixture-project",
     epoch: "broker-epoch-1",
     fromPosition: 3,
@@ -758,11 +808,11 @@ test("event cursors preserve epoch, identify gaps and enforce bounded replay", (
     readAtMs,
   );
   assert.equal(truncated.truncated, true);
-  assert.equal(truncated.events.value.length, 2);
+  assert.equal(present(truncated.events.value).length, 2);
   assert.equal(truncated.gaps.value, null);
   assert.equal(truncated.gaps.availability, "unknown");
   const lostPrefix = core.boundedConsoleTelemetryReplay(
-    [events[2]],
+    [present(events[2])],
     null,
     10,
     readAtMs,
@@ -815,7 +865,8 @@ test("event cursors preserve epoch, identify gaps and enforce bounded replay", (
     }),
   );
   assert.equal(
-    core.consoleTelemetryEventCursor(duplicateRevision[0]).positionKind,
+    present(core.consoleTelemetryEventCursor(present(duplicateRevision[0])))
+      .positionKind,
     "revision",
   );
   const firstRevisionPage = core.boundedConsoleTelemetryReplay(
@@ -824,7 +875,10 @@ test("event cursors preserve epoch, identify gaps and enforce bounded replay", (
     1,
     readAtMs,
   );
-  assert.equal(firstRevisionPage.events.value[0].identity.jobId.value, "job-a");
+  assert.equal(
+    present(present(firstRevisionPage.events.value)[0]).identity.jobId.value,
+    "job-a",
+  );
   const secondRevisionPage = core.boundedConsoleTelemetryReplay(
     duplicateRevision,
     firstRevisionPage.cursor.value,
@@ -832,7 +886,7 @@ test("event cursors preserve epoch, identify gaps and enforce bounded replay", (
     readAtMs,
   );
   assert.equal(
-    secondRevisionPage.events.value[0].identity.jobId.value,
+    present(present(secondRevisionPage.events.value)[0]).identity.jobId.value,
     "job-b",
   );
   assert.equal(secondRevisionPage.gaps.availability, "available");
@@ -892,20 +946,20 @@ test("passive collectors read complete bounded heartbeat sets, worker identity a
     maxRecords: 300,
   });
   assert.equal(clientsRead.status, "available");
-  assert.equal(clientsRead.value.length, 270);
+  assert.equal(present(clientsRead.value).length, 270);
   assert.equal(
     adapters.readProjectClientPresenceRecords(project, { now, maxRecords: 200 })
       .status,
     "unknown",
   );
-  const alive = (identity) =>
+  const alive = (identity: ProcessIdentity) =>
     identity.pid !== 42 ? true : identity.birth === "boot:new";
   const worker = adapters.readWorkerIdentity(queue, "job-1", {
     now,
     processAlive: alive,
   });
-  assert.equal(worker.value.pid, 42);
-  assert.equal(worker.value.alive, false);
+  assert.equal(present(worker.value).pid, 42);
+  assert.equal(present(worker.value).alive, false);
   const fusion = adapters.readExistingFusionReceipts(
     queue,
     [
@@ -915,13 +969,13 @@ test("passive collectors read complete bounded heartbeat sets, worker identity a
     { now },
   );
   assert.equal(fusion.status, "available");
-  assert.equal(fusion.value.length, 2);
+  assert.equal(present(fusion.value).length, 2);
   assert.deepEqual(
-    fusion.value.map((item) => item.source),
+    present(fusion.value).map((item) => item.source),
     ["preflight", "postflight"],
   );
   assert.equal(
-    fusion.value.some((item) => item.jobId === "job-held"),
+    present(fusion.value).some((item) => item.jobId === "job-held"),
     false,
   );
   const lock = core.normalizeConsoleLocks(null, readAtMs);
@@ -932,17 +986,17 @@ test("passive collectors read complete bounded heartbeat sets, worker identity a
     readAtMs,
   );
   assert.equal(unknownLock.status.value, "unknown");
-  assert.match(unknownLock.status.reason, /ABSENCE_IS_NOT_UNLOCKED/u);
+  assert.match(present(unknownLock.status.reason), /ABSENCE_IS_NOT_UNLOCKED/u);
 });
 
 test("event source sequences and serializes writes without allowing sink failure to fail CAD", async () => {
-  const saved = [];
-  let release;
-  const firstWrite = new Promise((resolve) => {
+  const saved: import("@fmcad/core").ConsoleTelemetryEvent[] = [];
+  let release!: () => void;
+  const firstWrite = new Promise<void>((resolve) => {
     release = resolve;
   });
   let calls = 0;
-  const reportedGaps = [];
+  const reportedGaps: import("@fmcad/core").ConsoleTelemetryGap[] = [];
   const source = adapters.createConsoleTelemetrySource({
     sourceId: "producer:test",
     epoch: "producer-epoch",
@@ -961,20 +1015,20 @@ test("event source sequences and serializes writes without allowing sink failure
   const second = source.publishJob(job("second", "queued"));
   assert.equal(first.status, "queued");
   assert.equal(second.status, "queued");
-  assert.equal(first.event.metadata.sequence.value, 1);
-  assert.equal(second.event.metadata.sequence.value, 2);
+  assert.equal(present(first.event).metadata.sequence.value, 1);
+  assert.equal(present(second.event).metadata.sequence.value, 2);
   assert.equal(source.cursor(), null);
   release();
   await source.flush();
   assert.equal(calls, 2);
   assert.equal(saved.length, 1);
-  assert.equal(source.cursor().position, 1);
-  assert.equal(source.readGaps().gaps[0].fromPosition, 2);
+  assert.equal(present(source.cursor()).position, 1);
+  assert.equal(present(source.readGaps().gaps[0]).fromPosition, 2);
   assert.equal(reportedGaps.length, 1);
   const third = source.publishJob(job("third", "queued"));
   await source.flush();
-  assert.equal(third.event.metadata.sequence.value, 3);
-  assert.equal(source.cursor().position, 3);
+  assert.equal(present(third.event).metadata.sequence.value, 3);
+  assert.equal(present(source.cursor()).position, 3);
   await source.close();
   assert.deepEqual(source.publishJob(job("after-close", "queued")), {
     event: null,
@@ -995,9 +1049,9 @@ test("event source sequences and serializes writes without allowing sink failure
 });
 
 test("bounded telemetry producer reports queue overflow as a retained source gap", async () => {
-  let release;
-  const gapReports = [];
-  const pending = new Promise((resolve) => {
+  let release!: () => void;
+  const gapReports: import("@fmcad/core").ConsoleTelemetryGap[] = [];
+  const pending = new Promise<void>((resolve) => {
     release = resolve;
   });
   const source = adapters.createConsoleTelemetrySource({
@@ -1014,25 +1068,29 @@ test("bounded telemetry producer reports queue overflow as a retained source gap
   const dropped = source.publishJob(job("second", "queued"));
   assert.equal(accepted.status, "queued");
   assert.equal(dropped.status, "dropped");
-  assert.equal(dropped.event.identity.jobId.value, "second");
-  assert.equal(dropped.gap.fromPosition, 2);
-  assert.equal(gapReports[0].fromPosition, 2);
+  assert.equal(present(dropped.event).identity.jobId.value, "second");
+  assert.equal(present(dropped.gap).fromPosition, 2);
+  assert.equal(present(gapReports[0]).fromPosition, 2);
   assert.equal(source.readGaps().gaps.length, 1);
   release();
   await source.flush();
-  assert.equal(source.cursor().position, 1);
+  assert.equal(present(source.cursor()).position, 1);
   source.acknowledgeGaps(2);
   assert.equal(source.readGaps().gaps.length, 0);
   await source.close();
 });
 
 test("source producer records a physical SDK turn interval with exact turn identity", async () => {
-  const appended = [];
+  const appended: import("@fmcad/core").ConsoleTelemetryEvent[] = [];
   const source = adapters.createConsoleTelemetrySource({
     sourceId: "queue:project:fixture",
     epoch: "broker-epoch",
     now: () => readAtMs,
-    sink: { append: async (event) => appended.push(event) },
+    sink: {
+      append: async (event) => {
+        appended.push(event);
+      },
+    },
     onGap: () => {},
   });
   const queued = source.publishPhaseInterval({
@@ -1061,6 +1119,7 @@ test("source producer records a physical SDK turn interval with exact turn ident
     finishedAtMs: 420,
   });
   assert.equal(queued.status, "queued");
+  assert.ok(queued.event);
   assert.equal(queued.event.eventType, "queue.phase-interval");
   assert.equal(queued.event.eventName.value, "queue.phase.sdkActive");
   assert.equal(queued.event.phaseIntervalKind.value, "sdkActive");
@@ -1083,13 +1142,13 @@ test("source producer records a physical SDK turn interval with exact turn ident
   await source.flush();
   assert.equal(appended.length, 1);
   assert.equal(
-    appended[0].metadata.eventId.value,
+    present(appended[0]).metadata.eventId.value,
     queued.event.metadata.eventId.value,
   );
 });
 
 test("read adapter preserves attached-client presence without OpenCode and skips unresolved Fusion receipts", () => {
-  const calls = [];
+  const calls: string[] = [];
   const jobs = [
     job("done", "succeeded", { finishedAt: readAtMs, physicalTurns: 0 }),
     job("held", "needs_reconciliation", { physicalTurns: 1 }),
@@ -1191,9 +1250,9 @@ test("read adapter preserves attached-client presence without OpenCode and skips
     timingWindowMs: 60_000,
   });
   assert.equal(snapshot.events.availability, "available");
-  assert.equal(snapshot.events.value.length, 2);
-  assert.equal(snapshot.currentCounts.value.terminal, 1);
-  assert.equal(snapshot.currentCounts.value.unresolved, 1);
+  assert.equal(present(snapshot.events.value).length, 2);
+  assert.equal(present(snapshot.currentCounts.value).terminal, 1);
+  assert.equal(present(snapshot.currentCounts.value).unresolved, 1);
   assert.equal(snapshot.overview.failedExecutions.value, 1);
   assert.equal(snapshot.presence.clientSource.value, "available");
   assert.equal(snapshot.presence.clientCount.value, 1);
@@ -1324,7 +1383,8 @@ test("global read keeps registered-project counts, deduped presence and host met
     }),
     processAlive: () => true,
   });
-  const snapshot = adapter.read({ scope: { kind: "broker" } });
+  // The public read scope is global; aggregate metric provenance remains broker-scoped.
+  const snapshot = adapter.read({ scope: { kind: "global" } });
   assert.equal(snapshot.projectId.value, null);
   assert.equal(snapshot.currentCounts.scope, "broker");
   assert.equal(snapshot.overview.pendingProject.value, 2);

@@ -1,16 +1,35 @@
-"use strict";
+import { createRequire } from "node:module";
+import type { Node as SyntaxNode } from "typescript";
 
-const assert = require("node:assert/strict");
-const { createHash } = require("node:crypto");
-const fs = require("node:fs");
-const http = require("node:http");
-const net = require("node:net");
-const os = require("node:os");
-const path = require("node:path");
-const { execFileSync, spawnSync } = require("node:child_process");
-const test = require("node:test");
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import fs from "node:fs";
+import http from "node:http";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import test from "node:test";
 
-const repository = path.resolve(__dirname, "..");
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function record(value: unknown): Record<string, unknown> {
+  assert.ok(isRecord(value), "Expected a JSON object at the package boundary");
+  return value;
+}
+function cookieFrom(headers: http.IncomingHttpHeaders): string {
+  const cookies = headers["set-cookie"];
+  assert.ok(cookies && cookies[0], "Expected the loopback session cookie");
+  const cookie = cookies[0].split(";", 1)[0];
+  assert.ok(cookie);
+  return cookie;
+}
+
+const repository = process.cwd();
+const load = createRequire(
+  path.join(repository, "tests/control-center-browser-bundle.test.ts"),
+);
 const installation = path.join(repository, "dist");
 const assetRoot = path.join(installation, "assets/control-center");
 const stagedResolver = path.join(
@@ -21,11 +40,16 @@ const buildScript = path.join(
   repository,
   "packages/control-center/scripts/build-browser.cjs",
 );
-const resolver = require("../packages/control-center/dist/resources");
-const serverFactory = require("../packages/control-center/dist/server/http");
-const digest = (value) => createHash("sha256").update(value).digest("hex");
+const resolver = load(
+  "../packages/control-center/dist/resources",
+) as typeof import("../packages/control-center/src/resources");
+const serverFactory = load(
+  "../packages/control-center/dist/server/http",
+) as typeof import("../packages/control-center/src/server/http");
+const digest = (value: string | Uint8Array) =>
+  createHash("sha256").update(value).digest("hex");
 
-function copyBundle(t) {
+function copyBundle(t: test.TestContext) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-web-assets-"));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
   const root = path.join(temp, "dist");
@@ -38,17 +62,25 @@ function copyBundle(t) {
 
 async function availablePort() {
   const probe = net.createServer();
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     probe.once("error", reject);
     probe.listen(0, "127.0.0.1", resolve);
   });
-  const port = probe.address().port;
-  await new Promise((resolve) => probe.close(resolve));
+  const address = probe.address();
+  assert.ok(address && typeof address !== "string");
+  const port = address.port;
+  await new Promise<void>((resolve, reject) =>
+    probe.close((error) => (error ? reject(error) : resolve())),
+  );
   return port;
 }
 
-function httpGet(url, cookie) {
-  return new Promise((resolve, reject) => {
+function httpGet(url: string, cookie?: string) {
+  return new Promise<{
+    status: number | undefined;
+    headers: http.IncomingHttpHeaders;
+    body: Buffer;
+  }>((resolve, reject) => {
     const request = http.get(
       url,
       {
@@ -58,8 +90,8 @@ function httpGet(url, cookie) {
         },
       },
       (response) => {
-        const chunks = [];
-        response.on("data", (chunk) => chunks.push(chunk));
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
         response.on("end", () =>
           resolve({
             status: response.statusCode,
@@ -73,7 +105,7 @@ function httpGet(url, cookie) {
   });
 }
 
-function checkBrowserEsmGraph(assetRoot) {
+function checkBrowserEsmGraph(assetRoot: string) {
   const source = String.raw`
     const assert = require('node:assert/strict');
     const fs = require('node:fs');
@@ -139,7 +171,7 @@ function checkBrowserEsmGraph(assetRoot) {
   assert.match(result.stdout, /"modules":20/);
 }
 
-test("browser build emits standalone ESM and a hash-bound static allowlist", async (t) => {
+test("browser build emits standalone ESM and a hash-bound static allowlist", async () => {
   execFileSync(process.execPath, [buildScript], {
     cwd: repository,
     encoding: "utf8",
@@ -218,7 +250,7 @@ test("browser build emits standalone ESM and a hash-bound static allowlist", asy
     const source = fs.readFileSync(path.join(assetRoot, "web", file), "utf8");
     // Catalog keys such as "system.process.panel" are data, not Node APIs.
     // Inspect executable syntax so those keys do not mask real API access.
-    const ts = require("typescript");
+    const ts = load("typescript") as typeof import("typescript");
     const syntax = ts.createSourceFile(
       file,
       source,
@@ -226,7 +258,7 @@ test("browser build emits standalone ESM and a hash-bound static allowlist", asy
       true,
       ts.ScriptKind.JS,
     );
-    const inspect = (node) => {
+    const inspect = (node: SyntaxNode): void => {
       if (ts.isCallExpression(node) && ts.isIdentifier(node.expression))
         assert.notEqual(node.expression.text, "require", file);
       if (
@@ -276,6 +308,7 @@ test("installed static resolver rejects changed bytes, symlinks and manifest tra
   const original = resolver.readControlCenterAssetManifest(installation);
   const changed = copyBundle(t);
   const first = original.assets[0];
+  assert.ok(first);
   fs.appendFileSync(path.join(changed.assets, first.file), "changed");
   assert.throws(
     () => resolver.loadConsoleHttpAssets(changed.root),
@@ -284,8 +317,13 @@ test("installed static resolver rejects changed bytes, symlinks and manifest tra
 
   const escaped = copyBundle(t);
   const manifestPath = path.join(escaped.assets, "asset-manifest.json");
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  manifest.assets[0].file = "../outside.js";
+  const manifest = {
+    ...original,
+    assets: original.assets.map((asset) => ({ ...asset })),
+  };
+  const firstAsset = manifest.assets[0];
+  assert.ok(firstAsset);
+  firstAsset.file = "../outside.js";
   const payload = {
     version: manifest.version,
     entrypoint: manifest.entrypoint,
@@ -304,11 +342,14 @@ test("installed static resolver rejects changed bytes, symlinks and manifest tra
     unlisted.assets,
     "asset-manifest.json",
   );
-  const unlistedManifest = JSON.parse(
-    fs.readFileSync(unlistedManifestPath, "utf8"),
-  );
-  unlistedManifest.assets[0].path = "/assets/control-center/assets/extra.js";
-  unlistedManifest.assets[0].file = "assets/extra.js";
+  const unlistedManifest = {
+    ...original,
+    assets: original.assets.map((asset) => ({ ...asset })),
+  };
+  const unlistedAsset = unlistedManifest.assets[0];
+  assert.ok(unlistedAsset);
+  unlistedAsset.path = "/assets/control-center/assets/extra.js";
+  unlistedAsset.file = "assets/extra.js";
   const unlistedPayload = {
     version: unlistedManifest.version,
     entrypoint: unlistedManifest.entrypoint,
@@ -326,6 +367,7 @@ test("installed static resolver rejects changed bytes, symlinks and manifest tra
   const entry = original.assets.find(
     (asset) => asset.path === original.entrypoint,
   );
+  assert.ok(entry);
   const destination = path.join(linked.assets, entry.file);
   const outside = path.join(linked.temp, "outside.js");
   fs.renameSync(destination, outside);
@@ -377,12 +419,14 @@ test("loopback HTTP serves only manifest-backed local browser resources", async 
   const origin = `http://localhost:${port}`;
   const page = await httpGet(`${origin}/`);
   assert.equal(page.status, 200);
-  assert.match(page.headers["content-security-policy"], /default-src 'self'/);
+  const contentSecurityPolicy = page.headers["content-security-policy"];
+  assert.ok(typeof contentSecurityPolicy === "string");
+  assert.match(contentSecurityPolicy, /default-src 'self'/);
   assert.match(
     page.body.toString("utf8"),
     /\/assets\/control-center\/web\/index\.js/,
   );
-  const cookie = page.headers["set-cookie"][0].split(";", 1)[0];
+  const cookie = cookieFrom(page.headers);
 
   const manifest = resolver.readControlCenterAssetManifest(installation);
   for (const asset of manifest.assets) {
@@ -444,17 +488,17 @@ test(
     const cleanHome = path.join(directory, "clean-home");
     fs.mkdirSync(cleanHome, { recursive: true });
     const cleanEnvironment = {
-      PATH: process.env.PATH,
+      PATH: process.env["PATH"],
       HOME: cleanHome,
       XDG_CONFIG_HOME: path.join(cleanHome, "config"),
       XDG_STATE_HOME: path.join(cleanHome, "state"),
       npm_config_userconfig: "/dev/null",
       npm_config_cache:
-        process.env.npm_config_cache ?? path.join(os.homedir(), ".npm"),
+        process.env["npm_config_cache"] ?? path.join(os.homedir(), ".npm"),
       npm_config_offline: "true",
       npm_config_update_notifier: "false",
     };
-    const packed = JSON.parse(
+    const packedReport: unknown = JSON.parse(
       execFileSync(
         "npm",
         ["pack", "--ignore-scripts", "--json", "--pack-destination", directory],
@@ -464,8 +508,18 @@ test(
           maxBuffer: 16 * 1024 * 1024,
         },
       ),
-    )[0];
-    const packedPaths = packed.files.map((file) => file.path);
+    );
+    assert.ok(Array.isArray(packedReport) && packedReport.length === 1);
+    const packed = record(packedReport[0]);
+    const packedFilename = packed["filename"];
+    assert.ok(typeof packedFilename === "string");
+    const packedFiles = packed["files"];
+    assert.ok(Array.isArray(packedFiles));
+    const packedPaths = packedFiles.map((file: unknown) => {
+      const filePath = record(file)["path"];
+      assert.ok(typeof filePath === "string");
+      return filePath;
+    });
     for (const required of [
       "dist/assets/control-center/asset-manifest.json",
       "dist/assets/control-center/index.html",
@@ -495,7 +549,7 @@ test(
         "--no-fund",
         "--prefix",
         directory,
-        path.join(directory, packed.filename),
+        path.join(directory, packedFilename),
       ],
       {
         cwd: directory,
@@ -523,21 +577,25 @@ test(
       false,
     );
     const installedDist = path.join(installed, "dist");
-    const installedResolver = require(
+    const installedResolver = load(
       path.join(
         installedDist,
         "src/dist/control-center/resources/static-assets.js",
       ),
-    );
-    const installedServerFactory = require(
+    ) as typeof resolver;
+    const installedServerFactory = load(
       path.join(installedDist, "src/dist/control-center/server/http.js"),
-    );
-    const runtimePaths = require(
+    ) as typeof serverFactory;
+    const runtimePaths = load(
       path.join(installedDist, "src/dist/config-platform"),
+    ) as typeof import("../packages/node-adapters/src/config-platform");
+    const runtimeBuild = record(
+      JSON.parse(
+        fs.readFileSync(path.join(installedDist, "runtime-build.json"), "utf8"),
+      ) as unknown,
     );
-    const runtimeBuild = JSON.parse(
-      fs.readFileSync(path.join(installedDist, "runtime-build.json"), "utf8"),
-    );
+    const fingerprint = runtimeBuild["fingerprint"];
+    assert.ok(typeof fingerprint === "string");
     const runtime = runtimePaths.resolveRuntimePaths({
       anchor: path.join(installedDist, "src/queue-worker.js"),
       home: path.join(directory, "clean-home"),
@@ -547,10 +605,7 @@ test(
         XDG_STATE_HOME: path.join(directory, "clean-home/state"),
       },
     });
-    assert.equal(
-      runtimePaths.runtimeBuildIdentity(runtime),
-      runtimeBuild.fingerprint,
-    );
+    assert.equal(runtimePaths.runtimeBuildIdentity(runtime), fingerprint);
     const assets = installedResolver.loadConsoleHttpAssets(installedDist);
     assert.equal(assets.length, 33);
     for (const module of [
@@ -568,15 +623,15 @@ test(
     checkBrowserEsmGraph(path.join(installedDist, "assets/control-center"));
 
     const port = await availablePort();
-    const { createControlCenterComposition } = require(
+    const { createControlCenterComposition } = load(
       path.join(installedDist, "src/dist/composition/control-center.js"),
-    );
+    ) as typeof import("../src/composition/control-center");
     const composition = createControlCenterComposition(
       {
         port,
         installationRoot: installedDist,
         stateDirectory: path.join(directory, "console-state"),
-        buildIdentity: runtimeBuild.fingerprint,
+        buildIdentity: fingerprint,
         protocolVersion: 1,
         instanceNonce: "d".repeat(64),
       },
@@ -588,7 +643,7 @@ test(
         openCodePresenceDirectory: path.join(directory, "absent-presence"),
       },
     );
-    t.after(() => composition.close());
+    t.after(() => composition.close?.());
     const principal = await composition.resolvePrincipal({
       subject: "installed-fixture",
       createdAt: Date.now(),
@@ -597,19 +652,20 @@ test(
       { kind: "global" },
       principal,
     );
+    assert.ok("snapshotToken" in snapshot, JSON.stringify(snapshot));
     assert.ok(snapshot.snapshotToken, JSON.stringify(snapshot));
     assert.equal(snapshot.scope.kind, "global");
     const server = installedServerFactory.createControlCenterHttpServer({
       identity: {
         port,
         protocolVersion: 1,
-        buildIdentity: runtimeBuild.fingerprint,
+        buildIdentity: fingerprint,
         pid: 101,
         processBirth: "installed-synthetic:101",
         instanceNonce: "d".repeat(64),
         probeSecret: "e".repeat(64),
       },
-      assets: composition.assets,
+      ...(composition.assets ? { assets: composition.assets } : {}),
       query: composition.query,
       resolvePrincipal: composition.resolvePrincipal,
     });
@@ -618,7 +674,7 @@ test(
     const origin = `http://localhost:${port}`;
     const page = await httpGet(`${origin}/`);
     assert.equal(page.status, 200);
-    const cookie = page.headers["set-cookie"][0].split(";", 1)[0];
+    const cookie = cookieFrom(page.headers);
     for (const asset of assets) {
       const response = await httpGet(`${origin}${asset.path}`, cookie);
       assert.equal(response.status, 200, asset.path);
@@ -635,9 +691,9 @@ test(
     );
     console.log(
       JSON.stringify({
-        tarball: packed.filename,
+        tarball: packedFilename,
         browserAssets: assets.length,
-        runtimeFingerprint: runtimeBuild.fingerprint,
+        runtimeFingerprint: fingerprint,
         openCodeSdkInstalled: false,
         server: "isolated-loopback",
       }),
