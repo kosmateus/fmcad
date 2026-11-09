@@ -130,6 +130,7 @@ jobs:
             sketches,
             reopen,
             revisions,
+            rectangles,
           ]
         include:
           - { protocol: mcp, suite: reopen, concurrency: 1 }
@@ -140,6 +141,10 @@ jobs:
           - { protocol: mcp, suite: revisions, concurrency: 2 }
           - { protocol: addin, suite: revisions, concurrency: 1 }
           - { protocol: addin, suite: revisions, concurrency: 2 }
+          - { protocol: mcp, suite: rectangles, concurrency: 1 }
+          - { protocol: mcp, suite: rectangles, concurrency: 2 }
+          - { protocol: addin, suite: rectangles, concurrency: 1 }
+          - { protocol: addin, suite: rectangles, concurrency: 2 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

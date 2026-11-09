@@ -53,7 +53,7 @@ before any integration; record exact merged SHA and full matrix results here.
 | Package | Observed delivery              | Required evidence / remaining disposition                                                                             |
 | ------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
 | A       | PR #42 merged as `171c972`     | A1 broker gates restored; A2–A4 admission/recovery/concurrency still required.                                        |
-| B       | Deliveries merged through `2ed8017` | Persistence, assertion/profile increments and receipt-bound saved reopen/revision scenarios; semantic assertion mapping and remaining lifecycle migration stay open. |
+| B       | Deliveries merged through `6c9f6c5` | Persistence, assertion/profile increments, receipt-bound reopen/revision and bounded rectangle regeneration; semantic assertion mapping and remaining lifecycle migration stay open. |
 | C       | PR #37 `a4943f3`               | Claim only at observation; canonical modeling services, Python boundaries and negative/readback evidence required.    |
 | D       | PR #38 `ee0fd54`               | Claim only at observation; file/source/version/publication and recovery contracts required.                           |
 | E       | PR #39 / #46 / #48 / #50 / #52 / #62 / #64 / #67 / #68 merged through `54b31e4` | Image, client/configuration, host commands, review/shot, MCP, command/help and catalog/queue boundaries; UI and complete installed parity stay open. |
@@ -92,8 +92,8 @@ python3 -B scripts/integration/native-plan.py --project-id PROJECT_ID --folder-i
 
 This command only constructs scenario objects and validates CLI arguments; it
 does not connect to Fusion, start a broker or execute a scenario. Schema 2 consumes
-B's merged required-profile manifest. It produces 60 shared command arrays for
-ten model families, MCP/addin and concurrency 1/2/10 with ten owners; it also
+B's merged required-profile manifest. It produces 66 shared command arrays for
+eleven model families, MCP/addin and concurrency 1/2/10 with ten owners; it also
 retains 27 native obligations as `NOTRUN` argument arrays and nine diagnostics as
 non-substituting cases. It records source/profile hashes, dirty state, receipts
 and cleanup policy. Semantic per-assertion mapping and legacy lifecycle migration
@@ -625,3 +625,42 @@ The separately inventoried queue-lifecycle source remains open until its own
 owner/execution evidence is delivered. E1–E4, G and offline acceptance remain
 incomplete; full candidate/merge-head CI and remaining package checklists are
 required. Native preparation remains `NOTRUN`; Fusion was not executed.
+
+## Fifteenth merged A–F checkpoint — dimensioned rectangle regeneration
+
+Merged main `6c9f6c5a1c98d0e6413e6cea006e725e25063836` contains Agent B's bounded
+dimensioned-rectangle delivery from PR #63. Its exact head
+`9be5e0f43d4a2c7b93ce04d0601b08f92ef0c7ec` passed all 22 jobs in workflow
+`42530763341`. Both production-checker component transports passed on that
+immutable head. No merge-SHA workflow is registered; G's previous candidate CI
+is stale after this main advance and cannot qualify the new combined tree.
+
+The shared `rectangles` family executes the production `shape.box` recipe with an
+analytical anchored rectangle, independent driving dimensions and retained
+extrusion expressions. It checks dimensions, volume, parameter regeneration,
+saved revision/reopen persistence and a further edit after reopen. Unsupported
+general solver behavior remains rejected, including foreign, driven, duplicate,
+incompatible and invalid dimension inputs.
+
+G adds `rectangles` to the required broker matrix for MCP and addin at concurrency
+1/2/10 with ten owners. The registration guard now covers all eighteen combinations
+across reopen, revisions and rectangles, and artifact names remain concurrency-
+specific. Static coverage moves to 494 sources / 250 registered / 244 explicit
+gaps; the new scenario source is reached by the existing scenario-unit gate.
+
+The combined pinned build, strict test typecheck and all 163 shared scenario unit
+cases pass. The six rectangle transport/concurrency cases exercise 60 owned saved
+fixtures. Simulator typing reports zero diagnostics; the pinned API verifier now
+covers 61 methods / 21 property accessors; both CI-registration assertions pass.
+
+The native generator includes the new family and validates 66 MCP/addin command
+arrays. All 27 native obligations and nine diagnostics remain `NOTRUN`; Fusion
+was not started. Runtime inventory remains 674 files and public routes remain 420.
+Published package content is unchanged at 1,617 files, 3,385,022 compressed bytes
+and 16,694,315 unpacked bytes, shasum
+`22dd30f1e463c1b7bcb4989dda969668ff6555fe`.
+
+No facade is retired. General solver/topology behavior, definitions and batch
+scenario migration, semantic assertion disposition, package checklists, fresh
+candidate CI and eventual merge-head CI remain open. Offline acceptance is still
+incomplete; native qualification remains a separate real-Fusion milestone.

@@ -451,3 +451,29 @@ The JS compatibility path remains an active installed loader and is not retired;
 the separate queue-lifecycle source remains open pending its own evidence. E1–E4,
 G and offline acceptance remain incomplete. Native preparation is still `NOTRUN`
 and Fusion was not executed.
+
+### Fifteenth A–F merge checkpoint
+
+Merged main `6c9f6c5` adds Agent B's bounded dimensioned-rectangle regeneration
+family from PR #63. Its exact head `9be5e0f` passed all 22 jobs in workflow
+`42530763341`, including both production-checker component transports. No
+merge-SHA workflow is registered. The previous G candidate runs became stale
+when main advanced and cannot qualify the combined tree.
+
+G adds `rectangles` to the MCP/addin broker matrix at concurrency 1/2/10 with ten
+owners. The guard covers all eighteen reopen/revision/rectangle combinations.
+Coverage becomes 494 test sources / 250 registered / 244 explicit gaps.
+
+Build, strict test types, 163 scenario tests, simulator typing, the expanded
+61-method / 21-property API verifier and both registration assertions pass. The
+six rectangle transport/concurrency cases cover 60 owned saved fixtures.
+
+The native generator now validates 66 shared commands for eleven families. Its
+27 native obligations and nine diagnostics remain `NOTRUN`; Fusion was not run.
+Inventory remains 674 runtime files and 420 routes. Package content remains 1,617
+files, 3,385,022 compressed bytes and 16,694,315 unpacked bytes, shasum
+`22dd30f1e463c1b7bcb4989dda969668ff6555fe`.
+
+No facade is retired. General solver/topology, definitions/batch migration,
+semantic assertion mapping, owner checklists and exact candidate/merge-head CI
+keep G and offline acceptance incomplete.

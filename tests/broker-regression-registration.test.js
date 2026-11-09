@@ -41,7 +41,7 @@ test("CI executes every retained broker regression family and its historical com
   assert.match(workflow, /^\s+- run: npm run test:broker-regressions\s*$/m);
 });
 
-test("CI executes saved reopen and revision profiles at every required concurrency", () => {
+test("CI executes saved and regeneration profiles at every required concurrency", () => {
   const root = path.resolve(__dirname, "..");
   const workflow = fs.readFileSync(
     path.join(root, ".github/workflows/ci.yml"),
@@ -51,7 +51,7 @@ test("CI executes saved reopen and revision profiles at every required concurren
   const matrix = job.strategy.matrix;
   assert.deepEqual(matrix.protocol, ["mcp", "addin"]);
   assert.deepEqual(matrix.concurrency, [10]);
-  for (const suite of ["reopen", "revisions"])
+  for (const suite of ["reopen", "revisions", "rectangles"])
     assert.ok(matrix.suite.includes(suite));
   const additions = new Set(
     matrix.include.map(({ protocol, suite, concurrency }) =>
@@ -59,7 +59,7 @@ test("CI executes saved reopen and revision profiles at every required concurren
     ),
   );
   for (const protocol of ["mcp", "addin"]) {
-    for (const suite of ["reopen", "revisions"]) {
+    for (const suite of ["reopen", "revisions", "rectangles"]) {
       for (const concurrency of [1, 2]) {
         assert.ok(additions.has([protocol, suite, concurrency].join(":")));
       }

@@ -54,6 +54,7 @@ const rows = [
  ['cloud', 'cloud-cases', 'cloudScenarios'], ['boxes', 'box-cases', 'boxScenarios'],
  ['attributes', 'attribute-cases', 'attributeScenarios'], ['sketches', 'sketch-cases', 'sketchScenarios'],
  ['reopen', 'reopen-cases', 'reopenScenarios'], ['revisions', 'reopen-cases', 'revisionScenarios'],
+ ['rectangles', 'rectangle-cases', 'rectangleScenarios'],
 ];
 const {parse} = require(root + 'cli.js');
 process.stdout.write(JSON.stringify(rows.map(([suite, file, name]) => {

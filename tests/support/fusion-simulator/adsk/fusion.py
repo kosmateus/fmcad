@@ -15,6 +15,10 @@ from ._model_geometry import (BRepBodies as BRepBodies, BRepBody as BRepBody,
     PhysicalProperties as PhysicalProperties, Sketch as Sketch, Sketches as Sketches,
     SketchCurves as SketchCurves, SketchCurve as SketchCurve, SketchLines as SketchLines, SketchLine as SketchLine,
     SketchLineList as SketchLineList, SketchPoint as SketchPoint, Profile as Profile,
+    DimensionOrientations as DimensionOrientations,
+    GeometricConstraints as GeometricConstraints, CoincidentConstraint as CoincidentConstraint,
+    SketchDimensions as SketchDimensions, SketchLinearDimension as SketchLinearDimension,
+    ModelParameter as ModelParameter, ProfileLoop as ProfileLoop, ProfileCurve as ProfileCurve,
     Profiles as Profiles, FeatureOperations as FeatureOperations,
     ExtentDirections as ExtentDirections, ExtentDefinition as ExtentDefinition,
     DistanceExtentDefinition as DistanceExtentDefinition,
@@ -229,6 +233,7 @@ class FusionUnitsManager(core.UnitsManager):
 
 class FeatureHealthStates:
     HealthyFeatureHealthState: ClassVar[int] = 0
+    ErrorFeatureHealthState: ClassVar[int] = 2
 
 
 class TimelineObject(core.Base):
@@ -430,6 +435,9 @@ class Component(core.Base):
         self.entityToken: str = "model-component:" + self.model_id
         self.occurrences: Occurrences = Occurrences(self)
         self.constructionPlanes: ConstructionPlanes = ConstructionPlanes(self)
+        # No construction point/axis creation is supported; these owned collections are empty.
+        self.constructionPoints: core.Collection[core.Base] = core.Collection()
+        self.constructionAxes: core.Collection[core.Base] = core.Collection()
         self.bRepBodies: BRepBodies = BRepBodies()
         self.features: Features = Features(self)
         self.sketches: Sketches = Sketches(self)
@@ -493,10 +501,14 @@ class Design(core.Product):
         for component in self.allComponents:
             if component.entityToken == entityToken:
                 entities.append(component)
+            entities.extend(feature for feature in component.features.extrudeFeatures if feature.entityToken == entityToken)
             entities.extend(body for body in component.bRepBodies if body.entityToken == entityToken)
             for sketch in component.sketches:
                 if sketch.entityToken == entityToken:
                     entities.append(sketch)
+                for entity in [sketch.originPoint, *sketch.geometricConstraints, *sketch.sketchDimensions]:
+                    if entity.entityToken == entityToken:
+                        entities.append(entity)
                 for line in sketch.sketchCurves.sketchLines:
                     for entity in (line, line.startSketchPoint, line.endSketchPoint):
                         if entity.entityToken == entityToken and entity not in entities:
