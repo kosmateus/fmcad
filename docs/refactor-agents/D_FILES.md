@@ -412,3 +412,21 @@ includes imports, references, externalization, save/publication and drawings.
 - Focused strict compilation and lint pass, including the new import handoff
   sources. Runtime/checker verification remains pending the coordinated quiet
   slot and final build; static migration is not execution evidence.
+
+
+### Delivery 11 — checker provenance and asynchronous receipt consumers
+
+- Migrated Python context binding/completeness and cloud-save/native-receipt
+  consumers to strict TypeScript. The retained completeness additions still
+  verify one original inventory and projection per invocation, every required
+  engine pass, tampering between groups and temporary-file cleanup on all paths.
+- All 182 original assertion ASTs remain, with one additional certificate
+  presence check. All 28 embedded template segments remain byte-identical,
+  including actual Python lifecycle programs and checker recording engines.
+  Malformed manifest and receipt inputs retain their original corruptions.
+- Narrow strict compilation, lint and formatting pass. Runtime verification of
+  these four migrated suites is pending the coordinated checker/process slot;
+  the earlier two JavaScript completeness cases passing does not qualify the
+  emitted TypeScript tests. Native proof still requires original binding,
+  native command identity and terminal lifecycle evidence; cloud processing
+  pending remains distinct from an unfinished SDK command.

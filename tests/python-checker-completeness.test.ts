@@ -1,42 +1,52 @@
-"use strict";
+import { present, retainedOrigin } from "./python-test-contracts";
+import { createRequire } from "node:module";
+import type { TestContext } from "node:test";
+import type { PreparedPythonArtifact } from "@fmcad/core";
+import type { SourceInput } from "../packages/node-adapters/src/python/artifact";
+import { record, at, list, text } from "./integration/offline-cli";
 
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs/promises");
-const path = require("node:path");
-const os = require("node:os");
-const { createHash } = require("node:crypto");
-const {
-  createPythonChecker,
-} = require("../packages/node-adapters/dist/python/checker");
-const {
-  preparePythonArtifact,
-} = require("../packages/node-adapters/dist/python/artifact");
-const {
-  pythonArtifactManifest,
-  pythonUnitContexts,
-  retainPythonOrigin,
-} = require("../packages/node-adapters/dist/python/context-binding");
-const {
-  createPythonRpcAdmission,
-} = require("../packages/node-adapters/dist/python/admission");
-const checkerProcess = require("../packages/node-adapters/dist/python/checker-process");
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import { createHash } from "node:crypto";
+const repository = path.resolve(__dirname, "../..");
+const load = createRequire(
+  path.join(repository, "tests", "python-checker-completeness.test.js"),
+);
+const { createPythonChecker } = load(
+  "../packages/node-adapters/dist/python/checker",
+) as typeof import("../packages/node-adapters/src/python/checker");
+const { preparePythonArtifact } = load(
+  "../packages/node-adapters/dist/python/artifact",
+) as typeof import("../packages/node-adapters/src/python/artifact");
+const { pythonArtifactManifest, pythonUnitContexts, retainPythonOrigin } = load(
+  "../packages/node-adapters/dist/python/context-binding",
+) as typeof import("../packages/node-adapters/src/python/context-binding");
+const { createPythonRpcAdmission } = load(
+  "../packages/node-adapters/dist/python/admission",
+) as typeof import("../packages/node-adapters/src/python/admission");
+const checkerProcess = load(
+  "../packages/node-adapters/dist/python/checker-process",
+) as typeof import("../packages/node-adapters/src/python/checker-process");
 
 const typingRoot = path.resolve("runtime/python/typing");
 const fixtureRoot = path.resolve("tests/fixtures/python-checker-completeness");
-const hash = (value) => createHash("sha256").update(value).digest("hex");
+const hash = (value: string | Buffer) =>
+  createHash("sha256").update(value).digest("hex");
 
-async function temporary(t, prefix = "fmcad-check-completeness-") {
+async function temporary(t: TestContext, prefix = "fmcad-check-completeness-") {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   return root;
 }
 
-function artifact(units, context = null) {
+function artifact(units: readonly SourceInput[], context: unknown = null) {
   return preparePythonArtifact(units, { context });
 }
 
-async function fakeChecker(t, mode = "pass") {
+async function fakeChecker(t: TestContext, mode = "pass") {
   const root = await temporary(t);
   const evidencePath = path.join(root, "engine-evidence.jsonl");
   const enginePath = path.join(root, "recording-checker.cjs");
@@ -63,7 +73,7 @@ async function fakeChecker(t, mode = "pass") {
   };
 }
 
-async function readEvidence(file) {
+async function readEvidence(file: string) {
   if (!(await fs.stat(file).catch(() => null))) return [];
   const text = await fs.readFile(file, "utf8");
   return text
@@ -73,7 +83,7 @@ async function readEvidence(file) {
     .map((line) => JSON.parse(line));
 }
 
-async function syntheticDefinitions(t) {
+async function syntheticDefinitions(t: TestContext) {
   const root = await temporary(t, "fmcad-check-completeness-definitions-");
   const files = Object.fromEntries(
     ["__init__", "cam", "drawing", "electron", "fusion", "sim", "volume"].map(
@@ -118,7 +128,7 @@ function groupedArtifact(markers = true) {
   // Two independent AST bodies just exceed the checker's fixed 75k body-node
   // bin budget together, but each fits alone. This exercises real projection
   // and aggregation without running the 154-unit production helper.
-  const listFor = (marker) => {
+  const listFor = (marker: string) => {
     const values = Array(40_020).fill("0");
     if (markers) values[0] = JSON.stringify(marker);
     return values.join(",");
@@ -139,7 +149,7 @@ function groupedArtifact(markers = true) {
   ]);
 }
 
-function rebind(artifactValue, context) {
+function rebind(artifactValue: PreparedPythonArtifact, context: unknown) {
   const mapped = new Set(artifactValue.sourceMap.map((entry) => entry.unitId));
   return preparePythonArtifact(
     artifactValue.units.map((unit) => ({
@@ -150,8 +160,13 @@ function rebind(artifactValue, context) {
   );
 }
 
-function receiptWithOriginalUnits(original, label) {
-  const { prepareReceiptScript } = require("../src/queue-instance");
+function receiptWithOriginalUnits(
+  original: PreparedPythonArtifact,
+  label: string,
+) {
+  const { prepareReceiptScript } = load("../src/queue-instance") as ReturnType<
+    typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
+  >;
   const receipt = prepareReceiptScript(
     original.script,
     true,
@@ -185,7 +200,7 @@ function receiptWithOriginalUnits(original, label) {
 }
 
 test("real basedpyright finds errors in every mapped unit while resolving shared globals", async () => {
-  const units = [];
+  const units: SourceInput[] = [];
   for (const filename of [
     "namespace-first.py",
     "namespace-middle.py",
@@ -330,10 +345,10 @@ test("real basedpyright verifies retained origin bytes inside a transformed Addi
   assert.equal(report.status, "passed", JSON.stringify(report));
   assert.equal(report.provenance.wireHash, prepared.sha256);
   assert.equal(report.provenance.artifactHash, prepared.artifactHash);
-  assert.match(report.provenance.analysisHash, /^[a-f0-9]{64}$/);
+  assert.match(text(report.provenance.analysisHash), /^[a-f0-9]{64}$/);
 
   const tamperedContext = structuredClone(prepared.context);
-  tamperedContext.origin.segments[0].startLine = 1;
+  record(list(at(tamperedContext, "origin", "segments"))[0])["startLine"] = 1;
   const mapped = new Set(prepared.sourceMap.map((entry) => entry.unitId));
   const tampered = preparePythonArtifact(
     prepared.units.map((unit) => ({
@@ -347,24 +362,34 @@ test("real basedpyright verifies retained origin bytes inside a transformed Addi
     context: { kind: "raw" },
   });
   assert.equal(rejected.status, "tool_error", JSON.stringify(rejected));
-  assert.match(rejected.reasons.join(" "), /origin source span does not match/i);
+  assert.match(
+    rejected.reasons.join(" "),
+    /origin source span does not match/i,
+  );
 });
 
 test("prepared canonical cad-v1 receipt retains all 154 helper units, maps, bytes and both contexts without a full checker run", (t) => {
-  const directory = require("node:fs").mkdtempSync(
+  const directory = (load("node:fs") as typeof import("node:fs")).mkdtempSync(
     path.join(os.tmpdir(), "helper-completeness-canonical-"),
   );
   t.after(() =>
-    require("node:fs").rmSync(directory, { recursive: true, force: true }),
+    (load("node:fs") as typeof import("node:fs")).rmSync(directory, {
+      recursive: true,
+      force: true,
+    }),
   );
   const scriptFile = path.join(directory, "canonical-stage.py");
-  require("node:fs").writeFileSync(
+  (load("node:fs") as typeof import("node:fs")).writeFileSync(
     scriptFile,
     'ARGS = []\nDOC_NAME = ""\ndef run(context: str) -> None:\n    stage = FMCAD.stage()\n    journal = FMCAD.journalInspect()\n    plan = FMCAD.resumePlan()\n    print(stage, journal, plan)\n',
   );
 
-  const { prepareRunScript } = require("../src/run");
-  const { prepareReceiptScript } = require("../src/queue-instance");
+  const { prepareRunScript } = load(
+    "../src/run",
+  ) as typeof import("../src/composition/run");
+  const { prepareReceiptScript } = load("../src/queue-instance") as ReturnType<
+    typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
+  >;
   const original = prepareRunScript(
     scriptFile,
     [],
@@ -382,7 +407,7 @@ test("prepared canonical cad-v1 receipt retains all 154 helper units, maps, byte
     { mapPath: (value) => value },
   );
   const final = retainPythonOrigin(receipt, pythonArtifactManifest(original));
-  const origin = final.context.origin;
+  const origin = retainedOrigin(final);
 
   assert.equal(original.units.length, 154);
   assert.equal(origin.units.length, 154);
@@ -523,7 +548,9 @@ test("retained origin body inventory is planned once and reverified for every gr
   // not a checker PASS or public admission proof.
   const { checker, evidencePath } = await fakeChecker(t);
   const original = groupedArtifact(false);
-  const { prepareReceiptScript } = require("../src/queue-instance");
+  const { prepareReceiptScript } = load("../src/queue-instance") as ReturnType<
+    typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
+  >;
   const receipt = prepareReceiptScript(
     original.script,
     true,
@@ -531,12 +558,27 @@ test("retained origin body inventory is planned once and reverified for every gr
     { jobId: "reuse-aggregate-plan" },
     { mapPath: (value) => value },
   );
-  const prepared = retainPythonOrigin(receipt, pythonArtifactManifest(original));
+  const prepared = retainPythonOrigin(
+    receipt,
+    pythonArtifactManifest(original),
+  );
   const runCheckerProcess = checkerProcess.runCheckerProcess;
-  let sourcePlanRuns = 0;
+  let sourcePlanRuns = 0,
+    inventoryRuns = 0,
+    projectionRuns = 0;
   checkerProcess.runCheckerProcess = async (...args) => {
     try {
-      if (JSON.parse(args[4] || "{}").analysisSourcePath) sourcePlanRuns++;
+      const input = JSON.parse(args[4] || "{}");
+      if (input.analysisSourcePath) sourcePlanRuns++;
+      if (input.units) inventoryRuns++;
+      if (input.projectionGroups) {
+        projectionRuns++;
+        assert.equal(
+          input.projectionGroups.length,
+          2,
+          "The complete group set is projected together",
+        );
+      }
     } catch {
       // Non-JSON checker input belongs to the other fixed checker phases.
     }
@@ -550,17 +592,122 @@ test("retained origin body inventory is planned once and reverified for every gr
       unitContexts: contexts,
     });
     assert.equal(report.status, "passed", JSON.stringify(report));
-    assert.equal(sourcePlanRuns, 1, "the parent derives the original full-body plan once");
-    assert.equal((await readEvidence(evidencePath)).length, 2, "both bounded groups still run");
+    assert.equal(
+      sourcePlanRuns,
+      1,
+      "the parent derives the original full-body plan once",
+    );
+    assert.equal(
+      inventoryRuns,
+      1,
+      "Exact source namespaces are inventoried once per check invocation",
+    );
+    assert.equal(
+      projectionRuns,
+      1,
+      "Immutable AST/policy work is shared without reusing analysis results",
+    );
+    assert.equal(
+      (await readEvidence(evidencePath)).length,
+      2,
+      "both bounded groups still run",
+    );
   } finally {
     checkerProcess.runCheckerProcess = runCheckerProcess;
+  }
+});
+
+test("shared preparation remains hash-bound through later groups and is removed on every outcome", async (t) => {
+  for (const mode of [
+    "pass",
+    "inventory",
+    "projection",
+    "metadata",
+    "missing-group",
+  ] as const) {
+    const { checker, root, evidencePath } = await fakeChecker(t);
+    const run = checkerProcess.runCheckerProcess;
+    let sharedDirectory: string | undefined;
+    let inventories = 0,
+      projections = 0,
+      engines = 0;
+    checkerProcess.runCheckerProcess = async (...args) => {
+      const input = JSON.parse(args[4] || "{}");
+      if (input.units) inventories++;
+      if (input.projectionGroups) {
+        projections++;
+        sharedDirectory = args[2];
+      }
+      const result = await run(...args);
+      if (input.projectionGroups && mode === "missing-group") {
+        const output = JSON.parse(result.stdout);
+        output.projections.pop();
+        return { ...result, stdout: JSON.stringify(output) };
+      }
+      if (args[0] === process.execPath && ++engines === 1 && mode !== "pass") {
+        assert.ok(sharedDirectory);
+        const tamperFiles: Partial<Record<typeof mode, string>> = {
+          inventory: "source-0.txt",
+          projection: "projection-1.txt",
+          metadata: "projection-1.json",
+        };
+        const file = tamperFiles[mode];
+        if (file)
+          await fs.appendFile(
+            path.join(sharedDirectory, file),
+            "\n# changed between groups",
+          );
+      }
+      return result;
+    };
+    let report;
+    try {
+      report = await checker.check({
+        artifact: groupedArtifact(false),
+        context: { kind: "raw" },
+      });
+    } finally {
+      checkerProcess.runCheckerProcess = run;
+    }
+    assert.equal(inventories, 1, mode);
+    assert.equal(projections, 1, mode);
+    const passes = await readEvidence(evidencePath);
+    if (mode === "pass") {
+      assert.equal(report.status, "passed", JSON.stringify(report));
+      assert.equal(
+        passes.length,
+        2,
+        "Both full-body groups still execute the checker",
+      );
+    } else {
+      assert.equal(report.status, "tool_error", JSON.stringify(report));
+      assert.match(
+        report.reasons.join("\n"),
+        /Shared AST inventory bytes changed|Prepared projection .*changed|complete group inventory/,
+        mode,
+      );
+      assert.equal(
+        passes.length,
+        mode === "missing-group" ? 0 : 1,
+        "Corrupt later preparation never reaches a checker pass",
+      );
+    }
+    assert.equal(
+      (await fs.readdir(root)).filter((name) => name.startsWith("fmcad-check-"))
+        .length,
+      0,
+      "Parent inventory and all child analysis directories are cleaned after " +
+        mode,
+    );
   }
 });
 
 test("aggregate failure reasons identify the same original unit as mapped diagnostics", async (t) => {
   const { checker } = await fakeChecker(t, "incomplete-beta");
   const original = groupedArtifact();
-  const { prepareReceiptScript } = require("../src/queue-instance");
+  const { prepareReceiptScript } = load("../src/queue-instance") as ReturnType<
+    typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
+  >;
   const receipt = prepareReceiptScript(
     original.script,
     true,
@@ -598,7 +745,7 @@ test("aggregate fails closed for OOM, timeout, incomplete, partial and missing l
     ["incomplete-second", "incomplete", /reportAny/i],
     ["partial-second", "tool_error", /every declared unit/i],
     ["missing-second", "tool_error", /JSON|Unexpected/i],
-  ];
+  ] as const;
   for (const [mode, expectedStatus, reason] of cases) {
     const { checker, evidencePath } = await fakeChecker(t, mode);
     const report = await checker.check({
@@ -643,7 +790,7 @@ test("origin omissions, duplicate maps, changed hashes and final-byte tampering 
 
   const forgedMap = {
     ...base,
-    sourceMap: [{ ...base.sourceMap[0], unitId: "undeclared-unit" }],
+    sourceMap: [{ ...present(base.sourceMap[0]), unitId: "undeclared-unit" }],
   };
   forgedMap.artifactHash = hash(
     JSON.stringify({
@@ -661,13 +808,12 @@ test("origin omissions, duplicate maps, changed hashes and final-byte tampering 
     "tool_error",
   );
 
-  const {
-    preparePythonArtifact: prepare,
-  } = require("../packages/node-adapters/dist/python/artifact");
-  const {
-    pythonArtifactManifest: manifest,
-    retainPythonOrigin: retain,
-  } = require("../packages/node-adapters/dist/python/context-binding");
+  const { preparePythonArtifact: prepare } = load(
+    "../packages/node-adapters/dist/python/artifact",
+  ) as typeof import("../packages/node-adapters/src/python/artifact");
+  const { pythonArtifactManifest: manifest, retainPythonOrigin: retain } = load(
+    "../packages/node-adapters/dist/python/context-binding",
+  ) as typeof import("../packages/node-adapters/src/python/context-binding");
   const original = prepare(
     [
       {
@@ -705,7 +851,7 @@ test("origin omissions, duplicate maps, changed hashes and final-byte tampering 
     },
   ]);
   const retained = retain(wrapped, manifest(original));
-  const origin = retained.context.origin;
+  const origin = retainedOrigin(retained);
 
   const cases = [
     [
@@ -726,7 +872,7 @@ test("origin omissions, duplicate maps, changed hashes and final-byte tampering 
     ],
   ];
   for (const [label, nextOrigin] of cases) {
-    const context = { ...retained.context, origin: nextOrigin };
+    const context = { ...record(retained.context), origin: nextOrigin };
     const malformed = rebind(retained, context);
     const report = await checker.check({
       artifact: malformed,
@@ -781,7 +927,10 @@ test("analysis provenance binds exact source, namespace context and resource fin
       source: "def run(context: str) -> None:\n    pass\n",
     },
   ]);
-  const request = (prepared, context) => ({ artifact: prepared, context });
+  const request = (
+    prepared: PreparedPythonArtifact,
+    context: import("@fmcad/core").PythonCheckContext,
+  ) => ({ artifact: prepared, context });
   const first = await checker.check(request(source, { kind: "raw" }));
   const changedSource = artifact([
     {
@@ -873,14 +1022,14 @@ test("analysis provenance binds exact source, namespace context and resource fin
       "configHash",
       "analysisHash",
     ])
-      assert.match(report.provenance[key], /^[a-f0-9]{64}$/);
+      assert.match(text(record(report.provenance)[key]), /^[a-f0-9]{64}$/);
   }
 });
 
 test("resource fingerprint change during real checking invalidates the admission certificate", async () => {
-  const {
-    preparePythonArtifact: prepare,
-  } = require("../packages/node-adapters/dist/python/artifact");
+  const { preparePythonArtifact: prepare } = load(
+    "../packages/node-adapters/dist/python/artifact",
+  ) as typeof import("../packages/node-adapters/src/python/artifact");
   const runtime = path.resolve("dist/runtime/python");
   let resources = "a".repeat(64);
   const checker = createPythonChecker({
@@ -916,7 +1065,7 @@ test("resource fingerprint change during real checking invalidates the admission
   await assert.rejects(
     admission.check(rpc, prepared),
     (error) =>
-      error.code === "PYTHON_ADMISSION_CHANGED" &&
-      /changed after analysis/.test(error.message),
+      record(error)["code"] === "PYTHON_ADMISSION_CHANGED" &&
+      /changed after analysis/.test(text(record(error)["message"])),
   );
 });

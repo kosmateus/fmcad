@@ -1,8 +1,22 @@
-"use strict";
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
+import {
+  present,
+  mutableManifest,
+  diagnostics,
+  retainedOrigin,
+  type MutableManifest,
+} from "./python-test-contracts";
+import { createRequire } from "node:module";
+import type { PreparedPythonArtifact } from "@fmcad/core";
+import type { SourceInput } from "../packages/node-adapters/src/python/artifact";
+import { record, at } from "./integration/offline-cli";
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+const repository = path.resolve(__dirname, "../..");
+const load = createRequire(
+  path.join(repository, "tests", "python-context-binding.test.js"),
+);
 const {
   preparePythonArtifact,
   pythonArtifactManifest,
@@ -11,13 +25,20 @@ const {
   pythonUnitContexts,
   createPythonChecker,
   createPythonRpcAdmission,
-} = require("../src/python");
-const { prepareReceiptScript } = require("../src/queue-instance");
-const {
-  createBrokerTransport,
-} = require("../src/dist/fusion-transport/broker");
+} = load(
+  "../src/python",
+) as typeof import("../packages/node-adapters/src/python/artifact") &
+  typeof import("../packages/node-adapters/src/python/context-binding") &
+  typeof import("../packages/node-adapters/src/python/checker") &
+  typeof import("../packages/node-adapters/src/python/admission");
+const { prepareReceiptScript } = load("../src/queue-instance") as ReturnType<
+  typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
+>;
+const { createBrokerTransport } = load(
+  "../src/dist/fusion-transport/broker",
+) as typeof import("../packages/node-adapters/src/fusion-transport/broker");
 const runtime = path.resolve("dist/runtime/python");
-const official = (script) => ({
+const official = (script: string) => ({
   method: "tools/call",
   params: {
     name: "fusion_mcp_execute",
@@ -34,7 +55,7 @@ const admission = () =>
     }),
   });
 
-function original(extra = []) {
+function original(extra: SourceInput[] = []) {
   const source = 'app.userInterface.messageBox("checked")';
   // This wrapper really supplies app to that isolated exec namespace. There is
   // no inferred global based on the word "bundle" or on a filename alone.
@@ -65,7 +86,7 @@ function original(extra = []) {
     },
   );
 }
-function receipt(source) {
+function receipt(source: PreparedPythonArtifact) {
   const manifest = bindPythonArtifactManifest(
     source.script,
     pythonArtifactManifest(source),
@@ -83,8 +104,8 @@ function receipt(source) {
 test("private manifest binds all original source metadata without sending a duplicate byte array", () => {
   const artifact = original();
   const manifest = pythonArtifactManifest(artifact);
-  assert.equal(manifest.script, undefined);
-  assert.equal(manifest.bytes, undefined);
+  assert.equal(record(manifest)["script"], undefined);
+  assert.equal(record(manifest)["bytes"], undefined);
   assert.equal(
     bindPythonArtifactManifest(artifact.script, manifest).artifactHash,
     artifact.artifactHash,
@@ -94,22 +115,22 @@ test("private manifest binds all original source metadata without sending a dupl
     { code: "PYTHON_CONTEXT_CHANGED" },
   );
   for (const change of [
-    (m) => (m.units[0].source += "\nx: str = 1"),
-    (m) => (m.context = {}),
-    (m) => (m.sourceMap = []),
+    (m: MutableManifest) => (present(m.units[0])["source"] += "\nx: str = 1"),
+    (m: MutableManifest) => (m.context = {}),
+    (m: MutableManifest) => (m.sourceMap = []),
   ]) {
-    const tampered = structuredClone(manifest);
+    const tampered = mutableManifest(manifest);
     change(tampered);
     assert.throws(() => bindPythonArtifactManifest(artifact.script, tampered), {
       code: "PYTHON_CONTEXT_CHANGED",
     });
   }
   const final = receipt(artifact);
-  assert.equal(final.context.origin.artifactHash, artifact.artifactHash);
-  assert.equal(final.context.origin.sha256, artifact.sha256);
+  assert.equal(retainedOrigin(final).artifactHash, artifact.artifactHash);
+  assert.equal(retainedOrigin(final).sha256, artifact.sha256);
   const user = final.units.find((unit) => unit.filename === "caller.py");
-  assert.equal(pythonUnitContexts(final)[user.id].app, true);
-  assert.ok(Object.isFrozen(pythonUnitContexts(final)[user.id]));
+  assert.equal(present(pythonUnitContexts(final)[present(user).id]).app, true);
+  assert.ok(Object.isFrozen(pythonUnitContexts(final)[present(user).id]));
   assert.throws(
     () =>
       retainPythonOrigin(
@@ -151,7 +172,7 @@ test("real checker honors only the matching embedded namespace and still checks 
   const checked = admission(),
     final = receipt(original());
   assert.equal(
-    (await checked.check(official(final.script), final)).report.status,
+    present((await checked.check(official(final.script), final)).report).status,
     "passed",
   );
   const withoutOrigin = prepareReceiptScript(
@@ -164,10 +185,11 @@ test("real checker honors only the matching embedded namespace and still checks 
   await assert.rejects(
     checked.check(official(withoutOrigin.script), withoutOrigin),
     (error) =>
-      error.code === "PYTHON_CHECK_REJECTED" &&
-      error.pythonCheck.diagnostics.some(
+      record(error)["code"] === "PYTHON_CHECK_REJECTED" &&
+      diagnostics(error).some(
         (d) =>
-          d.filename === "caller.py" && d.rule === "reportUndefinedVariable",
+          d["filename"] === "caller.py" &&
+          d["rule"] === "reportUndefinedVariable",
       ),
   );
   const unused = receipt(
@@ -185,9 +207,10 @@ test("real checker honors only the matching embedded namespace and still checks 
   await assert.rejects(
     checked.check(official(unused.script), unused),
     (error) =>
-      error.code === "PYTHON_CHECK_REJECTED" &&
-      error.pythonCheck.diagnostics.some(
-        (d) => d.filename === "unused.py" && d.rule === "reportAssignmentType",
+      record(error)["code"] === "PYTHON_CHECK_REJECTED" &&
+      diagnostics(error).some(
+        (d) =>
+          d["filename"] === "unused.py" && d["rule"] === "reportAssignmentType",
       ),
   );
   const namedSource = 'def run(context: str) -> None:\n    value: int = "bad"';
@@ -211,11 +234,11 @@ test("real checker honors only the matching embedded namespace and still checks 
     checked.check(official(namedReceipt.script), namedReceipt),
     (error) =>
       ["/project/original.py", "duplicate.py"].every((filename) =>
-        error.pythonCheck.diagnostics.some(
+        diagnostics(error).some(
           (d) =>
-            d.filename === filename &&
-            d.line === 2 &&
-            d.rule === "reportAssignmentType",
+            d["filename"] === filename &&
+            d["line"] === 2 &&
+            d["rule"] === "reportAssignmentType",
         ),
       ),
   );
@@ -234,24 +257,26 @@ for (const backend of ["mcp", "addin"])
       },
       {
         version: "fixture",
-        requestTimeout: (s) => s.timeoutMs,
+        requestTimeout: (s) => present(s.timeoutMs),
         bridgeSource: () => assert.fail("No bridge"),
       },
     );
-    let received;
-    const protocol = [];
+    let received: Record<string, unknown> | null | undefined;
+    const protocol: unknown[] = [];
     client._post = (payload) => {
-      protocol.push(payload.method);
-      if (payload.method === "initialize")
+      protocol.push(payload["method"]);
+      if (payload["method"] === "initialize")
         return Promise.resolve({
           status: 200,
           raw: JSON.stringify({
             jsonrpc: "2.0",
-            id: payload.id,
-            result: { protocolVersion: payload.params.protocolVersion },
+            id: payload["id"],
+            result: {
+              protocolVersion: at(payload, "params", "protocolVersion"),
+            },
           }),
         });
-      if (payload.method === "notifications/initialized")
+      if (payload["method"] === "notifications/initialized")
         return Promise.resolve({ status: 202, raw: "" });
       return assert.fail("Local preparation must not dispatch an SDK tool");
     };
@@ -267,9 +292,9 @@ for (const backend of ["mcp", "addin"])
       "fusion_mcp_execute",
       manifest,
     );
-    assert.equal(received.origin.artifactHash, source.artifactHash);
+    assert.equal(at(received, "origin", "artifactHash"), source.artifactHash);
     assert.equal(
-      received.payload.params.name,
+      at(received, "payload", "params", "name"),
       backend === "addin" ? "execute_python" : "fusion_mcp_execute",
     );
     assert.deepEqual(protocol, []);
@@ -286,7 +311,11 @@ for (const backend of ["mcp", "addin"])
       { code: "PYTHON_CONTEXT_CHANGED" },
     );
     assert.equal(received, null);
-    assert.deepEqual(protocol, [], "Invalid source inventory sends no protocol requests");
+    assert.deepEqual(
+      protocol,
+      [],
+      "Invalid source inventory sends no protocol requests",
+    );
   });
 
 test("conditional run contract checks real module bindings and refuses unresolved dynamic entrypoints", async () => {
@@ -295,7 +324,7 @@ test("conditional run contract checks real module bindings and refuses unresolve
     definitionsRoot: path.join(runtime, "typing"),
     pythonPlatform: "Windows",
   });
-  const check = (source) =>
+  const check = (source: string) =>
     checker.check({
       artifact: preparePythonArtifact([
         { id: "user", filename: "conditional.py", source, role: "user" },
@@ -327,7 +356,9 @@ test("actual cad-v1 helper stage receipt retains all source units and namespace 
     'ARGS = []\nDOC_NAME = ""\ndef run(context: str) -> None:\n    stage = FMCAD.stage()\n    journal = FMCAD.journalInspect()\n    plan = FMCAD.resumePlan()\n    print(stage, journal, plan)\n';
   const file = path.join(directory, "stage.py");
   fs.writeFileSync(file, source);
-  const original = require("../src/run").prepareRunScript(
+  const original = (
+    load("../src/run") as typeof import("../src/composition/run")
+  ).prepareRunScript(
     file,
     [],
     false,
@@ -346,16 +377,21 @@ test("actual cad-v1 helper stage receipt retains all source units and namespace 
     ),
     pythonArtifactManifest(original),
   );
-  assert.equal(final.context.origin.units.length, original.units.length);
-  assert.ok(final.context.origin.units.length > 100);
-  assert.deepEqual(final.context.origin.context.unitContexts["user-script"], {
-    kind: "cad-v1",
-    deferredFacade: true,
-    entrypoint: "run-if-present",
-  });
+  assert.equal(retainedOrigin(final).units.length, original.units.length);
+  assert.ok(retainedOrigin(final).units.length > 100);
+  assert.deepEqual(
+    at(retainedOrigin(final).context, "unitContexts", "user-script"),
+    {
+      kind: "cad-v1",
+      deferredFacade: true,
+      entrypoint: "run-if-present",
+    },
+  );
   const contexts = pythonUnitContexts(final);
   const helper = final.units.find((unit) => unit.filename === file);
-  const combined = final.units.find((unit) => unit.filename === "<fmcad-queue>");
+  const combined = final.units.find(
+    (unit) => unit.filename === "<fmcad-queue>",
+  );
   assert.ok(helper && combined);
   assert.deepEqual(contexts[helper.id], {
     kind: "cad-v1",
@@ -375,7 +411,9 @@ test("actual cad-v1 helper stage context is typed and retained in the final rece
     'ARGS = []\nDOC_NAME = ""\ndef run(context: str) -> None:\n    stage = FMCAD.stage()\n    journal = FMCAD.journalInspect()\n    plan = FMCAD.resumePlan()\n    print(stage, journal, plan)\n';
   const file = path.join(directory, "stage.py");
   fs.writeFileSync(file, source);
-  const original = require("../src/run").prepareRunScript(
+  const original = (
+    load("../src/run") as typeof import("../src/composition/run")
+  ).prepareRunScript(
     file,
     [],
     false,
@@ -393,15 +431,18 @@ test("actual cad-v1 helper stage context is typed and retained in the final rece
   );
   const final = retainPythonOrigin(wrapped, pythonArtifactManifest(original));
   const certificate = await admission().check(official(final.script), final);
+  assert.ok(certificate.report);
   assert.equal(
     certificate.report.status,
     "passed",
     JSON.stringify(certificate.report.diagnostics),
   );
   assert.equal(
-    pythonUnitContexts(final)[
-      final.units.find((unit) => unit.filename === file).id
-    ].deferredFacade,
+    present(
+      pythonUnitContexts(final)[
+        present(final.units.find((unit) => unit.filename === file)).id
+      ],
+    ).deferredFacade,
     true,
   );
   const invalid = file.replace(/stage\.py$/, "invalid.py");
@@ -409,7 +450,9 @@ test("actual cad-v1 helper stage context is typed and retained in the final rece
     invalid,
     'ARGS = []\nDOC_NAME = ""\ndef run(context: str) -> None:\n    FMCAD.stage().not_an_owner_receipt()\n',
   );
-  const invalidOriginal = require("../src/run").prepareRunScript(
+  const invalidOriginal = (
+    load("../src/run") as typeof import("../src/composition/run")
+  ).prepareRunScript(
     invalid,
     [],
     false,
@@ -431,10 +474,11 @@ test("actual cad-v1 helper stage context is typed and retained in the final rece
   await assert.rejects(
     admission().check(official(invalidFinal.script), invalidFinal),
     (error) =>
-      error.code === "PYTHON_CHECK_REJECTED" &&
-      error.pythonCheck.diagnostics.some(
+      record(error)["code"] === "PYTHON_CHECK_REJECTED" &&
+      diagnostics(error).some(
         (d) =>
-          d.rule === "reportAttributeAccessIssue" && d.filename === invalid,
+          d["rule"] === "reportAttributeAccessIssue" &&
+          d["filename"] === invalid,
       ),
   );
 });
@@ -453,7 +497,7 @@ test("direct checker snapshots valid mutable input before asynchronous analysis"
       role: "user",
     },
   ]);
-  const input = {
+  const input: import("@fmcad/core").PythonCheckRequest = {
     artifact: structuredClone(original),
     context: { kind: "raw" },
   };
@@ -472,7 +516,10 @@ test("direct checker snapshots valid mutable input before asynchronous analysis"
   const result = await pending;
   assert.equal(result.status, "passed");
   assert.equal(result.provenance.artifactHash, original.artifactHash);
-  const namespaces = {
+  const namespaces: {
+    artifact: PreparedPythonArtifact;
+    context: { kind: "raw"; app?: boolean };
+  } = {
     artifact: preparePythonArtifact([
       {
         id: "user",
@@ -525,9 +572,9 @@ test("large final receipt uses bounded source files without raising diagnostic l
       assert.ok(
         report.diagnostics.some(
           (d) =>
-            d.filename === "large.py" &&
-            d.line === 3 &&
-            d.rule === "reportAssignmentType",
+            d["filename"] === "large.py" &&
+            d["line"] === 3 &&
+            d["rule"] === "reportAssignmentType",
         ),
       );
   }
@@ -539,7 +586,7 @@ test("large final receipt uses bounded source files without raising diagnostic l
     context: { kind: "raw" },
   });
   assert.ok(
-    hidden.diagnostics.some((d) => d.rule === "reportMissingImports"),
+    hidden.diagnostics.some((d) => d["rule"] === "reportMissingImports"),
     "The local inventory helper must not become an importable SDK dependency",
   );
   const longName = "logical-" + "x".repeat(2048) + ".py";
@@ -571,8 +618,15 @@ test("large final receipt uses bounded source files without raising diagnostic l
 });
 
 test("generated typed literals preserve JSON values and do not introduce dynamic loader types", async () => {
-  const { pythonLiteral } = require("../src/python");
-  const decode = require("./fixtures/python-literal.cjs");
+  const { pythonLiteral } = load(
+    "../src/python",
+  ) as typeof import("../packages/node-adapters/src/python/artifact") &
+    typeof import("../packages/node-adapters/src/python/context-binding") &
+    typeof import("../packages/node-adapters/src/python/checker") &
+    typeof import("../packages/node-adapters/src/python/admission");
+  const decode = load("./fixtures/python-literal.cjs") as (
+    source: string,
+  ) => unknown;
   for (const value of [
     {
       unicode: "😀 日本語",
@@ -598,7 +652,7 @@ test("generated typed literals preserve JSON values and do not introduce dynamic
       JSON.parse(JSON.stringify(value)),
     );
   assert.throws(() => pythonLiteral(undefined), /serializable/);
-  const cycle = {};
+  const cycle: { self?: unknown } = {};
   cycle.self = cycle;
   assert.throws(() => pythonLiteral(cycle));
   assert.throws(() => pythonLiteral(1n));
@@ -613,15 +667,43 @@ test("generated typed literals preserve JSON values and do not introduce dynamic
 });
 
 test("persisted manifest boundary validates source inventory before canonical reconstruction", () => {
-  const artifact = original(), manifest = pythonArtifactManifest(artifact);
-  assert.deepEqual(bindPythonArtifactManifest(artifact.script, JSON.parse(JSON.stringify(manifest))), manifest);
-  for (const value of [null, [], 1, { ...manifest, units: null }, { ...manifest, sourceMap: {} }])
-    assert.throws(() => bindPythonArtifactManifest(artifact.script, value), { code: "PYTHON_CONTEXT_CHANGED" });
+  const artifact = original(),
+    manifest = pythonArtifactManifest(artifact);
+  assert.deepEqual(
+    bindPythonArtifactManifest(
+      artifact.script,
+      JSON.parse(JSON.stringify(manifest)),
+    ),
+    manifest,
+  );
+  for (const value of [
+    null,
+    [],
+    1,
+    { ...manifest, units: null },
+    { ...manifest, sourceMap: {} },
+  ])
+    assert.throws(() => bindPythonArtifactManifest(artifact.script, value), {
+      code: "PYTHON_CONTEXT_CHANGED",
+    });
   for (const change of [
-    m => { m.units[0].source = 3; }, m => { m.units[0].role = "invented"; },
-    m => { m.units[0].id = null; }, m => { m.sourceMap[0].unitId = []; },
+    (m: MutableManifest) => {
+      present(m.units[0])["source"] = 3;
+    },
+    (m: MutableManifest) => {
+      present(m.units[0])["role"] = "invented";
+    },
+    (m: MutableManifest) => {
+      present(m.units[0])["id"] = null;
+    },
+    (m: MutableManifest) => {
+      present(m.sourceMap[0])["unitId"] = [];
+    },
   ]) {
-    const changed = structuredClone(manifest); change(changed);
-    assert.throws(() => bindPythonArtifactManifest(artifact.script, changed), { code: "PYTHON_CONTEXT_CHANGED" });
+    const changed = mutableManifest(manifest);
+    change(changed);
+    assert.throws(() => bindPythonArtifactManifest(artifact.script, changed), {
+      code: "PYTHON_CONTEXT_CHANGED",
+    });
   }
 });
