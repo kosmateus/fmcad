@@ -340,5 +340,23 @@
     "sourcePath": "src/queue-epoch-successor-control.js",
     "file": "queue-epoch-successor-control-330849f.js.txt",
     "sha256": "1b1dc894519eb84f46118d148d7c33926c361dd746061b2f332034a85c0b06c5"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-native-fixture-grant.js",
+    "file": "queue-native-fixture-grant-dce47c5.js.txt",
+    "sha256": "7ffae9dc42884db224cd15f18e26d4301d9d33c9b07f27a696927dd9f432ad3d"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-scratch-qualification.js",
+    "file": "queue-scratch-qualification-dce47c5.js.txt",
+    "sha256": "85c0cb4ed25b8a13b073efdd0d014ae969f41685009cdd435f23ebd92258ed4c"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "scripts/upgrade-epoch-checker.cjs",
+    "file": "upgrade-epoch-checker-dce47c5.cjs.txt",
+    "sha256": "595d28cff3cce782a50fbb8b65d576320a6e0611dfe9ba5829ce056fe96db735"
   }
 ]

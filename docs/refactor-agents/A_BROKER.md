@@ -653,3 +653,36 @@ operation: the original owner, digest, purpose and process fences still apply.
 Two boundary tests and all 28 existing epoch handoff/crash-recovery tests pass;
 strict compile/lint pass. The older idle-budget test now respects TMPDIR.
 These schemas are the dependency for B's remaining operational upgrade script.
+
+## Scratch, native fixture and operational upgrade continuation
+
+The canonical scratch qualification and native fixture grant sources are now
+strict TypeScript. Unknown file/message records are checked before they provide
+paths, identifiers or authority. Final generated Python, artifact provenance,
+captured active-document restoration, exact native operation/source scopes and
+exclusive grant publication retain the immediate `dce47c5` predecessor behavior.
+Five paired cases execute those paths and check complete artifacts and immutable
+files; they pass without a native process. The retained real checker and Linux
+process suites remain required separately.
+
+A paired historical counterexample identifies one inherited defect: the old
+fixture validator accepted an otherwise valid manifest when both the grant and
+the supplied identity omitted build/source pins. The new validator requires an
+actual 64-character build hash and 40-character source commit. Matching absent
+values cannot authorize native execution; valid pinned grants remain equal.
+
+The operational checker-upgrade script now consumes the existing checked
+operator evidence schema and canonical handoff ports. Three paired predecessor
+cases pass: argument refusal before effects; a retained launch intent prevents
+any second child launch after uncertainty; and identical identity publication
+can resume while changed identity or foreign guards remain rejected. These are
+synthetic effect-port tests, not process/Fusion qualification. The complete
+existing handoff/crash-recovery and Linux process suites still apply.
+
+Strict standalone source/test compilation and focused lint pass. The emitted
+atomic-wire declaration now names the canonical return type rather than retaining
+an unused runtime binding; this repairs the current declaration lint CI failure.
+G must register the two new test files, canonical runtime sources and operator
+CTS launcher, and run the final integrated matrix. Remaining A work includes
+the audit response/facts/ABI and settled-evidence readers, closed succession,
+platform launchers, and the project-history activity fence shared with F.
