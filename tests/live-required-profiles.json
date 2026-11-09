@@ -740,7 +740,9 @@
             "mcp",
             "addin"
           ],
-          "cleanup": "Parent exact owned close/delete and foreign inventory audit only after both original phases succeed. Any failed/malformed/unknown result retains fixture and original request evidence without replay; inspect native restore before manual resolution."
+          "cleanup": "Parent exact owned close/delete and foreign inventory audit only after both original phases succeed. Any failed/malformed/unknown result retains fixture and original request evidence without replay; inspect native restore before manual resolution.",
+          "sourceSha256": "9f777a3a6235d75c9568650fa197d8704a9c6a3cc9e3ea8eb55c195a7a13b0f5",
+          "continuationSourceSha256": "9389aa6f1ba70ee39d21db21a0f4af2bbcfba6d6d803f5564b0eafe85f29d2de"
         }
       ]
     }
