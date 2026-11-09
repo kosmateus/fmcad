@@ -806,3 +806,50 @@ after each case. Strict compilation and focused lint pass. Execution of this new
 emitted batch remains required after the current integration staging; historical
 runtime-dependent cases require the private fixture in addition to the thirteen
 public portable cases described above.
+
+## Checker concurrency diagnostic, unchanged baseline
+
+A production metadata probe was prepared through the existing `prepareProbe`
+port, reconstructed with exactly the same artifact hash, and admitted by the real
+checker without calling the returned SDK sender. Fresh Node processes used the
+same immutable baseline, source, definitions and default 30-second engine limit;
+checker caching remained disabled. Sampling recorded engine process count/RSS and
+cgroup CPU use on the four-CPU, 16-GiB local environment.
+
+| Concurrent checks | Whole admission | Engine wall time | Result |
+| --- | --- | --- | --- |
+| 1, while source-tool launchers were active | 34.93 s | 30.56 s | timeout |
+| 2, all team tools paused | 8.45 s | 6.40–7.14 s | 2/2 passed |
+| 4, all team tools paused | 15.82 s | 11.57–13.27 s | 4/4 passed |
+| 1, repeated with all team tools paused | 4.86 s | 4.04 s | passed |
+
+The admission parent used 22.72 CPU-seconds in the first run versus 1.20 in the
+quiet repeated single-checker run; the latter had no cgroup throttling. Quiet
+engines peaked around 387–432 MiB each. Source-tool contention and warm filesystem
+caches were not independently controlled, so this diagnoses environment-sensitive
+performance rather than proving one exclusive cause. It does not justify changing
+admission deadlines, assertions or scheduler limits. The existing four-worker
+preparation, parallel offline work, single SDK queue and configurable scenario
+concurrency (Fusion default 10) remain unchanged. Final installed/exact-commit CI
+and the actual concurrency-10 profile remain required; this probe measurement is
+not an end-to-end scenario or native qualification.
+
+
+## Retained evidence regressions: strict source continuation
+
+The existing atomic-observation-binding, audit-response-protocol,
+audit-facts-capture, closed-epoch-proof, settled-epoch-evidence and
+epoch-dead-process suites now have canonical strict TypeScript sources. Their
+81 original assertion ASTs and 21 test declarations are preserved exactly after
+erasing types and normalizing equivalent property access; two additional
+assertions narrow an existing string ID and fixed-program fixture variant.
+Embedded subprocess code remains unchanged. The deliberately missing CLI ports
+and malformed persisted records remain missing/malformed at the tested boundary.
+
+Strict compilation and focused lint pass. Runtime execution of this emitted
+batch remains pending in the integration queue. The earlier eight/seven source
+batches also now place value imports before CommonJS initializers: TypeScript
+acceptance alone did not detect that emitted `createRequire(path.join(...))`
+could previously run before the `path` import. Their emitted executions must be
+rerun; previous runs of retained JavaScript prove behavior but do not qualify
+these new emitted entrypoints.
