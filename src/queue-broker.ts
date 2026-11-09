@@ -883,6 +883,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const preparedPosts = new WeakMap<P.Rpc, P.Prepared | P.PreparedPost>();
   const preparingJob = new AsyncLocalStorage<P.Job | false>();
   const preparingSignal = new AsyncLocalStorage<AbortSignal>();
+  function localCheckOptions() {
+    const signal = preparingSignal.getStore();
+    return signal ? { signal } : {};
+  }
   const preparedCalls = new WeakMap<P.WorkerMessage, P.Send>();
   const rawPreparedPosts = new Map<string, P.Prepared>();
   const flightPlans = new Map<
@@ -915,7 +919,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             pythonCertificate: await pythonAdmission.check(
               outgoing,
               unownedArtifact,
-              { signal: preparingSignal.getStore() },
+              localCheckOptions(),
             ),
             contextEpoch,
           };
@@ -2300,7 +2304,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const pythonCertificate = await pythonAdmission.check(
       outgoing,
       pythonArtifact,
-      { signal: preparingSignal.getStore() },
+      localCheckOptions(),
     );
     const prepared: P.Prepared = {
       outgoing,

@@ -83,3 +83,13 @@ tests/partition-bench-*/
 /docs/COMMAND_COVERAGE.md
 
 /tests/fixtures/historical-module.cjs
+
+/src/queue-admission.js
+/src/queue-admission.d.ts
+/src/queue-fixed-fixture-admission.js
+/src/queue-fixed-fixture-admission.d.ts
+
+/src/queue-instance-liveness.js
+/src/queue-instance-liveness.d.ts
+/src/queue-epoch-lineage.js
+/src/queue-epoch-lineage.d.ts

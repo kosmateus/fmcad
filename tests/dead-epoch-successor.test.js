@@ -3,13 +3,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const api = require('../src/queue-instance');
 const lineage = require('../src/queue-epoch-lineage');
 const { openIsolatedEpoch, isolatedEpochDirectory } = require('../src/queue-isolated-epoch');
 const { assertSuccessorApproval, assertCurrentPredecessor } = require('../src/queue-epoch-successor');
 
 function fixture(t, options) {
-  const base = fs.mkdtempSync('/tmp/opencode/dead-epoch-successor-');
+  // Only spell Windows receipt paths for these synthetic physical ports.
+  t.after(require('./fixtures/fake-wsl-platform.cjs')());
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'dead-epoch-successor-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   return require('./fixtures/dead-epoch-successor.cjs')(base, path.resolve(__dirname, '..'), options);
 }

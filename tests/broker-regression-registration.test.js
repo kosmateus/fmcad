@@ -22,6 +22,10 @@ test("CI executes every retained broker regression family and its historical com
     "queue-native-receipt",
     "queue-probe-recovery",
     "queue-snapshot-size",
+    "dead-epoch-successor",
+    "closed-epoch-successor",
+    "instance-loss-recovery",
+    "queue-atomic-recovery-audit",
   ];
   for (const name of required)
     assert.ok(files.includes(`tests/${name}.test.js`), name);

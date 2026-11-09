@@ -477,3 +477,35 @@ files, 3,385,022 compressed bytes and 16,694,315 unpacked bytes, shasum
 No facade is retired. General solver/topology, definitions/batch migration,
 semantic assertion mapping, owner checklists and exact candidate/merge-head CI
 keep G and offline acceptance incomplete.
+
+### Sixteenth A–F merge checkpoint
+
+Current main `330849f` integrates Agent A's PR #51 admission head `bed4300` and
+the stacked authenticated epoch/publication head `d9def49`. Their exact workflows
+`42526553187` and `42531951000` each passed 24/24 jobs; integrated main separately
+passed 24/24 in `42652902241`.
+
+The previous G candidate `f6462a5` is explicitly rejected because full CI
+`42563032582` failed. Its first jobs page records fifteen expanded broker-profile
+timeouts plus two MCP contract failures. Downloaded artifacts show work advancing
+through the unchanged real checker and one physical SDK lane when the 12-minute
+wrapper cancelled cleanup. G retains ten owners, both protocols, concurrency
+1/2/10 and every assertion, and assigns measured budgets of 58/65 minutes for
+rectangles, 34/40 for reopen and 24/30 for revisions (command/job). The two MCP
+process fixtures now install the existing fake-WSL adapter before generating
+Windows paths; production platform detection and receipt guards are unchanged.
+
+Coverage becomes 498 test sources / 259 registered / 239 explicit gaps. Build,
+format, lint, strict test types, 163 scenario units, simulator typing, the
+61-method / 21-property API verifier and 9/9 registration checks pass locally.
+This host's retained `/proc/<pid>/stat` guard blocks broker/installed transport
+execution, and its isolated offline MCP install lacks cached `basedpyright`
+metadata; neither result is waived or presented as installed acceptance.
+
+Runtime inventory remains 674 files and 420 public routes. Package inspection is
+1,621 files, 3,390,373 compressed bytes and 16,720,426 unpacked bytes, shasum
+`6a8d4dd7f337c88fed1ff6706904fc1352410efb`. No active loader/facade is removed.
+The native plan remains 66 shared commands, 27 obligations and nine diagnostics,
+all `NOTRUN`; Fusion was not executed. A3/A4, all owner checklists, semantic and
+registration debt, installed measurements and exact candidate/merge-head CI keep
+offline acceptance incomplete and native qualification separate.

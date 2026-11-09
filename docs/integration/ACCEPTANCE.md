@@ -52,7 +52,7 @@ before any integration; record exact merged SHA and full matrix results here.
 
 | Package | Observed delivery              | Required evidence / remaining disposition                                                                             |
 | ------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| A       | PR #42 merged as `171c972`     | A1 broker gates restored; A2–A4 admission/recovery/concurrency still required.                                        |
+| A       | PR #51 and coordinator integration `330849f` | Admission plus authenticated epoch/publication work integrated; remaining A3/A4 controllers and concurrency scope still required. |
 | B       | Deliveries merged through `6c9f6c5` | Persistence, assertion/profile increments, receipt-bound reopen/revision and bounded rectangle regeneration; semantic assertion mapping and remaining lifecycle migration stay open. |
 | C       | PR #37 `a4943f3`               | Claim only at observation; canonical modeling services, Python boundaries and negative/readback evidence required.    |
 | D       | PR #38 `ee0fd54`               | Claim only at observation; file/source/version/publication and recovery contracts required.                           |
@@ -664,3 +664,58 @@ No facade is retired. General solver/topology behavior, definitions and batch
 scenario migration, semantic assertion disposition, package checklists, fresh
 candidate CI and eventual merge-head CI remain open. Offline acceptance is still
 incomplete; native qualification remains a separate real-Fusion milestone.
+
+## Sixteenth merged A–F checkpoint — broker admission and authenticated recovery evidence
+
+Current main `330849f22302bcf0ee955cd1945ddb2040eff8c7` contains Agent A's
+admission delivery from PR #51 and the stacked authenticated epoch/publication
+head `d9def497fe88a7594c19f0044fadf04f0dcf4d51`. PR #51's exact head
+`bed43003745b67d4d6795e600fc40af85fb1daa1` passed all 24 jobs in workflow
+`42526553187`; the stacked head passed 24/24 in `42531951000`. The integrated
+main merge head independently passed 24/24 in workflow `42652902241`. These are
+immutable owner and merge-head results, not substitutes for fresh CI on G's
+combined candidate.
+
+The typed admission boundary retains source hashes, prepared bytes, request and
+receipt metadata through the real Python checker and refuses replacements before
+execution. Typed instance-liveness and epoch-lineage boundaries authenticate one
+evidence read, while per-receipt publication prevents another owner from receiving
+activation. Unknown outcomes remain unreplayed. The broker selection now retains
+dead/closed successor, instance-loss and atomic recovery audit suites alongside
+the original six broker families.
+
+G's previous exact candidate `f6462a5ca4f0aef82560f754b15280099312d822`
+is rejected: workflow `42563032582` concluded failure. The first jobs page records
+15 expanded profile jobs ending with exit 124 and two contract failures caused by
+the same missing fake-WSL fixture. Retained artifacts prove that the profile
+assertions were progressing through the real checker and serialized SDK lane when
+the 12-minute wrapper cancelled them: the concurrency-1 rectangle artifact had
+two owners passed and a third in settled cleanup; reopen had four passed and a
+fifth in cleanup; revision concurrency 10 had all ten owners progressing through
+their final lifecycle phases. No assertion or owner count is removed. CI now uses
+measured suite-specific command/job budgets (rectangles 58/65 minutes, reopen
+34/40, revisions 24/30) and keeps MCP/addin, concurrency 1/2/10 and ten owners.
+
+The two process MCP contract fixtures now install the repository's existing
+fake-WSL platform adapter before emitting Windows paths. Production detection,
+path validation, process identity, receipts and assertions remain unchanged.
+Local registration checks pass 9/9, the profile guard passes 2/2, all 163 scenario
+units pass, simulator typing has zero diagnostics, and the API verifier reports
+61 methods / 21 properties. This host still cannot supply `/proc` process-birth
+evidence; its installed transport attempt fails at the retained `/proc/<pid>/stat`
+guard, and the isolated MCP install additionally lacks cached `basedpyright`
+metadata. Those are not waived installed-package results; exact-candidate Linux
+CI remains required.
+
+Static coverage is now 498 test sources / 259 registered / 239 explicit gaps.
+Runtime inventory remains 674 files and public routes remain 420. Package
+inspection reports 1,621 files, 3,390,373 compressed bytes and 16,720,426
+unpacked bytes, shasum `6a8d4dd7f337c88fed1ff6706904fc1352410efb`.
+No facade is retired because active source and installed consumers remain.
+
+The schema-2 native generator still emits 66 shared command arrays, 27 native
+obligations and nine diagnostics, all `NOTRUN`; Fusion was not started. Remaining
+A3/A4 controllers, A–F completion checklists, 239 registration gaps, semantic
+assertion dispositions, installed profiles/measurements, fresh candidate CI and
+eventual merge-head CI keep offline acceptance **INCOMPLETE**. Native qualification
+remains a separate post-offline milestone requiring real Fusion access.
