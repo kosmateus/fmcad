@@ -23,10 +23,41 @@ import { createSelectControls } from "./select-controls.js";
 import { correlate, nonemptyId, type ConsoleRow } from "./read-model.js";
 import { localeText } from "./locale-runtime.js";
 import {
+  createAgentsProjectsFeature,
+  renderAgentDetail,
+  renderAgentList,
+  renderProjectActionDialog,
+  renderProjectActionStatus,
+  renderProjectList,
+  renderTechnicalSessionDetail,
+  renderTechnicalSessions,
+  type AgentFilter,
+  type AgentAliasIdentity,
+  type AgentsProjectsLocaleText,
+  type ProjectActionResponse,
+  type ProjectListFilter,
+  type TechnicalSessionFilter,
+} from "./agents-projects.js";
+import {
   mountLocaleSelector,
   type LocaleSelectorHandle,
 } from "./locale-selector.js";
 import type { MessageKey } from "./locale-catalogs.js";
+import {
+  createSystemControlCommand,
+  renderSystemControlConfirmation,
+  renderSystemControlReceipt,
+  renderSystemControls,
+  SystemControlsClient,
+  SystemControlsClientError,
+} from "./system-controls.js";
+import type {
+  SystemControlAction,
+  SystemControlCommand,
+  SystemControlReceipt,
+  SystemControlStatus,
+} from "../contracts/system-controls.js";
+import type { ConsoleProjectRecord } from "../contracts/query.js";
 
 type Collection = QueryRequest["collection"];
 type TableName = "tasks" | "agents" | "logs";
@@ -37,8 +68,15 @@ type TableRequestOptions = Partial<
   >
 >;
 type Row = Record<string, unknown>;
-type View = "overview" | "tasks" | "agents" | "logs";
-type AuxiliaryModal = "filter" | "search" | "settings" | "help" | "export";
+type View = "overview" | "tasks" | "agents" | "logs" | "system" | "projects";
+type AuxiliaryModal =
+  | "filter"
+  | "search"
+  | "settings"
+  | "help"
+  | "export"
+  | "project-action"
+  | "system-control-confirm";
 type LoadState = {
   scope: QueryScope;
   snapshotToken: string | null;
@@ -82,9 +120,113 @@ type ModalState =
       agent: Row;
       projectId: string;
       revision: Revision | null;
+      snapshotToken: string;
+      tasks: readonly Row[] | null;
+      files: readonly Row[] | null;
+      taskOffset: number;
+      taskTotal: number | null;
+      projectArchived: boolean;
+      loading: boolean;
       returnTask?: Extract<ModalState, { type: "task" }>;
+    }
+  | {
+      type: "session";
+      session: Row;
+      projectId: string;
+      snapshotToken: string;
+      revision: Revision | null;
+      tasks: readonly Row[] | null;
+      events: readonly Row[] | null;
+      taskOffset: number;
+      taskTotal: number | null;
+      loading: boolean;
     };
 type AgentReturn = Extract<ModalState, { type: "agent" }>;
+type ProjectActionDialog = {
+  project: Row;
+  action: "archive" | "restore";
+  revision: Revision;
+  status: ProjectActionResponse | null;
+};
+type AgentsProjectsFeaturePage = {
+  snapshot: { snapshotToken: string; revision: Revision };
+  page: QueryPage<Row>;
+  rows: readonly Row[];
+};
+type AgentsProjectsFeatureApi = {
+  projectRevision(projectId: string): Promise<Revision>;
+  favoriteProject(projectId: string, favorite?: boolean): boolean;
+  isFavorite(projectId: string): boolean;
+  listTechnicalSessions(
+    scope: QueryScope,
+    input: {
+      filter?: TechnicalSessionFilter;
+      search?: string;
+      offset?: number;
+      limit?: number;
+    },
+  ): Promise<AgentsProjectsFeaturePage>;
+  listAgents(
+    scope: QueryScope,
+    input: {
+      filter?: AgentFilter;
+      search?: string;
+      offset?: number;
+      limit?: number;
+    },
+  ): Promise<AgentsProjectsFeaturePage>;
+  listAgentTasks(
+    projectId: string,
+    agent: Row,
+    input: { offset?: number; limit?: number },
+  ): Promise<AgentsProjectsFeaturePage>;
+  taskDetailsForFile(
+    projectId: string,
+    file: Row,
+    snapshotToken: string,
+  ): Promise<{
+    task: Row;
+    artifact: ArtifactResult | null;
+    artifactUnavailable: boolean;
+    unavailableMessage: string | null;
+  }>;
+  setProjectAlias(
+    projectId: string,
+    alias: string,
+    revision: Revision,
+  ): Promise<ProjectActionResponse>;
+  resetProjectAlias(
+    projectId: string,
+    revision: Revision,
+  ): Promise<ProjectActionResponse>;
+  setAgentAlias(
+    projectId: string,
+    identity: AgentAliasIdentity,
+    alias: string,
+    revision: Revision,
+  ): Promise<ProjectActionResponse>;
+  resetAgentAlias(
+    projectId: string,
+    identity: AgentAliasIdentity,
+    revision: Revision,
+  ): Promise<ProjectActionResponse>;
+  archiveProject(
+    projectId: string,
+    revision: Revision,
+  ): Promise<ProjectActionResponse>;
+  restoreProject(
+    projectId: string,
+    revision: Revision,
+  ): Promise<ProjectActionResponse>;
+};
+
+const agentsProjectsLocale: AgentsProjectsLocaleText = {
+  t: (key, params) => localeText.t(key as MessageKey, params),
+  formatNumber: (value) => localeText.formatNumber(value),
+  formatDate: (value) => localeText.formatDate(value),
+  formatDuration: (milliseconds) => localeText.formatDuration(milliseconds),
+  subscribe: (listener) => localeText.subscribe(() => listener()),
+};
 
 const ICON_PATHS: Readonly<Record<string, string>> = {
   grid: "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z",
@@ -338,6 +480,8 @@ export interface ControlCenterOptions {
 
 export class ControlCenterApp {
   readonly #api: ConsoleQueryClient;
+  readonly #agentsProjects: AgentsProjectsFeatureApi;
+  readonly #systemControls: SystemControlsClient;
   readonly #root: HTMLElement;
   readonly #selects = createSelectControls();
   readonly #listeners = new AbortController();
@@ -348,12 +492,34 @@ export class ControlCenterApp {
   #modalGeneration = 0;
   #toastTimer: number | null = null;
   #localeRenderQueued = false;
+  #systemControlsInitialized = false;
+  #systemControlsMount = 0;
+  #systemControlsReadSerial = 0;
+  #systemControlStatus: SystemControlStatus | null = null;
+  #systemControlReceipt: SystemControlReceipt | null = null;
+  #systemControlAction: SystemControlAction | null = null;
   #scope: QueryScope = { kind: "global" };
   #view: View = "overview";
   #visible: LoadState | null = null;
   #latest: LoadState | null = null;
   #projects: readonly Row[] = [];
   #projectTotal: number | null = null;
+  #projectFilter: ProjectListFilter = "all";
+  #projectsSearch = "";
+  #projectRevisions = new Map<string, Revision>();
+  #projectRevisionKey = "";
+  #projectRevisionLoad = 0;
+  #projectActionDialog: ProjectActionDialog | null = null;
+  #projectActionBusy = false;
+  #technicalSessions: readonly Row[] | null = null;
+  #technicalSessionsSource = "";
+  #technicalSessionFilter: TechnicalSessionFilter = "all";
+  #workingAgents: readonly Row[] | null = null;
+  #workingAgentsLoading = false;
+  #workingAgentsUnavailable = false;
+  #workingAgentLoad = 0;
+  #agentViewLoad = 0;
+  #projectRevisionStatus = "";
   #modal: ModalState | null = null;
   #modalReturnFocus: HTMLElement | null = null;
   #source: EventSource | null = null;
@@ -364,7 +530,7 @@ export class ControlCenterApp {
   #follow = true;
   #mobile = false;
   #taskRange: "all" | "open" | "history" = "all";
-  #agentRange: "all" | "confirmed" | "history" = "all";
+  #agentRange: AgentFilter = "all";
   #logLevel = "all";
   #search = "";
   #page = 1;
@@ -398,6 +564,12 @@ export class ControlCenterApp {
     this.#root = root;
     const origin = options.origin ?? window.location.origin;
     this.#api = options.client ?? new ConsoleQueryClient(origin);
+    this.#agentsProjects = createAgentsProjectsFeature({
+      query: this.#api,
+      actions: { execute: (request) => this.#api.projectAction(request) },
+      localeText: agentsProjectsLocale,
+    }) as unknown as AgentsProjectsFeatureApi;
+    this.#systemControls = new SystemControlsClient(origin);
     this.#refreshInterval =
       options.refreshIntervalMs ?? this.#readRefreshInterval();
     const signal = this.#listeners.signal;
@@ -410,9 +582,17 @@ export class ControlCenterApp {
     document.addEventListener("change", (event) => this.#onChange(event), {
       signal,
     });
+    document.addEventListener("submit", (event) => this.#onSubmit(event), {
+      signal,
+    });
     document.addEventListener("keydown", (event) => this.#onKeyDown(event), {
       signal,
     });
+    document.addEventListener(
+      "click",
+      (event) => this.#onSystemControlsClick(event),
+      { signal },
+    );
     this.#unsubscribeLocale = localeText.subscribe(() => {
       this.#syncDocumentLocale();
       if (!this.#started || this.#localeRenderQueued) return;
@@ -430,6 +610,11 @@ export class ControlCenterApp {
   start(): Promise<void> {
     if (this.#listeners.signal.aborted) return Promise.resolve();
     if (this.#startPromise) return this.#startPromise;
+    const initialProject = new URL(window.location.href).searchParams.get(
+      "project",
+    );
+    if (initialProject)
+      this.#scope = { kind: "project", projectId: initialProject };
     this.#started = true;
     this.#syncDocumentLocale();
     this.#render();
@@ -451,6 +636,11 @@ export class ControlCenterApp {
     if (this.#toastTimer !== null) window.clearTimeout(this.#toastTimer);
     document.getElementById("toast")?.classList.remove("visible");
     this.#loadGeneration += 1;
+    this.#systemControlsReadSerial += 1;
+    this.#systemControlsMount += 1;
+    this.#agentViewLoad += 1;
+    this.#workingAgentLoad += 1;
+    this.#projectRevisionLoad += 1;
     this.#unsubscribeLocale?.();
     this.#unsubscribeLocale = null;
     this.#localeSelector?.dispose();
@@ -460,6 +650,17 @@ export class ControlCenterApp {
     this.#source = null;
     if (this.#refreshTimer !== null) window.clearTimeout(this.#refreshTimer);
     if (this.#searchTimer !== null) window.clearTimeout(this.#searchTimer);
+    this.#modal = null;
+    this.#auxiliaryModal = null;
+    this.#projectActionDialog = null;
+    this.#modalReturnFocus = null;
+    this.#returnAgent = null;
+    this.#visible = null;
+    this.#latest = null;
+    this.#projects = [];
+    this.#projectRevisions.clear();
+    this.#technicalSessions = null;
+    this.#workingAgents = null;
     this.#root.inert = false;
     this.#root.innerHTML = "";
     document.getElementById("overlay-root")?.replaceChildren();
@@ -472,6 +673,308 @@ export class ControlCenterApp {
     if (description) description.content = localeText.t("ui.meta.description");
     const skipLink = $(".skip-link");
     if (skipLink) skipLink.textContent = localeText.t("ui.skipLink");
+  }
+
+  #mountSystemControls(): void {
+    const mount = ++this.#systemControlsMount;
+    this.#systemControlsInitialized = true;
+    void (async () => {
+      await this.#refreshSystemControls(false);
+      if (this.#listeners.signal.aborted || mount !== this.#systemControlsMount)
+        return;
+      let receipt: SystemControlReceipt | null = null;
+      try {
+        receipt = await this.#systemControls.reconcilePending();
+      } catch {
+        receipt = null;
+      }
+      if (this.#view !== "system" || mount !== this.#systemControlsMount)
+        return;
+      this.#systemControlReceipt =
+        receipt && ["accepted", "pending", "unknown"].includes(receipt.state)
+          ? receipt
+          : null;
+      await this.#refreshSystemControls(false);
+      if (this.#view === "system" && mount === this.#systemControlsMount)
+        this.#render();
+    })();
+  }
+
+  #setView(view: View): void {
+    const changed = this.#view !== view;
+    this.#view = view;
+    if (changed && view === "system") this.#mountSystemControls();
+  }
+
+  async #refreshSystemControls(
+    render = true,
+  ): Promise<SystemControlStatus | null> {
+    if (this.#listeners.signal.aborted) return null;
+    const serial = ++this.#systemControlsReadSerial;
+    let status: SystemControlStatus | null = null;
+    try {
+      status = await this.#systemControls.status(this.#scope);
+    } catch {
+      status = null;
+    }
+    if (
+      serial !== this.#systemControlsReadSerial ||
+      this.#listeners.signal.aborted
+    )
+      return null;
+    this.#systemControlStatus = status;
+    if (render) this.#render();
+    return status;
+  }
+
+  #systemControlPhaseKey(status: SystemControlStatus): MessageKey {
+    const snapshot = status.snapshot;
+    if (status.state !== "available" || !snapshot)
+      return "system.controls.phase.offline";
+    if (snapshot.unresolved || snapshot.phase === "RECOVERY_BLOCKED")
+      return "system.controls.phase.recoveryBlocked";
+    if (snapshot.activeOperations > 0 && snapshot.phase === "DRAINING")
+      return "system.controls.phase.draining";
+    switch (snapshot.phase) {
+      case "RUNNING":
+        return "system.controls.phase.running";
+      case "PAUSED":
+        return "system.controls.phase.paused";
+      case "PAUSING":
+      case "DRAINING":
+        return "system.controls.phase.pausing";
+      case "STOPPED":
+        return "system.controls.phase.stopped";
+      default:
+        return "system.controls.phase.unknown";
+    }
+  }
+
+  #systemControlErrorMessage(
+    error: unknown,
+    action?: SystemControlAction,
+  ): string {
+    const code =
+      error instanceof SystemControlsClientError ? error.code : "UNKNOWN";
+    if (code === "UNAUTHORIZED" || code === "FORBIDDEN")
+      return localeText.t("system.controls.error.unauthorized");
+    if (code === "PENDING_STORAGE_UNAVAILABLE")
+      return localeText.t("system.controls.error.storageUnavailable");
+    if (code === "STATE_CONFLICT")
+      return localeText.t("system.controls.error.generationConflict");
+    if (code === "INSTANCE_CHANGED")
+      return localeText.t("system.controls.error.instanceChanged");
+    if (code === "RECONCILIATION_REQUIRED")
+      return localeText.t("system.controls.error.reconciliationRequired");
+    if (code === "OFFLINE" || code === "BROKER_OFFLINE")
+      return localeText.t("system.controls.error.offline");
+    if (action)
+      return localeText.t("system.controls.error.unsupported", {
+        action: localeText.t(`system.controls.action.${action}` as MessageKey),
+      });
+    return localeText.t("system.controls.phase.unknown");
+  }
+
+  #systemControlsPanel(): string {
+    const status = this.#systemControlStatus;
+    if (!status) {
+      const storageUnavailable =
+        !this.#systemControls.canMutate() && !this.#systemControlReceipt;
+      const receiptMarkup = this.#systemControlReceipt
+        ? renderSystemControlReceipt(
+            this.#systemControlReceipt,
+            (key, params) => localeText.t(key as MessageKey, params),
+          )
+        : "";
+      const reconcileButton = this.#systemControlReceipt
+        ? `<button class="btn small" type="button" data-system-control-reconcile>${localeText.t("system.controls.action.reconcile")}</button>`
+        : "";
+      return `<section class="panel system-panel" role="status" aria-live="polite"><h2>${localeText.t("system.controls.title")}</h2><p class="system-note">${localeText.t(storageUnavailable ? "system.controls.error.storageUnavailable" : "ui.systemControls.unavailable")}</p><button class="btn small" type="button" data-system-control-refresh>${localeText.t("system.controls.action.refresh")}</button>${receiptMarkup}${reconcileButton}</section>`;
+    }
+    const selectedProjectId =
+      this.#scope.kind === "project" ? this.#scope.projectId : null;
+    const selectedProject = selectedProjectId
+      ? this.#projects.find((entry) => projectId(entry) === selectedProjectId)
+      : null;
+    const receipt = this.#systemControlReceipt;
+    const pendingMarkup =
+      receipt && ["accepted", "pending", "unknown"].includes(receipt.state)
+        ? `<button class="btn small" type="button" data-system-control-reconcile>${localeText.t("system.controls.action.reconcile")}</button>`
+        : "";
+    return `${renderSystemControls(
+      status,
+      this.#scope,
+      (key, params) => localeText.t(key as MessageKey, params),
+      selectedProject ? projectName(selectedProject) : undefined,
+      localeText.formatNumber,
+      receipt,
+      this.#systemControls.canMutate(),
+    )}${pendingMarkup}`;
+  }
+
+  async #openSystemControlConfirmation(
+    action: SystemControlAction,
+  ): Promise<void> {
+    if (this.#systemControlReceipt) {
+      this.#toast(localeText.t("system.controls.safety.noReplay"));
+      await this.#refreshSystemControls();
+      return;
+    }
+    if (!this.#systemControls.canMutate()) {
+      this.#toast(localeText.t("system.controls.error.storageUnavailable"));
+      await this.#refreshSystemControls();
+      return;
+    }
+    this.#systemControlAction = action;
+    const requestedProjectId =
+      this.#scope.kind === "project" ? this.#scope.projectId : null;
+    const project = requestedProjectId
+      ? this.#projects.find((entry) => projectId(entry) === requestedProjectId)
+      : null;
+    const projectLabel = project ? projectName(project) : null;
+    const markup = renderSystemControlConfirmation(
+      action,
+      projectLabel,
+      (key, params) => localeText.t(key as MessageKey, params),
+    ).replace(
+      'class="modal-overlay"',
+      'class="overlay" data-action="backdrop"',
+    );
+    this.#mountOverlay(
+      "system-control-confirm",
+      markup,
+      "[data-system-control-cancel]",
+    );
+  }
+
+  async #executeSystemControlCommand(): Promise<void> {
+    const action = this.#systemControlAction;
+    if (!action) return;
+    this.#systemControlAction = null;
+    this.#closeModalSurface();
+    const scope = this.#scope;
+    const status = await this.#refreshSystemControls(false);
+    if (
+      this.#listeners.signal.aborted ||
+      scopeKey(scope) !== scopeKey(this.#scope)
+    )
+      return;
+    if (!status) {
+      this.#toast(localeText.t("ui.systemControls.unavailable"));
+      return;
+    }
+    let command: SystemControlCommand;
+    try {
+      command = createSystemControlCommand(status, this.#scope, action);
+    } catch {
+      this.#toast(localeText.t("system.controls.error.generationConflict"));
+      return;
+    }
+    try {
+      const receipt = await this.#systemControls.execute(command);
+      this.#systemControlReceipt = ["accepted", "pending", "unknown"].includes(
+        receipt.state,
+      )
+        ? receipt
+        : null;
+      if (receipt.state === "confirmed") {
+        const refreshed = await this.#refreshSystemControls(false);
+        this.#toast(
+          localeText.t("system.controls.action.confirmed", {
+            phase: localeText.t(
+              refreshed
+                ? this.#systemControlPhaseKey(refreshed)
+                : "system.controls.phase.unknown",
+            ),
+          }),
+        );
+      } else if (receipt.state === "unknown") {
+        this.#toast(localeText.t("system.controls.action.unknown"));
+      } else if (receipt.state === "accepted" || receipt.state === "pending") {
+        this.#toast(localeText.t("system.controls.action.receiptPending"));
+      } else if (receipt.state === "conflict") {
+        this.#toast(this.#systemControlErrorMessage(receipt, command.action));
+      }
+    } catch (error) {
+      this.#systemControlReceipt = null;
+      this.#toast(this.#systemControlErrorMessage(error, command.action));
+    }
+    await this.#refreshSystemControls();
+  }
+
+  #onSystemControlsClick(event: MouseEvent): void {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const button = target.closest<HTMLElement>(
+      "[data-system-control-refresh], [data-system-control-action], [data-system-control-cancel], [data-system-control-confirm-action], [data-system-control-reconcile]",
+    );
+    if (!button) return;
+    if (button.hasAttribute("data-system-control-refresh")) {
+      event.preventDefault();
+      void this.#refreshSystemControls();
+      return;
+    }
+    if (button.hasAttribute("data-system-control-cancel")) {
+      event.preventDefault();
+      this.#systemControlAction = null;
+      this.#closeModalSurface();
+      return;
+    }
+    if (button.hasAttribute("data-system-control-confirm-action")) {
+      event.preventDefault();
+      void this.#executeSystemControlCommand();
+      return;
+    }
+    if (button.hasAttribute("data-system-control-reconcile")) {
+      event.preventDefault();
+      void this.#reconcileSystemControlReceipt();
+      return;
+    }
+    const action = button.dataset["systemControlAction"];
+    if (
+      action === "pause" ||
+      action === "drain" ||
+      action === "resume" ||
+      action === "start"
+    ) {
+      event.preventDefault();
+      void this.#openSystemControlConfirmation(action);
+    }
+  }
+
+  async #reconcileSystemControlReceipt(): Promise<void> {
+    try {
+      const receipt = await this.#systemControls.reconcilePending();
+      this.#systemControlReceipt =
+        receipt && ["accepted", "pending", "unknown"].includes(receipt.state)
+          ? receipt
+          : null;
+      if (receipt?.state === "confirmed")
+        this.#toast(
+          localeText.t("system.controls.action.confirmed", {
+            phase: localeText.t(
+              this.#systemControlPhaseKey({
+                version: 1,
+                requestedScope: receipt.requestedScope,
+                effectiveScope: { kind: "global" },
+                state: receipt.snapshot ? "available" : "unavailable",
+                observedAt: null,
+                snapshot: receipt.snapshot,
+                capabilities: {
+                  pause: false,
+                  drain: false,
+                  resume: false,
+                  start: false,
+                },
+              }),
+            ),
+          }),
+        );
+    } catch (error) {
+      this.#systemControlReceipt = null;
+      this.#toast(this.#systemControlErrorMessage(error));
+    }
+    await this.#refreshSystemControls();
   }
 
   async #load(scope: QueryScope, background: boolean): Promise<void> {
@@ -552,11 +1055,17 @@ export class ControlCenterApp {
       this.#visible && scopeKey(this.#visible.scope) !== scopeKey(scope);
     if (!this.#frozen || (!background && scopeChanged)) this.#visible = next;
     if (this.#frozen) this.#notice = localeText.t("ui.freeze.banner");
+    if (this.#systemControlsInitialized)
+      await this.#refreshSystemControls(false);
+    if (generation !== this.#loadGeneration || this.#listeners.signal.aborted)
+      return;
     this.#render();
+    if (this.#view === "agents") this.#loadAgentsView();
     this.#renderModal();
   }
 
   async #loadProjects(generation: number): Promise<void> {
+    if (this.#listeners.signal.aborted) return;
     try {
       const globalSnapshot = await this.#api.snapshot({ kind: "global" });
       if (generation !== this.#loadGeneration) return;
@@ -659,8 +1168,7 @@ export class ControlCenterApp {
     ];
     if (typeof timeSample !== "number" || !Number.isFinite(timeSample)) {
       target.recentLogCount = null;
-      target.recentLogsError =
-        "Brak numerycznego timestampMs do pomiaru okna 60 s.";
+      target.recentLogsError = localeText.t("ui.logs.empty.unavailable");
       return;
     }
     try {
@@ -760,6 +1268,7 @@ export class ControlCenterApp {
   }
 
   #queryForTable(): void {
+    if (this.#view === "system" || this.#view === "projects") return;
     const state = this.#latest;
     if (!state?.snapshotToken || this.#frozen) return;
     const collection: TableName =
@@ -831,10 +1340,13 @@ export class ControlCenterApp {
           : rangeStates;
       filters["state"] = { any: selected };
     }
-    if (collection === "agents" && this.#agentRange !== "all") {
+    if (
+      collection === "agents" &&
+      (this.#agentRange === "active" || this.#agentRange === "history")
+    ) {
       filters["presence"] = {
         any:
-          this.#agentRange === "confirmed"
+          this.#agentRange === "active"
             ? ["observed", "active", "idle"]
             : ["stale", "unknown", "missing", "history"],
       };
@@ -930,6 +1442,38 @@ export class ControlCenterApp {
       stale || messages.length
         ? `<div class="notice info" role="status">${icon(stale ? "alert" : "info")}<div><strong>${localeText.t(stale ? "ui.notice.stale.title" : "ui.notice.source.title")}</strong><p>${esc(stale ? localeText.t("ui.notice.lastRead", { details: messages.join(" · ") || localeText.t("ui.notice.connectionUnavailable") }) : messages.join(" · "))}</p></div></div>`
         : "";
+    const pageTitle =
+      this.#view === "overview"
+        ? this.#scope.kind === "global"
+          ? localeText.t("ui.page.overview.global.title")
+          : esc(
+              project
+                ? projectName(project)
+                : localeText.t("ui.page.overview.project.title"),
+            )
+        : this.#view === "tasks"
+          ? localeText.t("ui.page.tasks.title")
+          : this.#view === "agents"
+            ? localeText.t("ui.page.agents.title")
+            : this.#view === "logs"
+              ? localeText.t("ui.page.logs.title")
+              : localeText.t(
+                  this.#view === "system" ? "nav.system" : "nav.projects",
+                );
+    const pageDescription =
+      this.#view === "overview"
+        ? this.#scope.kind === "global"
+          ? localeText.t("ui.page.overview.global.description")
+          : localeText.t("ui.page.overview.project.description")
+        : this.#view === "tasks"
+          ? localeText.t("ui.page.tasks.description")
+          : this.#view === "agents"
+            ? localeText.t("ui.page.agents.description")
+            : this.#view === "logs"
+              ? localeText.t("ui.page.logs.description")
+              : this.#view === "system"
+                ? localeText.t("ui.page.system.description")
+                : localeText.t("ui.page.projects.description");
     this.#localeSelector?.dispose();
     this.#localeSelector = null;
     this.#root.innerHTML = `
@@ -956,7 +1500,7 @@ export class ControlCenterApp {
             }
           </nav>
           <div class="sidebar-bottom"><div class="source-card"><div class="row"><span class="dot ${state?.snapshotToken && !stale ? "good" : "warn"}"></span><strong>${stale ? localeText.t("ui.workspace.status.stale") : state?.snapshotToken ? localeText.t("ui.workspace.status.ready") : localeText.t("ui.workspace.status.waiting")}</strong></div><p>${state?.revision ? `Snapshot ${esc(state.revision.epoch)}:${localeText.formatNumber(state.revision.revision)}` : localeText.t("ui.workspace.read.notReady")} ${localeText.t("ui.workspace.notSimulated")}</p></div>
-          <button class="nav-button" data-action="settings">${icon("settings")}${localeText.t("common.settings")}</button><button class="nav-button" data-action="help">${icon("help")}${localeText.t("common.help")}<span class="count">?</span></button>
+          <button class="nav-button ${this.#view === "projects" ? "active" : ""}" data-action="view" data-view="projects">${icon("folder")}${localeText.t("nav.projects")}</button><button class="nav-button" data-action="settings">${icon("settings")}${localeText.t("common.settings")}</button><button class="nav-button" data-action="help">${icon("help")}${localeText.t("common.help")}<span class="count">?</span></button>
            <div class="account"><div class="avatar">FC</div><div><strong>${localeText.t("app.title")}</strong><small>fmcad console · web edition</small></div></div></div>
         </aside>
           <button class="mobile-scrim" data-action="mobile" aria-label="${localeText.t("common.close")}"></button>
@@ -970,13 +1514,13 @@ export class ControlCenterApp {
             })
             .join(
               "",
-            )}</select></label></div><div class="top-actions"><span class="simulation-label"><span class="dot ${this.#isStale(state) ? "warn" : "good"}"></span>${this.#isStale(state) ? localeText.t("state.stale").toLocaleUpperCase(localeText.locale) : state?.snapshotToken ? localeText.t("ui.workspace.status.connected") : localeText.t("ui.workspace.status.waitingUpper")}</span><span class="top-divider"></span><button class="icon-button" data-action="global-search" aria-label="${localeText.t("ui.search.global.aria")}" title="${localeText.t("ui.search.global.title")}">${icon("search")}</button><button class="icon-button" data-action="settings" aria-label="${localeText.t("common.settings")}">${icon("settings")}</button><button class="icon-button" data-action="help" aria-label="${localeText.t("common.help")}">${icon("help")}</button><div id="locale-selector"></div></div></header>
+            )}</select></label></div><div class="top-actions"><span class="simulation-label"><span class="dot ${this.#isStale(state) ? "warn" : "good"}"></span>${this.#isStale(state) ? localeText.t("ui.workspace.status.stale").toLocaleUpperCase(localeText.locale) : state?.snapshotToken ? localeText.t("ui.workspace.status.connected") : localeText.t("ui.workspace.status.waitingUpper")}</span><span class="top-divider"></span><button class="icon-button" data-action="global-search" aria-label="${localeText.t("ui.search.global.aria")}" title="${localeText.t("ui.search.global.title")}">${icon("search")}</button><button class="icon-button" data-action="settings" aria-label="${localeText.t("common.settings")}">${icon("settings")}</button><button class="icon-button" data-action="help" aria-label="${localeText.t("common.help")}">${icon("help")}</button><div id="locale-selector"></div></div></header>
           <main id="main" class="content">
-            <div class="page-heading"><div><div class="eyebrow">${this.#scope.kind === "global" ? localeText.t("ui.page.eyebrow.global") : localeText.t("ui.page.eyebrow.project")}</div><h1>${this.#view === "overview" ? (this.#scope.kind === "global" ? localeText.t("ui.page.overview.global.title") : esc(project ? projectName(project) : localeText.t("ui.page.overview.project.title"))) : this.#view === "tasks" ? localeText.t("ui.page.tasks.title") : this.#view === "agents" ? localeText.t("ui.page.agents.title") : localeText.t("ui.page.logs.title")}</h1><p class="page-description">${this.#view === "overview" ? (this.#scope.kind === "global" ? localeText.t("ui.page.overview.global.description") : localeText.t("ui.page.overview.project.description")) : this.#view === "tasks" ? localeText.t("ui.page.tasks.description") : this.#view === "agents" ? localeText.t("ui.page.agents.description") : localeText.t("ui.page.logs.description")}</p></div><div class="heading-actions"><button class="btn" data-action="export" data-collection="${this.#activeCollection()}" aria-label="${localeText.t("ui.action.exportData")}">${icon("download", "small")}<span>${localeText.t("common.export")}</span></button>${this.#returnAgent ? `<button class="btn" data-action="back-agent">${localeText.t("ui.action.backAgent")}</button>` : ""}<button class="btn ${this.#frozen ? "primary" : ""}" data-action="freeze" aria-label="${localeText.t(this.#frozen ? "common.resume" : "common.freeze")}">${icon(this.#frozen ? "play" : "pause", "small")}<span>${localeText.t(this.#frozen ? "common.resume" : "common.freeze")}</span></button><button class="btn primary" data-action="refresh" aria-label="${localeText.t("ui.action.refreshView")}">${icon("refresh", "small")}<span>${localeText.t("common.refresh")}</span></button></div></div>
-            <div class="tabs" role="tablist" aria-label="${localeText.t("ui.tabs.aria")}">${this.#tab("overview", "grid", localeText.t("nav.overview"))}${this.#tab("tasks", "layers", localeText.t("nav.tasks"), knownTotal(state?.pages.tasks))}${this.#tab("agents", "users", localeText.t("nav.agents"), knownTotal(state?.pages.agents))}${this.#tab("logs", "terminal", localeText.t("nav.logs"), knownTotal(state?.pages.logs))}<span class="tab-end">${icon("clock", "small")}<span>${state?.revision ? localeText.t("ui.tabs.refreshRate", { seconds: this.#refreshInterval / 1000, revision: state.revision.revision }) : localeText.t("ui.tabs.waitingRefreshRate", { seconds: this.#refreshInterval / 1000 })}</span></span></div>
+            <div class="page-heading"><div><div class="eyebrow">${this.#scope.kind === "global" ? localeText.t("ui.page.eyebrow.global") : localeText.t("ui.page.eyebrow.project")}</div><h1>${pageTitle}</h1><p class="page-description">${pageDescription}</p></div><div class="heading-actions"><button class="btn" data-action="export" data-collection="${this.#activeCollection()}" aria-label="${localeText.t("ui.action.exportData")}">${icon("download", "small")}<span>${localeText.t("common.export")}</span></button>${this.#returnAgent ? `<button class="btn" data-action="back-agent">${localeText.t("ui.action.backAgent")}</button>` : ""}<button class="btn ${this.#frozen ? "primary" : ""}" data-action="freeze" aria-label="${localeText.t(this.#frozen ? "common.resume" : "common.freeze")}">${icon(this.#frozen ? "play" : "pause", "small")}<span>${localeText.t(this.#frozen ? "common.resume" : "common.freeze")}</span></button><button class="btn primary" data-action="refresh" aria-label="${localeText.t("common.refresh")}">${icon("refresh", "small")}<span>${localeText.t("common.refresh")}</span></button></div></div>
+            <div class="tabs" role="tablist" aria-label="${localeText.t("ui.tabs.aria")}">${this.#tab("overview", "grid", localeText.t("nav.overview"))}${this.#tab("tasks", "layers", localeText.t("nav.tasks"), knownTotal(state?.pages.tasks))}${this.#tab("agents", "users", localeText.t("nav.agents"), knownTotal(state?.pages.agents))}${this.#tab("logs", "terminal", localeText.t("nav.logs"), knownTotal(state?.pages.logs))}${this.#tab("system", "server", localeText.t("nav.system"))}<span class="tab-end">${icon("clock", "small")}<span>${state?.revision ? localeText.t("ui.tabs.refreshRate", { seconds: this.#refreshInterval / 1000, revision: state.revision.revision }) : localeText.t("ui.tabs.waitingRefreshRate", { seconds: this.#refreshInterval / 1000 })}</span></span></div>
             ${issue}${this.#frozen ? `<div class="freeze-banner">${icon("pause", "small")}${localeText.t("ui.freeze.banner")}<span>${esc(this.#notice)}</span><button data-action="freeze">${localeText.t("common.resume")} ${icon("play", "small")}</button></div>` : ""}
-            <div class="tab-content">${this.#view === "overview" ? this.#overview(state) : this.#view === "tasks" ? this.#tasksView(state) : this.#view === "logs" ? this.#logsView(state) : this.#agentsView(state)}</div>
-            <footer class="page-footer"><span>${icon("server", "small")} ${localeText.t("ui.footer.source")}</span><span><kbd>1–4</kbd> ${localeText.t("nav.overview")} <kbd>/</kbd> ${localeText.t("common.search")} <kbd>␠</kbd> ${localeText.t("common.freeze")}</span></footer>
+            <div class="tab-content">${this.#view === "overview" ? this.#overview(state) : this.#view === "tasks" ? this.#tasksView(state) : this.#view === "logs" ? this.#logsView(state) : this.#view === "system" ? this.#systemView(state) : this.#view === "projects" ? this.#projectsView(state) : this.#agentsView(state)}</div>
+            <footer class="page-footer"><span>${icon("server", "small")} ${localeText.t("ui.footer.source")}</span><span><kbd>1–5</kbd> ${localeText.t("nav.overview")} <kbd>/</kbd> ${localeText.t("common.search")} <kbd>␠</kbd> ${localeText.t("common.freeze")}</span></footer>
           </main>
         </div>
       </div>`;
@@ -1026,12 +1570,16 @@ export class ControlCenterApp {
     return `<button class="tab ${this.#view === view ? "active" : ""}" role="tab" aria-selected="${this.#view === view}" data-action="view" data-view="${view}">${icon(image, "small")}${label}${count != null ? `<span class="tab-count">${count}</span>` : ""}</button>`;
   }
 
-  #activeCollection(): TableName {
+  #activeCollection(): Collection {
     return this.#view === "logs"
       ? "logs"
       : this.#view === "agents"
         ? "agents"
-        : "tasks";
+        : this.#view === "system"
+          ? "system"
+          : this.#view === "projects"
+            ? "projects"
+            : "tasks";
   }
 
   #overview(state: LoadState | null): string {
@@ -1110,13 +1658,15 @@ export class ControlCenterApp {
     const page = state?.pages.system;
     const row = record(page?.rows[0]);
     const telemetry = record(row["data"]);
-    const host = record(
-      row["host"] ??
-        row["hostMetrics"] ??
-        telemetry["host"] ??
-        telemetry ??
-        row,
+    const nestedHost = record(
+      row["host"] ?? row["hostMetrics"] ?? telemetry["host"],
     );
+    const host =
+      Object.keys(nestedHost).length > 0
+        ? nestedHost
+        : Object.keys(telemetry).length > 0
+          ? telemetry
+          : row;
     if (!Object.keys(host).length) return "";
     const cpu = telemetryNumber(host, "cpuPercent");
     const memoryUsed =
@@ -1137,7 +1687,156 @@ export class ControlCenterApp {
         const seconds = telemetryNumber(host, "uptimeSeconds");
         return seconds === null ? null : seconds / 3600;
       })();
-    return `<section class="system-strip"><div class="system-strip-title">${icon("server", "small")}Host lokalny</div><div class="strip-metric">CPU <b>${cpu === null ? "—" : `${cpu.toLocaleString("pl-PL", { maximumFractionDigits: 1 })}%`}</b><div class="mini-track"><span style="width:${cpu === null ? 0 : Math.max(0, Math.min(100, cpu))}%"></span></div></div><div class="strip-metric">RAM <b>${memoryUsed === null || memoryTotal === null ? "—" : `${memoryUsed.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} / ${memoryTotal.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} GiB`}</b></div><div class="strip-metric">Uptime <b>${uptime === null ? "—" : `${uptime.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} h`}</b></div></section>`;
+    return `<section class="system-strip"><div class="system-strip-title">${icon("server", "small")}${localeText.t("ui.systemStrip.host")}</div><div class="strip-metric">${localeText.t("system.metric.cpu")} <b>${cpu === null ? "—" : `${localeText.formatNumber(cpu, { maximumFractionDigits: 1 })}%`}</b><div class="mini-track"><span style="width:${cpu === null ? 0 : Math.max(0, Math.min(100, cpu))}%"></span></div></div><div class="strip-metric">${localeText.t("ui.systemStrip.ram")} <b>${memoryUsed === null || memoryTotal === null ? "—" : `${localeText.formatNumber(memoryUsed, { maximumFractionDigits: 1 })} / ${localeText.formatNumber(memoryTotal, { maximumFractionDigits: 1 })} GiB`}</b></div><div class="strip-metric">${localeText.t("ui.systemStrip.uptime")} <b>${uptime === null ? "—" : localeText.formatDuration(uptime * 3_600_000)}</b></div></section>`;
+  }
+
+  #systemView(state: LoadState | null): string {
+    const page = state?.pages.system;
+    const controls = this.#systemControlsPanel();
+    if (!page)
+      return `${this.#empty(
+        localeText.t("system.empty.unavailable"),
+        state?.errors.system ??
+          localeText.t("system.empty.observationsUnavailable"),
+        "server",
+      )}<div class="system-grid">${controls}</div>`;
+    const row = page.rows[0];
+    if (!row)
+      return `${this.#empty(
+        page.source.state === "no-data"
+          ? localeText.t("system.empty.noRetainedObservations")
+          : localeText.t("system.empty.observationsUnavailable"),
+        statusSourceText(page.source),
+        "server",
+      )}<div class="system-grid">${controls}</div>`;
+
+    const source = record(row["data"]);
+    const nestedHost = record(
+      row["host"] ?? row["hostMetrics"] ?? source["host"],
+    );
+    const host =
+      Object.keys(nestedHost).length > 0
+        ? nestedHost
+        : Object.keys(source).length > 0
+          ? source
+          : row;
+    const formatNumber = (value: unknown, maximumFractionDigits = 1) => {
+      const result = telemetryNumber({ value }, "value");
+      return result === null
+        ? null
+        : localeText.formatNumber(result, { maximumFractionDigits });
+    };
+    const formatGib = (value: unknown) => {
+      const bytes = telemetryNumber({ value }, "value");
+      return bytes === null
+        ? null
+        : `${localeText.formatNumber(bytes / 1024 ** 3, { maximumFractionDigits: 1 })} GiB`;
+    };
+    const hostValues: readonly (readonly [string, unknown])[] = [
+      [localeText.t("system.metric.hostname"), text(host, "hostname")],
+      [
+        localeText.t("system.metric.cpu"),
+        formatNumber(host["cpuPercent"]) === null
+          ? null
+          : `${formatNumber(host["cpuPercent"])}%`,
+      ],
+      [
+        localeText.t("system.metric.ramUsedTotal"),
+        formatGib(host["ramUsedBytes"]) === null ||
+        formatGib(host["ramTotalBytes"]) === null
+          ? null
+          : `${formatGib(host["ramUsedBytes"])} / ${formatGib(host["ramTotalBytes"])}`,
+      ],
+      [
+        localeText.t("system.metric.swapUsedTotal"),
+        formatGib(host["swapUsedBytes"]) === null ||
+        formatGib(host["swapTotalBytes"]) === null
+          ? null
+          : `${formatGib(host["swapUsedBytes"])} / ${formatGib(host["swapTotalBytes"])}`,
+      ],
+      [
+        localeText.t("system.metric.diskUsedTotal"),
+        formatGib(host["diskUsedBytes"]) === null ||
+        formatGib(host["diskTotalBytes"]) === null
+          ? null
+          : `${formatGib(host["diskUsedBytes"])} / ${formatGib(host["diskTotalBytes"])}`,
+      ],
+      [
+        localeText.t("system.metric.loadAverage"),
+        Array.isArray(host["load"]) &&
+        host["load"].every(
+          (value) => typeof value === "number" && Number.isFinite(value),
+        )
+          ? host["load"].map((value) => formatNumber(value, 2)).join(" / ")
+          : null,
+      ],
+      [
+        localeText.t("system.metric.networkInterface"),
+        host["networkInterface"],
+      ],
+      [
+        localeText.t("system.metric.receiveRate"),
+        formatNumber(host["rxBytesPerSecond"]) === null
+          ? null
+          : `${formatNumber(host["rxBytesPerSecond"])} B/s`,
+      ],
+      [
+        localeText.t("system.metric.sendRate"),
+        formatNumber(host["txBytesPerSecond"]) === null
+          ? null
+          : `${formatNumber(host["txBytesPerSecond"])} B/s`,
+      ],
+      [
+        localeText.t("system.metric.uptime"),
+        formatNumber(host["uptimeSeconds"]) === null
+          ? null
+          : localeText.formatDuration(
+              telemetryNumber({ value: host["uptimeSeconds"] }, "value")! *
+                1000,
+            ),
+      ],
+      [
+        localeText.t("system.metric.processCount"),
+        formatNumber(host["processCount"], 0),
+      ],
+    ];
+    const processRow = (label: string, value: unknown): string => {
+      const processObservation = record(value);
+      const identity = record(processObservation["identity"]);
+      const alive = identity["alive"];
+      const status =
+        alive === true
+          ? localeText.t("system.process.status.confirmed")
+          : alive === false
+            ? localeText.t("system.process.status.terminated")
+            : localeText.t("system.process.status.unknown");
+      return `<div class="process"><div><strong>${label}</strong><span class="mono">${esc(localeText.t("system.process.identity", { pid: display(identity["pid"]), birth: display(identity["birth"]) }))}</span></div><span class="status-line">${esc(status)}</span><span class="mono">${localeText.t("system.metric.cpu")} ${formatNumber(processObservation["cpuPercent"]) === null ? "—" : `${formatNumber(processObservation["cpuPercent"])}%`} · RSS ${formatGib(processObservation["rssBytes"]) ?? "—"}</span></div>`;
+    };
+    const workers = row["workers"];
+    const workerList = Array.isArray(workers)
+      ? workers.length
+        ? workers
+            .map((worker, index) =>
+              processRow(
+                localeText.t("system.process.worker", { index: index + 1 }),
+                worker,
+              ),
+            )
+            .join("")
+        : page.source.state === "available"
+          ? `<p class="system-note">${localeText.t("system.note.noReportedWorkers")}</p>`
+          : `<p class="system-note">${esc(statusSourceText(page.source))}</p>`
+      : `<p class="system-note">${esc(statusSourceText(page.source))}</p>`;
+    const locks = record(row["locks"]);
+    const processes = `${processRow(localeText.t("system.process.panel", { index: 1 }), row["panelProcess"])}${processRow(localeText.t("system.process.broker", { index: 1 }), row["brokerProcess"])}${workerList}`;
+    return `<div class="notice info" role="status" data-system-source="${esc(page.source.state)}">${icon(page.source.state === "available" ? "server" : "alert")}<div><strong>${esc(statusSourceText(page.source))}</strong><p>${localeText.t("system.note.unknownRemainsUnknown")}</p></div></div><div class="system-grid"><section class="panel system-panel"><h2>${icon("server", "small")}${localeText.t("system.hostLocal")}</h2>${this.#keyValues(hostValues)}</section><section class="panel system-panel"><h2>${icon("pulse", "small")}${localeText.t("system.processes")}</h2>${processes}</section><section class="panel system-panel"><h2>${icon("check", "small")}${localeText.t("system.lockObservations")}</h2>${this.#keyValues(
+      [
+        [localeText.t("system.lock.status"), locks["status"]],
+        [localeText.t("system.lock.evidenceCount"), locks["evidenceCount"]],
+        [localeText.t("system.lock.source"), locks["source"]],
+        [localeText.t("system.lock.reason"), locks["reason"]],
+      ],
+    )}</section>${controls}</div>`;
   }
 
   #queuePanel(overview: ConsoleOverviewRecord | undefined): string {
@@ -1381,26 +2080,200 @@ export class ControlCenterApp {
 
   #agentsView(state: LoadState | null): string {
     const page = state?.pages.agents;
-    const rows = page?.rows ?? [];
-    const presence = page?.facets["presence"] ?? {};
-    const count = (values: readonly string[]) => {
-      const matches = Object.entries(presence)
-        .filter(([value]) => values.includes(value.toLowerCase()))
-        .map(([, total]) => total);
-      return matches.length
-        ? matches.reduce((sum, value) => sum + value, 0)
-        : null;
-    };
-    const ranges = [
-      ["all", "Wszystkie", page?.total ?? null],
-      ["confirmed", "Potwierdzone", count(["observed", "active", "idle"])],
-      [
-        "history",
-        "Historia i nieznane",
-        count(["stale", "unknown", "missing", "history"]),
-      ],
-    ] as const;
-    return `<div class="agent-toolbar"><div class="segmented agent-filter" aria-label="${localeText.t("ui.agents.filter.aria")}">${ranges.map(([key, label, total]) => `<button class="segment ${this.#agentRange === key ? "active" : ""}" data-action="agent-range" data-range="${key}">${label}<span>${total === null ? "—" : localeText.formatNumber(total)}</span></button>`).join("")}</div></div><section class="panel table-panel"><div class="panel-head"><div><h2>${localeText.t("ui.agents.title")}<span class="count-label">${knownTotal(page) === null ? "—" : localeText.formatNumber(knownTotal(page)!)}</span></h2><p class="panel-subtitle">${localeText.t("ui.agents.description")}</p></div><span class="inline-source">${statusSourceText(page?.source ?? { state: "unavailable", source: "agents" })}</span></div><div class="table-toolbar"><label class="search-box">${icon("search", "small")}<input id="agent-search" type="search" placeholder="${localeText.t("ui.agents.search.placeholder")}" value="${esc(this.#search)}" aria-label="${localeText.t("ui.agents.search.aria")}"></label>${this.#tableControls("agents")}</div><div class="agent-list">${rows.length ? rows.map((agent) => `<div class="agent-list-row" ${nonemptyId(agent["id"]) ? `tabindex="0" data-action="agent" data-id="${esc(agent["id"])}" data-project="${esc(text(agent, "projectId") ?? "")}"` : ""}><span class="agent-identity"><span class="agent-monogram">${esc((text(agent, "name") ?? "?").slice(0, 2).toUpperCase())}</span><span class="agent-identity-text"><span class="agent-name-line"><strong>${esc(text(agent, "name") ?? text(agent, "clientId") ?? localeText.t("ui.agents.identity.unknown"))}</strong>${statusBadge(agent["presence"])}</span><span class="agent-role">${esc(display(agent["kind"]))}</span><span class="agent-tool">${esc(text(agent, "id") ?? localeText.t("ui.agents.identity.notReported"))}</span></span></span><span class="agent-work">${esc(text(agent, "work") ?? localeText.t("ui.agents.work.none"))}</span>${icon("chevron", "small")}</div>`).join("") : this.#empty(!page ? localeText.t("ui.agents.empty.unavailable") : page.source.state === "no-data" ? localeText.t("ui.agents.empty.noPresence") : localeText.t("ui.agents.empty.noIdentity"), !page ? (state?.errors.agents ?? localeText.t("ui.agents.source.noData")) : statusSourceText(page.source), "users")}</div><div class="table-footer"><span>${page ? `${localeText.formatNumber(page.offset + (rows.length ? 1 : 0))}–${localeText.formatNumber(page.offset + rows.length)} ${knownTotal(page) === null ? localeText.t("ui.table.ofUnknownCount") : localeText.t("ui.pagination.of", { pages: localeText.formatNumber(knownTotal(page)!) })}` : localeText.t("ui.agents.page.unavailable")}</span>${this.#pagination(knownTotal(page), page?.limit ?? 8, rows.length >= (page?.limit ?? 8))}</div></section>`;
+    const rows =
+      this.#agentRange === "working"
+        ? (this.#workingAgents ?? [])
+        : (page?.rows ?? []);
+    const unavailable =
+      this.#agentRange === "working"
+        ? this.#workingAgentsLoading ||
+          this.#workingAgents === null ||
+          this.#workingAgentsUnavailable
+        : !page || (page.source.state !== "available" && rows.length === 0);
+    const agents = renderAgentList({
+      rows,
+      filter: this.#agentRange,
+      localeText: agentsProjectsLocale,
+      sourceState:
+        this.#agentRange === "working" && this.#workingAgentsLoading
+          ? localeText.t("common.loading")
+          : statusSourceText(
+              page?.source ?? { state: "unavailable", source: "agents" },
+            ),
+      unavailable,
+    }).replace(
+      'data-action="agent-search"',
+      `data-action="agent-search" value="${esc(this.#search)}"`,
+    );
+    const sessions =
+      this.#technicalSessions === null
+        ? `<section class="panel table-panel"><div class="panel-head"><h2>${localeText.t("agents.title")}</h2><span class="inline-source">${esc(this.#technicalSessionsSource || localeText.t("common.loading"))}</span></div><p class="project-list-description" role="status">${localeText.t("agents.list.unavailable")}</p></section>`
+        : renderTechnicalSessions({
+            rows: this.#technicalSessions,
+            filter: this.#technicalSessionFilter,
+            localeText: agentsProjectsLocale,
+            sourceState: this.#technicalSessionsSource,
+          });
+    return `${agents}<div class="section-spaced">${sessions}</div>`;
+  }
+
+  #projectsView(state: LoadState | null): string {
+    const rows = this.#projects
+      .map((row) => {
+        const id = projectId(row);
+        return id
+          ? ({ ...row, id, name: projectName(row) } as ConsoleProjectRecord)
+          : null;
+      })
+      .filter((row): row is ConsoleProjectRecord => row !== null);
+    this.#ensureProjectRevisions(rows);
+    const source = state?.pages.projects?.source;
+    const unavailable =
+      rows.length === 0 &&
+      (!source || source.state === "unavailable" || source.state === "no-data");
+    const favorites = new Set(
+      rows
+        .filter((row) => this.#agentsProjects.isFavorite(row.id))
+        .map((row) => row.id),
+    );
+    let list = renderProjectList({
+      rows: unavailable ? null : rows,
+      filter: this.#projectFilter,
+      search: this.#projectsSearch,
+      favorites,
+      revisions: this.#projectRevisions,
+      localeText: agentsProjectsLocale,
+      ...(unavailable
+        ? {
+            unavailableReason:
+              state?.errors.projects ??
+              statusSourceText(
+                source ?? { state: "unavailable", source: "projects" },
+              ),
+          }
+        : {}),
+    });
+    for (const project of rows) {
+      const formStart = list.indexOf(
+        `data-action="project-alias-form" data-project="${esc(project.id)}"`,
+      );
+      if (formStart < 0) continue;
+      const formEnd = list.indexOf("</form>", formStart);
+      if (formEnd < 0) continue;
+      const form = list
+        .slice(formStart, formEnd)
+        .replace(
+          '<input type="text" name="alias"',
+          `<input id="project-alias-${esc(project.id)}" type="text" name="alias"`,
+        );
+      list = `${list.slice(0, formStart)}${form}${list.slice(formEnd)}`;
+    }
+    return `${list}${this.#projectRevisionStatus ? `<p class="project-list-description" role="status">${esc(this.#projectRevisionStatus)}</p>` : ""}`;
+  }
+
+  #ensureProjectRevisions(rows: readonly ConsoleProjectRecord[]): void {
+    const key = rows.map((row) => row.id).join("\u0000");
+    if (key === this.#projectRevisionKey) return;
+    this.#projectRevisionKey = key;
+    this.#projectRevisions = new Map();
+    this.#projectRevisionStatus = "";
+    const load = ++this.#projectRevisionLoad;
+    if (!rows.length) return;
+    void (async () => {
+      const revisions = new Map<string, Revision>();
+      let failures = 0;
+      for (let offset = 0; offset < rows.length; offset += 8) {
+        await Promise.all(
+          rows.slice(offset, offset + 8).map(async (project) => {
+            try {
+              revisions.set(
+                project.id,
+                await this.#agentsProjects.projectRevision(project.id),
+              );
+            } catch {
+              failures += 1;
+            }
+          }),
+        );
+        if (
+          load !== this.#projectRevisionLoad ||
+          this.#listeners.signal.aborted
+        )
+          return;
+      }
+      this.#projectRevisions = revisions;
+      this.#projectRevisionStatus = failures
+        ? localeText.t("projects.archive.blocked.missing")
+        : "";
+      if (this.#view === "projects") this.#render();
+    })();
+  }
+
+  #loadAgentsView(): void {
+    if (this.#listeners.signal.aborted) return;
+    const serial = ++this.#agentViewLoad;
+    this.#technicalSessions = null;
+    this.#technicalSessionsSource = localeText.t("common.loading");
+    void this.#agentsProjects
+      .listTechnicalSessions(this.#scope, {
+        filter: this.#technicalSessionFilter,
+        search: this.#search,
+        limit: 200,
+      })
+      .then((result) => {
+        if (serial !== this.#agentViewLoad || this.#listeners.signal.aborted)
+          return;
+        this.#technicalSessions =
+          result.page.source.state === "available" ||
+          (result.page.source.state === "partial" && result.rows.length > 0)
+            ? result.rows
+            : null;
+        this.#technicalSessionsSource = statusSourceText(result.page.source);
+        if (this.#view === "agents") this.#render();
+      })
+      .catch((error: unknown) => {
+        if (serial !== this.#agentViewLoad || this.#listeners.signal.aborted)
+          return;
+        this.#technicalSessions = null;
+        this.#technicalSessionsSource = this.#error(error);
+        if (this.#view === "agents") this.#render();
+      });
+    if (this.#agentRange !== "working") {
+      this.#workingAgents = null;
+      this.#workingAgentsLoading = false;
+      this.#workingAgentsUnavailable = false;
+      return;
+    }
+    const workingLoad = ++this.#workingAgentLoad;
+    this.#workingAgentsLoading = true;
+    this.#workingAgents = null;
+    this.#workingAgentsUnavailable = false;
+    void this.#agentsProjects
+      .listAgents(this.#scope, {
+        filter: "working",
+        search: this.#search,
+        offset: (this.#page - 1) * 8,
+        limit: 8,
+      })
+      .then((result) => {
+        if (
+          workingLoad !== this.#workingAgentLoad ||
+          this.#listeners.signal.aborted
+        )
+          return;
+        this.#workingAgents = result.rows;
+        this.#workingAgentsLoading = false;
+        this.#workingAgentsUnavailable =
+          result.page.source.state !== "available" && result.rows.length === 0;
+        if (this.#view === "agents") this.#render();
+      })
+      .catch(() => {
+        if (workingLoad !== this.#workingAgentLoad) return;
+        this.#workingAgents = null;
+        this.#workingAgentsLoading = false;
+        this.#workingAgentsUnavailable = true;
+        if (this.#view === "agents") this.#render();
+      });
   }
 
   #empty(title: string, description: string, image: string): string {
@@ -1413,21 +2286,22 @@ export class ControlCenterApp {
     );
   }
 
-  async #openTask(id: string): Promise<void> {
+  async #openTask(id: string, ownerHint?: string): Promise<void> {
     const state = this.#state();
-    const task = (state?.pages.tasks?.rows ?? []).find(
+    const retainedTask = (state?.pages.tasks?.rows ?? []).find(
       (row) => rowTaskId(row) === id,
     );
-    if (!task) {
-      this.#toast(localeText.t("ui.project.task.unavailable"));
-      return;
-    }
     const owner =
-      this.#scope.kind === "project"
+      ownerHint ??
+      (this.#scope.kind === "project"
         ? this.#scope.projectId
-        : text(task, "projectId");
+        : text(retainedTask ?? {}, "projectId"));
     if (!nonemptyId(owner)) {
-      this.#toast(localeText.t("ui.project.task.sourceMissing"));
+      this.#toast(
+        retainedTask
+          ? localeText.t("ui.project.task.sourceMissing")
+          : localeText.t("ui.project.task.unavailable"),
+      );
       return;
     }
     const generation = ++this.#modalGeneration;
@@ -1461,7 +2335,12 @@ export class ControlCenterApp {
         limit: 1,
       });
       if (!this.#currentModal(generation)) return;
-      const selected = page.rows.find((row) => rowTaskId(row) === id) ?? task;
+      const selected =
+        page.rows.find((row) => rowTaskId(row) === id) ?? retainedTask;
+      if (!selected) {
+        this.#toast(localeText.t("ui.project.task.unavailable"));
+        return;
+      }
       this.#showTask(
         selected,
         owner,
@@ -1483,6 +2362,10 @@ export class ControlCenterApp {
     revision: Revision | null,
     returnLog?: Extract<ModalState, { type: "log" }>,
     sources: Readonly<Record<string, SourceStatus>> = {},
+    retainedArtifact?: {
+      readonly kind: ArtifactKind;
+      readonly artifact: ArtifactResult;
+    },
   ): void {
     this.#rememberModalFocus();
     this.#modal = {
@@ -1492,12 +2375,16 @@ export class ControlCenterApp {
       snapshotToken: token,
       revision,
       sources,
-      tab: "details",
+      tab: retainedArtifact
+        ? isOutputKind(retainedArtifact.kind)
+          ? "response"
+          : "code"
+        : "details",
       events: null,
       eventStatus: null,
-      artifact: null,
+      artifact: retainedArtifact?.artifact ?? null,
       artifactMissingReason: null,
-      artifactKind: null,
+      artifactKind: retainedArtifact?.kind ?? null,
       loading: false,
       ...(returnLog ? { returnLog } : {}),
     };
@@ -1511,15 +2398,13 @@ export class ControlCenterApp {
     const requestId = text(modal.task, "requestId");
     if (!modal.snapshotToken) {
       modal.events = [];
-      modal.eventStatus =
-        "Brak tokenu snapshotu do korelowanego odczytu zdarzeń.";
+      modal.eventStatus = localeText.t("ui.modal.task.noEventsSnapshot");
       this.#renderModal();
       return;
     }
     if (!nonemptyId(id) && !nonemptyId(requestId)) {
       modal.events = [];
-      modal.eventStatus =
-        "Brak niepustego task ID lub request ID do powiązania zdarzeń.";
+      modal.eventStatus = localeText.t("ui.modal.task.noEventIdentity");
       this.#renderModal();
       return;
     }
@@ -1598,10 +2483,10 @@ export class ControlCenterApp {
       modal.artifactMissingReason =
         text(reference, "reason") ??
         (reference["state"] === "missing"
-          ? `${kind} was not retained for this task.`
+          ? `${kind} · ${localeText.t("state.missing")}`
           : reference["state"] === "unavailable"
-            ? `${kind} is unavailable in the retained source.`
-            : `No retained ${kind} channel with verified provenance was supplied.`);
+            ? `${kind} · ${localeText.t("ui.source.unavailable")}`
+            : `${kind} · ${localeText.t("ui.modal.task.outputChooseDescription")}`);
       this.#renderModal();
       return;
     }
@@ -1612,8 +2497,8 @@ export class ControlCenterApp {
       modal.artifact = null;
       modal.loading = false;
       modal.artifactMissingReason = !modal.snapshotToken
-        ? "Brak tokenu snapshotu do odczytu artefaktu."
-        : "Źródło nie udostępniło identyfikatora artefaktu.";
+        ? localeText.t("ui.modal.task.noArtifactSnapshot")
+        : localeText.t("ui.source.unavailable");
       this.#renderModal();
       return;
     }
@@ -1651,6 +2536,40 @@ export class ControlCenterApp {
     const host = document.getElementById("overlay-root");
     if (!host) return;
     if (!this.#modal) {
+      if (
+        this.#auxiliaryModal === "project-action" &&
+        this.#projectActionDialog
+      ) {
+        this.#renderProjectActionModal(focus);
+        return;
+      }
+      if (
+        this.#auxiliaryModal === "system-control-confirm" &&
+        this.#systemControlAction
+      ) {
+        const action = this.#systemControlAction;
+        const controlProjectId =
+          this.#scope.kind === "project" ? this.#scope.projectId : null;
+        const project = controlProjectId
+          ? this.#projects.find(
+              (entry) => projectId(entry) === controlProjectId,
+            )
+          : null;
+        const markup = renderSystemControlConfirmation(
+          action,
+          project ? projectName(project) : null,
+          (key, params) => localeText.t(key as MessageKey, params),
+        ).replace(
+          'class="modal-overlay"',
+          'class="overlay" data-action="backdrop"',
+        );
+        this.#mountOverlay(
+          "system-control-confirm",
+          markup,
+          "[data-system-control-cancel]",
+        );
+        return;
+      }
       if (this.#auxiliaryModal) return;
       this.#closeModalSurface();
       return;
@@ -1662,28 +2581,52 @@ export class ControlCenterApp {
     const activeAction = active?.dataset["action"];
     const activeId = active?.dataset["id"];
     const activeTab = active?.dataset["tab"];
+    const focusedId = active?.id;
+    const selectionStart =
+      active instanceof HTMLInputElement ? active.selectionStart : null;
+    const selectionEnd =
+      active instanceof HTMLInputElement ? active.selectionEnd : null;
     const content =
       this.#modal.type === "task"
         ? this.#taskModal(this.#modal)
         : this.#modal.type === "log"
           ? this.#logModal(this.#modal)
-          : this.#agentModal(this.#modal);
+          : this.#modal.type === "agent"
+            ? this.#agentModal(this.#modal)
+            : this.#sessionModal(this.#modal);
     const footer =
       this.#modal.type === "task"
-        ? `${this.#modal.returnLog ? `<button class="btn small" data-action="back-log">← Zdarzenie</button>` : ""}<span class="modal-footer-note">Stan z chwili otwarcia · rewizja ${this.#modal.revision?.revision ?? "—"}</span><button class="btn small" data-action="task-refresh">${icon("refresh", "small")}Odśwież szczegóły</button><button class="btn" data-action="close">Zamknij</button>`
+        ? `${this.#modal.returnLog ? `<button class="btn small" data-action="back-log">${localeText.t("ui.modal.backToEvent")}</button>` : ""}<span class="modal-footer-note">${localeText.t("ui.modal.task.snapshotRevision", { revision: this.#modal.revision?.revision ?? "—" })}</span><button class="btn small" data-action="task-refresh">${icon("refresh", "small")}${localeText.t("ui.modal.task.refresh")}</button><button class="btn" data-action="close">${localeText.t("common.close")}</button>`
         : this.#modal.type === "log"
-          ? `${this.#modal.returnTask ? `<button class="btn small" data-action="back-task">← Zadanie</button>` : ""}${nonemptyId(this.#modal.log["taskId"]) ? `<button class="btn primary" data-action="log-task">${icon("layers", "small")}Powiązane zadanie</button>` : ""}<button class="btn" data-action="copy-log">${icon("copy", "small")}Kopiuj wpis</button><button class="btn" data-action="close">Zamknij</button>`
-          : `${this.#modal.returnTask ? `<button class="btn small" data-action="back-task">← Zadanie</button>` : ""}<button class="btn small" data-action="agent-logs">${icon("terminal", "small")}Logi</button><button class="btn" data-action="close">Zamknij</button>`;
+          ? `${this.#modal.returnTask ? `<button class="btn small" data-action="back-task">${localeText.t("ui.modal.backToTask")}</button>` : ""}${nonemptyId(this.#modal.log["taskId"]) ? `<button class="btn primary" data-action="log-task">${icon("layers", "small")}${localeText.t("ui.modal.relatedTask")}</button>` : ""}<button class="btn" data-action="copy-log">${icon("copy", "small")}${localeText.t("ui.modal.copyEntry")}</button><button class="btn" data-action="close">${localeText.t("common.close")}</button>`
+          : this.#modal.type === "agent"
+            ? `${this.#modal.returnTask ? `<button class="btn small" data-action="back-task">${localeText.t("ui.modal.backToTask")}</button>` : ""}<button class="btn" data-action="close">${localeText.t("common.close")}</button>`
+            : `<button class="btn" data-action="close">${localeText.t("common.close")}</button>`;
     const title =
       this.#modal.type === "task"
-        ? "Szczegóły zadania"
+        ? localeText.t("ui.modal.task.title")
         : this.#modal.type === "log"
-          ? "Szczegóły zdarzenia"
-          : "Agent / sesja";
-    host.innerHTML = `<div class="overlay" data-action="backdrop"><section class="modal wide" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><h2 id="modal-title">${title}</h2><button class="icon-button" data-action="close" aria-label="Zamknij okno">${icon("close")}</button></header><div class="modal-body">${content}</div><footer class="modal-footer">${footer}</footer></section></div>`;
+          ? localeText.t("ui.modal.log.title")
+          : localeText.t("ui.modal.agent.title");
+    host.innerHTML = `<div class="overlay" data-action="backdrop"><section class="modal wide" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><h2 id="modal-title">${title}</h2><button class="icon-button" data-action="close" aria-label="${localeText.t("ui.modal.close")}">${icon("close")}</button></header><div class="modal-body">${content}</div><footer class="modal-footer">${footer}</footer></section></div>`;
     this.#selects.upgrade(host);
     if (focus) $(".modal", host)?.focus();
-    else if (activeAction) {
+    else if (focusedId) {
+      const next = $<HTMLInputElement>(`#${CSS.escape(focusedId)}`, host);
+      if (next) {
+        next.focus({ preventScroll: true });
+        if (selectionStart !== null && selectionStart !== undefined) {
+          try {
+            next.setSelectionRange(
+              selectionStart,
+              selectionEnd ?? selectionStart,
+            );
+          } catch {
+            /* not a text input */
+          }
+        }
+      }
+    } else if (activeAction) {
       const next = [
         ...host.querySelectorAll<HTMLElement>("[data-action]"),
       ].find(
@@ -1696,8 +2639,39 @@ export class ControlCenterApp {
     }
   }
 
+  #renderProjectActionModal(focus = false): void {
+    const host = document.getElementById("overlay-root");
+    const dialog = this.#projectActionDialog;
+    if (!host || !dialog) return;
+    const markup = renderProjectActionDialog(
+      dialog.project as ConsoleProjectRecord,
+      dialog.action,
+      dialog.revision,
+      agentsProjectsLocale,
+      dialog.status,
+    ).replace(
+      'data-action="project-action-confirm"',
+      `data-action="project-action-confirm"${this.#projectActionBusy || dialog.status?.state === "ok" ? " disabled" : ""}`,
+    );
+    const activeAction = (document.activeElement as HTMLElement | null)
+      ?.dataset["action"];
+    this.#root.inert = true;
+    host.innerHTML = `<div class="overlay" data-action="backdrop">${markup}</div>`;
+    if (focus) {
+      $("[data-action=project-action-cancel]", host)?.focus();
+    } else if (activeAction) {
+      $(`[data-action="${CSS.escape(activeAction)}"]`, host)?.focus({
+        preventScroll: true,
+      });
+    }
+  }
+
   #renderLocaleOverlay(): void {
-    if (this.#modal) {
+    if (
+      this.#modal ||
+      this.#auxiliaryModal === "system-control-confirm" ||
+      this.#auxiliaryModal === "project-action"
+    ) {
       this.#renderModal();
       return;
     }
@@ -1758,6 +2732,10 @@ export class ControlCenterApp {
     const host = document.getElementById("overlay-root");
     if (host) host.innerHTML = "";
     this.#root.inert = false;
+    if (this.#auxiliaryModal === "system-control-confirm")
+      this.#systemControlAction = null;
+    this.#projectActionDialog = null;
+    this.#projectActionBusy = false;
     this.#exportCollection = null;
     this.#modal = null;
     this.#auxiliaryModal = null;
@@ -1772,14 +2750,18 @@ export class ControlCenterApp {
     const id = rowTaskId(task) ?? "";
     const tabs = (
       [
-        ["details", "file", "Szczegóły"],
+        ["details", "file", localeText.t("ui.tasks.column.details")],
         [
           "events",
           "terminal",
-          `Zdarzenia${modal.events ? ` (${modal.events.length})` : ""}`,
+          modal.events === null
+            ? localeText.t("ui.logs.title")
+            : localeText.t("ui.modal.task.tab.events", {
+                count: modal.events.length,
+              }),
         ],
-        ["code", "code", "Kod"],
-        ["response", "terminal", "Odpowiedź"],
+        ["code", "code", localeText.t("ui.modal.task.tab.code")],
+        ["response", "terminal", localeText.t("ui.modal.task.tab.response")],
       ] as const
     )
       .map(
@@ -1794,27 +2776,48 @@ export class ControlCenterApp {
         : null;
     let body = "";
     if (modal.tab === "details") {
-      body = `<div class="details-header">${statusBadge(task["state"])}</div><div class="detail-command">${esc(text(task, "label") ?? text(task, "kind") ?? "Nieznana operacja")}</div><div class="detail-columns"><section><h3 class="detail-section-title">Cel i operacja</h3>${this.#keyValues(
+      body = `<div class="details-header">${statusBadge(task["state"])}</div><div class="detail-command">${esc(text(task, "label") ?? text(task, "kind") ?? localeText.t("ui.tasks.operation.unknown"))}</div><div class="detail-columns"><section><h3 class="detail-section-title">${localeText.t("ui.modal.task.section.purposeOperation")}</h3>${this.#keyValues(
         [
-          ["Cel", text(task, "purpose")],
-          ["Rodzaj", text(task, "kind")],
-          ["Dokument", text(task, "document")],
-          ["Źródło pola", text(task, "source")],
+          [localeText.t("ui.modal.task.field.purpose"), text(task, "purpose")],
+          [localeText.t("ui.modal.task.field.kind"), text(task, "kind")],
+          [
+            localeText.t("ui.modal.task.field.document"),
+            text(task, "document"),
+          ],
+          [localeText.t("ui.modal.task.field.source"), text(task, "source")],
         ],
-      )}</section><section><h3 class="detail-section-title">Wynik i czasy</h3>${this.#keyValues(
+      )}</section><section><h3 class="detail-section-title">${localeText.t("ui.modal.task.section.resultTimes")}</h3>${this.#keyValues(
         [
-          ["Stan źródłowy", task["state"]],
-          ["Wysłano", dateTime(task["submittedAt"])],
-          ["Rozpoczęto", dateTime(task["startedAt"])],
-          ["Zakończono", dateTime(task["finishedAt"])],
-          ["Oczekiwanie", duration(task["waitMs"])],
-          ["Wykonanie", duration(task["executionMs"])],
-          ["Limit wykonania", duration(task["timeoutMs"])],
-          ["Kod wyjścia", task["exitCode"]],
-          ["Rezultat", task["outcome"]],
-          ["Możliwa modyfikacja", task["mayHaveMutated"]],
+          [localeText.t("ui.modal.task.field.sourceState"), task["state"]],
+          [
+            localeText.t("ui.modal.task.field.submitted"),
+            dateTime(task["submittedAt"]),
+          ],
+          [
+            localeText.t("ui.modal.task.field.started"),
+            dateTime(task["startedAt"]),
+          ],
+          [
+            localeText.t("ui.modal.task.field.finished"),
+            dateTime(task["finishedAt"]),
+          ],
+          [localeText.t("ui.tasks.column.wait"), duration(task["waitMs"])],
+          [
+            localeText.t("ui.tasks.column.execution"),
+            duration(task["executionMs"]),
+          ],
+          [
+            localeText.t("ui.modal.task.field.timeout"),
+            duration(task["timeoutMs"]),
+          ],
+          [localeText.t("ui.modal.task.field.exitCode"), task["exitCode"]],
+          [localeText.t("ui.modal.task.field.outcome"), task["outcome"]],
+          [
+            localeText.t("ui.modal.task.field.mayHaveMutated"),
+            task["mayHaveMutated"],
+          ],
         ],
-      )}</section></div><h3 class="detail-section-title">Tożsamość i korelacja</h3>${this.#keyValues(
+      )}</section></div><h3 class="detail-section-title">${localeText.t("ui.modal.task.section.identity")}</h3>${this.#keyValues(
         [
           ["Task ID", id],
           ["Job ID", task["jobId"]],
@@ -1823,32 +2826,38 @@ export class ControlCenterApp {
           ["Client ID", task["clientId"]],
           ["Agent ID", task["agentId"]],
           ["Session ID", task["sessionId"]],
-          ["Dokument ID", task["documentId"]],
-          ["Operacja", task["operationKind"]],
-          ["Zdarzenie terminalne", task["event"]],
-          ["Źródło", task["source"]],
-          ["Ordinal źródła", task["sourceOrdinal"]],
+          ["Document ID", task["documentId"]],
           [
-            "Rewizja",
+            localeText.t("ui.modal.task.field.operation"),
+            task["operationKind"],
+          ],
+          [localeText.t("ui.modal.log.event"), task["event"]],
+          [localeText.t("ui.modal.log.source"), task["source"]],
+          [
+            localeText.t("ui.modal.task.field.sourceOrdinal"),
+            task["sourceOrdinal"],
+          ],
+          [
+            localeText.t("ui.modal.task.field.revision"),
             modal.revision
               ? `${modal.revision.epoch}:${modal.revision.revision}`
               : null,
           ],
         ],
-      )}${agentId ? `<button class="text-link" data-action="task-agent" data-id="${esc(agentId)}">${icon("users", "small")}Otwórz agenta / sesję</button>` : ""}`;
+      )}${agentId ? `<button class="text-link" data-action="task-agent" data-id="${esc(agentId)}">${icon("users", "small")}${localeText.t("ui.modal.task.openAgent")}</button>` : ""}`;
     } else if (modal.tab === "events") {
       body = modal.loading
         ? this.#empty(
-            "Wczytywanie zdarzeń",
-            "Odczyt ze snapshotu bieżącego zadania.",
+            localeText.t("common.loading"),
+            localeText.t("ui.modal.task.events.loadingDescription"),
             "terminal",
           )
         : modal.events?.length
           ? `<div class="modal-event-list">${this.#logItems(modal.events)}</div>`
           : this.#empty(
-              "Brak dostępnych zdarzeń",
+              localeText.t("ui.logs.events.empty"),
               modal.eventStatus ??
-                "Nie znaleziono zdarzeń z niepustym powiązaniem zadania lub requestu.",
+                localeText.t("ui.modal.task.events.emptyDescription"),
               "terminal",
             );
     } else if (modal.tab === "code") {
@@ -1863,9 +2872,9 @@ export class ControlCenterApp {
         artifacts[artifactSlot(modal.artifactKind ?? "original-source")];
       const ref = record(Array.isArray(rawRef) ? rawRef[0] : rawRef);
       const sourceHash = text(ref, "sourceHash") ?? text(task, "sourceHash");
-      body = `<div class="response-tabs"><div class="segmented">${(["original-source", "sent-source", "current-file"] as const).map((kind) => `<button class="segment ${modal.artifactKind === kind ? "active" : ""}" data-action="artifact" data-kind="${kind}">${kind === "original-source" ? "Oryginalne" : kind === "sent-source" ? "Wysłane" : "Aktualny plik"}</button>`).join("")}</div>${selected?.content ? `<button class="btn small" data-action="copy-artifact">${icon("copy", "small")}Kopiuj</button>` : ""}</div>${this.#keyValues(
+      body = `<div class="response-tabs"><div class="segmented">${(["original-source", "sent-source", "current-file"] as const).map((kind) => `<button class="segment ${modal.artifactKind === kind ? "active" : ""}" data-action="artifact" data-kind="${kind}">${localeText.t(kind === "original-source" ? "ui.modal.task.source.original" : kind === "sent-source" ? "ui.modal.task.source.sent" : "ui.modal.task.source.current")}</button>`).join("")}</div>${selected?.content ? `<button class="btn small" data-action="copy-artifact">${icon("copy", "small")}${localeText.t("common.copy")}</button>` : ""}</div>${this.#keyValues(
         [["SHA-256", sourceHash]],
-      )}${sourceHash ? `<button class="text-link" data-action="copy-hash">${icon("copy", "small")}Kopiuj hash</button>` : ""}${modal.loading ? this.#empty("Wczytywanie źródła", "Odczyt ograniczonego artefaktu ze snapshotu.", "file") : selected ? this.#artifactBlock(selected, modal.artifactKind ?? "original-source") : modal.artifactMissingReason ? this.#empty("Źródło niedostępne", modal.artifactMissingReason, "alert") : this.#empty("Wybierz źródło", "Oryginalny kod, wysłany payload i aktualny plik są odrębnymi artefaktami.", "code")}`;
+      )}${sourceHash ? `<button class="text-link" data-action="copy-hash">${icon("copy", "small")}${localeText.t("ui.modal.task.copyHash")}</button>` : ""}${modal.loading ? this.#empty(localeText.t("common.loading"), localeText.t("ui.modal.task.sourceLoadingDescription"), "file") : selected ? this.#artifactBlock(selected, modal.artifactKind ?? "original-source") : modal.artifactMissingReason ? this.#empty(localeText.t("ui.modal.task.sourceUnavailable"), modal.artifactMissingReason, "alert") : this.#empty(localeText.t("ui.modal.task.sourceChoose"), localeText.t("ui.modal.task.sourceChooseDescription"), "code")}`;
     } else {
       const taskArtifacts = record(task["artifacts"]);
       const outputButtons = outputChannels
@@ -1873,14 +2882,14 @@ export class ControlCenterApp {
           const channel = record(taskArtifacts[artifactSlot(kind)]);
           const available = validOutputChannel(channel);
           const label = kind === "rpc" ? "rpc-result.json" : kind;
-          return `<button class="segment ${modal.artifactKind === kind ? "active" : ""}" data-action="artifact" data-kind="${kind}" aria-label="${esc(label)}${available ? "" : " · niedostępny"}" title="${esc(text(channel, "reason") ?? filename)}">${esc(label)}${available ? "" : " · niedostępny"}</button>`;
+          return `<button class="segment ${modal.artifactKind === kind ? "active" : ""}" data-action="artifact" data-kind="${kind}" aria-label="${esc(label)}${available ? "" : ` · ${localeText.t("ui.modal.task.outputUnavailable")}`}" title="${esc(text(channel, "reason") ?? filename)}">${esc(label)}${available ? "" : ` · ${localeText.t("ui.modal.task.outputUnavailable")}`}</button>`;
         })
         .join("");
       const selectedOutput = isOutputKind(modal.artifactKind)
         ? record(taskArtifacts[artifactSlot(modal.artifactKind)])
         : null;
       const provenanceNote = validOutputChannel(selectedOutput ?? {})
-        ? `<p class="details-note">Źródło zachowane: ${esc(text(selectedOutput!, "provenance"))} · SHA-256 ${esc(text(selectedOutput!, "sourceHash"))}</p>`
+        ? `<p class="details-note">${localeText.t("ui.modal.task.provenance", { provenance: text(selectedOutput!, "provenance") ?? "", hash: text(selectedOutput!, "sourceHash") ?? "" })}</p>`
         : "";
       const taskSource = modal.sources["tasks"];
       const freshnessNote =
@@ -1895,19 +2904,20 @@ export class ControlCenterApp {
       const selectedLabel =
         selectedKind === "rpc"
           ? "rpc-result.json"
-          : (selectedKind ?? "artefaktu");
-      body = `<div class="response-tabs"><span class="details-note">Zachowane wyjście wykonania; odczyt tylko z przypiętego snapshotu, bez ponownego uruchomienia.</span><div class="segmented">${outputButtons}<button class="segment ${selectedKind === "response" ? "active" : ""}" data-action="artifact" data-kind="response" aria-label="Wczytaj odpowiedź zgodności">Odpowiedź</button></div>${selectedArtifact?.content ? `<button class="btn small" data-action="copy-artifact">${icon("copy", "small")}Kopiuj</button>` : ""}</div>${freshnessNote}${provenanceNote}${modal.loading ? this.#empty(`Wczytywanie ${esc(selectedLabel)}`, "Odczyt ograniczonego zakresu ze snapshotu.", "terminal") : selectedArtifact && selectedKind ? this.#artifactBlock(selectedArtifact, selectedKind) : modal.artifactMissingReason ? this.#empty(`${esc(selectedLabel)} niedostępny`, modal.artifactMissingReason, "alert") : this.#empty("Wybierz zachowany kanał", "Dostępność stdout, stderr, RPC i zgodności odpowiedzi zależy wyłącznie od retained artifact links.", "terminal")}`;
+          : (selectedKind ?? "artifact");
+      body = `<div class="response-tabs"><span class="details-note">${localeText.t("ui.modal.task.outputNote")}</span><div class="segmented">${outputButtons}<button class="segment ${selectedKind === "response" ? "active" : ""}" data-action="artifact" data-kind="response" aria-label="${localeText.t("ui.modal.task.compatibleResponse")}">${localeText.t("ui.modal.task.tab.response")}</button></div>${selectedArtifact?.content ? `<button class="btn small" data-action="copy-artifact">${icon("copy", "small")}${localeText.t("common.copy")}</button>` : ""}</div>${freshnessNote}${provenanceNote}${modal.loading ? this.#empty(localeText.t("ui.modal.task.outputLoading", { channel: selectedLabel }), localeText.t("ui.modal.task.outputLoadingDescription"), "terminal") : selectedArtifact && selectedKind ? this.#artifactBlock(selectedArtifact, selectedKind) : modal.artifactMissingReason ? this.#empty(`${esc(selectedLabel)} ${localeText.t("ui.modal.task.outputUnavailable")}`, modal.artifactMissingReason, "alert") : this.#empty(localeText.t("ui.modal.task.outputChoose"), localeText.t("ui.modal.task.outputChooseDescription"), "terminal")}`;
     }
-    return `<div class="details-header"><span class="project-chip">${esc(this.#projectLabel(modal.projectId))}</span>${statusBadge(task["state"])}</div><div class="modal-tabs" role="tablist" aria-label="Szczegóły zadania">${tabs}</div><section role="tabpanel" class="agent-modal-panel">${body}</section>`;
+    return `<div class="details-header"><span class="project-chip">${esc(this.#projectLabel(modal.projectId))}</span>${statusBadge(task["state"])}</div><div class="modal-tabs" role="tablist" aria-label="${localeText.t("ui.modal.task.tabs.aria")}">${tabs}</div><section role="tabpanel" class="agent-modal-panel">${body}</section>`;
   }
 
   #artifactBlock(artifact: ArtifactResult, kind: ArtifactKind): string {
     if (!["available", "empty", "truncated"].includes(artifact.state))
-      return `<div class="notice info">${icon("alert")}<div><strong>${esc(artifact.state)}</strong><p>${esc(artifact.reason ?? "Treść artefaktu nie jest dostępna.")}</p></div></div>`;
+      return `<div class="notice info">${icon("alert")}<div><strong>${esc(artifact.state)}</strong><p>${esc(artifact.reason ?? localeText.t("ui.modal.task.artifactUnavailable"))}</p></div></div>`;
     if (artifact.content === null || artifact.state === "empty")
       return this.#empty(
-        "Brak treści artefaktu",
-        artifact.reason ?? "Źródło nie zgłosiło treści.",
+        localeText.t("common.noData"),
+        artifact.reason ??
+          localeText.t("ui.modal.task.artifactEmptyDescription"),
         "file",
       );
     if (kind === "response" || isOutputKind(kind)) {
@@ -1917,9 +2927,10 @@ export class ControlCenterApp {
           : kind === "stderr"
             ? "stderr.txt · UTF-8"
             : kind === "rpc"
-              ? "rpc-result.json · zachowany wynik, nie pełny wire payload"
-              : "Odpowiedź · tekst zachowany";
-      return `<div class="source-editor-head"><span class="source-language">${label}</span><span>${artifact.content.split("\n").length} linii</span></div><pre class="code-block"><code>${esc(artifact.content)}</code></pre>${artifact.state === "truncated" ? `<p class="details-note">Treść ograniczona przez API · odczyt bajtów ${artifact.offset}–${artifact.offset + artifact.length} z ${artifact.totalLength ?? "nieznanej długości"}.</p>` : ""}`;
+              ? localeText.t("ui.modal.task.artifactRpcRetained")
+              : localeText.t("ui.modal.task.artifactResponseRetained");
+      const lineCount = artifact.content.split("\n").length;
+      return `<div class="source-editor-head"><span class="source-language">${label}</span><span>${localeText.plural("ui.modal.task.artifactLines", lineCount)}</span></div><pre class="code-block"><code>${esc(artifact.content)}</code></pre>${artifact.state === "truncated" ? `<p class="details-note">${localeText.t("ui.modal.task.artifactTruncated", { offset: artifact.offset, end: artifact.offset + artifact.length, totalLength: artifact.totalLength ?? localeText.t("common.unknown") })}</p>` : ""}`;
     }
     const highlighter = (
       window as Window & {
@@ -1940,7 +2951,7 @@ export class ControlCenterApp {
       highlighted = esc(artifact.content);
     }
     const lines = highlighted.split("\n");
-    return `<div class="source-editor-head"><span class="source-language">Tekst zachowany · tylko odczyt</span><span>${lines.length} linii</span></div><pre class="code-block code-view syntax-view"><code class="language-python">${lines.map((line, index) => `<span><i class="code-gutter">${index + 1}</i><span class="highlight-source">${line || " "}</span></span>`).join("\n")}</code></pre>${artifact.state === "truncated" ? `<p class="details-note">Treść ograniczona przez API · odczyt bajtów ${artifact.offset}–${artifact.offset + artifact.length} z ${artifact.totalLength ?? "nieznanej długości"}.</p>` : ""}`;
+    return `<div class="source-editor-head"><span class="source-language">${localeText.t("ui.modal.task.artifactSourceReadOnly")}</span><span>${localeText.plural("ui.modal.task.artifactLines", lines.length)}</span></div><pre class="code-block code-view syntax-view"><code class="language-python">${lines.map((line, index) => `<span><i class="code-gutter">${index + 1}</i><span class="highlight-source">${line || " "}</span></span>`).join("\n")}</code></pre>${artifact.state === "truncated" ? `<p class="details-note">${localeText.t("ui.modal.task.artifactTruncated", { offset: artifact.offset, end: artifact.offset + artifact.length, totalLength: artifact.totalLength ?? localeText.t("common.unknown") })}</p>` : ""}`;
   }
 
   #logModal(modal: Extract<ModalState, { type: "log" }>): string {
@@ -1949,37 +2960,59 @@ export class ControlCenterApp {
     const raw =
       text(log, "rawMessage") ??
       text(log, "message") ??
-      "Treść nie została zachowana.";
+      localeText.t("ui.modal.log.unretainedMessage");
     return `<div class="details-header"><span class="badge ${stateTone(log["level"])}">${esc(text(log, "level") ?? "OTHER")}</span></div>${this.#keyValues(
       [
-        ["Czas lokalny", dateTime(timestamp)],
-        ["Czas UTC", utcDateTime(timestamp)],
-        ["Źródło", log["source"]],
-        ["Zdarzenie", log["event"]],
+        [localeText.t("ui.modal.log.localTime"), dateTime(timestamp)],
+        [localeText.t("ui.modal.log.utcTime"), utcDateTime(timestamp)],
+        [localeText.t("ui.modal.log.source"), log["source"]],
+        [localeText.t("ui.modal.log.event"), log["event"]],
         ["Task ID", log["taskId"]],
         ["Request ID", log["requestId"]],
         ["Client ID", log["clientId"]],
         [
-          "Rewizja",
+          localeText.t("ui.modal.task.field.revision"),
           modal.revision
             ? `${modal.revision.epoch}:${modal.revision.revision}`
             : null,
         ],
       ],
-    )}<h3 class="detail-section-title">Wiadomość</h3><pre class="code-block">${esc(raw)}</pre>`;
+    )}<h3 class="detail-section-title">${localeText.t("ui.modal.log.message")}</h3><pre class="code-block">${esc(raw)}</pre>`;
   }
 
   #agentModal(modal: Extract<ModalState, { type: "agent" }>): string {
-    const agent = modal.agent;
-    return `<div class="agent-modal-identity"><span class="agent-monogram large">${esc((text(agent, "name") ?? "?").slice(0, 2).toUpperCase())}</span><div><h3>${esc(text(agent, "name") ?? text(agent, "clientId") ?? "Nieznana tożsamość")}</h3><p>${esc(text(agent, "kind") ?? "Rodzaj niezgłoszony")}</p><span class="project-chip">${esc(this.#projectLabel(modal.projectId))}</span></div>${statusBadge(agent["presence"])}</div>${this.#keyValues(
-      [
-        ["Client ID", agent["id"]],
-        ["Session ID", agent["sessionId"]],
-        ["Źródło obecności", agent["source"]],
-        ["Ostatni sygnał", dateTime(agent["lastSeen"])],
-        ["Aktywne zadanie", agent["work"]],
-      ],
-    )}<p class="details-note">Tożsamość i obecność pochodzą z jawnego źródła. Historia zadań nie jest używana jako heartbeat.</p>`;
+    if (modal.loading)
+      return `<p role="status">${localeText.t("common.loading")}</p>`;
+    return renderAgentDetail({
+      agent: modal.agent,
+      tasks: modal.tasks,
+      files: modal.files,
+      projectName: this.#projectLabel(modal.projectId),
+      projectArchived: modal.projectArchived,
+      snapshotToken: modal.snapshotToken,
+      revision: modal.revision,
+      taskOffset: modal.taskOffset,
+      taskTotal: modal.taskTotal,
+      localeText: agentsProjectsLocale,
+    })
+      .replace(
+        '<input type="text" name="alias"',
+        '<input id="agent-alias-input" type="text" name="alias"',
+      )
+      .replace('data-action="agent-logs-open"', 'data-action="agent-logs"');
+  }
+
+  #sessionModal(modal: Extract<ModalState, { type: "session" }>): string {
+    if (modal.loading)
+      return `<p role="status">${localeText.t("common.loading")}</p>`;
+    return renderTechnicalSessionDetail({
+      session: modal.session,
+      tasks: modal.tasks,
+      events: modal.events,
+      offset: modal.taskOffset,
+      total: modal.taskTotal,
+      localeText: agentsProjectsLocale,
+    });
   }
 
   #keyValues(entries: readonly (readonly [string, unknown])[]): string {
@@ -2007,7 +3040,7 @@ export class ControlCenterApp {
   async #copy(value: string): Promise<void> {
     try {
       await navigator.clipboard.writeText(value);
-      this.#toast("Skopiowano do schowka.");
+      this.#toast(localeText.t("common.copied"));
     } catch {
       const field = document.createElement("textarea");
       field.value = value;
@@ -2019,7 +3052,9 @@ export class ControlCenterApp {
       const copied = document.execCommand("copy");
       field.remove();
       this.#toast(
-        copied ? "Skopiowano do schowka." : "Nie udało się skopiować treści.",
+        copied
+          ? localeText.t("common.copied")
+          : localeText.t("ui.toast.copyFailed"),
       );
     }
   }
@@ -2027,32 +3062,58 @@ export class ControlCenterApp {
   async #export(collection: Collection, format: "csv" | "json"): Promise<void> {
     const state = this.#latest;
     if (!state?.snapshotToken)
-      return this.#toast("Brak snapshotu do eksportu.");
-    const options = this.#tableOptions(
-      collection === "logs"
-        ? "logs"
-        : collection === "agents"
-          ? "agents"
-          : "tasks",
-    );
-    const selection = Object.fromEntries(
-      Object.entries(options).filter(
-        ([key]) => key !== "offset" && key !== "limit",
-      ),
-    ) as Partial<
-      Pick<
-        QueryRequest,
-        "search" | "filters" | "sort" | "facetFields" | "aggregateFields"
-      >
-    >;
-    const request: QueryRequest = {
-      version: API_VERSION,
-      scope: state.scope,
-      collection,
-      snapshotToken: state.snapshotToken,
-      ...selection,
-    };
+      return this.#toast(localeText.t("ui.toast.exportNoSnapshot"));
     try {
+      let scope = state.scope;
+      let snapshotToken = state.snapshotToken;
+      let selection: Partial<
+        Pick<
+          QueryRequest,
+          "search" | "filters" | "sort" | "facetFields" | "aggregateFields"
+        >
+      >;
+      if (collection === "projects") {
+        scope = { kind: "global" };
+        snapshotToken = (await this.#api.snapshot(scope)).snapshotToken;
+        selection = {
+          ...(this.#projectsSearch ? { search: this.#projectsSearch } : {}),
+          ...(this.#projectFilter === "monitored"
+            ? { filters: { monitoring: { eq: true } } }
+            : this.#projectFilter === "archived"
+              ? {
+                  filters: {
+                    monitoring: { eq: false },
+                    archivedAtMs: { min: 0 },
+                  },
+                }
+              : {}),
+        };
+      } else {
+        const options = this.#tableOptions(
+          collection === "logs"
+            ? "logs"
+            : collection === "agents"
+              ? "agents"
+              : "tasks",
+        );
+        selection = Object.fromEntries(
+          Object.entries(options).filter(
+            ([key]) => key !== "offset" && key !== "limit",
+          ),
+        ) as Partial<
+          Pick<
+            QueryRequest,
+            "search" | "filters" | "sort" | "facetFields" | "aggregateFields"
+          >
+        >;
+      }
+      const request: QueryRequest = {
+        version: API_VERSION,
+        scope,
+        collection,
+        snapshotToken,
+        ...selection,
+      };
       const result = await this.#api.export({ ...request, format });
       if (this.#listeners.signal.aborted) return;
       const mime =
@@ -2068,7 +3129,9 @@ export class ControlCenterApp {
       link.click();
       URL.revokeObjectURL(url);
       this.#closeModalSurface();
-      this.#toast(`Wyeksportowano ${result.rowCount} rekordów.`);
+      this.#toast(
+        localeText.t("ui.toast.exported", { count: result.rowCount }),
+      );
     } catch (error) {
       this.#toast(this.#error(error));
     }
@@ -2087,13 +3150,23 @@ export class ControlCenterApp {
         break;
       case "view": {
         const view = button.dataset["view"];
-        if (["overview", "tasks", "agents", "logs"].includes(String(view))) {
-          this.#view = view as View;
+        if (
+          [
+            "overview",
+            "tasks",
+            "agents",
+            "logs",
+            "system",
+            "projects",
+          ].includes(String(view))
+        ) {
+          this.#setView(view as View);
           this.#search = "";
           this.#page = 1;
           this.#mobile = false;
           this.#queryForTable();
           this.#render();
+          if (this.#view === "agents") this.#loadAgentsView();
         }
         break;
       }
@@ -2192,8 +3265,7 @@ export class ControlCenterApp {
             const error = $("#filter-error");
             if (error) {
               error.hidden = false;
-              error.textContent =
-                "Podaj poprawny zakres: minimum nie może być większe od maksimum.";
+              error.textContent = localeText.t("ui.filter.invalidRange");
             }
             break;
           }
@@ -2275,18 +3347,115 @@ export class ControlCenterApp {
         this.#queryForTable();
         this.#render();
         break;
-      case "agent-range":
+      case "agent-filter":
         if (
-          ["all", "confirmed", "history"].includes(
-            String(button.dataset["range"]),
+          ["all", "active", "working", "history"].includes(
+            String(button.dataset["filter"]),
           )
         ) {
-          this.#agentRange = button.dataset["range"] as
-            "all" | "confirmed" | "history";
+          this.#agentRange = button.dataset["filter"] as AgentFilter;
           this.#page = 1;
+          this.#loadAgentsView();
           this.#queryForTable();
           this.#render();
         }
+        break;
+      case "session-filter":
+        if (
+          ["all", "confirmed", "history", "unknown"].includes(
+            String(button.dataset["filter"]),
+          )
+        ) {
+          this.#technicalSessionFilter = button.dataset[
+            "filter"
+          ] as TechnicalSessionFilter;
+          this.#loadAgentsView();
+        }
+        break;
+      case "project-filter":
+        if (
+          ["all", "monitored", "archived"].includes(
+            String(button.dataset["filter"]),
+          )
+        ) {
+          this.#projectFilter = button.dataset["filter"] as ProjectListFilter;
+          this.#render();
+        }
+        break;
+      case "project-favorite": {
+        const id = button.dataset["project"];
+        if (id) {
+          this.#agentsProjects.favoriteProject(
+            id,
+            button.getAttribute("aria-pressed") !== "true",
+          );
+          this.#render();
+        }
+        break;
+      }
+      case "project-open":
+        if (button.dataset["project"])
+          void this.#openProject(button.dataset["project"]!);
+        break;
+      case "project-archive-open":
+        if (button.dataset["project"])
+          void this.#openProjectAction(button.dataset["project"]!, "archive");
+        break;
+      case "project-restore-open":
+        if (button.dataset["project"])
+          void this.#openProjectAction(button.dataset["project"]!, "restore");
+        break;
+      case "project-action-cancel":
+        this.#closeModalSurface();
+        break;
+      case "project-action-confirm":
+        void this.#confirmProjectAction();
+        break;
+      case "project-alias-reset":
+        void this.#resetProjectAlias(button);
+        break;
+      case "agent-alias-reset":
+        void this.#resetAgentAlias(button);
+        break;
+      case "agent-open":
+        if (button.dataset["id"])
+          void this.#openAgent(
+            button.dataset["id"]!,
+            button.dataset["project"] ??
+              (this.#scope.kind === "project" ? this.#scope.projectId : ""),
+          );
+        break;
+      case "session-open":
+        if (button.dataset["id"])
+          void this.#openTechnicalSession(
+            button.dataset["id"]!,
+            button.dataset["project"] ??
+              (this.#scope.kind === "project" ? this.#scope.projectId : ""),
+          );
+        break;
+      case "session-page":
+        if (this.#modal?.type === "session")
+          void this.#loadTechnicalSessionDetails(
+            this.#modal,
+            Math.max(0, Number(button.dataset["offset"]) || 0),
+          );
+        break;
+      case "agent-task-page":
+        if (this.#modal?.type === "agent")
+          void this.#loadAgentDetails(
+            this.#modal,
+            Math.max(0, Number(button.dataset["offset"]) || 0),
+          );
+        break;
+      case "agent-file-task":
+        void this.#openAgentFileTask(button);
+        break;
+      case "agent-logs-open":
+        if (button.dataset["project"] && button.dataset["sessionId"])
+          void this.#openAgentSessionLogs(
+            button.dataset["project"]!,
+            button.dataset["sessionId"]!,
+          );
         break;
       case "follow":
         this.#follow = !this.#follow;
@@ -2299,6 +3468,10 @@ export class ControlCenterApp {
         break;
       case "task":
         if (button.dataset["id"]) void this.#openTask(button.dataset["id"]);
+        break;
+      case "task-open":
+        if (button.dataset["id"])
+          void this.#openTask(button.dataset["id"]!, button.dataset["project"]);
         break;
       case "agent":
         if (button.dataset["id"])
@@ -2322,10 +3495,14 @@ export class ControlCenterApp {
         const log = [
           ...(this.#state()?.pages.logs?.rows ?? []),
           ...(currentTask?.events ?? []),
+          ...(this.#modal?.type === "session"
+            ? (this.#modal.events ?? [])
+            : []),
         ].find((row) => nonemptyId(row["id"]) && row["id"] === logId);
         if (log) {
           const owner =
             currentTask?.projectId ??
+            (this.#modal?.type === "session" ? this.#modal.projectId : null) ??
             (this.#scope.kind === "project"
               ? this.#scope.projectId
               : text(log, "projectId"));
@@ -2342,6 +3519,13 @@ export class ControlCenterApp {
         }
         break;
       }
+      case "log-open":
+        if (button.dataset["id"] && button.dataset["project"])
+          void this.#openLogById(
+            button.dataset["id"]!,
+            button.dataset["project"]!,
+          );
+        break;
       case "log-task": {
         if (
           this.#modal?.type === "log" &&
@@ -2475,14 +3659,281 @@ export class ControlCenterApp {
     }
   }
 
+  #onSubmit(event: SubmitEvent): void {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    const action = form.dataset["action"];
+    if (action !== "project-alias-form" && action !== "agent-alias-form")
+      return;
+    event.preventDefault();
+    const alias = new FormData(form).get("alias");
+    if (typeof alias !== "string") return;
+    if (action === "project-alias-form")
+      void this.#saveProjectAlias(form, alias);
+    else void this.#saveAgentAlias(form, alias);
+  }
+
+  #expectedRevision(element: HTMLElement): Revision | null {
+    const epoch = element.dataset["revisionEpoch"];
+    const revision = Number(element.dataset["revision"]);
+    return epoch && Number.isSafeInteger(revision) && revision >= 0
+      ? { epoch, revision }
+      : null;
+  }
+
+  async #openProject(id: string): Promise<void> {
+    this.#view = "overview";
+    await this.#changeScope({ kind: "project", projectId: id });
+  }
+
+  async #openProjectAction(
+    id: string,
+    action: "archive" | "restore",
+  ): Promise<void> {
+    const modalGeneration = ++this.#modalGeneration;
+    const project = this.#projects.find((entry) => projectId(entry) === id);
+    if (!project) {
+      this.#toast(localeText.t("projects.archive.blocked.missing"));
+      return;
+    }
+    try {
+      const snapshot = await this.#api.snapshot({
+        kind: "project",
+        projectId: id,
+      });
+      if (!this.#currentModal(modalGeneration)) return;
+      this.#projectRevisions.set(id, snapshot.revision);
+      this.#rememberModalFocus();
+      this.#modal = null;
+      this.#projectActionDialog = {
+        project: { ...project, id, name: projectName(project) },
+        action,
+        revision: snapshot.revision,
+        status: null,
+      };
+      this.#auxiliaryModal = "project-action";
+      this.#renderModal(true);
+    } catch (error) {
+      if (!this.#currentModal(modalGeneration)) return;
+      this.#toast(this.#error(error));
+    }
+  }
+
+  async #confirmProjectAction(): Promise<void> {
+    const dialog = this.#projectActionDialog;
+    if (!dialog || this.#projectActionBusy) return;
+    const id = projectId(dialog.project);
+    if (!id) return;
+    this.#projectActionBusy = true;
+    this.#renderModal();
+    try {
+      const result =
+        dialog.action === "archive"
+          ? await this.#agentsProjects.archiveProject(id, dialog.revision)
+          : await this.#agentsProjects.restoreProject(id, dialog.revision);
+      if (
+        this.#projectActionDialog === dialog &&
+        !this.#listeners.signal.aborted
+      )
+        this.#projectActionDialog = { ...dialog, status: result };
+      this.#toast(
+        renderProjectActionStatus(
+          result,
+          agentsProjectsLocale,
+          projectName(dialog.project),
+        ),
+      );
+      if (result.state === "ok") await this.#refreshProjects();
+    } catch (error) {
+      this.#toast(this.#error(error));
+    } finally {
+      this.#projectActionBusy = false;
+      this.#renderModal();
+    }
+  }
+
+  async #saveProjectAlias(form: HTMLFormElement, alias: string): Promise<void> {
+    if (this.#projectActionBusy) return;
+    const id = form.dataset["project"];
+    const revision = this.#expectedRevision(form);
+    if (!id || !revision) {
+      this.#toast(localeText.t("projects.archive.blocked.stale"));
+      return;
+    }
+    this.#projectActionBusy = true;
+    const submit = form.querySelector<HTMLButtonElement>("[type=submit]");
+    if (submit) submit.disabled = true;
+    try {
+      const result = await this.#agentsProjects.setProjectAlias(
+        id,
+        alias,
+        revision,
+      );
+      const project = this.#projects.find((entry) => projectId(entry) === id);
+      this.#toast(
+        renderProjectActionStatus(
+          result,
+          agentsProjectsLocale,
+          project ? projectName(project) : id,
+        ),
+      );
+      if (result.state === "ok") await this.#refreshProjects();
+    } catch (error) {
+      this.#toast(this.#error(error));
+    } finally {
+      this.#projectActionBusy = false;
+      if (submit?.isConnected) submit.disabled = false;
+    }
+  }
+
+  async #resetProjectAlias(button: HTMLElement): Promise<void> {
+    if (this.#projectActionBusy) return;
+    const form = button.closest<HTMLFormElement>(
+      "form[data-action=project-alias-form]",
+    );
+    const id = form?.dataset["project"];
+    const revision = form ? this.#expectedRevision(form) : null;
+    if (!id || !revision) {
+      this.#toast(localeText.t("projects.archive.blocked.stale"));
+      return;
+    }
+    this.#projectActionBusy = true;
+    try {
+      const result = await this.#agentsProjects.resetProjectAlias(id, revision);
+      const project = this.#projects.find((entry) => projectId(entry) === id);
+      this.#toast(
+        renderProjectActionStatus(
+          result,
+          agentsProjectsLocale,
+          project ? projectName(project) : id,
+        ),
+      );
+      if (result.state === "ok") await this.#refreshProjects();
+    } catch (error) {
+      this.#toast(this.#error(error));
+    } finally {
+      this.#projectActionBusy = false;
+    }
+  }
+
+  async #saveAgentAlias(form: HTMLFormElement, alias: string): Promise<void> {
+    if (this.#projectActionBusy || this.#modal?.type !== "agent") return;
+    const modal = this.#modal;
+    const identity = this.#agentAliasIdentity(form);
+    const revision = this.#expectedRevision(form);
+    if (!identity || !revision) {
+      this.#toast(localeText.t("agents.alias.identityUnavailable"));
+      return;
+    }
+    this.#projectActionBusy = true;
+    try {
+      const result = await this.#agentsProjects.setAgentAlias(
+        modal.projectId,
+        identity,
+        alias,
+        revision,
+      );
+      this.#toast(
+        renderProjectActionStatus(
+          result,
+          agentsProjectsLocale,
+          text(modal.agent, "alias") ??
+            text(modal.agent, "name") ??
+            identity.id,
+        ),
+      );
+      if (result.state === "ok" && this.#modal === modal) {
+        const agent = { ...modal.agent };
+        if (result.alias === null) delete agent["alias"];
+        else agent["alias"] = result.alias;
+        this.#modal = {
+          ...modal,
+          agent,
+          revision: result.revision ?? modal.revision,
+        };
+      }
+    } catch (error) {
+      this.#toast(this.#error(error));
+    } finally {
+      this.#projectActionBusy = false;
+      this.#renderModal();
+    }
+  }
+
+  async #resetAgentAlias(button: HTMLElement): Promise<void> {
+    if (this.#projectActionBusy || this.#modal?.type !== "agent") return;
+    const form = button.closest<HTMLFormElement>(
+      "form[data-action=agent-alias-form]",
+    );
+    if (!form) return;
+    const modal = this.#modal;
+    const identity = this.#agentAliasIdentity(form);
+    const revision = this.#expectedRevision(form);
+    if (!identity || !revision) {
+      this.#toast(localeText.t("agents.alias.identityUnavailable"));
+      return;
+    }
+    this.#projectActionBusy = true;
+    try {
+      const result = await this.#agentsProjects.resetAgentAlias(
+        modal.projectId,
+        identity,
+        revision,
+      );
+      this.#toast(
+        renderProjectActionStatus(
+          result,
+          agentsProjectsLocale,
+          text(modal.agent, "name") ?? identity.id,
+        ),
+      );
+      if (result.state === "ok" && this.#modal === modal) {
+        const agent = { ...modal.agent };
+        delete agent["alias"];
+        this.#modal = {
+          ...modal,
+          agent,
+          revision: result.revision ?? modal.revision,
+        };
+      }
+    } catch (error) {
+      this.#toast(this.#error(error));
+    } finally {
+      this.#projectActionBusy = false;
+      this.#renderModal();
+    }
+  }
+
+  #agentAliasIdentity(form: HTMLFormElement): AgentAliasIdentity | null {
+    const kind = form.dataset["identityKind"];
+    const id = form.dataset["identityId"];
+    return (kind === "agent" || kind === "client" || kind === "session") &&
+      nonemptyId(id)
+      ? { kind, id }
+      : null;
+  }
+
+  async #refreshProjects(): Promise<void> {
+    if (this.#listeners.signal.aborted) return;
+    this.#projectRevisionKey = "";
+    this.#projectRevisions.clear();
+    await this.#loadProjects(this.#loadGeneration);
+    this.#render();
+  }
+
   async #changeScope(scope: QueryScope): Promise<void> {
     this.#closeModalSurface();
+    this.#agentViewLoad += 1;
+    this.#workingAgentLoad += 1;
+    this.#technicalSessions = null;
+    this.#workingAgents = null;
     this.#scope = scope;
     this.#mobile = false;
     this.#page = 1;
     this.#filters = { tasks: {}, agents: {}, logs: {} };
     this.#sorts = { tasks: [], agents: [], logs: [] };
     this.#search = "";
+    this.#returnAgent = null;
     this.#modal = null;
     this.#source?.close();
     await this.#load(scope, false);
@@ -2527,9 +3978,7 @@ export class ControlCenterApp {
         };
       } else {
         this.#modal = { ...modal, loading: false };
-        this.#toast(
-          "Zadania nie ma w świeżym snapshotcie; zachowano otwarty zapis.",
-        );
+        this.#toast(localeText.t("ui.modal.task.notInFreshSnapshot"));
       }
     } catch (error) {
       if (!this.#currentModal(generation)) return;
@@ -2572,12 +4021,269 @@ export class ControlCenterApp {
         return;
       }
       if (!returnTask) this.#rememberModalFocus();
-      this.#modal = {
+      const modal: Extract<ModalState, { type: "agent" }> = {
         type: "agent",
         agent: safeClone(agent),
         projectId: owner,
         revision: page.revision,
+        snapshotToken: page.snapshotToken,
+        tasks: null,
+        files: null,
+        taskOffset: 0,
+        taskTotal: null,
+        projectArchived: this.#isProjectArchived(owner),
+        loading: true,
         ...(returnTask ? { returnTask: safeClone(returnTask) } : {}),
+      };
+      this.#modal = modal;
+      this.#renderModal(true);
+      await this.#loadAgentDetails(modal, 0);
+    } catch (error) {
+      this.#toast(this.#error(error));
+    }
+  }
+
+  async #loadAgentDetails(
+    modal: Extract<ModalState, { type: "agent" }>,
+    offset: number,
+  ): Promise<void> {
+    const loading = { ...modal, loading: true, taskOffset: offset };
+    this.#modal = loading;
+    this.#renderModal();
+    try {
+      const taskPage = await this.#agentsProjects.listAgentTasks(
+        modal.projectId,
+        modal.agent,
+        { offset, limit: 8 },
+      );
+      if (this.#modal !== loading || this.#listeners.signal.aborted) return;
+      const taskIds = taskPage.rows
+        .map((task) => task["id"])
+        .filter((id): id is string => nonemptyId(id));
+      let files: readonly Row[] | null = [];
+      if (taskIds.length) {
+        const filePage = await this.#api.query<Row>({
+          version: API_VERSION,
+          scope: { kind: "project", projectId: modal.projectId },
+          collection: "files",
+          snapshotToken: taskPage.snapshot.snapshotToken,
+          filters: { taskId: { any: taskIds } },
+          offset: 0,
+          limit: 200,
+        });
+        files =
+          filePage.source.state === "unavailable"
+            ? null
+            : filePage.rows.filter(
+                (file) =>
+                  file["projectId"] === modal.projectId &&
+                  nonemptyId(file["taskId"]) &&
+                  taskIds.includes(String(file["taskId"])) &&
+                  nonemptyId(file["artifactId"]),
+              );
+      }
+      if (this.#modal !== loading) return;
+      this.#modal = {
+        ...loading,
+        snapshotToken: taskPage.snapshot.snapshotToken,
+        revision: taskPage.snapshot.revision,
+        tasks:
+          taskPage.page.source.state === "unavailable" ? null : taskPage.rows,
+        files,
+        taskTotal: taskPage.page.total,
+        loading: false,
+      };
+    } catch {
+      if (this.#modal !== loading) return;
+      this.#modal = { ...loading, tasks: null, files: null, loading: false };
+    }
+    this.#renderModal();
+  }
+
+  #isProjectArchived(id: string): boolean {
+    const project = this.#projects.find((entry) => projectId(entry) === id);
+    return (
+      project?.["monitoring"] === false || project?.["archivedAtMs"] != null
+    );
+  }
+
+  async #openTechnicalSession(id: string, owner: string): Promise<void> {
+    if (!nonemptyId(id) || !nonemptyId(owner)) return;
+    try {
+      const result = await this.#agentsProjects.listTechnicalSessions(
+        { kind: "project", projectId: owner },
+        { filter: "all", limit: 200 },
+      );
+      const session = result.rows.find(
+        (row) => row["id"] === id || row["sessionId"] === id,
+      );
+      if (!session) {
+        this.#toast(localeText.t("agents.sessions.empty"));
+        return;
+      }
+      this.#rememberModalFocus();
+      const modal: Extract<ModalState, { type: "session" }> = {
+        type: "session",
+        session: safeClone(session),
+        projectId: owner,
+        snapshotToken: result.snapshot.snapshotToken,
+        revision: result.snapshot.revision,
+        tasks: null,
+        events: null,
+        taskOffset: 0,
+        taskTotal: null,
+        loading: true,
+      };
+      this.#modal = modal;
+      this.#renderModal(true);
+      await this.#loadTechnicalSessionDetails(modal, 0);
+    } catch (error) {
+      this.#toast(this.#error(error));
+    }
+  }
+
+  async #loadTechnicalSessionDetails(
+    modal: Extract<ModalState, { type: "session" }>,
+    offset: number,
+  ): Promise<void> {
+    const sessionId =
+      text(modal.session, "sessionId") ?? text(modal.session, "id");
+    if (!sessionId) return;
+    const loading = { ...modal, loading: true, taskOffset: offset };
+    this.#modal = loading;
+    this.#renderModal();
+    try {
+      const scope = { kind: "project" as const, projectId: modal.projectId };
+      const [tasks, events] = await Promise.all([
+        this.#api.query<Row>({
+          version: API_VERSION,
+          scope,
+          collection: "tasks",
+          snapshotToken: modal.snapshotToken,
+          filters: { sessionId: { eq: sessionId } },
+          offset,
+          limit: 8,
+        }),
+        this.#api.query<Row>({
+          version: API_VERSION,
+          scope,
+          collection: "logs",
+          snapshotToken: modal.snapshotToken,
+          filters: { sessionId: { eq: sessionId } },
+          offset: 0,
+          limit: 200,
+        }),
+      ]);
+      if (this.#modal !== loading) return;
+      this.#modal = {
+        ...loading,
+        tasks:
+          tasks.source.state === "unavailable"
+            ? null
+            : tasks.rows.filter(
+                (row) =>
+                  row["projectId"] === modal.projectId &&
+                  row["sessionId"] === sessionId,
+              ),
+        events:
+          events.source.state === "unavailable"
+            ? null
+            : events.rows.filter(
+                (row) =>
+                  row["projectId"] === modal.projectId &&
+                  row["sessionId"] === sessionId,
+              ),
+        taskTotal: tasks.total,
+        loading: false,
+      };
+    } catch {
+      if (this.#modal !== loading) return;
+      this.#modal = { ...loading, tasks: null, events: null, loading: false };
+    }
+    this.#renderModal();
+  }
+
+  async #openAgentFileTask(button: HTMLElement): Promise<void> {
+    const generation = ++this.#modalGeneration;
+    const projectId = button.dataset["project"];
+    const taskId = button.dataset["taskId"];
+    const artifactId = button.dataset["artifactId"];
+    const snapshotToken = button.dataset["snapshot"];
+    if (!projectId || !taskId || !artifactId || !snapshotToken) return;
+    try {
+      const detail = await this.#agentsProjects.taskDetailsForFile(
+        projectId,
+        { projectId, taskId, artifactId },
+        snapshotToken,
+      );
+      if (!this.#currentModal(generation)) return;
+      if (detail.artifactUnavailable) {
+        this.#toast(
+          detail.unavailableMessage ??
+            localeText.t("agents.file.detailUnavailable"),
+        );
+        return;
+      }
+      const revision =
+        this.#modal?.type === "agent" && this.#modal.projectId === projectId
+          ? this.#modal.revision
+          : null;
+      if (!detail.artifact) return;
+      this.#showTask(
+        detail.task,
+        projectId,
+        snapshotToken,
+        revision,
+        undefined,
+        {},
+        {
+          kind: detail.artifact.kind,
+          artifact: detail.artifact,
+        },
+      );
+    } catch (error) {
+      this.#toast(this.#error(error));
+    }
+  }
+
+  async #openAgentSessionLogs(
+    projectId: string,
+    sessionId: string,
+  ): Promise<void> {
+    if (this.#modal?.type === "agent")
+      this.#returnAgent = safeClone(this.#modal);
+    this.#closeModalSurface();
+    this.#scope = { kind: "project", projectId };
+    this.#view = "logs";
+    this.#search = sessionId;
+    this.#page = 1;
+    await this.#load(this.#scope, false);
+    this.#watch();
+  }
+
+  async #openLogById(id: string, owner: string): Promise<void> {
+    const generation = ++this.#modalGeneration;
+    try {
+      const scope = { kind: "project" as const, projectId: owner };
+      const snapshot = await this.#api.snapshot(scope);
+      if (!this.#currentModal(generation)) return;
+      const page = await this.#api.query<Row>({
+        version: API_VERSION,
+        scope,
+        collection: "logs",
+        snapshotToken: snapshot.snapshotToken,
+        filters: { id },
+        limit: 1,
+      });
+      if (!this.#currentModal(generation)) return;
+      const log = page.rows.find((row) => row["id"] === id);
+      if (!log) return;
+      this.#rememberModalFocus();
+      this.#modal = {
+        type: "log",
+        log,
+        projectId: owner,
+        revision: page.revision,
       };
       this.#renderModal(true);
     } catch (error) {
@@ -2592,7 +4298,7 @@ export class ControlCenterApp {
     const taskId = logModal.log["taskId"];
     const requestId = logModal.log["requestId"];
     if (!nonemptyId(taskId) && !nonemptyId(requestId)) {
-      this.#toast("Zdarzenie nie ma niepustego task ID ani request ID.");
+      this.#toast(localeText.t("ui.toast.eventIdentityMissing"));
       return;
     }
     const generation = ++this.#modalGeneration;
@@ -2617,7 +4323,7 @@ export class ControlCenterApp {
           : nonemptyId(row["requestId"]) && row["requestId"] === requestId,
       );
       if (!task) {
-        this.#toast("Powiązanego zadania nie ma w zachowanym zakresie.");
+        this.#toast(localeText.t("ui.project.task.unavailable"));
         return;
       }
       this.#showTask(
@@ -2646,9 +4352,7 @@ export class ControlCenterApp {
       return;
     }
     if (!nonemptyId(owner)) {
-      this.#toast(
-        "Wynik nie zgłosił project ID; szczegółów nie można otworzyć.",
-      );
+      this.#toast(localeText.t("ui.toast.searchResultProjectMissing"));
       return;
     }
     this.#auxiliaryModal = null;
@@ -2695,7 +4399,7 @@ export class ControlCenterApp {
         ? agent.agent["id"]
         : null;
     if (!identity) {
-      this.#toast("Agent nie ma niepustej tożsamości do powiązania logów.");
+      this.#toast(localeText.t("ui.toast.agentLogIdentityMissing"));
       return;
     }
     this.#returnAgent = safeClone(agent);
@@ -2717,13 +4421,23 @@ export class ControlCenterApp {
   #onInput(event: Event): void {
     const target = event.target;
     if (!(target instanceof HTMLInputElement)) return;
-    if (["task-search", "agent-search", "log-search"].includes(target.id)) {
+    const action = target.dataset["action"];
+    if (action === "project-search") {
+      this.#projectsSearch = target.value;
+      this.#render();
+      return;
+    }
+    if (
+      ["task-search", "log-search"].includes(target.id) ||
+      action === "agent-search"
+    ) {
       this.#search = target.value;
       this.#page = 1;
       if (this.#searchTimer !== null) window.clearTimeout(this.#searchTimer);
       this.#searchTimer = window.setTimeout(() => {
         this.#searchTimer = null;
         this.#queryForTable();
+        if (this.#view === "agents") this.#loadAgentsView();
       }, 180);
     }
     if (target.id === "filter-value-search") {
@@ -2773,7 +4487,7 @@ export class ControlCenterApp {
       }
       this.#closeModalSurface();
       this.#render();
-      this.#toast("Częstotliwość odświeżania została zaktualizowana.");
+      this.#toast(localeText.t("ui.toast.refreshIntervalUpdated"));
     }
   }
 
@@ -2863,15 +4577,22 @@ export class ControlCenterApp {
       "2": "tasks",
       "3": "agents",
       "4": "logs",
+      "5": "system",
+      "6": "projects",
     };
     if (views[event.key]) {
       event.preventDefault();
-      this.#view = views[event.key]!;
+      this.#setView(views[event.key]!);
       this.#render();
+      if (this.#view === "agents") this.#loadAgentsView();
     } else if (event.key === "/") {
       event.preventDefault();
-      $("#task-search, #agent-search, #log-search")?.focus();
-    } else if (event.key.toLowerCase() === "f") {
+      $("#task-search, [data-action=agent-search], #log-search")?.focus();
+    } else if (
+      event.key.toLowerCase() === "f" &&
+      this.#view !== "system" &&
+      this.#view !== "projects"
+    ) {
       this.#openFilter(
         this.#view === "logs"
           ? "level"
@@ -2917,7 +4638,7 @@ export class ControlCenterApp {
       event.key === "Enter" &&
       target instanceof HTMLElement &&
       target.matches(
-        '[data-action="task"],[data-action="agent"],[data-action="log"]',
+        '[data-action="task"],[data-action="task-open"],[data-action="agent"],[data-action="agent-open"],[data-action="session-open"],[data-action="log"],[data-action="log-open"]',
       )
     ) {
       event.preventDefault();
@@ -2925,7 +4646,7 @@ export class ControlCenterApp {
     } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       const rows = [
         ...document.querySelectorAll<HTMLElement>(
-          '#main [data-action="task"],#main [data-action="agent"],#main [data-action="log"]',
+          '#main [data-action="task"],#main [data-action="task-open"],#main [data-action="agent"],#main [data-action="agent-open"],#main [data-action="session-open"],#main [data-action="log"],#main [data-action="log-open"]',
         ),
       ];
       if (!rows.length) return;
@@ -2980,7 +4701,11 @@ export class ControlCenterApp {
     )
       this.#filterOptions = [
         ...this.#filterOptions,
-        { value: null, count: page.total - knownCount, label: "Brak danych" },
+        {
+          value: null,
+          count: page.total - knownCount,
+          label: localeText.t("common.noData"),
+        },
       ];
     this.#filterColumn = column;
     this.#filterSearch = preservedSearch;
@@ -2994,13 +4719,13 @@ export class ControlCenterApp {
           )
         : new Set(this.#filterOptions.map((option) => option.value)));
     const body = isNumber
-      ? `<p class="column-filter-description">Zakres wartości · sekundy</p><div class="column-number-range"><label for="filter-min">Od<input id="filter-min" type="number" min="0" step="any" value="${filter?.type === "number" && filter.min !== "" ? esc(typeof filter.min === "number" ? filter.min / 1000 : "") : ""}"></label><span>—</span><label for="filter-max">Do<input id="filter-max" type="number" min="0" step="any" value="${filter?.type === "number" && filter.max !== "" ? esc(typeof filter.max === "number" ? filter.max / 1000 : "") : ""}"></label></div><label class="column-unknown"><input id="filter-missing" type="checkbox" ${filter?.type !== "number" || filter.includeUnknown ? "checked" : ""}>Uwzględnij brak danych</label>`
+      ? `<p class="column-filter-description">${localeText.t("ui.filter.numeric.description")}</p><div class="column-number-range"><label for="filter-min">${localeText.t("ui.filter.numeric.min")}<input id="filter-min" type="number" min="0" step="any" value="${filter?.type === "number" && filter.min !== "" ? esc(typeof filter.min === "number" ? filter.min / 1000 : "") : ""}"></label><span>—</span><label for="filter-max">${localeText.t("ui.filter.numeric.max")}<input id="filter-max" type="number" min="0" step="any" value="${filter?.type === "number" && filter.max !== "" ? esc(typeof filter.max === "number" ? filter.max / 1000 : "") : ""}"></label></div><label class="column-unknown"><input id="filter-missing" type="checkbox" ${filter?.type !== "number" || filter.includeUnknown ? "checked" : ""}>${localeText.t("ui.filter.includeMissing")}</label>`
       : this.#filterOptions.length
-        ? `<div class="column-value-search">${icon("search", "small")}<input id="filter-value-search" type="search" autocomplete="off" value="${esc(this.#filterSearch)}" placeholder="Szukaj wartości…" aria-label="Szukaj wartości kolumny"></div><div class="column-choice-actions"><button type="button" data-action="filter-select-visible">Tylko widoczne</button><button type="button" data-action="filter-select-all">Wszystkie</button><button type="button" data-action="filter-select-none">Żadne</button></div><div class="column-values" id="filter-values"></div><div class="column-selection-note" id="filter-selection-note" aria-live="polite"></div>`
-        : `<label class="column-text-label" for="filter-text">Zawiera tekst</label><input id="filter-text" type="search" value="${filter?.type === "text" ? esc(filter.query) : ""}"><p class="column-filter-description">Wyszukiwanie bez rozróżniania wielkości liter.</p>`;
+        ? `<div class="column-value-search">${icon("search", "small")}<input id="filter-value-search" type="search" autocomplete="off" value="${esc(this.#filterSearch)}" placeholder="${localeText.t("ui.filter.searchValues.placeholder")}" aria-label="${localeText.t("ui.filter.searchValues.aria")}"></div><div class="column-choice-actions"><button type="button" data-action="filter-select-visible">${localeText.t("ui.filter.selectVisible")}</button><button type="button" data-action="filter-select-all">${localeText.t("ui.filter.selectAll")}</button><button type="button" data-action="filter-select-none">${localeText.t("ui.filter.selectNone")}</button></div><div class="column-values" id="filter-values"></div><div class="column-selection-note" id="filter-selection-note" aria-live="polite"></div>`
+        : `<label class="column-text-label" for="filter-text">${localeText.t("ui.filter.contains")}</label><input id="filter-text" type="search" value="${filter?.type === "text" ? esc(filter.query) : ""}"><p class="column-filter-description">${localeText.t("ui.filter.caseInsensitive")}</p>`;
     this.#mountOverlay(
       "filter",
-      `<div class="overlay" data-action="backdrop"><section class="column-filter-popup" role="dialog" aria-modal="true" aria-labelledby="column-filter-title" tabindex="-1"><header><div><span>FILTR KOLUMNY</span><h3 id="column-filter-title">${esc(column)}</h3></div><button class="icon-button" data-action="close" aria-label="Zamknij filtr">${icon("close", "small")}</button></header><div class="column-filter-body">${body}<p id="filter-error" class="field-error" role="alert" hidden></p></div><footer><button class="btn small" data-action="filter-clear" data-column="${esc(column)}">Wyczyść</button><button class="btn primary small" data-action="filter-apply" data-column="${esc(column)}">Zastosuj</button></footer></section></div>`,
+      `<div class="overlay" data-action="backdrop"><section class="column-filter-popup" role="dialog" aria-modal="true" aria-labelledby="column-filter-title" tabindex="-1"><header><div><span>${localeText.t("ui.filter.title")}</span><h3 id="column-filter-title">${esc(column)}</h3></div><button class="icon-button" data-action="close" aria-label="${localeText.t("ui.filter.close")}">${icon("close", "small")}</button></header><div class="column-filter-body">${body}<p id="filter-error" class="field-error" role="alert" hidden></p></div><footer><button class="btn small" data-action="filter-clear" data-column="${esc(column)}">${localeText.t("ui.filter.clear")}</button><button class="btn primary small" data-action="filter-apply" data-column="${esc(column)}">${localeText.t("ui.filter.apply")}</button></footer></section></div>`,
       isNumber
         ? "#filter-min"
         : this.#filterOptions.length
@@ -3045,7 +4770,7 @@ export class ControlCenterApp {
   #searchDialog(query = "", results = ""): void {
     this.#mountOverlay(
       "search",
-      `<div class="overlay" data-action="backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><h2 id="modal-title">Szukaj w przestrzeni roboczej</h2><button class="icon-button" data-action="close" aria-label="Zamknij">${icon("close")}</button></header><div class="modal-body"><label class="search-box global-modal-search">${icon("search")}<input id="global-search-input" type="search" placeholder="Projekt, zadanie, agent, ID…" aria-label="Szukaj globalnie" autocomplete="off" value="${esc(query)}"></label><div id="global-results" class="global-search-results">${results}</div></div></section></div>`,
+      `<div class="overlay" data-action="backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><h2 id="modal-title">${localeText.t("ui.search.title")}</h2><button class="icon-button" data-action="close" aria-label="${localeText.t("ui.modal.close")}">${icon("close")}</button></header><div class="modal-body"><label class="search-box global-modal-search">${icon("search")}<input id="global-search-input" type="search" placeholder="${localeText.t("ui.search.placeholder")}" aria-label="${localeText.t("ui.search.global.aria")}" autocomplete="off" value="${esc(query)}"></label><div id="global-results" class="global-search-results">${results}</div></div></section></div>`,
       "#global-search-input",
     );
   }
@@ -3057,15 +4782,15 @@ export class ControlCenterApp {
     const needle = query.trim();
     if (!needle) {
       holder.innerHTML = this.#empty(
-        "Wpisz wyszukiwaną frazę",
-        "Wyszukiwanie korzysta wyłącznie z danych dostępnych przez API.",
+        localeText.t("ui.search.prompt"),
+        localeText.t("ui.search.apiOnly"),
         "search",
       );
       return;
     }
     holder.innerHTML = this.#empty(
-      "Wyszukiwanie…",
-      "Odczyt z globalnego zakresu.",
+      localeText.t("common.loading"),
+      localeText.t("ui.search.globalScope"),
       "search",
     );
     try {
@@ -3094,18 +4819,24 @@ export class ControlCenterApp {
               return "";
             const id = projectId(row) ?? text(row, "id");
             if (!id) return "";
-            return `<button class="search-result" data-action="search-result" data-kind="${type}" data-id="${esc(id)}" data-project="${esc(text(row, "projectId") ?? "")}">${icon(type === "project" ? "folder" : type === "agent" ? "users" : "code")}<div><strong>${esc(text(row, "name") ?? text(row, "label") ?? text(row, "kind") ?? id)}</strong><small>${esc(type)} · ${esc(text(row, "state") ?? text(row, "projectName") ?? "")}</small></div>${icon("chevron", "small")}</button>`;
+            const label =
+              type === "project"
+                ? localeText.t("nav.projects")
+                : type === "agent"
+                  ? localeText.t("nav.agents")
+                  : localeText.t("nav.tasks");
+            return `<button class="search-result" data-action="search-result" data-kind="${type}" data-id="${esc(id)}" data-project="${esc(text(row, "projectId") ?? "")}">${icon(type === "project" ? "folder" : type === "agent" ? "users" : "code")}<div><strong>${esc(text(row, "name") ?? text(row, "label") ?? text(row, "kind") ?? id)}</strong><small>${label} · ${esc(text(row, "state") ?? text(row, "projectName") ?? "")}</small></div>${icon("chevron", "small")}</button>`;
           })
           .join("") ||
         this.#empty(
-          "Brak wyników",
-          "Spróbuj innej nazwy lub fragmentu.",
+          localeText.t("common.noResults"),
+          localeText.t("ui.search.emptyDescription"),
           "search",
         );
     } catch (error) {
       if (serial !== this.#globalSearchSerial) return;
       holder.innerHTML = this.#empty(
-        "Wyszukiwanie niedostępne",
+        localeText.t("ui.search.unavailable"),
         this.#error(error),
         "alert",
       );
@@ -3113,23 +4844,35 @@ export class ControlCenterApp {
   }
 
   #showHelp(): void {
+    const views = (
+      [
+        "nav.overview",
+        "nav.tasks",
+        "nav.agents",
+        "nav.logs",
+        "nav.system",
+      ] as const
+    )
+      .map((key) => localeText.t(key))
+      .join(" / ");
     this.#mountOverlay(
       "help",
-      `<div class="overlay" data-action="backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><h2 id="modal-title">Pomoc i skróty</h2><button class="icon-button" data-action="close">${icon("close")}</button></header><div class="modal-body"><p>Widoki używają wyłącznie odczytów z lokalnego Console Query API.</p>${[
-        ["Przegląd / Zadania / Agenci / Logi", "1–4"],
-        ["Wyszukiwanie w widoku", "/"],
-        ["Wyszukiwanie globalne", "Ctrl K"],
-        ["Filtry / sortowanie", "f / o"],
-        ["Sortowanie wielu kolumn", "Ctrl + klik"],
-        ["Zamroź / wznów podgląd", "Spacja"],
-        ["Śledzenie logów", "l"],
-        ["Zakres projektu", "c"],
-        ["Odśwież", "r"],
-        ["Eksportuj", "e"],
-        ["Ustawienia podglądu", ","],
-        ["W zadaniu: kod / odpowiedź", "p / y"],
-        ["W zadaniu: zdarzenia / agent", "g / a"],
-        ["Zamknij okno", "Esc"],
+      `<div class="overlay" data-action="backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><h2 id="modal-title">${localeText.t("common.help")}</h2><button class="icon-button" data-action="close" aria-label="${localeText.t("common.close")}">${icon("close")}</button></header><div class="modal-body"><p>${localeText.t("ui.help.readOnly")}</p>${[
+        [views, "1–5"],
+        [localeText.t("ui.help.shortcuts.viewSearch"), "/"],
+        [localeText.t("ui.help.shortcuts.globalSearch"), "Ctrl K"],
+        [localeText.t("ui.help.shortcuts.filtersSort"), "f / o"],
+        [localeText.t("ui.help.shortcuts.multiSort"), "Ctrl + click"],
+        [localeText.t("ui.help.shortcuts.freeze"), "Space"],
+        [localeText.t("ui.help.shortcuts.follow"), "l"],
+        [localeText.t("ui.help.shortcuts.system"), "5"],
+        [localeText.t("ui.help.shortcuts.scope"), "c"],
+        [localeText.t("ui.help.shortcuts.refresh"), "r"],
+        [localeText.t("ui.help.shortcuts.export"), "e"],
+        [localeText.t("ui.help.shortcuts.settings"), ","],
+        [localeText.t("ui.help.shortcuts.taskCodeResponse"), "p / y"],
+        [localeText.t("ui.help.shortcuts.taskEventsAgent"), "g / a"],
+        [localeText.t("ui.help.shortcuts.close"), "Esc"],
       ]
         .map(
           ([label, key]) =>
@@ -3137,7 +4880,7 @@ export class ControlCenterApp {
         )
         .join(
           "",
-        )}<p class="details-note">Zamrożenie dotyczy widoku przeglądarki, a nie pracy brokera. Automatyczne odczyty są wyzwalane przez powiadomienia zmian źródła.</p></div></section></div>`,
+        )}<p class="details-note">${localeText.t("ui.help.freezeNote")}</p></div></section></div>`,
       ".modal",
     );
   }
@@ -3145,7 +4888,7 @@ export class ControlCenterApp {
   #showSettings(): void {
     this.#mountOverlay(
       "settings",
-      `<div class="overlay" data-action="backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><h2 id="modal-title">Ustawienia podglądu</h2><button class="icon-button" data-action="close" aria-label="Zamknij">${icon("close")}</button></header><div class="modal-body"><div class="field"><label class="modal-label" for="refresh-interval">Odstęp między aktualizacjami widoku</label><select id="refresh-interval"><option value="2000" ${this.#refreshInterval === 2000 ? "selected" : ""}>Co 2 sekundy · szybka</option><option value="4000" ${this.#refreshInterval === 4000 ? "selected" : ""}>Co 4 sekundy · standardowa</option><option value="8000" ${this.#refreshInterval === 8000 ? "selected" : ""}>Co 8 sekund · spokojna</option></select><small>Widok pobiera nowy snapshot po powiadomieniu SSE. Interwał scala serię zmian; nie działa tu własny polling ani generator danych.</small></div></div></section></div>`,
+      `<div class="overlay" data-action="backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><h2 id="modal-title">${localeText.t("common.settings")}</h2><button class="icon-button" data-action="close" aria-label="${localeText.t("common.close")}">${icon("close")}</button></header><div class="modal-body"><div class="field"><label class="modal-label" for="refresh-interval">${localeText.t("ui.settings.refreshInterval")}</label><select id="refresh-interval"><option value="2000" ${this.#refreshInterval === 2000 ? "selected" : ""}>${localeText.t("ui.settings.interval.fast")}</option><option value="4000" ${this.#refreshInterval === 4000 ? "selected" : ""}>${localeText.t("ui.settings.interval.standard")}</option><option value="8000" ${this.#refreshInterval === 8000 ? "selected" : ""}>${localeText.t("ui.settings.interval.slow")}</option></select><small>${localeText.t("ui.settings.refreshNote")}</small></div></div></section></div>`,
       ".modal",
     );
   }
@@ -3154,7 +4897,7 @@ export class ControlCenterApp {
     this.#exportCollection = collection;
     this.#mountOverlay(
       "export",
-      `<div class="overlay" data-action="backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><h2 id="modal-title">Eksport danych</h2><button class="icon-button" data-action="close" aria-label="Zamknij">${icon("close")}</button></header><div class="modal-body"><p>Eksport obejmuje cały retained scope i aktualne filtry, niezależnie od bieżącej strony.</p><button class="source-option" data-action="export-format" data-collection="${esc(collection)}" data-format="csv"><span class="source-option-icon">${icon("file")}</span><div><strong>CSV · pełny wynik</strong><p>Separator i formuły obsługuje serwer eksportu.</p></div>${icon("download", "small")}</button><button class="source-option" data-action="export-format" data-collection="${esc(collection)}" data-format="json"><span class="source-option-icon">${icon("code")}</span><div><strong>JSON · pełny wynik</strong><p>Wersjonowany eksport wybranego zakresu.</p></div>${icon("download", "small")}</button></div></section></div>`,
+      `<div class="overlay" data-action="backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><h2 id="modal-title">${localeText.t("common.export")}</h2><button class="icon-button" data-action="close" aria-label="${localeText.t("common.close")}">${icon("close")}</button></header><div class="modal-body"><p>${localeText.t("ui.export.description")}</p><button class="source-option" data-action="export-format" data-collection="${esc(collection)}" data-format="csv"><span class="source-option-icon">${icon("file")}</span><div><strong>${localeText.t("ui.export.csv.title")}</strong><p>${localeText.t("ui.export.csv.description")}</p></div>${icon("download", "small")}</button><button class="source-option" data-action="export-format" data-collection="${esc(collection)}" data-format="json"><span class="source-option-icon">${icon("code")}</span><div><strong>${localeText.t("ui.export.json.title")}</strong><p>${localeText.t("ui.export.json.description")}</p></div>${icon("download", "small")}</button></div></section></div>`,
       ".modal",
     );
   }

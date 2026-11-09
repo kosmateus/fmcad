@@ -20,9 +20,19 @@ export function prepareOfflineTestCache(root: string): void {
       readFileSync(path.join(root, "package.json"), "utf8"),
     ) as unknown,
   );
-  const dependencies = record(manifest["dependencies"]);
-  if (!Object.keys(dependencies).length)
+  const runtimeDependencies = record(manifest["dependencies"]);
+  if (!Object.keys(runtimeDependencies).length)
     throw new Error("No runtime dependencies");
+  const developmentDependencies = record(manifest["devDependencies"]);
+  const v1Host = developmentDependencies["@opencode-ai/plugin"];
+  if (typeof v1Host !== "string" || !v1Host)
+    throw new Error("Missing supported OpenCode V1 host dependency");
+  // The installed V1 object-loader test resolves this optional host package in
+  // its own consumer. Warm its metadata too; production dependencies are unchanged.
+  const dependencies = {
+    ...runtimeDependencies,
+    "@opencode-ai/plugin": v1Host,
+  };
   const directory = mkdtempSync(path.join(tmpdir(), "fmcad-consumer-cache-"));
   try {
     writeFileSync(

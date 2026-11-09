@@ -415,8 +415,22 @@ export function startStdio(
     }
   }
   let telemetry: McpStdioTelemetry | undefined;
+  const createTelemetry =
+    dependencies.createTelemetry ??
+    (!injectedRuntime
+      ? (): McpStdioTelemetry => {
+          const producer = runtimeRequire(
+            "../composition/control-center-telemetry.js",
+          ) as typeof import("../composition/control-center-telemetry.js");
+          return producer.createMcpStdioTelemetry({
+            clientId,
+            instanceId,
+            queueDirectory: runtimeModules.queueConnection.queueDirectory(),
+          });
+        }
+      : undefined);
   try {
-    telemetry = dependencies.createTelemetry?.();
+    telemetry = createTelemetry?.();
   } catch {
     try {
       stderr.write(

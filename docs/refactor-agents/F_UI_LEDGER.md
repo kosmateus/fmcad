@@ -7,8 +7,11 @@ Keychain is excluded. Modeling and Fusion mutation routes are unchanged.
 
 ## Archived scope and current dispositions
 
-Archived task identifiers below follow the completion plan. The embedded Dolt
-store was extracted separately; no independent task-status export has been made.
+Archived task identifiers below were verified by querying the extracted Dolt
+store with Dolt 2.7.2 on a disposable copy. The original database was untouched.
+`web-query-api` and `web-service` were closed; `web-system-controls` was blocked;
+`browser-console` and `log-retention` were open; the other listed UI tasks were
+in progress. Archived status is not current acceptance.
 Archived branch commits are source evidence, not proof of successful qualification.
 
 | Archived task / feature | Current production evidence | Disposition / remaining work |
@@ -87,3 +90,51 @@ Additional archived integration source: `delivery/console-ui-locales` at
 project and System views. This is a recovery reference for the next integration;
 it must be merged selectively with current artifact/identity behavior and the
 new lifecycle guards, not copied over main as a complete application.
+
+## Operational integration delivery (in progress)
+
+The localized archived views are selectively merged with current artifact and
+identity handling and the lifecycle fixes. System controls consume the unchanged
+BrokerControl/QueueClient ports, retain durable request receipts and generation
+fences, and perform no startup action when opening the page. Browser disposal
+invalidates System reads and prevents a pending status read from dispatching a
+control after disposal or a project-scope change.
+
+Production composition now injects SQLite project/agent alias and restore
+handlers. Archival deliberately remains blocked: legacy queue admission and
+presence writers do not participate in the project-history activity fence.
+Issue #43 requests A's production fence adapter; idle telemetry alone cannot
+establish safe archival. Isolated storage compositions never connect controls
+to a different default broker directory.
+
+The public launcher for E is `openControlCenter({port, projectPath?})`, returning
+`{url, projectId, dispose}` after authenticated readiness. A supplied canonical
+path must match exactly one registered project. The URL selects that registered
+identity, with server-side authorization retained. Caller disposal does not stop
+the shared detached service or broker.
+
+Installed asset validation caught and fixed the archived root-level contract
+placement: System contracts now live under `contracts/`, with all five new
+resources explicitly allowlisted. No staging wildcard or integrity relaxation.
+Local checks: strict build and typecheck, locale keys/parameters, all eight
+agents/projects regressions, installed alias authorization and blocked archive,
+passive history isolation, static tamper rejection and real HTTP asset serving
+pass. The browser ESM dependency graph loads 20 modules and the manifest has 31
+resources. The restored System suite has 19 tests; five local tests pass and 14
+real IPC tests fail before assertions because this host cannot read `/proc/PID/stat`.
+Full CI/Chromium on this delivery remains required before merging or TUI deletion.
+
+## Verified archived acceptance gaps
+
+The Dolt task `fmcad-log-retention` requires bounded private temporary service
+diagnostics, ownership-safe cleanup, redaction, bounded writer queues and
+disk-full/restart tests. SQLite quota alone does not satisfy it. Existing
+`observer-errors.log` remains unbounded and durable project logs must not be
+deleted when implementing that diagnostic policy.
+
+`fmcad-web-system-controls` explicitly limits the primary panel to
+pause/drain/resume and guarded STOPPED start, forbids reimplementing restart in
+HTTP, and requires original receipt recovery. Terminal inspect/stop/restart/reload
+therefore remain an explicit retirement decision with A/E rather than silently
+being included in the web controls. `web-telemetry` records authoritative phase
+boundaries as a remaining producer gap; polling timestamps must not fill it.

@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { sanitize } = require('./console-logs');
-const { consoleSource, selectConsoleRows, controlIntent, openOperation: open } = require('./dist/core');
+const { consoleSource, selectConsoleRows, openOperation: open } = require('./dist/core');
 const views = ['overview', 'agents', 'tasks', 'logs', 'system'];
 function viewState(name) { return { search: '', filters: { scope: 'all' },
   sort: 'default', selectedId: null, offset: 0, order: [], frozen: null, follow: name === 'logs', newCount: 0 }; }
@@ -96,27 +96,9 @@ function exportRows(file, rows, { format = 'jsonl', overwrite = false, retention
   try { fs.writeFileSync(fd, data); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   return snapshot.length;
 }
-class BrokerControl {
-  constructor(factory = () => new (require('./queue-client').QueueClient)('console:' + process.pid + ':' + randomUUID())) { this.factory = factory; }
-  async read() {
-    this.client ||= this.factory(); await this.client.register({ autoStart: false });
-    this.current = await this.client.call('control-status');
-    this.observedAt = Date.now();
-    return this.current;
-  }
-  async set(paused) {
-    if (!this.current) throw new Error('Read broker state before control');
-    // A displayed/frozen or old passive snapshot never authorizes mutation.
-    const before = await this.read();
-    const requestId = randomUUID();
-    const intent = controlIntent(paused, requestId, { status: 'available', value: before, observedAt: this.observedAt });
-    try {
-      return this.current = await this.client.call(intent.method, { control: intent.control });
-    } catch (error) {
-      this.current = null;
-      try { await this.read(); } catch { /* Unknown outcome stays explicit. No replay. */ }
-      throw error;
-    }
-  }
+const { BrokerObservation } = require('./dist/node-adapters/control-center/broker-observation');
+class BrokerControl extends BrokerObservation {
+  constructor(factory = () => new (require('./queue-client').QueueClient)('console:' + process.pid + ':' + randomUUID())) { super(factory); }
 }
+
 module.exports = { ConsoleModel, BrokerControl, exportRows, views, open };

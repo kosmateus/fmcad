@@ -433,7 +433,8 @@ test(
   "process MCP and CLI share the production broker/typed worker and execute once per explicit request",
   { timeout: 30000 },
   async (t) => {
-    const { resolveFmcadConfiguration } = require("../dist/src/dist/core");
+    t.after(require("./fixtures/fake-wsl-platform.cjs")());
+  const { resolveFmcadConfiguration } = require("../dist/src/dist/core");
     const { queueDirectory } = require("../dist/src/queue-connection");
     const { serve } = require("../dist/src/queue-broker");
     const { durable } = require("../dist/src/queue-instance");
@@ -689,7 +690,8 @@ test(
   "MCP process identities preserve project-scoped jobs across pause, lost acknowledgement and owner restart",
   { timeout: 30000 },
   async (t) => {
-    const { resolveFmcadConfiguration } = require("../dist/src/dist/core");
+    t.after(require("./fixtures/fake-wsl-platform.cjs")());
+  const { resolveFmcadConfiguration } = require("../dist/src/dist/core");
     const { queueDirectory } = require("../src/queue-connection");
     const { serve } = require("../dist/src/queue-broker");
     const { durable } = require("../dist/src/queue-instance");

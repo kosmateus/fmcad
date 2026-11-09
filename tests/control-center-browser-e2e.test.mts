@@ -319,7 +319,15 @@ test(
           ...document.querySelectorAll<HTMLElement>(
             "#app [data-action], #overlay-root [data-action]",
           ),
-        ].map(describe);
+        ]
+          .filter(
+            (element) =>
+              // Submission is verified through the form's submit button; disabled
+              // pagination controls are unavailable, not missed interactions.
+              !(element instanceof HTMLFormElement) &&
+              !(element instanceof HTMLButtonElement && element.disabled),
+          )
+          .map(describe);
         void window.__recordConsoleControlInventory?.(controls);
       };
       const reportClick = (event: Event): void => {
@@ -480,12 +488,17 @@ test(
     await page
       .getByRole("heading", { name: "E2E Synthetic Project" })
       .waitFor();
-    await page.getByText("NIEAKTUALNE", { exact: true }).waitFor();
+    await page
+      .getByText("OSTATNI ODCZYT NIEAKTUALNY", { exact: true })
+      .waitFor();
     await page
       .getByText("E2E stale-data scenario", { exact: false })
       .first()
       .waitFor();
-    assert.match(await page.locator("#app").innerText(), /NIEAKTUALNE/);
+    assert.match(
+      await page.locator("#app").innerText(),
+      /OSTATNI ODCZYT NIEAKTUALNY/,
+    );
     assert.match(
       await page.locator("#app").innerText(),
       /E2E stale-data scenario/,
@@ -882,6 +895,7 @@ test(
 
     await page.getByRole("tab", { name: "Agenci" }).click();
     await page.getByRole("heading", { name: "Agenci i ich praca" }).waitFor();
+    await page.locator('[data-action="agent-search"]').click();
     await page.getByText("E2E Active Agent").waitFor();
     assert.match(await page.locator("#app").innerText(), /Potwierdzone/);
     // Both agents are already visible in the unfiltered table. The historical
@@ -895,16 +909,35 @@ test(
         query.filters?.presence?.any?.includes("unknown") === true &&
         query.filters.presence.any.includes("active") === false,
     );
-    await page.getByRole("button", { name: /Historia i nieznane/ }).click();
+    await page
+      .locator('[data-action="agent-filter"][data-filter="history"]')
+      .click();
     await historicalAgentsRequest;
     await page.getByText("E2E Active Agent").waitFor({ state: "detached" });
     await page.getByText("E2E Historical Agent").waitFor();
     assert.equal(await page.getByText("E2E Active Agent").count(), 0);
+    const technicalSessionsRequest = waitForQuery(
+      page,
+      (query) => query.collection === "sessions",
+    );
+    await page
+      .locator('[data-action="session-filter"][data-filter="all"]')
+      .click();
+    await technicalSessionsRequest;
     record(
       "agents view and confirmed/history filter display source-backed presence states",
     );
     await page.getByText("E2E Historical Agent").click();
     await page.getByRole("dialog", { name: "Agent / sesja" }).waitFor();
+    const agentAlias = page.locator("#agent-alias-input");
+    await agentAlias.fill("");
+    await page.locator('[data-action="agent-alias-save"]').click();
+    assert.equal(
+      await agentAlias.evaluate(
+        (input: HTMLInputElement) => input.validity.valueMissing,
+      ),
+      true,
+    );
     const agentLogsRequest = waitForQuery(
       page,
       (query) =>
@@ -1101,6 +1134,15 @@ test(
     await searchAgentRequest;
     await page.getByRole("dialog", { name: "Agent / sesja" }).waitFor();
     record("global search result navigates to the matching agent details");
+    await page
+      .locator('[data-action="task-open"][data-id="task-e2e-queued"]')
+      .click();
+    await page.locator('[data-action="task-refresh"]').waitFor();
+    assert.match(
+      await page.locator('[role="dialog"]').innerText(),
+      /E2E queued task/,
+    );
+    record("agent activity opens the retained owning task");
     await page.getByRole("button", { name: "Zamknij okno" }).click();
 
     await page.getByRole("button", { name: "Pomoc", exact: true }).click();
@@ -1539,5 +1581,90 @@ test(
         ),
     );
     assert.equal(await page.locator('[role="dialog"]').count(), 0);
+  },
+);
+
+test(
+  "a delayed global session response cannot replace the selected project's sessions",
+  { timeout: 30000 },
+  async (t) => {
+    const fixture = createBrowserFixture();
+    const http = await fixture.start();
+    t.after(() => http.close());
+    const browser = await chromium.launch({ headless: true });
+    t.after(() => browser.close());
+    const page = await browser.newPage({ locale: "pl-PL" });
+    let release!: () => void;
+    let requested!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const seen = new Promise<void>((resolve) => {
+      requested = resolve;
+    });
+    await page.route("**/api/v1/console/query", async (route) => {
+      const request = route.request().postDataJSON() as CapturedQuery;
+      if (request.collection !== "sessions") {
+        await route.continue();
+        return;
+      }
+      const response = await route.fetch();
+      const body = await response.json();
+      const global = request.scope?.kind === "global";
+      body.rows = [
+        {
+          id: global ? "stale-global-session" : "selected-project-session",
+          projectId: "project-e2e-alpha",
+          presence: "active",
+        },
+      ];
+      body.total = 1;
+      if (global) {
+        requested();
+        await pending;
+      }
+      await route.fulfill({ response, json: body });
+    });
+    await page.goto(http.origin);
+    await page.getByRole("tab", { name: "Agenci" }).click();
+    await seen;
+    await page
+      .locator('aside [data-action="scope"][data-id="project-e2e-alpha"]')
+      .click();
+    await page
+      .locator(
+        '[data-action="session-open"][data-id="selected-project-session"]',
+      )
+      .waitFor();
+    const completed = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/console/query") &&
+        (response.request().postDataJSON() as CapturedQuery).collection ===
+          "sessions" &&
+        (response.request().postDataJSON() as CapturedQuery).scope?.kind ===
+          "global",
+    );
+    release();
+    await completed;
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    assert.equal(
+      await page
+        .locator('[data-action="session-open"][data-id="stale-global-session"]')
+        .count(),
+      0,
+    );
+    assert.equal(
+      await page
+        .locator(
+          '[data-action="session-open"][data-id="selected-project-session"]',
+        )
+        .count(),
+      1,
+    );
   },
 );

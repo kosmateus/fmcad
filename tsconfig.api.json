@@ -18,6 +18,7 @@
     "src/api/**/*.ts",
     "src/composition/library*.ts",
     "src/composition/control-center.ts",
+    "src/composition/control-center-telemetry.ts",
     "src/composition/run.ts",
     "src/composition/cad.ts",
     "src/composition/cad-execution.ts",
