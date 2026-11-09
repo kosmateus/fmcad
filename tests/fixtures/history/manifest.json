@@ -166,5 +166,11 @@
     "sourcePath": "src/composition/stage-dependencies.js",
     "file": "stage-dependencies-9386.js.txt",
     "sha256": "c08b7ae433baa3da3bc8f9563c613c7dbab5d60da72d3f848b1f6e2eec123723"
+  },
+  {
+    "revision": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+    "sourcePath": "src/queue-state.js",
+    "file": "queue-state-a262.js.txt",
+    "sha256": "a4f9422c8f12a169ffe0168ff7353e21c676fca6a8d13313c32e55fcc1c7b4c0"
   }
 ]

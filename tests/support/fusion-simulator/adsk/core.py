@@ -3,9 +3,13 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 import math
-from typing import ClassVar, Generic, TypeVar
+from copy import deepcopy
+from typing import TYPE_CHECKING, ClassVar, Generic, TypeVar
 from uuid import uuid4
 from ._expressions import Quantity, evaluate
+
+if TYPE_CHECKING:
+    from .fusion import Design
 
 T = TypeVar("T")
 
@@ -222,6 +226,7 @@ class DataFile(Base):
         self.model_pending: int = folder.parentProject.data.save_delay_steps
         self.model_delete_remaining: int | None = None
         self.model_parameters: list[tuple[str, str, float, str, str]] = []
+        self.model_design: Design | None = None
 
     @property
     def latestVersion(self) -> DataFile:
@@ -346,21 +351,16 @@ class Document(Base):
         from .fusion import Design
         product = self.products.product
         assert isinstance(product, Design)
+        # Copy the bounded model graph, but never the live application/documents.
+        # The document reference is rebound when opening the immutable snapshot.
+        file.model_design = deepcopy(product, {id(self): self})
         file.model_parameters = [(p.name, p.expression, p.value, p.unit, p.comment) for p in product.userParameters]
         self.dataFile = file
         self.isSaved = True
         self.isModified = False
         self.app.data.save_calls += 1
 
-    def _require_save_support(self) -> None:
-        from .fusion import Design
-        product = self.products.product
-        assert isinstance(product, Design)
-        if product.allComponents.count > 1 or any(c.sketches.count or c.constructionPlanes.count or c.features.count for c in product.allComponents):
-            raise NotImplementedError("Geometry persistence is not modeled")
-
     def saveAs(self, name: str, dataFolder: DataFolder, description: str, tag: str) -> bool:
-        self._require_save_support()
         if not self.isValid or dataFolder.parentProject.data is not self.app.data:
             raise RuntimeError("Unavailable document or foreign data folder")
         if self.isSaved:
@@ -378,7 +378,6 @@ class Document(Base):
             return False
         if not self.isModified:
             return True
-        self._require_save_support()
         old = self.dataFile
         file = DataFile(old.parentFolder, self.name, old.id, old.versionNumber + 1)
         old.parentFolder.dataFiles.values.remove(old)
@@ -420,11 +419,37 @@ class Documents(Collection[Document]):
         return doc
 
 
+    def open(self, dataFile: DataFile, visible: bool = True) -> Document:
+        if dataFile.parentProject.data is not self.app.data:
+            raise ValueError("Foreign data file")
+        if dataFile.parentFolder.dataFiles.itemById(dataFile.id) is not dataFile:
+            raise ValueError("Deleted or superseded file version")
+        if not dataFile.isComplete or dataFile.model_delete_remaining is not None:
+            raise ValueError("File is incomplete or being deleted")
+        existing = next((doc for doc in self if doc.dataFile is dataFile), None)
+        if existing is not None:
+            if visible:
+                existing.activate()
+            return existing
+        snapshot = dataFile.model_design
+        if snapshot is None:
+            raise NotImplementedError("File has no modeled design snapshot")
+        doc = Document(self.app)
+        doc.products = Products(deepcopy(snapshot, {id(snapshot.model_doc): doc}))
+        doc.name = dataFile.name
+        doc.dataFile = dataFile
+        doc.isSaved = True
+        self.values.append(doc)
+        if visible:
+            self.app.activeDocument = doc
+        return doc
+
+
 class Application(Base):
     _instance: ClassVar[Application | None] = None
 
     def __init__(self) -> None:
-        self.version: str = "fmcad-simulator-v9-not-Fusion"
+        self.version: str = "fmcad-simulator-v10-not-Fusion"
         self.activeDocument: Document | None = None
         self.documents: Documents = Documents(self)
         self.userInterface: UserInterface = UserInterface()
