@@ -8,9 +8,11 @@ const instance = load("./queue-instance") as Pick<
 const { resolveRuntimePaths, resolveChildEntrypoint } = load(
   "./dist/config-platform",
 ) as typeof import("../packages/node-adapters/src/config-platform");
-const { PhasedWorkers: NodePhasedWorkers } = load(
-  "./dist/node-adapters/execution/phased-workers",
-) as typeof import("../packages/node-adapters/src/execution/phased-workers");
+const { PhasedWorkers: NodePhasedWorkers, resolvePreparationConcurrency } =
+  load(
+    "./dist/node-adapters/execution/phased-workers",
+  ) as typeof import("../packages/node-adapters/src/execution/phased-workers");
+export { resolvePreparationConcurrency };
 type HostFields =
   | "durable"
   | "readResult"

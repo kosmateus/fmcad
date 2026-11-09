@@ -545,6 +545,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       ? options.testAtomicWorkflowScope
       : fastenersScope;
   const pinned: P.Config = JSON.parse(JSON.stringify(cfg)) as P.Config;
+  const preparationConcurrency = (runtimeRequire(
+    "./dist/node-adapters/execution/phased-workers",
+  ) as Pick<typeof import("../packages/node-adapters/src/execution/phased-workers"),"resolvePreparationConcurrency">).resolvePreparationConcurrency(
+    (pinned["queue"] as {preparationConcurrency?:unknown}|undefined)?.preparationConcurrency,
+  );
   const configHash = brokerConfigHash(pinned);
   let identityFile = path.join(dir, "instance.json");
   let oldIdentity = fs.existsSync(identityFile)
@@ -1375,6 +1380,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   }
 
   const phased = new (load("./queue-phased").PhasedWorkers)({
+    preparationConcurrency,
     state,
     dir,
     cfg: pinned,
@@ -1435,7 +1441,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         payload.method = "tools/list";
         delete payload.params;
       }
-      await pythonAdmission.check(payload);
+      await pythonAdmission.check(payload, undefined, { signal });
     },
     properties: clientProperties,
     spawnWorker: options.spawnWorker,

@@ -502,15 +502,15 @@ def analysis_plan_from_concatenated(source, source_map, unit_metadata, extra_uni
     return analysis_plan(source_units, projection_unit_ids)
 
 
-def project_source(source, source_map, roles, selected_unit_ids):
-    tree = ast.parse(source)
-    parents, functions = root_functions(tree)
+def project_source(source, source_map, roles, selected_unit_ids, projectable_functions=None):
+    if projectable_functions is None:
+        parents, functions = root_functions(ast.parse(source))
+        projectable_functions = [node for node in functions
+                                 if function_policy(node, parents) == 'projectable' and node.body]
     lines = source.splitlines(keepends=True)
     selected = set(selected_unit_ids)
     projected = []
-    for node in functions:
-        if function_policy(node, parents) != 'projectable' or not node.body:
-            continue
+    for node in projectable_functions:
         source_entry = next((entry for entry in source_map
                              if entry['generatedStartLine'] <= node.lineno <= entry['generatedEndLine']), None)
         if source_entry is None:
@@ -562,28 +562,55 @@ if __name__ == '__main__':
         raise SystemExit(0)
     if 'projectionSourcePath' in request:
         source_path = pathlib.Path(request['projectionSourcePath'])
-        output_path = pathlib.Path(request['projectionOutputPath'])
         cwd = pathlib.Path.cwd().resolve()
-        if source_path.resolve().parent != cwd or output_path.resolve().parent != cwd:
-            raise ValueError('Projection files must stay in the checker inventory directory')
+        if source_path.resolve().parent != cwd:
+            raise ValueError('Projection source must stay in the checker inventory directory')
         source_bytes = source_path.read_bytes()
         source = source_bytes.decode('utf-8')
-        projected, ranges = project_source(
-            source,
-            request['sourceMap'],
-            request['sourceRoles'],
-            request['selectedUnitIds'],
-        )
-        encoded = projected.encode('utf-8')
-        if len(encoded) > 16 * 1024 * 1024:
-            raise ValueError('Projected analysis source exceeds 16 MiB')
-        with output_path.open('xb') as stream:
-            stream.write(encoded)
-        json.dump({
-            'sourceSha256': hashlib.sha256(source_bytes).hexdigest(),
-            'analysisSourceHash': hashlib.sha256(encoded).hexdigest(),
-            'projectedBodies': ranges,
-        }, sys.stdout)
+        source_hash = hashlib.sha256(source_bytes).hexdigest()
+        parents, functions = root_functions(ast.parse(source))
+        projectable = [node for node in functions
+                       if function_policy(node, parents) == 'projectable' and node.body]
+        groups = request.get('projectionGroups')
+        if groups is None:
+            groups = [{'selectedUnitIds': request['selectedUnitIds'],
+                       'projectionOutputPath': request['projectionOutputPath']}]
+        if not isinstance(groups, list) or not groups or len(groups) > 16:
+            raise ValueError('Invalid bounded projection group inventory')
+        outputs = []
+        for index, group in enumerate(groups):
+            output_path = pathlib.Path(group['projectionOutputPath'])
+            if output_path.resolve().parent != cwd:
+                raise ValueError('Projection output must stay in the checker inventory directory')
+            projected, ranges = project_source(
+                source, request['sourceMap'], request['sourceRoles'],
+                group['selectedUnitIds'], projectable,
+            )
+            encoded = projected.encode('utf-8')
+            if len(encoded) > 16 * 1024 * 1024:
+                raise ValueError('Projected analysis source exceeds 16 MiB')
+            with output_path.open('xb') as stream:
+                stream.write(encoded)
+            metadata = {
+                'sourceSha256': source_hash,
+                'analysisSourceHash': hashlib.sha256(encoded).hexdigest(),
+                'projectedBodies': ranges,
+            }
+            if 'projectionGroups' not in request:
+                json.dump(metadata, sys.stdout)
+                raise SystemExit(0)
+            metadata_path = pathlib.Path(group['metadataOutputPath'])
+            if metadata_path.resolve().parent != cwd:
+                raise ValueError('Projection metadata must stay in the checker inventory directory')
+            metadata_bytes = json.dumps(metadata, ensure_ascii=True).encode('utf-8')
+            with metadata_path.open('xb') as stream:
+                stream.write(metadata_bytes)
+            outputs.append({'index': index, 'sourceFile': str(output_path),
+                            'sourceHash': metadata['analysisSourceHash'],
+                            'metadataFile': str(metadata_path),
+                            'metadataHash': hashlib.sha256(metadata_bytes).hexdigest()})
+        json.dump({'pythonVersion': sys.version, 'sourceSha256': source_hash,
+                   'projections': outputs}, sys.stdout)
         raise SystemExit(0)
     result = []
     source_bytes = 0

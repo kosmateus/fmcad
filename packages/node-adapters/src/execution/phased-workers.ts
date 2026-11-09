@@ -3,6 +3,7 @@ import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { performance } from "node:perf_hooks";
+import { availableParallelism } from "node:os";
 import { nextLocalWorker } from "@fmcad/core";
 import type {
   QueueJob,
@@ -46,6 +47,8 @@ interface PhasedState {
   finishLocal(id: string, details: QueueDetails): unknown;
 }
 export interface PhasedWorkerOptions {
+  /** Independent of Fusion scenario owners and the single SDK queue. */
+  preparationConcurrency?: number | undefined;
   state: PhasedState;
   /** Measured local boundaries only; failures cannot affect worker ownership. */
   onLocalPhase?(job: QueueJob, phase: "prepare" | "finalize" | null): void;
@@ -66,7 +69,7 @@ export interface PhasedWorkerOptions {
   spawnWorker?: typeof spawn | undefined;
   entrypoint: string;
   durable(file: string, value: unknown, exclusive?: boolean): void;
-  readResult(file: string): WorkerResult;
+  readResult(file: string): WorkerResult | null;
   processBirth(pid: number): string;
   workflowNonterminal(value: unknown): boolean;
   responsePath(dir: string, job: Job, name: string, create: boolean): string;
@@ -84,6 +87,33 @@ function errorCode(error: unknown): string | undefined {
     : undefined;
 }
 
+/** Two CPU slots per complete helper checker; existing worker ceiling remains
+ * the default upper bound. Explicit configuration keeps parallel preparation
+ * available independently of the number of connected Fusion owners. */
+export function resolvePreparationConcurrency(
+  value?: unknown,
+  cpuCount = availableParallelism(),
+): number {
+  if (!Number.isSafeInteger(cpuCount) || cpuCount < 1)
+    throw failure(
+      "INVALID_PREPARATION_CONCURRENCY",
+      "Available CPU capacity must be a positive integer",
+    );
+  if (value === undefined)
+    return Math.min(4, Math.max(1, Math.floor(cpuCount / 2)));
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 1 ||
+    value > 10
+  )
+    throw failure(
+      "INVALID_PREPARATION_CONCURRENCY",
+      "queue.preparationConcurrency must be 1..10",
+    );
+  return value;
+}
+
 /** Process adapter for parallel local phases. It never constructs a transport. */
 export class PhasedWorkers {
   readonly workers = new Map<string, WorkerRecord>();
@@ -91,7 +121,12 @@ export class PhasedWorkers {
   stopping = false;
   lastLocalClient: string | null = null;
 
-  constructor(readonly ports: PhasedWorkerOptions) {}
+  readonly preparationConcurrency: number;
+  constructor(readonly ports: PhasedWorkerOptions) {
+    this.preparationConcurrency = resolvePreparationConcurrency(
+      ports.preparationConcurrency,
+    );
+  }
 
   start(job: Job): void {
     if (this.workers.has(job.id) || this.backlog.has(job.id)) return;
@@ -99,7 +134,11 @@ export class PhasedWorkers {
     this.pump();
   }
   pump(): void {
-    while (!this.stopping && this.workers.size < 4 && this.backlog.size) {
+    while (
+      !this.stopping &&
+      this.workers.size < this.preparationConcurrency &&
+      this.backlog.size
+    ) {
       const job = nextLocalWorker(
         [...this.backlog.values()],
         this.lastLocalClient,

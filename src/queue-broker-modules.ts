@@ -5,7 +5,7 @@ import type * as P from "./queue-broker-ports";
 import type {
   PhasedWorkerOptions,
   PhasedWorkers,
-} from "../packages/node-adapters/dist/execution/phased-workers";
+} from "../packages/node-adapters/src/execution/phased-workers";
 import type { QueueGate } from "../packages/node-adapters/dist/execution/gate";
 import type { BrokerControlFence } from "../packages/core/src/application/broker-control";
 import type { PreparedPythonArtifact } from "../packages/core/src/domain/python-artifact";

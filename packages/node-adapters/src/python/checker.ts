@@ -92,7 +92,23 @@ interface PythonAnalysisPlan {
   }>>;
   readonly sha256: string;
 }
+interface SharedInventory {
+  readonly bindingHash: string;
+  readonly directory: string;
+  readonly metadata: string;
+  readonly metadataHash: string;
+  readonly files: readonly { readonly name: string; readonly sha256: string }[];
+}
+interface SharedProjection {
+  readonly directory: string;
+  readonly sourceFile: string;
+  readonly sourceHash: string;
+  readonly metadataFile: string;
+  readonly metadataHash: string;
+}
 interface AnalysisProjection {
+  readonly inventory: SharedInventory;
+  readonly prepared: SharedProjection;
   readonly plan: PythonAnalysisPlan;
   readonly groupIndex: number;
   readonly selectedUnitIds: readonly string[];
@@ -131,15 +147,17 @@ function aggregateAnalysisReports(
         configHash: null, typingHash: null, analysisHash: null, cache: "disabled",
       },
     };
+  const refusal = (reason: string): PythonCheckReport => {
+    const reasons = new Set([reason]);
+    for (const report of reports) for (const detail of report.reasons) {
+      reasons.add(detail);
+      if (Buffer.byteLength(JSON.stringify([...reasons])) > limits.outputBytes)
+        return {status:"tool_error",diagnostics:[],reasons:[reason,"Aggregate checker failure reasons exceed output limit"],provenance:first.provenance};
+    }
+    return {status:"tool_error",diagnostics:[],reasons:[...reasons],provenance:first.provenance};
+  };
   if (reports.length !== plan.groups.length)
-    return {
-      status: "tool_error",
-      diagnostics: [],
-      reasons: [
-        `Aggregate checker completed ${reports.length} of ${plan.groups.length} required analyses`,
-      ],
-      provenance: first.provenance,
-    };
+    return refusal(`Aggregate checker completed ${reports.length} of ${plan.groups.length} required analyses`);
   const { analysisHash: _firstAnalysisHash, ...identity } = first.provenance;
   void _firstAnalysisHash;
   const sameIdentity = reports.every((report) => {
@@ -148,12 +166,7 @@ function aggregateAnalysisReports(
     return stableJson(current) === stableJson(identity);
   });
   if (!sameIdentity)
-    return {
-      status: "tool_error",
-      diagnostics: [],
-      reasons: ["Aggregate checker provenance changed between analysis passes"],
-      provenance: first.provenance,
-    };
+    return refusal("Aggregate checker provenance changed between analysis passes");
   const diagnostics = new Map<string, PythonCheckDiagnostic>();
   const reasons = new Set<string>();
   for (const report of reports) {
@@ -805,16 +818,42 @@ export function createPythonChecker(
               },
             })),
         ];
-        const inventory = await runCheckerProcess(
+        // Reuse only this check() invocation's already inventoried exact bytes.
+        // Every child still verifies the final artifact, input binding, namespace
+        // inventory and file hashes; no analysis result crosses requests.
+        const inventoryBinding = checkerHash(stableJson({
+          artifactHash: artifact.artifactHash,
+          seeds,
+          projectionUnitIds: [...projectionUnitIds],
+          typingHash: provenance.typingHash,
+          contextHash: provenance.contextHash,
+        }));
+        if (projection) {
+          const shared = projection.inventory;
+          if (shared.bindingHash !== inventoryBinding || checkerHash(shared.metadata) !== shared.metadataHash)
+            throw new Error("Shared AST inventory is not bound to this exact artifact and producer");
+          let copiedBytes = 0;
+          for (const file of shared.files) {
+            throwIfAborted(signal);
+            if (!/^(?:original-)?source-\d+\.txt$/.test(file.name))
+              throw new Error("Invalid shared inventory filename");
+            const bytes = await readFile(join(shared.directory, file.name));
+            copiedBytes += bytes.length;
+            if (copiedBytes > 32 * 1024 * 1024 || checkerHash(bytes) !== file.sha256)
+              throw new Error("Shared AST inventory bytes changed");
+            await writeFile(join(inventoryDirectory, file.name), bytes, { flag: "wx" });
+          }
+        }
+        const inventory = projection
+          ? { code: 0, stdout: projection.inventory.metadata, stderr: "", problem: null }
+          : await runCheckerProcess(
           options.pythonExecutable ?? "python3",
           ["-I", "-S", helperPath],
           inventoryDirectory,
           limits,
           JSON.stringify({
             units: seeds,
-            ...(projection
-              ? { skipAnalysisPlan: true }
-              : originalOrigin
+            ...(originalOrigin
                 ? {}
                 : {
                     sourceUnits: artifact.units.map((unit) => ({
@@ -1012,13 +1051,61 @@ export function createPythonChecker(
           );
         }
         if (!projection && analysisPlan.groups.length > 1) {
-          if (temporaryDirectory) {
-            await rm(temporaryDirectory, {
-              recursive: true, force: true, maxRetries: 3, retryDelay: 50,
-            });
-            temporaryDirectory = undefined;
-            directory = undefined;
+          const inventoryFiles: {name:string;sha256:string}[] = [];
+          let inventoryBytes = 0;
+          for (const [index, unit] of units.entries()) {
+            if (unit.originalSourceFile !== `original-source-${index}.txt` || !unit.originalSourceHash)
+              throw new Error("Original inventory file is not bound to its namespace");
+            for (const [name, expected] of [
+              [`source-${index}.txt`, unit.analysisSourceHash],
+              [unit.originalSourceFile, unit.originalSourceHash],
+            ] as const) {
+              throwIfAborted(signal);
+              const bytes = await readFile(join(inventoryDirectory, name));
+              inventoryBytes += bytes.length;
+              if (inventoryBytes > 32 * 1024 * 1024 || checkerHash(bytes) !== expected)
+                throw new Error("Shared inventory source identity/size mismatch");
+              inventoryFiles.push({ name, sha256: expected });
+            }
           }
+          const sharedInventory: SharedInventory = {
+            bindingHash: inventoryBinding, directory: inventoryDirectory,
+            metadata: inventory.stdout, metadataHash: checkerHash(inventory.stdout), files: inventoryFiles,
+          };
+          const wireIndex = units.findIndex((unit) => unit.id === projectionCheckerUnitId);
+          if (wireIndex < 0) throw new Error("Aggregate checker has no mapped helper source unit");
+          const sourcePath = `source-${wireIndex}.txt`;
+          const sourceBytes = await readFile(join(inventoryDirectory, sourcePath));
+          const batch = await runCheckerProcess(
+            options.pythonExecutable ?? "python3", ["-I", "-S", helperPath],
+            inventoryDirectory, limits, JSON.stringify({
+              projectionSourcePath: sourcePath,
+              sourceMap: projectionSourceMap,
+              sourceRoles: Object.fromEntries(analysisPlan.unitHashes.map((unit) => [unit.id, unit.role])),
+              projectionGroups: analysisPlan.groups.map((selectedUnitIds, index) => ({
+                selectedUnitIds, projectionOutputPath: `projection-${index}.txt`,
+                metadataOutputPath: `projection-${index}.json`,
+              })),
+            }), signal,
+          );
+          if (batch.problem || batch.code !== 0 || batch.stderr.trim())
+            throw new Error("Checker body projections: " + (batch.problem ?? (batch.stderr || "invalid projection exit")));
+          const batchMetadata = checkerObject(JSON.parse(batch.stdout) as unknown);
+          const outputs = batchMetadata["projections"];
+          if (batchMetadata["sourceSha256"] !== checkerHash(sourceBytes) ||
+              batchMetadata["pythonVersion"] !== provenance.pythonInterpreterVersion ||
+              !Array.isArray(outputs) || outputs.length !== analysisPlan.groups.length)
+            throw new Error("Aggregate projections changed source, interpreter or complete group inventory");
+          const projections: SharedProjection[] = outputs.map((value, index) => {
+            const output = checkerObject(value);
+            if (output["index"] !== index || output["sourceFile"] !== `projection-${index}.txt` ||
+                output["metadataFile"] !== `projection-${index}.json` ||
+                typeof output["sourceHash"] !== "string" || !/^[a-f0-9]{64}$/.test(output["sourceHash"]) ||
+                typeof output["metadataHash"] !== "string" || !/^[a-f0-9]{64}$/.test(output["metadataHash"]))
+              throw new Error("Invalid aggregate projection output identity");
+            return {directory:inventoryDirectory,sourceFile:output["sourceFile"] as string,
+              metadataFile:output["metadataFile"] as string,sourceHash:output["sourceHash"],metadataHash:output["metadataHash"]};
+          });
           const reports: PythonCheckReport[] = [];
           for (const [groupIndex, selectedUnitIds] of analysisPlan.groups.entries()) {
             throwIfAborted(signal);
@@ -1029,6 +1116,8 @@ export function createPythonChecker(
               sourceMap: projectionSourceMap,
               sourceHash: projectionSourceHash,
               checkerUnitId: projectionCheckerUnitId,
+              inventory: sharedInventory,
+              prepared: projections[groupIndex]!,
             });
             reports.push(childReport);
             if (childReport.status === "tool_error") break;
@@ -1112,26 +1201,12 @@ export function createPythonChecker(
           const wireIndex = units.findIndex((unit) => unit.id === projection.checkerUnitId);
           if (wireIndex < 0) throw new Error("Aggregate checker has no mapped helper source unit");
           const sourcePath = `source-${wireIndex}.txt`;
-          const projectedPath = `projection-${projection.groupIndex}.txt`;
           const sourceBytes = await readFile(join(inventoryDirectory, sourcePath));
-          const projected = await runCheckerProcess(
-            options.pythonExecutable ?? "python3",
-            ["-I", "-S", helperPath],
-            inventoryDirectory,
-            limits,
-            JSON.stringify({
-              projectionSourcePath: sourcePath,
-              projectionOutputPath: projectedPath,
-              sourceMap: projection.sourceMap,
-              sourceRoles: Object.fromEntries(projection.plan.unitHashes.map((unit) => [unit.id, unit.role])),
-              selectedUnitIds: projection.selectedUnitIds,
-            }),
-            signal,
-          );
-          if (projected.problem || projected.code !== 0 || projected.stderr.trim())
-            throw new Error("Checker body projection: " +
-              (projected.problem ?? (projected.stderr || "invalid projection exit")));
-          const projectedMetadata = checkerObject(JSON.parse(projected.stdout) as unknown);
+          const shared = projection.prepared;
+          const metadataBytes = await readFile(join(shared.directory, shared.metadataFile));
+          if (metadataBytes.length > limits.outputBytes || checkerHash(metadataBytes) !== shared.metadataHash)
+            throw new Error("Prepared projection metadata changed or exceeded output limit");
+          const projectedMetadata = checkerObject(JSON.parse(metadataBytes.toString("utf8")) as unknown);
           if (
             projectedMetadata["sourceSha256"] !== checkerHash(sourceBytes) ||
             typeof projectedMetadata["analysisSourceHash"] !== "string" ||
@@ -1141,7 +1216,9 @@ export function createPythonChecker(
           const projectedBodies = projectedMetadata["projectedBodies"];
           if (!Array.isArray(projectedBodies))
             throw new Error("Malformed projected body inventory");
-          const projectedSource = await readFile(join(inventoryDirectory, projectedPath));
+          const projectedSource = await readFile(join(shared.directory, shared.sourceFile));
+          if (checkerHash(projectedSource) !== shared.sourceHash)
+            throw new Error("Prepared projection source changed");
           const originalLineOffsets = sourceLineOffsets(sourceBytes);
           const projectedLineOffsets = sourceLineOffsets(projectedSource);
           if (

@@ -871,3 +871,44 @@ The isolated-epoch proxy declaration now includes its already implemented
 the typed host interface without changing execution. Strict compilation and lint
 pass for all migrated sources. Actual emitted execution, pinned historical runs
 and complete final-commit CI remain pending; no native qualification is claimed.
+
+
+## Full-helper preparation and bounded scheduling
+
+The immutable baseline's original CI rectangle source was prepared through the
+real cad-v1 run adapter, add-in UI guard and receipt wrapper, then checked without
+an SDK port. With all team tools idle, one complete admission passed all five
+analysis groups in 152.53 s. Initial inventory took 3.57 s and origin planning
+7.56 s; repeated group inventories took 18.42 s and projections 17.57 s. Engine
+wall times were 18.90, 19.51, 18.38, 20.74 and 14.83 s; measured engine CPU was
+157.86 s, parent CPU 19.82 s and whole cgroup CPU 225.49 s. Peak engine RSS was
+636 MiB; cgroup throttling was only 0.82 s on four available CPUs. This is an
+actual complete offline checker PASS, not an SDK/native qualification.
+
+The preserved public MCP process fixture independently recorded 152.28 s and
+150.69 s of preparation. Its deliberately plain physical port lacks preparation
+methods, so its preliminary check and later final receipt check are distinct;
+that trace is not the real-transport scenario CI failure. Its fallback omitted
+the owning AbortSignal. The broker now forwards that signal, with an existing
+phased-worker regression checking worker closure, checker cancellation, zero SDK
+dispatch and the same request receipt without replay. No deadline changed.
+
+The checker now retains exact, hash-bound inventory only inside one check()
+invocation, produces the complete set of projections from one immutable AST/policy
+pass, and still runs every independent checker group. Every child revalidates
+source namespaces, file hashes, plan membership, projected body inventory and
+all bodies required in full. Definitions/engine provenance and final-byte fences
+remain enforced; no checker result is reused across requests. Aggregate refusals
+retain bounded original failure reasons while preserving provenance-mismatch and
+incomplete-group rejection. Parent and child temporary files remain in finally
+cleanup paths. The retained completeness suite now covers mid-group corruption
+of inventory, projection, metadata, missing groups and cleanup on every outcome.
+
+Existing preparation scheduling accepts queue.preparationConcurrency 1..10;
+without an override it uses availableParallelism(), reserves two CPU slots per
+full checker and keeps the previous default ceiling of four workers. That means
+one preparation on two available CPUs and two on four CPUs. Configured parallel
+preparation remains supported and tested independently of Fusion owner concurrency
+(default ten) and the single SDK lane. The source changes pass focused strict
+compilation/lint; emitted regression execution and a quiet full-helper c2 measure
+remain required after the central build, before any performance closure claim.
