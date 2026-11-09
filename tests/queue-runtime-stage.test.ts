@@ -1,3 +1,4 @@
+import ts from "typescript";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -24,6 +25,10 @@ test("queue staging publishes exact compiler bytes and preserves unrelated files
     "queue-closed-epoch-proof",
     "queue-isolated-epoch",
     "queue-scratch-control",
+    "queue-admission",
+    "queue-fixed-fixture-admission",
+    "queue-instance-liveness",
+    "queue-epoch-lineage",
   ];
   for (const name of names)
     for (const extension of [".js", ".d.ts"]) {
@@ -85,4 +90,36 @@ test("legacy fixture consumers receive emitted CJS from canonical CTS, not handw
       fs.readFileSync(path.join(root, "tests/fixtures", filename)),
       fs.readFileSync(path.join(compiled, filename)),
     );
+});
+
+test("queue declarations resolve against the installed runtime providers", () => {
+  const root = path.resolve(__dirname, "../..");
+  const files = [
+    "queue-admission",
+    "queue-fixed-fixture-admission",
+    "queue-instance-liveness",
+    "queue-epoch-lineage",
+  ].map((name) => path.join(root, "dist/src", name + ".d.ts"));
+  for (const file of files)
+    assert.doesNotMatch(fs.readFileSync(file, "utf8"), /packages\/|@fmcad\//);
+  const program = ts.createProgram(files, {
+    noEmit: true,
+    strict: true,
+    skipLibCheck: false,
+    target: ts.ScriptTarget.ES2023,
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    types: ["node"],
+    typeRoots: [path.join(root, "node_modules/@types")],
+  });
+  const diagnostics = ts.getPreEmitDiagnostics(program);
+  assert.equal(
+    diagnostics.length,
+    0,
+    ts.formatDiagnostics(diagnostics, {
+      getCanonicalFileName: (file) => file,
+      getCurrentDirectory: () => root,
+      getNewLine: () => "\n",
+    }),
+  );
 });

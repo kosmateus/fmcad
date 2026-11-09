@@ -1,4 +1,5 @@
 "use strict";
+const os = require('node:os');
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -436,7 +437,7 @@ test(
     const { queueDirectory } = require("../dist/src/queue-connection");
     const { serve } = require("../dist/src/queue-broker");
     const { durable } = require("../dist/src/queue-instance");
-    const directory = fs.mkdtempSync("/tmp/opencode/mcp-broker-");
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-broker-'));
     const oldState = process.env.XDG_STATE_HOME;
     process.env.XDG_STATE_HOME = directory;
     const dir = queueDirectory();
@@ -693,7 +694,7 @@ test(
     const { serve } = require("../dist/src/queue-broker");
     const { durable } = require("../dist/src/queue-instance");
     const { QueueClient } = require("../src/queue-client");
-    const directory = fs.mkdtempSync("/tmp/opencode/mcp-context-process-");
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-context-process-'));
     const projectA = path.join(directory, "project-a");
     const projectB = path.join(directory, "project-b");
     fs.mkdirSync(projectA);

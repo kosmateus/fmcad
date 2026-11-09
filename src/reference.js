@@ -1,8 +1,4 @@
-const path = require('node:path');
-const { resolveRuntimePaths, resolvePython } = require('./dist/config-platform/index.js');
-const { runReferencePipeline } = require('./dist/core/application/local-pipeline');
-const { createLocalWorker } = require('./dist/python/local-pipeline');
-const { redactDiagnostic } = require('./diagnostics');
+const { validate, execute } = require('./dist/composition/library-reference');
 
 const inputs = {
   layout: { schemaVersion: '1', original: 'Source {path,status:CONFIRMED|ESTIMATED|OPEN|DERIVED,sha256?,revision?,uncertaintyPx,derivedFrom?}. Paths are CLI-local, relative to cwd.', frame: 'Right-handed {name,origin:[length,length,length],xAxis:[number,number,number],yAxis:[number,number,number]}.', views: 'Nonempty [{id,orientation:front|side|rear|top|bottom|left|right|custom,crop:[x,y,width,height],rotation:"0 deg",mirrorX?:boolean,camera:{projection:orthographic|perspective|unknown,orientation,frame,eye?,target?,up?}}]. Crop pixels use original raster coordinates.', conflicts: 'Optional [{views:[id,...],reason,source}] recording known contradictions; never silently reconciled.', out: 'NEW output directory with existing parent.' },
@@ -25,23 +21,6 @@ function configure(catalog) {
   image.inputs.mode = 'calibrate (legacy plane-coordinate contract) or inspect (only mode/ref).';
   image.inputs.source = 'Optional calibrate provenance {path,sha256,status,uncertainty,derivedFrom?}; records caller evidence, not pixel-to-canvas verification.';
   image.limitations.push('GM05 inspect returns actual Canvas transform; source-aware calibration retains provenance and warns for non-confirmed sources. See docs/GM05.md.');
-}
-
-function validate(operation, data) {
-  if (descriptors[operation] && data.schemaVersion !== 1) throw new Error('reference schemaVersion must be 1');
-  if (operation !== 'reference.image') return;
-  if (!['calibrate', 'inspect'].includes(data.mode)) throw new Error('reference image mode must be calibrate or inspect');
-  if (data.mode === 'inspect' && Object.keys(data).some(k => !['mode', 'ref'].includes(k))) throw new Error('reference image inspect accepts only mode/ref');
-  if (data.mode === 'calibrate' && ['segment', 'length', 'anchor'].some(k => !Object.hasOwn(data, k))) throw new Error('reference image calibrate requires segment, length and anchor');
-}
-
-function execute(operation, data) {
-  const worker = createLocalWorker({
-    redactDiagnostic,
-    resolveWorker: () => path.join(resolveRuntimePaths({ anchor: __filename }).assets, 'reference_images.py'),
-    resolvePython: plan => resolvePython({ pythonPath: plan.python, feature: 'reference' }),
-  });
-  return runReferencePipeline(operation, data, worker);
 }
 
 const manuals = Object.fromEntries(Object.entries(descriptors).map(([operation, spec]) => [operation, {

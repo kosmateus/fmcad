@@ -1,7 +1,6 @@
 const path = require('node:path');
 const { resolveRuntimePaths, resolvePython } = require('./dist/config-platform/index.js');
-const { runImagePipeline } = require('./dist/core/application/local-pipeline');
-const { createLocalWorker, localPipelineFiles } = require('./dist/python/local-pipeline');
+const { createImageCommand } = require('./dist/python/image-command');
 const { redactDiagnostic } = require('./diagnostics');
 const camelCase = key => key.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 
@@ -67,25 +66,7 @@ Select it with --python "$HOME/.venvs/fmcad-image/bin/python".
 See docs/IMAGE_BOUNDARIES.md for input restrictions, artifacts and limitations.`,
 };
 
-async function boundariesImage(args, deps) {
-  let setup;
-  const process = createLocalWorker({
-    redactDiagnostic,
-    resolveWorker: () => worker,
-    resolvePython: plan => {
-      const python = (deps.resolvePython || resolvePython)({ pythonPath: plan.python, feature: 'image-boundaries' });
-      setup = `Image boundary dependencies: run ${JSON.stringify(python)} -m pip install -r ${JSON.stringify(requirements)} in your user-owned environment. Nothing was installed automatically.\n`;
-      return python;
-    },
-    ...(deps.spawnImageBoundaries ? { spawn: deps.spawnImageBoundaries } : {}),
-    stdout: chunk => deps.stdout.write(chunk),
-    stderr: chunk => deps.stderr.write(chunk),
-    startError: (error, plan) => new Error(`Cannot start local Python ${JSON.stringify(plan.python)}: ${error.message}. Select an installed interpreter with --python EXE.\n${setup}`),
-  });
-  const result = await runImagePipeline('boundaries', args, localPipelineFiles, process);
-  if (result.code !== 0) deps.stderr.write(`image boundaries worker failed (${result.signal || result.code}). ${setup}`);
-  return result.code === 0 ? 0 : 1;
-}
+const boundariesImage = createImageCommand({ mode: "boundaries", worker, requirements, resolvePython, redactDiagnostic });
 
 const manual = {
   sections: [{ title: 'Local Return Contract', text: descriptor.desc }],

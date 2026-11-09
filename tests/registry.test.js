@@ -248,12 +248,7 @@ test("legacy non-CAD operation arguments pass once to the existing broker route"
 });
 
 test("docops, exports, calls and tools preserve argv instead of constructing a CLI transport", async (t) => {
-  const previousWsl = process.env.WSL_DISTRO_NAME;
-  process.env.WSL_DISTRO_NAME = "LegacyTest";
-  t.after(() => {
-    if (previousWsl === undefined) delete process.env.WSL_DISTRO_NAME;
-    else process.env.WSL_DISTRO_NAME = previousWsl;
-  });
+  t.after(require("./fixtures/fake-wsl-platform.cjs")());
   for (const entry of commands.filter((command) =>
     ["docops", "export", "upload", "call", "tools", "doctor"].includes(
       command.kind,
@@ -402,7 +397,8 @@ test("purpose/global options reach configuration; negative values and path argum
   );
 });
 
-test("upload input path is passed without shell mapping and init remains offline", async () => {
+test("upload input path is passed without shell mapping and init remains offline", async (t) => {
+  t.after(require("./fixtures/fake-wsl-platform.cjs")());
   const h = harness();
   assert.equal(
     await main(

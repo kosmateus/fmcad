@@ -1,0 +1,82 @@
+{
+  "src/image-trace.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "209adcd8787dfe1d13f1f79f4b1ef7ffb41fac31991d186bb49713cb4ddfcc6e"
+  },
+  "src/image-optimize.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "80db3a07d7fbf2a9f0c341ba263f37678ac3add353243059bf898aa9f17b7cde"
+  },
+  "src/image-boundaries.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "ce6b7bf329eddc85eb7000b9e4d8b37f5b399a5eb2db61fdba522b4166eeac4a"
+  },
+  "src/config.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "749781398f749f9788e7fd1b302198c43872c1b158bb0803c1bb68e3560dea66"
+  },
+  "src/client.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "fadc8b3ea57a257b040eee3e3023aebedb7ad991de878f612e0982e8fe3f9397"
+  },
+  "src/engineering-local.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "2c02e02ed1ea67083f60c8e09edbc2a09c4f977bda77987faa04b771e1f493bb"
+  },
+  "src/reference.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "0c5f2a43e23bec804082396a24c779c79acb3b6f985a3aee5861373f7a216373"
+  },
+  "src/mcp-stdio-compat.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "62800cfc0c5c6fc088522306bb1fd775662844388ce88cbf6fac4c612523fdd3"
+  },
+  "src/review.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "a5d02da3429ddf4dee4cb93b94870375ad53468e7654fb68d35497f799cce96e"
+  },
+  "src/shot.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "0cae669caf0a1f0e97764ceb95db98e841ef9ecb17f0632b085427052f286c3b"
+  },
+  "src/commands.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "dd63aa822e0f0a4ebaa83c24557f3747ae323101df21f50586bd7d9f8c15f605"
+  },
+  "src/help.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "e771c0253595afc566d4f6f0f3065682cbd1e8aa0dcfcc6919cfb311092eeb13"
+  },
+  "src/help-pl.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "64d366310535945f95147bde725bae3a934b3bdbd3db4d6564f46d2dd28aaa5e"
+  },
+  "src/help-details.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "3f7308673d91cb875c65d47531f0e84941b8af1b009c72db995f1b746f71c992"
+  },
+  "src/help-manual.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "1317b8cc510b88498d220b95b75a270ea93d1521edc2b5177050887e1368ab3e"
+  },
+  "src/help-guide.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "92274ace54c7a34100f0189c98787ba2ecb5e58f6bcc22fd91f3147606c45fff"
+  },
+  "src/help-format.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "ed1e7212b87c0dcfe0f57b79b9c4f56e38af256c853d6a4d2bb98c24ece2a735"
+  },
+  "src/legacy-manual.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "ed8282a2528d0737d6b28c45fc5dced586bebd8d25778c7616fcde3d56cc23ef"
+  },
+  "src/broker-manual.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "99464012b0bd93d2dbb102b4f2b22950019406fd1ea3cf163189ff71c911c861"
+  },
+  "src/catalog/index.js": {
+    "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "sha256": "6ceefc220d4f3b4631a59f132327b8b54a0c97e8793fc2bf90cfaa9473afbe00"
+  }
+}

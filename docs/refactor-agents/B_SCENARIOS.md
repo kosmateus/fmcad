@@ -633,3 +633,30 @@ the evidence to the already audited predecessors. This reduces syntax-review wor
 it does not assert changed helper behavior equivalent or increase migration coverage.
 Eight focused audit tests and runtime-test compilation pass. Full exact-head CI
 and the unresolved production transaction contract still prevent stack merging.
+
+## Resume on the coordinator integration — 9 November 2026
+
+The coordinator retained PR #100 (`be4fcd3`) as the integration proposal for the
+complete B stack and closed its ancestor proposals without discarding commits.
+Fetch and merge current main `330849f` into the candidate, preserving A's integrated
+receipt/admission work and all previously merged E/F changes. The continuation
+checkpoint governs delivery order; production command settlement remains owned
+outside B and its seven required transaction failures must not be bypassed.
+
+The additional CI inventory failure is B-owned: native-solids was mistakenly
+listed under supported-model sharedScenarios while its model disposition remained
+pending. Preserve the existing classification assertion and move this prefix to
+explicit nativeScenarios metadata. Keep the full legacy suite pending and the
+native qualification blocked on the historical annular-bound discrepancy; do not
+relabel the entire suite as modeled or fully native-migrated. A regression test
+binds the native CLI entry to its required native manifest and proves absence from
+the required supported-model cases. Eleven inventory/native-refusal/scheduling
+checks and the pinned build pass on the combined candidate.
+
+The previous transient workspace was lost after an interrupted archive upload.
+Published work through #100 is restored. The intermediate archive enumeration
+(52 paths, 99 snapshots, 220 transitions, 5,059 unique source/site IDs) and its
+unpublished tests must be regenerated from the supplied archive before claiming
+that delivery. The body-assignment production-checker runs interrupted with that
+workspace have no verified final result and must be repeated. Earlier observed
+material and appearance component results remain as recorded, not native proof.

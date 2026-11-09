@@ -1,4 +1,5 @@
 'use strict';
+const os = require('node:os');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -102,7 +103,7 @@ test('SDK catalog calls submit typed payloads to the existing phased worker with
 });
 
 test('queued catalog output reads only owned hash-bound artifacts, never advertised paths', async t => {
-  const dir = fs.mkdtempSync('/tmp/opencode/catalog-artifacts-');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-artifacts-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const owned = require('../src/queue-response-files');
   const job = { id: randomUUID(), state: 'succeeded', request: { cwd: process.cwd() } };

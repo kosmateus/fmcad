@@ -1423,3 +1423,121 @@ test(
     t.diagnostic(`Browser E2E artifacts: ${runDirectory}`);
   },
 );
+
+test(
+  "disposed browser mounts cannot restart reads or subscriptions",
+  { timeout: 30000 },
+  async (t) => {
+    const fixture = createBrowserFixture();
+    const http = await fixture.start();
+    t.after(() => http.close());
+    const browser = await chromium.launch({ headless: true });
+    t.after(() => browser.close());
+    const page = await browser.newPage();
+    await page.route("**/web/index.js", (route) =>
+      route.fulfill({ contentType: "text/javascript", body: "" }),
+    );
+    await page.goto(http.origin);
+    const result = await page.evaluate(async () => {
+      const modulePath = "/assets/control-center/web/app.js";
+      const apiPath = "/assets/control-center/web/api.js";
+      const { ControlCenterApp } = await import(modulePath);
+      const { ConsoleQueryClient } = await import(apiPath);
+      const root = document.getElementById("app")!;
+      const client = new ConsoleQueryClient(location.origin);
+      const snapshot = await client.snapshot({ kind: "global" });
+      let release!: (value: unknown) => void;
+      const pending = new Promise((resolve) => {
+        release = resolve;
+      });
+      let snapshots = 0,
+        queries = 0,
+        watches = 0;
+      client.snapshot = () => {
+        snapshots++;
+        return pending;
+      };
+      client.query = () => {
+        queries++;
+        throw new Error("Read after disposal");
+      };
+      client.watch = () => {
+        watches++;
+        return { close() {} };
+      };
+      const app = new ControlCenterApp(root, { client });
+      void app.start();
+      app.dispose();
+      app.dispose();
+      release(snapshot);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await app.start();
+      return {
+        snapshots,
+        queries,
+        watches,
+        content: root.innerHTML,
+        overlay: document.getElementById("overlay-root")?.innerHTML,
+      };
+    });
+    assert.deepEqual(result, {
+      snapshots: 1,
+      queries: 0,
+      watches: 0,
+      content: "",
+      overlay: "",
+    });
+  },
+);
+
+test(
+  "closing task details rejects their delayed refresh",
+  { timeout: 30000 },
+  async (t) => {
+    const fixture = createBrowserFixture();
+    const http = await fixture.start();
+    t.after(() => http.close());
+    const browser = await chromium.launch({ headless: true });
+    t.after(() => browser.close());
+    const page = await browser.newPage();
+    await page.goto(http.origin);
+    await page.locator('[data-action="task"]').first().click();
+    await page.locator('[data-action="task-refresh"]').waitFor();
+    let release!: () => void;
+    let requested!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const seen = new Promise<void>((resolve) => {
+      requested = resolve;
+    });
+    await page.route("**/api/v1/console/query", async (route) => {
+      const body = route.request().postDataJSON() as CapturedQuery;
+      if (body.collection === "tasks" && body.filters?.id) {
+        const response = await route.fetch();
+        requested();
+        await pending;
+        await route.fulfill({ response });
+      } else await route.continue();
+    });
+    await page.locator('[data-action="task-refresh"]').click();
+    await seen;
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator('[role="dialog"]').count(), 0);
+    const completed = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/console/query") &&
+        !!(response.request().postDataJSON() as CapturedQuery).filters?.id,
+    );
+    release();
+    await completed;
+    // Flush the response handler and its render, not an already visible row.
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    assert.equal(await page.locator('[role="dialog"]').count(), 0);
+  },
+);

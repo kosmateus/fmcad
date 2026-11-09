@@ -11,7 +11,7 @@ import type {
   LocalWorkerPlan,
   LocalWorkerPort,
   LocalWorkerResult,
-} from "../../../core/src/ports/local-pipeline";
+} from "@fmcad/core";
 
 export const localPipelineFiles: LocalPipelineFiles = {
   resolve: (value) => path.resolve(value),

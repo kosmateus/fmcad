@@ -1,4 +1,5 @@
 "use strict";
+const os = require('node:os');
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -12,7 +13,7 @@ const root = path.resolve(__dirname, "..");
 // Only the library port is replaced; host entrypoint, schemas, validation,
 // permissions, SDK tool helper and cleanup are the shipped implementation.
 async function fixture(t, host, { realServices = false, projectDirectory = "/project/session-worktree" } = {}) {
-  const directory = fs.mkdtempSync("/tmp/opencode/fmcad-plugin-consumer-");
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-plugin-consumer-'));
   let pkg;
   t.after(() => {
     if (pkg && fs.existsSync(pkg)) {
@@ -450,7 +451,7 @@ for (const host of ["v1", "v2"]) {
 
 for (const host of ["v1", "v2"]) {
   test(`built ${host}: a stopped broker never falls back to the configured physical endpoint`, async (t) => {
-    const home = fs.mkdtempSync("/tmp/opencode/fmcad-plugin-stopped-broker-");
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-plugin-stopped-broker-'));
     const project = path.join(home, "project");
     fs.mkdirSync(project);
     let physicalRequests = 0;
@@ -513,7 +514,7 @@ for (const host of ["v1", "v2"]) {
 }
 
 test("external root import needs no host SDK and has no service effects", (t) => {
-  const directory = fs.mkdtempSync("/tmp/opencode/fmcad-plugin-import-");
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-plugin-import-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   fs.writeFileSync(path.join(directory, "package.json"), '{"private":true}');
   const packed = JSON.parse(
@@ -612,7 +613,7 @@ test("packed V2 setup failure cleans owned resources and never falls back to V1"
 });
 
 test("public API sequence options and purpose reach existing submit; invalid/local controls never submit", (t) => {
-  const directory = fs.mkdtempSync("/tmp/opencode/fmcad-plugin-api-");
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-plugin-api-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const child = spawnSync(
     process.execPath,

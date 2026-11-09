@@ -20,6 +20,7 @@ interface Entry {
     | { kind: "later" }
     | { kind: "unchanged" | "changed"; path: string; sha256: string };
   sharedScenarios: string[];
+  nativeScenarios?: string[];
 }
 const inventory = load("./tests/live-suite-inventory.json") as {
   baselineCommit: string;
@@ -87,6 +88,41 @@ test("inventory distinguishes runner registration from pending shared coverage",
       assert.equal(options.suite, suite);
     }
   }
+});
+
+test("native shared prefixes remain separate from supported model coverage", () => {
+  const profiles = load("./tests/live-required-profiles.json") as {
+    profiles: {
+      "required-model": { cases: { id: string }[] };
+      "native-qualification": {
+        cases: {
+          source: string;
+          sharedScenario?: string;
+          qualification?: string;
+        }[];
+      };
+    };
+  };
+  const entry = inventory.entries.find(
+    (item) => item.id === "shape-native-solids",
+  );
+  assert.ok(entry);
+  assert.equal(entry.model, "pending");
+  assert.deepEqual(entry.sharedScenarios, []);
+  assert.deepEqual(entry.nativeScenarios, ["native-solids"]);
+  assert.equal(parse(["--suite", "native-solids"]).suite, "native-solids");
+  const native = profiles.profiles["native-qualification"].cases.find(
+    (item) => item.source === entry.source,
+  );
+  assert.ok(native);
+  assert.equal(
+    profiles.profiles["required-model"].cases.some(
+      (item) => item.id === "native-solids",
+    ),
+    false,
+  );
+  assert.equal(native.sharedScenario, "native-solids-*");
+  assert.equal(native.qualification, "blocked-historical-bound-expectation");
 });
 
 test("historical byte identity claims retain their archived hashes", () => {

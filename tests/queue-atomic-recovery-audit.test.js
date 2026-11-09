@@ -3,12 +3,21 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const { createRecoveryAudit, auditAtomic, auditSummary } = require('../src/queue-atomic-recovery-audit');
 const { createProductionQueueAdmission } = require('../src/queue-admission');
 const { resolveRuntimePaths } = require('../src/dist/config-platform');
 const { hash, buildHash } = require('../src/queue-instance');
 const canonicalHash = require('../src/dist/core/application/cad/json').hash;
 const { QueueGate } = require('../src/queue-gate');
+
+function fixtureDirectory(t, prefix) {
+  // Synthetic physical ports only; no Fusion is contacted.
+  t.after(require('./fixtures/fake-wsl-platform.cjs')());
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  return directory;
+}
 
 test('legacy audit capability and build mismatch refuse before any control submission', async () => {
   for (const status of [{ features: {} }, { features: { atomicRecoveryAudit: true }, control: { buildHash: 'old' } }]) {
@@ -52,8 +61,7 @@ test('audit rejects terminal claims, foreign pins, geometry additions and forged
 });
 
 test('concurrent receipt polls join one publication callback instead of racing epoch activation', async t => {
-  const directory = fs.mkdtempSync('/tmp/opencode/audit-publication-race-');
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const directory = fixtureDirectory(t, 'audit-publication-race-');
   let enteredResolve, releaseResolve, endedResolve, publications = 0;
   const entered = new Promise(resolve => { enteredResolve = resolve; });
   const blocker = new Promise(resolve => { releaseResolve = resolve; });
@@ -80,8 +88,7 @@ test('concurrent receipt polls join one publication callback instead of racing e
 });
 
 test('a lost scratch creation reply retains start/unknown evidence and can never dispatch again', async t => {
-  const directory = fs.mkdtempSync('/tmp/opencode/scratch-unknown-wire-');
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const directory = fixtureDirectory(t, 'scratch-unknown-wire-');
   let sent = 0, endedResolve;
   const ended = new Promise(resolve => { endedResolve = resolve; });
   const kind = 'isolated-scratch-qualification', epochId = require('node:crypto').randomUUID();
@@ -110,8 +117,7 @@ test('a lost scratch creation reply retains start/unknown evidence and can never
 
 for (const mode of ['passed', 'failed', 'source_drift', 'final_byte_tamper', 'bad_remote_outcome']) {
   test('real production audit check/fence: ' + mode, { timeout: 45000 }, async t => {
-    const directory = fs.mkdtempSync('/tmp/opencode/atomic-audit-check-');
-    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    const directory = fixtureDirectory(t, 'atomic-audit-check-');
     const source = path.join(directory, 'runtime/python/recovery/atomic_audit.py');
     fs.mkdirSync(path.dirname(source), { recursive: true });
     fs.copyFileSync(path.resolve(__dirname, '../runtime/python/recovery/atomic_audit.py'), source);
