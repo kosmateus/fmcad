@@ -148,3 +148,15 @@ ViewCube/fit behavior. A failed assertion still attempts restoration after known
 settlement; an unknown write stops further mutations, retains both primary and
 restoration errors, and blocks subsequent scenarios. Recovery does not upgrade
 that result to a passed camera qualification.
+
+`--suite poses` runs the production local pose-manifest save/update/list/apply/
+evaluate/delete sequence on owned saved rectangular bodies. It preserves the
+historical visibility and revision expectations and uses exact returned body refs
+for independent readback. It runs exclusively, restores original visibility after
+known assertion failures, and never retries an unknown apply. Joint poses, native
+configuration tables and rendered visibility are separate native obligations.
+
+The per-assertion ledger separates implemented mappings from qualification:
+`blocked-command-settlement` entries remain failing dependencies, while
+`offline-tested-native-pending` entries have model evidence but no native result.
+Neither label implies completion of the overall live suite.

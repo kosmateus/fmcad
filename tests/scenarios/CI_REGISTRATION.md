@@ -45,3 +45,8 @@ exclusive-instance barriers even when the configured owner limit is ten. Keep
 native rendering, ViewCube, fit and shot-pack obligations separate; this family
 qualifies explicit state and lifecycle only. Never run two coordinators against
 one Fusion instance.
+
+Add `poses` to both protocols at concurrency 1/2/10. This exclusive saved-fixture
+family tests production manifest revisions, body visibility, temporary evaluation
+and restoration. It does not qualify joint solving or native rendering. Retain the
+foreign-token and lost-reply unit gates in the aggregate scenario command.

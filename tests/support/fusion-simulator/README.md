@@ -164,3 +164,21 @@ orientations, smooth transitions, rendered images, PNG bytes and shot packs are
 unsupported; no placeholder pixels qualify those historical assertions. Unknown
 camera writes are never replayed. Recovery can close the original owned document
 from settled receipts, but does not certify camera restoration or run later cases.
+
+### Pose manifest and body visibility (model v14)
+
+The model adds owned component attributes and body light-bulb state. Actual
+production pose handlers store revisioned manifests in those attributes and
+perform apply/evaluate/restore/delete. Fill, spring, route and service fields stay
+manifest-carried declarations; no mass, force, configuration-table or joint solver
+behavior is inferred from them. Root-body visibility readback follows its bulb and
+active timeline state. Ancestor/occurrence visibility and direct isVisible writes
+remain unsupported. The pinned verifier includes the added accessor shapes.
+
+The shared pose case preserves the historical manifest and visibility checks on a
+saved fixture. It uses the exact body token returned by shape.box: the historical
+fixture searched for a body named PoseBody, while both current and archived
+geometry handlers assign that name to the feature and return the body's own ref.
+No body-rename behavior is fabricated in the simulator. Native renderer visibility
+and inherited visibility rules remain qualification obligations; no native run has
+been performed.

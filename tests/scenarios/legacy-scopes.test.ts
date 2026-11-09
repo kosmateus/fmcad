@@ -110,6 +110,7 @@ test("required profiles account for every retained live suite and separate diagn
       "rectangles",
       "transactions",
       "camera",
+      "poses",
     ],
   );
 });

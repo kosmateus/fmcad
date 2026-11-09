@@ -303,13 +303,13 @@
       "id": "pose-methods",
       "source": "tests/live-pose-methods.js",
       "runner": "standalone",
-      "model": "native-only",
+      "model": "partial",
       "scope": "Pose creation/application, capture and restoration",
       "prerequisites": "Installed matching broker and an isolated owned fixture",
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": []
+      "sharedScenarios": ["poses"]
     },
     {
       "id": "recovery-ports",

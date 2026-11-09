@@ -18,6 +18,7 @@ import { boxScenarios } from "./box-cases";
 import { attributeScenarios } from "./attribute-cases";
 import { reopenScenarios, revisionScenarios } from "./reopen-cases";
 import { transactionScenarios } from "./transaction-cases";
+import { poseScenarios } from "./pose-cases";
 import { cameraScenarios } from "./camera-cases";
 import { rectangleScenarios } from "./rectangle-cases";
 import { sketchScenarios } from "./sketch-cases";
@@ -46,6 +47,7 @@ interface Options {
     | "boxes"
     | "attributes"
     | "transactions"
+    | "poses"
     | "camera"
     | "rectangles"
     | "revisions"
@@ -95,6 +97,7 @@ export function parse(argv: string[]): Options {
         value === "boxes" ||
         value === "attributes" ||
         value === "transactions" ||
+        value === "poses" ||
         value === "camera" ||
         value === "rectangles" ||
         value === "revisions" ||
@@ -339,6 +342,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           ...((options.suite === "transactions" || options.suite === "all") &&
           options.folder
             ? transactionScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "poses" || options.suite === "all") &&
+          options.folder
+            ? poseScenarios(options.folder, options.owners)
             : []),
           ...((options.suite === "camera" || options.suite === "all") &&
           options.folder

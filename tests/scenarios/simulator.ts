@@ -125,6 +125,7 @@ export const simulatorCapabilities = new Set([
   "saved-revisions",
   "dimensioned-rectangle",
   "camera-state",
+  "pose-visibility",
   "cad-commands",
   "parameter-crud",
   "parameter-expressions",

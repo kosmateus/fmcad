@@ -434,6 +434,7 @@ class Component(core.Base):
         self.model_design: Design = design
         self.model_name: str | None = name
         self.model_id: str = str(uuid.uuid4())
+        self.model_attributes: core.Attributes = core.Attributes(design.model_doc)
         self.objectType: str = "adsk::fusion::Component"
         self.entityToken: str = "model-component:" + self.model_id
         self.occurrences: Occurrences = Occurrences(self)
@@ -453,6 +454,10 @@ class Component(core.Base):
         self.xConstructionAxis: ConstructionAxis = ConstructionAxis(core.Vector3D(1, 0, 0))
         self.yConstructionAxis: ConstructionAxis = ConstructionAxis(core.Vector3D(0, 1, 0))
         self.zConstructionAxis: ConstructionAxis = ConstructionAxis(core.Vector3D(0, 0, 1))
+
+    @property
+    def attributes(self) -> core.Attributes:
+        return self.model_attributes
 
     @property
     def id(self) -> str:

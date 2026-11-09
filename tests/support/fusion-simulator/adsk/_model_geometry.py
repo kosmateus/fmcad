@@ -380,11 +380,32 @@ class BRepBody(core.Base):
         self.model_feature: ExtrudeFeature = feature
         self.model_bounds: core.BoundingBox3D = bounds
         self.name: str = "Body" + str(feature.model_component.bRepBodies.count + 1)
-        self.isVisible: bool = True
+        self.model_light_bulb: bool = True
         self.objectType: str = "adsk::fusion::BRepBody"
         self.parentComponent: fusion.Component = feature.model_component
         self.entityToken: str = "model-body:" + str(uuid.uuid4())
         self.attributes: core.Attributes = core.Attributes(self.parentComponent.model_design.model_doc)
+
+    @property
+    def isLightBulbOn(self) -> bool:
+        return self.model_light_bulb
+
+    @isLightBulbOn.setter
+    def isLightBulbOn(self, value: bool) -> None:
+        if not self.parentComponent.model_design.model_doc.isValid:
+            raise ValueError("Body document is closed")
+        self.model_light_bulb = value
+        self.parentComponent.model_design.model_doc.isModified = True
+
+    @property
+    def isVisible(self) -> bool:
+        if self.parentComponent is not self.parentComponent.model_design.rootComponent:
+            raise NotImplementedError("Occurrence and ancestor visibility are not modeled")
+        return self.isLightBulbOn and self.model_active
+
+    @isVisible.setter
+    def isVisible(self, value: bool) -> None:
+        raise NotImplementedError("Set isLightBulbOn; direct visibility setters are not modeled")
 
     @property
     def boundingBox(self) -> core.BoundingBox3D:

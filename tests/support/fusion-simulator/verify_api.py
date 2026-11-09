@@ -30,7 +30,8 @@ METHODS: dict[str, dict[str, list[str]]] = {
 }
 
 PARAMETER_PROPERTIES = ["name", "expression", "value", "unit", "comment"]
-PROPERTIES = [("core", "Camera", "core", "Camera", ["eye", "target", "upVector", "cameraType", "perspectiveAngle", "viewOrientation", "isFitView", "isSmoothTransition"]),
+PROPERTIES = [("fusion", "Component", "fusion", "Component", ["attributes"]),
+              ("fusion", "BRepBody", "fusion", "BRepBody", ["isLightBulbOn", "isVisible"]), ("core", "Camera", "core", "Camera", ["eye", "target", "upVector", "cameraType", "perspectiveAngle", "viewOrientation", "isFitView", "isSmoothTransition"]),
               ("core", "Viewport", "core", "Viewport", ["camera", "parentDocument"]),
               ("core", "Application", "core", "Application", ["activeViewport"]), ("fusion", "Parameter", "fusion", "UserParameter", PARAMETER_PROPERTIES),
               ("fusion", "SketchPoint", "fusion", "SketchPoint", ["worldGeometry"]),

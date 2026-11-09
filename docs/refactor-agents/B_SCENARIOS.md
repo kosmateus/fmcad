@@ -322,3 +322,36 @@ PR #58 merged as `2ed8017` after all 22 checks passed on `c4ab2f9`
 preserved. The immutable PR #75 camera component profile passed on both MCP and
 addin; source hashes before/after were identical (`eb0237a4...`). These successes
 do not remove the separate transaction settlement and journal blockers.
+
+## Delivery ledger — pose manifests and visibility
+
+Assertion-helper audit PR #88 (`ab1b2d2`) retains all earlier sites and exposes
+previously missed helper-call expectations. The pose delivery maps 28 of those
+individual historical checks onto one shared saved-fixture sequence: manifest
+revisions 1/2, exact document identity, declared fill/spring/route/service fields,
+list membership, apply/readback, temporary evaluation/restoration, baseline apply,
+confirmed deletion and empty index. The order and expected values are retained.
+
+Fixture correction: `live-pose-methods.js` searched for a body named `PoseBody`,
+but current and archived `b0a8081` geometry handlers assign the requested name to
+the feature and return separate body refs. The shared case uses that exact owned
+body token for independent visibility readback. It does not invent a body-rename
+side effect. The historical source and its original guard remain in the inventory.
+
+Model v14 adds component attributes and body light-bulb state, with root-body
+visibility only. Production pose handlers implement the manifests and restoration;
+there is no duplicate pose implementation in the simulator. Joint solving,
+configuration tables, rendering and inherited occurrence visibility remain native
+obligations. Both transports pass at concurrency 1/2/10. Lost-apply recovery never
+replays, and deterministic foreign-token substitution leaves an independently
+observed protected saved document unchanged. The eight initial tests pass; added
+assertion-failure restoration and the non-transaction regression are running.
+Strict simulator types pass; pinned API coverage is 65 methods / 46 accessors.
+The disposition ledger now distinguishes the 37 blocked transaction mappings from
+other offline-tested/native-pending mappings. Overall B1–B4 completion remains open.
+
+Pose regression result: all 191 tests in the non-transaction scenario selection
+pass, including the new assertion-failure restoration case. The transaction file
+is explicitly excluded from this result because its five known settlement failures
+remain blocked; this is not a green whole-package claim. API shape and strict model
+type checks pass. Production-checker and full CI evidence will follow on the PR.

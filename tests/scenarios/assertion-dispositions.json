@@ -10,7 +10,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -19,7 +21,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -28,7 +32,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -37,7 +43,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -46,7 +54,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -55,7 +65,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -64,7 +76,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -73,7 +87,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -82,7 +98,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -91,7 +109,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -100,7 +120,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -109,7 +131,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -118,7 +142,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -127,7 +153,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -136,7 +164,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -145,7 +175,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transactions.test.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -154,7 +186,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -163,7 +197,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -172,7 +208,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -181,7 +219,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -190,7 +230,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transactions.test.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -199,7 +241,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -208,7 +252,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -217,7 +263,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -226,7 +274,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -235,7 +285,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -244,7 +296,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -253,7 +307,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -262,7 +318,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -271,7 +329,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -280,7 +340,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -289,7 +351,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transactions.test.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -298,7 +362,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -307,7 +373,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -316,7 +384,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -325,7 +395,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-definitions.js",
@@ -334,7 +406,9 @@
       "scenario": "definition-transaction-*",
       "capabilities": ["cad-commands", "dimensioned-rectangle"],
       "evidence": "tests/scenarios/transaction-cases.ts",
-      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred."
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
     },
     {
       "source": "tests/live-extended.js",
@@ -343,7 +417,8 @@
       "scenario": "camera-state-*",
       "capabilities": ["camera-state"],
       "evidence": "tests/scenarios/camera-cases.ts",
-      "reason": "Retains the exact perspective projection, 40-degree angle, 80/60/50 mm eye and 0.00001 internal-unit tolerance from this assertion. This mapping excludes neighboring shot.pack, PNG and ViewCube assertions; native viewport behavior remains unqualified."
+      "reason": "Retains the exact perspective projection, 40-degree angle, 80/60/50 mm eye and 0.00001 internal-unit tolerance from this assertion. This mapping excludes neighboring shot.pack, PNG and ViewCube assertions; native viewport behavior remains unqualified.",
+      "qualification": "offline-tested-native-pending"
     },
     {
       "source": "tests/live-extended.js",
@@ -352,7 +427,8 @@
       "scenario": "camera-state-*",
       "capabilities": ["camera-state"],
       "evidence": "tests/scenarios/camera-cases.ts",
-      "reason": "Retains the exact perspective projection, 40-degree angle, 80/60/50 mm eye and 0.00001 internal-unit tolerance from this assertion. This mapping excludes neighboring shot.pack, PNG and ViewCube assertions; native viewport behavior remains unqualified."
+      "reason": "Retains the exact perspective projection, 40-degree angle, 80/60/50 mm eye and 0.00001 internal-unit tolerance from this assertion. This mapping excludes neighboring shot.pack, PNG and ViewCube assertions; native viewport behavior remains unqualified.",
+      "qualification": "offline-tested-native-pending"
     },
     {
       "source": "tests/live-extended.js",
@@ -361,7 +437,288 @@
       "scenario": "camera-state-*",
       "capabilities": ["camera-state"],
       "evidence": "tests/scenarios/camera-cases.ts",
-      "reason": "Retains the exact perspective projection, 40-degree angle, 80/60/50 mm eye and 0.00001 internal-unit tolerance from this assertion. This mapping excludes neighboring shot.pack, PNG and ViewCube assertions; native viewport behavior remains unqualified."
+      "reason": "Retains the exact perspective projection, 40-degree angle, 80/60/50 mm eye and 0.00001 internal-unit tolerance from this assertion. This mapping excludes neighboring shot.pack, PNG and ViewCube assertions; native viewport behavior remains unqualified.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "21e3d01bac74bd5c3059-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "4e45596c6ae0454bc154-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "fd0ddf95de65bbe90d84-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "95c03ea368fd37dc4dc6-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "c760e25d1e93dc991bf4-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "767f4597da3649500c37-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "3e8880a4aa5c9bd26dce-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "1ab0b6092c5e0fe77bca-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "f3c165931f06bb664a8d-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "573be923607dccdf91fe-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "961b1270f79fcc4e410b-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "3b8d47396c0f374dbb93-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "e4b08a276302e97d6edf-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "a81b1fcbf23d3d649e9b-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "24723efc2bcff7b5fb9e-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "229789567b4aed4eecbf-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "c57ee60006aeeac54f4e-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "8c1322407b96689906f5-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "9e83f0dbf68d12b68ecb-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "5afdc0d356af14b5fc6c-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "07013f4eca44d5c54a5a-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "653732c010f16f852a62-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "641ac2b02aec90ad666d-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "00ed3eb8d54b48d9d65e-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "67c7baa59c3f6424cae7-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "bbd29e29418c45608d64-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "ecccb86fa334b7d0ec20-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "b14a203bf2eb4a196f75-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
     }
   ]
 }
