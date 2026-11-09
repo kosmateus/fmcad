@@ -25,7 +25,7 @@ in full but their immediate-predecessor semantic comparisons remain outstanding.
 
 ## Required profile manifest
 
-`tests/live-required-profiles.json` separates thirteen registered shared model families,
+`tests/live-required-profiles.json` separates fifteen registered shared model families,
 required retained native obligations and diagnostic helpers/external fixtures.
 `node tests/run-live.js --list-profiles` lists it without contacting Fusion.
 Native commands are qualification entrypoints, not authorization to run unconverted
@@ -70,3 +70,53 @@ explicit MCP server-name change. All later source files retain their complete
 source hashes. No shared/native coverage was inferred from finding more sites.
 The 40 existing semantic mappings remain valid IDs; newly found sites remain
 open until individually reviewed. Four focused inventory/disposition tests pass.
+
+## Immediate source predecessors
+
+`tests/live-assertion-predecessors.json` now records the latest exact archived
+version of each of the 39 current sources and its first parent. All 39 current
+files match archive bytes exactly. For the data-import, fixed data-import and
+sketch TypeScript ports, explicit JavaScript predecessor paths prevent treating
+ported assertions as newly introduced. Reproduce against the separately recovered
+archive with:
+
+```sh
+node dist/tests/scenarios/assertion-history.js /absolute/archive/.git /absolute/output.json
+```
+
+The comparison retains 421 removed/changed static sites with their exact old
+expressions and 1,197 added-site IDs referencing the current frozen ledger.
+These are textual changes, not 421 lost runtime checks: 396 are in the three
+TypeScript ports and include formatting, wrappers and type-related access syntax.
+Their individual semantic review remains open. This comparison covers the latest
+source change, not every earlier intermediate revision across archive branches.
+
+Reviewed non-port changes:
+
+- Animation adds frame/video validation and an explicit optional-encoder blocked
+  path; success checks become conditional only for that declared path. The camera
+  manifest checks remain unchanged. Native frame validity remains unqualified.
+- Component hierarchy adds a linked occurrence and changes the later parts count
+  from one to two, with exact definition-token and 50 mm placement checks.
+- CAD moves the active-document assertion to the guarded owner. Extended CAD and
+  motion snapshots filter through the old broker visibility helper; this is not
+  evidence that unrelated user documents were independently audited. Shared runner
+  snapshots enumerate all documents and do not inherit that filter.
+- Extended CAD makes the failed-check batch explicitly non-atomic, preserving its
+  per-step output contract. Atomic rollback remains a separate open obligation.
+- Legacy removes `assert.equal(state.active, name)` without a replacement at the
+  same point. Preserve this removed expression as an open migration obligation;
+  unchanged current-source hashes alone cannot certify this history.
+- Motion removes the `--after-styles` precondition while keeping explicit `--run`.
+  The new exclusive barrier prevents overlap but does not establish this historical
+  ordering prerequisite or prove native state restoration.
+- GM07 changes fixed build equality to installed-package self-consistency and an
+  optional expected candidate. This is a changed qualification prerequisite;
+  final native registration still needs an explicit offline-qualified build pin.
+- MCP changes the advertised server name and adds help/tool checks, as previously
+  recorded. Multidocument adds SDK interval/count checks and fixes null-to-None
+  rendering for active-document restoration; previous numeric assertions remain.
+
+These findings do not increase the 79 shared semantic mappings or close B1.
+No old source, expected geometry, ownership guard or runtime failure was removed
+by this audit. Native execution and complete per-assertion disposition remain open.

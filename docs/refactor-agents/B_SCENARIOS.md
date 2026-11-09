@@ -398,3 +398,18 @@ all earlier numeric and unsupported-syntax assertions completed in their histori
 order, then cleanup is deferred and no later readback is submitted. The existing
 positive transaction suite still requires known settlement from C/G; this order
 correction does not resolve that blocker or the journal-lock issue.
+
+## Delivery ledger — immediate predecessor evidence
+
+Transaction-order PR #91 (`f9e9454`) preserves the historical sequence and passes
+both transport/loss tests. The latest exact archive versions of all 39 live/helper
+sources are now compared with their first parents, including explicit JavaScript
+predecessors for three TypeScript ports. The frozen evidence preserves 421 removed
+or changed expressions and 1,197 added current-site IDs. Six audit/disposition tests
+and runtime-test compilation pass. This records textual changes, not missing-check
+counts or semantic equivalence; 396 changed sites belong to the three ports.
+
+Reviewed differences and unresolved active-document, motion-order and GM07 build
+pin obligations are recorded in B_ASSERTION_AUDIT.md. Earlier intermediate revisions
+and per-assertion port equivalence remain open. No whole-suite completion is inferred.
+The immutable pose component profile has passed MCP; addin is still running.
