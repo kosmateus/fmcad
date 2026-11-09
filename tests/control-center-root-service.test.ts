@@ -1,22 +1,33 @@
-"use strict";
-
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const net = require("node:net");
-const { createHash } = require("node:crypto");
-const { dependencies } = require("../dist/src/dist/composition/opencode");
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { createRequire } from "node:module";
+import { at, record, text } from "./integration/offline-cli";
+const runtimeRequire = createRequire(
+  process.cwd() + "/tests/control-center-root-service.test.js",
+);
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import net from "node:net";
+import { createHash } from "node:crypto";
+const { dependencies } = runtimeRequire(
+  "../dist/src/dist/composition/opencode",
+) as typeof import("../src/composition/opencode");
 
 async function unusedPort() {
   const server = net.createServer();
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
-  const port = server.address().port;
-  await new Promise((resolve) => server.close(resolve));
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const port = address.port;
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
   return port;
 }
 
@@ -52,30 +63,34 @@ test(
     Object.assign(process.env, {
       HOME: home,
       TMPDIR: temp,
-      XDG_CONFIG_HOME: xdg.config,
-      XDG_DATA_HOME: xdg.data,
-      XDG_STATE_HOME: xdg.state,
-      XDG_CACHE_HOME: xdg.cache,
+      XDG_CONFIG_HOME: text(xdg["config"]),
+      XDG_DATA_HOME: text(xdg["data"]),
+      XDG_STATE_HOME: text(xdg["state"]),
+      XDG_CACHE_HOME: text(xdg["cache"]),
     });
-    delete process.env.FMCAD_CONFIG;
-    process.env.FMCAD_CONTROL_CENTER_PORT = String(await unusedPort());
+    delete process.env["FMCAD_CONFIG"];
+    process.env["FMCAD_CONTROL_CENTER_PORT"] = String(await unusedPort());
 
-    const serviceDirectory = path.join(xdg.data, "fmcad", "control-center");
-    let servicePid;
+    const serviceDirectory = path.join(
+      text(xdg["data"]),
+      "fmcad",
+      "control-center",
+    );
+    const owned: { pid?: number } = {};
     t.after(async () => {
-      if (servicePid) {
+      if (owned.pid) {
         try {
-          process.kill(servicePid, "SIGTERM");
+          process.kill(owned.pid, "SIGTERM");
         } catch (error) {
-          if (error.code !== "ESRCH") throw error;
+          if (record(error)["code"] !== "ESRCH") throw error;
         }
         const deadline = Date.now() + 5000;
         while (Date.now() < deadline) {
           try {
-            process.kill(servicePid, 0);
+            process.kill(owned.pid, 0);
             await new Promise((resolve) => setTimeout(resolve, 25));
           } catch (error) {
-            if (error.code === "ESRCH") break;
+            if (record(error)["code"] === "ESRCH") break;
             throw error;
           }
         }
@@ -90,6 +105,7 @@ test(
 
     const deps = dependencies();
     assert.equal(typeof deps.ensureWeb, "function");
+    assert(deps.ensureWeb);
     try {
       await deps.ensureWeb();
     } catch (error) {
@@ -105,16 +121,21 @@ test(
       const log = fs.existsSync(diagnostics)
         ? fs.readFileSync(diagnostics, "utf8")
         : "";
-      throw new Error(`${error.message}${log ? `\n${log}` : ""}`, {
-        cause: error,
-      });
+      throw new Error(
+        `${String(record(error)["message"])}${log ? `\n${log}` : ""}`,
+        {
+          cause: error,
+        },
+      );
     }
-    const discovery = JSON.parse(
-      fs.readFileSync(path.join(serviceDirectory, "service.json"), "utf8"),
+    const discovery = record(
+      JSON.parse(
+        fs.readFileSync(path.join(serviceDirectory, "service.json"), "utf8"),
+      ),
     );
-    servicePid = discovery.pid;
-    assert.ok(Number.isSafeInteger(servicePid) && servicePid > 0);
-    const base = `http://localhost:${discovery.port}`;
+    owned.pid = Number(discovery["pid"]);
+    assert.ok(Number.isSafeInteger(owned.pid) && owned.pid > 0);
+    const base = `http://localhost:${discovery["port"]}`;
     const page = await fetch(base + "/");
     assert.equal(page.status, 200);
     const html = await page.text();
@@ -126,12 +147,9 @@ test(
   "standalone MCP automatically starts the installed console and keeps stdout framed",
   { timeout: 25000 },
   async (t) => {
-    const { spawn } = require("node:child_process");
-    const { once } = require("node:events");
-    const {
-      processBirthIdentity,
-      processIsAlive,
-    } = require("../dist/src/dist/control-center/server/identity.js");
+    const { processBirthIdentity, processIsAlive } = runtimeRequire(
+      "../dist/src/dist/control-center/server/identity.js",
+    ) as typeof import("../packages/control-center/src/server/identity");
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-mcp-console-"));
     const port = await unusedPort();
     const dataHome = path.join(root, "data");
@@ -152,7 +170,7 @@ test(
     );
     const child = spawn(
       process.execPath,
-      [path.resolve(__dirname, "../dist/bin/fmcad-mcp.js")],
+      [path.resolve(process.cwd(), "dist/bin/fmcad-mcp.js")],
       {
         cwd: root,
         env: {
@@ -176,13 +194,16 @@ test(
       diagnostics += chunk.toString();
     });
     const closed = once(child, "close");
-    let service;
+    let service:
+      { pid: number; processBirth: string; port: number } | undefined;
     t.after(async () => {
       if (child.exitCode === null && child.signalCode === null)
         child.kill("SIGTERM");
       await closed;
       if (!service && fs.existsSync(discoveryFile))
-        service = JSON.parse(fs.readFileSync(discoveryFile, "utf8"));
+        service = decodeService(
+          JSON.parse(fs.readFileSync(discoveryFile, "utf8")),
+        );
       if (
         service &&
         processBirthIdentity(service.pid) === service.processBirth
@@ -211,19 +232,19 @@ test(
     }
     assert.deepEqual(JSON.parse(output), { jsonrpc: "2.0", id: 1, result: {} });
     assert.ok(fs.existsSync(discoveryFile), diagnostics);
-    service = JSON.parse(fs.readFileSync(discoveryFile, "utf8"));
+    service = decodeService(JSON.parse(fs.readFileSync(discoveryFile, "utf8")));
     assert.equal(service.port, port);
     const response = await fetch(`http://localhost:${port}/`);
     assert.equal(response.status, 200);
-    const cookie = response.headers.get("set-cookie").split(";", 1)[0];
+    const cookie = text(response.headers.get("set-cookie")).split(";", 1)[0]!;
     const snapshot = await fetch(
       `http://localhost:${port}/api/v1/console/snapshot?scope=global`,
       { headers: { Cookie: cookie } },
     );
     assert.equal(snapshot.status, 200);
-    const value = await snapshot.json();
-    assert.ok(value.snapshotToken, JSON.stringify(value));
-    assert.equal(value.scope.kind, "global");
+    const value = record(await snapshot.json());
+    assert.ok(value["snapshotToken"], JSON.stringify(value));
+    assert.equal(at(value, "scope", "kind"), "global");
     assert.equal(
       fs.existsSync(path.join(stateHome, "fmcad/queue/broker.lock")),
       false,
@@ -233,3 +254,18 @@ test(
     assert.equal(code, 0, diagnostics);
   },
 );
+
+function decodeService(value: unknown): {
+  pid: number;
+  processBirth: string;
+  port: number;
+} {
+  const v = record(value);
+  assert.equal(typeof v["pid"], "number");
+  assert.equal(typeof v["port"], "number");
+  return {
+    pid: v["pid"] as number,
+    port: v["port"] as number,
+    processBirth: text(v["processBirth"]),
+  };
+}

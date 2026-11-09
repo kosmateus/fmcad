@@ -553,3 +553,19 @@ reference pipelines correctly refused this Debian 13 host. The run was stopped
 to release checker resources for isolated reruns. No timeout, platform guard,
 checker assertion, receipt or native qualification requirement is relaxed.
 Exact final-commit CI and the corrected process/admission tests remain required.
+
+The additional retained console-service, pause, data, root-service, interface and
+client-presence suites are now strict TypeScript. Their original test names and
+assertions remain registered; parsed JSON and optional observations use checked
+boundaries. Synthetic WSL facts in the pause suite now restore after each case.
+No broker timeout, unknown-result expectation, PID/birth condition or release
+proof is changed. Strict compilation/emission and targeted lint pass; runtime
+reruns are pending the shared host's exclusive checker slot.
+
+The last handwritten docops composition is now library-docops.ts. Its thirteen
+exports, delegated screenshot function and permissive historical argument
+parsing are retained. The frozen dce47c5 source and SHA-256 provenance support a
+paired test over twenty command/argument cases in both successful and uncertain
+dispatch modes, comparing actual document-domain calls, exact generated Python,
+output and failures. Compilation is verified; this new paired runtime test and
+retained document/diagnostic suites still require execution after staging.

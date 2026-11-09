@@ -122,5 +122,9 @@
   "src/addin-bridge.js": {
     "commit": "178d37bb7d1877206ae95861aae4c62cbd971008",
     "sha256": "9b4e2b75b578362c578400ac25b0287fb463940155d76639d7f38a459dc7ee9f"
+  },
+  "src/docops.js": {
+    "commit": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sha256": "02640ab227f04ac596824939b8ba766fd405328d320600af17a60cae4a69777c"
   }
 }
