@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
 const root = path.resolve(__dirname, "../../..");
 const load = createRequire(path.join(root, "package.json"));
 const { stageCompatibility } = load(
@@ -43,7 +44,18 @@ test("clean and incremental compatibility staging preserve canonical export iden
       entry.target,
     );
     const file = target.endsWith(".js") ? target : target + ".js";
-    write(file, "module.exports = { run() { return 'canonical'; } };\n");
+    const names = "publicExports" in entry ? [...entry.publicExports] : ["run"];
+    write(
+      file,
+      "module.exports = Object.fromEntries(" +
+        JSON.stringify(names) +
+        ".map(name => [name, () => name]));\n" +
+        ("main" in entry
+          ? "module.exports[" +
+            JSON.stringify(entry.main) +
+            "] = () => require('node:fs').writeFileSync(__filename + '.invoked', 'main');\n"
+          : ""),
+    );
   }
   stageCompatibility(dir);
   write(
@@ -57,6 +69,30 @@ test("clean and incremental compatibility staging preserve canonical export iden
       path.resolve(dir, path.dirname(entry.publicPath), entry.target),
     );
     const facade: unknown = requireFixture(path.join(dir, entry.publicPath));
-    assert.equal(facade, canonical);
+    if ("publicExports" in entry) {
+      assert.ok(canonical && typeof canonical === "object");
+      assert.ok(facade && typeof facade === "object");
+      assert.deepEqual(
+        Object.keys(facade).sort(),
+        [...entry.publicExports].sort(),
+      );
+      for (const name of entry.publicExports)
+        assert.equal(Reflect.get(facade, name), Reflect.get(canonical, name));
+      if ("main" in entry) {
+        assert.equal(
+          Reflect.get(facade, entry.main),
+          undefined,
+          "Internal main is not a public API export",
+        );
+        const target =
+          path.resolve(dir, path.dirname(entry.publicPath), entry.target) +
+          ".js.invoked";
+        assert.equal(fs.existsSync(target), false, "Import is inert");
+        execFileSync(process.execPath, [path.join(dir, entry.publicPath)], {
+          encoding: "utf8",
+        });
+        assert.equal(fs.readFileSync(target, "utf8"), "main");
+      }
+    } else assert.equal(facade, canonical);
   }
 });

@@ -1,6 +1,108 @@
 /** Existing literal CommonJS compatibility paths; no business logic lives here. */
 export const compatibilityModules = [
   {
+    publicPath: "src/opencode/project-logger.cjs",
+    target: "../dist/composition/library-project-observer",
+    emittedPath:
+      "dist/library-build/src/composition/library-project-observer.js",
+    publicExports: [
+      "ensureProjectLogger",
+      "attachProject",
+      "clientEvent",
+      "createEventSink",
+      "stopProjectLogger",
+      "locations",
+      "workspaceLog",
+      "appendSafe",
+    ],
+    main: "runProjectObserver",
+  },
+  {
+    publicPath: "src/control-center-system-controls.cjs",
+    target: "./dist/composition/library-control-center-system-controls",
+    emittedPath:
+      "dist/library-build/src/composition/library-control-center-system-controls.js",
+  },
+  {
+    publicPath: "src/docops.js",
+    target: "./dist/composition/library-docops",
+    emittedPath: "dist/library-build/src/composition/library-docops.js",
+  },
+  {
+    publicPath: "src/console-logs.js",
+    target: "./dist/composition/library-console-log-reader",
+    emittedPath:
+      "dist/library-build/src/composition/library-console-log-reader.js",
+  },
+  {
+    publicPath: "src/console-task-events.js",
+    target: "./dist/composition/library-console-task-events",
+    emittedPath:
+      "dist/library-build/src/composition/library-console-task-events.js",
+  },
+  {
+    publicPath: "src/direct-telemetry.js",
+    target: "./dist/composition/library-direct-telemetry",
+    emittedPath:
+      "dist/library-build/src/composition/library-direct-telemetry.js",
+  },
+  {
+    publicPath: "src/composition/legacy-worker.js",
+    target: "../dist/composition/library-legacy-worker",
+    emittedPath: "dist/library-build/src/composition/library-legacy-worker.js",
+  },
+  {
+    publicPath: "src/console-response.js",
+    target: "./dist/composition/library-console-response",
+    emittedPath:
+      "dist/library-build/src/composition/library-console-response.js",
+  },
+  {
+    publicPath: "src/console-details.js",
+    target: "./dist/composition/library-console-details",
+    emittedPath:
+      "dist/library-build/src/composition/library-console-details.js",
+  },
+  {
+    publicPath: "src/console-controller.js",
+    target: "./dist/composition/library-console-controller",
+    emittedPath:
+      "dist/library-build/src/composition/library-console-controller.js",
+  },
+  {
+    publicPath: "src/curve.js",
+    target: "./dist/composition/library-curve",
+    emittedPath: "dist/library-build/src/composition/library-curve.js",
+  },
+  {
+    publicPath: "src/selection-rules.js",
+    target: "./dist/composition/library-selection-rules",
+    emittedPath:
+      "dist/library-build/src/composition/library-selection-rules.js",
+  },
+  {
+    publicPath: "src/brep-baseline.js",
+    target: "./dist/composition/library-brep-baseline",
+    emittedPath: "dist/library-build/src/composition/library-brep-baseline.js",
+  },
+  {
+    publicPath: "src/data-import.js",
+    target: "./dist/composition/library-data-import",
+    emittedPath: "dist/library-build/src/composition/library-data-import.js",
+  },
+  {
+    publicPath: "src/drawing-package.js",
+    target: "./dist/composition/library-drawing-package",
+    emittedPath:
+      "dist/library-build/src/composition/library-drawing-package.js",
+  },
+  {
+    publicPath: "src/references-refresh.js",
+    target: "./dist/composition/library-references-refresh",
+    emittedPath:
+      "dist/library-build/src/composition/library-references-refresh.js",
+  },
+  {
     publicPath: "src/addin-bridge.js",
     target: "./dist/composition/library-addin-bridge",
     emittedPath: "dist/library-build/src/composition/library-addin-bridge.js",

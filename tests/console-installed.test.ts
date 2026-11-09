@@ -67,7 +67,7 @@ async function run() {
         installed,
         "dist/src/dist/node-adapters/persistence/project-history/registry.js",
       ),
-    ) as typeof import("../packages/node-adapters/src/persistence/project-history/registry");
+    ) as typeof import("../packages/node-adapters/dist/persistence/project-history/registry");
     const registry = openProjectRegistry();
     registry.register({
       projectId: "project-unicode-α",

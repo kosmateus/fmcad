@@ -2,6 +2,14 @@ import * as fs from "node:fs";
 import path from "node:path";
 
 const modules = [
+  "atomic-runtime-abi",
+  "queue-settled-epoch-evidence",
+  "queue-audit-facts-capture",
+  "fusion-reset",
+  "queue-document",
+  "queue-phased",
+  "queue-state",
+  "queue-audit-response-proof",
   "queue-atomic-migration-stop",
   "queue-atomic-audit-upgrade",
   "queue-atomic-migration-worker",
@@ -14,6 +22,11 @@ const modules = [
   "queue-atomic-migration-files",
   "queue-atomic-recovery-audit",
   "queue-atomic-wire",
+  "queue-native-fixture-grant",
+  "queue-scratch-qualification",
+  "queue-console-admin",
+  "queue-response-migration",
+  "queue-closed-epoch-successor",
   "atomic-observation-binding",
   "queue-epoch-runtime-upgrade",
 

@@ -65,7 +65,20 @@
     "src/composition/queue-epoch-successor.ts",
     "src/composition/queue-epoch-successor-types.ts",
     "src/composition/queue-epoch-successor-control.ts",
-    "src/queue-atomic-migration-stop.ts"
+    "src/queue-atomic-migration-stop.ts",
+    "src/queue-native-fixture-grant.ts",
+    "src/queue-scratch-qualification.ts",
+    "src/queue-console-admin.ts",
+    "src/queue-response-migration.ts",
+    "src/queue-closed-epoch-successor.ts",
+    "src/queue-audit-response-proof.ts",
+    "src/queue-state.ts",
+    "src/queue-phased.ts",
+    "src/queue-document.ts",
+    "src/fusion-reset.ts",
+    "src/queue-audit-facts-capture.ts",
+    "src/queue-settled-epoch-evidence.ts",
+    "src/atomic-runtime-abi.ts"
   ],
   "references": [
     {

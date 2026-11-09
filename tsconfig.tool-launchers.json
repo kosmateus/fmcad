@@ -23,6 +23,15 @@
     "scripts/read-audit-response-proof.cts",
     "scripts/qualify-epoch-checker.cts",
     "scripts/qualify-isolated-epoch.cts",
-    "scripts/qualify-closed-successor-worker.cts"
+    "scripts/qualify-closed-successor-worker.cts",
+    "scripts/upgrade-epoch-checker.cts"
+  ],
+  "references": [
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/node-adapters"
+    }
   ]
 }

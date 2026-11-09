@@ -29,7 +29,7 @@ const rows = commands.map((command) => {
             "actual canonical/alias child discovery",
             "offline detailed help routing",
           ],
-          tests: ["tests/registry.test.js", "tests/manual-coverage.test.js"],
+          tests: ["tests/registry.test.ts", "tests/manual-coverage.test.ts"],
           gaps: [],
           bugs: [],
         }

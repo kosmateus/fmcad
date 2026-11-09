@@ -358,5 +358,107 @@
     "sourcePath": "scripts/upgrade-epoch-checker.cjs",
     "file": "upgrade-epoch-checker-dce47c5.cjs.txt",
     "sha256": "595d28cff3cce782a50fbb8b65d576320a6e0611dfe9ba5829ce056fe96db735"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-console-admin.js",
+    "file": "queue-console-admin-dce47c5.js.txt",
+    "sha256": "d48cc81f57e3c0ce72f88295cd724dee8b37ba7a724830a2f6c12cb997a29d20"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-response-migration.js",
+    "file": "queue-response-migration-dce47c5.js.txt",
+    "sha256": "fd9a2fa42d16d73585f47c412daec37f2c62210bd64d08963402cfebc663ec2a"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-closed-epoch-successor.js",
+    "file": "queue-closed-epoch-successor-dce47c5.js.txt",
+    "sha256": "35a078c7900c81dbdc57addfa5ad9905936155543c1565932b137296de65fa7f"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/direct-telemetry.js",
+    "file": "direct-telemetry-dce47c5.js.txt",
+    "sha256": "a862c6e82f78300b3d676db3f213a5c41c084e8202d342fdad5890dfded6380c"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/composition/legacy-worker.js",
+    "file": "legacy-worker-dce47c5.js.txt",
+    "sha256": "4cb1de917402b3500ff8b97c1e2cb18bd037dadd7e4e3535cce798868da03860"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-audit-response-proof.js",
+    "file": "queue-audit-response-proof-dce47c5.js.txt",
+    "sha256": "e6d5ccd29bec5a1c1d8d548fc34864b0e1a7ff95cc6e9253bc1f141d98981f60"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-audit-facts-capture.js",
+    "file": "queue-audit-facts-capture-dce47c5.js.txt",
+    "sha256": "4e1e433c83834da614e1148856062de51a4680629d2e54460906f0b90cadbc82"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-settled-epoch-evidence.js",
+    "file": "queue-settled-epoch-evidence-dce47c5.js.txt",
+    "sha256": "1af904398febc52720c0593603684d24088381b676cd1dc2c5cdcf4c78d06eb2"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/atomic-runtime-abi.js",
+    "file": "atomic-runtime-abi-dce47c5.js.txt",
+    "sha256": "78be7d85745369d2689669b94d884ae95d3880c255d1d0345d0da8f15770a8e8"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-state.js",
+    "file": "queue-state-dce47c5.js.txt",
+    "sha256": "4cd7e93cc402df3ccd9044a00737a7c4cf5643ef9c04ac04cb8d01bb78522b9e"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-phased.js",
+    "file": "queue-phased-dce47c5.js.txt",
+    "sha256": "354121e2a5921ca9e7b0407b47bbea8fd4913d406c9a00132d8287b22dbd5614"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-document.js",
+    "file": "queue-document-dce47c5.js.txt",
+    "sha256": "23017158c7f6e754d8eb11bad257836242d70ab896960c8d340b4e0f909c48c6"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/fusion-reset.js",
+    "file": "fusion-reset-dce47c5.js.txt",
+    "sha256": "c4b72f4d5a2981ee1a99b69fac775886869fdec1973197c85718f961282bcee1"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "runtime/python/recovery/atomic_audit.py",
+    "file": "atomic-audit-843.py.txt",
+    "sha256": "171882e43aa81c12411cd54d5d7ef1071502d25f17f143054aa3ca3bb7ef83f7"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/control-center-system-controls.cjs",
+    "file": "control-center-system-controls-dce47c5.cjs.txt",
+    "sha256": "236123e09b9856b80fc58eaf9d4d7f5a746ff18e5b559fd9ba57cf3580b8ccc3"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/opencode/project-logger.cjs",
+    "file": "project-logger-dce47c5.cjs.txt",
+    "sha256": "3b5e157b822419b4b7e6429f289d797d117da562021afc578cbd43fdf0cb131f"
+  },
+  {
+    "revision": "5292078741b417d6e921d3252a8bf19b3f0cc15b",
+    "sourcePath": "packages/core/src/application/cad/prepare.ts",
+    "file": "cad-prepare-5292.ts.txt",
+    "sha256": "8c74fe0b4ee6f079cb0b572d2f4ec81cb4b8e8ea193dbfae37934acc5acf9931"
   }
 ]
