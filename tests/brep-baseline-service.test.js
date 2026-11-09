@@ -171,7 +171,14 @@ test('typed CLI and MCP execute capture → owned inspect → compare through th
     else process.env.XDG_STATE_HOME = oldState;
     fs.rmSync(root, { recursive: true, force: true });
   });
-  broker = await serve(config, { dir: brokerDirectory, confirmOwnership: true, createBackend: () => fakeBackend, pollMs: 5 });
+  const preload = path.join(root, 'fake-wsl-preload.cjs');
+  fs.writeFileSync(preload, `require(${JSON.stringify(require.resolve('./fixtures/fake-wsl-platform.cjs'))})();\n`);
+  broker = await serve(config, {
+    dir: brokerDirectory, confirmOwnership: true, createBackend: () => fakeBackend, pollMs: 5,
+    spawnWorker(executable, args, options) {
+      return require('node:child_process').spawn(executable, ['--require', preload, ...args], options);
+    },
+  });
 
   let cliOutput = '', cliErrors = '';
   const cliCode = await cliMain([
