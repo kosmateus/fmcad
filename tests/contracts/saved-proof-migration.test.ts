@@ -1,16 +1,19 @@
-import type {} from "../../packages/core/src/application/cad/saved-fixture-proof";
-const test = require("node:test") as typeof import("node:test");
-const assert: typeof import("node:assert/strict") = require("node:assert/strict");
-const fs = require("node:fs") as typeof import("node:fs");
-const path = require("node:path") as typeof import("node:path");
-const vm = require("node:vm") as typeof import("node:vm");
-const { createRequire } =
-  require("node:module") as typeof import("node:module");
-const root = path.resolve(__dirname, "../..");
-const { parseSavedFixtureReader } =
-  require("../../src/queue-saved-fixture-reader") as typeof import("../../packages/core/src/application/cad/saved-fixture-proof");
-const { hash } =
-  require("../../src/dist/core/application/cad/json") as typeof import("../../packages/core/src/application/cad/json");
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import vm from "node:vm";
+import { createRequire } from "node:module";
+const root = path.resolve(__dirname, "../../..");
+const runtimeRequire = createRequire(
+  path.join(root, "tests/contracts/saved-proof-migration.test.js"),
+);
+const { parseSavedFixtureReader } = runtimeRequire(
+  "../../src/queue-saved-fixture-reader",
+) as typeof import("../../packages/core/src/application/cad/saved-fixture-proof");
+const { hash } = runtimeRequire(
+  "../../src/dist/core/application/cad/json",
+) as typeof import("../../packages/core/src/application/cad/json");
 const historical = {
   exports:
     {} as typeof import("../../packages/core/src/application/cad/saved-fixture-proof") &
@@ -114,11 +117,13 @@ for (const purpose of [
 }
 
 test("saved administrative preparation preserves exact historical Python bytes", (t) => {
-  const install =
-    require("../fixtures/fake-wsl-platform.cjs") as () => () => void;
+  const install = runtimeRequire(
+    "../fixtures/fake-wsl-platform.cjs",
+  ) as () => () => void;
   t.after(install());
-  const { prepareSavedFixtureReader } =
-    require("../../src/queue-saved-fixture-reader") as typeof import("../../packages/node-adapters/src/persistence/saved-fixture-reader");
+  const { prepareSavedFixtureReader } = runtimeRequire(
+    "../../src/queue-saved-fixture-reader",
+  ) as typeof import("../../packages/node-adapters/src/persistence/saved-fixture-reader");
   for (const [purpose, filename] of [
     ["saved-fixture-retain-v1", "sdk-retained.json"],
     ["saved-fixture-destination-v1", "sdk-destination.json"],

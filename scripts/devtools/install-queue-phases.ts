@@ -75,7 +75,8 @@ export function stagedFiles(root: string, trees: readonly string[]): string[] {
     const entry = fs.lstatSync(file);
     if (entry.isDirectory()) {
       for (const child of fs.readdirSync(file).sort()) {
-        if (["node_modules", ".git", ".cad", ".beads"].includes(child)) continue;
+        if (["node_modules", ".git", ".cad", ".beads"].includes(child))
+          continue;
         visit(name + "/" + child);
       }
     } else if (entry.isFile()) {
@@ -222,10 +223,12 @@ export function candidateFiles(root: string): {
       ]),
       ...stagedFiles(root, [
         "src/dist",
+        "dist/src",
         "bin",
         "dist/bin",
         "dist/processes",
         "assets",
+        "dist/assets",
         "dist/runtime",
         "dist/scripts",
         "scripts",

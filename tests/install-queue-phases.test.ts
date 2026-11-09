@@ -109,6 +109,9 @@ test("the candidate manifest retains compiled dependencies and fixtures without 
     candidate = stagedFixture(f.root);
   const entries = [
     "src/dist/node-adapters/execution/phased-workers.js",
+    "dist/src/queue-instance.js",
+    "dist/src/dist/node-adapters/execution/queue-instance.js",
+    "dist/assets/cad/document.py",
     "dist/runtime/python/typing/checker-project.py",
     "dist/scripts/devtools/runtime.js",
     "tests/fixtures/receipt.json",
@@ -254,6 +257,25 @@ test("quiescent installation fences autostart, stops only the idle broker and pr
   assert.equal(result["state"], "installed");
   assert.equal(result["fusionCalls"], 0);
   assert.equal(result["brokerLeftStopped"], true);
+  const installedDevtools = createRequire(
+    path.join(f.root, "dist/scripts/devtools/runtime.js"),
+  );
+  assert.equal(
+    installedDevtools.resolve("../../src/queue-instance.js"),
+    path.join(f.root, "dist/src/queue-instance.js"),
+  );
+  const installedInstance = createRequire(
+    installedDevtools.resolve("../../src/queue-instance.js"),
+  );
+  assert.equal(
+    installedInstance.resolve(
+      "./dist/node-adapters/execution/queue-instance.js",
+    ),
+    path.join(
+      f.root,
+      "dist/src/dist/node-adapters/execution/queue-instance.js",
+    ),
+  );
   assert.deepEqual(calls, ["status", "status", "stop"]);
   assert.equal(fs.existsSync(path.join(f.dir, "recovery.lock")), false);
   assert.equal(
