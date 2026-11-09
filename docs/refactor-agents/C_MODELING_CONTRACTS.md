@@ -587,3 +587,20 @@ remain unchanged and its rerun requires the next complete central stage. The two
 production-checker cases are not run by that selection and remain explicit gates.
 No timing claim is made from the concurrently loaded host. The retained process
 crash/restart, unknown-outcome and Python identity guards actually executed.
+
+### Remaining recovery fixtures migrated for package A
+
+`instance-loss-recovery`, `isolated-epoch`, `recovery-isolation` and
+`queue-atomic-control` now use strict TypeScript with the actual adapter contracts.
+All 31 source test declarations, 119 original assertions and six embedded programs
+are retained. A checked dynamic boundary preserves the intentionally incomplete
+CLI dependency fixture; it still proves rejection before credentials/configuration
+or IO. Historical/current observer comparison validates the callable historical
+entrypoint and compares original error codes/messages without normalizing them.
+Remote JSON and queue identifiers are checked before access, and filesystem fault
+injection remains limited to its original concrete method.
+
+Strict compilation, lint and source/template parity passed. Runtime execution of
+these four suites is NOTRUN pending complete central staging; the process-loss
+admission case requires the coordinated real-checker gate. No narrow emit is used
+as installed-package evidence.
