@@ -74,7 +74,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "2 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/atomic-isolation.test.js": {
       "owner": "B",
@@ -102,7 +103,8 @@
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/direct-child-dispatch",
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/atomic-transaction.test.js": {
       "owner": "B",
@@ -132,7 +134,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "9 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm01-definition.test.js": {
       "owner": "B",
@@ -164,7 +167,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "4 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm02-data-import.test.js": {
       "owner": "B",
@@ -195,7 +199,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "3 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm03-entity.test.js": {
       "owner": "B",
@@ -223,7 +228,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm04-datum.test.js": {
       "owner": "B",
@@ -251,7 +257,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm06-sketch.test.js": {
       "owner": "B",
@@ -283,7 +290,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "11 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm07-profile-curve.test.js": {
       "owner": "B",
@@ -310,7 +318,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm08-surface.test.js": {
       "owner": "B",
@@ -339,7 +348,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm09-feature.test.js": {
       "owner": "B",
@@ -367,7 +377,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm10-shapes.test.js": {
       "owner": "B",
@@ -396,7 +407,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm11-gear.test.js": {
       "owner": "B",
@@ -424,7 +436,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm12-spring.test.js": {
       "owner": "B",
@@ -453,7 +466,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm13-thread.test.js": {
       "owner": "B",
@@ -488,7 +502,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm14-cam.test.js": {
       "owner": "B",
@@ -516,7 +531,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm15-seal.test.js": {
       "owner": "B",
@@ -553,7 +569,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm16-fasteners.test.js": {
       "owner": "B",
@@ -594,7 +611,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "12 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm17-mechanism.test.js": {
       "owner": "B",
@@ -629,7 +647,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm18-pose.test.js": {
       "owner": "B",
@@ -664,7 +683,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm19-interference.test.js": {
       "owner": "B",
@@ -701,7 +721,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm20-containment.test.js": {
       "owner": "B",
@@ -736,7 +757,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm25-routing.test.js": {
       "owner": "B",
@@ -783,7 +805,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm26-fpc-pcb.test.js": {
       "owner": "B",
@@ -838,7 +861,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "12 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm27-assembly.test.js": {
       "owner": "B",
@@ -881,7 +905,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm28-optics.test.js": {
       "owner": "B",
@@ -924,7 +949,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm29-appearance.test.js": {
       "owner": "B",
@@ -979,7 +1005,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "12 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm30-presentation.test.js": {
       "owner": "B",
@@ -1022,7 +1049,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "9 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm31-dfm.test.js": {
       "owner": "B",
@@ -1067,7 +1095,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm32-sheetmetal.test.js": {
       "owner": "B",
@@ -1110,7 +1139,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm34-marking.test.js": {
       "owner": "B",
@@ -1151,7 +1181,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "5 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm36-explode-animation.test.js": {
       "owner": "B",
@@ -1199,7 +1230,8 @@
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/direct-child-dispatch",
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/gm37-checking-evidence.test.js": {
       "owner": "B",
@@ -1251,7 +1283,8 @@
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/direct-child-dispatch",
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "10 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/integration/recipes.test.js": {
       "owner": "B",
@@ -1282,7 +1315,8 @@
       "sourcePinStatus": "matched",
       "blockers": [
         "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ]
+      ],
+      "reason": "10 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
     },
     "tests/native/iw7.4_parameter_test.py": {
       "owner": "B",
@@ -1313,7 +1347,8 @@
         "One-millisecond budget refusal skips the setter and preserves the expression"
       ],
       "cleanup": "Parent exact owned close/delete and foreign inventory audit only after both original phases succeed. Any failed/malformed/unknown result retains fixture and original request evidence without replay; inspect native restore before manual resolution.",
-      "nextAction": "Run both unchanged native phase bodies on each parent-owned saved scratch fixture after offline closure; retain exact file/version/project/folder, original request receipts, local restoration evidence and final owned cleanup. Source/capability/fault tests alone do not qualify native behavior."
+      "nextAction": "Run both unchanged native phase bodies on each parent-owned saved scratch fixture after offline closure; retain exact file/version/project/folder, original request receipts, local restoration evidence and final owned cleanup. Source/capability/fault tests alone do not qualify native behavior.",
+      "reason": "The original parameter.test and failure-restoration programs require native physical-property and temporary-body readback. They are registered in the required native-fixtures profile with an exact owned saved handoff; neither source checks nor simulator results qualify those observations."
     },
     "tests/fixtures/owned-cli/handoff.test.js": {
       "owner": "B/G",
@@ -1385,7 +1420,8 @@
         "Owned cleanup completes and original foreign inventories remain unchanged; unknown child/request defers cleanup"
       ],
       "nextAction": "Collect the six exact-final-commit CI run URLs and scenario artifacts, verify child callbacks actually executed and every owner completed cleanup. Do not run this fixture standalone or treat skipped registration as evidence.",
-      "handoffBlocker": "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
+      "handoffBlocker": "nativeIntegrationEvidence.handoffBlockers/per-command-settlement",
+      "reason": "This child fixture is executed only by the owned child-cli scenario, not as a standalone test. CI registration names six protocol/concurrency jobs, but actual passing child execution, original SDK-settled receipts and cleanup evidence for the final commit are still required."
     }
   }
 }
