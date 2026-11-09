@@ -34,7 +34,7 @@ function entry(
       tests: [
         "tests/legacy.test.js",
         "tests/registry.test.ts",
-        "tests/manual-legacy.test.js",
+        "tests/manual-legacy.test.ts",
         "tests/manual_legacy_test.py",
       ],
       gaps: [],

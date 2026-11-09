@@ -646,6 +646,65 @@ function historicalPublicBoundary<K extends keyof BoundaryModules>(
   return baseline.exports as BoundaryModules[K];
 }
 
+function relocateHistoricalTestEvidence(value: unknown): unknown {
+  // Evidence moves with strict test migration. Check both sides of each
+  // explicit relocation; preserve every other descriptor/manual value and
+  // the unchanged, hash-verified historical source.
+  const relocated = new Map(
+    [
+      "registry",
+      "manual-legacy",
+      "console-pause",
+      "console-offline",
+      "console-services",
+      "queue-scheduling",
+      "batch-local",
+      "shot",
+      "reference",
+      "image-trace",
+      "image-optimize",
+      "image-boundaries",
+      "engineering-fit",
+      "engineering-thermal",
+      "engineering-mass",
+      "engineering-fluid",
+      "engineering-hydraulic",
+      "review",
+      "review-pixels",
+      "review-application",
+    ].map((test) => [
+      "tests/" + test + ".test.js",
+      "tests/" + test + ".test.ts",
+    ]),
+  );
+  const relocate = (value: unknown): unknown => {
+    if (typeof value === "string" && relocated.has(value)) {
+      const target = present(relocated.get(value));
+      assert.equal(
+        fs.existsSync(path.join(root, value)),
+        false,
+        "old evidence was retired: " + value,
+      );
+      assert.equal(
+        fs.existsSync(path.join(root, target)),
+        true,
+        "typed evidence exists: " + target,
+      );
+      return target;
+    }
+    if (Array.isArray(value)) {
+      for (let index = 0; index < value.length; index++)
+        value[index] = relocate(value[index]);
+      return value;
+    }
+    if (value && typeof value === "object")
+      for (const key of Object.keys(value))
+        record(value)[key] = relocate(record(value)[key]);
+    return value;
+  };
+  return relocate(value);
+}
+
 test("typed compatibility client preserves metadata and every historical denial without transport", async () => {
   const historical = historicalPublicBoundary("client").McpClient;
   const current = (
@@ -1284,11 +1343,11 @@ test("typed command registration preserves every route, alias, flag and argument
 test("typed help preserves every registered English and Polish page and text layout", () => {
   assert.deepEqual(
     runtimeRequire("../src/legacy-manual"),
-    historicalPublicBoundary("legacy-manual"),
+    relocateHistoricalTestEvidence(historicalPublicBoundary("legacy-manual")),
   );
   assert.deepEqual(
     runtimeRequire("../src/broker-manual"),
-    historicalPublicBoundary("broker-manual"),
+    relocateHistoricalTestEvidence(historicalPublicBoundary("broker-manual")),
   );
   const oldHelp = historicalPublicBoundary("help"),
     help = runtimeRequire(
@@ -2359,7 +2418,7 @@ test("unchanged retained UI suite also passes against the frozen historical impl
     baseline._compile(source,target);
     const load=Module._load;
     Module._load=function(request,parent,isMain){
-      if ((request==='./ui'||request.endsWith('/ui')||request.endsWith('/ui.js'))&&Module._resolveFilename(request,parent)===target)return baseline.exports as BoundaryModules[K];
+      if ((request==='./ui'||request.endsWith('/ui')||request.endsWith('/ui.js'))&&Module._resolveFilename(request,parent)===target)return baseline.exports;
       return load.call(this,request,parent,isMain);
     };
   `,
@@ -2394,55 +2453,7 @@ test("remaining host registrations preserve public descriptors and manuals", () 
   ] as const) {
     const historical = record(historicalPublicBoundary(name)),
       current = record(runtimeRequire("../src/" + name));
-    // Evidence moves with strict test migration. Check both sides of each
-    // explicit relocation; preserve every other descriptor/manual value and
-    // the unchanged, hash-verified historical source.
-    const relocated = new Map(
-      [
-        "shot",
-        "reference",
-        "image-trace",
-        "image-optimize",
-        "image-boundaries",
-        "engineering-fit",
-        "engineering-thermal",
-        "engineering-mass",
-        "engineering-fluid",
-        "engineering-hydraulic",
-        "review",
-        "review-pixels",
-        "review-application",
-      ].map((test) => [
-        "tests/" + test + ".test.js",
-        "tests/" + test + ".test.ts",
-      ]),
-    );
-    const relocate = (value: unknown): unknown => {
-      if (typeof value === "string" && relocated.has(value)) {
-        const target = present(relocated.get(value));
-        assert.equal(
-          fs.existsSync(path.join(root, value)),
-          false,
-          "old evidence was retired: " + value,
-        );
-        assert.equal(
-          fs.existsSync(path.join(root, target)),
-          true,
-          "typed evidence exists: " + target,
-        );
-        return target;
-      }
-      if (Array.isArray(value)) {
-        for (let index = 0; index < value.length; index++)
-          value[index] = relocate(value[index]);
-        return value;
-      }
-      if (value && typeof value === "object")
-        for (const key of Object.keys(value))
-          record(value)[key] = relocate(record(value)[key]);
-      return value;
-    };
-    relocate(historical);
+    relocateHistoricalTestEvidence(historical);
     for (const key of [
       "descriptor",
       "manual",

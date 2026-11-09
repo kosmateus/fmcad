@@ -10,7 +10,7 @@ import type { BrokerModules } from "../src/queue-broker-modules";
 import type { ExecutionReceipt } from "../src/api";
 import { at, record, text as textValue } from "./integration/offline-cli";
 const root = process.cwd(),
-  load = createRequire(__filename);
+  load = createRequire(path.join(root, "tests/library-api-broker.test.js"));
 const { createFmcad } = load("fmcad/api") as typeof import("../src/api");
 const { resolveFmcadConfiguration } = load(
   path.join(root, "dist/src/dist/core"),

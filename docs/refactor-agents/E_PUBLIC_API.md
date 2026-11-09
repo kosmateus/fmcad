@@ -604,3 +604,31 @@ commands, real host workers, generated manual handlers, retained review/UI and
 five console groups. The broker-backed pause suite, installed API/OpenCode and
 Python admission gates remain separate pending checks. This is not native Fusion
 qualification or exact-final-commit CI evidence.
+
+### Remaining public transport suites
+
+The six retained add-in, curl, physical transport, original UI-origin checker,
+installed runtime consumer and SDK probe suites are now strict TypeScript.
+Their existing behavioral assertions remain; malformed inputs keep their runtime
+values through explicit negative-boundary casts. The curl gate now requires
+actual local curl instead of treating an unavailable binary as a passing skip.
+Checked wire/JSON boundaries preserve private broker seams, public direct-SDK
+denial, source-origin fences and installed declarations. Strict compilation and
+ESLint pass. Actual execution awaits the central rebuilt runtime and checker
+diagnosis; registration and source checks are not behavioral qualification.
+
+The next real sequential E run passed all five pause tests, including physical
+RPC drain/resume with bound readiness receipts, plus the first complete MCP/CLI
+broker and typed worker case. It exposed two test migration defects: emitted
+self-import resolution and a TypeScript cast inside a generated historical UI
+preload. Both are corrected. Explicit historical manual relocations now also
+cover registry, manual-legacy, console and batch-local evidence; production
+manuals replace only references whose original JS tests were retired.
+
+Installed external CJS/ESM/declaration/help checks reached the real reference
+worker, which correctly rejected this Debian 13 host. The later MCP identity
+process test exceeded its unchanged 390-second budget and continued during
+teardown. After recording its generated state, only this agent's test process
+tree was stopped to release the shared checker host. OpenCode, later MCP and
+Python admission gates in that slice were not reached and remain pending.
+No timeout, owner, receipt, platform or uncertain-replay rule was relaxed.

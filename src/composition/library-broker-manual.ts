@@ -93,7 +93,7 @@ export const manuals: Record<string, CommandManual> = Object.fromEntries(
           "src/queue-state.js",
         ],
         tests: [
-          "tests/queue-scheduling.test.js",
+          "tests/queue-scheduling.test.ts",
           "tests/console-pause.test.ts",
           "tests/phased-queue.test.js",
           "tests/queue-probe-recovery.test.js",
@@ -143,7 +143,7 @@ manuals["console"] = {
     ],
     tests: [
       "tests/console-pause.test.ts",
-      "tests/console-offline.test.js",
+      "tests/console-offline.test.ts",
       "tests/console-services.test.ts",
     ],
     verified: [
