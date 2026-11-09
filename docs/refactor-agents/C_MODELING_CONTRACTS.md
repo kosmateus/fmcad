@@ -539,3 +539,19 @@ rejection; the two pure persisted-state integration cases also pass. All 17 have
 zero skips. The remaining real broker restart case and two build/admission cases
 await the coordinated stable-build run. These results do not qualify those
 three pending cases or native Fusion execution.
+
+### Native lifecycle source ports (execution pending)
+
+All six C native source families now have typed ScenarioSession ports: CAD,
+extended geometry/camera, sketch operations, thicken/slot pattern, feature modes
+and component hierarchy. The frozen sources and all 1,228 assertion identifiers
+remain intact. Strict compilation and lint pass, and the recorded source comparison
+preserves the original group/helper readback calls. The 38 shared-model capability,
+metadata uncertainty, owner mismatch, recovery and cleanup tests are prepared but
+have not run; real Fusion remains NOTRUN. Exact legacy CLI `active`/`doc list`
+output parsing is retained through the shared queue; actual safety execution and
+final native-profile checks remain open before runner readiness.
+The lifecycle has one SDK queue and no new simulator geometry. Details and
+justified stronger coordinate/output-intent assertions are recorded in
+`C_NATIVE_ASSERTION_OBLIGATIONS.md`. Existing installed/checker/browser and the
+remaining retained regression runtime gates also remain pending.

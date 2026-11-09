@@ -170,15 +170,13 @@ for all 266 frozen sites in `live-feature-modes.js` (161) and
 retained native-context obligations, all marked not-run. Source hashes and
 individual evidence literals remain unchanged.
 
-`live-feature-modes.js` still selects a hard-coded addin endpoint and concatenates
-legacy CAD assets. Its report, component and document state are shared across
-feature groups. Before native qualification, use the existing prepared CAD path
-and ScenarioSession with the same mode steps/readbacks on both supported
-backends. Preserve the historical XZ direction and hole extent hypotheses, the
-explicit getter-inspection gaps, original tolerances and indeterminate-result
-stop. `live-component-hierarchy.js` already pins doc-id and honors broker blocks,
-but needs its environment/report globals and cleanup moved into the common
-owner lifecycle. Neither retained source is labeled native-ready.
+The frozen legacy sources remain historical evidence. Their executable ports
+now use ScenarioSession: feature modes preserve the original addin-only scope,
+production handler bundle, XZ/hole hypotheses and inspection gaps; hierarchy
+preserves component selection and all physical readbacks. Endpoint selection,
+request ownership, durable evidence and lifecycle now belong to the common runner.
+The offline safety executions below are still required before runner readiness;
+no native execution is claimed.
 
 ### tests/live-feature-modes.js
 
@@ -220,3 +218,46 @@ owner lifecycle. Neither retained source is labeled native-ready.
 | `hierarchy-rigid-group` | Create the requested rigid group from the moved and target occurrences without including children; require a nonempty native group token and exact requested name. |
 | `hierarchy-align` | Unground the source at X30 mm, align it to the target root transform, require residual<=1e-8 and actual origin0, independently read X minimum0 within0.001 mm and unchanged body dimensions. |
 | `hierarchy-final-accounting` | On known unblocked execution close the owned fixture, require no owned leftovers and restored original active document while preserving foreign inventory; blocked/unknown states must remain explicit and not be retried. |
+
+## Owned native runner source checkpoint
+
+Six executable ports now retain the C readbacks under the existing ScenarioSession:
+`native-cad`, `native-extended`, `native-sketch-operations`,
+`native-thicken-slot-pattern`, `native-feature-modes` and
+`native-component-hierarchy`. Owners default to 10; each uses the existing
+exclusive-instance barrier because its full foreign-document and active-state
+checks are instance-wide. The fixtures remain unsaved and require no cloud folder.
+Feature modes remain addin-only. Sketch operations require the exact installed
+package through `FMCAD_LIVE_RUNTIME_ROOT`; CAD reimport additionally requires the
+explicit `FMCAD_LIVE_REIMPORT=1` qualification variant.
+
+Strict TypeScript and ESLint pass for all six ports and their 38 lifecycle/predicate
+safety cases. The source comparison preserves assertion and readback call counts
+in 11 CAD, 22 extended and 9 feature-mode source groups, all 14 sketch geometry
+functions, and all 10 thicken/26 hierarchy literal readback labels. Loop-generated
+cases remain in their original loops. The comparison is source evidence, not
+execution evidence. The safety cases have not run yet; runner status therefore
+remains `migration-required` pending the coordinated built-runtime gate.
+
+The transport migration retains the generated CLI parser for CAD commands and
+uses exact original broker outcomes instead of inventing a subprocess exit code.
+Actual exit codes, where supplied by the original execution, remain evidence.
+Sketch keeps typed request/job/client and operation-result checks. Its read-only
+`active`/`doc list` commands retain their actual public output parsers and original
+receipts through the same queue. The pre-creation metadata inventory is verified
+before initializing subsequent raw CLI row comparisons.
+Creation, close, foreign inventory and original active restoration use the existing
+owned lifecycle. Guard mismatch and unknown nested outcomes durably defer cleanup.
+
+The opt-in checkpoint roundtrip preserves count, bounds, volume and issue checks
+in the same SDK request as the owned import. Its durable child receipt binds the
+original request, parent, input file and new child; closure must be proven before
+primary cleanup. Recovery reads the original result and never repeats an import.
+The original tolerances and native hypotheses are unchanged. Added assertions
+require all three bounds/endpoint coordinates and an original owned PNG intent,
+closing vacuous empty-array or unbound-output evidence without relaxing a check.
+
+Still pending: execute the safety cases on the stable build, validate native
+CLI/profile registration,
+and run every retained geometry/solver/rendering/style obligation on real Fusion.
+No simulator result qualifies a native kernel.
