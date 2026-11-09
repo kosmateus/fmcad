@@ -45,6 +45,16 @@
           "id": "sketches",
           "scope": "owned-document",
           "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite sketches --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "reopen",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite reopen --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "revisions",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite revisions --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
         }
       ]
     },

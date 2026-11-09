@@ -111,3 +111,17 @@ Unsupported capabilities are reported before setup and fail the required
 profile. Backend-specific changes to expected results or tolerances are not
 allowed. Live validation remains necessary for unsaved-document export, the
 global active-document behavior and the model's supported API semantics.
+
+## Saved revisions and reopen
+
+`--suite reopen` tests discarding unsaved parameter/geometry edits when reopening
+an exact saved fixture. `--suite revisions` first saves modeled geometry and a
+parameter, observes the next completed version, then verifies that reopening
+retains that snapshot and discards subsequent unsaved edits. Both families are in
+`--suite all` and use identical steps and tolerances on both backends.
+
+Each scenario may save one revision and reopen once. Durable intents and original
+backend receipts bind client/request, prior creation ID and exact file/version.
+A lost reply defers cleanup; recovery reads the original evidence and never repeats
+save/open/close. A failed receipt handoff cannot authorize deleting a different
+file. A revision has no native-format implication: model exports remain marked JSON.

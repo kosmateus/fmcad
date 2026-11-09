@@ -138,3 +138,37 @@ This is an intermediate B1/B4 delivery, not package completion or native evidenc
 
 Persistence PR #44 (`fe1c66f`) passed all 124 scenario unit tests locally; full CI
 is pending. The archive contains the pre-refactor Git baseline and is kept separate.
+
+## Delivery ledger — saved revisions and receipt-bound reopen
+
+PR #36 merged as `2e96778` after all 22 checks passed on `ce68130`
+([CI](https://github.com/kosmateus/fmcad/actions/runs/42523647038)).
+PR #44 merged as `ecf4f60` after all 22 checks passed on `fe1c66f`
+([CI](https://github.com/kosmateus/fmcad/actions/runs/42524121814)).
+The assertion-ledger PR #45 is now targeted at main.
+
+New shared `reopen` and `revisions` families retain exact file/folder/version
+identity while adopting a new creation ID only from the original successful
+request and matching durable receipt. A revision records its intent before save,
+observes the next completed version separately, and never resubmits an unknown
+save. An unmodified save keeps its version. Reopen closes once, opens once, and
+rejects existing open handles, changed versions and foreign receipts.
+
+The same scenario bodies run on the model and Fusion. They verify saved parameter
+and analytical box persistence, independent readback of unsaved edits before
+close, discard of those edits after reopen, and exact cleanup of the saved version.
+Loss tests cover save, observation, close, open and deletion; recovery uses original
+backend evidence and does not rerun scenario assertions. Cancellation after known
+save/close completion still cleans the owned file. Ambiguous post-open failures
+remain deferred. Explicit second save/reopen attempts are rejected before submission.
+
+The model tests exercise both transports at concurrency 1/2/10. Production checker
+and full CI results will be recorded before merge. G owns the separate broker-matrix
+registration proposal in `tests/scenarios/CI_REGISTRATION.md`; local broker execution
+remains blocked by the unmodified Linux process-identity prerequisite.
+
+Native-only assumptions: an accepted modified save publishes exactly the next
+version; close(False) discards edits; reopen establishes a new creation ID; reopened
+parameters and bounded geometry match the saved version. These are qualification
+obligations, not native results. General native formats, solver/topology behavior,
+transactional suite migration and complete per-assertion dispositions remain open.
