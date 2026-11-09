@@ -6,9 +6,9 @@
       "status.py": "6167e4ef2eb547f1e5232afe7ccbaeabadd38eb8395cbbe01ee01984926a870a"
     },
     "after": {
-      "status.py": "d9e4e590e088a0a2790e2778f6b25248d038e60e9af47bb114b65ec4b8dc5aa7"
+      "status.py": "c97e2ee98f2a955ecf75249cad2ba99c6c12922de1c7c697a6f5fd9cfa0c5c11"
     },
-    "reason": "Reviewed current typed/extracted CAD runtime and expanded catalog instead of the pre-refactor concatenated runtime. Only exact status.py bytes change; operation, arguments, all document/project identity pins and SDK call count remain compared without exemptions. This offline fixture does not qualify native CAD behavior."
+    "reason": "Reviewed typed modeling and file-workflow integration: canonical Python loaders, extracted reference/externalization policy and source provenance change exact generated status.py bytes. Historical modeling and file-workflow comparisons cover the migrated boundaries. Operation, arguments, document/project identity, results, effects and SDK call counts remain compared without exemptions; native behavior remains unqualified."
   },
   {
     "id": "cli.help",

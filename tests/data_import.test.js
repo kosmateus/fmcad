@@ -233,3 +233,159 @@ test('generated adapter request compiles, carries normalized model paths, and pa
   assert.match(script, /ctx.assert_identity\(\)/);
   assert.equal(require('./helpers/legacy').scriptConfig(script, ['_FMCAD_REQUEST'])._FMCAD_REQUEST.docFileId, 'cloud');
 });
+
+const importHistory = require('./fixtures/file-workflows/load.cjs');
+const importVersions = [
+  ['pre-refactor', importHistory('baseline', 'src/data-import.js')],
+  ['before extraction', importHistory('before', 'src/data-import.js')],
+  ['typed values', require('../src/data-import')],
+];
+function importObservation(fn) {
+  try { return { value: fn() }; }
+  catch (error) { return { error: error.message }; }
+}
+test('import value extraction preserves complete source plans, provenance hashes and offline observations', () => {
+  const csvPath = source('paired-parameters.csv', '\uFEFFsymbol;value;units;note\r\nw;2;mm;"one\ntwo"\r\nn;4;;count\r\n');
+  const jsonPath = source('paired-catalog.json', JSON.stringify({ table: [item('part', { source: 'fixture' })] }));
+  const requests = [
+    ['param.import', { version: 1, owner: 'fixture', revision: 'r1', source: csvPath,
+      schema: { delimiter: ';', columns: { name: 'symbol', expression: 'value', unit: 'units', comment: 'note' }, defaults: { status: 'CONFIRMED' } } }],
+    ['catalog.check', { version: 1, source: jsonPath, schema: { recordsPath: 'table' } }],
+    ['catalog.check', adapter([item('parent', { kind: 'assembly', quantity: 2 }), item('child', { parent: 'parent', quantity: 3 })])],
+    ['placement.check', adapter([{ id: 'part', occurrence: { token: 'exact-token' }, placement: pose('1 in', { occurrence: { token: 'parent' } }), status: 'CONFIRMED', source: 'fixture' }])],
+  ];
+  for (const [operation, data] of requests) {
+    const snapshots = importVersions.map(([, api]) => {
+      const plan = api.prepare(operation, structuredClone(data));
+      return { plan, offline: operation.endsWith('.check') ? api.offlineResult(plan) : null };
+    });
+    assert.deepEqual(snapshots[1], snapshots[0]);
+    assert.deepEqual(snapshots[2], snapshots[0]);
+  }
+});
+test('import value extraction keeps exact CSV and transform failures', () => {
+  const sources = ['', 'a,a\n1,2', 'a,b\n1', 'a\n"unterminated', 'a\n"x"bad', '\uFEFFa,b\r\n"one\r\ntwo",3\r\n'];
+  for (const text of sources) {
+    const results = importVersions.map(([, api]) => importObservation(() => api.csv(text)));
+    assert.deepEqual(results[1], results[0]); assert.deepEqual(results[2], results[0]);
+  }
+  const valid = pose('2 in'), identityMatrix = [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
+  const transforms = [valid, { ...valid, translation: ['2','0 mm','0 mm'] },
+    { ...valid, rotation: [1,0,0,0,2,0,0,0,1] },
+    { matrix: identityMatrix, unit: 'in', frame: 'root' },
+    { matrix: identityMatrix, unit: 'mm', frame: { datum: 'mount', component: 'root' } },
+    { ...valid, frame: { datum: 'mount' } },
+    { ...valid, rotation: [-1,0,0,0,1,0,0,0,1] },
+    { ...valid, surprise: true }, { ...valid, rotation: [null] }];
+  for (const input of transforms) {
+    const results = importVersions.map(([, api]) => importObservation(() => api.transform(structuredClone(input))));
+    assert.deepEqual(results[1], results[0]); assert.deepEqual(results[2], results[0]);
+  }
+});
+test('import value extraction retains transforms and inverses for all supported length units', () => {
+  for (const unit of ['mm', 'cm', 'm', 'in', 'ft']) {
+    const results = importVersions.map(([, api]) => {
+      const value = api.transform(pose(`12 ${unit}`));
+      return { value, inverse: api.inverse(value.matrix), product: api.multiply(value.matrix, api.inverse(value.matrix)) };
+    });
+    assert.deepEqual(results[1], results[0]); assert.deepEqual(results[2], results[0]);
+  }
+});
+
+test('source snapshot binds parsed rows and provenance when the source changes immediately after reading', () => {
+  const crypto = require('node:crypto');
+  const file = source('changing-parameters.json', '[]');
+  const original = JSON.stringify([{ name: 'width', expression: '2 mm', unit: 'mm', status: 'CONFIRMED' }]);
+  const replacement = JSON.stringify([{ name: 'width', expression: '900 mm', unit: 'mm', status: 'CONFIRMED' }]);
+  const outputs = [];
+  for (const label of ['baseline', 'before', 'current']) {
+    fs.writeFileSync(file, original);
+    let reads = 0;
+    const read = value => {
+      assert.equal(value, file);
+      reads++;
+      const bytes = fs.readFileSync(value);
+      fs.writeFileSync(value, replacement);
+      return bytes;
+    };
+    const base = require('../src/dist/node-adapters/persistence/data-import-files').dataImportFiles;
+    const files = { ...base, snapshot(value) {
+      const bytes = read(value);
+      return { text: bytes.toString('utf8'), sha256: crypto.createHash('sha256').update(bytes).digest('hex') };
+    } };
+    const api = label === 'current' ? require('../src/data-import') : importHistory(label, 'src/data-import.js', { 'node:fs': { ...fs, readFileSync: read } });
+    const plan = api.prepare('param.import', { version: 1, owner: 'owner', revision: 'r1', source: file }, files);
+    assert.equal(reads, 1);
+    assert.equal(plan.result.parameters[0].expression, '2 mm');
+    assert.equal(plan.provenance.sha256, crypto.createHash('sha256').update(original).digest('hex'));
+    assert.equal(fs.readFileSync(file, 'utf8'), replacement);
+    outputs.push(plan);
+  }
+  assert.deepEqual(outputs[1], outputs[0]);
+  assert.deepEqual(outputs[2], outputs[0]);
+});
+
+test('source read failures retain the original failure and never retry', () => {
+  const file = source('unreadable-parameters.json', '[]');
+  for (const label of ['baseline', 'before', 'current']) {
+    let reads = 0;
+    const failure = new Error('injected source read failure');
+    const read = () => { reads++; throw failure; };
+    const base = require('../src/dist/node-adapters/persistence/data-import-files').dataImportFiles;
+    const api = label === 'current' ? require('../src/data-import') : importHistory(label, 'src/data-import.js', { 'node:fs': { ...fs, readFileSync: read } });
+    assert.throws(() => api.prepare('param.import', { version: 1, owner: 'owner', revision: 'r1', source: file }, { ...base, snapshot: read }), error => error === failure);
+    assert.equal(reads, 1);
+  }
+});
+
+test('source schema failures preserve historical validation order and messages', () => {
+  const file = source('schema-parameters.json', JSON.stringify([{ name: 'width', expression: '2 mm', unit: 'mm' }]));
+  for (const schema of [null, false, [], { surprise: true }, { columns: [] }, { columns: { name: 1 } }, { defaults: [] }, { values: { unit: [] } }, { values: { unit: {} } }, { recordsPath: 'missing' }]) {
+    const results = importVersions.map(([, api]) => importObservation(() => api.prepare('param.import', { version: 1, owner: 'owner', revision: 'r1', source: file, schema })));
+    assert.deepEqual(results[1], results[0]);
+    assert.deepEqual(results[2], results[0]);
+  }
+});
+
+test('model identity, missing evidence and replacement datum plans retain historical results', () => {
+  const file = source('paired-model.step', 'neutral fixture bytes, not native qualification');
+  const request = structuredClone(descriptors['cots.replace'].example);
+  request.model.path = file;
+  request.datumMap = [{ name: 'mount', old: pose('10 mm', 'component'), new: pose('2 mm', 'component') },
+    { name: 'lens', old: pose('20 mm', 'component'), new: pose('12 mm', 'component') }];
+  const requests = [request,
+    { ...request, model: { ...request.model, path: path.join(directory, 'missing.step') } },
+    { ...request, model: { ...request.model, sha256: '0'.repeat(64) } },
+    { ...request, model: { ...request.model, includedItems: ['same', 'same'] } },
+    { ...request, mass: { value: -1, unit: 'kg' } },
+    { ...request, mass: { value: 1, unit: 'kg', status: 'DERIVED' } },
+    { ...request, mass: { value: 1, unit: 'kg', status: 'CONFIRMED', source: 'measurement' } }];
+  for (const data of requests) {
+    const results = importVersions.map(([, api]) => importObservation(() => api.prepare('cots.replace', structuredClone(data))));
+    assert.deepEqual(results[1], results[0]);
+    assert.deepEqual(results[2], results[0]);
+  }
+});
+
+test('catalog expansion, ownership ledgers and refusal branches match historical workflows', () => {
+  const requests = [
+    adapter([item('a'), item('a')]),
+    adapter([item('a', { parent: 'missing' })]),
+    adapter([item('a', { parent: 'b' }), item('b', { parent: 'a' })]),
+    adapter([item('a', { contents: [{ id: 'missing', quantity: 1 }] })]),
+    adapter([item('a', { contents: [{ id: 'b', quantity: 1 }] }), item('b', { contents: [{ id: 'a', quantity: 1 }] })]),
+    adapter([item('a', { kind: 'purchased', quantity: 3, purchaseQuantity: 2 })]),
+    adapter([item('board', { kind: 'pcba', purchaseQuantity: 2, contents: [{ id: 'chip', quantity: 1 }] }), item('chip', { parent: 'board', allocation: { owner: 'board', quantity: 1 } })]),
+    { ...adapter([item('a')]), maxItems: 1, instances: [{ id: 'a1', item: 'a', parent: null, localKey: 'x' }, { id: 'a2', item: 'a', parent: null, localKey: 'y' }] },
+    { ...adapter([item('a')]), instances: [{ id: 'a1', item: 'a', parent: null, localKey: 'x' }, { id: 'a2', item: 'a', parent: null, localKey: 'x' }] },
+    { ...adapter([item('a')]), bom: [{ id: 'a', quantity: 1, basis: 'purchase' }] },
+    { ...adapter([item('a')]), bom: [{ id: 'a', quantity: 1, basis: 'physical' }, { id: 'a', quantity: 1, basis: 'physical' }] },
+    { ...adapter([item('a', { quantity: 20 })]), maxItems: 2 },
+    { ...adapter([item('a')]), instances: [{ id: 'a1', item: 'foreign', parent: null, localKey: 'x' }] },
+  ];
+  for (const input of requests) {
+    const results = importVersions.map(([, api]) => importObservation(() => api.prepare('catalog.check', structuredClone(input))));
+    assert.deepEqual(results[1], results[0]);
+    assert.deepEqual(results[2], results[0]);
+  }
+});

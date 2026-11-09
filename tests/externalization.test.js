@@ -578,3 +578,183 @@ test('three-module grouped automatic and bounded scheduling have equal completed
   assert.deepEqual(autoAdapter.effects,[0,1,2,3,4,5,6,7,8]);
   assert.deepEqual(boundedAdapter.effects,autoAdapter.effects);
 });
+
+// Same failures against original and immediately preceding readers. These
+// snapshots use the current shared journal codec; only D's owner policy differs.
+const loadFileHistory = require('./fixtures/file-workflows/load.cjs');
+const previousStore = loadFileHistory('before', 'packages/node-adapters/src/persistence/externalization.ts');
+const evidenceVersions = [
+  ['pre-refactor', loadFileHistory('baseline', 'src/externalization.js')],
+  ['before owner guards', loadFileHistory('before', 'src/externalization.js', {
+    './dist/node-adapters/persistence/externalization': previousStore,
+  })],
+  ['current', external],
+];
+for (const [label, api] of evidenceVersions) {
+  test(`${label}: foreign manifest operation cannot authorize the accepted operation`, async t => {
+    const data = input('composeNew', { reportPath: await directory(t), phase: 'copy' });
+    const manifest = api.manifest(api.validate(data));
+    const dir = path.join(data.reportPath, data.operationId);
+    await fs.mkdir(dir);
+    const stored = { manifest, requestHash: require('../src/engineering-common').hash(manifest),
+      operationId: 'foreign-operation', sessionNonce: 'original-session', copyProtocol: 1 };
+    const bytes = JSON.stringify(stored);
+    await fs.writeFile(path.join(dir, 'manifest.json'), bytes);
+    const adapter = native();
+    if (label === 'current') {
+      await assert.rejects(api.execute(null, data, {}, adapter), /manifest owner mismatch/);
+      assert.equal(adapter.calls.length, 0);
+    } else {
+      const result = await api.execute(null, data, {}, adapter);
+      assert.equal(result.invocationStatus, 'complete');
+      assert.equal(adapter.calls.length, 1);
+    }
+    assert.equal(await fs.readFile(path.join(dir, 'manifest.json'), 'utf8'), bytes);
+  });
+  test(`${label}: a foreign result inside an owned envelope is not completion`, async t => {
+    const data = input('composeNew', { reportPath: await directory(t), phase: 'copy' });
+    const adapter = native();
+    await api.execute(null, data, {}, adapter);
+    const dir = path.join(data.reportPath, data.operationId);
+    const names = (await fs.readdir(dir)).filter(name => /^\d{8}\.json$/.test(name)).sort();
+    const file = path.join(dir, names.at(-1));
+    const record = JSON.parse(await fs.readFile(file, 'utf8'));
+    record.result.operationId = 'foreign-operation';
+    const bytes = JSON.stringify(record);
+    await fs.writeFile(file, bytes);
+    const count = adapter.calls.length;
+    if (label === 'current') await assert.rejects(api.execute(null, { ...data, resume: true }, {}, adapter), /result owner mismatch/);
+    else {
+      const result = await api.execute(null, { ...data, resume: true }, {}, adapter);
+      assert.equal(result.operationId, 'foreign-operation');
+      assert.equal(result.invocationStatus, 'complete');
+    }
+    assert.equal(adapter.calls.length, count);
+    assert.equal(await fs.readFile(file, 'utf8'), bytes);
+  });
+  test(`${label}: changed manifest between read and lock acquisition is not submission authority`, async t => {
+    const data = input('composeNew', { reportPath: await directory(t), phase: 'copy' });
+    const adapter = native();
+    const io = { ...fs, async open(file, ...args) {
+      if (path.basename(file) === 'run.lock') {
+        const manifestPath = path.join(path.dirname(file), 'manifest.json');
+        const stored = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+        stored.sessionNonce = 'new-owner-session';
+        await fs.writeFile(manifestPath, JSON.stringify(stored));
+      }
+      return fs.open(file, ...args);
+    } };
+    if (label === 'current') {
+      await assert.rejects(api.execute(null, data, {}, { ...adapter, fs: io }), /evidence changed before admission/);
+      assert.equal(adapter.calls.length, 0);
+    } else {
+      assert.equal((await api.execute(null, data, {}, { ...adapter, fs: io })).invocationStatus, 'complete');
+      assert.equal(adapter.calls.length, 1);
+    }
+    await assert.rejects(fs.access(path.join(data.reportPath, data.operationId, 'run.lock')), { code: 'ENOENT' });
+  });
+}
+test('typed evidence restoration preserves original copy intents, nonces and complete phase results', async t => {
+  const reportPath = await directory(t);
+  const data = input('copyAndReplace', { reportPath, phase: 'copy' });
+  const snapshots = [];
+  for (const [, api] of evidenceVersions) {
+    const dir = path.join(reportPath, data.operationId);
+    await fs.mkdir(dir);
+    const manifest = api.manifest(api.validate(data));
+    await fs.writeFile(path.join(dir, 'manifest.json'), JSON.stringify({ manifest,
+      requestHash: require('../src/engineering-common').hash(manifest), operationId: data.operationId,
+      sessionNonce: 'fixed-original-session', copyProtocol: 1 }));
+    const adapter = native(), captured = [];
+    const result = await api.execute(null, data, {}, { ...adapter, now: () => 100,
+      step: async (...args) => { captured.push(structuredClone(args)); return adapter.step(...args); } });
+    snapshots.push({ result, captured });
+    await fs.rm(dir, { recursive: true });
+  }
+  assert.deepEqual(snapshots[1], snapshots[0]);
+  assert.deepEqual(snapshots[2], snapshots[0]);
+});
+test('failed externalization admission preserves its original error alongside lock cleanup failure', async t => {
+  const data = input('composeNew', { reportPath: await directory(t), phase: 'copy' });
+  const cleanup = new Error('lock cleanup failed'), adapter = native();
+  const io = { ...fs, async open(file, ...args) {
+    if (path.basename(file) === 'run.lock') {
+      const target = path.join(path.dirname(file), 'manifest.json');
+      const stored = JSON.parse(await fs.readFile(target, 'utf8'));
+      stored.sessionNonce = 'changed';
+      await fs.writeFile(target, JSON.stringify(stored));
+    }
+    return fs.open(file, ...args);
+  }, async unlink(file) {
+    if (path.basename(file) === 'run.lock') throw cleanup;
+    return fs.unlink(file);
+  } };
+  await assert.rejects(external.execute(null, data, {}, { ...adapter, fs: io }), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.match(error.cause.message, /evidence changed before admission/);
+    assert.deepEqual(error.errors, [error.cause, cleanup]);
+    return true;
+  });
+  assert.equal(adapter.calls.length, 0);
+  assert.ok(await fs.stat(path.join(data.reportPath, data.operationId, 'run.lock')));
+});
+test('production checker admits the extracted externalization planning through the shipped bundle', { timeout: 180000 }, async () => {
+  const { prepareCadBundle } = require('../packages/node-adapters/dist/python/bundle');
+  const { createPythonChecker } = require('../packages/node-adapters/dist/python/checker');
+  const root = path.resolve(__dirname, '..');
+  const typingRoot = path.join(root, 'dist/runtime/python/typing');
+  const artifact = prepareCadBundle(root, '\n\n_EXTERNAL_REQUEST: JsonObject = {"action": "inspect", "data": {}}\ndef run(_context: str) -> None:\n    _result = _external_refresh_internal(_EXTERNAL_REQUEST["action"], _EXTERNAL_REQUEST["data"])\n');
+  const checker = createPythonChecker({ typingRoot, definitionsRoot: typingRoot, pythonPlatform: 'Windows' });
+  const report = await checker.check({ artifact, context: { kind: 'bundle' } });
+  assert.equal(report.status, 'passed', JSON.stringify(report));
+  assert.equal(report.provenance.checker, 'basedpyright');
+});
+
+const inputVersions = [
+  loadFileHistory('baseline', 'src/externalization.js'),
+  loadFileHistory('input-before', 'src/externalization.js'),
+  external,
+];
+function inputObservation(api, request) {
+  try {
+    const data = api.validate(request);
+    return { data, manifest: api.manifest(data) };
+  } catch (error) { return { error: error.message }; }
+}
+test('typed externalization inputs preserve complete normalized manifests and source/destination pins', () => {
+  for (const mode of ['copyAndReplace', 'replaceFromExisting', 'composeNew', 'replaceExternal']) {
+    for (const changes of [{}, { phase: 'inspect', resume: true }, { phase: 'verify', verificationScope: 'sources', save: false }, { maxItems: 1, maxChecks: 1, timeBudgetMs: 25 }]) {
+      const request = input(mode, changes);
+      const results = inputVersions.map(api => inputObservation(api, structuredClone(request)));
+      assert.deepEqual(results[1], results[0]); assert.deepEqual(results[2], results[0]);
+      assert.equal(results[2].data.source.fileId, 'source');
+      assert.equal(results[2].data.source.version, 1);
+    }
+  }
+});
+test('typed externalization refusal order retains historical ownership, bounds and map errors', () => {
+  const requests = [input('replaceExternal', { confirmReplace: false }), input('copyAndReplace', { confirmRetire: false }),
+    input('composeNew', { phase: 'retire' }), input('composeNew', { phase: 'verify' }), input('composeNew', { save: false }),
+    input('composeNew', { unexpected: true }), input('composeNew', { source: { projectId: 'project', fileId: 'source', version: 1 } }),
+    input('composeNew', { itemIds: ['foreign'] }), input('composeNew', { expectedInventory: { foreign: { bodies: 1 } } })];
+  for (const key of ['maxItems', 'maxChecks', 'timeBudgetMs']) for (const value of [null, true, 0, -1, 1.5]) requests.push(input('composeNew', { [key]: value }));
+  for (const map of [[{ sourceIndex: -1, targetIndex: 0 }], [{ sourceIndex: 0, targetIndex: 0 }, { sourceIndex: 0, targetIndex: 1 }]]) {
+    const data = input(); data.items[0].occurrenceMap = map; requests.push(data);
+  }
+  for (const request of requests) {
+    const results = inputVersions.map(api => inputObservation(api, structuredClone(request)));
+    assert.ok(results[0].error);
+    assert.deepEqual(results[1], results[0]); assert.deepEqual(results[2], results[0]);
+  }
+});
+test('typed externalization manifest excludes invocation cursors and cannot be changed through caller input', () => {
+  const results = inputVersions.map(api => {
+    const request = input(), validated = api.validate(request), original = api.manifest(validated);
+    request.source.version = 99; request.items[0].dataFileId = 'foreign'; request.expectedInventory.module.bodies = 999;
+    assert.deepEqual(api.manifest(validated), original);
+    validated.phase = 'inspect'; validated.resume = true; validated.maxChecks = 1; validated.itemIds = ['module'];
+    assert.deepEqual(api.manifest(validated), original);
+    return original;
+  });
+  assert.deepEqual(results[1], results[0]); assert.deepEqual(results[2], results[0]);
+});

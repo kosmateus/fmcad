@@ -194,7 +194,9 @@ test("prepared compatibility loaders resolve every dependency without executing 
       fs.readFileSync(path.join(root, file), "utf8"),
     ),
   );
-  assert.equal(dynamicAssets.length, 19);
+  // The modeling migration adds 19 canonical loaders to the 19 retained ones.
+  // Every loader still undergoes source, provenance and dependency checks below.
+  assert.equal(dynamicAssets.length, 38);
 
   const units = cadBundleUnits(root, "full");
   assert.equal(units.length, cadBundleManifest.length);
@@ -214,8 +216,23 @@ test("prepared compatibility loaders resolve every dependency without executing 
     assert.ok(manifest, file);
     const unit = byId.get(manifest.id);
     assert.ok(unit, manifest.id);
-    assert.equal(unit.filename, file);
+    assert.equal(unit.filename, manifest.path);
     assert.doesNotMatch(unit.source, /\bexec\s*\(|\bcompile\s*\(/, manifest.id);
+    if (manifest.compatibilityPath) {
+      // Canonical entries bypass the compatibility asset entirely: assert the
+      // complete shipped source, not the old prepared-loader representation.
+      const canonical = fs.readFileSync(path.join(root, manifest.path), "utf8");
+      assert.equal(
+        unit.source,
+        `CAD_HANDLERS.owner = ${pythonStringLiteral(manifest.owner ?? manifest.id)}\n${canonical}`,
+      );
+      for (const dependency of manifest.dependencies)
+        assert.ok(
+          byId.has(dependency),
+          `${manifest.id} dependency ${dependency}`,
+        );
+      continue;
+    }
     assert.match(unit.source, /Prepared compatibility boundary/);
 
     const original = fs.readFileSync(path.join(root, file), "utf8");
@@ -264,7 +281,9 @@ test("prepared compatibility loaders resolve every dependency without executing 
     path.join(temporaryRoot, "runtime/python"),
     { recursive: true },
   );
-  const { geometryFamilies } = require("../packages/node-adapters/dist/python/geometry-manifest");
+  const {
+    geometryFamilies,
+  } = require("../packages/node-adapters/dist/python/geometry-manifest");
   for (const family of geometryFamilies) {
     const applicationPath = path.join(
       temporaryRoot,
@@ -279,7 +298,8 @@ test("prepared compatibility loaders resolve every dependency without executing 
         ? assignmentMarker
         : null;
     assert.ok(previous, family);
-    const replacement = previous === legacyMarker ? assignmentMarker : legacyMarker;
+    const replacement =
+      previous === legacyMarker ? assignmentMarker : legacyMarker;
     fs.writeFileSync(
       applicationPath,
       application.replace(previous, replacement),
@@ -301,7 +321,10 @@ test("prepared compatibility loaders resolve every dependency without executing 
   assert.ok(curveMarker);
   fs.writeFileSync(
     curveApplicationPath,
-    curveApplication.replace(curveMarker, curveMarker.replace("'curve'", "'other'")),
+    curveApplication.replace(
+      curveMarker,
+      curveMarker.replace("'curve'", "'other'"),
+    ),
   );
   assert.throws(
     () => cadBundleUnits(temporaryRoot, "full"),
@@ -504,7 +527,9 @@ test("actual CAD and cad-v1 run wrappers retain prepared units and original sour
     buildCadScript("document.status", {}, { doc: "fixture" }),
   );
   assert.ok(!status.units.some((unit) => unit.id === "model"));
-  const directory = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "python-source-"));
+  const directory = fs.mkdtempSync(
+    path.join(require("node:os").tmpdir(), "python-source-"),
+  );
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const file = path.join(directory, "日本語.py");
   const source =

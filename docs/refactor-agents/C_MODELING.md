@@ -1,6 +1,6 @@
 # Agent C — CAD modeling services and Python runtime
 
-Status: **available**. Claim this package, fetch current main and read
+Status: **claimed by Agent C** (8 November 2026), based on `0b84454`. Read
 [the shared plan](../REFACTOR_PARALLEL_PLAN.md) before editing.
 
 ## Outcome and ownership
@@ -96,3 +96,52 @@ code have justified regressions, and B/G can account for every modeling live
 assertion. Record native-only gaps without treating them as completion evidence.
 Append PR/SHA, exact checks and remaining scope here after each family and
 continue through the whole package, not just sketch migration.
+
+## Active delivery
+
+Claim: PR #37. Initial policy extraction and remaining ownership/dependencies are
+tracked in [the modeling contracts ledger](C_MODELING_CONTRACTS.md).
+The package remains in progress; no C1–C4 completion is claimed. G must integrate
+the new runtime test gates before the policy delivery can merge.
+
+The second delivery migrates fastener and feature-rework policy, extends paired
+history to 156 tests and retains 12 JavaScript / 67 Python tests. It is stacked
+on #37; integration remains blocked on G's runtime gates and full exact-head CI.
+
+The third delivery separates typed curve sample policy from host source adaptation
+and types datum/surface policies. It preserves 218 historical comparisons plus
+18 JavaScript and 43 Python tests. See the contracts ledger for B/G handoffs.
+
+The fourth delivery types selection orchestration and BRep host composition.
+Twenty-four paired historical cases preserve outputs and call order. Five retained
+artifact tests require Linux `/proc`; this host limitation is not a waiver for CI.
+
+The fifth delivery adds the 266-operation public inventory, 260-case exhaustive real
+admission matrix (254 direct + six authorized coordinator programs), installed-package
+modeling validation and the measurement unit-policy boundary. The complete matrix is
+not yet a passing result. D must integrate the measurement math-alias normalization;
+G must register disjoint admission shards and installed/history tests before merge.
+
+The Python delivery additionally converts 19 C compatibility assets to canonical
+loaders and freezes their original bytes as independent test evidence. This exposed
+and fixes an inherited entity geometry-frame regression: 14 existing query cases
+failed on the typed adapter although the historical implementation passed. All 22
+retained cases plus a new paired frame/identity/zero-mutation regression pass after
+the correction; 297 canonical modeling-family tests pass. See the contracts ledger.
+
+
+The sixth delivery finishes the remaining catalog specialist policies and private
+selection/BRep capability catalogs in typed core. Eight compatibility facades retain
+public/private exports. There are 2,651 paired public negative/positive scenarios,
+private exact-payload authorization comparisons and installed declarations/previews.
+Five inherited temporary-directory assumptions are fixed after identical historical
+reproduction; the remaining owned-result `/proc` prerequisite stays enforced.
+The full admission/CI gates and B/G reconciliation are still open.
+
+
+The executed-registry audit additionally catches admission omissions independent
+of public family prefixes. Current scope is 272 descriptors (263 C, 9 shared),
+with 262 generated C programs. It adds checking `deliver` and presentation
+`visibility.finalize`; four ordinary visibility operations remain D-owned.
+Four loader/history/coverage tests and installed 272-contract/263-preview consumers
+pass. Full current-head CI and the corrected complete admission matrix remain open.

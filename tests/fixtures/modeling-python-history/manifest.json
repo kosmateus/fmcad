@@ -1,0 +1,209 @@
+{
+  "animation": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/animation.py",
+    "fixture": "animation.py",
+    "sha256": "8276360fcfdb63b5bd268b08c9b3304efb1aa7e9a9a633043417c17637757104",
+    "units": [
+      "runtime/python/fmcad/domain/animation.py",
+      "runtime/python/fmcad/adapters/fusion/animation.py"
+    ],
+    "guard": "_animation_joint_value"
+  },
+  "animation2": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/animation2.py",
+    "fixture": "animation2.py",
+    "sha256": "50e9bf06fafb188b234c18a3daff1a036dab9ad22d6154141574c5ae08a108bd",
+    "units": [
+      "runtime/python/fmcad/domain/animation2.py",
+      "runtime/python/fmcad/adapters/fusion/animation2.py"
+    ],
+    "guard": "_anim2_contract"
+  },
+  "appearance": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/appearance.py",
+    "fixture": "appearance.py",
+    "sha256": "33eb037d22c6a8ca2e8ee099bf113f1987cb7ebcbf28ccefe3de527d1d49bc0b",
+    "units": [
+      "runtime/python/fmcad/domain/appearance.py",
+      "runtime/python/fmcad/adapters/fusion/appearance.py"
+    ],
+    "guard": "_style_value"
+  },
+  "attributes": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/attributes.py",
+    "fixture": "attributes.py",
+    "sha256": "84da9fec8abe555620b7379ca3fb48f1ae74c39c24d0b4cf88c406e328764109",
+    "units": [
+      "runtime/python/fmcad/adapters/fusion/attributes.py"
+    ],
+    "guard": "_attr_entity"
+  },
+  "cam": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/cam.py",
+    "fixture": "cam.py",
+    "sha256": "205cf65694c56352a88a229ecf252328301ef0ba1479e1921c383403c2c62d2a",
+    "units": [
+      "runtime/python/fmcad/domain/cam.py",
+      "runtime/python/fmcad/adapters/fusion/cam.py"
+    ],
+    "guard": "_cam_contract"
+  },
+  "checking": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/checking.py",
+    "fixture": "checking.py",
+    "sha256": "c74d26ac0c55dc700be3bf9258d0c9ec956c505c117ae8f0d07158d51f974e91",
+    "units": [
+      "runtime/python/fmcad/domain/checking.py",
+      "runtime/python/fmcad/application/checking.py",
+      "runtime/python/fmcad/adapters/fusion/checking.py"
+    ],
+    "guard": "_checking_contract"
+  },
+  "containment": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/containment.py",
+    "fixture": "containment.py",
+    "sha256": "87856e6e49ab3bab7457bbe858b752a062ccb684846ca3fee01b96eb17fd5aec",
+    "units": [
+      "runtime/python/fmcad/domain/containment.py",
+      "runtime/python/fmcad/adapters/fusion/containment.py"
+    ],
+    "guard": "_containment_point3"
+  },
+  "dfm": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/dfm.py",
+    "fixture": "dfm.py",
+    "sha256": "3b92e01846a04fe815932f8dccff82b64e3c1158123ee1223ddf9c5865f7dec0",
+    "units": [
+      "runtime/python/fmcad/domain/dfm.py",
+      "runtime/python/fmcad/adapters/fusion/dfm.py"
+    ],
+    "guard": "_dfm_contract"
+  },
+  "entity": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/entity.py",
+    "fixture": "entity.py",
+    "sha256": "9cf650016b9aa1f1c82502e4c4048ce953c054c300510db58b186c2e73fff925",
+    "units": [
+      "runtime/python/fmcad/adapters/fusion/entity.py"
+    ],
+    "guard": "_cad_context_scope"
+  },
+  "explode": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/explode.py",
+    "fixture": "explode.py",
+    "sha256": "e62dbc626547b0eb532743c36d3263e192f4e08472fa34f7537c143d9aeec067",
+    "units": [
+      "runtime/python/fmcad/domain/explode.py",
+      "runtime/python/fmcad/adapters/fusion/explode.py"
+    ],
+    "guard": "_explode_contract"
+  },
+  "fpc_pcb": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/fpc_pcb.py",
+    "fixture": "fpc_pcb.py",
+    "sha256": "aa6027ac8693677ed06f3c7fb7d6825438baf6fc93e93d26168c38295ace59e4",
+    "units": [
+      "runtime/python/fmcad/domain/fpc_pcb.py",
+      "runtime/python/fmcad/adapters/fusion/fpc_pcb.py"
+    ],
+    "guard": "_polygon"
+  },
+  "interference": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/interference.py",
+    "fixture": "interference.py",
+    "sha256": "8d640c758a33b9b123c3fbfdee69700e9cb9a013d6d4ea9f3e7d099aa7ac55f9",
+    "units": [
+      "runtime/python/fmcad/domain/interference.py",
+      "runtime/python/fmcad/adapters/fusion/interference.py"
+    ],
+    "guard": "_interference_contract"
+  },
+  "marking": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/marking.py",
+    "fixture": "marking.py",
+    "sha256": "1acd1220014adba8f3c97c87cdf3e297054ad7921e3cde5ab5c7f07760a2956d",
+    "units": [
+      "runtime/python/fmcad/domain/marking.py",
+      "runtime/python/fmcad/adapters/fusion/marking.py"
+    ],
+    "guard": "_marking_point3"
+  },
+  "measure": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/measure.py",
+    "fixture": "measure.py",
+    "sha256": "582a22b3206c443764045e76a7a6e337b849f979e6adaec2e3c1222e881a4f73",
+    "units": [
+      "runtime/python/fmcad/domain/measure.py",
+      "runtime/python/fmcad/adapters/fusion/measure.py"
+    ],
+    "guard": "_measure_space"
+  },
+  "optics": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/optics.py",
+    "fixture": "optics.py",
+    "sha256": "c594f521556ded1a94c1a18559048851347205386573a112faa2a99d57ad7043",
+    "units": [
+      "runtime/python/fmcad/domain/optics.py",
+      "runtime/python/fmcad/adapters/fusion/optics.py"
+    ],
+    "guard": "_optics_point3"
+  },
+  "presentation": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/presentation.py",
+    "fixture": "presentation.py",
+    "sha256": "72b9ba69c019df6953406fecdf83a5575b0fef35288daa8a0fff5ff633d99485",
+    "units": [
+      "runtime/python/fmcad/domain/presentation.py",
+      "runtime/python/fmcad/adapters/fusion/presentation.py"
+    ],
+    "guard": "_presentation_identity"
+  },
+  "seal": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/seal.py",
+    "fixture": "seal.py",
+    "sha256": "41b8dfd79654af19891f9dcae88a880f51626f3a00ddfd669eaaa0868d2cdaba",
+    "units": [
+      "runtime/python/fmcad/domain/seal.py",
+      "runtime/python/fmcad/adapters/fusion/seal.py"
+    ],
+    "guard": "_seal_mm"
+  },
+  "simulation": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/simulation.py",
+    "fixture": "simulation.py",
+    "sha256": "841da537b9bd10e5eb506758233ccb28089a099562db579fd0fde30fcdacd100",
+    "units": [
+      "runtime/python/fmcad/adapters/fusion/simulation.py"
+    ],
+    "guard": "_simulation_capabilities"
+  },
+  "texture": {
+    "revision": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
+    "source": "assets/cad/texture.py",
+    "fixture": "texture.py",
+    "sha256": "db387b3a36bf5afaac217ed1fd42a6ac961776389e7ee31c815a36d9fb162b54",
+    "units": [
+      "runtime/python/fmcad/domain/texture.py",
+      "runtime/python/fmcad/adapters/fusion/texture.py"
+    ],
+    "guard": "_texture_path"
+  }
+}

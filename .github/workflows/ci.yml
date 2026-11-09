@@ -164,4 +164,39 @@ jobs:
       - run: npm run build
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      - run: npm run test:prepare-offline
       - run: npm run test:regressions
+
+  modeling-admission:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: |
+          set -o pipefail
+          mkdir -p .test-artifacts/modeling
+          npm run test:modeling:admission | tee .test-artifacts/modeling/admission.log
+        env:
+          FMCAD_MODELING_ADMISSION_SHARD: ${{ matrix.shard }}/8
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: modeling-admission-${{ matrix.node }}-${{ matrix.shard }}
+          path: .test-artifacts/modeling/
+          include-hidden-files: true

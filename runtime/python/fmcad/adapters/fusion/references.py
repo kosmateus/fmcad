@@ -785,15 +785,6 @@ def _references_metadata(design: "_ReferencesDesign", root: "_ReferencesComponen
             'componentTokens': sorted(str(value) for value in component_ids if value)}
 
 
-def _references_occurrence_states(metadata: "JsonObject") -> "list[JsonObject] | None":
-    rows = _cad_cast("list[JsonObject]", metadata.get('occurrences', []))
-    if any(not row.get('token') for row in rows):
-        return None
-    return sorted([{'token': row['token'], 'nativeToken': row.get('nativeToken'),
-                    'transform': row.get('transform'), 'contextKind': row.get('contextKind'),
-                    'isDerived': row.get('isDerived'),
-                    'isReferencedComponent': row.get('isReferencedComponent')}
-                   for row in rows], key=lambda row: _cad_cast(str, row['token']))
 
 
 def _references_internal_unit(parameter: "_ReferencesParameter") -> "tuple[str, str]":
@@ -2005,7 +1996,12 @@ def _references_cold_verify(ctx: "CadContext", data: "_ReferencesInput") -> "Jso
                 'lifecycleEffects': [{'fileId': file_id, 'effect': 'coldReopenUncertain', 'owned': True}]}
 
 
-def _references_refresh_internal(action: str, data: "_ReferencesInput") -> "JsonObject":
+def _references_refresh_internal(action: object, payload: object) -> "JsonObject":
+    if not isinstance(action, str) or action not in ('graph', 'preflight', 'sdkUpdate', 'nativeUpdate', 'save', 'coldVerify'):
+        raise ValueError('Unknown private references.refresh SDK action')
+    if not isinstance(payload, dict):
+        raise ValueError('references.refresh data must be an object')
+    data = _cad_cast("_ReferencesInput", payload)
     if action == 'graph':
         return _references_collect_graph(data)
     if action not in ('preflight', 'sdkUpdate', 'nativeUpdate', 'save', 'coldVerify'):

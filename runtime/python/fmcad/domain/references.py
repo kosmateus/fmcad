@@ -37,3 +37,14 @@ def _references_edge_snapshot_matches(current_edges: "Sequence[Mapping[str, obje
         if row.get('versionSource') == 'unresolved':
             return False, 'referenceVersionUnresolved'
     return True, None
+
+
+def _references_occurrence_states(metadata: "JsonObject") -> "list[JsonObject] | None":
+    rows = _cad_cast("list[JsonObject]", metadata.get('occurrences', []))
+    if any(not row.get('token') for row in rows):
+        return None
+    return sorted([{'token': row['token'], 'nativeToken': row.get('nativeToken'),
+                    'transform': row.get('transform'), 'contextKind': row.get('contextKind'),
+                    'isDerived': row.get('isDerived'),
+                    'isReferencedComponent': row.get('isReferencedComponent')}
+                   for row in rows], key=lambda row: _cad_cast(str, row['token']))

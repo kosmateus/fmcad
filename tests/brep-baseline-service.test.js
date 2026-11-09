@@ -79,6 +79,7 @@ test('canonical catalog, typed CLI/MCP project the same three public operations 
 });
 
 test('typed CLI and MCP execute capture → owned inspect → compare through the fake broker', { timeout: 60000 }, async t => {
+  t.after(require('./fixtures/fake-wsl-platform.cjs')());
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-brep-broker-'));
   const project = path.join(root, 'project');
   const state = path.join(root, 'state');
@@ -257,6 +258,7 @@ test('typed CLI and MCP execute capture → owned inspect → compare through th
 });
 
 test('unknown fake-broker outcome retains one owned staging turn and never replays', async t => {
+  t.after(require('./fixtures/fake-wsl-platform.cjs')());
   const root = fixture(t, true);
   let turns = 0;
   const input = mcpInvocation('fmcad_cad_measure_baseline_capture', {
