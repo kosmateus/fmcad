@@ -122,11 +122,20 @@ export function createProjectActivityReader(
     const queueRoot = fs.realpathSync(options.queueDirectory);
     if (queueRoot !== path.resolve(options.queueDirectory))
       throw new Error("Queue directory changed");
-    try {
-      fs.lstatSync(path.join(queueRoot, "queue-state.pending.json"));
-      throw new Error("Queue commit is unresolved");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    for (const marker of [
+      "queue-state.pending.json",
+      "isolated-admission-epoch.json",
+      "active-epoch-succession.json",
+    ]) {
+      try {
+        fs.lstatSync(path.join(queueRoot, marker));
+        // Isolated epoch state lives below admission-epochs, while this reader
+        // observes the normal root state. Never qualify historical root data
+        // as the active queue or implicitly settle a pending commit.
+        throw new Error("Current queue epoch or commit cannot be verified");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
     }
     const owner = json(path.join(queueRoot, "broker.lock"));
     const saved = json(
@@ -149,7 +158,10 @@ export function createProjectActivityReader(
       capability["registryPath"] !== options.registry.readonlyPath ||
       saved["version"] !== 1 ||
       typeof saved["paused"] !== "boolean" ||
-      control["generation"] !== (saved["controlGeneration"] ?? 0) ||
+      typeof control["buildHash"] !== "string" ||
+      !/^[a-f0-9]{64}$/u.test(control["buildHash"]) ||
+      control["generation"] !== integer(saved["controlGeneration"] ?? 0) ||
+      control["contextEpoch"] !== integer(saved["contextEpoch"] ?? 0) ||
       control["gateClosed"] !== saved["paused"] ||
       typeof control["held"] !== "boolean" ||
       typeof control["unresolved"] !== "boolean" ||
@@ -157,6 +169,7 @@ export function createProjectActivityReader(
       integer(control["activeOperations"]) !== control["activeIds"].length
     )
       throw new Error("Live broker activity fence cannot be verified");
+    integer(saved["epoch"]);
     const queueRevision = integer(saved["revision"]);
     const retained = history.readSnapshot();
     if (

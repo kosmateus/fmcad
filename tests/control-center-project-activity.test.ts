@@ -59,6 +59,8 @@ function fixture(t: test.TestContext) {
     protocol: 1,
     instanceId: owner.nonce,
     generation: 0,
+    contextEpoch: 0,
+    buildHash: "a".repeat(64),
     gateClosed: false,
     owner,
     activeOperations: 0,
@@ -215,15 +217,24 @@ test("archival refuses mismatched broker ownership, capability, incomplete and u
       },
     },
     { instanceId: "other" },
+    { buildHash: "unknown" },
+    { contextEpoch: 1 },
+    { generation: "0" },
     { activeOperations: 1, activeIds: [] },
   ]) {
     f.write("console-state.json", { ...f.control, ...patch });
     assert.equal(f.archive().state, "unavailable", JSON.stringify(patch));
   }
   f.write("console-state.json", f.control);
-  f.write("queue-state.pending.json", f.saved);
-  assert.equal(f.archive().state, "unavailable");
-  fs.unlinkSync(path.join(f.queue, "queue-state.pending.json"));
+  for (const marker of [
+    "queue-state.pending.json",
+    "isolated-admission-epoch.json",
+    "active-epoch-succession.json",
+  ]) {
+    f.write(marker, f.saved);
+    assert.equal(f.archive().state, "unavailable", marker);
+    fs.unlinkSync(path.join(f.queue, marker));
+  }
   for (const patch of [
     { active: "unknown" },
     { localUnknown: { id: "unknown" } },

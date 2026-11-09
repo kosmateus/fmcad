@@ -274,4 +274,29 @@ checks) and executes 17 passing cases against both dce47c5 and current code.
 the byte-identical VM/installed-runtime source harness. Strict compilation and
 lint pass; the full packaging/browser-bundle run awaits the stable integration
 slot. E owns the six remaining service/pause/data/root-service/interface/client
-presence test migrations.
+presence test migrations. E completed those six strict migrations in 0c261a1,
+preserving all 44 cases and 268 original assertions; runtime execution is
+recorded separately by E and the integration owner.
+
+
+The final three retained F suites (`project-history-telemetry-runtime`,
+`project-logger-rotation`, `project-responses`) now use strict TypeScript. All
+16 original tests and 97 original assertions remain; additional guards validate
+unknown query rows, nullable logger paths and the worker's actual stdout file
+descriptor. Focused compilation and lint pass. Their runtime execution remains a
+post-staging requirement, including installed producer composition and the
+observer process; compilation alone is not acceptance.
+
+The archive reader additionally refuses isolated-admission and epoch-succession
+markers. Root queue-state data cannot qualify the active queue while an isolated
+epoch lives below `admission-epochs`. Broker build hash, control generation,
+context epoch and queue epoch must have the required shapes. The refusal matrix
+covers each marker and malformed metadata; its final execution follows central
+staging, preserving the existing ownership and no-replay guards.
+
+The [global state obligation ledger](F_GLOBAL_STATE_NATIVE_OBLIGATIONS.md) accounts
+for the remaining 568 frozen style/motion/animation/camera/pose assertion IDs.
+Twelve exact shared-case matches and three offline preflight matches await their
+registered execution. The other 553 are explicit retained native obligations
+whose `ScenarioSession` migration is still required; this ledger is not evidence
+that those native fixtures or the overall offline migration are complete.
