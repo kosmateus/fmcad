@@ -121,7 +121,7 @@ for (const mode of ['automatic', 'exclusive']) test(`controlled broker IPC: ${mo
     async _post(payload) { return { status: 200, raw: JSON.stringify({ jsonrpc: '2.0', id: payload.id, result: {} }) }; },
     async callTool() { return { failed: false, text: 'FMCAD_QUEUE_INSTANCE ' + JSON.stringify(identity) }; } };
   const broker = await serve({ backend: 'addin', timeoutMs: 1000 }, { dir, confirmOwnership: true,
-    createBackend: () => physical, pollMs: 5 });
+    createBackend: () => physical, nativePath: file => file, pollMs: 5 });
   t.after(async () => { await broker.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   const a = { clientId: 'a', clientToken: 'private-a' }, b = { clientId: 'b', clientToken: 'private-b' };
   await request(dir, { action: 'register', ...a }); await request(dir, { action: 'register', ...b });

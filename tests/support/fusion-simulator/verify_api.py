@@ -14,7 +14,7 @@ METHODS: dict[str, dict[str, list[str]]] = {
              "UnitsManager": ["isValidExpression", "evaluateExpression"],
              "Attributes": ["add", "itemByName", "itemsByGroup"],
              "Plane": ["create"], "Matrix3D": ["create", "asArray"],
-             "Application": ["get"], "Documents": ["add"], "Document": ["activate", "close", "saveAs", "save"],
+             "Application": ["get"], "Documents": ["add", "open"], "Document": ["activate", "close", "saveAs", "save"],
              "Products": ["itemByProductType"], "ValueInput": ["createByString", "createByReal"],
              "Data": ["findFileById"], "DataProjects": ["itemById"], "DataFolders": ["itemById", "itemByName", "add"],
              "DataFiles": ["itemById"], "DataFile": ["deleteMe"]},
