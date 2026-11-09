@@ -1,5 +1,9 @@
 'use strict';
 
+// Shared owned-backend extraction: tests/scenarios/gm30-cases.ts.
+// See tests/scenarios/GM25_37_DISPOSITION.md for exact CLI/native obligations.
+// This retained source is not, by itself, native qualification evidence.
+
 // Live integration tests for GM-30 (sections, views, reversible presentation
 // epilogue). Sections are analysis results, not timeline entities, and document
 // clear deletes them explicitly (docs/DOCUMENT_CLEAR.md), so creating them here

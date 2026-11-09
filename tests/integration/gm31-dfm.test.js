@@ -1,5 +1,9 @@
 'use strict';
 
+// Shared owned-backend extraction: tests/scenarios/gm31-cases.ts.
+// See tests/scenarios/GM25_37_DISPOSITION.md for exact CLI/native obligations.
+// This retained source is not, by itself, native qualification evidence.
+
 // Live integration tests for GM-31 (manufacturing rules, draft, undercuts, wall
 // thickness). These are declared-sample evaluations computed in the Fusion
 // handler; native B-Rep ray sampling is a gated path reported as blocked.

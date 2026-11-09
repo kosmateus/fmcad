@@ -1,5 +1,9 @@
 'use strict';
 
+// Shared owned-backend extraction: tests/scenarios/gm29-cases.ts.
+// See tests/scenarios/GM25_37_DISPOSITION.md for exact CLI/native obligations.
+// This retained source is not, by itself, native qualification evidence.
+
 // Live integration tests for GM-29 (appearances, materials, textures, metadata).
 // Appearance/material resources are RETAINED by document clear (see
 // docs/DOCUMENT_CLEAR.md "Retained"), so these tests use timestamped unique

@@ -1,5 +1,9 @@
 'use strict';
 
+// Shared owned-backend extraction: tests/scenarios/gm36-cases.ts.
+// See tests/scenarios/GM25_37_DISPOSITION.md for exact CLI/native obligations.
+// This retained source is not, by itself, native qualification evidence.
+
 // Live integration tests for GM-36 (explode and animation sequencing). These
 // drive the real fmcad CLI against the coordinator-provided document
 // (FMCAD_TEST_DOC) and assert the deterministic pose/frame contracts from

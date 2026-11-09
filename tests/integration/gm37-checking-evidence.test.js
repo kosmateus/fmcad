@@ -1,5 +1,9 @@
 'use strict';
 
+// Shared owned-backend extraction: tests/scenarios/gm37-cases.ts.
+// See tests/scenarios/GM25_37_DISPOSITION.md for exact CLI/native obligations.
+// This retained source is not, by itself, native qualification evidence.
+
 // Live integration tests for GM-37 (checks, evidence and release): check.set,
 // evidence.package/check and deliver. These are read-only envelope commands that
 // evaluate declared predicates and evidence, never mutating the document. Each
@@ -95,14 +99,19 @@ test('G37-03: check.set continues after an ordinary fail and skips dependents of
 
 test('G37-04: missing data and stale evidence are distinct from fail', (t) => {
   if (skipLive(t)) return;
-  const out = fmcad(['check', 'set', '--doc', docName(), '--data', JSON.stringify({
+  const response = cli(['check', 'set', '--doc', docName(), '--data', JSON.stringify({
     schemaVersion: 1,
     checks: [
       { id: 'undeclared', predicate: { kind: 'scalar' } },
       { id: 'stale', predicate: { kind: 'scalar', actual: { value: 25.0 }, expected: { min: 24.0, max: 26.0 } }, source: { path: 'drawing', status: 'ESTIMATED' } },
     ],
   })]);
-  assert.equal(out.success, true, JSON.stringify(out));
+  const out = response.out;
+  assert.notEqual(response.code, 0, 'unknown evidence remains a public failure');
+  assert.ok(out, 'expected a JSON envelope: ' + response.err);
+  // Accepted baseline already rejected unknown outwardly; preserve informational success inside the result.
+  assert.equal(out.success, false, JSON.stringify(out));
+  assert.equal(out.result.success, true, JSON.stringify(out));
   assert.equal(out.status, 'unknown', JSON.stringify(out));
   assert.equal(out.result.missingCount, 1, JSON.stringify(out.result));
   assert.equal(out.result.staleCount, 1, JSON.stringify(out.result));
@@ -133,12 +142,17 @@ test('G37-05: evidence.package reports manifest, completeness and stale items', 
 
 test('G37-06: evidence.check marks missing required evidence unresolved, not failed', (t) => {
   if (skipLive(t)) return;
-  const out = fmcad(['evidence', 'check', '--doc', docName(), '--data', JSON.stringify({
+  const response = cli(['evidence', 'check', '--doc', docName(), '--data', JSON.stringify({
     schemaVersion: 1,
     evidence: [{ id: 'housing-model', kind: 'model', path: 'models/housing.f3d' }],
     required: ['film'],
   })]);
-  assert.equal(out.success, true, JSON.stringify(out));
+  const out = response.out;
+  assert.notEqual(response.code, 0, 'unknown evidence remains a public failure');
+  assert.ok(out, 'expected a JSON envelope: ' + response.err);
+  // Accepted baseline already rejected unknown outwardly; preserve informational success inside the result.
+  assert.equal(out.success, false, JSON.stringify(out));
+  assert.equal(out.result.success, true, JSON.stringify(out));
   assert.equal(out.status, 'unknown', JSON.stringify(out));
   assert.equal(out.result.complete, false, JSON.stringify(out.result));
   assert.deepEqual(out.result.missing, [{ kind: 'film' }], JSON.stringify(out.result));
