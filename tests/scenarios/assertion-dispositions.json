@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "status": "partial-migration",
-  "meaning": "Only explicitly reviewed mappings are covered. Every other frozen assertion remains an open migration or native-classification obligation.",
+  "meaning": "Only listed mappings have been reviewed; qualification fields distinguish offline evidence, native obligations and blockers. Every unlisted frozen assertion remains an open migration or native-classification obligation.",
   "mappings": [
     {
       "source": "tests/live-definitions.js",
@@ -829,6 +829,204 @@
       "evidence": "tests/scenarios/animation-cases.ts",
       "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
       "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "ea6fd4e3c5865a6ecfaf-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "e5be004b51901e0d1c11-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "06d373ba11d0d839018d-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "27b5a4a6c0deb9280506-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "e58d53d34284b2efbd30-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "f0567ecbc0e208db68ab-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "1387afa4beddd1a9de95-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "3f16bac7ff1b67321300-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "55b9f8aec85036842855-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "9dea59bc13ffc5da3351-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "157a992a9af5f1ee4e3e-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "d59b9b06ddad4162561f-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "b40d5227c665008b2406-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "cbd824c23d9705053157-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "dc403e90f9833b137db8-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "dae1185705299cd277ed-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "1e4a42639505be2dc675-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "437f004fae09e14f4deb-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
+      "qualification": "blocked-historical-bound-expectation",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
     }
   ]
 }

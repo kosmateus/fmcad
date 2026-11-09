@@ -269,8 +269,10 @@
           "source": "tests/live-shape-native-solids.js",
           "disposition": "migration-pending",
           "obligation": "Native solid creation and geometric properties",
-          "command": "node tests/live-shape-native-solids.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-solids --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run --project-id PROJECT --folder-id FOLDER",
+          "prerequisites": "Offline refactor complete, matching installed build and broker, explicit dedicated project/folder; resolve the documented annular-sector bound conflict before qualification.",
+          "sharedScenario": "native-solids-*",
+          "qualification": "blocked-historical-bound-expectation"
         },
         {
           "id": "sketch-operations",

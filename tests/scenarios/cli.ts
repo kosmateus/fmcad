@@ -18,6 +18,10 @@ import { boxScenarios } from "./box-cases";
 import { attributeScenarios } from "./attribute-cases";
 import { reopenScenarios, revisionScenarios } from "./reopen-cases";
 import { transactionScenarios } from "./transaction-cases";
+import {
+  nativeSolidsCapability,
+  nativeSolidsScenarios,
+} from "./native-solids-cases";
 import { animationScenarios } from "./animation-cases";
 import { poseScenarios } from "./pose-cases";
 import { cameraScenarios } from "./camera-cases";
@@ -48,6 +52,7 @@ interface Options {
     | "boxes"
     | "attributes"
     | "transactions"
+    | "native-solids"
     | "animation"
     | "poses"
     | "camera"
@@ -99,6 +104,7 @@ export function parse(argv: string[]): Options {
         value === "boxes" ||
         value === "attributes" ||
         value === "transactions" ||
+        value === "native-solids" ||
         value === "animation" ||
         value === "poses" ||
         value === "camera" ||
@@ -201,7 +207,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       queue = new QueueScenarioBackend(
         "fusion",
         options.protocol,
-        simulatorCapabilities,
+        new Set([...simulatorCapabilities, nativeSolidsCapability]),
         root,
         cfg,
         (file) => platform.toWindowsPath(file, platform.detectPlatform()),
@@ -345,6 +351,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           ...((options.suite === "transactions" || options.suite === "all") &&
           options.folder
             ? transactionScenarios(options.folder, options.owners)
+            : []),
+          ...(options.suite === "native-solids" && options.folder
+            ? nativeSolidsScenarios(options.folder, options.owners)
             : []),
           ...((options.suite === "animation" || options.suite === "all") &&
           options.folder

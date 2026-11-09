@@ -37,7 +37,15 @@ test("reviewed assertion mappings name retained individual assertions and real e
     assert.ok(available.has(key), key);
     assert.ok(!mapped.has(key), "Duplicate semantic disposition: " + key);
     mapped.add(key);
-    assert.equal(row["disposition"], "shared");
+    assert.ok(["shared", "native-only"].includes(text(row["disposition"])));
+    if (row["disposition"] === "native-only") {
+      assert.equal(row["scenario"], "native-solids-*");
+      assert.equal(
+        row["qualification"],
+        "blocked-historical-bound-expectation",
+      );
+      assert.ok(fs.existsSync(path.join(root, text(row["blocker"]))));
+    }
     assert.ok(fs.existsSync(path.join(root, text(row["evidence"]))));
     assert.ok(
       [
@@ -45,6 +53,7 @@ test("reviewed assertion mappings name retained individual assertions and real e
         "camera-state-*",
         "pose-visibility-*",
         "animation-plan-*",
+        "native-solids-*",
       ].includes(text(row["scenario"])),
     );
     assert.ok(text(row["reason"]).length > 40);

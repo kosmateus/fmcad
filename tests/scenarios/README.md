@@ -166,3 +166,12 @@ on owned saved fixtures. It asserts the historical frame interpolation values
 and tolerances, then checks independent document state after valid and rejected
 plans. It does not create native storyboard actions, render frames or sample
 joint motion. Those remain explicit native obligations.
+
+`--suite native-solids` is an explicit native obligation using shared saved-fixture
+lifecycle and unchanged rib/web/sector/arc-strip/torus requests and measurements.
+It is outside supported model `all`. Both model transports refuse its capability
+before any SDK call; that refusal fails qualification. The annular-sector Y bound
+has a documented historical analytical conflict, so native qualification remains
+blocked even though the sequence is registered. See
+`docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md`. Do not run native Fusion until
+the offline refactor is complete.

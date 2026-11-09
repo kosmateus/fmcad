@@ -413,3 +413,23 @@ Reviewed differences and unresolved active-document, motion-order and GM07 build
 pin obligations are recorded in B_ASSERTION_AUDIT.md. Earlier intermediate revisions
 and per-assertion port equivalence remain open. No whole-suite completion is inferred.
 The immutable pose component profile has passed MCP; addin is still running.
+
+## Delivery ledger — shared native solid obligations
+
+Predecessor-audit PR #92 (`d76805f`) preserves exact historical changes without
+claiming semantic completion. The shared native-solids sequence now retains the
+rib/web/sector/arc-strip/O-ring geometry requests, body counts, bounds and volumes,
+using normal owned saved-file lifecycle. Eighteen native-only assertion mappings
+join the 79 shared mappings. The old unsaved lifecycle checks remain explicit
+unmigrated obligations, not implied by saved fixture cleanup.
+
+The model does not advertise the native profile/sector/torus capability; both
+transports refuse all ten owners before any SDK operation. CLI admission requires
+explicit native run and project/folder. Seven registration/refusal tests and
+runtime-test compilation pass; no native geometry execution is claimed.
+
+The historical annular-sector Y expectation conflicts with the declared outer-arc
+extremum. B_NATIVE_SOLIDS_ASSUMPTIONS.md records the calculation and production
+recipe boundary. The expectation and tolerance are preserved; qualification is
+blocked pending an evidenced C/G review. This is separate from transaction
+settlement and journal blockers. Native execution remains deferred.

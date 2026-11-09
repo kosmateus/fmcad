@@ -359,7 +359,7 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": []
+      "sharedScenarios": ["native-solids"]
     },
     {
       "id": "sketch-operations",

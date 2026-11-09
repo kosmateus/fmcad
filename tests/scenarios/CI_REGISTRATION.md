@@ -55,3 +55,9 @@ Add `animation` for both protocols at concurrency 1/2/10. This owned-document
 family runs the production deterministic camera-track planner and verifies its
 read-only contract. Native storyboard actions, joint sampling and frame/video
 export remain separate obligations; a generated manifest is not rendered output.
+
+The native `shape-native-solids` obligation now points to shared `--suite
+native-solids` with explicit project/folder and protocol/concurrency placeholders.
+Keep this outside the required supported-model matrix: model execution must fail
+as unsupported without SDK work. Its historical annular bound conflict is a
+qualification blocker, not an optional skip; see B_NATIVE_SOLIDS_ASSUMPTIONS.md.
