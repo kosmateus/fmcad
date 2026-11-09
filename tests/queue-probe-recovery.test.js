@@ -12,8 +12,10 @@ const { QueueState } = require('../src/queue-state');
 const { serve, brokerConfigHash } = require('../src/queue-broker');
 const { request } = require('../src/queue-connection');
 
-test('failed terminal recovery probe can be replaced; unresolved, mismatched and busy probes cannot', async () => {
+test('failed terminal recovery probe can be replaced; unresolved, mismatched and busy probes cannot', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qp-'));
+  let broker;
+  t.after(async () => { await broker?.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   const cfg = { backend: 'addin', timeoutMs: 1000 };
   const buildHash = qi.buildHash();
   const instance = { pid: 123, birth: 'test:1', version: 'test', activeCommand: 'SelectCommand', documents: [] };
@@ -44,7 +46,7 @@ test('failed terminal recovery probe can be replaced; unresolved, mismatched and
       qi.durable(path.join(directory, `reconcile-${freshBinding.rpcId}.receipt.json`), { ...freshBinding, terminal: true, outcome: 'succeeded', instance });
       return { failed: false, text: 'FMCAD_QUEUE_INSTANCE ' + JSON.stringify(instance) };
     } };
-  const broker = await serve(cfg, { dir, confirmOwnership: true, createBackend: () => client });
+  broker = await serve(cfg, { dir, confirmOwnership: true, createBackend: () => client, nativePath: file => file });
   await request(dir, { action: 'register', clientId: 'owner', clientToken: 'secret' });
   const reconcile = () => request(dir, { action: 'reconcile', jobId: job.id, auth: { clientId: 'owner', clientToken: 'secret' } });
   await assert.rejects(reconcile(), { code: 'RECEIPT_UNAVAILABLE' });
@@ -69,11 +71,11 @@ test('failed terminal recovery probe can be replaced; unresolved, mismatched and
   assert.equal(broker.status().held, null);
   assert.ok(fs.existsSync(path.join(directory, `reconcile-probe-${recoveryBinding.rpcId}.json`)));
   assert.equal(qi.readJson(receipt).outcome, 'failed');
-  await broker.close(); fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('probe diagnostics retain backend failure and restore timeout', async () => {
+test('probe diagnostics retain backend failure and restore timeout', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qp-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const diagnosticPath = path.join(dir, 'probe.json');
   const client = { server: { timeoutMs: 20000 }, async callTool() { return { failed: true, text: 'RuntimeError: dataFile getter failed' }; } };
   await assert.rejects(qi.probe(client, { diagnosticPath }), { code: 'INSTANCE_UNAVAILABLE' });
@@ -126,12 +128,13 @@ sys.modules['adsk']=adsk; sys.modules['adsk.core']=core
   await assert.rejects(qi.probe(client), { code: 'INSTANCE_UNAVAILABLE' });
 });
 
-test('Python receipt retains original exception and traceback without swallowing it', () => {
+test('Python receipt retains original exception and traceback without swallowing it', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qp-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const receipt = path.join(dir, 'receipt.json');
-  const script = qi.wrapScript("raise ValueError('document metadata unavailable')", false, receipt, { jobId: 'test' });
+  const script = qi.wrapScript("raise ValueError('document metadata unavailable')", false, receipt, { jobId: 'test' }, { mapPath: file => file });
   // Linux offline SDK stub; no Fusion client, server or real document.
-  const body = `import sys, types\ncore=types.ModuleType('adsk.core')\ncore.Application=types.SimpleNamespace(get=lambda: types.SimpleNamespace(version='test', userInterface=types.SimpleNamespace(activeCommand='SelectCommand')))\nadsk=types.ModuleType('adsk'); adsk.core=core\nsys.modules['adsk']=adsk; sys.modules['adsk.core']=core\n` + script.replace(JSON.stringify(qi.fusionPath(receipt)), JSON.stringify(receipt));
+  const body = `import sys, types\ncore=types.ModuleType('adsk.core')\ncore.Application=types.SimpleNamespace(get=lambda: types.SimpleNamespace(version='test', userInterface=types.SimpleNamespace(activeCommand='SelectCommand')))\nadsk=types.ModuleType('adsk'); adsk.core=core\nsys.modules['adsk']=adsk; sys.modules['adsk.core']=core\n` + script;
   const output = spawnSync('python3', ['-c', body], { encoding: 'utf8' });
   assert.notEqual(output.status, 0);
   const value = qi.readJson(receipt);

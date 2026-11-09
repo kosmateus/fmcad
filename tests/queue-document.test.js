@@ -27,31 +27,50 @@ test('broker admits unchanged A after B, and returns changed A data in the same 
   const states = { A: snapshot('A', 1), B: snapshot('B', 1) };
   let productCalls = 0;
   const instance = { pid: 99, birth: 'mock:99', version: 'mock', activeCommand: 'SelectCommand', documents: [] };
+  function execute(script) {
+    const bindingMatch = script.match(/_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/);
+    const receiptMatch = script.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
+    if (bindingMatch) {
+      assert.ok(receiptMatch, 'A bound physical request must declare its receipt path');
+      const binding = JSON.parse(JSON.parse(bindingMatch[1]));
+      fs.writeFileSync(JSON.parse(receiptMatch[1]), JSON.stringify({ ...binding, terminal: true, outcome: 'succeeded', instance }));
+    }
+    if (script.includes('FMCAD_QUEUE_INSTANCE')) {
+      const wrapped = script.match(/exec\(compile\(("(?:\\.|[^"\\])*")/);
+      const source = wrapped ? JSON.parse(wrapped[1]) : script;
+      const match = source.match(/_qd_capture\(_app, _qi_cast\(dict\[str, object\] \| None, _qi_json.loads\(("(?:\\.|[^"\\])*")\)\)\)/);
+      if (source.includes("_value['documentState']")) assert.ok(match, 'Read the requested selector rather than returning an unscoped probe');
+      const selector = match ? JSON.parse(JSON.parse(match[1])) : undefined;
+      const documentState = selector?.metadataOnly ? { status: 'metadata-only' } : selector ? states[selector.name] : undefined;
+      return 'FMCAD_QUEUE_INSTANCE ' + JSON.stringify({ ...instance, ...(documentState ? { documentState } : {}) });
+    }
+    productCalls++;
+    return '{}';
+  }
   const physical = { server: { timeoutMs: 2000 }, _parse: JSON.parse,
-    async _post() { throw Error('Unexpected network path in controlled backend'); },
+    async _post(payload) {
+      const args = payload.params.arguments;
+      const text = execute(args.object?.script || args.code || '');
+      return { status: 200, raw: JSON.stringify({ jsonrpc: '2.0', id: payload.id, result: { content: [{ type: 'text', text }] } }) };
+    },
     async callTool(value) {
-      const script = value.object?.script || '';
-      if (script.includes('FMCAD_QUEUE_INSTANCE')) {
-        const wrapped = script.match(/exec\(compile\(("(?:\\.|[^"\\])*")/);
-        const source = wrapped ? JSON.parse(wrapped[1]) : script;
-        const match = source.match(/_qd_capture\(_app, _qi_json.loads\(("(?:\\.|[^"\\])*")\)\)/);
-        const selector = match ? JSON.parse(JSON.parse(match[1])) : undefined;
-        const documentState = selector?.metadataOnly ? { status: 'metadata-only' } : selector ? states[selector.name] : undefined;
-        return { failed: false, text: 'FMCAD_QUEUE_INSTANCE ' + JSON.stringify({ ...instance, ...(documentState ? { documentState } : {}) }) };
-      }
-      productCalls++;
-      return { failed: false, text: '{}' };
+      return { failed: false, text: execute(value.object?.script || '') };
     } };
   const broker = await serve({ backend: 'addin', timeoutMs: 2000 }, { dir, confirmOwnership: true,
-    createBackend: () => physical, pollMs: 5 });
+    createBackend: () => physical, nativePath: file => file, pollMs: 5 });
   t.after(async () => { await broker.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   const a = { clientId: 'a', clientToken: 'private-a' }, b = { clientId: 'b', clientToken: 'private-b' };
   await request(dir, { action: 'register', ...a }); await request(dir, { action: 'register', ...b });
   const call = (auth, action, values = {}) => request(dir, { auth, action, ...values });
+  // This scenario verifies document ownership, not a two-second preparation deadline.
+  // Real Python admission now runs in the local worker before the fake SDK turn.
+  const commandTimeoutMs = 60000;
   async function run(auth, name, sequence) {
     const job = await call(auth, 'submit', { request: { requestId: randomUUID(), kind: 'command', cwd: dir,
-      argv: ['stats', '--doc', name], timeoutMs: 2000, ...(sequence ? { sequence } : {}) } });
-    for (let i = 0; i < 300; i++) {
+      argv: ['stats', '--doc', name], timeoutMs: commandTimeoutMs, ...(sequence ? { sequence } : {}) } });
+    // The worker and SDK phases each have the submitted command budget.
+    const deadline = Date.now() + 2 * commandTimeoutMs + 10000;
+    while (Date.now() < deadline) {
       const result = await call(auth, 'result', { jobId: job.id });
       if (['succeeded', 'failed', 'needs_reconciliation'].includes(result.job.state)) return result;
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -65,6 +84,7 @@ test('broker admits unchanged A after B, and returns changed A data in the same 
   assert.equal((await run(b, 'B')).job.state, 'succeeded');
   const continued = await run(a, 'A', { action: 'continue', id: first.job.sequenceId });
   assert.equal(continued.job.state, 'succeeded', JSON.stringify(continued));
+  assert.equal(productCalls, 3, 'Each successful observation executes once');
   states.A = snapshot('A', 2, 9);
   const before = productCalls;
   const changed = await run(a, 'A', { action: 'end', id: first.job.sequenceId });
