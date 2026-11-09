@@ -85,3 +85,9 @@ processes compare all declarations, specialist validation, local classification,
 MCP schemas/adaptation, CLI contracts and capability/probe outcomes. Installed
 strict consumer compilation covers its exported declarations. Shared specialist
 module mutation is isolated by the harness, not removed from production.
+
+MCP compatibility orchestration is now typed in `library-mcp-compat`,
+`library-mcp-queue` and `library-mcp-forwarder`; the old JS path is a loader.
+Paired historical checks retain wire bytes, sessions, errors, single admission,
+request/document ownership, acknowledgement recovery and caller disposal.
+All 35 library/stdio/catalog-sharing checks pass, including installed declarations.

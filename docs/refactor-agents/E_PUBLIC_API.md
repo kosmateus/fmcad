@@ -263,3 +263,24 @@ functions mutate loaded declaration objects. Every operation, MCP projection,
 invalid argument outcome and CLI contract is compared without shared state.
 Build and lint pass; 33 catalog/library/installed-consumer tests pass, including
 strict declarations for the registry. No A/C/D specialist policy changes.
+
+### Complete MCP compatibility orchestration
+
+PR #46 passed full CI 42524870768 and merged as `7ec4886`; #48 now targets main.
+PR #67 contains typed catalog registry composition.
+
+`mcp-stdio-compat.js` is now a loader for typed catalog composition, queue
+submission/recovery and the historical compatibility forwarder. Queue ports
+preserve single admission, stable request context, owned-artifact reads,
+reconciliation, caller-only wait abort and disposal. The newer bounded stdio
+transport remains separate; its stronger wire rules are not silently applied to
+the compatibility forwarder. Forwarder parity covers 110 request/response pairs
+and session propagation. Nine paired queue scenarios cover successful/failed or
+uncertain outcomes, Python preflight, lost acknowledgement with successful or
+failed recovery, missing results and registration failure.
+
+Full build, lint and test typecheck pass. All 35 library/stdio/catalog-sharing
+tests pass, including installed strict declarations for the complete compatibility
+module. Existing frame bytes, bounded metadata diagnostics, no-retry errors and
+accepted-running-job assertions pass unchanged. Native ownership/inode checks
+remain CI qualification rather than locally weakened assertions.
