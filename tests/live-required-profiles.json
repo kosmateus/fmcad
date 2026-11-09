@@ -268,9 +268,9 @@
         {
           "id": "retained-engineering",
           "scope": "exclusive-instance",
-          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite retained-engineering --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
-          "ownerCopies": 10,
-          "minimumOwnerFixtures": 10,
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite retained-engineering --protocol PROTOCOL --concurrency CONCURRENCY --owners 1",
+          "ownerCopies": 1,
+          "minimumOwnerFixtures": 15,
           "obligation": "Fifteen original declared analytic groups from engineering coverage; identical shared callbacks and tolerance assertions, no native BRep/kernel qualification."
         }
       ]
@@ -296,10 +296,19 @@
         {
           "id": "backend-adapter",
           "source": "tests/live-backend-adapter.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Backend capabilities, progress, transport limits and read-only soak",
-          "command": "node tests/live-backend-adapter.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-backend-adapter --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and existing add-in broker; readonly instance barrier, durable original RPC/stdio identities, no created documents.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-backend-adapter-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10,
+          "protocols": [
+            "addin"
+          ],
+          "lifecycle": "read-only"
         },
         {
           "id": "batch-reference",
@@ -373,10 +382,15 @@
         {
           "id": "definitions",
           "source": "tests/live-definitions.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Literal definitions, idempotent run IDs and failed-check stop",
-          "command": "node tests/live-definitions.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-definitions --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and broker; shared exact-owned unsaved transaction fixture and original receipts. Same behavioral assertions also execute in the model suite, which does not qualify Fusion.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/transaction-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "design-styles",
@@ -407,10 +421,16 @@
         {
           "id": "entity-attributes",
           "source": "tests/live-entity-attributes.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Entity identity, attributes and selection behavior",
-          "command": "node tests/live-entity-attributes.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-attributes --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and broker; existing shared owned unsaved attribute sequence, exact identity and original terminal receipts. The model executes identical assertions but native qualification remains NOTRUN.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/attribute-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10,
+          "sharedScenario": "attributes-unsaved-*"
         },
         {
           "id": "extended",
@@ -480,10 +500,19 @@
         {
           "id": "mcp-stdio",
           "source": "tests/live-mcp-stdio.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Installed stdio discovery and live Fusion tool invocation",
-          "command": "node tests/live-mcp-stdio.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-mcp-stdio --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and existing add-in broker; readonly instance barrier, durable original RPC/stdio identities, no created documents.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-mcp-stdio-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10,
+          "protocols": [
+            "addin"
+          ],
+          "lifecycle": "read-only"
         },
         {
           "id": "motion-animation",
@@ -501,10 +530,15 @@
         {
           "id": "normal-multidocument",
           "source": "tests/live-normal-multidocument.ts",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Normal document operations with interleaving and exact document ownership",
           "command": "node dist/tests/live-normal-multidocument.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "prerequisites": "Matching installed build and existing broker admissionScope normal-multidocument. Own fresh unsaved fixtures; original request identity and SDK settlement required before cleanup. The runner never restarts or replaces the shared broker.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "requiredEnvironment": [
+            "FMCAD_LIVE_RUNTIME"
+          ]
         },
         {
           "id": "pose-methods",
@@ -522,18 +556,32 @@
         {
           "id": "response-recovery",
           "source": "tests/live-response-recovery.ts",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Accepted response loss, original receipt recovery and no mutation replay",
           "command": "node dist/tests/live-response-recovery.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "prerequisites": "Matching installed build and existing broker admissionScope normal-multidocument. Own fresh unsaved fixtures; original request identity and SDK settlement required before cleanup. The runner never restarts or replaces the shared broker.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "requiredEnvironment": [
+            "FMCAD_LIVE_RUNTIME"
+          ]
         },
         {
           "id": "rpc-recovery",
           "source": "tests/live-rpc-recovery.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "RPC reply loss, broker settlement and original result recovery",
-          "command": "node tests/live-rpc-recovery.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-rpc-recovery --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Explicit absent broker.lock after operator drains/stops an idle broker; this profile owns the only broker it starts and retains unknown receipts. Two actual clients, no created documents.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-rpc-recovery-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10,
+          "protocols": [
+            "addin"
+          ],
+          "lifecycle": "read-only"
         },
         {
           "id": "shape-native-solids",
@@ -564,10 +612,18 @@
         {
           "id": "style-save",
           "source": "tests/live-style-save.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Style precedence, mass, unsaved state and local archive roundtrip",
-          "command": "node tests/live-style-save.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-style-save --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and broker; active Design original view capture; exact-owned unsaved style fixture, same-request native child object receipts for F3D roundtrip, original camera/workspace restoration required.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-style-save-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10,
+          "protocols": [
+            "addin"
+          ]
         },
         {
           "id": "thicken-slot-pattern",

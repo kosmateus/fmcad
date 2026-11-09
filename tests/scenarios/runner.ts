@@ -70,6 +70,7 @@ export interface ScenarioReport {
   error?: string;
   cleanupError?: string;
   cleanupHold?: { requestId: string; reason: string };
+  peers?: Owner[];
 }
 function errorText(error: unknown): string {
   if (error instanceof AggregateError)
@@ -107,6 +108,8 @@ function persist(filename: string, value: unknown): void {
   fs.renameSync(temporary, filename);
 }
 export class ScenarioSession {
+  #parentSession: ScenarioSession | undefined;
+  readonly #peerSessions = new Map<string, ScenarioSession>();
   #uncertain = false;
   #sequence = 0;
   #document: Document | undefined;
@@ -144,6 +147,47 @@ export class ScenarioSession {
   }
   get uncertain(): boolean {
     return this.#uncertain;
+  }
+  /** A second real readonly client, linked before creation to this same lifecycle. */
+  createReadonlyPeer(label: string): ScenarioSession {
+    if (
+      this.report.lifecycle !== "read-only" ||
+      this.report.scope !== "exclusive-instance" ||
+      this.#document ||
+      this.#parentSession ||
+      this.#uncertain ||
+      !/^[a-z][a-z0-9-]{0,20}$/u.test(label)
+    )
+      throw new Error(
+        "Readonly peer requires an exclusive settled parent and a bounded label",
+      );
+    const scenarioId = this.report.owner.scenarioId + "-peer-" + label;
+    if (
+      scenarioId.length > 100 ||
+      this.report.peers?.some((peer) => peer.scenarioId === scenarioId)
+    )
+      throw new Error(
+        "Readonly peer already exists or has an invalid identity",
+      );
+    const owner = {
+      runId: this.report.owner.runId,
+      scenarioId,
+      clientId: "scenario:" + this.report.owner.runId + ":" + scenarioId,
+    };
+    (this.report.peers ??= []).push(owner);
+    this.persist();
+    const peer = new ScenarioSession(
+      this.backend,
+      owner,
+      path.join(path.dirname(this.directory), scenarioId),
+      this.signal,
+    );
+    peer.report.lifecycle = "read-only";
+    peer.report.scope = "exclusive-instance";
+    peer.#parentSession = this;
+    peer.persist();
+    this.#peerSessions.set(scenarioId, peer);
+    return peer;
   }
   get originalView(): Record<string, unknown> {
     const result = this.report.requests.find(
@@ -427,7 +471,7 @@ export class ScenarioSession {
   async legacyScript(
     source:
       | "tests/live-data-import.ts"
-      | "tests/live-legacy-owned.ts" = "tests/live-data-import.ts",
+      | "tests/scenarios/legacy-owned-driver.ts" = "tests/live-data-import.ts",
   ): Promise<void> {
     if (this.report.scope !== "exclusive-instance" || this.document.file)
       throw new Error(
@@ -463,9 +507,10 @@ export class ScenarioSession {
       );
     if (
       mode
-        ? !["tests/live-data-import.ts", "tests/live-legacy-owned.ts"].includes(
-            source,
-          ) ||
+        ? ![
+            "tests/live-data-import.ts",
+            "tests/scenarios/legacy-owned-driver.ts",
+          ].includes(source) ||
           this.document.file ||
           this.report.scope !== "exclusive-instance"
         : !(
@@ -674,11 +719,26 @@ export class ScenarioSession {
       directory: string;
     }) => Promise<{ execution: Execution; value: T }>,
   ): Promise<T> {
+    this.signal?.throwIfAborted();
+    return this.#registeredRequest(phase, intent, dispatch);
+  }
+  async #registeredRequest<T>(
+    phase: string,
+    intent: Record<string, unknown>,
+    dispatch: (context: {
+      owner: Owner;
+      requestId: string;
+      directory: string;
+    }) => Promise<{ execution: Execution; value: T }>,
+  ): Promise<T> {
     if (this.report.lifecycle === "read-only" && intent["readOnly"] !== true)
       throw new Error(
         "Readonly scenario requests require explicit readonly intent",
       );
-    if (this.#uncertain)
+    if (
+      this.#uncertain ||
+      (this.#parentSession && this.#parentSession.#uncertain)
+    )
       throw new Error(
         "Unsettled original request; inspect before continuing, never replay",
       );
@@ -699,14 +759,28 @@ export class ScenarioSession {
       });
     } catch (error) {
       this.#uncertain = true;
+      if (this.#parentSession) {
+        this.#parentSession.#uncertain = true;
+        this.#parentSession.persist();
+      }
       this.persist();
       throw error;
     }
     entry.result = result.execution;
+    const receipt = result.execution.brokerReceipt;
     this.#uncertain =
       result.execution.requestId !== requestId ||
       !result.execution.sdkSettled ||
-      result.execution.state === "unknown";
+      result.execution.state === "unknown" ||
+      (receipt !== undefined &&
+        (receipt.requestId !== requestId ||
+          receipt.clientId !== this.report.owner.clientId ||
+          !receipt.jobId ||
+          receipt.state !== result.execution.state));
+    if (this.#uncertain && this.#parentSession) {
+      this.#parentSession.#uncertain = true;
+      this.#parentSession.persist();
+    }
     this.persist();
     if (this.#uncertain)
       throw new Error(
@@ -727,7 +801,7 @@ export class ScenarioSession {
     command?: ScriptRequest["command"],
     inspectCli?: ScriptRequest["inspectCli"],
   ): Promise<Record<string, unknown>> {
-    const execution = await this.registeredRequest(
+    const execution = await this.#registeredRequest(
       phase,
       {
         kind: inspectCli ? "inspect-cli" : command ? "cad" : "script",
@@ -748,6 +822,15 @@ export class ScenarioSession {
         return { execution, value: execution };
       },
     );
+    if (
+      this.backend.qualification === "broker" &&
+      execution.state === "succeeded"
+    )
+      assert.equal(
+        execution.exitCode,
+        0,
+        "Successful public CLI command lacks its original zero exit status",
+      );
     if (
       phase === "create" &&
       execution.state === "failed" &&
@@ -1037,6 +1120,10 @@ export class ScenarioSession {
   }
   async cleanup(): Promise<void> {
     if (this.report.cleanup === "complete" && !this.#uncertain) return;
+    for (const peer of this.#peerSessions.values()) {
+      await peer.cleanup();
+      if (peer.report.cleanup !== "complete") this.#uncertain = true;
+    }
     // A malformed creation result can still leave a durable identity written by the exact original request.
     if (!this.#document && !this.#uncertain) {
       const receipt = path.join(this.directory, "creation.json");
@@ -1523,6 +1610,37 @@ export async function resumeCleanup(
       ),
       "Original readonly receipts do not prove no mutation",
     );
+    const peers: Owner[] = [];
+    if (raw["peers"] !== undefined) {
+      assert.ok(Array.isArray(raw["peers"]) && raw["peers"].length <= 10);
+      for (const value of raw["peers"]) {
+        const peer = record(value);
+        const scenarioId = text(peer["scenarioId"]);
+        assert.ok(scenarioId.startsWith(owner.scenarioId + "-peer-"));
+        assert.match(
+          scenarioId.slice((owner.scenarioId + "-peer-").length),
+          /^[a-z][a-z0-9-]{0,20}$/u,
+        );
+        assert.equal(peer["runId"], owner.runId);
+        assert.equal(
+          peer["clientId"],
+          "scenario:" + owner.runId + ":" + scenarioId,
+        );
+        const identity = {
+          runId: owner.runId,
+          scenarioId,
+          clientId: text(peer["clientId"]),
+        };
+        assert.ok(!peers.some((prior) => prior.clientId === identity.clientId));
+        const result = await resumeCleanup(
+          backend,
+          path.join(path.dirname(directory), scenarioId, "report.json"),
+        );
+        assert.equal(result.lifecycle, "read-only");
+        assert.equal(result.cleanup, "complete");
+        peers.push(identity);
+      }
+    }
     const report: ScenarioReport = {
       owner,
       directory,
@@ -1535,6 +1653,7 @@ export async function resumeCleanup(
       status: "failed",
       cleanup: "complete",
       requests: recovered,
+      ...(peers.length ? { peers } : {}),
       error: "Recovered readonly requests; assertions were not rerun",
     };
     persist(file, report);

@@ -40,6 +40,13 @@ interface Report {
   mutationJob?: Job;
   originalResult?: Result;
   receipts?: Result[];
+  intents?: {
+    requestId: string;
+    clientId: string;
+    phase: number;
+    sourceSha256: string;
+    result?: Result;
+  }[];
   broker?: { readonly buildHash: string; readonly admissionScope: string };
   before?: Record<string, unknown>;
   identity?: OwnedDocument;
@@ -135,6 +142,16 @@ async function main() {
       persist();
       settled = await observe(mutationJob.id);
       report.originalResult = settled;
+      const intent = report.intents?.find(
+        (row) =>
+          row.requestId === settled?.job.requestId &&
+          row.clientId === settled?.job.clientId,
+      );
+      if (!intent || settled.execution.sdkSettled !== true)
+        throw new Error(
+          "Observed original mutation has no matching durable intent or settlement",
+        );
+      intent.result = settled;
       assert.equal(
         settled.job.state,
         "succeeded",
@@ -196,9 +213,20 @@ async function main() {
           ]
         : []),
     ];
+    const requestId = id + ":" + phase;
+    const intent: NonNullable<Report["intents"]>[number] = {
+      requestId,
+      clientId: queue.auth.clientId,
+      phase,
+      sourceSha256: createHash("sha256")
+        .update(fs.readFileSync(file))
+        .digest("hex"),
+    };
+    (report.intents ??= []).push(intent);
+    persist(); // Original intent precedes admission, including creation and cleanup.
     const job = await queue.submit({
       kind: "command",
-      requestId: id + ":" + phase,
+      requestId,
       argv,
       cwd: directory,
       timeoutMs: 180000,
@@ -207,6 +235,17 @@ async function main() {
       inputFiles: inputFiles(argv, directory),
     });
     const result = await queue.wait(job.id);
+    if (
+      result.job.id !== job.id ||
+      result.job.requestId !== requestId ||
+      result.job.clientId !== queue.auth.clientId ||
+      result.execution.sdkSettled !== true
+    )
+      throw new Error(
+        "Original response-recovery request identity or settlement differs; retain the fixture",
+      );
+    intent.result = result;
+    persist();
     if (armed) {
       assert.ok(mutationJob);
       assert.equal(
@@ -331,6 +370,7 @@ print(json.dumps(dict(closed=True,active=a.activeDocument.creationId if a.active
     report.error = String(error instanceof Error ? error.stack : error);
     if (report.identity && report.cleanup?.["closed"] !== true) {
       const settled = knownSettlement([
+        ...(report.intents || []).map((intent) => intent.result),
         ...(report.receipts || []),
         ...(report.attemptedMutation ? [report.originalResult] : []),
       ]);

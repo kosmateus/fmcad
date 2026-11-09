@@ -135,13 +135,19 @@ const engineeringAnalyticDeclarationOperations = [
   "fixture.access",
 ];
 export function engineeringAnalyticDeclarationScenarios(
-  owners = 10,
+  owners = 1,
 ): Scenario[] {
-  return nativeEngineeringScenarios(owners, true);
+  return engineeringAnalyticDeclarationGroups.flatMap((group) =>
+    nativeEngineeringScenarios(owners, true, group).map((scenario, index) => ({
+      ...scenario,
+      id: "retained-engineering-" + group + "-" + index,
+    })),
+  );
 }
 export function nativeEngineeringScenarios(
   owners = 10,
   declarationsOnly = false,
+  onlyGroup?: string,
 ): Scenario[] {
   return Array.from({ length: owners }, (_, index): Scenario => ({
     id:
@@ -211,6 +217,7 @@ export function nativeEngineeringScenarios(
           !engineeringAnalyticDeclarationGroups.some((group) => group === name)
         )
           return;
+        if (onlyGroup !== undefined && name !== onlyGroup) return;
         if ((requiresBody && !body) || session.uncertain || blockedReason) {
           report.tests.push({
             name,
@@ -404,7 +411,7 @@ export function nativeEngineeringScenarios(
             "feature.dependencies",
             "known limitations explain partial dependency coverage",
             values(field(dependencies, "limitations")).some((item) =>
-              values(item).includes("not every feature"),
+              text(item).includes("not every feature"),
             ),
             true,
           );
@@ -551,7 +558,7 @@ export function nativeEngineeringScenarios(
             "diff identifies an added BRep body entry",
             values(field(difference, "changes")).some(
               (item) =>
-                values(field(item, "path")).includes("/bodies") &&
+                text(field(item, "path")).includes("/bodies") &&
                 field(item, "change") === "added",
             ),
             true,
@@ -2846,7 +2853,11 @@ export function nativeEngineeringScenarios(
       if (failure !== undefined) throw failure;
       assert.equal(
         report.tests.length,
-        declarationsOnly ? engineeringAnalyticDeclarationGroups.length + 1 : 26,
+        onlyGroup !== undefined
+          ? 2
+          : declarationsOnly
+            ? engineeringAnalyticDeclarationGroups.length + 1
+            : 26,
       );
       assert.ok(
         report.tests.every((row) => field(row, "status") === "pass"),

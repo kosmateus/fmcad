@@ -10,6 +10,14 @@ const { boundedMap, concurrencyLimit, sourceHash } = require('../dist/tests/scen
 const suites = ['legacy', 'cad', 'extended', 'definitions', 'data-import', 'backend-adapter',
   'feature-modes', 'style-save', 'motion-animation', 'camera-probe', 'joint-limits-probe', 'mcp-stdio'];
 const scopedSuites = ['gm12-spring', 'data-import-fixed'];
+const ownedSuites = {
+  legacy: 'native-legacy', cad: 'native-cad', extended: 'native-extended',
+  definitions: 'native-definitions', 'data-import': 'native-import',
+  'backend-adapter': 'native-backend-adapter', 'feature-modes': 'native-feature-modes',
+  'style-save': 'native-style-save', 'motion-animation': 'native-motion',
+  'camera-probe': 'native-camera-probe', 'joint-limits-probe': 'native-joint-limits',
+  'mcp-stdio': 'native-mcp-stdio',
+};
 
 const optIns = {
   'data-import': ['--run'], 'feature-modes': ['--run'], 'style-save': ['--run'],
@@ -144,7 +152,7 @@ async function run(argv = process.argv.slice(2), settings = {}) {
     baselineFile = path.join(directory, 'baseline.json');
     fs.writeFileSync(baselineFile, JSON.stringify(await captureBaseline()));
     const names = [...suites];
-    const results = await runBatch(names, routing, name => run([name, '--routing', routing, ...(optIns[name] || [])], { baselineFile }), concurrency);
+    const results = await runBatch(names, routing, name => run([name, '--routing', routing, '--concurrency', String(concurrency), ...(optIns[name] || [])], { baselineFile }), concurrency);
     if (baselineFile) {
       const before = JSON.parse(fs.readFileSync(baselineFile, 'utf8'));
       const after = await captureBaseline();
@@ -175,6 +183,17 @@ async function run(argv = process.argv.slice(2), settings = {}) {
     FMCAD_LIVE_ROUTING: routing, FMCAD_LIVE_CLIENT: clientId, FMCAD_LIVE_SUITE: suite };
   if (settings.baselineFile) env.FMCAD_LIVE_BASELINE_FILE = settings.baselineFile;
   delete env.FMCAD_LIVE_SEQUENCE_ID;
+  const offlineStyleCheck = suite === 'style-save' && args.length === 1 && args[0] === '--check';
+  if (ownedSuites[suite] && !offlineStyleCheck) {
+    const unsupported = args.filter(arg => arg !== '--run' && !(suite === 'joint-limits-probe' && arg === '--verify'));
+    if (unsupported.length) throw new Error('Unsupported owned suite arguments: ' + unsupported.join(' '));
+    const protocol = settings.protocol || require('../src/config').loadConfig({ routing: 'queue' }).cfg.backend;
+    if (!['mcp', 'addin'].includes(protocol)) throw new Error('Owned native suite requires an explicit supported broker protocol');
+    const script = ['dist/tests/scenarios/cli.js', '--backend', 'fusion', '--profile', 'broker',
+      '--suite', ownedSuites[suite], '--protocol', protocol, '--concurrency', String(concurrency), '--owners', '10', '--run'];
+    process.stderr.write(`LIVE ${suite}: shared owned scenario ${ownedSuites[suite]}, concurrency=${concurrency}\n`);
+    return (settings.launch || runChild)(script, env);
+  }
   // The native import suites were migrated to TypeScript; execute their build
   // output so the runner cannot silently select an abandoned JS implementation.
   const directory = ['data-import', 'data-import-fixed'].includes(suite) ? path.join('dist', 'tests') : 'tests';

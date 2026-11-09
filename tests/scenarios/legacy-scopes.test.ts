@@ -128,6 +128,7 @@ test("required profiles account for every retained live suite and separate diagn
       "retained-containment",
       "retained-gm-contracts",
       "child-cli",
+      "retained-engineering",
     ],
   );
 });

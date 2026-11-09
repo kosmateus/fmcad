@@ -12,9 +12,11 @@ for (const protocol of ["mcp", "addin"] as const) {
       directory,
       10,
     );
-    assert.equal(reports.length, 1);
-    assert.equal(reports[0]?.status, "passed", JSON.stringify(reports));
-    assert.equal(reports[0]?.cleanup, "complete");
+    assert.equal(reports.length, 15);
+    for (const report of reports) {
+      assert.equal(report.status, "passed", JSON.stringify(report));
+      assert.equal(report.cleanup, "complete");
+    }
     assert.deepEqual(await remaining(model), { active: null, documents: [] });
   });
 }

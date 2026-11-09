@@ -11,7 +11,12 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": ["animation"]
+      "sharedScenarios": [
+        "animation"
+      ],
+      "nativeScenarios": [
+        "native-animation"
+      ]
     },
     {
       "id": "backend-adapter",
@@ -25,7 +30,10 @@
         "path": "tests/live-backend-adapter.js",
         "sha256": "a058aafa576e98d29c8af20224b4d5eb61622867a13e685e864573d7831de0d5"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [],
+      "nativeScenarios": [
+        "native-backend-adapter"
+      ]
     },
     {
       "id": "batch-reference",
@@ -39,7 +47,10 @@
         "path": "tests/live-batch-reference.js",
         "sha256": "4da717dcf4d3718ad043dd4082377f6b54639503446301ba13a660a0fb85921f"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [],
+      "nativeScenarios": [
+        "native-batch-reference"
+      ]
     },
     {
       "id": "cad",
@@ -53,7 +64,12 @@
         "path": "tests/live-cad.js",
         "sha256": "d628563f3cd0e5b91945ce7b870c6c0d1f1636bd5e31efbd4f02a05c9341001e"
       },
-      "sharedScenarios": ["sketches"]
+      "sharedScenarios": [
+        "sketches"
+      ],
+      "nativeScenarios": [
+        "native-cad"
+      ]
     },
     {
       "id": "camera-probe",
@@ -67,7 +83,10 @@
         "path": "tests/live-camera-probe.js",
         "sha256": "a1ec277be6034ced88cb5b1f3f8372a59c3fbb3857998d74939b39545bee7593"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [],
+      "nativeScenarios": [
+        "native-camera-probe"
+      ]
     },
     {
       "id": "component-hierarchy",
@@ -79,7 +98,10 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [],
+      "nativeScenarios": [
+        "native-component-hierarchy"
+      ]
     },
     {
       "id": "data-import-fixed",
@@ -103,7 +125,10 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [],
+      "nativeScenarios": [
+        "native-import"
+      ]
     },
     {
       "id": "definitions",
@@ -117,7 +142,12 @@
         "path": "tests/live-definitions.js",
         "sha256": "68333e6b02ec2cd6fa83fd55b2b5f8923a8beb9928997a2e7c88c5cc6bc6dc01"
       },
-      "sharedScenarios": ["transactions"]
+      "sharedScenarios": [
+        "transactions"
+      ],
+      "nativeScenarios": [
+        "native-definitions"
+      ]
     },
     {
       "id": "design-styles",
@@ -129,7 +159,14 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": ["materials", "appearances", "style-assignments"]
+      "sharedScenarios": [
+        "materials",
+        "appearances",
+        "style-assignments"
+      ],
+      "nativeScenarios": [
+        "native-design-styles"
+      ]
     },
     {
       "id": "engineering-analytics",
@@ -141,7 +178,14 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": ["gear-pair", "engineering-declarations"]
+      "sharedScenarios": [
+        "gear-pair",
+        "engineering-declarations",
+        "retained-engineering"
+      ],
+      "nativeScenarios": [
+        "native-engineering"
+      ]
     },
     {
       "id": "entity-attributes",
@@ -153,7 +197,12 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": ["attributes"]
+      "sharedScenarios": [
+        "attributes"
+      ],
+      "nativeScenarios": [
+        "native-attributes"
+      ]
     },
     {
       "id": "extended",
@@ -167,7 +216,10 @@
         "path": "tests/live-extended.js",
         "sha256": "9bd480369aea6cb5ecd351bd51614f1db83532abc6f09ca5e11cd5c5ce2072c5"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [],
+      "nativeScenarios": [
+        "native-extended"
+      ]
     },
     {
       "id": "feature-modes",
@@ -181,7 +233,10 @@
         "path": "tests/live-feature-modes.js",
         "sha256": "5258a69714c8456ee399749f402488f84bd47c8317e1b5c37a8c48a936152a89"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [],
+      "nativeScenarios": [
+        "native-feature-modes"
+      ]
     },
     {
       "id": "file-exports",
@@ -193,7 +248,10 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [],
+      "nativeScenarios": [
+        "native-file-exports"
+      ]
     },
     {
       "id": "gm07",
@@ -243,7 +301,10 @@
         "path": "tests/live-joint-limits-probe.js",
         "sha256": "834bea7cc30a0374e82383bfd5efb0e5ad6442e9f6297450559e3e40a7516f3a"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [],
+      "nativeScenarios": [
+        "native-joint-limits"
+      ]
     },
     {
       "id": "legacy",
@@ -257,7 +318,15 @@
         "path": "tests/live-legacy.js",
         "sha256": "f1418bdca5c9e934eb8c82a5b0e475094a717e3c06bd111a59ca46dfc0bae960"
       },
-      "sharedScenarios": ["foundation", "parameters", "documents", "boxes"]
+      "sharedScenarios": [
+        "foundation",
+        "parameters",
+        "documents",
+        "boxes"
+      ],
+      "nativeScenarios": [
+        "native-legacy"
+      ]
     },
     {
       "id": "mcp-stdio",
@@ -271,7 +340,10 @@
         "path": "tests/live-mcp-stdio.js",
         "sha256": "a424fa866aea3582771dc7a14e74ea0fadc82959827ce7bfea25d7f715bdd832"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [],
+      "nativeScenarios": [
+        "native-mcp-stdio"
+      ]
     },
     {
       "id": "motion-animation",
@@ -285,7 +357,10 @@
         "path": "tests/live-motion-animation.js",
         "sha256": "21c23eccc448d90f7672dcb81a2af922ed61609a175266b74e1d0ef0a1e880fe"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [],
+      "nativeScenarios": [
+        "native-motion"
+      ]
     },
     {
       "id": "normal-multidocument",
@@ -309,7 +384,12 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": ["poses"]
+      "sharedScenarios": [
+        "poses"
+      ],
+      "nativeScenarios": [
+        "native-pose"
+      ]
     },
     {
       "id": "recovery-ports",
@@ -347,7 +427,10 @@
         "path": "tests/live-rpc-recovery.js",
         "sha256": "431355e8641dd8beff29a5ae48348959b1529d4959023cc17932b4e6663d03d5"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [],
+      "nativeScenarios": [
+        "native-rpc-recovery"
+      ]
     },
     {
       "id": "shape-native-solids",
@@ -360,7 +443,9 @@
         "kind": "later"
       },
       "sharedScenarios": [],
-      "nativeScenarios": ["native-solids"]
+      "nativeScenarios": [
+        "native-solids"
+      ]
     },
     {
       "id": "sketch-operations",
@@ -372,7 +457,12 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": ["sketches"]
+      "sharedScenarios": [
+        "sketches"
+      ],
+      "nativeScenarios": [
+        "native-sketch-operations"
+      ]
     },
     {
       "id": "style-save",
@@ -386,7 +476,10 @@
         "path": "tests/live-style-save.js",
         "sha256": "466a26f77303d206c0cd68b1aa947f17c674646aacdc366a722abdd2e40d683b"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [],
+      "nativeScenarios": [
+        "native-style-save"
+      ]
     },
     {
       "id": "thicken-slot-pattern",
@@ -398,7 +491,10 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": []
+      "sharedScenarios": [],
+      "nativeScenarios": [
+        "native-thicken-slot-pattern"
+      ]
     },
     {
       "id": "thread-method",
@@ -410,7 +506,12 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": ["thread-recipes"]
+      "sharedScenarios": [
+        "thread-recipes"
+      ],
+      "nativeScenarios": [
+        "native-thread"
+      ]
     },
     {
       "id": "ui-host-inspect",

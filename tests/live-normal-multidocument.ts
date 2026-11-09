@@ -122,6 +122,15 @@ async function main() {
       description: "Owned multi-document native test: " + phase,
     });
     const result = await queue.wait(job.id);
+    if (
+      result.job.id !== job.id ||
+      result.job.requestId !== requestId ||
+      result.job.clientId !== queue.auth.clientId ||
+      result.execution.sdkSettled !== true
+    )
+      throw new Error(
+        "Original multidocument request identity or settlement differs; retain both fixtures",
+      );
     report.receipts[
       report.receipts.findIndex((row) => row.requestId === requestId)
     ] = { requestId, phase, job, result };

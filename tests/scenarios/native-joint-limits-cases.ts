@@ -70,16 +70,19 @@ export function nativeJointLimitsScenarios(owners = 10): Scenario[] {
         const script = async (
           label: string,
           body: string,
-          _owned = true,
+          owned = true,
           readOnly = true,
-        ) =>
-          probe.script(
+        ) => {
+          if (!owned)
+            throw new Error("Native joint probes require the owned fixture");
+          return probe.script(
             `doc=app.activeDocument
 assert app.userInterface.activeCommand in ('','SelectCommand')
 d=adsk.fusion.Design.cast(doc.products.itemByProductType('DesignProductType'))
 ${body}`,
             readOnly,
           );
+        };
         const cad = async (
           operation: string,
           data: Record<string, unknown>,
@@ -182,14 +185,14 @@ ${emit("rows")}`,
                       Math.abs(
                         number(field(actual, a, p)) - number(expected[i]),
                       ) < 1e-10,
-                      `${kind} ${a} ${p}: ${actual[a][p]}`,
+                      `${kind} ${a} ${p}: ${field(actual, a, p)}`,
                     );
                   for (const p of [
                     "isMinimumValueEnabled",
                     "isMaximumValueEnabled",
                     "isRestValueEnabled",
                   ])
-                    assert.equal(actual[a][p], true);
+                    assert.equal(field(actual, a, p), true);
                 }
               };
               check(

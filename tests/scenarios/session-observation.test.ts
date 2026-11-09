@@ -195,6 +195,36 @@ test("lost registered transport blocks every later dispatch and preserves cleanu
   assert.equal(f.session.report.cleanup, "deferred");
 });
 
+test("a matching outer request cannot conceal a foreign original broker receipt", async (t) => {
+  const f = restored(t, "");
+  await assert.rejects(
+    f.session.registeredRequest(
+      "transport-foreign",
+      { readOnly: true },
+      async ({ requestId }) => ({
+        execution: {
+          requestId,
+          state: "succeeded",
+          sdkSettled: true,
+          mayHaveMutated: false,
+          stdout: "",
+          brokerReceipt: {
+            requestId,
+            jobId: "foreign-job",
+            clientId: "foreign-client",
+            state: "succeeded",
+            operationResult: {},
+          },
+        },
+        value: "must not be returned",
+      }),
+    ),
+    /mismatched original request/u,
+  );
+  await f.session.cleanup();
+  assert.equal(f.session.report.cleanup, "deferred");
+});
+
 test("public CLI inspection retains raw text and its original receipt without a target", async (t) => {
   const f = restored(t, "DOC name=original\nDONE\n");
   const result = await f.session.inspectCli(
@@ -205,6 +235,58 @@ test("public CLI inspection retains raw text and its original receipt without a 
   assert.equal(f.requests[0]?.inspectCli, "doc-list");
   assert.equal(f.requests[0]?.target, undefined);
   assert.equal(result.requestId, f.session.report.requests[0]?.requestId);
+});
+
+test("readonly peer has its own durable identity and blocks its parent after a lost result", async (t) => {
+  const f = restored(t, "");
+  const report = { ...f.session.report };
+  delete report.document;
+  report.lifecycle = "read-only";
+  report.scope = "exclusive-instance";
+  report.cleanup = "not-created";
+  const parent = new ScenarioSession(
+    f.backend,
+    report.owner,
+    f.directory,
+    undefined,
+    undefined,
+    report,
+  );
+  const peer = parent.createReadonlyPeer("b");
+  assert.notEqual(peer.report.owner.clientId, parent.report.owner.clientId);
+  const durable = JSON.parse(
+    fs.readFileSync(path.join(f.directory, "report.json"), "utf8"),
+  ) as ScenarioReport;
+  assert.deepEqual(durable.peers, [peer.report.owner]);
+  let sends = 0;
+  await assert.rejects(
+    peer.registeredRequest(
+      "transport-peer-lost",
+      { readOnly: true },
+      async (context) => {
+        sends++;
+        assert.equal(context.owner.clientId, peer.report.owner.clientId);
+        throw new Error("peer response lost");
+      },
+    ),
+    /peer response lost/u,
+  );
+  assert.equal(parent.uncertain, true);
+  await assert.rejects(
+    parent.registeredRequest(
+      "transport-parent-next",
+      { readOnly: true },
+      async () => {
+        sends++;
+        throw new Error("must not send");
+      },
+    ),
+    /Unsettled/u,
+  );
+  await parent.cleanup();
+  assert.equal(peer.report.cleanup, "deferred");
+  assert.equal(parent.report.cleanup, "deferred");
+  assert.equal(sends, 1);
 });
 
 test("canonical CAD command carries an owned unsaved identity without fabricating a file", async (t) => {

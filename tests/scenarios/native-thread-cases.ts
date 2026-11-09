@@ -41,8 +41,7 @@ export function nativeThreadScenarios(owners = 10): Scenario[] {
           operations: string[];
         }[],
       };
-      let body: unknown,
-        currentCase = "fixture";
+      let currentCase = "fixture";
       // The historical catalog query used a designation where the unchanged handler
       // accepts its nominal key. Keep its rejection as a separate original command.
       await guard();
@@ -73,7 +72,7 @@ export function nativeThreadScenarios(owners = 10): Scenario[] {
         1,
       );
       validated("shape.cylinder");
-      body = field(cylinder, "bodies", 0);
+      const body = field(cylinder, "bodies", 0);
       const face = await cad("entity.find", {
         kind: "face",
         filters: { geometry: "cylinder", radius: "5 mm" },

@@ -15,7 +15,7 @@
         },
         "after": {
           "source": "tests/helpers/live-broker.js",
-          "sha256": "482db0841347fa908e02e08e0db8e0cf823eca7d30158e48e30e75c3ef523323",
+          "sha256": "df03e4bd0b7596b47c9fd04dcb3f43c07721a9478217e78aab8c2a5cbd1074bb",
           "count": 0
         },
         "retainedIds": [],
@@ -23,8 +23,8 @@
         "addedIds": []
       },
       "workingTreeReview": {
-        "reason": "Owned child CLI handoff records original request identity before admission and harvests exact broker receipts; zero assertion sites in both helper versions. Historical comparison remains preserved.",
-        "historicalAfterSha256": "7f5b54c61965d11fb95199dd91283328e8ea732982379c7cb7832741ef31a9b5"
+        "historicalAfterSha256": "7f5b54c61965d11fb95199dd91283328e8ea732982379c7cb7832741ef31a9b5",
+        "reason": "Zero assertion sites remain exactly unchanged. Existing owned CLI handoff remains journaled; read-only diagnostic RPCs persist original intent before admission, preserve exact owner/settlement, and retain the owned-child bypass refusal."
       }
     },
     {
@@ -40,7 +40,7 @@
         },
         "after": {
           "source": "tests/helpers/live-cli.js",
-          "sha256": "59d7432c9a4537261a8932c2afb049e57f7a03fc6af776066b3a3a6c8472af07",
+          "sha256": "fc0186800c1ca2d6108dfb6ec6cc2df184a8826cbd66c60f2cc3bcf8f5a07675",
           "count": 0
         },
         "retainedIds": [],
@@ -48,8 +48,8 @@
         "addedIds": []
       },
       "workingTreeReview": {
-        "reason": "Owned child CLI handoff records original request identity before admission and harvests exact broker receipts; zero assertion sites in both helper versions. Historical comparison remains preserved.",
-        "historicalAfterSha256": "ba5a19453ca9ded452e2e774285ceb99bb314a38fefa1abf32dbecbab82f8ee8"
+        "historicalAfterSha256": "ba5a19453ca9ded452e2e774285ceb99bb314a38fefa1abf32dbecbab82f8ee8",
+        "reason": "Zero assertion sites remain exactly unchanged. Existing owned CLI handoff remains journaled; read-only diagnostic RPCs persist original intent before admission, preserve exact owner/settlement, and retain the owned-child bypass refusal."
       }
     },
     {
@@ -4105,7 +4105,7 @@
         },
         "after": {
           "source": "tests/live-gm07.js",
-          "sha256": "48e1d8ae8b2c993dfbb758d93b6302ddaff75b249b56bd05dd673d6fd1f1882f",
+          "sha256": "d7a8f1bbb86ec6677ee7ae01956ac8f3377fdbd1cdf31ccdfca4d1fe27c0d62c",
           "count": 115
         },
         "retainedIds": [
@@ -4241,6 +4241,10 @@
           "17996022ae23b8d067a3-1",
           "daacc81b75794491d40b-1"
         ]
+      },
+      "workingTreeReview": {
+        "historicalAfterSha256": "48e1d8ae8b2c993dfbb758d93b6302ddaff75b249b56bd05dd673d6fd1f1882f",
+        "reason": "Every retained assertion ID, kind and expression is unchanged. Fixed native invocations now fsync original caller-owned request intent and one-shot fixture claim before child spawn; exact returned receipts are observed without authorizing cleanup or replay."
       }
     },
     {
@@ -4256,7 +4260,7 @@
         },
         "after": {
           "source": "tests/live-gm12-spring.js",
-          "sha256": "1658a35b75bdb3cdd6a3078a192922a92691d68780113641f111b3338d075486",
+          "sha256": "f312b53d5ed7a3f7169e04214885622d8484495eff8dccd46138bde5ac467c58",
           "count": 132
         },
         "retainedIds": [
@@ -4396,6 +4400,10 @@
         "addedIds": [
           "31f07b3b96b5008df227-1"
         ]
+      },
+      "workingTreeReview": {
+        "historicalAfterSha256": "1658a35b75bdb3cdd6a3078a192922a92691d68780113641f111b3338d075486",
+        "reason": "Every retained assertion ID, kind and expression is unchanged. Fixed native invocations now fsync original caller-owned request intent and one-shot fixture claim before child spawn; exact returned receipts are observed without authorizing cleanup or replay."
       }
     },
     {
@@ -4787,7 +4795,7 @@
         },
         "after": {
           "source": "tests/live-normal-multidocument.ts",
-          "sha256": "bd91e4a52e066ef9afbc17d7608d1a969ffd880db16dbdf825b834837380eb5f",
+          "sha256": "1bcf6831378c871c31c0c902e2b2807cdaa53d44aef5d08086f619ae0d8ffb54",
           "count": 48
         },
         "retainedIds": [
@@ -4868,6 +4876,10 @@
           "f5096cef93f02d9429b2-2",
           "c6f9bcb89a6206f08541-1"
         ]
+      },
+      "workingTreeReview": {
+        "reason": "All retained assertion IDs and expressions are unchanged; exact original request/job/client/SDK-settlement binding and durable pre-admission intent now cover every phase.",
+        "historicalAfterSha256": "bd91e4a52e066ef9afbc17d7608d1a969ffd880db16dbdf825b834837380eb5f"
       }
     },
     {
@@ -5049,7 +5061,7 @@
         },
         "after": {
           "source": "tests/live-response-recovery.ts",
-          "sha256": "5a14248ca77e41471195c0a31abb04d15e675586a7541a8ef2304ec4662b48d7",
+          "sha256": "12bf7450f297042afcef11f0d82e2e8ee987335097878c2ca852a66f3b0c132c",
           "count": 36
         },
         "retainedIds": [
@@ -5093,6 +5105,10 @@
           "147450512f744990098f-1",
           "425655f27b02bb8f7497-1"
         ]
+      },
+      "workingTreeReview": {
+        "reason": "All retained assertion IDs and expressions are unchanged; exact original request/job/client/SDK-settlement binding and durable pre-admission intent now cover every phase.",
+        "historicalAfterSha256": "5a14248ca77e41471195c0a31abb04d15e675586a7541a8ef2304ec4662b48d7"
       }
     },
     {

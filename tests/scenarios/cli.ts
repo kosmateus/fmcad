@@ -1,4 +1,22 @@
 import {
+  nativeRpcRecoveryScenarios,
+  nativeRpcRecoveryCapability,
+  prepareNativeRpcRecoveryBroker,
+  type NativeRpcRecoveryPreparation,
+} from "./native-rpc-recovery-cases";
+import {
+  nativeMcpStdioScenarios,
+  nativeMcpStdioCapability,
+} from "./native-mcp-stdio-cases";
+import {
+  nativeBackendAdapterScenarios,
+  nativeBackendAdapterCapability,
+} from "./native-backend-adapter-cases";
+import {
+  nativeStyleSaveScenarios,
+  nativeStyleSaveCapability,
+} from "./native-style-save-cases";
+import {
   nativeLegacyScenarios,
   nativeLegacyCapability,
 } from "./native-legacy-cases";
@@ -154,6 +172,12 @@ interface Options {
     | "native-joint-limits"
     | "native-motion"
     | "native-legacy"
+    | "native-style-save"
+    | "native-backend-adapter"
+    | "native-mcp-stdio"
+    | "native-rpc-recovery"
+    | "native-definitions"
+    | "native-attributes"
     | "native-import"
     | "native-extended"
     | "native-sketch-operations"
@@ -236,6 +260,12 @@ export function parse(argv: string[]): Options {
         value === "native-joint-limits" ||
         value === "native-motion" ||
         value === "native-legacy" ||
+        value === "native-style-save" ||
+        value === "native-backend-adapter" ||
+        value === "native-mcp-stdio" ||
+        value === "native-rpc-recovery" ||
+        value === "native-definitions" ||
+        value === "native-attributes" ||
         value === "native-import" ||
         value === "native-extended" ||
         value === "native-sketch-operations" ||
@@ -309,6 +339,12 @@ export function parse(argv: string[]): Options {
       "native-motion",
       "native-legacy",
       "retained-engineering",
+      "native-style-save",
+      "native-backend-adapter",
+      "native-mcp-stdio",
+      "native-rpc-recovery",
+      "native-definitions",
+      "native-attributes",
       "native-import",
       "native-extended",
       "native-sketch-operations",
@@ -357,6 +393,7 @@ export function scenarioCopies(
 }
 export function scenariosFor(
   options: Pick<Options, "suite" | "owners" | "folder">,
+  context: { rpcRecovery?: NativeRpcRecoveryPreparation } = {},
 ): Scenario[] {
   return [
     ...(options.suite === "retained-engineering" || options.suite === "all"
@@ -394,6 +431,24 @@ export function scenariosFor(
       : []),
     ...(options.suite === "native-legacy"
       ? nativeLegacyScenarios(options.owners)
+      : []),
+    ...(options.suite === "native-style-save"
+      ? nativeStyleSaveScenarios(options.owners)
+      : []),
+    ...(options.suite === "native-backend-adapter"
+      ? nativeBackendAdapterScenarios(options.owners)
+      : []),
+    ...(options.suite === "native-mcp-stdio"
+      ? nativeMcpStdioScenarios(options.owners)
+      : []),
+    ...(options.suite === "native-rpc-recovery"
+      ? nativeRpcRecoveryScenarios(options.owners, context.rpcRecovery)
+      : []),
+    ...(options.suite === "native-definitions"
+      ? transactionScenarios(undefined, options.owners)
+      : []),
+    ...(options.suite === "native-attributes"
+      ? unsavedAttributeScenarios(options.owners)
       : []),
     ...(options.suite === "native-import"
       ? nativeImportScenarios(options.owners)
@@ -555,6 +610,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   let broker: { close(): Promise<void> } | undefined;
   let backend: ScenarioBackend;
   let queue: QueueScenarioBackend | undefined;
+  let rpcRecovery: NativeRpcRecoveryPreparation | undefined;
   const originalEnvironment = new Map<string, string | undefined>();
   const hashSources = (): string =>
     sourceHash({
@@ -576,6 +632,8 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         throw new Error(
           "Configured broker backend differs from --protocol; no broker was started or changed",
         );
+      if (options.suite === "native-rpc-recovery" && !options.cleanup)
+        rpcRecovery = await prepareNativeRpcRecoveryBroker(root, cfg);
       const platform = load("./src/dist/config-platform") as {
         toWindowsPath: typeof toWindowsPath;
         detectPlatform: typeof detectPlatform;
@@ -605,6 +663,14 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
             : []),
           nativeMotionCapability,
           nativeLegacyCapability,
+          ...(options.protocol === "addin" ? [nativeStyleSaveCapability] : []),
+          ...(options.protocol === "addin"
+            ? [nativeBackendAdapterCapability]
+            : []),
+          ...(options.protocol === "addin" ? [nativeMcpStdioCapability] : []),
+          ...(options.protocol === "addin"
+            ? [nativeRpcRecoveryCapability]
+            : []),
           nativeImportCapability,
           nativeExtendedCapability,
           nativeSketchOperationsCapability,
@@ -613,7 +679,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           nativeCameraProbeCapability,
         ]),
         root,
-        cfg,
+        rpcRecovery?.config ?? cfg,
         (file) => platform.toWindowsPath(file, platform.detectPlatform()),
       );
       backend = queue;
@@ -725,7 +791,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     try {
       reports = await runScenarios(
         backend,
-        scenariosFor(options),
+        scenariosFor(options, rpcRecovery ? { rpcRecovery } : {}),
         output,
         options.concurrency,
         cancellation.signal,
@@ -761,6 +827,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     return passed ? 0 : 1;
   } finally {
     queue?.close();
+    await rpcRecovery?.closeOwned();
     try {
       await broker?.close();
     } finally {

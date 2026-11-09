@@ -112,6 +112,9 @@ test("reviewed assertion mappings name retained individual assertions and real e
     if (row["disposition"] !== "native-only")
       assert.ok(
         [
+          "scenario-session-contracts",
+          "retained-engineering-*",
+          "recovery-port-contracts",
           "import-receipt-contracts",
           "import-result-contracts",
           "mechanical-declarations-*",
@@ -145,8 +148,14 @@ test("reviewed assertion mappings name retained individual assertions and real e
       );
     assert.ok(text(row["reason"]).length > 40);
   }
-  assert.ok(
-    mapped.size > 0 && mapped.size < available.size,
-    "This partial ledger must not imply complete migration",
+  assert.deepEqual(
+    [...available].filter((key) => !mapped.has(key)),
+    [],
+    "Every retained assertion requires its individual reviewed offline or native disposition",
+  );
+  assert.equal(
+    [...mapped].filter((key) => available.has(key)).length,
+    available.size,
+    "All current assertion sites must be accounted for exactly once",
   );
 });
