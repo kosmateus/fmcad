@@ -1,28 +1,27 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const path = require("node:path");
-const os = require("node:os");
-const { spawnSync } = require("node:child_process");
-const {
-  cadBundleManifest,
-  cadBundleUnits,
-  orderBundle,
-} = require("../packages/node-adapters/dist/python/bundle");
-const {
-  documentIoFamilies,
-  documentIoCadManifest,
-  documentIoFamilyUnits,
-} = require("../packages/node-adapters/dist/python/document-io-manifest");
-const {
-  preparePythonArtifact,
-  verifyPythonArtifact,
-  pythonLiteral,
-} = require("../packages/node-adapters/dist/python/artifact");
-const {
-  queueDocumentSnapshotUnits,
-  queueDocumentSnapshotSource,
-} = require("../packages/node-adapters/dist/python/document-probe");
-const root = path.resolve(__dirname, "..");
+import test from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import os from "node:os";
+import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+import type { PreparedPythonArtifact } from "../packages/core/src/domain/python-artifact";
+const load = createRequire(
+  path.join(process.cwd(), "tests/python-document-io.test.ts"),
+);
+const { cadBundleManifest, cadBundleUnits, orderBundle } = load(
+  "../packages/node-adapters/dist/python/bundle",
+) as typeof import("../packages/node-adapters/src/python/bundle");
+const { documentIoFamilies, documentIoCadManifest, documentIoFamilyUnits } =
+  load(
+    "../packages/node-adapters/dist/python/document-io-manifest",
+  ) as typeof import("../packages/node-adapters/src/python/document-io-manifest");
+const { preparePythonArtifact, verifyPythonArtifact, pythonLiteral } = load(
+  "../packages/node-adapters/dist/python/artifact",
+) as typeof import("../packages/node-adapters/src/python/artifact");
+const { queueDocumentSnapshotUnits, queueDocumentSnapshotSource } = load(
+  "../packages/node-adapters/dist/python/document-probe",
+) as typeof import("../packages/node-adapters/src/python/document-probe");
+const root = process.cwd();
 const runtime = path.join(root, "runtime/python");
 
 test("family manifest composes a complete unique registry with real source maps", () => {
@@ -30,11 +29,19 @@ test("family manifest composes a complete unique registry with real source maps"
   assert.deepEqual(documentIoCadManifest(composed), composed);
   assert.deepEqual(
     documentIoFamilies(),
-    require("./fixtures/python-document-io-manifest.json").families,
+    (
+      load("./fixtures/python-document-io-manifest.json") as {
+        families: unknown;
+      }
+    ).families,
   );
   const units = cadBundleUnits(root);
   const expectedHandlerOrder = [
-    ...require("./fixtures/python-geometry/baseline.json").handlerOrder,
+    ...(
+      load("./fixtures/python-geometry/baseline.json") as {
+        handlerOrder: string[];
+      }
+    ).handlerOrder,
   ];
   expectedHandlerOrder.splice(
     expectedHandlerOrder.indexOf("datum.frame") + 1,
@@ -63,36 +70,48 @@ test("family manifest composes a complete unique registry with real source maps"
     assert.ok(prepared.units.some((unit) => unit.id === family.family));
   }
   const currentMasterAdditions = [
-    'frame.context_audit', 'snapshot.capture_v2', 'snapshot.diff_v2',
-    'measure.section-series', 'measure.witness-check',
-    'geometry.delta', 'geometry.compare-region',
-    'sketch.coordinate-check', 'sketch.profile-query',
-    'selection.rule.define', 'selection.rule.inspect', 'selection.rule.resolve', 'selection.rule.check',
-    'selection.rule.define_internal', 'selection.rule.inspect_internal',
-    'selection.rule.resolve_internal', 'selection.rule.check_internal',
-    'mechanism.drive-test', 'mechanism.motion-link.create', 'fastener.measured-check',
+    "frame.context_audit",
+    "snapshot.capture_v2",
+    "snapshot.diff_v2",
+    "measure.section-series",
+    "measure.witness-check",
+    "geometry.delta",
+    "geometry.compare-region",
+    "sketch.coordinate-check",
+    "sketch.profile-query",
+    "selection.rule.define",
+    "selection.rule.inspect",
+    "selection.rule.resolve",
+    "selection.rule.check",
+    "selection.rule.define_internal",
+    "selection.rule.inspect_internal",
+    "selection.rule.resolve_internal",
+    "selection.rule.check_internal",
+    "mechanism.drive-test",
+    "mechanism.motion-link.create",
+    "fastener.measured-check",
   ];
   const currentMasterOwners = {
-    'geometry.delta': 'regional-geometry',
-    'geometry.compare-region': 'regional-geometry',
-    'frame.context_audit': 'semantic-model-state',
-    'snapshot.capture_v2': 'semantic-model-state',
-    'snapshot.diff_v2': 'semantic-model-state',
-    'measure.section-series': 'section-witness',
-    'measure.witness-check': 'section-witness',
-    'selection.rule.define': 'selection-rules',
-    'selection.rule.inspect': 'selection-rules',
-    'selection.rule.resolve': 'selection-rules',
-    'selection.rule.check': 'selection-rules',
-    'selection.rule.define_internal': 'selection-rules',
-    'selection.rule.inspect_internal': 'selection-rules',
-    'selection.rule.resolve_internal': 'selection-rules',
-    'selection.rule.check_internal': 'selection-rules',
-    'mechanism.drive-test': 'native-drive',
-    'mechanism.motion-link.create': 'native-drive',
-    'fastener.measured-check': 'measured-fasteners',
-    'sketch.coordinate-check': 'sketch_geometry_proof',
-    'sketch.profile-query': 'sketch_geometry_proof',
+    "geometry.delta": "regional-geometry",
+    "geometry.compare-region": "regional-geometry",
+    "frame.context_audit": "semantic-model-state",
+    "snapshot.capture_v2": "semantic-model-state",
+    "snapshot.diff_v2": "semantic-model-state",
+    "measure.section-series": "section-witness",
+    "measure.witness-check": "section-witness",
+    "selection.rule.define": "selection-rules",
+    "selection.rule.inspect": "selection-rules",
+    "selection.rule.resolve": "selection-rules",
+    "selection.rule.check": "selection-rules",
+    "selection.rule.define_internal": "selection-rules",
+    "selection.rule.inspect_internal": "selection-rules",
+    "selection.rule.resolve_internal": "selection-rules",
+    "selection.rule.check_internal": "selection-rules",
+    "mechanism.drive-test": "native-drive",
+    "mechanism.motion-link.create": "native-drive",
+    "fastener.measured-check": "measured-fasteners",
+    "sketch.coordinate-check": "sketch_geometry_proof",
+    "sketch.profile-query": "sketch_geometry_proof",
   };
   const setup = `import sys, types, builtins, pathlib
 adsk = types.ModuleType('adsk')
@@ -193,7 +212,13 @@ assert simulation['productAccessed'] is False
 });
 
 test("legacy document/review/export builders consume runtime, retaining literal argument encoding", () => {
-  const ops = require("../src/ops");
+  const ops = load("../src/ops") as {
+    prepareOpScript(
+      operation: string,
+      args: readonly unknown[],
+    ): PreparedPythonArtifact;
+    prepareExportScript(args: readonly string[]): PreparedPythonArtifact;
+  };
   const inspect = ops.prepareOpScript("stats", ["日本語", true, null]);
   const exported = ops.prepareExportScript([
     "step",
@@ -211,7 +236,14 @@ test("legacy document/review/export builders consume runtime, retaining literal 
       ),
     );
   }
-  const review = require("../src/review").buildReviewScript({
+  const { buildReviewScript } = load("../src/review") as {
+    buildReviewScript(request: {
+      doc: string;
+      docId: string;
+      out: string;
+    }): string;
+  };
+  const review = buildReviewScript({
     doc: "Model",
     docId: "id",
     out: "C:\\new",

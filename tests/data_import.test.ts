@@ -1092,3 +1092,38 @@ test("catalog expansion, ownership ledgers and refusal branches match historical
     assert.deepEqual(results[2], results[0]);
   }
 });
+
+test("typed import composition preserves public descriptors and offline admission decisions", () => {
+  type Composition = typeof import("../src/composition/library-data-import");
+  const current = load("../src/data-import") as Composition;
+  for (const label of ["baseline", "before"]) {
+    const historical = importHistory(
+      label,
+      "src/data-import.js",
+    ) as unknown as Composition;
+    assert.deepEqual(current.descriptors, historical.descriptors);
+    for (const operation of [
+      ...Object.keys(current.descriptors),
+      "missing.check",
+      "",
+    ]) {
+      for (const inspectModel of [undefined, false, true, null, 1, "true"]) {
+        assert.equal(
+          current.isOffline(operation, { inspectModel }),
+          historical.isOffline(operation, { inspectModel }),
+          `${label}: ${operation}, inspectModel=${String(inspectModel)}`,
+        );
+      }
+    }
+    for (const operation of Object.keys(current.manuals)) {
+      assert.deepEqual(
+        current.manuals[operation]!.sections,
+        historical.manuals[operation]!.sections,
+      );
+      assert.deepEqual(
+        current.manuals[operation]!.examples,
+        historical.manuals[operation]!.examples,
+      );
+    }
+  }
+});

@@ -2675,10 +2675,12 @@ test(
   "production checker admits the public reference action wrapper against pinned Python interfaces",
   { timeout: 180000 },
   async () => {
-    const { prepareCadBundle } =
-      load("../packages/node-adapters/dist/python/bundle") as typeof import("../packages/node-adapters/src/python/bundle");
-    const { createPythonChecker } =
-      load("../packages/node-adapters/dist/python/checker") as typeof import("../packages/node-adapters/src/python/checker");
+    const { prepareCadBundle } = load(
+      "../packages/node-adapters/dist/python/bundle",
+    ) as typeof import("../packages/node-adapters/src/python/bundle");
+    const { createPythonChecker } = load(
+      "../packages/node-adapters/dist/python/checker",
+    ) as typeof import("../packages/node-adapters/src/python/checker");
     const project = process.cwd(),
       typingRoot = path.join(project, "dist/runtime/python/typing");
     const artifact = prepareCadBundle(
@@ -2698,3 +2700,44 @@ test(
     assert.equal(report.provenance.checker, "basedpyright");
   },
 );
+
+test("typed reference configuration preserves the caller catalog and exact mutation scope", () => {
+  type Composition =
+    typeof import("../src/composition/library-references-refresh");
+  const current = load("../src/references-refresh") as Composition;
+  for (const label of ["baseline", "before"]) {
+    const historical = referenceHistory(
+      label,
+      "src/references-refresh.js",
+    ) as unknown as Composition;
+    const declaration = {
+      summary: "Pinned reference update",
+      inputs: {},
+      required: [],
+      example: {},
+      limitations: [],
+      readOnly: false,
+      requiresDoc: true,
+      nodeOnly: false,
+      batchAllowed: true,
+    };
+    const entry = structuredClone(declaration);
+    const unrelated = structuredClone(declaration);
+    const catalog = { "references.refresh": entry, other: unrelated };
+    const expected = structuredClone(catalog);
+    historical.configure(expected);
+    current.configure(catalog);
+    assert.deepEqual(catalog, expected);
+    assert.equal(catalog["references.refresh"], entry);
+    assert.equal(catalog.other, unrelated);
+    assert.deepEqual(unrelated, declaration);
+    assert.throws(
+      () => current.configure({}),
+      /references.refresh catalog entry is required/,
+    );
+    assert.throws(
+      () => historical.configure({}),
+      /references.refresh catalog entry is required/,
+    );
+  }
+});

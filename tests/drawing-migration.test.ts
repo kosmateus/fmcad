@@ -548,3 +548,27 @@ test("drawing package readback preserves missing, malformed and foreign report f
     );
   assert.deepEqual(fs.readFileSync(file), original);
 });
+
+test("typed drawing composition preserves every local descriptor and manual return contract", () => {
+  type Composition =
+    typeof import("../src/composition/library-drawing-package");
+  const current = load("../src/drawing-package") as Composition;
+  for (const label of ["baseline", "package-before"]) {
+    const historical = history(
+      label,
+      "src/drawing-package.js",
+    ) as unknown as Composition;
+    assert.deepEqual(current.descriptors, historical.descriptors);
+    assert.deepEqual(current.familyDescriptors, historical.familyDescriptors);
+    for (const operation of Object.keys(current.manuals)) {
+      assert.deepEqual(
+        current.manuals[operation]!.sections,
+        historical.manuals[operation]!.sections,
+      );
+      assert.deepEqual(
+        current.manuals[operation]!.examples,
+        historical.manuals[operation]!.examples,
+      );
+    }
+  }
+});

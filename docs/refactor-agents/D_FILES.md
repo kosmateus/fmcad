@@ -343,3 +343,33 @@ includes imports, references, externalization, save/publication and drawings.
   (76.3 seconds); nine AST/pure-boundary/planning checks pass. The final
   [contract map](D_FILE_CONTRACTS.md) separates executable offline evidence,
   shared-scenario handoff and native qualification obligations.
+
+### Delivery 8 — canonical file host composition and retained executable contracts
+
+- Continued from integrated candidate `dce47c5`; the seven previous deliveries
+  already own the domain, application and Python lifecycle boundaries. They are
+  retained, not reimplemented. Remaining import/drawing descriptor construction,
+  local/native classification, workflow composition and reference catalog wiring
+  now have strict `library-*` implementations. Existing public JS entrypoints
+  delegate to them; installed-path compatibility is preserved.
+- Added paired descriptor/manual and exact catalog-mutation checks against the
+  existing SHA-256 verified baseline and predecessor fixtures. Import source
+  snapshots, owner/version pins, immutable plans, receipt-only continuation and
+  known/unknown cleanup semantics are unchanged.
+- Migrated the document/I/O bundle contract and synthetic import fixture generator
+  to strict TypeScript. The bundle still executes actual Python with filesystem
+  loading forbidden, checks the full handler registry and source maps, and
+  verifies unavailable document readback. The generator retains exclusive file
+  creation and its existing no-overwrite/emitted-artifact tests.
+- Focused strict compilation, lint and formatting pass. The six-file Node family
+  selection executed 171 cases: 167 passed and four failed, without skipped cases.
+  Two production checker cases ran before pinned `typing/current.json` existed;
+  the generated adapter parser timed out in its unchanged Python child-process
+  budget, and nested externalization returned unknown during the same incomplete
+  host preparation. No production guard or expectation was relaxed.
+- The targeted recheck after typings became available still encountered Python
+  timeouts while other checker work ran. It was stopped to give the integration
+  owner one heavy-test slot at a time; its partial output is not a pass. The
+  canonical Python composition suite likewise needs its complete rerun after the
+  interrupted child-process probe. Fresh exact-head CI and installed-consumer
+  evidence remain release gates. Native Fusion qualification remains NOTRUN.
