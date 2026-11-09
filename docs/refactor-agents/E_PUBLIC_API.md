@@ -592,3 +592,15 @@ a pre-existing /tmp/opencode directory. The installed reference case no longer
 silently skips when FMCAD_REFERENCE_PYTHON is absent; it also accepts FMCAD_PYTHON
 or the default python3. Debian host qualification remains a reported environment
 limitation, not a reason to relax production platform checks.
+
+The staged first runtime slice exercised 145 public/manual/docops/console cases.
+143 passed in the initial sequential run; recursive manual schema inspection
+exposed a migration bug treating nested arrays as object records. Restoring the
+original array traversal fixed that case. A doctor child also exceeded its
+unchanged ten-second process budget during that run; isolated metadata plus
+manual IO reran 14/14 with zero skips (empty-metadata doctor: 145 ms). Thus every
+case in the slice has an actual passing execution, including the paired docops
+commands, real host workers, generated manual handlers, retained review/UI and
+five console groups. The broker-backed pause suite, installed API/OpenCode and
+Python admission gates remain separate pending checks. This is not native Fusion
+qualification or exact-final-commit CI evidence.

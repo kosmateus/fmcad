@@ -107,6 +107,10 @@ test("all io examples pass existing outer validators and ordered reference synta
       const refs = new Set<string>();
       function visit(value: unknown) {
         if (!value || typeof value !== "object") return;
+        if (Array.isArray(value)) {
+          value.forEach(visit);
+          return;
+        }
         const ref = record(value)["$ref"];
         if (ref) refs.add(text(text(ref).split(".")[0]));
         Object.values(value).forEach(visit);
