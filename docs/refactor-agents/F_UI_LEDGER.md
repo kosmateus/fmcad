@@ -380,3 +380,23 @@ now returns the declared promise; the original no-call assertions still enforce
 that those paths never execute. Narrow source compilation, lint and structural
 assertion/program comparison pass. Real process, broker and checker execution
 is pending the coordinated post-staging runtime slot.
+
+Current native handoff safety execution: all 12 camera/global-state cases pass
+without skips or cancellations. Capability refusal checks each owner separately,
+so the scheduler's correct stop barrier cannot count later `not-run` owners as
+executed checks. Lost/missing/foreign native results retain the exact unsaved
+fixture and defer cleanup without repeating the dispatch. Style-save adds three
+passing capability/production-preview cases and 21 passing document-save Python
+tests; native material, geometry, animation and viewport qualification is still
+not-run. The global-state ledger records source-ready factories and these
+specific offline results, with exact-final-commit CI still required.
+
+The first runtime execution of the six worker/recovery suites has 22 passes,
+two failures and one timed-out case (25 total). Crash/restart, pipeline ordering,
+stage-owner isolation and the actual frozen legacy producer pass. The candidate
+approval test correctly refuses stale built bytes (`BUILD_CHANGED`) before the
+expected qualification refusal; rerun after central staging is required. The
+first CAD worker test times out in the existing Python AST fixture parser while
+other compiler processes are active. The real audit preflight also reaches its
+unchanged 30-second timeout. These are unresolved execution results, not passes;
+no timeout or expected refusal was weakened. Log: `/tmp/fmcad-f-six-runtime.log`.

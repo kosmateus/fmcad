@@ -17,7 +17,11 @@ for (const protocol of ["mcp", "addin"] as const) {
         (s) => s.scope === "exclusive-instance" && s.fixture === undefined,
       ),
     );
-    const reports = await runScenarios(backend, scenarios, directory, 10);
+    const reports = [];
+    // Check every owner independently: an exclusive unsupported result correctly
+    // stops later scenarios in one run, so that barrier is not a capability proof.
+    for (const scenario of scenarios)
+      reports.push(...(await runScenarios(backend, [scenario], directory, 10)));
     assert.equal(model.executions, initial);
     assert.equal(reports.length, 10);
     for (const report of reports) {
