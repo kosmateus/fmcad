@@ -569,3 +569,21 @@ The six C typed factories and their CLI/profile registrations are ready for the
 owned handoff; semantic ledger rows remain native qualification not-run. The
 final integrated CI/native-plan gate and real Fusion readbacks remain pending.
 The earlier execution-pending entry is superseded by this runtime evidence.
+
+### Retained stage-owner, journal and isolated-document tests
+
+The remaining three handwritten suites now use strict TypeScript and actual
+runtime module contracts. All 29 source test declarations (45 expanded cases),
+167 original assertion sites and 25 child/Python template fragments are retained.
+Persisted JSON is treated as unknown and checked before access. Deliberately
+incomplete requests and the original complete authenticated dependency object
+still cross the real runtime validation boundary, without whole-module casts.
+The fake-WSL admission fixtures and exact final-byte fence remain in place.
+
+Strict compilation and ESLint passed. An actual run selected the 43 non-checker
+cases: 42 passed, while the public Fmcad stage case hit a generated staging-layout
+error after a narrow TypeScript emit replaced a compatibility shim. Its assertions
+remain unchanged and its rerun requires the next complete central stage. The two
+production-checker cases are not run by that selection and remain explicit gates.
+No timing claim is made from the concurrently loaded host. The retained process
+crash/restart, unknown-outcome and Python identity guards actually executed.
