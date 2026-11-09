@@ -397,3 +397,18 @@ includes imports, references, externalization, save/publication and drawings.
 - Runtime verification is pending the coordinated process-test slot after the
   central build. Optional image dependencies and supported-host checks have not
   been bypassed; skipped worker cases do not count as behavior evidence.
+
+### Delivery 10 — saved-file recovery test consumers
+
+- Migrated the eight retained saved-audit key/path, destination approval,
+  document guard, first-save scope, fixture control/reader and scratch
+  qualification suites to strict TypeScript. The existing CJS fixtures,
+  scoped fake-WSL setup and original process-birth evidence are retained.
+- All 114 original assertion ASTs are preserved, with 17 added presence or
+  fixture-context checks. Canonicalization accounts for typed property access,
+  the receipt variable rename, explicit UTF-8 reads, repository-root module
+  loading and the CLI's existing standard-output/error ports. No expected
+  outcome, identity fence, original-receipt requirement or retry refusal changed.
+- Focused strict compilation and lint pass, including the new import handoff
+  sources. Runtime/checker verification remains pending the coordinated quiet
+  slot and final build; static migration is not execution evidence.
