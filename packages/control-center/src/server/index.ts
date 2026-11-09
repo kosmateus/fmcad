@@ -8,6 +8,7 @@ export { createConsoleQueryApi, type ConsoleQueryApi } from "./query-api.js";
 export {
   createProjectActions,
   type ProjectActionActivityFence,
+  type ProjectActionFreshContext,
   type ProjectActionFreshPresence,
   type ProjectActionFreshSource,
   type ProjectActionFreshState,

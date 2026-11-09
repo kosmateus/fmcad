@@ -153,3 +153,16 @@ terminal facade retained for compatibility. All three existing passive/fresh-rea
 failed-refresh tests pass against the extracted adapter. No terminal UI or
 meaningful assertion is deleted before the listed launcher, browser and broker
 administration acceptance gates.
+
+
+### Continuation completion evidence (2026-11-09)
+
+The remaining small runtime boundaries are strict composition modules. Fifteen
+retained console/installed-composition suites migrated with the same behavioral
+assertions. Production project archival now consumes authoritative activity
+observations under the same SQLite fence as A's admission and presence writers;
+seven focused reader/contending-process tests and the real broker IPC archive
+case pass. Browser follow-through fixes stale table filters after snapshot expiry
+and the transposed copy-entry/back-to-task locale mapping. F_UI_LEDGER.md contains
+the exact local scope and environment limits; final browser and exact-head CI
+must still be attached by the integration owner. Native Fusion remains separate.

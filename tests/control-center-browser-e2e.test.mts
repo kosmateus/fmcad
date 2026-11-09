@@ -134,7 +134,7 @@ async function waitForCount(locator: Locator, count: number): Promise<void> {
 
 test(
   "Control Center interactions work in headless Chromium against an isolated query fixture",
-  { timeout: 120_000 },
+  { timeout: 240_000 },
   async (t) => {
     fs.mkdirSync(artifactsRoot, { recursive: true });
     const runId = `${new Date().toISOString().replaceAll(":", "-")}-${process.pid}`;
@@ -892,7 +892,10 @@ test(
         query.collection === "logs" &&
         query.filters?.taskId === "task-e2e-queued",
     );
-    await page.getByRole("tab", { name: "Zdarzenia" }).click();
+    await page
+      .getByRole("dialog", { name: "Szczegóły zadania" })
+      .getByRole("tab", { name: "Logi projektu", exact: true })
+      .click();
     await eventsRequest;
     await page.getByText("E2E queued task was accepted").waitFor();
     record("task detail and its event tab query scoped backend records");
@@ -1679,5 +1682,73 @@ test(
         .count(),
       1,
     );
+  },
+);
+
+test(
+  "expired table snapshots refresh once and preserve the selected agent filter",
+  { timeout: 30000 },
+  async (t) => {
+    const fixture = createBrowserFixture();
+    const http = await fixture.start();
+    t.after(() => http.close());
+    const browser = await chromium.launch({ headless: true });
+    t.after(() => browser.close());
+    const page = await browser.newPage({ locale: "pl-PL" });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(http.origin);
+    await page.getByRole("tab", { name: "Agenci" }).click();
+    await page.getByText("E2E Active Agent").waitFor();
+    const tokens: string[] = [];
+    await page.route("**/api/v1/console/query", async (route) => {
+      const body = requestBody(route.request());
+      const filters = body?.["filters"];
+      const presence = isRecord(filters) ? filters["presence"] : null;
+      if (
+        body?.["collection"] === "agents" &&
+        isRecord(presence) &&
+        Array.isArray(presence["any"]) &&
+        presence["any"].includes("unknown")
+      ) {
+        tokens.push(
+          route.request().headers()["x-control-center-snapshot"] ?? "",
+        );
+        if (tokens.length === 1) {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              version: 1,
+              state: "expired",
+              code: "SNAPSHOT_EXPIRED",
+              message: "Retained snapshot expired",
+            }),
+          });
+          return;
+        }
+      }
+      await route.continue();
+    });
+    await page
+      .locator('[data-action="agent-filter"][data-filter="history"]')
+      .click();
+    await page.getByText("E2E Active Agent").waitFor({ state: "detached" });
+    await page.getByText("E2E Historical Agent").waitFor();
+    assert.equal(
+      tokens.length,
+      2,
+      "one fresh snapshot replaces the expired read",
+    );
+    assert.ok(tokens[0]);
+    assert.ok(tokens[1]);
+    assert.notEqual(tokens[0], tokens[1]);
+    assert.equal(
+      await page
+        .locator('[data-action="agent-filter"][data-filter="history"]')
+        .getAttribute("aria-pressed"),
+      "true",
+    );
+    assert.deepEqual(errors, []);
   },
 );

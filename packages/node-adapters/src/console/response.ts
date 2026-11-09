@@ -7,7 +7,7 @@ import type { ConsoleRow, ConsoleSnapshot } from "@fmcad/core";
 interface ResponseJob extends ConsoleRow {
   request?: { cwd?: string };
 }
-interface ResponseOutput {
+export interface ResponseOutput {
   name: string;
   path: string;
   text?: string;

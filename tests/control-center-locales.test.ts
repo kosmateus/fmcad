@@ -115,3 +115,12 @@ test("localized filters and search preserve the meaning of their actions", () =>
     }
   }
 });
+
+test("translated copy and navigation actions keep their distinct meanings", () => {
+  const pl = CATALOGS.pl;
+  const de = CATALOGS.de;
+  assert.equal(pl["ui.modal.copyEntry"], "Kopiuj wpis");
+  assert.equal(pl["ui.modal.backToTask"], "← Zadanie");
+  assert.equal(de["ui.modal.copyEntry"], "Eintrag kopieren");
+  assert.equal(de["ui.modal.backToTask"], "← Aufgabe");
+});

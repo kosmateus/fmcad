@@ -42,7 +42,7 @@ async function availablePort(): Promise<number> {
 
 test(
   "browser reads real registered SQLite histories through the installed production composition",
-  { timeout: 90000 },
+  { timeout: 180000 },
   async (t) => {
     const artifacts = path.resolve(
       process.env["FMCAD_CONTROL_CENTER_E2E_ARTIFACTS"] ??

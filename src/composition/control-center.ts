@@ -30,6 +30,9 @@ const history = runtimeRequire(
 const projectActions = runtimeRequire(
   "../control-center/server/project-actions.js",
 ) as typeof import("../../packages/control-center/src/server/project-actions.js");
+const activity = runtimeRequire(
+  "../node-adapters/control-center/project-activity.js",
+) as typeof import("../../packages/node-adapters/src/control-center/project-activity.js");
 const queue = runtimeRequire("../../queue-connection.js") as {
   queueDirectory(): string;
 };
@@ -73,11 +76,14 @@ export function createControlCenterComposition(
         projectRoot: project.path,
         readOnly: false,
       }),
-    readFreshState() {
-      // Legacy queue admission and presence writers do not share the SQLite
-      // lifecycle fence. Never infer safe archival from an idle observation.
-      throw new Error("Project activity fencing is unavailable");
-    },
+    readFreshState: activity.createProjectActivityReader({
+      registry,
+      queueDirectory,
+      projectRevision: (snapshot) => adapter.revisions.observeProject(snapshot),
+      ...(storage.openCodePresenceDirectory !== undefined
+        ? { openCodePresenceDirectory: storage.openCodePresenceDirectory }
+        : {}),
+    }),
     projectRevision: (snapshot) => adapter.revisions.observeProject(snapshot),
     publishProjectChange: (snapshot) =>
       adapter.revisions.publishProjectCommit(snapshot),

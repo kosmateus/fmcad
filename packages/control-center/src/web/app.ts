@@ -1093,8 +1093,9 @@ export class ControlCenterApp {
         "search" | "filters" | "sort" | "offset" | "limit" | "facetFields"
       >
     > = {},
-  ): Promise<void> {
-    if (this.#listeners.signal.aborted || !target.snapshotToken) return;
+  ): Promise<"complete" | "expired" | "superseded"> {
+    if (this.#listeners.signal.aborted || !target.snapshotToken)
+      return "superseded";
     const request: QueryRequest = {
       version: API_VERSION,
       scope: target.scope,
@@ -1106,13 +1107,16 @@ export class ControlCenterApp {
     this.#querySerial[collection] = serial;
     try {
       const page = await this.#api.query<Row>(request);
-      if (this.#querySerial[collection] !== serial) return;
+      if (this.#querySerial[collection] !== serial) return "superseded";
       target.pages[collection] = page;
       delete target.errors[collection];
     } catch (error) {
-      if (this.#querySerial[collection] !== serial) return;
+      if (this.#querySerial[collection] !== serial) return "superseded";
       target.errors[collection] = this.#error(error);
+      if (error instanceof ConsoleApiError && error.code === "SNAPSHOT_EXPIRED")
+        return "expired";
     }
+    return "complete";
   }
 
   async #loadChartRows(target: LoadState, capturedAt: number): Promise<void> {
@@ -1278,8 +1282,22 @@ export class ControlCenterApp {
           ? "agents"
           : "tasks";
     const options = this.#tableOptions(collection);
-    void this.#query(state, collection, options).then(() => {
-      if (this.#latest !== state) return;
+    void this.#query(state, collection, options).then((outcome) => {
+      if (
+        this.#latest !== state ||
+        this.#listeners.signal.aborted ||
+        outcome === "superseded"
+      )
+        return;
+      if (outcome === "expired") {
+        // A retained table token may expire while the user inspects details.
+        // Acquire one fresh snapshot and apply the current filters. The full
+        // load reports any further error; it does not recursively retry.
+        void this.#load(this.#scope, true).then(() => {
+          if (!this.#listeners.signal.aborted) this.#watch();
+        });
+        return;
+      }
       if (!this.#frozen) this.#visible = state;
       this.#latest = state;
       this.#render();

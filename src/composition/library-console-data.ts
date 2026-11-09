@@ -3,7 +3,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { parseFlags } from "../entrypoints/cli/parser";
 import { findCommand } from "./library-commands";
-import type { ConsoleSnapshot } from "../../packages/core/src";
+import type { ConsoleSnapshot } from "@fmcad/core";
 import type { SnapshotOptions } from "../../packages/node-adapters/src/console/snapshots";
 import type { LogCursor } from "../../packages/node-adapters/src/console/logs";
 const load = createRequire(__filename);
@@ -23,7 +23,7 @@ const {
   projectConsoleOperation,
   redactDiagnostic,
   formatJsonError,
-} = load("../core") as typeof import("../../packages/core/src");
+} = load("../core") as typeof import("@fmcad/core");
 const { createSnapshotReaders } = load(
   "../node-adapters/console/snapshots",
 ) as typeof import("../../packages/node-adapters/src/console/snapshots");

@@ -20,7 +20,7 @@ wait for this ledger.
 | Inspect/stop/restart/reload terminal administration | A/E retained administrative interfaces | Explicit supported-command mapping or retirement decision required; do not invent a second HTTP restart implementation |
 | Console mouse/cell painting, terminal layout and scrolling | Browser responsive/accessibility controls | Chromium desktop/mobile, keyboard/modal navigation and 25 locales; terminal cell-size assertions retire only after replacement acceptance |
 | Demo data and static presentation | Isolated browser test fixture | No fixture injected into production composition; production tests use registered SQLite histories |
-| Project monitoring/archive and alias | Registry/SQLite actions | Alias/restore verified; archive remains unavailable until A provides shared activity fencing, never inferred from idle telemetry |
+| Project monitoring/archive and alias | Registry/SQLite actions | Alias/restore verified; archive now uses the shared SQLite admission/presence fence with live owner and full-state proofs; legacy/unqualified sources remain unavailable |
 
 ## Test disposition
 
@@ -122,3 +122,12 @@ Focused local result after candidate preparation: 28 tests, 26 pass, two existin
 optional formatter-library skips, no failures. CI browser acceptance, complete
 package build and dependency removal remain final integration gates; this local
 result does not qualify native Fusion or claim a successful Chromium run.
+
+
+The 2026-11-09 continuation moves the retained domain suites to strict TypeScript
+and completes production archive fencing. See F_UI_LEDGER.md for the current
+reader, real broker IPC and competing-process evidence. Browser snapshot expiry
+now refreshes the selected table filter once; translated copy/navigation actions
+retain independent semantic assertions. Terminal paint assertions remain retired
+according to the mapping above; no artifact ownership, response identity, read
+bound, false/zero, unknown outcome or no-replay assertion was removed.

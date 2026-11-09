@@ -224,3 +224,54 @@ parallel local intervals, wall-clock adjustment, restart uncertainty and sample
 bounds. All 17 existing telemetry tests pass; core/node/API compilation passes.
 Full fresh build reached devtools tests and browser assets, then hit unrelated
 `tests/data_import.test.ts` duplicate `require` declaration (reported to owner).
+
+
+### Current continuation: typed boundaries and authoritative archive (2026-11-09)
+
+The five small console runtime facades now delegate to strict typed host
+composition; domain, bounded artifact, event correlation, response, source,
+offline retention, metrics and installed-composition cases retain their original
+assertions in TypeScript. The local focused runs executed 40 passing cases with
+no skips (26 domain/artifact cases, eight read-model cases, six metrics/offline/
+snapshot/installed-composition cases). The source formatter suite remains a
+supported-Ubuntu check: both the exact dce47c5 predecessor and the migrated suite
+fail the same three Python preflight expectations on Debian 13; the platform
+fence and expected behavior are unchanged.
+
+Project archival is now wired to the production passive activity reader while
+holding the existing SQLite writer fence. It verifies the current live broker
+PID/birth/nonce, registry capability, full durable queue, retained jobs and
+complete client/OpenCode/legacy-direct observations. Admission and presence
+publication use that same fence. Missing/legacy capability, unknown ownership,
+partial state, pending queue commits and uncertain activity still refuse the
+mutation. Closed fenced writers and confirmed dead process identities cannot
+resurrect monitoring. Source freshness is measured at the fenced read and checked
+after observation; the event-driven diagnostics timestamp is not a heartbeat.
+
+Seven reader/archive cases passed, including separate competing admission and
+archive processes using the actual registration and SQLite locks. Archive fails
+promptly without a lifecycle change during contention; admission takes effect
+only after the fence releases, and a later successful archive blocks subsequent
+admission. A real broker IPC case then archived through the production reader and
+ProjectActions, verified both lifecycle records, preserved the original receipt
+lookup, and rejected a new request without repeating a physical operation.
+
+Chromium is usable with the managed environment's approved local-server/process
+execution path. The new snapshot-expiry regression passed: a table filter obtains
+one fresh snapshot, preserves the selected filter and rejects the old rows. A
+long interaction trace also exposed transposed copy-entry/back-to-task translated
+row keys. Their mapping and independent Polish/German semantic checks were fixed;
+the copy behavior assertion is retained. Final complete browser acceptance and
+exact-head CI are recorded by the integration owner after the rerun, rather than
+inferred from these focused results. These are offline proofs, not native Fusion
+qualification.
+
+
+C completed the two larger retained-test migrations in 03376ae:
+`console-telemetry` preserves all 259 original assertions (plus two narrowing
+checks) and executes 17 passing cases against both dce47c5 and current code.
+`control-center-browser-bundle` preserves its four cases, all 53 assertions and
+the byte-identical VM/installed-runtime source harness. Strict compilation and
+lint pass; the full packaging/browser-bundle run awaits the stable integration
+slot. E owns the six remaining service/pause/data/root-service/interface/client
+presence test migrations.

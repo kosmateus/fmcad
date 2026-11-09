@@ -1,13 +1,16 @@
-"use strict";
+import { createRequire } from "node:module";
+const load = createRequire(
+  path.join(process.cwd(), "tests/control-center-root-composition.test.js"),
+);
 
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const os = require("node:os");
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 
 test("installed root stages the trusted service entrypoint and verified static composition", async (t) => {
-  const installation = path.join(__dirname, "..", "dist");
+  const installation = path.join(process.cwd(), "dist");
   for (const relative of [
     "src/dist/control-center/resources/static-assets.js",
     "src/dist/control-center/server/process-main.js",
@@ -20,9 +23,9 @@ test("installed root stages the trusted service entrypoint and verified static c
       `${relative} was not emitted/staged`,
     );
 
-  const rootComposition = require(
+  const rootComposition = load(
     path.join(installation, "src/dist/composition/control-center.js"),
-  );
+  ) as typeof import("../src/composition/control-center");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-root-read-model-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const composition = rootComposition.createControlCenterComposition(
@@ -40,7 +43,8 @@ test("installed root stages the trusted service entrypoint and verified static c
       openCodePresenceDirectory: path.join(root, "presence"),
     },
   );
-  t.after(() => composition.close());
+  t.after(() => composition.close?.());
+  assert.ok(composition.assets);
   assert.equal(composition.assets.length, 33);
   for (const module of [
     "web/agents-projects.js",
@@ -67,9 +71,10 @@ test("installed root stages the trusted service entrypoint and verified static c
     { kind: "global" },
     principal,
   );
+  assert.ok("scope" in snapshot);
   assert.equal(snapshot.scope.kind, "global");
   assert.ok(snapshot.snapshotToken);
   assert.equal(fs.existsSync(path.join(root, "registry")), false);
   assert.equal(fs.existsSync(path.join(root, "queue")), false);
-  await composition.close();
+  await composition.close?.();
 });

@@ -210,8 +210,8 @@ const ALIASES: Partial<Record<AppExtraMessageKey, string>> = {
 const TEXT_KEYS = [
   "ui.page.projects.description",
   "ui.modal.backToEvent",
-  "ui.modal.backToTask",
   "ui.modal.copyEntry",
+  "ui.modal.backToTask",
   "ui.modal.close",
   "ui.modal.relatedTask",
   "ui.modal.task.title",
