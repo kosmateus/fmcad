@@ -70,3 +70,7 @@ Add `appearances` as the seventeenth supported model family, with the same MCP/a
 and concurrency 1/2/10 broker matrix. Unit tests also cover lost-copy recovery without
 replay, foreign-document IDs, closed/library writes and assertion-failure cleanup.
 Native visual/texture/assignment qualification is not covered by this registration.
+
+Add `style-assignments` as the eighteenth required supported model family on the
+same MCP/addin broker matrix at concurrency 1/2/10. Native inherited materials,
+physical mass and face/occurrence overrides remain outside this bounded capability.

@@ -456,6 +456,12 @@ class Component(core.Base):
         self.zConstructionAxis: ConstructionAxis = ConstructionAxis(core.Vector3D(0, 0, 1))
 
     @property
+    def allOccurrences(self) -> core.Collection[Occurrence]:
+        if self.occurrences.count:
+            raise NotImplementedError("Assembly-context occurrence enumeration is not modeled")
+        return core.Collection()
+
+    @property
     def attributes(self) -> core.Attributes:
         return self.model_attributes
 

@@ -129,6 +129,7 @@ export const simulatorCapabilities = new Set([
   "animation-sequence",
   "material-metadata",
   "appearance-metadata",
+  "body-style-assignment",
   "cad-commands",
   "parameter-crud",
   "parameter-expressions",

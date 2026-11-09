@@ -90,6 +90,11 @@
           "id": "appearances",
           "scope": "owned-document",
           "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite appearances --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "style-assignments",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite style-assignments --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
         }
       ]
     },

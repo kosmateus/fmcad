@@ -785,7 +785,7 @@ class Application(Base):
     _instance: ClassVar[Application | None] = None
 
     def __init__(self) -> None:
-        self.version: str = "fmcad-simulator-v16-not-Fusion"
+        self.version: str = "fmcad-simulator-v17-not-Fusion"
         self.activeDocument: Document | None = None
         self.documents: Documents = Documents(self)
         self.userInterface: UserInterface = UserInterface()

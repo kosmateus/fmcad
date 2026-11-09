@@ -571,3 +571,46 @@ the test to the documented Application.materialLibraries made both failing check
 pass without changing model behavior. Three profile-registration checks and the
 individual-disposition gate pass. The broader nontransaction regression is running;
 required transaction tests remain failing for the documented production blocker.
+
+## Appearance validation and body style assignment follow-up
+
+PR #98 (`282e596`) contains the appearance metadata prefix. All 235 nontransaction
+scenario tests pass, including the final corrected guard tests. Required positive
+transaction tests remain excluded only from this explicitly scoped local result;
+they stay required in full CI. The immutable material production-checker profiles
+at `ce0cef6` pass through MCP and addin with complete cleanup and matching source
+hash `5ca23a95aeba40fd96d4e8fe602f3fedb4f6ed759aa67a0b952e27a9a4727734`.
+The appearance production-checker profiles now run at immutable `282e596`.
+
+The next shared family retains the style suite's 4 x 5 x 6 mm box, appearance
+assignment/map and material assignment/map counts/IDs, and renamed local appearance
+list check. Both backends use the same steps. Independent body getters, 120 mm3
+volume and saved revision/reopen add readback evidence. Local resources must belong
+to the exact design. The model supports explicit root-body assignment only; library
+or foreign resources, override clearing, inheritance and nonempty assembly-context
+enumeration remain unsupported. This is not a claim of native material density,
+mass, face/occurrence overrides or rendered appearance. The historical texture
+probe remains a separately open obligation and is not replaced by canned output.
+
+
+The assertion ledger now has 157 reviewed mappings (156 current sites plus one
+removed predecessor assertion), including 18 native-solid obligations. Thirteen
+body-assignment assertions are mapped individually. Strict typing is clean and the
+pinned API verifier covers 75 methods and 70 accessors. Required-model registration
+contains 18 bounded families; none of these counts marks B1–B4 complete.
+
+CI #90 at `55a31a8` also fails both contract jobs; all other 20 jobs pass. The decoded
+Node 24 log (job 128986990913, run 42564190010) shows seven transaction failures with
+the same explicit unknown command outcome. This reinforces the existing blocker;
+no dependent branch is eligible to merge.
+
+Focused assignment validation: all six transport/concurrency combinations (28
+saved fixtures), both lost-assignment recovery cases, foreign body-token isolation
+and assertion-failure cleanup pass. The guard test initially used an existing
+session directory and omitted the required box name; after fixing its setup, the
+foreign/library/closed-target checks pass without changing model behavior. Four
+registration/disposition tests also pass. The final nontransaction regression is
+running on the corrected sources; the earlier 10/11 test run is not called green.
+The immutable appearance MCP component profile passes with complete cleanup and
+matching source hash `1c169b45a431d83e306c93653ed48e53d3385c949515feb0a7eb832c6eabeb44`;
+its addin profile is running. Full CI remains the mandatory merge gate.

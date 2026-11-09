@@ -381,10 +381,53 @@ class BRepBody(core.Base):
         self.model_bounds: core.BoundingBox3D = bounds
         self.name: str = "Body" + str(feature.model_component.bRepBodies.count + 1)
         self.model_light_bulb: bool = True
+        self.model_appearance: core.Appearance | None = None
+        self.model_material: core.Material | None = None
         self.objectType: str = "adsk::fusion::BRepBody"
         self.parentComponent: fusion.Component = feature.model_component
         self.entityToken: str = "model-body:" + str(uuid.uuid4())
         self.attributes: core.Attributes = core.Attributes(self.parentComponent.model_design.model_doc)
+
+    def model_style_target(self) -> None:
+        design = self.parentComponent.model_design
+        if not design.model_doc.isValid or not self.model_active:
+            raise ValueError("Style target is closed or rolled back")
+        if self.parentComponent is not design.rootComponent:
+            raise NotImplementedError("Only explicit root-body style assignments are modeled")
+
+    @property
+    def appearance(self) -> core.Appearance | None:
+        self.model_style_target()
+        return self.model_appearance
+
+    @appearance.setter
+    def appearance(self, value: core.Appearance | None) -> None:
+        self.model_style_target()
+        design = self.parentComponent.model_design
+        if value is None:
+            raise NotImplementedError("Clearing overrides and inherited appearance are not modeled")
+        value.model_valid()
+        if value.parent is not design:
+            raise ValueError("Appearance must belong to the target design")
+        self.model_appearance = value
+        design.model_doc.isModified = True
+
+    @property
+    def material(self) -> core.Material | None:
+        self.model_style_target()
+        return self.model_material
+
+    @material.setter
+    def material(self, value: core.Material | None) -> None:
+        self.model_style_target()
+        design = self.parentComponent.model_design
+        if value is None:
+            raise NotImplementedError("Inherited physical material is not modeled")
+        value.model_valid()
+        if value.parent is not design:
+            raise ValueError("Material must belong to the target design")
+        self.model_material = value
+        design.model_doc.isModified = True
 
     @property
     def isLightBulbOn(self) -> bool:

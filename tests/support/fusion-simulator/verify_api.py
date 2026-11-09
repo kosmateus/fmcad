@@ -30,7 +30,8 @@ METHODS: dict[str, dict[str, list[str]]] = {
 }
 
 PARAMETER_PROPERTIES = ["name", "expression", "value", "unit", "comment"]
-PROPERTIES = [("core", "Appearance", "core", "Appearance", ["id", "name", "parent", "appearanceProperties"]),
+PROPERTIES = [("fusion", "BRepBody", "fusion", "BRepBody", ["appearance", "material"]),
+              ("fusion", "BaseComponent", "fusion", "Component", ["allOccurrences"]),("core", "Appearance", "core", "Appearance", ["id", "name", "parent", "appearanceProperties"]),
               ("core", "MaterialLibrary", "core", "MaterialLibrary", ["appearances"]),
               ("fusion", "Design", "fusion", "Design", ["appearances"]), ("core", "Material", "core", "Material", ["id", "name", "description", "parent", "materialProperties"]),
               ("core", "MaterialLibrary", "core", "MaterialLibrary", ["id", "name", "materials"]),

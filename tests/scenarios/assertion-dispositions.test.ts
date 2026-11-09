@@ -80,6 +80,7 @@ test("reviewed assertion mappings name retained individual assertions and real e
         "document-lifecycle",
         "material-metadata-*",
         "appearance-metadata-*",
+        "body-style-assignment-*",
         "parameter-crud",
         "construction-planes",
         "component-tree",

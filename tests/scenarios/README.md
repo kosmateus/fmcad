@@ -187,3 +187,8 @@ selection by actual ID, copy, rename and nullable projection-read prefix. The sa
 steps and assertions run on both backends; independent metadata and revision/reopen
 checks use owned saved files. Texture and assignment checks from the remainder of
 live-design-styles remain open. Model null projection means absent fixture data.
+
+`--suite style-assignments` covers explicit local appearance/material assignment to
+the historical 4 x 5 x 6 mm root body, exact map IDs/counts and renamed list entry.
+It independently checks getter identity and volume before and after owned reopen.
+It does not cover texture probes, inherited defaults, mass or instance overrides.

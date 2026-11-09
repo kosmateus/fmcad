@@ -210,3 +210,15 @@ projection algorithm, rendered image, assignment or inheritance is simulated.
 Local resources persist in the supported saved graph and rebind to the reopened
 document. Library writes and writes through a closed document are refused.
 Native copy/rename/projection/persistence remain explicitly unqualified.
+
+## Explicit root-body styles (v17)
+
+Root bodies accept exact design-local Appearance and Material resources. Their
+independent getters retain these references across supported saved revisions.
+The initial null getters mean no modeled assignment, not a claim that native
+Fusion has no default physical material. No density/mass or inherited visual state
+is supplied. Foreign/library resource setters, closed or rolled-back targets,
+nonroot bodies and override clearing are refused. Empty allOccurrences is valid
+only for an actually empty assembly; nonempty context enumeration is unsupported.
+The pinned BaseComponent accessor supplies the inherited API shape. Actual native
+resource/getter/persistence behavior is still a qualification assumption.

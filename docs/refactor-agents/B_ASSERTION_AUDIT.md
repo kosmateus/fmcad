@@ -25,7 +25,7 @@ in full but their immediate-predecessor semantic comparisons remain outstanding.
 
 ## Required profile manifest
 
-`tests/live-required-profiles.json` separates sixteen registered shared model families,
+`tests/live-required-profiles.json` separates eighteen registered shared model families,
 required retained native obligations and diagnostic helpers/external fixtures.
 `node tests/run-live.js --list-profiles` lists it without contacting Fusion.
 Native commands are qualification entrypoints, not authorization to run unconverted
@@ -121,3 +121,15 @@ Reviewed non-port changes:
 These findings do not increase the 79 shared semantic mappings or close B1.
 No old source, expected geometry, ownership guard or runtime failure was removed
 by this audit. Native execution and complete per-assertion disposition remain open.
+
+
+## Current disposition checkpoint — local styles
+
+The ledger now has 157 reviewed mappings: 138 current shared assertion sites,
+18 explicitly blocked native-solid sites and one removed predecessor assertion.
+Twelve appearance metadata and thirteen explicit body-assignment checks preserve
+individual historical expressions. The 3,551 remaining current static sites still
+need semantic disposition; wrapper sites overlap and these are not runtime coverage
+percentages. Required-model registration contains 18 families, with transactions
+still blocked by the production settlement contract. Texture, inherited styles,
+physical mass and complete style-suite wrapper/cleanup equivalence remain open.

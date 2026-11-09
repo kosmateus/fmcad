@@ -1546,6 +1546,188 @@
       "evidence": "tests/scenarios/appearance-cases.ts",
       "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
       "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "e1bb308b091bedc9fa42-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "1caf9208869bfe43edcc-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "c9c392f5ca4ec67150a6-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "a02333227623f0a26534-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "7b3be97a35813f6c0be0-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "313ffe58c3ddc5a28f03-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "f38f8f997cc078130f45-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "93a36f0614814b0e3fd1-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "c8cde89f8aa819307fed-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "1d0f305f5fe05ee1a0a9-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "cf815603817003eaf35a-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "d9ad543b56bca477b556-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "2046aec5754310af69b1-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
     }
   ]
 }
