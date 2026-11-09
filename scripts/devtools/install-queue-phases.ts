@@ -53,17 +53,193 @@ const RUNTIME_FILES = [
   "src/queue-client.js",
   "src/queue-cli.js",
   "src/queue-connection.js",
+  "src/queue-worker.js",
+  "src/queue-autostart-worker.js",
   "src/review.js",
   "src/i18n.js",
 ];
 const TEST_FILES = [
-  "tests/recovery-isolation.test.js",
-  "tests/phased-queue.test.js",
-  "tests/build-preflight-rejection.test.js",
-  "tests/upstream-queue-regressions.test.js",
-  "tests/install-queue-phases.test.js",
-  "tests/idle-build-refresh.test.js",
+  "dist/tests/recovery-isolation.test.js",
+  "dist/tests/phased-queue.test.js",
+  "dist/tests/build-preflight-rejection.test.js",
+  "dist/tests/upstream-queue-regressions.test.js",
+  "dist/tests/install-queue-phases.test.js",
+  "dist/tests/idle-build-refresh.test.js",
 ];
+/** A staged candidate contains executable compiler output and its retained
+ * data fixtures. Never traverse private state, worktrees or node_modules. */
+export function stagedFiles(root: string, trees: readonly string[]): string[] {
+  const files: string[] = [];
+  function visit(name: string): void {
+    const file = checkedPath(root, name);
+    const entry = fs.lstatSync(file);
+    if (entry.isDirectory()) {
+      for (const child of fs.readdirSync(file).sort()) {
+        if (["node_modules", ".git", ".cad", ".beads"].includes(child)) continue;
+        visit(name + "/" + child);
+      }
+    } else if (entry.isFile()) {
+      if (
+        (!/\.[cm]?ts$/.test(name) || name.endsWith(".d.ts")) &&
+        !name.endsWith(".map")
+      )
+        files.push(name);
+    } else throw failure("INVALID_STAGE", "Unsupported staged file: " + name);
+  }
+  for (const tree of trees)
+    if (fs.existsSync(path.join(root, tree))) visit(tree);
+  return files.sort();
+}
+export function checkedPath(root: string, relative: string): string {
+  if (
+    !relative ||
+    relative.includes("\\") ||
+    path.isAbsolute(relative) ||
+    relative.split("/").some((part) => !part || part === "." || part === "..")
+  )
+    throw failure("INVALID_STAGE", "Invalid relative staged path: " + relative);
+  let file = path.resolve(root);
+  for (const part of relative.split("/")) {
+    file = path.join(file, part);
+    if (fs.existsSync(file) && fs.lstatSync(file).isSymbolicLink())
+      throw failure("INVALID_STAGE", "Symlink in staged path: " + relative);
+  }
+  return file;
+}
+export function testEntrypoints(root: string): string[] {
+  return TEST_FILES.map((file) => {
+    if (fs.existsSync(checkedPath(root, file))) return file;
+    const retained = file.replace(/^dist\//, "");
+    // Older complete stages may still contain the original JavaScript suite.
+    // A canonical TypeScript source must have compiled output; never execute it
+    // or silently select a stale JavaScript sibling.
+    if (
+      !fs.existsSync(checkedPath(root, retained.replace(/\.js$/, ".ts"))) &&
+      fs.existsSync(checkedPath(root, retained))
+    )
+      return retained;
+    throw failure("INVALID_STAGE", "Missing compiled regression: " + file);
+  });
+}
+function hostClosure(root: string, seeds: readonly string[]): string[] {
+  const files = new Set(seeds),
+    pending = [...seeds];
+  while (pending.length) {
+    const relative = pending.pop()!;
+    if (!/\.(?:c?js|mjs)$/.test(relative)) continue;
+    const text = fs.readFileSync(checkedPath(root, relative), "utf8");
+    const names = new Set(
+      [
+        ...text.matchAll(
+          /(?:require|runtimeRequire|load)\s*\(\s*["'](\.{1,2}\/[^"']+)["']\s*\)/g,
+        ),
+      ].map((match) => match[1]!),
+    );
+    for (const match of text.matchAll(
+      /require\(path\.join\(__dirname,\s*["']([^"']+)["']\s*\)/g,
+    ))
+      names.add(match[1]!);
+    for (const name of names) {
+      const bases = [
+        path.resolve(root, path.dirname(relative), name),
+        path.resolve(root, "src", name),
+      ];
+      const resolved = bases
+        .flatMap((base) => [
+          base,
+          base + ".js",
+          base + ".cjs",
+          base + ".json",
+          path.join(base, "index.js"),
+        ])
+        .filter(
+          (file) =>
+            file.startsWith(path.resolve(root) + path.sep) &&
+            fs.existsSync(file) &&
+            fs.lstatSync(file).isFile(),
+        );
+      if (!resolved.length)
+        throw failure(
+          "INVALID_STAGE",
+          "Missing relative runtime dependency: " + relative + " -> " + name,
+        );
+      for (const file of resolved) {
+        const dependency = path.relative(root, file).split(path.sep).join("/");
+        checkedPath(root, dependency);
+        // Package metadata is supplied by the baseline installation. This
+        // bounded phase installer does not upgrade external dependencies.
+        if (dependency === "package.json" || files.has(dependency)) continue;
+        files.add(dependency);
+        pending.push(dependency);
+      }
+    }
+  }
+  return [...files].sort();
+}
+export function candidateFiles(root: string): {
+  runtime: string[];
+  tests: string[];
+} {
+  const runtime = [
+    ...new Set([
+      ...hostClosure(root, [
+        ...RUNTIME_FILES,
+        // Catalog providers are selected by name at runtime. Preserve this
+        // existing composition's declared dynamic module set as well.
+        ...[
+          "data-import",
+          "entity-query",
+          "sketch",
+          "datum",
+          "curve",
+          "surface",
+          "reference",
+          "drawing-package",
+          "drawing-check",
+          "drawing-export",
+          "spring",
+          "thread",
+          "cam",
+          "seal",
+          "fastener",
+          "feature-rework",
+          "ui",
+          "references-refresh",
+          "document-publication",
+          "externalization",
+        ]
+          .map((name) => "src/" + name + ".js")
+          .filter(
+            (file) =>
+              fs.existsSync(
+                checkedPath(
+                  root,
+                  "src/dist/composition/library-catalog-registry.js",
+                ),
+              ) || fs.existsSync(checkedPath(root, file)),
+          ),
+        ...stagedFiles(root, ["src/catalog"]),
+      ]),
+      ...stagedFiles(root, [
+        "src/dist",
+        "bin",
+        "dist/bin",
+        "dist/processes",
+        "assets",
+        "dist/runtime",
+        "dist/scripts",
+        "scripts",
+      ]),
+    ]),
+  ].sort();
+  const tests = [
+    ...new Set([
+      ...testEntrypoints(root),
+      ...stagedFiles(root, ["tests", "dist/tests"]),
+    ]),
+  ].sort();
+  return { runtime, tests };
+}
 const sha = (bytes: Buffer): string =>
   createHash("sha256").update(bytes).digest("hex");
 const terminal = (state: unknown): boolean =>
@@ -94,8 +270,21 @@ export function archiveFiles(file: string): Map<string, Buffer> {
       throw failure("INVALID_ARCHIVE", "Invalid npm baseline archive");
     }
     const type = header[156];
-    if (type === 0 || type === 48)
+    if (
+      !name ||
+      name.includes("\\") ||
+      path.isAbsolute(name) ||
+      name
+        .replace(/\/$/, "")
+        .split("/")
+        .some((part) => !part || part === "." || part === "..")
+    )
+      throw failure("INVALID_ARCHIVE", "Invalid archive path: " + name);
+    if (type === 0 || type === 48) {
+      if (result.has(name))
+        throw failure("INVALID_ARCHIVE", "Duplicate archive file: " + name);
       result.set(name, tar.subarray(offset + 512, offset + 512 + size));
+    }
     offset += 512 + Math.ceil(size / 512) * 512;
   }
   return result;
@@ -108,9 +297,10 @@ export function inspectSources(
 ): Array<Record<string, unknown>> {
   const baseline = archiveFiles(archive);
   const files: Array<Record<string, unknown>> = [];
-  for (const name of [...RUNTIME_FILES, ...TEST_FILES]) {
-    const staged = path.join(stage, name);
-    const target = path.join(root, name);
+  const manifest = candidateFiles(stage);
+  for (const name of [...manifest.runtime, ...manifest.tests]) {
+    const staged = checkedPath(stage, name);
+    const target = checkedPath(root, name);
     if (!fs.lstatSync(staged).isFile())
       throw failure("INVALID_STAGE", `Missing staged file: ${name}`);
     const current = fs.existsSync(target) ? fs.readFileSync(target) : null;
@@ -266,7 +456,7 @@ export async function install(
       if (beforeSha256)
         atomicFile(
           path.join(backup, name),
-          fs.readFileSync(path.join(root, name)),
+          fs.readFileSync(checkedPath(root, name)),
           0o600,
         );
     }
@@ -276,7 +466,7 @@ export async function install(
       for (const file of files) {
         const name = stringField(file, "name");
         const beforeSha256 = stringOrNullField(file, "beforeSha256");
-        const target = path.join(root, name);
+        const target = checkedPath(root, name);
         const current = fs.existsSync(target)
           ? sha(fs.readFileSync(target))
           : null;
@@ -285,8 +475,14 @@ export async function install(
             "CONCURRENT_SOURCE_CHANGE",
             `File changed immediately before installation: ${name}`,
           );
+        const next = fs.readFileSync(checkedPath(stage, name));
+        if (sha(next) !== stringField(file, "afterSha256"))
+          throw failure(
+            "CONCURRENT_SOURCE_CHANGE",
+            "Staged file changed before installation: " + name,
+          );
         applied.push(file);
-        atomicFile(target, fs.readFileSync(path.join(stage, name)));
+        atomicFile(target, next);
       }
       report["state"] = "installed";
       report["afterBuildHash"] = buildHash(root);
@@ -298,7 +494,7 @@ export async function install(
           const name = stringField(file, "name");
           const beforeSha256 = stringOrNullField(file, "beforeSha256");
           const afterSha256 = stringField(file, "afterSha256");
-          const target = path.join(root, name);
+          const target = checkedPath(root, name);
           const current = fs.existsSync(target)
             ? sha(fs.readFileSync(target))
             : null;

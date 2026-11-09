@@ -8,12 +8,13 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 const stage = path.resolve(__dirname, "../..");
 const load = createRequire(path.join(stage, "package.json"));
-const { RUNTIME_FILES, archiveFiles, install } = load(
-  path.join(
-    process.env["FMCAD_UPSTREAM_TEST_ROOT"] || stage,
-    "scripts/install-queue-phases",
-  ),
-) as typeof import("../scripts/devtools/install-queue-phases");
+const { RUNTIME_FILES, TEST_FILES, candidateFiles, archiveFiles, install } =
+  load(
+    path.join(
+      process.env["FMCAD_UPSTREAM_TEST_ROOT"] || stage,
+      "scripts/install-queue-phases",
+    ),
+  ) as typeof import("../scripts/devtools/install-queue-phases");
 function record(value: unknown): Record<string, unknown> {
   assert.ok(
     value !== null && typeof value === "object" && !Array.isArray(value),
@@ -92,6 +93,100 @@ function fixture(t: TestContext) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return { root, dir, stage, archive };
 }
+
+function stagedFixture(root: string): string {
+  const stage = path.join(root, "candidate");
+  for (const file of [...RUNTIME_FILES, ...TEST_FILES]) {
+    const target = path.join(stage, file);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, "// compiled fixture: " + file + "\n");
+  }
+  return stage;
+}
+
+test("the candidate manifest retains compiled dependencies and fixtures without unrelated state", (t) => {
+  const f = fixture(t),
+    candidate = stagedFixture(f.root);
+  const entries = [
+    "src/dist/node-adapters/execution/phased-workers.js",
+    "dist/runtime/python/typing/checker-project.py",
+    "dist/scripts/devtools/runtime.js",
+    "tests/fixtures/receipt.json",
+    "dist/tests/fixtures/typed-fixture.cjs",
+  ];
+  for (const file of [
+    ...entries,
+    ".cad/private.json",
+    "node_modules/private.js",
+    "src/unrelated-user.js",
+    "tests/uncompiled.test.ts",
+  ]) {
+    const target = path.join(candidate, file);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, "fixture");
+  }
+  const manifest = candidateFiles(candidate);
+  assert.deepEqual(candidateFiles(candidate), manifest);
+  const files = [...manifest.runtime, ...manifest.tests];
+  for (const file of entries) assert.ok(files.includes(file), file);
+  for (const file of [
+    ".cad/private.json",
+    "node_modules/private.js",
+    "src/unrelated-user.js",
+    "tests/uncompiled.test.ts",
+  ])
+    assert.equal(files.includes(file), false, file);
+  fs.symlinkSync(
+    path.join(candidate, ".cad/private.json"),
+    path.join(candidate, "src/dist/escaped.json"),
+  );
+  assert.throws(() => candidateFiles(candidate), { code: "INVALID_STAGE" });
+});
+
+test("changed staged bytes refuse publication and restore already applied files", async (t) => {
+  const f = fixture(t),
+    candidate = stagedFixture(f.root);
+  const before = Object.fromEntries(
+    RUNTIME_FILES.filter((file) => fs.existsSync(path.join(f.root, file))).map(
+      (file) => [file, hash(path.join(f.root, file))],
+    ),
+  );
+  const rename = fs.renameSync;
+  let injected = false;
+  fs.renameSync = function (from, to) {
+    const result = rename.call(this, from, to);
+    if (
+      !injected &&
+      String(from).endsWith(".install") &&
+      String(to).startsWith(path.join(f.root, "assets"))
+    ) {
+      injected = true;
+      fs.appendFileSync(
+        path.join(candidate, "src/i18n.js"),
+        "// later stage mutation\n",
+      );
+    }
+    return result;
+  };
+  try {
+    await assert.rejects(
+      install({
+        ...f,
+        stage: candidate,
+        apply: true,
+        control: async () => assert.fail("No broker exists"),
+      }),
+      { code: "CONCURRENT_SOURCE_CHANGE" },
+    );
+  } finally {
+    fs.renameSync = rename;
+  }
+  assert.equal(injected, true);
+  for (const [file, digest] of Object.entries(before))
+    assert.equal(hash(path.join(f.root, file)), digest);
+  assert.equal(fs.existsSync(path.join(f.root, "src/queue-phased.js")), false);
+  assert.equal(fs.existsSync(path.join(f.dir, "recovery.lock")), false);
+});
 
 test("installation refuses a foreign active/unknown lease without stopping or editing anything", async (t) => {
   const f = fixture(t),

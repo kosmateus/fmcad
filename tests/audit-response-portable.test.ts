@@ -71,9 +71,9 @@ function fixture(t: test.TestContext) {
     return file;
   };
   const python = frozenSource(
-    frozen,
+    predecessor,
     "runtime/python/recovery/atomic_audit.py",
-  ).replaceAll("\n", "\r\n"); // Historical public source was packaged with CRLF.
+  ).replaceAll("\n", "\r\n"); // Public dce47c5 blob, packaged as the historical CRLF producer.
   const pythonFile = put("runtime/python/recovery/atomic_audit.py", python);
   const sourceHash = createHash("sha256").update(python).digest("hex");
   // This is an explicit synthetic host identity port, not an installed runtime

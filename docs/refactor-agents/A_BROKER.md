@@ -760,10 +760,14 @@ host module and its typed replacement; registration alone is not qualification.
 
 `audit-response-portable.test.ts` executes every case from the formerly gated
 `audit-response-proof.test.js` on both the immediate predecessor and typed proof
-reader. It uses the public frozen 843 audit producer and public Python source;
+reader. It uses the 843 audit producer already frozen in the public integration
+and the byte-identical Python source from public `dce47c5`;
 the explicit synthetic host identity port is only a fixture. Public Git LF bytes
 are deterministically packaged as CRLF, matching the original producer packaging.
-The public fixture manifest records the original Git source hash. No archived
+The Python fixture has public blob `19d48b968eba01bc65aabd4277553c6b994724bf`,
+matching `dce47c5:runtime/python/recovery/atomic_audit.py` exactly. The 843 historical
+label does not establish that the original 843 commit is publicly reachable.
+The public fixture manifest records the verified public Git source hash. No archived
 private runtime, credentials, ledger or environment files are included.
 
 | Original retained case | Portable executed case |
@@ -933,3 +937,20 @@ The engine was intercepted before spawn for that comparison; it proves unchanged
 analysis inputs, not accepted admission. The same pinned basedpyright executable
 also has the same SHA-256 in both checkouts. Actual Ubuntu CI remains required to
 qualify execution under the unchanged limits; local timing failure is not waived.
+
+The retained recovery-audit suite now has a strict TypeScript source. Its 61
+original assertions and nine declarations (13 expanded cases) remain, with two
+additional narrowing assertions; three assertions only replace untyped module or
+JSON access with the same typed boundary. The embedded wire programs, refusal
+expectations and deliberately partial administrative gate remain unchanged.
+
+The phase installer now inventories compiled regression entrypoints, reachable
+host modules, generated runtime/worker/CLI/devtool outputs and retained fixtures.
+Verification and export consume that same deterministic dependency manifest.
+Canonical TypeScript tests require their emitted files; an incomplete stage is
+refused. Private state and node_modules are excluded. Original quiescence,
+baseline conflict, startup fence and rollback behavior remain, with explicit path
+and staged-byte checks. Verification requires every reported case to pass with
+zero skips/cancellations. Existing installer tests plus manifest/symlink/stage
+mutation regressions must execute after central build5; build4 correctly refused
+the newly migrated but not yet emitted recovery-isolation suite.

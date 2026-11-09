@@ -383,7 +383,7 @@ test("export creates a candidate only under a supplied offline destination", (t)
   const report = {
     verified: true,
     testExitCode: 0,
-    counts: { fail: 0, pass: 3 },
+    counts: { fail: 0, pass: 3, tests: 3, cancelled: 0, skipped: 0 },
     runtime,
     afterBuildHash: "fixture-build",
     runtimeFiles: [{ path: "src/fixture.js", sha256: sha("verified bytes") }],
@@ -760,6 +760,28 @@ test("verification helpers hash only a fixture runtime and summarize controlled 
   assert.equal(report["verified"], true);
   assert.equal(report["installedRuntimeTested"], false);
   assert.equal(report["output"], output);
+  const skipped = verify.verifyQueuePhases(
+    { runtime },
+    {
+      installedRoot: installed,
+      outputDirectory: path.join(f.directory, "skipped-report"),
+      stateDirectory: state,
+      buildHash: () => "fixture-build",
+      spawn: () => ({
+        pid: 41,
+        output: [],
+        stdout: "# tests 2\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 1\n",
+        stderr: "",
+        status: 0,
+        signal: null,
+      }),
+    },
+  );
+  assert.equal(
+    skipped["verified"],
+    false,
+    "Registered but skipped cases do not qualify installation",
+  );
   assert.equal(
     JSON.parse(fs.readFileSync(path.join(output, "verification.json"), "utf8"))
       .fusionCalls,

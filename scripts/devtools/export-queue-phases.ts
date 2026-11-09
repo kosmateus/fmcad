@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { runtimeRequire, runtimeRoot, isRecord } from "./runtime.js";
+import { checkedPath, stagedFiles } from "./install-queue-phases.js";
 
 interface QueueInstanceModule {
   buildHash(root?: string): string;
@@ -17,7 +18,13 @@ interface ReportFile {
 interface VerificationReport extends Record<string, unknown> {
   verified: boolean;
   testExitCode: number;
-  counts: { fail: number; pass: number };
+  counts: {
+    fail: number;
+    pass: number;
+    tests: number;
+    cancelled: number;
+    skipped: number;
+  };
   runtime: string;
   afterBuildHash: string;
   runtimeFiles: ReportFile[];
@@ -65,6 +72,10 @@ export function exportQueuePhases(
     !report.verified ||
     report.testExitCode !== 0 ||
     report.counts.fail !== 0 ||
+    report.counts.tests < 1 ||
+    report.counts.pass !== report.counts.tests ||
+    report.counts.cancelled !== 0 ||
+    report.counts.skipped !== 0 ||
     currentBuildHash(report.runtime) !== report.afterBuildHash
   ) {
     throw new Error("Runtime no longer matches the passing verification");
@@ -88,11 +99,11 @@ export function exportQueuePhases(
   fs.mkdirSync(destination, { recursive: true, mode: 0o700 });
   const hashes: ReportFile[] = [];
   for (const item of [...report.runtimeFiles, ...report.testFiles]) {
-    const bytes = fs.readFileSync(path.join(report.runtime, item.path));
+    const bytes = fs.readFileSync(checkedPath(report.runtime, item.path));
     const digest = createHash("sha256").update(bytes).digest("hex");
     if (digest !== item.sha256)
       throw new Error(`Verified source changed: ${item.path}`);
-    const file = path.join(destination, "files", item.path);
+    const file = checkedPath(path.join(destination, "files"), item.path);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, bytes, { flag: "wx", mode: 0o600 });
     hashes.push(item);
@@ -117,6 +128,10 @@ export function exportQueuePhases(
       "docs/QUEUE_PHASES_20261020.md",
     ],
   ];
+  // The public launchers import compiled devtools and their runtime helper.
+  // Export those exact local dependencies alongside the launchers.
+  for (const relative of stagedFiles(projectRoot, ["dist/scripts"]))
+    copies.push([checkedPath(projectRoot, relative), relative]);
   for (const [source, name] of copies) {
     const target = path.join(destination, name);
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -190,9 +205,9 @@ export function main(args: string[]): void {
 function asVerificationReport(value: unknown): VerificationReport {
   if (
     !isRecord(value) ||
-    !isRecord(value.counts) ||
-    !Array.isArray(value.runtimeFiles) ||
-    !Array.isArray(value.testFiles)
+    !isRecord(value["counts"]) ||
+    !Array.isArray(value["runtimeFiles"]) ||
+    !Array.isArray(value["testFiles"])
   ) {
     throw new TypeError("Invalid verification report");
   }
