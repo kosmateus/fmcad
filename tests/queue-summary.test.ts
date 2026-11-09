@@ -1,13 +1,14 @@
 import { createRequire } from "node:module";
-const load = createRequire(
-  path.join(process.cwd(), "tests", "queue-summary.test.js"),
-);
-
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+
+const load = createRequire(
+  path.join(process.cwd(), "tests", "queue-summary.test.js"),
+);
+
 // Explicit fake physical backends require only synthetic WSL path spelling.
 test.beforeEach((t) =>
   (t as test.TestContext).after(

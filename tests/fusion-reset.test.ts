@@ -1,5 +1,13 @@
 import Module from "node:module";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+
 type ResetApi = typeof import("../src/fusion-reset");
 type ExecPort = (
   file: string,
@@ -57,16 +65,9 @@ interface Job {
   state: string;
   dispatch?: { rpcCount: number };
 }
-import { createRequire } from "node:module";
 const root = process.cwd();
 const load = createRequire(path.join(root, "tests", "fusion-reset.test.js"));
 
-import test from "node:test";
-import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { randomUUID } from "node:crypto";
 test.beforeEach((t) =>
   (t as test.TestContext).after(
     (load("./fixtures/fake-wsl-platform.cjs") as () => () => void)(),

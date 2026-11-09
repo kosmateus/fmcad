@@ -3,6 +3,13 @@ import type {
   RecoveryAuditPorts,
   AuditScope,
 } from "../packages/node-adapters/src/execution/recovery-audit";
+import { createRequire } from "node:module";
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+
 interface Epoch {
   root: string;
   epochId: string;
@@ -69,16 +76,10 @@ interface TestPorts {
   >;
   buildHash: string;
 }
-import { createRequire } from "node:module";
 const root = process.cwd();
 const load = createRequire(
   path.join(root, "tests", "closed-epoch-successor.test.js"),
 );
-import test from "node:test";
-import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
 const api = load("../src/queue-instance") as ReturnType<
   typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
 >;

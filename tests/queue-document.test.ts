@@ -1,3 +1,11 @@
+import { createRequire } from "node:module";
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+
 type Auth = { clientId: string; clientToken: string };
 type Job = {
   id: string;
@@ -10,16 +18,9 @@ type Job = {
   operationResult: { executionOutcome: string; mayHaveMutated: boolean };
 };
 type Result = { job: Job; stdout: string };
-import { createRequire } from "node:module";
 const load = createRequire(
   path.join(process.cwd(), "tests", "queue-document.test.js"),
 );
-import test from "node:test";
-import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { randomUUID } from "node:crypto";
 const { documentSelector, compareDocumentState } = load(
   "../src/queue-document",
 ) as typeof import("../src/queue-document");

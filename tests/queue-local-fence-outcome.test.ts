@@ -1,3 +1,9 @@
+import { createRequire } from "node:module";
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+
 type Job = {
   id: string;
   state: string;
@@ -9,20 +15,15 @@ type Job = {
   operationResult: { executionOutcome: string; mayHaveMutated: boolean };
 };
 type Result = { job: Job; stdout: string };
-import { createRequire } from "node:module";
 const load = createRequire(
   path.join(process.cwd(), "tests", "queue-local-fence-outcome.test.js"),
 );
-import test from "node:test";
 // Explicit fake physical backends require only synthetic WSL path spelling.
 test.beforeEach((t) =>
   (t as test.TestContext).after(
     (load("./fixtures/fake-wsl-platform.cjs") as () => () => void)(),
   ),
 );
-import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 
 test(
   "pre-dispatch fence rejection publishes its local outcome before any job directory exists",

@@ -1,11 +1,12 @@
 import path from "node:path";
 import { createRequire } from "node:module";
-const load = createRequire(
-  path.join(process.cwd(), "tests", "queue-config-identity.test.js"),
-);
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
+
+const load = createRequire(
+  path.join(process.cwd(), "tests", "queue-config-identity.test.js"),
+);
 const { brokerConfigHash } = load("../src/queue-instance") as {
   brokerConfigHash(config: Record<string, unknown>): string;
 };

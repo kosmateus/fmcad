@@ -1,3 +1,9 @@
+import { createRequire } from "node:module";
+import path from "node:path";
+import nodeTest from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+
 interface AuditFixture {
   files: import("../src/queue-audit-response-proof").AuditResponseManifest;
   records: Record<string, Record<string, unknown>>;
@@ -16,13 +22,10 @@ interface MutableEvidence {
   key: { clientId: string };
   pythonCheck: { status: string };
 }
-import { createRequire } from "node:module";
 const root = process.cwd();
 const load = createRequire(
   path.join(root, "tests", "audit-response-proof.test.js"),
 );
-import path from "node:path";
-import nodeTest from "node:test";
 const test = (name: string, fn: (t: nodeTest.TestContext) => void) =>
   nodeTest(
     name,
@@ -33,8 +36,6 @@ const test = (name: string, fn: (t: nodeTest.TestContext) => void) =>
     },
     fn,
   );
-import assert from "node:assert/strict";
-import fs from "node:fs";
 const { auditResponseProof, auditResponseProofStillCurrent } = load(
   "../src/queue-audit-response-proof",
 ) as typeof import("../src/queue-audit-response-proof");

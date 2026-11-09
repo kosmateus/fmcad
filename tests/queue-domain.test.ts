@@ -1,10 +1,11 @@
 import path from "node:path";
 import { createRequire } from "node:module";
+import test from "node:test";
+import assert from "node:assert/strict";
+
 const load = createRequire(
   path.join(process.cwd(), "tests", "queue-domain.test.js"),
 );
-import test from "node:test";
-import assert from "node:assert/strict";
 const {
   QueueDomain,
   initialQueueSnapshot,

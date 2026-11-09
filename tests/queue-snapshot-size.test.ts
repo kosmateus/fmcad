@@ -1,14 +1,15 @@
 import { createRequire } from "node:module";
-const root = process.cwd();
-const load = createRequire(
-  path.join(root, "tests", "queue-snapshot-size.test.js"),
-);
-
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+const root = process.cwd();
+const load = createRequire(
+  path.join(root, "tests", "queue-snapshot-size.test.js"),
+);
+
 const { createAdapter } = load(
   "../src/console-data",
 ) as typeof import("../src/composition/library-console-data");

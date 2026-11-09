@@ -1,18 +1,19 @@
+import { createRequire } from "node:module";
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 type MutableClient = InstanceType<
   typeof import("../src/queue-client").QueueClient
 > & {
   dir: string;
   options: { cfg: { routing: string; queue: { autoStart: boolean } } };
 };
-import { createRequire } from "node:module";
 const load = createRequire(
   path.join(process.cwd(), "tests", "idle-build-refresh.test.js"),
 );
-import test from "node:test";
-import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 const { QueueClient, refreshIdleBroker } = load(
   "../src/queue-client",
 ) as typeof import("../src/queue-client");

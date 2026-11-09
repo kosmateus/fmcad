@@ -1,19 +1,20 @@
+import { createRequire } from "node:module";
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+
 interface AuditFixture {
   files: import("../src/queue-audit-response-proof").AuditResponseManifest;
   records: Record<string, Record<string, unknown>>;
   migrationAudit: string;
   key: { requestId: string };
 }
-import { createRequire } from "node:module";
 const root = process.cwd();
 const load = createRequire(
   path.join(root, "tests", "read-audit-response-cli.test.js"),
 );
-import test from "node:test";
-import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { spawnSync } from "node:child_process";
 const { durable, hash } = load("../src/queue-instance") as ReturnType<
   typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
 >;

@@ -1,3 +1,9 @@
+import { createRequire } from "node:module";
+import test from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import fs from "node:fs";
+
 interface Fixture {
   dir: string;
   state: {
@@ -10,15 +16,10 @@ interface Fixture {
   job: { id: string };
   jobDirectory: string;
 }
-import { createRequire } from "node:module";
 const root = process.cwd();
 const load = createRequire(
   path.join(root, "tests", "saved-first-save-evidence.test.js"),
 );
-import test from "node:test";
-import assert from "node:assert/strict";
-import path from "node:path";
-import fs from "node:fs";
 const api = load("../src/queue-instance") as ReturnType<
   typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
 >;

@@ -1,12 +1,13 @@
 import { createRequire } from "node:module";
-const root = process.cwd();
-const load = createRequire(
-  path.join(root, "tests", "atomic-runtime-abi.test.js"),
-);
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+
+const root = process.cwd();
+const load = createRequire(
+  path.join(root, "tests", "atomic-runtime-abi.test.js"),
+);
 const { buildHash, hash, durable } = load(
   "../src/queue-instance",
 ) as ReturnType<
