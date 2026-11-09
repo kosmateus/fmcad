@@ -367,9 +367,33 @@ includes imports, references, externalization, save/publication and drawings.
   the generated adapter parser timed out in its unchanged Python child-process
   budget, and nested externalization returned unknown during the same incomplete
   host preparation. No production guard or expectation was relaxed.
-- The targeted recheck after typings became available still encountered Python
-  timeouts while other checker work ran. It was stopped to give the integration
-  owner one heavy-test slot at a time; its partial output is not a pass. The
-  canonical Python composition suite likewise needs its complete rerun after the
-  interrupted child-process probe. Fresh exact-head CI and installed-consumer
-  evidence remain release gates. Native Fusion qualification remains NOTRUN.
+- A later serial four-case recheck completed with the pinned SDK present: all four
+  still failed. The generated adapter hit the unchanged five-second Python parser
+  timeout; nested externalization reported unknown instead of the expected
+  pre-submit UI-host failure; the two production checkers returned tool_error with
+  only 2/5 and 1/5 required analyses completed. Another retained-baseline checker
+  overlapped the first portion before being stopped. These are failed local
+  checks, not passing integration evidence; no guard, timeout or expectation was
+  relaxed. The canonical Python composition suite likewise needs its complete
+  rerun after the interrupted child-process probe. Fresh exact-head CI and
+  installed-consumer evidence remain release gates. Native Fusion qualification
+  remains NOTRUN.
+
+### Delivery 9 — retained diagnostics, publication and Python consumer tests
+
+- Migrated both file-editability consumers, publisher failures/ownership tests,
+  local pipeline and installed read-only package tests, Python artifact tests and
+  compatibility preparation tests to strict TypeScript. They still load the
+  actual public runtime entrypoints, execute the same Python workers, preserve
+  exact source/receipt checks and reject partial diagnostics without retry.
+- The publisher's filesystem type now names only its used methods; emitted
+  publication behavior is unchanged. Fault doubles add tripwires for operations
+  that must not follow a failed write or target a directory. Installed-package
+  cleanup still handles failure before the installation path becomes available.
+- Focused strict compilation, lint and formatting pass. An assertion AST
+  comparison retains all 249 original assertions across the seven suites and
+  adds seven presence/phase checks. Compatibility temporary directories now use
+  the operating system temporary directory instead of assuming `/tmp/opencode`.
+- Runtime verification is pending the coordinated process-test slot after the
+  central build. Optional image dependencies and supported-host checks have not
+  been bypassed; skipped worker cases do not count as behavior evidence.

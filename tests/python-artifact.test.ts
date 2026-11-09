@@ -1,33 +1,43 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const path = require("node:path");
-const fs = require("node:fs");
-const { spawnSync } = require("node:child_process");
-const { createHash } = require("node:crypto");
+import type { SourceInput } from "../packages/node-adapters/src/python/artifact";
+import type { InvocationStore } from "../packages/node-adapters/src/execution/invocation";
+import os from "node:os";
+import { createRequire } from "node:module";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import * as fs from "node:fs";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+
+const root = path.resolve(__dirname, "../..");
+const load = createRequire(path.join(root, "package.json"));
 const {
   preparePythonArtifact,
   verifyPythonArtifact,
   pythonLiteral,
   pythonValue,
-} = require("../packages/node-adapters/dist/python/artifact");
+} = load(
+  "./packages/node-adapters/dist/python/artifact",
+) as typeof import("../packages/node-adapters/src/python/artifact");
 const {
   prepareCadBundle,
   cadBundleManifest,
   cadBundleUnits,
   orderBundle,
   pythonStringLiteral,
-} = require("../packages/node-adapters/dist/python/bundle");
-const {
-  mapPythonPosition,
-} = require("../packages/core/dist/domain/python-artifact");
-const {
-  prepareWireArtifact,
-} = require("../packages/node-adapters/dist/python/source-units");
-const root = path.resolve(__dirname, "..");
+} = load(
+  "./packages/node-adapters/dist/python/bundle",
+) as typeof import("../packages/node-adapters/src/python/bundle");
+const { mapPythonPosition } = load(
+  "./packages/core/dist/domain/python-artifact",
+) as typeof import("../packages/core/src/domain/python-artifact");
+const { prepareWireArtifact } = load(
+  "./packages/node-adapters/dist/python/source-units",
+) as typeof import("../packages/node-adapters/src/python/source-units");
 
 test("prepared artifact is deterministic, immutable and retains exact bytes and embedded code", () => {
   const user = 'def run(context):\n    return "😀"\n';
-  const inputs = [
+  const inputs: SourceInput[] = [
     {
       id: "user",
       filename: "/user.py",
@@ -60,7 +70,10 @@ test("prepared artifact is deterministic, immutable and retains exact bytes and 
   assert.ok(Object.isFrozen(first.context));
   verifyPythonArtifact(first);
   assert.throws(
-    () => verifyPythonArtifact({ ...first, runtimeVersion: "future" }),
+    () =>
+      Reflect.apply(verifyPythonArtifact, undefined, [
+        { ...first, runtimeVersion: "future" },
+      ]),
     /version/,
   );
   assert.throws(
@@ -84,8 +97,12 @@ test("prepared artifact is deterministic, immutable and retains exact bytes and 
 });
 
 test("legacy operation and atomic builders expose the exact prepared script", () => {
-  const ops = require("../src/ops");
-  const atomic = require("../src/batch-atomic");
+  const ops = load(
+    "./src/ops",
+  ) as typeof import("../packages/node-adapters/src/python/legacy-operations");
+  const atomic = load(
+    "./src/batch-atomic",
+  ) as typeof import("../src/composition/batch-atomic");
   const prepared = ops.prepareOpScript("stats", []);
   assert.equal(prepared.script, ops.buildOpScript("stats", []));
   assert.equal(
@@ -96,7 +113,7 @@ test("legacy operation and atomic builders expose the exact prepared script", ()
   const batch = atomic.prepareAtomicScript(request);
   assert.equal(batch.script, atomic.buildAtomicScript(request));
   assert.deepEqual(batch.request, request);
-  assert.equal(batch.units.at(-1).role, "wrapper");
+  assert.equal(present(batch.units.at(-1)).role, "wrapper");
   verifyPythonArtifact(batch);
 });
 
@@ -136,7 +153,7 @@ test("manifest rejects missing modules/dependencies, duplicates and cycles befor
       ),
     /inventory/,
   );
-  const module = (id, dependencies) => ({
+  const module = (id: string, dependencies: string[]) => ({
     id,
     path: `assets/cad/${id}.py`,
     dependencies,
@@ -170,7 +187,7 @@ test("prepared handler owners are explicit, escaped Python string literals", () 
     const manifest = cadBundleManifest.find((item) => item.id === unit.id);
     assert.ok(manifest);
     const owner = manifest.owner ?? manifest.id;
-    const line = unit.source.split("\n", 1)[0];
+    const line = present(unit.source.split("\n", 1)[0]);
     assert.equal(line, `CAD_HANDLERS.owner = ${pythonStringLiteral(owner)}`);
     assert.doesNotMatch(line, /__import__\(['"]json['"]\)\.loads/);
   }
@@ -249,8 +266,9 @@ test("prepared compatibility loaders resolve every dependency without executing 
       /^# Resolved manifest source units: (.+)$/m,
     );
     assert.ok(provenance, manifest.id);
-    for (const record of provenance[1].split(", ")) {
+    for (const record of present(provenance[1]).split(", ")) {
       const [id, filename, expectedHash] = record.split(":");
+      assert.ok(id);
       const dependency = byId.get(id);
       assert.ok(dependency, `${manifest.id} dependency ${id}`);
       assert.equal(dependency.filename, filename);
@@ -270,7 +288,7 @@ test("prepared compatibility loaders resolve every dependency without executing 
   );
 
   const temporaryRoot = fs.mkdtempSync(
-    path.join(require("node:os").tmpdir(), "fmcad-compatibility-loader-"),
+    path.join(os.tmpdir(), "fmcad-compatibility-loader-"),
   );
   t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   fs.mkdirSync(path.join(temporaryRoot, "assets/cad"), { recursive: true });
@@ -281,9 +299,9 @@ test("prepared compatibility loaders resolve every dependency without executing 
     path.join(temporaryRoot, "runtime/python"),
     { recursive: true },
   );
-  const {
-    geometryFamilies,
-  } = require("../packages/node-adapters/dist/python/geometry-manifest");
+  const { geometryFamilies } = load(
+    "./packages/node-adapters/dist/python/geometry-manifest",
+  ) as typeof import("../packages/node-adapters/src/python/geometry-manifest");
   for (const family of geometryFamilies) {
     const applicationPath = path.join(
       temporaryRoot,
@@ -342,7 +360,9 @@ test("prepared compatibility loaders resolve every dependency without executing 
 });
 
 test("light document-status profile carries strict handler and wrapper context", () => {
-  const { prepareCadScript } = require("../src/cad");
+  const { prepareCadScript } = load(
+    "./src/cad",
+  ) as typeof import("../src/composition/cad-execution");
   const context = {
     doc: "InspectionScratch",
     docId: "creation-123",
@@ -360,7 +380,7 @@ test("light document-status profile carries strict handler and wrapper context",
       "wrapper",
     ],
   );
-  const core = status.units.find((unit) => unit.id === "core").source;
+  const core = present(status.units.find((unit) => unit.id === "core")).source;
   for (const signature of [
     'def _entity_resolve_reference(ctx: "CadContext", ref: "JsonObject",',
     'def _entity_inspect(ctx: "CadContext", data: "JsonObject") -> "JsonRecord": ...',
@@ -369,26 +389,30 @@ test("light document-status profile carries strict handler and wrapper context",
     'def _datum_existing(ctx: "CadContext", data: "JsonObject",',
   ])
     assert.ok(core.includes(signature), signature);
-  const values = status.units.find((unit) => unit.id === "values").source;
+  const values = present(
+    status.units.find((unit) => unit.id === "values"),
+  ).source;
   assert.ok(values.includes("class _CadAttributes(_Protocol):"));
   assert.ok(
     core.includes(
       '_cad_cast("_CadAttributes", ctx.root.attributes).itemByName',
     ),
   );
-  const wrapper = status.units.at(-1).source;
+  const wrapper = present(status.units.at(-1)).source;
   assert.match(
     wrapper,
     /def _document_status_minimal\(ctx: "CadContext", data: "JsonObject"\) -> "JsonRecord"/,
   );
 
   const full = cadBundleUnits(root, "full");
-  const fullCore = full.find((unit) => unit.id === "core").source;
+  const fullCore = present(full.find((unit) => unit.id === "core")).source;
   assert.ok(
     !fullCore.includes('def _entity_resolve_reference(ctx: "CadContext"'),
   );
-  const entity = full.find((unit) => unit.id === "entity").source;
-  const datum = full.find((unit) => unit.id === "geometry-datum-fusion").source;
+  const entity = present(full.find((unit) => unit.id === "entity")).source;
+  const datum = present(
+    full.find((unit) => unit.id === "geometry-datum-fusion"),
+  ).source;
   assert.ok(entity.includes('_cad_cast("_CadAttributes | None"'));
   for (const [source, signature] of [
     [
@@ -408,7 +432,7 @@ test("light document-status profile carries strict handler and wrapper context",
       'def _datum_frame(ctx: "CadContext", data: "JsonObject") -> "JsonObject":',
     ],
     [datum, 'def _datum_existing(ctx: "CadContext", data: "JsonObject"'],
-  ])
+  ] as const)
     assert.ok(source.includes(signature), signature);
 });
 
@@ -458,8 +482,12 @@ test("payload nonfinite and Unicode policy remains compatible", () => {
 });
 
 test("final receipt preparation includes transport wrapper and nested literal user code before dispatch", (t) => {
-  t.after(require("./fixtures/fake-wsl-platform.cjs")());
-  const { prepareReceiptScript } = require("../src/queue-instance");
+  t.after(
+    (load("./tests/fixtures/fake-wsl-platform.cjs") as () => () => void)(),
+  );
+  const { prepareReceiptScript } = load("./src/queue-instance") as ReturnType<
+    typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
+  >;
   const code = 'def run(context):\n    return "日本語"\n';
   const outer = `def run(context):\n    exec(compile(${pythonValue(code)}, '/user.py', 'exec'), {})\n`;
   const binding = {
@@ -483,7 +511,7 @@ test("final receipt preparation includes transport wrapper and nested literal us
       (unit) => unit.filename === "<fmcad-queue>" && unit.source === outer,
     ),
   );
-  assert.equal(prepared.units.at(-1).filename, "<fmcad-wire>");
+  assert.equal(present(prepared.units.at(-1)).filename, "<fmcad-wire>");
   assert.deepEqual(prepared.request, binding);
   verifyPythonArtifact(prepared);
   assert.deepEqual(
@@ -520,24 +548,28 @@ test("offline literal extraction never executes source and finds syntax errors h
 });
 
 test("actual CAD and cad-v1 run wrappers retain prepared units and original source pinning", (t) => {
-  const { prepareCadScript, buildCadScript } = require("../src/cad");
+  const { prepareCadScript, buildCadScript } = load(
+    "./src/cad",
+  ) as typeof import("../src/composition/cad-execution");
   const status = prepareCadScript("document.status", {}, { doc: "fixture" });
   assert.equal(
     status.script,
     buildCadScript("document.status", {}, { doc: "fixture" }),
   );
   assert.ok(!status.units.some((unit) => unit.id === "model"));
-  const directory = fs.mkdtempSync(
-    path.join(require("node:os").tmpdir(), "python-source-"),
-  );
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "python-source-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const file = path.join(directory, "日本語.py");
   const source =
     'ARGS = []\nDOC_NAME = ""\ndef run(context):\n    return {"passed": True}\n';
   fs.writeFileSync(file, source);
-  const invocation = {};
-  const run = require("../src/run");
-  const artifact = require("../src/invocation").context.run(invocation, () =>
+  const invocation: InvocationStore = {};
+  const run = load("./src/run") as typeof import("../src/composition/run");
+  const artifact = (
+    load(
+      "./src/invocation",
+    ) as typeof import("../packages/node-adapters/src/execution/invocation")
+  ).context.run(invocation, () =>
     run.prepareRunScript(
       file,
       [true, null],
@@ -552,7 +584,7 @@ test("actual CAD and cad-v1 run wrappers retain prepared units and original sour
     createHash("sha256").update(source).digest("hex"),
   );
   assert.equal(invocation.sourcePath, file);
-  const user = artifact.units.find((unit) => unit.role === "user");
+  const user = present(artifact.units.find((unit) => unit.role === "user"));
   assert.equal(user.filename, file);
   assert.ok(user.source.includes(`ARGS = ${pythonLiteral([true, null])}`));
   assert.ok(user.source.includes(`DOC_NAME = ${pythonLiteral("fixture")}`));
@@ -563,10 +595,15 @@ test("actual CAD and cad-v1 run wrappers retain prepared units and original sour
     artifact.script,
   );
   assert.equal(
-    wire.units.find((unit) => unit.filename === file).source,
+    present(wire.units.find((unit) => unit.filename === file)).source,
     user.source,
   );
   const plain = run.prepareRunScript(file, [], false, undefined);
   assert.equal(plain.script, source);
   assert.equal(plain.units.length, 1);
 });
+
+function present<T>(value: T | undefined): T {
+  assert.ok(value !== undefined);
+  return value;
+}
