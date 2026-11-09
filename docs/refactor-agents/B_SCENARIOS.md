@@ -518,3 +518,29 @@ assertions are still open; this does not mark the complete suite migrated.
 Legacy expectation validation: all 42 focused parameter/document/box and injected
 regression tests pass, plus the disposition check. Runtime-test compilation passes.
 The immutable material component profiles are now running at `ce0cef6`.
+
+## Integration checkpoint — confirmed CI blocker
+
+Main was fetched again and remains `6c9f6c5`. PR #96 (`a585110`) contains the
+43 passing focused legacy/disposition checks. No dependent B PR has been merged.
+Exact-head CI for #78, #88 and #89 fails the scenario-unit steps in both Node
+contract jobs; the other 20 jobs pass. Decoded #89 Linux logs confirm seven
+transaction failures, all at the original no-eval command's explicit unknown
+outcome. B_COMMAND_SETTLEMENT_BLOCKER.md contains run/job links and the exact
+failure boundary. This is not explained by the local host's missing `/tmp`.
+Newer descendant CI runs remain queued at this checkpoint.
+
+Remaining package work is substantial and is not marked complete: individual
+assertion dispositions and intermediate-history/port review; import/export and
+reference lineage/source pins; broader sketch/component/feature semantics;
+appearance/assignment/mass, joint/motion/UI contracts; and G's final required
+broker/native registration. There are 132 reviewed mappings (131 current sites
+plus one removed predecessor assertion) against 3,707 current static sites; wrapper
+sites overlap, so these counts are not runtime coverage percentages. Model v15 and
+16 supported-family registrations are intermediate deliveries, not B1–B4 exit.
+
+The transaction contract requires production-owner work outside B before full CI
+can pass. Keep its positive tests required, preserve original literals/assertions,
+and do not replace the unknown result with a synthetic known rejection. Native
+Fusion stays deferred and keychain remains excluded. The material production-checker
+profile at `ce0cef6` is still running in the immutable verification checkout.

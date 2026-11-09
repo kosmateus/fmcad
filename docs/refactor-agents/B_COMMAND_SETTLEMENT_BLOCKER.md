@@ -67,3 +67,23 @@ passed the production-checker MCP component profile but addin failed reopening
 the journal for changed-run rejection even with one scenario owner. Source hashes
 were stable. The lock owner must investigate against ordinary Linux CI; no lock
 workaround has been introduced. Native Fusion execution remains deferred.
+
+## Ordinary Linux CI confirmation
+
+The blocker is now reproduced outside the local restricted host. At pose head
+`c51dacf904c93ef6a4db741330639d5ff2281c26`, CI run
+[42563565989](https://github.com/kosmateus/fmcad/actions/runs/42563565989) fails the
+scenario-unit step in both Node 22.13.0 and Node 24 contract jobs. The decoded logs
+of jobs [128985054792](https://github.com/kosmateus/fmcad/actions/runs/42563565989/job/128985054792)
+and [128985054637](https://github.com/kosmateus/fmcad/actions/runs/42563565989/job/128985054637)
+each contain seven failing reports: all six MCP/addin × concurrency 1/2/10 positive
+transaction cases and the replay/zero-SDK-call case. Every report ends at
+`cad-literal-rejection` with command `status=unknown`, error
+`Original CAD command remains unsettled: status=unknown`, and deferred cleanup.
+
+The other 20 jobs in this run pass, including the existing broker/model families.
+Those jobs do not resolve the required transaction failure. The earlier unsafe
+heads #70/#72/#75 passed CI before command-level settlement was enforced; do not
+merge those heads as a workaround. Draft #78 and descendant PRs remain blocked.
+The separate intermittent local journal-lock refusal remains unresolved and is
+not the cause shown by these seven Linux failure reports.
