@@ -19,6 +19,9 @@ const runtimeRequire = createRequire(__filename);
 const load = <K extends keyof BrokerModules>(name: K): BrokerModules[K] =>
   runtimeRequire(name) as BrokerModules[K];
 const { openIsolatedEpoch, epochAdmission } = load("./queue-isolated-epoch");
+const projectActivity = runtimeRequire(
+  "./dist/node-adapters/persistence/project-history/activity",
+) as typeof import("../packages/node-adapters/src/persistence/project-history/activity");
 const { epochControlDirectory } = load("./queue-epoch-lineage");
 const { QueueGate } = load("./queue-gate");
 const { PauseBudget } = load("./pause-budget");
@@ -1465,6 +1468,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         at: Date.now(),
         ...gate.snapshot(),
         owner: marker,
+        projectActivityFence: projectActivity.projectActivityCapability(),
         queued: Object.values(state.data.jobs).filter(
           (job) => job.state === "queued",
         ).length,
@@ -4872,7 +4876,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         const existing = Object.values(state.data.jobs).some(
           (job) => job.requestId === request.requestId,
         );
-        let rawPrepared, preparedId, flights;
+        let rawPrepared: P.Prepared | undefined;
+        let preparedId: string | undefined;
+        let flights: Awaited<ReturnType<typeof prepareJobFlights>>;
         try {
           if (!existing && request.kind === "rpc") {
             preparedId = randomUUID();
@@ -4907,24 +4913,32 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             );
           resetFence();
           if (state.epoch) epochAdmission(state, request, clients);
-          if (!existing)
-            load(
-              "./dist/node-adapters/persistence/accepted-inputs",
-            ).retainAdmission(dir, request);
-          const job = state.submit(request, preparedId);
-          if (workflowObservation) {
-            workflowObservation.observerJobHash = required(
-              state.data.jobs[job.id],
-            ).hash;
-            state.armWorkflowObservation(job.id, workflowObservation);
-          }
-          if (rawPrepared && job.id === preparedId)
-            rawPreparedPosts.set(job.id, rawPrepared);
-          if (flights && job.id === preparedId)
-            flightPlans.set(job.id, flights);
-          if (request.phased && job.state === "preparing")
-            phased.start(required(state.data.jobs[job.id]));
-          return job;
+          const accept = () => {
+            if (!existing)
+              load(
+                "./dist/node-adapters/persistence/accepted-inputs",
+              ).retainAdmission(dir, request);
+            const job = state.submit(request, preparedId);
+            if (workflowObservation) {
+              workflowObservation.observerJobHash = required(
+                state.data.jobs[job.id],
+              ).hash;
+              state.armWorkflowObservation(job.id, workflowObservation);
+            }
+            if (rawPrepared && job.id === preparedId)
+              rawPreparedPosts.set(job.id, rawPrepared);
+            if (flights && job.id === preparedId)
+              flightPlans.set(job.id, flights);
+            if (request.phased && job.state === "preparing")
+              phased.start(required(state.data.jobs[job.id]));
+            return job;
+          };
+          // Original request lookup remains available after archival and never
+          // creates a second job. New durable acceptance shares the project's
+          // lifecycle fence with archive and presence writers.
+          return existing
+            ? accept()
+            : projectActivity.withProjectActivityFence(request.cwd, accept);
         } finally {
           if (preparedId) rawPreparations--;
           if (stopping) setImmediate(drain);
@@ -4965,6 +4979,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           recovery,
           buildHash: codeHash,
           features: {
+            projectHistoryActivityFence: true,
             conditionalIdleStop: true,
             phasedCommands: true,
             atomicWorkflowObserve: true,
@@ -5048,6 +5063,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 ? { deadEpochSuccessor: successorControl.metadata() }
                 : {}),
               features: {
+                projectHistoryActivityFence: true,
                 conditionalIdleStop: true,
                 phasedCommands: true,
                 atomicWorkflowObserve: true,

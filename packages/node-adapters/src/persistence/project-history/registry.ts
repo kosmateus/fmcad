@@ -413,6 +413,20 @@ export function openProjectRegistry(
       return readRegistryFile(file);
     },
 
+    withRegistrationFence<T>(
+      operation: (snapshot: ProjectRegistrySnapshot) => T,
+    ): T {
+      return withWriteLock(() => {
+        const result = operation(readRegistryFile(file));
+        if (result && typeof result === "object" && "then" in result)
+          fail(
+            "REGISTRY_FENCE_ASYNC",
+            "Registration fence operations must remain synchronous",
+          );
+        return result;
+      });
+    },
+
     lookup(projectId: string): ProjectRegistryEntry | null {
       const entry = readRegistryFile(file).projects.find(
         (project) => project.projectId === projectId,

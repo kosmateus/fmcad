@@ -686,3 +686,25 @@ G must register the two new test files, canonical runtime sources and operator
 CTS launcher, and run the final integrated matrix. Remaining A work includes
 the audit response/facts/ABI and settled-evidence readers, closed succession,
 platform launchers, and the project-history activity fence shared with F.
+
+## Project activity and archival fence
+
+New broker acceptance and both presence writers now use the registered project's
+existing SQLite activity transaction. Registry enrollment also holds its existing
+exclusive write lock so registering a project cannot race an unfenced admission.
+An archived or disabled project rejects new work before acceptance; looking up an
+already accepted request still returns the original job and cannot replay it.
+Registered client heartbeats publish under the canonical project even when cwd
+contains a nested `.cad`; OpenCode snapshots bind their exact session scopes and
+carry process/database/project identity proof. A legacy or unknown producer is
+not certified by these markers. Closing presence remains permitted after archive.
+
+Twelve activity/client-presence tests pass with zero skips, including real broker
+IPC, actual Control Center archive/read-fresh-state composition, both lifecycle
+updates, original receipt lookup, rejected new submit, canonical nested presence,
+SQLite writer exclusion and a registration race. Strict API/adapter/test compile
+and focused lint pass. F's separate seven-case reader matrix also executes a real
+competing child admission: archive refuses the busy registry without deadlock,
+releases SQLite, and only then may the child accept; retry archive succeeds and a
+subsequent child is refused. Registry acquisition is fail-fast, while SQLite waits
+are bounded; transient contention is an explicit refusal, never inferred idleness.

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { withProjectActivityFence } from "../persistence/project-history/activity";
 import type {
   ClientPresenceSummary,
   Id,
@@ -103,10 +104,9 @@ export function createClientPresenceAdapter(policy: ClientPresencePolicy) {
       /* Unsupported hosts cannot confirm process presence. */
     }
     const scopedInstanceId = options.instanceId ?? randomUUID();
-    const directory = path.join(project, ".cad", "telemetry", "clients");
-    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    let directory = path.join(project, ".cad", "telemetry", "clients");
     const fileId = createHash("sha256").update(scopedInstanceId).digest("hex");
-    const file = path.join(directory, `${fileId}.json`);
+    let file = path.join(directory, `${fileId}.json`);
     const snapshot = {
       version: 1,
       instanceId: scopedInstanceId,
@@ -120,9 +120,28 @@ export function createClientPresenceAdapter(policy: ClientPresencePolicy) {
     let stopped = false;
     const publishSnapshot = (): void => {
       try {
-        durable(file, snapshot);
+        withProjectActivityFence(
+          project,
+          (proof) => {
+            const targetProject = proof?.projectRoot ?? project;
+            directory = path.join(
+              targetProject,
+              ".cad",
+              "telemetry",
+              "clients",
+            );
+            file = path.join(directory, `${fileId}.json`);
+            fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+            durable(file, {
+              ...snapshot,
+              project: targetProject,
+              ...(proof ? { activityFence: proof } : {}),
+            });
+          },
+          { closingPresence: snapshot.closed },
+        );
       } catch {
-        /* Presence cannot gate admission or execution. */
+        /* The broker independently fences admission. A blocked heartbeat does not authorize new activity. */
       }
     };
     const publish = (): void => {
@@ -143,7 +162,9 @@ export function createClientPresenceAdapter(policy: ClientPresencePolicy) {
     };
     publish();
     return {
-      file,
+      get file() {
+        return file;
+      },
       instanceId: policy.id("instance", scopedInstanceId),
       publish,
       stop: dispose,
