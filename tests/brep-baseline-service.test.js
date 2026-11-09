@@ -109,6 +109,19 @@ test('typed CLI and MCP execute capture → owned inspect → compare through th
     async _post(envelope) {
       const request = envelope.params.arguments;
       const script = request.object.script;
+      let receiptSource = script, binding, receiptFile;
+      for (let depth = 0; depth < 8; depth++) {
+        binding = receiptSource.match(/_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/);
+        receiptFile = receiptSource.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
+        if (binding && receiptFile) break;
+        const wrapped = receiptSource.match(/exec\(compile\(("(?:\\.|[^"\\])*")/);
+        if (!wrapped) break;
+        receiptSource = JSON.parse(wrapped[1]);
+      }
+      assert.ok(binding && receiptFile, 'fake backend must acknowledge the exact current receipt binding');
+      const record = JSON.parse(JSON.parse(binding[1]));
+      const target = JSON.parse(receiptFile[1]).replace(/^\\\\wsl\$\\[^\\]+/, '').replaceAll('\\', '/');
+      durable(target, { ...record, terminal: true, outcome: 'succeeded', instance });
       if (script.includes('FMCAD_QUEUE_INSTANCE')) {
         const text = 'FMCAD_QUEUE_INSTANCE ' + JSON.stringify(instance);
         return { status: 200, raw: JSON.stringify({ jsonrpc: '2.0', id: envelope.id,
@@ -118,13 +131,6 @@ test('typed CLI and MCP execute capture → owned inspect → compare through th
       assert.match(script, /class FusionExactBrepSerializer/);
       assert.match(script, /_measure_baseline_internal_handler/);
       assert.ok(request.object.readOnly);
-      const binding = script.match(/_qr_binding = _qr_json.loads\(("(?:\\.|[^"\\])*")\)/);
-      const receiptFile = script.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
-      if (binding && receiptFile) {
-        const record = JSON.parse(JSON.parse(binding[1]));
-        const target = JSON.parse(receiptFile[1]).replace(/^\\\\wsl\$\\[^\\]+/, '').replaceAll('\\', '/');
-        durable(target, { ...record, terminal: true, outcome: 'succeeded', instance });
-      }
       const stageId = fs.readdirSync(path.join(project, '.cad/baseline-staging'))[0];
       const stageDir = path.join(project, '.cad/baseline-staging', stageId);
       const entries = fs.readdirSync(stageDir);
