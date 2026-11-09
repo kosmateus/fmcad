@@ -31,6 +31,7 @@ test('FAKE adsk, real Python: isolated document guard before model body: ' + mod
 });
 
 test('production checker qualifies the actual unsaved-document guard without suppressing nullable getter diagnostics', { timeout: 180000 }, async t => {
+  t.after(require('./fixtures/fake-wsl-platform.cjs')());
   const dir = fs.mkdtempSync('/tmp/opencode/isolated-document-admission-');
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const api = require('../src/queue-instance'), wire = require('../src/queue-atomic-recovery-audit');

@@ -461,3 +461,17 @@ The BRep lifecycle must be rerun after staging stabilizes: a concurrent build
 contract change invalidated its earlier attempt. Final installed consumers,
 complete pinned admission and full CI for the exact integrated commit remain
 open; simulator evidence does not qualify Fusion's native solver or geometry.
+
+
+### Linux CI preparation for retained real checker tests
+
+The completed CI logs show all nine fixed-import checker cases and the unsaved
+isolated-document admission case failing in receipt path mapping before invoking
+the checker. Both source files are unchanged from `dce47c5`; the predecessor
+requires a detected WSL environment while these offline fixtures run on Linux.
+Each real-checker test now installs and restores the existing fake-WSL fixture.
+The final wrapped program, actual basedpyright check, certificate byte fence,
+expected document binding and absent receipt assertions remain unchanged.
+The fixed-import source passes strict compilation and lint. The eight isolated
+Python document-guard cases pass with zero skips. The ten real-checker cases
+remain pending a stable build and the coordinated checker execution slot.

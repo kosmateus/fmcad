@@ -113,6 +113,10 @@ for (const program of programs) {
     `production checker qualifies fixed ${program} through the existing cad-v1 prepare/wire path`,
     { timeout: 180_000 },
     async (t) => {
+      const installFakeWslPlatform = runtimeRequire(
+        path.join(projectRoot, "tests/fixtures/fake-wsl-platform.cjs"),
+      ) as () => () => void;
+      t.after(installFakeWslPlatform());
       const pathsModule = runtimeRequire(
         path.join(projectRoot, "src/dist/config-platform/index.js"),
       ) as ConfigPlatformModule;
