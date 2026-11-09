@@ -87,7 +87,7 @@ function errorCode(error: unknown): string | undefined {
     : undefined;
 }
 
-/** Two CPU slots per complete helper checker; existing worker ceiling remains
+/** Four CPU slots per complete helper checker; existing worker ceiling remains
  * the default upper bound. Explicit configuration keeps parallel preparation
  * available independently of the number of connected Fusion owners. */
 export function resolvePreparationConcurrency(
@@ -100,7 +100,7 @@ export function resolvePreparationConcurrency(
       "Available CPU capacity must be a positive integer",
     );
   if (value === undefined)
-    return Math.min(4, Math.max(1, Math.floor(cpuCount / 2)));
+    return Math.min(4, Math.max(1, Math.floor(cpuCount / 4)));
   if (
     typeof value !== "number" ||
     !Number.isSafeInteger(value) ||

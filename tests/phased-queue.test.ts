@@ -881,7 +881,8 @@ test("preparation capacity defaults to available CPU and rejects unbounded confi
     path.join(projectRoot, "src/queue-phased.js"),
   ) as typeof import("../src/queue-phased");
   assert.equal(resolvePreparationConcurrency(undefined, 2), 1);
-  assert.equal(resolvePreparationConcurrency(undefined, 4), 2);
+  assert.equal(resolvePreparationConcurrency(undefined, 4), 1);
+  assert.equal(resolvePreparationConcurrency(undefined, 8), 2);
   assert.equal(resolvePreparationConcurrency(undefined, 32), 4);
   assert.equal(resolvePreparationConcurrency(10, 2), 10);
   for (const value of [0, 11, 1.5, "2", null, NaN, Infinity])

@@ -905,10 +905,31 @@ cleanup paths. The retained completeness suite now covers mid-group corruption
 of inventory, projection, metadata, missing groups and cleanup on every outcome.
 
 Existing preparation scheduling accepts queue.preparationConcurrency 1..10;
-without an override it uses availableParallelism(), reserves two CPU slots per
+without an override it uses availableParallelism(), reserves four CPU slots per
 full checker and keeps the previous default ceiling of four workers. That means
-one preparation on two available CPUs and two on four CPUs. Configured parallel
+one preparation on two/four available CPUs and two on eight CPUs. Configured parallel
 preparation remains supported and tested independently of Fusion owner concurrency
-(default ten) and the single SDK lane. The source changes pass focused strict
-compilation/lint; emitted regression execution and a quiet full-helper c2 measure
-remain required after the central build, before any performance closure claim.
+(default ten) and the single SDK lane.
+
+After central build4 the emitted regressions executed: worker loss aborts fallback
+admission without SDK dispatch or replay; configured preparation levels one and
+two both retain one physical SDK lane; aggregate refusals retain cancellation and
+provenance reasons; shared inventory/projection/metadata tampering, missing groups
+and cleanup are checked. All eight selected cases passed, with no skips.
+
+The quiet full-helper measurements remain **unqualified**. On four available CPUs
+(cpu.max 800000/200000), two simultaneous admissions both refused after three of
+five groups: third-engine timeout, 115.60 s overall and 295.98 cgroup CPU-seconds.
+Single admission refused after four of five groups: fourth-engine timeout,
+126.83 s overall and 219.01 CPU-seconds. Inventory and projection now run once per
+artifact; batch projection took 4.02–5.40 s in c2 and 4.31 s in c1. Engine timeouts
+still prevent acceptance; the lower default reduces contention but is not a
+performance qualification. The original 30 s engine and 180 s admission deadlines
+remain unchanged. Exact projected-input comparison passed: one final 2,382,846-byte
+artifact was prepared through both the immutable baseline and current checker.
+All five groups contained the same 14 files each (analysis units, configuration
+and stubs), with byte-identical contents and SHA-256 hashes in all 70 comparisons.
+The engine was intercepted before spawn for that comparison; it proves unchanged
+analysis inputs, not accepted admission. The same pinned basedpyright executable
+also has the same SHA-256 in both checkouts. Actual Ubuntu CI remains required to
+qualify execution under the unchanged limits; local timing failure is not waived.
