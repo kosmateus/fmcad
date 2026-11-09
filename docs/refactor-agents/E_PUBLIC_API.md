@@ -181,3 +181,42 @@ must execute before final qualification; a local pass is not full CI evidence.
 - PR #52 also types the screenshot boundary. Fourteen paired observations preserve
   single dispatch, response precedence, malformed responses and publication errors;
   the two retained screenshot tests pass. Installed declarations cover ShotClient.
+
+### MCP context and installed consumer follow-up
+
+PR #39 completed full CI (run 42524333282) and merged as `10236646`.
+PR #46 is now based on main. Review/screenshot PR #52 head `24b0ec5`
+passes 13 library/screenshot tests, including installed declarations.
+
+Queue metadata validation now moves to `library-mcp-metadata.ts`; paired
+historical cases cover owner/document/file pins, sequence/revision validation,
+Unicode, root hints, private metadata stripping and input non-mutation.
+An inherited defect is retained explicitly: projectDirectory advertises 4096
+characters but the shared identifier predicate limits it to 256. Changing that
+acceptance range requires a separate behavior decision and downstream check.
+
+MCP/OpenCode fixtures use the host temporary directory rather than assuming
+`/tmp/opencode`. G was notified that offline-cache preparation must include the
+supported V1 host dependency, not just runtime dependencies. Installed MCP and
+both OpenCode lines remain open until the unchanged assertions pass in CI.
+
+MCP catalog routing now uses `library-mcp-catalog.ts` with explicit catalog and
+post ports. Seventy-two paired observations preserve local/broker routing,
+notification failures, backend restrictions, response formatting and owner pins.
+The installed OpenCode suite passes all nine tests after online preparation of
+the V1 host dependency; actual consumer installs remain offline.
+
+The installed MCP warning was traced to eager application configuration parsing
+for optional companion startup, not missing installed assets. The existing
+poison-config fixture failed because the parse error became a console warning.
+The entrypoint now skips companion launch when configuration is unavailable,
+preserves that error for the first queued operation, and retains exactly-once
+best-effort startup and diagnostics for valid configuration. Existing tests are
+unchanged; a new regression covers ping, config-required failure and subsequent
+ping without a broker or companion call. F was notified in #43.
+
+Final validation for this MCP delivery: full build, lint and test typecheck pass;
+17 library/installed MCP/companion tests pass, including closed strict protocol
+DTO declarations. Nine installed OpenCode tests pass. Three existing full
+MCP integration cases remain locally blocked by missing /proc process identity
+or opened-artifact verification, with guards and assertions preserved for CI.
