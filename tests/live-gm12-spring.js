@@ -7,6 +7,7 @@ const childProcess = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { prepareNativeInvocation, observeNativeInvocation } = require('../dist/tests/live-import-receipts.js');
 const { assertFixedMethodResults, isExecutionUnknown } = require('./helpers/gm12-fixed-result');
 
 const root = path.resolve(__dirname, '..');
@@ -89,35 +90,32 @@ function runFixedProgram() {
     '--request-id', requestId,
     '--timeout', '180000',
   ];
-  const result = childProcess.spawnSync(process.execPath, command, {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 240000,
-    maxBuffer: 32 * 1024 * 1024,
-    env: { ...process.env, FMCAD_ROUTING: 'queue', FMCAD_CLIENT: clientId },
+  const intentFile = prepareNativeInvocation(path.join(root, '.test-artifacts/native-invocations'), {
+    requestId, clientId, document: identity, runtimeRoot, buildHash, fixtureId: fixture.fixtureId,
+    manifestSha256: fixture.manifestSha256, scriptSha256: fixture.scriptSha256, command,
   });
+  const row = { requestId, clientId, runtimeRoot, buildHash, fixtureId: fixture.fixtureId,
+    manifestSha256: fixture.manifestSha256, scriptSha256: fixture.scriptSha256,
+    arguments: args, intentFile, status: 'dispatch-intent' };
+  report.commands.push(row);
+  persist(); // The durable intent is independent of the overwriteable summary report.
+  let result;
+  try {
+    result = childProcess.spawnSync(process.execPath, command, {
+      cwd: root, encoding: 'utf8', timeout: 240000, maxBuffer: 32 * 1024 * 1024,
+      env: { ...process.env, FMCAD_ROUTING: 'queue', FMCAD_CLIENT: clientId },
+    });
+  } catch (error) {
+    uncertain = true; row.status = 'unknown'; row.error = error.message; persist(); throw error;
+  }
   const stdout = result.stdout || '';
   const stderr = result.stderr || '';
   const jobLines = stderr.split(/\r?\n/).filter(line => line.startsWith('FMCAD_QUEUE_JOB '));
   const terminalLines = stderr.split(/\r?\n/).filter(line => line.startsWith('FMCAD_QUEUE_RESULT '));
-  const row = {
-    requestId,
-    clientId,
-    runtimeRoot,
-    buildHash,
-    fixtureId: fixture.fixtureId,
-    manifestSha256: fixture.manifestSha256,
-    scriptSha256: fixture.scriptSha256,
-    exitCode: result.status,
-    signal: result.signal || undefined,
-    error: result.error?.message,
-    stdout,
-    stderr,
-    status: 'not-validated',
-  };
-  report.commands.push(row);
+  Object.assign(row, { exitCode: result.status, signal: result.signal || undefined,
+    error: result.error?.message, stdout, stderr, status: 'not-validated' });
   persist();
-  if (result.error || result.signal || result.status === null || jobLines.length > 0 && terminalLines.length !== 1) {
+  if (result.error || result.signal || result.status === null || jobLines.length > 1 || jobLines.length > 0 && terminalLines.length !== 1) {
     uncertain = true;
     row.status = 'unknown';
     persist();
@@ -144,7 +142,14 @@ function runFixedProgram() {
     persist();
     throw new Error('Malformed terminal queue receipt; stop without retry.');
   }
-  row.jobId = jobLines.length === 1 ? JSON.parse(jobLines[0].slice('FMCAD_QUEUE_JOB '.length)).jobId : null;
+  try {
+    const accepted = jobLines.length === 1 ? JSON.parse(jobLines[0].slice('FMCAD_QUEUE_JOB '.length)) : null;
+    observeNativeInvocation(intentFile, accepted, queueResult);
+    row.jobId = accepted.jobId;
+  } catch (error) {
+    uncertain = true; row.status = 'unknown'; row.error = error.message; persist();
+    throw new Error('Fixed-run accepted/terminal identity or outcome is unverified; inspect the original request, never replay.', { cause: error });
+  }
   row.queueResult = queueResult;
   if (isExecutionUnknown(queueResult)) {
     uncertain = true;
