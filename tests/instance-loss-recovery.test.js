@@ -3,11 +3,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 const { requireInstanceProcess, requireRecoveryProcesses } = require('../src/queue-instance-liveness');
 const { prepareRecoveryAudit, prepareRecoveryAuditWire } = require('../src/queue-atomic-recovery-audit');
 const { recoveryAuditAdmissionPreflight } = require('../src/queue-admission');
-const { buildHash, wrapScript, fusionPath } = require('../src/queue-instance');
+const { buildHash, wrapScript } = require('../src/queue-instance');
 
 const original = { pid: 123, birth: 'old', version: '2706' };
 const current = { pid: 456, birth: 'new', version: '2706' };
@@ -46,13 +47,12 @@ test('unknown process observation is not death, same PID with a new birth is not
 });
 
 test('receipt identity fence rejects a foreign endpoint BEFORE any audit body statement', t => {
-  const dir = fs.mkdtempSync('/tmp/opencode/instance-endpoint-');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'instance-endpoint-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const receipt = path.join(dir, 'receipt.json');
   const binding = { jobId: 'fixture', rpcId: 'fixture', sourceHash: 'fixture', buildHash: 'fixture', requestHash: 'fixture',
     purpose: 'atomic-recovery-audit-v1', auditExpectedInstance: current };
-  const wrapped = wrapScript("app.audit_body_executed = True", false, receipt, binding).replace(
-    '_qr_path = ' + JSON.stringify(fusionPath(receipt)), '_qr_path = ' + JSON.stringify(receipt));
+  const wrapped = wrapScript("app.audit_body_executed = True", false, receipt, binding, { mapPath: file => file });
   const bootstrap = `import sys, types, json
 app=types.SimpleNamespace(version='different-endpoint',userInterface=types.SimpleNamespace(activeCommand='SelectCommand'))
 adsk,core=types.ModuleType('adsk'),types.ModuleType('adsk.core')
@@ -76,18 +76,25 @@ print('no-body-executed')
   assert.match(result.stdout, /no-body-executed/);
 });
 
-test('real current-only preflight checks complete endpoint-fenced bytes and refuses stripped instance binding', { timeout: 30000 }, async () => {
+test('real current-only preflight checks complete endpoint-fenced bytes and refuses stripped instance binding', { timeout: 30000 }, async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'loss-audit-preflight-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const context = { purpose: 'atomic-recovery-audit-v1', currentInstance: current,
     historicalInstance: original, historicalProcessState: 'terminated' };
   const identity = { commandId: 'fmcad_atomic_' + 'a'.repeat(32), resolvedIdentity: { name: 'Owned', creationId: 'own', fileId: null } };
   const reader = prepareRecoveryAudit(path.resolve(__dirname, '..'), identity, context);
-  const prepare = () => prepareRecoveryAuditWire({ reader, auditBinding: context, buildHash: buildHash(), jobId: 'fixture',
-    rpcId: '11111111-1111-4111-8111-111111111111', receipt: '/tmp/opencode/not-sent-loss-audit.json', instance: current,
+  const prepare = () => {
+    const restore = require('./fixtures/fake-wsl-platform.cjs')();
+    try { return prepareRecoveryAuditWire({ reader, auditBinding: context, buildHash: buildHash(), jobId: 'fixture',
+    rpcId: '11111111-1111-4111-8111-111111111111', receipt: path.join(directory, 'not-sent-loss-audit.json'), instance: current,
     payload: { jsonrpc: '2.0', id: 'fixture', method: 'tools/call', params: { name: 'execute_python',
       arguments: { code: reader.artifact.script + '\n\nrun("")\n', persistent: false } } } });
+    } finally { restore(); }
+  };
   const first = await recoveryAuditAdmissionPreflight(prepare());
   assert.equal(first.status, 'passed');
   assert.deepEqual(await recoveryAuditAdmissionPreflight(prepare()), first);
   const stripped = prepare(); delete stripped.record.binding.auditExpectedInstance;
   await assert.rejects(recoveryAuditAdmissionPreflight(stripped));
+  assert.deepEqual(fs.readdirSync(directory), []);
 });

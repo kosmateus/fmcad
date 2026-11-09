@@ -3,11 +3,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const api = require('../src/queue-instance');
 const { reference, successionAuthority } = require('../src/queue-epoch-lineage');
 
 function fixture(t) {
-  const root = fs.mkdtempSync('/tmp/opencode/closed-successor-');
+  // Only spell Windows receipt paths for these synthetic physical ports.
+  t.after(require('./fixtures/fake-wsl-platform.cjs')());
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'closed-successor-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return require('./fixtures/closed-epoch-successor.cjs')(root, path.resolve(__dirname, '..'));
 }

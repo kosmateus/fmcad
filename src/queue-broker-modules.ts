@@ -1,3 +1,4 @@
+import type { ScopedPrepared } from "./queue-admission";
 /** Typed inventory of the retained Node adapters consumed by broker composition.
  * These contracts are private and do not widen the public CAD API. */
 import type * as P from "./queue-broker-ports";
@@ -102,11 +103,11 @@ interface SuccessorRuntime {
   authorityEntry: unknown;
   audit: string;
 }
-interface AtomicWire {
+interface AtomicWire extends ScopedPrepared {
   outgoing: P.Rpc;
   pythonArtifact: PreparedPythonArtifact;
   rpcId: string;
-  record: P.RecordEvidence;
+  record: P.RecordEvidence & ScopedPrepared["record"];
   dispatchTimeoutMs: number;
 }
 export interface BrokerModules {
@@ -188,19 +189,7 @@ export interface BrokerModules {
       payload: P.Rpc,
     ): { kind: "python"; source: string } | { kind: "non-python" };
   };
-  "./queue-admission": {
-    createProductionQueueAdmission(runtime: string): {
-      admission: {
-        check(
-          payload: P.Rpc,
-          artifact?: PreparedPythonArtifact,
-          options?: { signal: AbortSignal | undefined },
-        ): Promise<P.Certificate>;
-      };
-      checkPrepared(prepared: AtomicWire): Promise<P.Certificate>;
-      fencePrepared(prepared: AtomicWire, codeHash: string): void;
-    };
-  };
+  "./queue-admission": typeof import("./queue-admission");
   "./atomic-observation-binding": {
     atomicObservationIdentityHash(identity: P.AtomicIdentity): string;
     assertAtomicObservationWire(
@@ -413,11 +402,7 @@ export interface BrokerModules {
     auditUpgradeApproval(approved: unknown, dir: string): { purpose: string };
     auditUpgradeStillCurrent(upgrade: unknown): boolean;
   };
-  "./queue-instance-liveness": {
-    processLossAudit(upgrade: unknown): boolean;
-    requireRecoveryProcesses(original: P.Instance, upgrade: unknown): void;
-    processTuple(instance: P.Instance): unknown;
-  };
+  "./queue-instance-liveness": typeof import("./queue-instance-liveness");
   "./queue-atomic-recovery-audit": {
     createRecoveryAudit(ports: AuditPorts): Control;
   };

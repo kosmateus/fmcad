@@ -70,7 +70,11 @@
     "tests/command-services-migration.test.ts",
     "tests/execution-request-migration.test.ts",
     "tests/stage-dependencies-migration.test.ts",
-    "tests/queue-scheduling-history.test.ts"
+    "tests/queue-scheduling-history.test.ts",
+    "tests/queue-admission-migration.test.ts",
+    "tests/queue-fixed-fixture-admission-migration.test.ts",
+    "tests/queue-epoch-evidence-migration.test.ts",
+    "tests/audit-publication-isolation.test.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]
 }
