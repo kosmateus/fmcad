@@ -51,6 +51,8 @@ test("fixed native invocation intent survives lost replies and recovery only rea
   assert.equal(readNativeInvocation(filename).state, "prepared");
   assert.deepEqual(readNativeInvocation(filename).binding, binding);
   assert.throws(() => prepareNativeInvocation(directory, binding), /EEXIST/);
+  const retry = { ...binding, requestId: "retry-under-another-request", command: binding.command.map(word => word === binding.requestId ? "retry-under-another-request" : word) };
+  assert.throws(() => prepareNativeInvocation(directory, retry), /EEXIST/, "New request IDs cannot replay the same one-shot fixed fixture");
   assert.throws(
     () =>
       prepareNativeInvocation(directory, {
@@ -139,6 +141,7 @@ test("fixed native invocation intent survives lost replies and recovery only rea
   );
   assert.equal(lookups, 1);
   assert.equal(readNativeInvocation(filename).state, "settled");
+  assert.throws(() => prepareNativeInvocation(directory, retry), /EEXIST/, "Recovery does not grant another mutation on the same pristine-fixture claim");
 });
 
 type QueueDomainOptions = {

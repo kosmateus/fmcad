@@ -86,6 +86,17 @@ export function prepareNativeInvocation(
     intent.driver.birth,
     "No verified driver process birth; refuse native admission",
   );
+  // A new request ID or a restarted caller must not replay an uncertain fixed
+  // mutation against the same scratch. Keep the claim even after settlement:
+  // these pristine-fixture programs are one-shot, and recovery only reads.
+  const claims = path.join(directory, "claims");
+  fs.mkdirSync(claims, { recursive: true, mode: 0o700 });
+  assert.ok(fs.lstatSync(claims).isDirectory() && !fs.lstatSync(claims).isSymbolicLink());
+  writeHandoff(path.join(claims, createHash("sha256")
+    .update(binding.fixtureId + "\0" + binding.document.creationId).digest("hex") + ".json"), {
+    version: 1, requestId: binding.requestId, clientId: binding.clientId,
+    document: binding.document, fixtureId: binding.fixtureId, intent: filename,
+  }, true);
   writeHandoff(filename, intent, true);
   return filename;
 }

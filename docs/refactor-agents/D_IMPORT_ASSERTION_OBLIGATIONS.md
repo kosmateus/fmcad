@@ -43,7 +43,11 @@ Fixed import preserves its externally prepared exact scratch and fixed-source
 grant; it never closes that caller-owned document. The shared receipt module
 fsyncs an exclusive per-request intent before spawn, including client, document,
 runtime/build, fixture and source/manifest hashes, exact command digest and
-driver PID/birth. A CLI terminal is only `terminal-observed`. Independent
+driver PID/birth.
+An exclusive claim in the stable invocation directory binds each fixture and
+creationId before the per-request intent; a restarted process or new requestId
+cannot replay the same pristine-fixture program. Recovery never releases it.
+A CLI terminal is only `terminal-observed`. Independent
 recovery requires the original driver to be dead and reads the exact original
 worker request before marking `settled`; it has no submit or close capability.
 GM07/GM12 reuse this helper rather than adding another admission architecture.

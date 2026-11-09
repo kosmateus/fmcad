@@ -765,9 +765,8 @@ function runFixedProgram(): FixedPayload {
     "--timeout",
     "180000",
   ];
-  nativeAttempted = true;
   const intentPath = prepareNativeInvocation(
-    path.join(path.dirname(reportPath), "native-invocations"),
+    path.join(artifactParent, "native-invocations"),
     {
       requestId,
       clientId,
@@ -782,6 +781,7 @@ function runFixedProgram(): FixedPayload {
   );
   report["nativeIntent"] = intentPath;
   persist();
+  nativeAttempted = true;
   const result = spawnSync(process.execPath, command, {
     cwd: root,
     encoding: "utf8",
