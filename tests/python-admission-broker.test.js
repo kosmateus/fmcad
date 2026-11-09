@@ -24,6 +24,8 @@ test('production transport refuses corrupted startup Python before any admission
   await new Promise(resolve=>endpoint.listen(0,'127.0.0.1',resolve));
   const cfg={backend:'mcp',url:`http://127.0.0.1:${endpoint.address().port}`,timeoutMs:5000,tool:'fusion_mcp_execute'};
   await assert.rejects(serve(cfg,{dir:directory,confirmOwnership:true,
+    // The endpoint only records bytes; receipts belong to this local fixture.
+    nativePath: value => value,
     createBackend:server=>{
       const client=createBrokerTransport(server,{version:'test',requestTimeout:s=>s.timeoutMs,bridgeSource:()=>assert.fail('MCP has no bridge')});
       const prepare=client.prepareCallTool.bind(client);

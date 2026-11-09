@@ -73,6 +73,8 @@ module.exports = async function fixture(t, {typedService = false} = {}) {
     fs.rmSync(home,{recursive:true,force:true});
   });
   broker=await serve(cfg,{dir,confirmOwnership:true,pollMs:5,createBackend:()=>physical,
+    // This physical fixture writes receipts locally without executing Fusion.
+    nativePath:value=>value,
     pythonChecker:{async check(request){checks.push(request.artifact.sha256);return checker.check(request);}},
     checkPrepared:prepared=>observe(prepared),
     ...(typedService?{spawnWorker(executable,args,options){return spawn(executable,[worker,args[1]],options);}}:{}),

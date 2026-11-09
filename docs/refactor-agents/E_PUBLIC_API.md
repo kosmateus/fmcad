@@ -516,3 +516,40 @@ Remaining #71/#73/#76/#80 and E/F/shared-gate integration are pending full CI.
 Native qualification, keychain and terminal retirement remain outside this
 completion claim. G has the current route inventory, preserved gate changes
 and exact validation evidence in #40.
+
+### Continuation from the integrated dce47c5 baseline
+
+The public runtime migrations above are already integrated. The remaining work
+is retained test migration and actual integration failures, not another rewrite
+of CLI/MCP/SDK/OpenCode implementations. Twelve retained suites now use strict
+TypeScript: registry, reference, library broker, the five engineering families,
+the three image commands and server metadata. Runtime JSON is decoded at the
+existing offline test boundary; numeric tolerances, ownership checks, dispatch
+counts and failure assertions remain intact. Image temporary directories now
+register cleanup even when an assertion fails. Reference tests require the
+configured interpreter and its dependencies instead of silently skipping.
+
+Verified against the unchanged built dce47c5 runtime: registry 11/11,
+engineering 29/29, image 27/27 and server metadata 11/11, with zero skips.
+The metadata suite now exercises the private broker transport and the actual
+doctor worker through the CLI queue seam; the public compatibility client still
+rejects direct execution. Metadata projection, initialization failure cleanup,
+redaction, one configuration read and one route are preserved.
+
+The original public-consumer run also reproduced three incomplete strict
+fixture migrations: optional transport preparation hooks were missing from
+fail-fast proxies in two MCP process cases and one resources/read case. They
+are now explicitly absent, as in their plain-object predecessors; unexpected
+required reads still fail. Admission fixtures now inject the existing native
+path port for their synthetic local receipts. Installed admission tests pack
+the already built artifact with --ignore-scripts, matching the other installed
+gates and preventing prepack build output from corrupting npm's JSON result.
+
+The baseline run exercised the actual installed OpenCode V1/V2 consumers and
+single-admission library broker successfully. It is not a complete qualification:
+manual evidence paths were stale (C owns the correction), the MCP fixtures above
+failed, installed MCP exceeded its original budget under concurrent load, and
+reference pipelines correctly refused this Debian 13 host. The run was stopped
+to release checker resources for isolated reruns. No timeout, platform guard,
+checker assertion, receipt or native qualification requirement is relaxed.
+Exact final-commit CI and the corrected process/admission tests remain required.

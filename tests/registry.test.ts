@@ -1,18 +1,58 @@
-"use strict";
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const {
-  commands,
-  legacyCommands,
-  findCommand,
-  globalFlags,
-} = require("../src/commands");
-const { main } = require("../src/cli");
-const { OPS } = require("../src/ops");
-const config = {
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+import type { CliDependencies } from "../src/entrypoints/cli";
+import type { CliOptions } from "../src/entrypoints/cli/parser";
+import type {
+  FmcadConfiguration,
+  FmcadOptions,
+  FmcadServices,
+  CadWorkerInvocation,
+  ExecuteOptions,
+} from "../src/api";
+const root = process.cwd();
+const load = createRequire(__filename);
+const { commands, legacyCommands, findCommand, globalFlags } = load(
+  path.join(root, "src/commands"),
+) as typeof import("../src/composition/library-commands");
+const { main } = load(
+  path.join(root, "src/cli"),
+) as typeof import("../src/entrypoints/cli");
+const { OPS } = load(path.join(root, "src/ops")) as {
+  OPS: Record<string, unknown>;
+};
+type Call =
+  | ["exit", number]
+  | ["config", CliOptions]
+  | ["queue", string[], FmcadConfiguration, CliOptions]
+  | ["init", Record<string, unknown>];
+function call<K extends Call[0]>(
+  calls: Call[],
+  kind: K,
+): Extract<Call, [K, ...unknown[]]> {
+  const found = calls.find(
+    (entry): entry is Extract<Call, [K, ...unknown[]]> => entry[0] === kind,
+  );
+  assert(found, `Missing ${kind} call`);
+  return found;
+}
+function services(
+  value: Pick<FmcadServices, "start" | "dispose" | "execute">,
+): FmcadServices {
+  return new Proxy(value, {
+    get(target, key) {
+      assert(
+        Reflect.has(target, key),
+        `Unexpected service access: ${String(key)}`,
+      );
+      return Reflect.get(target, key);
+    },
+  }) as FmcadServices;
+}
+const config: FmcadConfiguration = {
   backend: "mcp",
   routing: "queue",
   url: "http://127.0.0.1:8765/mcp",
@@ -25,11 +65,11 @@ const config = {
   controlCenter: { port: 4748 },
 };
 
-function harness(overrides = {}) {
-  const calls = [];
+function harness(overrides: CliDependencies = {}) {
+  const calls: Call[] = [];
   let stdout = "",
     stderr = "";
-  const dependencies = {
+  const dependencies: CliDependencies = {
     stdout: {
       write: (text) => {
         stdout += text;
@@ -121,14 +161,18 @@ test("keychain is absent while queue and MCP help remain available offline", asy
   );
   assert.equal(findCommand(["keychain"]), undefined);
   assert.equal(findCommand(["queue", "status"])?.kind, "queue");
-  const { globalHelp, detail } = require("../src/help");
+  const { globalHelp, detail } = load(
+    path.join(root, "src/help"),
+  ) as typeof import("../src/composition/library-help");
   assert.match(globalHelp(), /queue status/);
   assert.doesNotMatch(globalHelp(), /fmcad keychain/i);
   const removed = harness();
   assert.equal(await main(["keychain", "prepare"], removed.dependencies), 1);
   assert.match(removed.stderr, /unknown command: keychain/);
   assert.deepEqual(removed.calls, [["exit", 1]]);
-  const { startStdio } = require("../src/mcp-stdio");
+  const { startStdio } = load(
+    path.join(root, "src/mcp-stdio"),
+  ) as typeof import("../src/entrypoints/mcp-stdio");
   let mcpHelp = "";
   startStdio(["--help"], {
     stdout: {
@@ -178,7 +222,7 @@ test("missing values, unknown options and invalid legacy invocations fail before
   )) {
     for (const flag of [
       "--unknown",
-      ...Object.entries(entry.flags)
+      ...Object.entries(entry.flags ?? {})
         .filter(([, kind]) => kind === "value")
         .map(([flag]) => flag),
     ]) {
@@ -230,7 +274,10 @@ test("legacy non-CAD operation arguments pass once to the existing broker route"
     const args =
       entry.key === "plane_add"
         ? ["Offset", "offset", "XY", "10 mm"]
-        : Array.from({ length: entry.minArgs }, (_, index) => `arg${index}`);
+        : Array.from(
+            { length: entry.minArgs ?? 0 },
+            (_, index) => `arg${index}`,
+          );
     const h = harness();
     assert.equal(
       await main(
@@ -239,7 +286,7 @@ test("legacy non-CAD operation arguments pass once to the existing broker route"
       ),
       0,
     );
-    const routed = h.calls.find((call) => call[0] === "queue");
+    const routed = call(h.calls, "queue");
     assert.ok(routed, entry.key);
     assert.equal(routed[1][0], entry.key);
     assert.deepEqual(routed[1].slice(1, 1 + args.length), args);
@@ -248,7 +295,13 @@ test("legacy non-CAD operation arguments pass once to the existing broker route"
 });
 
 test("docops, exports, calls and tools preserve argv instead of constructing a CLI transport", async (t) => {
-  t.after(require("./fixtures/fake-wsl-platform.cjs")());
+  t.after(
+    (
+      load(
+        path.join(root, "tests/fixtures/fake-wsl-platform.cjs"),
+      ) as () => () => void
+    )(),
+  );
   for (const entry of commands.filter((command) =>
     ["docops", "export", "upload", "call", "tools", "doctor"].includes(
       command.kind,
@@ -259,14 +312,14 @@ test("docops, exports, calls and tools preserve argv instead of constructing a C
         ? ["tool", '{"value":1}']
         : Array(entry.minArgs ?? 0).fill("argument");
     if (entry.requiresDoc) args.push("--doc", "Design");
-    if (entry.exactlyOne) args.push(entry.exactlyOne[0]);
+    if (entry.exactlyOne) args.push(entry.exactlyOne[0]!);
     const h = harness();
     assert.equal(
       await main([...entry.key.split(" "), ...args], h.dependencies),
       0,
       `${entry.key}: ${h.stderr}`,
     );
-    const routed = h.calls.find((call) => call[0] === "queue");
+    const routed = call(h.calls, "queue");
     assert.ok(routed, entry.key);
     assert.equal(routed[1][0], entry.key.split(" ")[0]);
     assert.equal(h.calls.filter((call) => call[0] === "queue").length, 1);
@@ -281,37 +334,43 @@ test("run keeps JSON, document pins, readonly and listing as typed library/offli
     script,
     'ARGS = {}\nDOC_NAME = ""\ndef run(context):\n    pass\n',
   );
-  const admitted = [];
+  const admitted: {
+    options: FmcadOptions;
+    payload: CadWorkerInvocation;
+    execution: ExecuteOptions;
+  }[] = [];
   const h = harness({
-    createFmcad: (options) => ({
-      async start() {},
-      async dispose() {},
-      async execute(payload, execution) {
-        admitted.push({ options, payload, execution });
-        return {
-          version: 1,
-          requestId: execution.requestId,
-          jobId: null,
-          state: "succeeded",
-          result: { success: true },
-          outcome: {
+    createFmcad: (options) =>
+      services({
+        async start() {},
+        async dispose() {},
+        async execute(payload, execution) {
+          assert(execution);
+          admitted.push({ options, payload, execution });
+          return {
             version: 1,
-            requestId: null,
+            requestId: execution.requestId ?? "",
             jobId: null,
-            acceptance: "accepted",
-            executionOutcome: "succeeded",
-            mayHaveMutated: null,
-            validation: {
-              status: "not_checked",
-              source: null,
-              artifactId: null,
-              measurements: {},
+            state: "succeeded",
+            result: { success: true },
+            outcome: {
+              version: 1,
+              requestId: null,
+              jobId: null,
+              acceptance: "accepted",
+              executionOutcome: "succeeded",
+              mayHaveMutated: null,
+              validation: {
+                status: "not_checked",
+                source: null,
+                artifactId: null,
+                measurements: {},
+              },
+              code: null,
             },
-            code: null,
-          },
-        };
-      },
-    }),
+          };
+        },
+      }),
   });
   assert.equal(
     await main(
@@ -333,7 +392,9 @@ test("run keeps JSON, document pins, readonly and listing as typed library/offli
     0,
     h.stderr,
   );
+  assert(admitted[0]);
   assert.equal(admitted[0].payload.kind, "run");
+  assert(admitted[0].payload.kind === "run");
   assert.deepEqual(admitted[0].payload.request.args, [25]);
   assert.deepEqual(admitted[0].payload.request.identity, {
     docId: "creation",
@@ -375,12 +436,12 @@ test("purpose/global options reach configuration; negative values and path argum
     ),
     0,
   );
-  const configured = h.calls.find((call) => call[0] === "config");
+  const configured = call(h.calls, "config");
   assert.equal(configured[1].description, "Inspect model");
-  assert.equal(configured[1].config, "/config");
+  assert.equal(configured[1]["config"], "/config");
   assert.deepEqual(configured[1].headers, { A: "one", B: "two:three" });
   assert.equal(configured[1].timeoutMs, 123);
-  const routed = h.calls.find((call) => call[0] === "queue");
+  const routed = call(h.calls, "queue");
   assert.ok(routed[1].includes("call"));
   assert.ok(routed[1].includes("http://localhost"));
   assert.ok(routed[1].includes("/config"));
@@ -392,13 +453,17 @@ test("purpose/global options reach configuration; negative values and path argum
     ),
     0,
   );
-  assert.ok(
-    negative.calls.find((call) => call[0] === "queue")[1].includes("-10 mm"),
-  );
+  assert.ok(call(negative.calls, "queue")[1].includes("-10 mm"));
 });
 
 test("upload input path is passed without shell mapping and init remains offline", async (t) => {
-  t.after(require("./fixtures/fake-wsl-platform.cjs")());
+  t.after(
+    (
+      load(
+        path.join(root, "tests/fixtures/fake-wsl-platform.cjs"),
+      ) as () => () => void
+    )(),
+  );
   const h = harness();
   assert.equal(
     await main(
@@ -414,9 +479,7 @@ test("upload input path is passed without shell mapping and init remains offline
     ),
     0,
   );
-  assert.ok(
-    h.calls.find((call) => call[0] === "queue")[1].includes("/mnt/c/notes.txt"),
-  );
+  assert.ok(call(h.calls, "queue")[1].includes("/mnt/c/notes.txt"));
   const init = harness();
   assert.equal(
     await main(
@@ -448,7 +511,9 @@ test("broker failure is returned without constructing an adapter fallback", asyn
 });
 
 test("legacy help descriptor exports remain compatible", () => {
-  const { SPECIAL, detail } = require("../src/help");
+  const { SPECIAL, detail } = load(
+    path.join(root, "src/help"),
+  ) as typeof import("../src/composition/library-help");
   for (const key of Object.keys(SPECIAL))
-    assert.equal(SPECIAL[key](), detail(key));
+    assert.equal(SPECIAL[key]!(), detail(key));
 });

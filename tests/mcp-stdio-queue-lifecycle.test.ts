@@ -59,7 +59,9 @@ function port(server: http.Server): number {
   assert(address && typeof address === "object");
   return address.port;
 }
-function partial<T extends object>(value: Partial<T>): T {
+function partial<T extends object>(value: {
+  [K in keyof T]?: T[K] | undefined;
+}): T {
   return new Proxy(value, {
     get(target, key) {
       assert(
@@ -412,6 +414,16 @@ test("queue-mode resources/read fails locally before admission or physical dispa
       confirmOwnership: true,
       createBackend: () =>
         partial<Client>({
+          // Match the deliberately minimal predecessor fixture. Optional
+          // preparation hooks are absent; other unexpected reads still fail.
+          prepareCallTool: undefined,
+          prepareUiGuardedScript: undefined,
+          prepareListTools: undefined,
+          executeUiGuardedScript: undefined,
+          withRequest: undefined,
+          reqOpts: undefined,
+          negotiatedProtocolVersion: undefined,
+          serverInfo: undefined,
           capabilities: {},
           server: { timeoutMs: 1000 },
           _parse: JSON.parse,

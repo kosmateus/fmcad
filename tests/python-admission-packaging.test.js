@@ -10,7 +10,7 @@ function installConsumer(directory) {
     ? path.resolve(process.env.FMCAD_PACKED_TARBALL)
     : (() => {
         const [packed] = JSON.parse(
-          execFileSync("npm", ["pack", "--json", "--pack-destination", directory], {
+          execFileSync("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", directory], {
             cwd: path.resolve("."),
             encoding: "utf8",
             maxBuffer: 4 * 1024 * 1024,

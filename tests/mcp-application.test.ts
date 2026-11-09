@@ -41,7 +41,9 @@ function text(value: unknown): string {
   assert.equal(typeof value, "string");
   return value as string;
 }
-function partial<T extends object>(value: Partial<T>): T {
+function partial<T extends object>(value: {
+  [K in keyof T]?: T[K] | undefined;
+}): T {
   return new Proxy(value, {
     get(target, key) {
       assert(
@@ -716,6 +718,17 @@ test(
       });
     }
     const physical: Client = partial<Client>({
+      // The predecessor's plain physical fixture intentionally had no transport
+      // preparation or session hooks. Keep those probes explicitly absent while
+      // the proxy still rejects unexpected required fixture reads.
+      prepareCallTool: undefined,
+      prepareUiGuardedScript: undefined,
+      prepareListTools: undefined,
+      executeUiGuardedScript: undefined,
+      withRequest: undefined,
+      reqOpts: undefined,
+      negotiatedProtocolVersion: undefined,
+      serverInfo: undefined,
       capabilities: {},
       server: { timeoutMs: publicExecutionBudgetMs },
       _parse: JSON.parse,
@@ -1012,6 +1025,17 @@ test(
       });
     }
     const physical: Client = partial<Client>({
+      // The predecessor's plain physical fixture intentionally had no transport
+      // preparation or session hooks. Keep those probes explicitly absent while
+      // the proxy still rejects unexpected required fixture reads.
+      prepareCallTool: undefined,
+      prepareUiGuardedScript: undefined,
+      prepareListTools: undefined,
+      executeUiGuardedScript: undefined,
+      withRequest: undefined,
+      reqOpts: undefined,
+      negotiatedProtocolVersion: undefined,
+      serverInfo: undefined,
       capabilities: {},
       server: { timeoutMs: publicExecutionBudgetMs },
       _parse: JSON.parse,
