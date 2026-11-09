@@ -1,14 +1,26 @@
-"use strict";
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { PassThrough } from "node:stream";
+import { createRequire } from "node:module";
+import type { AddressInfo } from "node:net";
 
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const http = require("node:http");
-const os = require("node:os");
-const path = require("node:path");
-const { PassThrough } = require("node:stream");
-
-const root = path.resolve(__dirname, "..");
+const root = path.resolve(__dirname, "../..");
+const load = createRequire(path.join(root, "package.json"));
+function address(server: http.Server): AddressInfo {
+  const result = server.address();
+  assert.ok(result && typeof result === "object");
+  return result;
+}
+function record(value: unknown): Record<string, unknown> {
+  assert.ok(
+    value !== null && typeof value === "object" && !Array.isArray(value),
+  );
+  return value as Record<string, unknown>;
+}
 
 test("only the broker bootstrap imports the private physical transport", () => {
   const publicFiles = [
@@ -33,11 +45,14 @@ test("only the broker bootstrap imports the private physical transport", () => {
     "utf8",
   );
   assert.equal((broker.match(/createBrokerTransport/g) || []).length, 1);
-  assert.equal(require("../src/queue-client").assertDirectAccess, undefined);
+  assert.equal(
+    record(load("./src/queue-client"))["assertDirectAccess"],
+    undefined,
+  );
 
-  const manifest = require("../package.json");
+  const manifest = record(load("./package.json"));
   assert.doesNotMatch(
-    JSON.stringify(manifest.exports),
+    JSON.stringify(manifest["exports"]),
     /fusion-transport|queue-broker|src\/client/,
   );
 });
@@ -49,30 +64,41 @@ test("legacy direct factory/config and worker environment grant no physical acce
     request.resume();
     request.on("end", () => response.end("{}"));
   });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(async () => {
     server.closeAllConnections();
-    await new Promise((resolve) => server.close(resolve));
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
   });
 
   const constructors = {
-    McpClient() {
-      assert.fail("direct factory must reject before construction");
+    McpClient: class {
+      constructor() {
+        assert.fail("direct factory must reject before construction");
+      }
     },
   };
   assert.throws(
     () =>
-      require("../src/backends").createBackend(
-        { routing: "direct" },
-        constructors,
-      ),
+      (
+        load(
+          "./src/backends",
+        ) as typeof import("../src/composition/library-backends")
+      ).createBackend({ routing: "direct" }, constructors),
     {
       code: "UNSUPPORTED_ROUTING",
     },
   );
   assert.throws(
-    () => require("../src/config").loadConfig({ routing: "direct" }),
+    () =>
+      (
+        load(
+          "./src/config",
+        ) as typeof import("../src/composition/library-configuration")
+      ).loadConfig({ routing: "direct" }),
     (error) => {
+      assert.ok(error instanceof Error && "code" in error);
       assert.equal(error.code, "UNSUPPORTED_ROUTING");
       assert.match(
         error.message,
@@ -82,7 +108,14 @@ test("legacy direct factory/config and worker environment grant no physical acce
     },
   );
   await assert.rejects(
-    require("../src/queue-broker").serve(
+    (
+      load("./src/queue-broker") as {
+        serve(
+          config: { routing: string },
+          options: { confirmOwnership: true; createBackend(): never },
+        ): Promise<unknown>;
+      }
+    ).serve(
       { routing: "direct" },
       {
         confirmOwnership: true,
@@ -96,15 +129,17 @@ test("legacy direct factory/config and worker environment grant no physical acce
     { code: "UNSUPPORTED_ROUTING" },
   );
 
-  const { McpClient } = require("../src/client");
-  const previous = process.env.FMCAD_QUEUE_WORKER_JOB;
-  process.env.FMCAD_QUEUE_WORKER_JOB = "forged-without-broker-capability";
+  const { McpClient } = load(
+    "./src/client",
+  ) as typeof import("../src/composition/library-client");
+  const previous = process.env["FMCAD_QUEUE_WORKER_JOB"];
+  process.env["FMCAD_QUEUE_WORKER_JOB"] = "forged-without-broker-capability";
   t.after(() => {
-    if (previous === undefined) delete process.env.FMCAD_QUEUE_WORKER_JOB;
-    else process.env.FMCAD_QUEUE_WORKER_JOB = previous;
+    if (previous === undefined) delete process.env["FMCAD_QUEUE_WORKER_JOB"];
+    else process.env["FMCAD_QUEUE_WORKER_JOB"] = previous;
   });
   const client = new McpClient({
-    url: `http://127.0.0.1:${server.address().port}/mcp`,
+    url: `http://127.0.0.1:${address(server).port}/mcp`,
     routing: "queue",
   });
   for (const method of [
@@ -120,7 +155,10 @@ test("legacy direct factory/config and worker environment grant no physical acce
     });
   }
   assert.equal(physicalRequests, 0);
-  assert.equal(require("../src/queue-client").assertDirectAccess, undefined);
+  assert.equal(
+    record(load("./src/queue-client"))["assertDirectAccess"],
+    undefined,
+  );
 });
 
 test(
@@ -136,19 +174,22 @@ test(
       request.resume();
       request.on("end", () => response.end("{}"));
     });
-    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
     const configPath = path.join(home, "config.json");
     const config = {
       backend: "mcp",
       routing: "queue",
-      url: `http://127.0.0.1:${server.address().port}/mcp`,
+      url: `http://127.0.0.1:${address(server).port}/mcp`,
       headers: {},
       timeoutMs: 1000,
       tool: "fusion_mcp_execute",
       transport: "node",
       protocolVersion: "2025-06-18",
       queue: { autoStart: false, autoRecover: false },
-    };
+      controlCenter: { port: 4748 },
+    } as const;
     fs.writeFileSync(configPath, JSON.stringify(config));
     const envKeys = [
       "XDG_STATE_HOME",
@@ -159,21 +200,23 @@ test(
     const before = Object.fromEntries(
       envKeys.map((key) => [key, process.env[key]]),
     );
-    process.env.XDG_STATE_HOME = home;
-    process.env.FMCAD_CONFIG = configPath;
-    process.env.FMCAD_ROUTING = "queue";
-    process.env.FMCAD_CLIENT = "offline-broker-only-test";
+    process.env["XDG_STATE_HOME"] = home;
+    process.env["FMCAD_CONFIG"] = configPath;
+    process.env["FMCAD_ROUTING"] = "queue";
+    process.env["FMCAD_CLIENT"] = "offline-broker-only-test";
     t.after(async () => {
       for (const key of envKeys) {
         if (before[key] === undefined) delete process.env[key];
         else process.env[key] = before[key];
       }
       server.closeAllConnections();
-      await new Promise((resolve) => server.close(resolve));
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
       fs.rmSync(home, { recursive: true, force: true });
     });
 
-    const cli = require("../src/cli");
+    const cli = load("./src/cli") as typeof import("../src/entrypoints/cli");
     let cliError = "";
     assert.equal(
       await cli.main(["projects", "--config", configPath], {
@@ -194,33 +237,35 @@ test(
 
     const stdin = new PassThrough();
     let stdout = "";
-    const mcp = require("../src/mcp-stdio").startStdio(
-      ["--project-directory", project],
-      {
-        stdin,
-        stdout: {
-          write(value) {
-            stdout += value;
-          },
+    const mcp = (
+      load("./src/mcp-stdio") as typeof import("../src/entrypoints/mcp-stdio")
+    ).startStdio(["--project-directory", project], {
+      stdin,
+      stdout: {
+        write(value) {
+          stdout += value;
         },
-        stderr: { write() {} },
-        loadConfig: () => ({ cfg: config }),
       },
-    );
+      stderr: { write() {} },
+      loadConfig: () => ({ cfg: config }),
+    });
     stdin.end(
       JSON.stringify({ jsonrpc: "2.0", id: 1, method: "resources/list" }) +
         "\n",
     );
+    assert.ok(mcp);
     await mcp.closed;
-    const mcpReply = JSON.parse(stdout.trim());
-    assert.equal(mcpReply.id, 1);
-    assert.ok(mcpReply.error);
+    const mcpReply = record(JSON.parse(stdout.trim()));
+    assert.equal(mcpReply["id"], 1);
+    assert.ok(mcpReply["error"]);
     assert.match(
-      mcpReply.error.message,
+      String(record(mcpReply["error"])["message"]),
       /no direct fallback|QUEUE_NOT_RUNNING|ECONNREFUSED|ENOENT/i,
     );
 
-    const { createFmcad } = require("fmcad/api");
+    const { createFmcad } = load(
+      "fmcad/api",
+    ) as typeof import("../src/api/index");
     const api = createFmcad({
       version: 1,
       config,

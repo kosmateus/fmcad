@@ -12,18 +12,29 @@ const { isCompleteFinalRuntime, isWithin, summarizeSamples } =
   require("../../scripts/refactor-baseline-benchmark.ts") as import("../../scripts/refactor-baseline-benchmark").FinalBenchmarkHarness;
 
 const root = resolve(__dirname, "../..");
-const fixture = JSON.parse(
-  readFileSync(
-    resolve(root, "tests/fixtures/refactor-final-benchmark.json"),
-    "utf8",
+const fixtureInput = data.record(
+  data.json(
+    readFileSync(
+      resolve(root, "tests/fixtures/refactor-final-benchmark.json"),
+      "utf8",
+    ),
   ),
 );
+const fixture = {
+  nodeEnv: data.text(fixtureInput["nodeEnv"]),
+  samples: data.number(fixtureInput["samples"]),
+  warmIterations: data.number(fixtureInput["warmIterations"]),
+  clients: data.number(fixtureInput["clients"]),
+  config: data.record(fixtureInput["config"]),
+  operations: data.array(fixtureInput["operations"]).map(data.text),
+  excluded: data.array(fixtureInput["excluded"]).map(data.text),
+};
 
 test("final fixture is bounded, offline, and excludes geometric claims", () => {
   assert.equal(fixture.samples, 5);
   assert.equal(fixture.warmIterations, 5);
   assert.equal(fixture.clients, 4);
-  assert.equal(fixture.config.routing, "queue");
+  assert.equal(fixture.config["routing"], "queue");
   assert.ok(fixture.operations.includes("public-api-import"));
   assert.ok(fixture.operations.includes("mcp-tools-list"));
   assert.ok(fixture.excluded.includes("physical geometry"));
@@ -96,41 +107,46 @@ test("final runtime qualification rejects a timeout or a missing fake queue call
       },
     };
   };
-  const runtime: any = {
-    version: 1,
-    fixtureSha256: "fixture-only-sha256",
-    isolation: {
-      rootUnderOsTemp: true,
-      uniqueOwnedSubdirectories: true,
-      xdgRootsPerClient: true,
-      noGlobalBrokerOrSdk: true,
-    },
-    workloads: Object.fromEntries(
-      [
-        "api-import",
-        "help",
-        "mcp",
-        "catalog",
-        "prepare-bundle",
-        "multi-client",
-      ].map((name) => [
-        name,
-        {
-          coldRuns: Array.from({ length: fixture.samples }, () =>
-            name === "multi-client" ? multi("cold") : ordinary(name, "cold"),
-          ),
-          warmRuns: Array.from({ length: fixture.samples }, () =>
-            name === "multi-client" ? multi("warm") : ordinary(name, "warm"),
-          ),
-        },
-      ]),
-    ),
-  };
+  const runtime: import("../../scripts/refactor-benchmark-data").FinalRuntime =
+    {
+      version: 1,
+      fixtureSha256: "fixture-only-sha256",
+      isolation: {
+        rootUnderOsTemp: true,
+        uniqueOwnedSubdirectories: true,
+        xdgRootsPerClient: true,
+        noGlobalBrokerOrSdk: true,
+      },
+      workloads: Object.fromEntries(
+        [
+          "api-import",
+          "help",
+          "mcp",
+          "catalog",
+          "prepare-bundle",
+          "multi-client",
+        ].map((name) => [
+          name,
+          {
+            coldRuns: Array.from({ length: fixture.samples }, () =>
+              name === "multi-client" ? multi("cold") : ordinary(name, "cold"),
+            ),
+            warmRuns: Array.from({ length: fixture.samples }, () =>
+              name === "multi-client" ? multi("warm") : ordinary(name, "warm"),
+            ),
+          },
+        ]),
+      ),
+    };
   assert.equal(isCompleteFinalRuntime(runtime), true);
-  runtime.workloads["multi-client"].coldRuns[0].data.fakeQueue
-    .queueSummaryCalls--;
+  const multiClient = runtime.workloads["multi-client"];
+  assert.ok(multiClient);
+  const firstRun = multiClient.coldRuns[0];
+  assert.ok(firstRun?.data?.fakeQueue);
+  assert.ok(typeof firstRun.data.fakeQueue.queueSummaryCalls === "number");
+  firstRun.data.fakeQueue.queueSummaryCalls--;
   assert.equal(isCompleteFinalRuntime(runtime), false);
-  runtime.workloads["multi-client"].coldRuns[0].status = "timeout";
+  firstRun.status = "timeout";
   assert.equal(isCompleteFinalRuntime(runtime), false);
 });
 

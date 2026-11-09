@@ -1,22 +1,33 @@
-"use strict";
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const { execFileSync } = require("node:child_process");
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
 
-function installConsumer(directory) {
-  const tarball = process.env.FMCAD_PACKED_TARBALL
-    ? path.resolve(process.env.FMCAD_PACKED_TARBALL)
+function installConsumer(directory: string) {
+  const tarball = process.env["FMCAD_PACKED_TARBALL"]
+    ? path.resolve(process.env["FMCAD_PACKED_TARBALL"])
     : (() => {
-        const [packed] = JSON.parse(
-          execFileSync("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", directory], {
-            cwd: path.resolve("."),
-            encoding: "utf8",
-            maxBuffer: 4 * 1024 * 1024,
-          }),
+        const [packed] = array(
+          JSON.parse(
+            execFileSync(
+              "npm",
+              [
+                "pack",
+                "--ignore-scripts",
+                "--json",
+                "--pack-destination",
+                directory,
+              ],
+              {
+                cwd: path.resolve("."),
+                encoding: "utf8",
+                maxBuffer: 4 * 1024 * 1024,
+              },
+            ),
+          ),
         );
-        return path.join(directory, packed.filename);
+        return path.join(directory, text(record(packed)["filename"]));
       })();
   fs.writeFileSync(
     path.join(directory, "package.json"),
@@ -67,21 +78,27 @@ test("installed consumer certifies exact raw Python and rejects errors offline o
       console.log(JSON.stringify({status:'passed',rawPositive:certificate.report.status,receiptPositive:checked.report.status}));
     })().catch(e=>{console.error(e);process.exitCode=1;});
   `;
-  const result = JSON.parse(
-    execFileSync(process.execPath, ["-e", source], {
-      cwd: directory,
-      encoding: "utf8",
-      timeout: 240000,
-      env: {
-        PATH: process.env.PATH,
-        HOME: directory,
-        npm_config_offline: "true",
-        HTTP_PROXY: "http://127.0.0.1:1",
-        HTTPS_PROXY: "http://127.0.0.1:1",
-      },
-    }),
+  const result = record(
+    JSON.parse(
+      execFileSync(process.execPath, ["-e", source], {
+        cwd: directory,
+        encoding: "utf8",
+        timeout: 240000,
+        env: {
+          PATH: process.env["PATH"],
+          HOME: directory,
+          npm_config_offline: "true",
+          HTTP_PROXY: "http://127.0.0.1:1",
+          HTTPS_PROXY: "http://127.0.0.1:1",
+        },
+      }),
+    ),
   );
-  assert.deepEqual(result, { status: "passed", rawPositive: "passed", receiptPositive: "passed" });
+  assert.deepEqual(result, {
+    status: "passed",
+    rawPositive: "passed",
+    receiptPositive: "passed",
+  });
 });
 
 test("installed consumer retains real CLI, worker, MCP and public API admission parity", (t) => {
@@ -98,7 +115,7 @@ test("installed consumer retains real CLI, worker, MCP and public API admission 
     path.join(copied, "python-admission-ports.test.js"),
   );
   fs.copyFileSync(
-    path.join(__dirname, "fixtures/python-admission-broker.cjs"),
+    path.resolve("tests/fixtures/python-admission-broker.cjs"),
     path.join(copied, "fixtures/python-admission-broker.cjs"),
   );
   const integration = execFileSync(
@@ -116,14 +133,14 @@ test("installed consumer retains real CLI, worker, MCP and public API admission 
       timeout: 165000,
       maxBuffer: 4 * 1024 * 1024,
       env: {
-        PATH: process.env.PATH,
+        PATH: process.env["PATH"],
         HOME: directory,
         FMCAD_ADMISSION_CONSUMER_PACKAGE: path.join(
           directory,
           "node_modules/fmcad",
         ),
-        ...(process.env.WSL_DISTRO_NAME
-          ? { WSL_DISTRO_NAME: process.env.WSL_DISTRO_NAME }
+        ...(process.env["WSL_DISTRO_NAME"]
+          ? { WSL_DISTRO_NAME: process.env["WSL_DISTRO_NAME"] }
           : {}),
         npm_config_offline: "true",
         HTTP_PROXY: "http://127.0.0.1:1",
@@ -170,25 +187,52 @@ test("installed consumer checks the complete cad-v1 helper with retained origins
         contexts,elapsedMs:Date.now()-started}));
     })().catch(error=>{console.error(error,error.pythonCheck);process.exitCode=1;});
   `;
-  const result = JSON.parse(
-    execFileSync(process.execPath, ["-e", source], {
-      cwd: directory,
-      encoding: "utf8",
-      timeout: 240000,
-      maxBuffer: 8 * 1024 * 1024,
-      env: {
-        PATH: process.env.PATH,
-        HOME: directory,
-        npm_config_offline: "true",
-        HTTP_PROXY: "http://127.0.0.1:1",
-        HTTPS_PROXY: "http://127.0.0.1:1",
-      },
-    }),
+  const result = record(
+    JSON.parse(
+      execFileSync(process.execPath, ["-e", source], {
+        cwd: directory,
+        encoding: "utf8",
+        timeout: 240000,
+        maxBuffer: 8 * 1024 * 1024,
+        env: {
+          PATH: process.env["PATH"],
+          HOME: directory,
+          npm_config_offline: "true",
+          HTTP_PROXY: "http://127.0.0.1:1",
+          HTTPS_PROXY: "http://127.0.0.1:1",
+        },
+      }),
+    ),
   );
-  assert.equal(result.status, "passed");
-  assert.equal(result.units, 154);
-  assert.equal(result.maps, 153);
-  assert.equal(result.diagnostics, 0);
-  assert.ok(result.contexts.some((context) => context.kind === "raw"));
-  assert.ok(result.contexts.some((context) => context.kind === "cad-v1" && context.deferredFacade));
+  assert.equal(result["status"], "passed");
+  assert.equal(result["units"], 154);
+  assert.equal(result["maps"], 153);
+  assert.equal(result["diagnostics"], 0);
+  assert.ok(
+    array(result["contexts"]).some(
+      (context) => record(context)["kind"] === "raw",
+    ),
+  );
+  assert.ok(
+    array(result["contexts"]).some(
+      (context) =>
+        record(context)["kind"] === "cad-v1" &&
+        record(context)["deferredFacade"],
+    ),
+  );
 });
+
+function record(value: unknown): Record<string, unknown> {
+  assert.ok(
+    value !== null && typeof value === "object" && !Array.isArray(value),
+  );
+  return value as Record<string, unknown>;
+}
+function array(value: unknown): unknown[] {
+  assert.ok(Array.isArray(value));
+  return value;
+}
+function text(value: unknown): string {
+  assert.ok(typeof value === "string");
+  return value;
+}

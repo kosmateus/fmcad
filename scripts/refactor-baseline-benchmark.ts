@@ -12,8 +12,14 @@ import type {
 
 const { createRequire } =
   require("node:module") as typeof import("node:module");
-const { readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync } =
-  require("node:fs") as typeof import("node:fs");
+const {
+  readFileSync,
+  writeFileSync,
+  mkdtempSync,
+  rmSync,
+  mkdirSync,
+  existsSync,
+} = require("node:fs") as typeof import("node:fs");
 const { resolve, join, dirname, isAbsolute, relative, sep } =
   require("node:path") as typeof import("node:path");
 const { cpus, release, platform, tmpdir } =
@@ -1603,7 +1609,10 @@ async function main() {
         const args = [
           "--test",
           ...(selection ? ["--test-name-pattern", selection] : []),
-          `tests/${suite}.test.js`,
+          !existsSync(join(root, `tests/${suite}.test.js`)) &&
+          existsSync(join(root, `tests/${suite}.test.ts`))
+            ? `dist/tests/${suite}.test.js`
+            : `tests/${suite}.test.js`,
         ];
         const result = command(
           process.execPath,

@@ -1,24 +1,29 @@
-"use strict";
+import { createRequire } from "node:module";
+import type { TestContext } from "node:test";
+import type { ObservationEvent } from "@fmcad/core";
 
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const { spawn } = require("node:child_process");
-const { once } = require("node:events");
-const core = require("../src/dist/core");
-const {
-  createProjectPresencePort,
-} = require("../src/dist/node-adapters/telemetry/client-presence");
-const {
-  createTelemetryEventSink,
-} = require("../src/dist/node-adapters/telemetry/event-sink");
-const { createTelemetry } = require("../src/direct-telemetry");
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+const load = createRequire(path.resolve("tests/observation-ports.test.js"));
+const core = load("../src/dist/core") as typeof import("@fmcad/core");
+const { createProjectPresencePort } = load(
+  "../src/dist/node-adapters/telemetry/client-presence",
+) as typeof import("../packages/node-adapters/src/telemetry/client-presence");
+const { createTelemetryEventSink } = load(
+  "../src/dist/node-adapters/telemetry/event-sink",
+) as typeof import("../packages/node-adapters/src/telemetry/event-sink");
+const { createTelemetry } = load(
+  "../src/direct-telemetry",
+) as typeof import("../src/composition/library-direct-telemetry");
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function fixture(t) {
+function fixture(t: TestContext) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "observation-ports-"));
   const project = path.join(root, "project");
   fs.mkdirSync(path.join(project, ".cad"), { recursive: true });
@@ -26,7 +31,10 @@ function fixture(t) {
   return { root, project };
 }
 
-async function until(fn, timeoutMs = 5000) {
+async function until<T>(
+  fn: () => T | null | undefined | false,
+  timeoutMs = 5000,
+): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const value = fn();
@@ -38,7 +46,7 @@ async function until(fn, timeoutMs = 5000) {
 
 test("two independent processes with one client ID retain per-instance identity and shutdown", async (t) => {
   const { project } = fixture(t);
-  const modulePath = require.resolve("../src/client-presence");
+  const modulePath = load.resolve("../src/client-presence");
   const code =
     `const { startClientPresence } = require(${JSON.stringify(modulePath)});\n` +
     `const presence = startClientPresence('mcp:shared', process.cwd(), { intervalMs: 25 });\n` +
@@ -62,18 +70,21 @@ test("two independent processes with one client ID retain per-instance identity 
     second = start();
   const firstInfo = await until(() =>
     first.output().split("\n").filter(Boolean).length
-      ? JSON.parse(first.output().split("\n")[0])
+      ? record(JSON.parse(present(first.output().split("\n")[0])))
       : null,
   );
   const secondInfo = await until(() =>
     second.output().split("\n").filter(Boolean).length
-      ? JSON.parse(second.output().split("\n")[0])
+      ? record(JSON.parse(present(second.output().split("\n")[0])))
       : null,
   );
-  assert.notEqual(firstInfo.instanceId, secondInfo.instanceId);
+  assert.notEqual(firstInfo["instanceId"], secondInfo["instanceId"]);
   const both = await until(() => {
-    const client = require("../src/client-presence").readClientPresence(project)
-      .clients[0];
+    const client = (
+      load("../src/client-presence") as ReturnType<
+        typeof import("../packages/node-adapters/src/telemetry/client-presence").createClientPresenceAdapter
+      >
+    ).readClientPresence(project).clients[0];
     return client?.processCount === 2 ? client : null;
   });
   assert.equal(both.id, "mcp:shared");
@@ -87,8 +98,11 @@ test("two independent processes with one client ID retain per-instance identity 
   first.child.stdin.end("stop");
   await firstExit;
   const one = await until(() => {
-    const client = require("../src/client-presence").readClientPresence(project)
-      .clients[0];
+    const client = (
+      load("../src/client-presence") as ReturnType<
+        typeof import("../packages/node-adapters/src/telemetry/client-presence").createClientPresenceAdapter
+      >
+    ).readClientPresence(project).clients[0];
     return client?.processCount === 2 && client.observedProcesses === 1
       ? client
       : null;
@@ -98,8 +112,13 @@ test("two independent processes with one client ID retain per-instance identity 
   second.child.stdin.end("stop");
   await secondExit;
   assert.equal(
-    require("../src/client-presence").readClientPresence(project).clients[0]
-      .presence,
+    (
+      load("../src/client-presence") as ReturnType<
+        typeof import("../packages/node-adapters/src/telemetry/client-presence").createClientPresenceAdapter
+      >
+    )
+      .readClientPresence(project)
+      .clients.at(0)?.presence,
     "offline",
   );
 });
@@ -124,14 +143,18 @@ test("presence enumeration is bounded and preserves unknown for missing process 
       }),
     );
   }
-  const result = require("../src/client-presence").readClientPresence(project, {
+  const result = (
+    load("../src/client-presence") as ReturnType<
+      typeof import("../packages/node-adapters/src/telemetry/client-presence").createClientPresenceAdapter
+    >
+  ).readClientPresence(project, {
     alive: () => null,
   });
   assert.equal(result.filesRead, 256);
   assert.equal(result.filesOmitted, 4);
   assert.equal(result.errors, 0);
-  assert.equal(result.clients[0].presence, "unknown");
-  assert.equal(result.clients[0].processCount, 256);
+  assert.equal(present(result.clients[0]).presence, "unknown");
+  assert.equal(present(result.clients[0]).processCount, 256);
 });
 
 test("instance observation scope isolates failures and disposes only its own presence", async () => {
@@ -148,7 +171,7 @@ test("instance observation scope isolates failures and disposes only its own pre
     purpose: "Inspect fit",
   });
   const nowMs = 100;
-  const published = [];
+  const published: ObservationEvent[] = [];
   let disposed = 0;
   let heartbeats = 0;
   const scope = core.createObservationScope({
@@ -180,11 +203,11 @@ test("instance observation scope isolates failures and disposes only its own pre
     true,
   );
   assert.equal(await scope.heartbeat(), true);
-  assert.equal(published[0].invocation.requestId, "request-1");
-  assert.equal(published[0].invocation.jobId, "job-1");
-  assert.equal(published[0].invocation.projectId, "project-1");
-  assert.equal(published[0].invocation.documentId, "doc-1");
-  assert.equal(published[0].invocation.turnId, "turn-1");
+  assert.equal(present(published[0]).invocation.requestId, "request-1");
+  assert.equal(present(published[0]).invocation.jobId, "job-1");
+  assert.equal(present(published[0]).invocation.projectId, "project-1");
+  assert.equal(present(published[0]).invocation.documentId, "doc-1");
+  assert.equal(present(published[0]).invocation.turnId, "turn-1");
   assert.equal(heartbeats, 1);
   await scope.dispose();
   await scope.dispose();
@@ -210,19 +233,30 @@ test("project presence port binds one invocation instance and disposes only its 
     source: "cli",
   });
   await port.heartbeat(invocation, Date.now());
-  let client = require("../src/client-presence").readClientPresence(project)
-    .clients[0];
-  assert.equal(client.presence, "observed");
+  let client = (
+    load("../src/client-presence") as ReturnType<
+      typeof import("../packages/node-adapters/src/telemetry/client-presence").createClientPresenceAdapter
+    >
+  ).readClientPresence(project).clients[0];
+  assert.equal(present(client).presence, "observed");
   await port.dispose(other, Date.now());
   assert.equal(
-    require("../src/client-presence").readClientPresence(project).clients[0]
-      .presence,
+    (
+      load("../src/client-presence") as ReturnType<
+        typeof import("../packages/node-adapters/src/telemetry/client-presence").createClientPresenceAdapter
+      >
+    )
+      .readClientPresence(project)
+      .clients.at(0)?.presence,
     "observed",
   );
   await port.dispose(invocation, Date.now());
-  client = require("../src/client-presence").readClientPresence(project)
-    .clients[0];
-  assert.equal(client.presence, "offline");
+  client = (
+    load("../src/client-presence") as ReturnType<
+      typeof import("../packages/node-adapters/src/telemetry/client-presence").createClientPresenceAdapter
+    >
+  ).readClientPresence(project).clients[0];
+  assert.equal(present(client).presence, "offline");
 });
 
 test("telemetry sink bounds events, observes disposal, and never promotes auxiliary failures", async (t) => {
@@ -232,14 +266,14 @@ test("telemetry sink bounds events, observes disposal, and never promotes auxili
     instanceId: "instance",
     source: "mcp",
   });
-  const event = {
+  const event: ObservationEvent = {
     version: 1,
     invocation,
     atMs: 1,
     name: "transport.completed",
     data: { status: "completed" },
   };
-  const written = [];
+  const written: ObservationEvent[] = [];
   const sink = createTelemetryEventSink(async (value) => {
     written.push(value);
   }, 1024);
@@ -247,7 +281,7 @@ test("telemetry sink bounds events, observes disposal, and never promotes auxili
   assert.equal(written.length, 1);
   const oversized = { ...event, data: { payload: "x".repeat(2000) } };
   await assert.rejects(sink.publish(oversized), /oversized/);
-  sink.dispose();
+  present(sink.dispose).call(sink);
   await sink.publish(event);
   assert.equal(written.length, 1);
 
@@ -267,21 +301,38 @@ test("telemetry sink bounds events, observes disposal, and never promotes auxili
     status: 200,
     raw: JSON.stringify({ result: "private transport payload" }),
   };
+  const request = {
+    method: "tools/call",
+    params: { arguments: { secret: "not persisted" } },
+  };
   const result = await telemetry.track(
-    {
-      method: "tools/call",
-      params: { arguments: { secret: "not persisted" } },
-    },
+    request,
     async () => transportResult,
     invocation,
   );
   assert.strictEqual(result, transportResult);
-  const snapshot = JSON.parse(fs.readFileSync(telemetry.file, "utf8"));
-  assert.equal(snapshot.operations[0].requestId, "request");
-  assert.equal(snapshot.operations[0].instanceId, "instance");
+  const snapshot = record(JSON.parse(fs.readFileSync(telemetry.file, "utf8")));
+  const operation = record(array(snapshot["operations"])[0]);
+  assert.equal(operation["requestId"], "request");
+  assert.equal(operation["instanceId"], "instance");
   assert.doesNotMatch(
     JSON.stringify(snapshot),
     /private transport payload|not persisted|secret/,
   );
   await telemetry.dispose();
 });
+
+function present<T>(value: T | null | undefined): T {
+  assert.ok(value !== undefined && value !== null);
+  return value;
+}
+function record(value: unknown): Record<string, unknown> {
+  assert.ok(
+    value !== null && typeof value === "object" && !Array.isArray(value),
+  );
+  return value as Record<string, unknown>;
+}
+function array(value: unknown): unknown[] {
+  assert.ok(Array.isArray(value));
+  return value;
+}
