@@ -719,6 +719,116 @@
       "evidence": "tests/scenarios/pose-cases.ts",
       "qualification": "offline-tested-native-pending",
       "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "1e8d485d1a640ad46efd-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "d1ef480c29821cd813ed-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "58c9bf16ad9f56a634c0-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "85c3cdf89fc3c758d4aa-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "298570e6d2b56488ea3a-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "f7f958a93f35153ffc6c-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "01627023a8a6aba73db8-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "18d8974c26bbdabe2ee5-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "d12a399ffad6dbc2dbed-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "4130b77c1e10a7209f7f-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "08407e151efe2df8726f-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
     }
   ]
 }

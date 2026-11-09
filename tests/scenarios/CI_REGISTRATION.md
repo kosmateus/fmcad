@@ -50,3 +50,8 @@ Add `poses` to both protocols at concurrency 1/2/10. This exclusive saved-fixtur
 family tests production manifest revisions, body visibility, temporary evaluation
 and restoration. It does not qualify joint solving or native rendering. Retain the
 foreign-token and lost-reply unit gates in the aggregate scenario command.
+
+Add `animation` for both protocols at concurrency 1/2/10. This owned-document
+family runs the production deterministic camera-track planner and verifies its
+read-only contract. Native storyboard actions, joint sampling and frame/video
+export remain separate obligations; a generated manifest is not rendered output.

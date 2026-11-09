@@ -355,3 +355,28 @@ pass, including the new assertion-failure restoration case. The transaction file
 is explicitly excluded from this result because its five known settlement failures
 remain blocked; this is not a green whole-package claim. API shape and strict model
 type checks pass. Production-checker and full CI evidence will follow on the PR.
+
+## Delivery ledger — deterministic animation planning
+
+Pose PR #89 (`c51dacf`) retains the 191 passing non-transaction tests; its
+production-checker component run is in progress and CI is queued. No blocked
+transaction dependency is treated as resolved.
+
+The shared animation family preserves all 11 historical camera-manifest checks
+from `live-animation-methods.js`: exact track input, three frames, count/order,
+fps, time and camera interpolation with unchanged 1e-9 tolerances, stable target
+and up vector, and no authored native actions or affected entities. Independent
+saved-document readback additionally verifies no geometry, timeline, parameter
+or modification-state changes after planning and three rejected inputs. The
+production planner supplies all results; the simulator adds only a capability
+registration. There is no duplicate animation implementation.
+
+The required-model catalog now includes the animation family and the per-assertion
+ledger contains 79 reviewed mappings. Native storyboard actions, joint sampling,
+rendered frames/video and restoration of UI state remain open obligations. A
+manifest does not prove any of them. Full matrix and CI evidence follow below.
+
+Animation validation: all six MCP/addin × concurrency 1/2/10 combinations pass
+(28 owned saved fixtures), as do the four disposition/profile barrier checks.
+Runtime-test compilation passes. Native execution remains deferred, and full
+exact-head CI remains required before merge.

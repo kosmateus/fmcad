@@ -75,6 +75,11 @@
           "id": "poses",
           "scope": "exclusive-instance",
           "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite poses --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "animation",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite animation --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
         }
       ]
     },
@@ -86,7 +91,7 @@
         {
           "id": "animation-methods",
           "source": "tests/live-animation-methods.js",
-          "disposition": "native-only",
+          "disposition": "migration-pending",
           "obligation": "Storyboard creation, animation actions and frame export",
           "command": "node tests/live-animation-methods.js --run",
           "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."

@@ -44,6 +44,7 @@ test("reviewed assertion mappings name retained individual assertions and real e
         "definition-transaction-*",
         "camera-state-*",
         "pose-visibility-*",
+        "animation-plan-*",
       ].includes(text(row["scenario"])),
     );
     assert.ok(text(row["reason"]).length > 40);

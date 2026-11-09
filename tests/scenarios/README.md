@@ -160,3 +160,9 @@ The per-assertion ledger separates implemented mappings from qualification:
 `blocked-command-settlement` entries remain failing dependencies, while
 `offline-tested-native-pending` entries have model evidence but no native result.
 Neither label implies completion of the overall live suite.
+
+`--suite animation` executes the production deterministic camera-track planner
+on owned saved fixtures. It asserts the historical frame interpolation values
+and tolerances, then checks independent document state after valid and rejected
+plans. It does not create native storyboard actions, render frames or sample
+joint motion. Those remain explicit native obligations.

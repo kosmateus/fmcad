@@ -5,13 +5,13 @@
       "id": "animation-methods",
       "source": "tests/live-animation-methods.js",
       "runner": "standalone",
-      "model": "native-only",
+      "model": "partial",
       "scope": "Storyboard creation, animation actions and frame export",
       "prerequisites": "Installed matching broker and an isolated owned fixture",
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": []
+      "sharedScenarios": ["animation"]
     },
     {
       "id": "backend-adapter",
