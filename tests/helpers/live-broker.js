@@ -122,7 +122,8 @@ function disposeBackend(client) {
 }
 
 function createBackend(server, dependencies = {}) {
-  const value = context();
+  const value = context(dependencies.clientId
+    ? { ...process.env, FMCAD_LIVE_CLIENT: dependencies.clientId } : process.env);
   const client = (dependencies.createBackend || createBrokerTransport)({ ...server, routing: 'queue' }, {
     version: require('../../package.json').version,
     requestTimeout,
@@ -140,7 +141,11 @@ function createBackend(server, dependencies = {}) {
     payload = scope.payload(payload);
     if (controlPlane) throw new Error('SDK traffic cannot bypass the broker');
     if (process.env.FMCAD_LIVE_OWNED_SCOPE) throw new Error('Owned native observations must use the journaled CLI command path');
+    if (dependencies.registeredRequest && dependencies.diagnosticReadOnly !== true)
+      throw new Error('Registered diagnostic transport requires explicit read-only intent');
     const command = dependencies.command === true && payload.params?.name === 'execute_python';
+    if (dependencies.registeredRequest && command)
+      throw new Error('Registered diagnostic transport requires raw read-only RPC; use journaled CLI for commands');
     let file, argv;
     if (command) {
       if (payload.params.arguments.persistent !== false) throw new Error('Live scripts require persistent:false');
@@ -150,15 +155,29 @@ function createBackend(server, dependencies = {}) {
       fs.writeFileSync(file, commandScript(payload.params.arguments.code), { flag: 'wx', mode: 0o600 });
       argv = ['run', file];
     }
-    const job = await queue.submit({ ...(command ? {
-      kind: 'command', argv,
-      inputFiles: require('../../src/queue-client').inputFiles(argv, process.cwd()),
-    } : { kind: 'rpc', payload, ...(sessionId ? { sessionId } : {}) }),
-      buildHash: require('../../src/queue-instance').buildHash(),
-       protocolVersion: client.negotiatedProtocolVersion || client.server.protocolVersion,
-       requestId: randomUUID(), cwd: process.cwd(), backend: cfg.backend, timeoutMs: cfg.timeoutMs,
-       description: 'Live integration ' + (process.env.FMCAD_LIVE_SUITE || 'test') + ': ' + (payload.params?.name || payload.method) });
-    const result = await queue.wait(job.id);
+    const buildHash = require('../../src/queue-instance').buildHash();
+    const protocolVersion = client.negotiatedProtocolVersion || client.server.protocolVersion;
+    const dispatch = async requestId => {
+      const job = await queue.submit({ ...(command ? {
+        kind: 'command', argv,
+        inputFiles: require('../../src/queue-client').inputFiles(argv, process.cwd()),
+      } : { kind: 'rpc', payload, ...(sessionId ? { sessionId } : {}) }),
+        buildHash, protocolVersion, requestId, cwd: process.cwd(), backend: cfg.backend, timeoutMs: cfg.timeoutMs,
+        description: 'Live integration ' + (process.env.FMCAD_LIVE_SUITE || 'test') + ': ' + (payload.params?.name || payload.method) });
+      const result = await queue.wait(job.id);
+      return { job, result };
+    };
+    const { job, result } = dependencies.registeredRequest
+      ? await dependencies.registeredRequest('transport-rpc', {
+        readOnly: true, payload, sessionId, protocolVersion, buildHash,
+      }, async binding => {
+        if (binding.owner.clientId !== value.clientId) throw new Error('Foreign registered transport owner');
+        const observed = await dispatch(binding.requestId);
+        if (observed.job.id !== observed.result.job.id) throw new Error('Foreign original transport result');
+        return { value: observed,
+          execution: require('../../dist/tests/scenarios/queue-backend').queueExecution(observed.result, binding.owner, binding.requestId) };
+      })
+      : await dispatch(randomUUID());
     let response;
     if (command) {
       if (!['succeeded', 'failed'].includes(result.job.state) || !result.stdout?.trim()) {
