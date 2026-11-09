@@ -11,12 +11,9 @@ for (const protocol of ["mcp", "addin"] as const)
   test(`native style/save qualification requires the real kernel before all ten owners or user-view capture via ${protocol}`, async (t) => {
     const { backend, model, directory } = await fixture(t, protocol);
     const before = model.executions;
-    const reports = await runScenarios(
-      backend,
-      nativeStyleSaveScenarios(),
-      directory,
-      10,
-    );
+    const reports = [];
+    for (const scenario of nativeStyleSaveScenarios())
+      reports.push(...(await runScenarios(backend, [scenario], directory, 10)));
     assert.equal(reports.length, 10);
     assert.equal(
       model.executions,
@@ -25,6 +22,7 @@ for (const protocol of ["mcp", "addin"] as const)
     );
     for (const report of reports) {
       assert.equal(report.status, "unsupported");
+      assert.match(report.error ?? "", /Missing capabilities:/);
       assert.equal(report.cleanup, "not-created");
       assert.deepEqual(report.requests, []);
     }

@@ -555,3 +555,17 @@ The lifecycle has one SDK queue and no new simulator geometry. Details and
 justified stronger coordinate/output-intent assertions are recorded in
 `C_NATIVE_ASSERTION_OBLIGATIONS.md`. Existing installed/checker/browser and the
 remaining retained regression runtime gates also remain pending.
+
+
+### Actual native-runner safety gate
+
+After central build4, 43 C/style safety and preview tests passed with no skips or
+cancellations. All ten owners of each factory are exercised independently for
+capability refusal; two separate barrier tests record subsequent owners as
+not-run without claiming their execution. Existing complete cleanup, recursive
+unknown detection, document/file identity, foreign inventory and no-replay checks
+remain exact. The full offline document_save_test.py module passed 21 tests.
+The six C typed factories and their CLI/profile registrations are ready for the
+owned handoff; semantic ledger rows remain native qualification not-run. The
+final integrated CI/native-plan gate and real Fusion readbacks remain pending.
+The earlier execution-pending entry is superseded by this runtime evidence.

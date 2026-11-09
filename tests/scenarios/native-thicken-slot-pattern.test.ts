@@ -32,6 +32,32 @@ import {
   nativeThickenSlotPatternCapability,
 } from "./native-thicken-slot-pattern-cases";
 
+for (const protocol of ["mcp", "addin"] as const)
+  test(`exclusive native capability barrier records subsequent owners as not run via ${protocol}`, async (t) => {
+    const { backend, model, directory } = await fixture(t, protocol);
+    const before = model.executions;
+    const reports = await runScenarios(
+      backend,
+      nativeThickenSlotPatternScenarios(),
+      directory,
+      10,
+    );
+    assert.equal(reports.length, 10);
+    for (const [index, report] of reports.entries()) {
+      assert.equal(report.status, index === 0 ? "unsupported" : "not-run");
+      assert.equal(report.cleanup, "not-created");
+      assert.deepEqual(report.requests, []);
+      assert.match(
+        report.error ?? "",
+        index === 0
+          ? /Missing capabilities:/
+          : /exclusive scenario did not establish successful restoration and cleanup/i,
+      );
+    }
+    assert.equal(model.executions, before);
+    assert.deepEqual(await remaining(model), { active: null, documents: [] });
+  });
+
 const families = [
   {
     name: "cad",
@@ -69,12 +95,13 @@ for (const family of families)
     test(`${family.name} native capability rejects all ten owners before dispatch via ${protocol}`, async (t) => {
       const { backend, model, directory } = await fixture(t, protocol);
       const before = model.executions;
-      const reports = await runScenarios(
-        backend,
-        family.scenarios(),
-        directory,
-        10,
-      );
+      const reports = [];
+      // Run each owner independently so the exclusive scheduler's stop barrier
+      // cannot turn an unexecuted owner into claimed capability evidence.
+      for (const scenario of family.scenarios())
+        reports.push(
+          ...(await runScenarios(backend, [scenario], directory, 10)),
+        );
       assert.equal(reports.length, 10);
       assert.equal(
         model.executions,
@@ -83,6 +110,7 @@ for (const family of families)
       );
       for (const report of reports) {
         assert.equal(report.status, "unsupported");
+        assert.match(report.error ?? "", /Missing capabilities:/);
         assert.equal(report.cleanup, "not-created");
         assert.equal(
           report.fixture,
@@ -228,8 +256,8 @@ for (const protocol of ["mcp", "addin"] as const)
     assert.deepEqual(
       reports.map((row) => [row.status, row.cleanup]),
       [
-        ["passed", "closed"],
-        ["passed", "closed"],
+        ["passed", "complete"],
+        ["passed", "complete"],
       ],
     );
     assert.equal(

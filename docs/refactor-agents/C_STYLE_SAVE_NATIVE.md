@@ -37,8 +37,12 @@ Validation at this checkpoint:
 - The local `document.save_as` preview remains an actual offline call with a
   backend that throws if contacted. Its test checks `mutation: false` and
   `state: input-validated-only`.
-- Runtime execution of those three tests is pending the coordinated central
-  build. The retained `tests/document_save_test.py` module also needs a current
-  full run; no prior package-D run is claimed as its evidence.
+- The three safety/preview tests passed in the coordinated C43 run (43 passed,
+  zero skipped/cancelled). Each of ten owners is tested independently so a
+  scheduler barrier cannot masquerade as executed capability evidence. The
+  retained `tests/document_save_test.py` module also passed all 21 tests in
+  10.375 seconds; this is a new full run, not an inferred package-D result.
+- CLI and addin-only profile registration are connected and pass strict checking.
+  Final integrated CI/native-plan validation remains an integration gate.
 - Native geometry, materials, rendering and F3D qualification are **not run**.
   Static checks and unsupported-capability tests do not qualify native behavior.

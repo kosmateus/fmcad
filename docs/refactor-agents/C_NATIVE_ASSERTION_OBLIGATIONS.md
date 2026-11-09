@@ -231,13 +231,19 @@ Feature modes remain addin-only. Sketch operations require the exact installed
 package through `FMCAD_LIVE_RUNTIME_ROOT`; CAD reimport additionally requires the
 explicit `FMCAD_LIVE_REIMPORT=1` qualification variant.
 
-Strict TypeScript and ESLint pass for all six ports and their 38 lifecycle/predicate
+Strict TypeScript and ESLint pass for all six ports and their lifecycle/predicate
 safety cases. The source comparison preserves assertion and readback call counts
 in 11 CAD, 22 extended and 9 feature-mode source groups, all 14 sketch geometry
 functions, and all 10 thicken/26 hierarchy literal readback labels. Loop-generated
 cases remain in their original loops. The comparison is source evidence, not
-execution evidence. The safety cases have not run yet; runner status therefore
-remains `migration-required` pending the coordinated built-runtime gate.
+execution evidence. The coordinated build4 runtime gate passed all 43 C/style safety and preview
+cases with zero skips. Each of ten owners for every factory/protocol is invoked
+separately and actually refuses its missing native capability without SDK work;
+two separate tests verify the exclusive scheduler stops subsequent owners as
+`not-run`. Identity/foreign-inventory failures and nested uncertainty defer cleanup
+and prevent replay. The two successful pure lifecycle probes require `complete`,
+the existing runner cleanup status (the new tests initially used `closed`).
+Runner status is now `owned-handoff-ready`; no native observation is qualified.
 
 The transport migration retains the generated CLI parser for CAD commands and
 uses exact original broker outcomes instead of inventing a subprocess exit code.
@@ -260,7 +266,9 @@ The original tolerances and native hypotheses are unchanged. Added assertions
 require all three bounds/endpoint coordinates and an original owned PNG intent,
 closing vacuous empty-array or unbound-output evidence without relaxing a check.
 
-Still pending: execute the safety cases on the stable build, validate native
-CLI/profile registration,
-and run every retained geometry/solver/rendering/style obligation on real Fusion.
+All six CLI factories/capabilities and profile records are connected, including
+addin-only feature modes, CAD reimport variants and the sketch installed-root
+requirement; the complete CLI passes strict checking. Still pending: final
+integrated CI/native-plan validation and every retained geometry/solver/rendering/
+style obligation on real Fusion.
 No simulator result qualifies a native kernel.
