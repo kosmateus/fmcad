@@ -313,6 +313,16 @@ checks cover installed host contracts, not native geometry or solver qualificati
 
 ## Current integration evidence
 
+The integration proposal also includes main `9daedef4f763bd9b229cc88dc376967a488b55e3`
+(E's MCP helper, review/screenshot and catalog boundaries). The combined tree passes
+the pinned build, strict test types, lint, formatting and all 252 modeling
+policy/history/installed tests with zero skips. This includes 263 CLI and 263 MCP
+previews outside the checkout. No C runtime or modeling program changed in that
+merge. PR #57 head `1c94657b` and #61 head `255dd866` now each have 22/22 successful
+CI jobs (runs `42529553914` and `42530208843`). Shared gate integration and the
+complete 262-program admission matrix remain required; the partial local shard
+logs and queued integration CI are not successful full-matrix evidence.
+
 The C stack is #37 → #47 → #57 → #61 → #65; #66 is the isolated shared-gate
 proposal. Runtime head `c61a2515` is integrated with fetched main `5d5a793` in
 #66 at `39103d1e`. The package-script conflict was resolved by retaining every

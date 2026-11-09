@@ -131,3 +131,92 @@ comparisons retain synchronous preflight failure and exact helper arguments.
 The existing six engineering/batch-local suites pass all 33 cases. Native image
 quality and Canvas semantics remain deferred. Declarative metadata is still a
 separate registration migration; these adapters do not close all of E3.
+
+### MCP helper schema parity
+
+The frozen predecessor rejects the advertised optional `acceptedOutcome` on
+`fmcad_queue_reconcile` because it treats `required` as the allowed-field list.
+Typed helper declarations and validation now distinguish allowed and required
+fields and enforce the advertised committed/aborted enum. Paired tests preserve
+the no-outcome response, reject malformed/foreign fields before registration,
+and require one reconcile call plus one owned status read with zero submit/wait
+calls. Request/document/file context stays bound to the owned job. Agent A was
+notified on PR #42; no broker policy or receipt validation changed.
+
+Build, lint and test typecheck pass. The focused library/framing/catalog set has
+32 passes and five host-limited failures: one retained fixture requires
+`/tmp/opencode`, and four artifact checks require `/proc` inode verification
+(the last manifests as missing success output after that rejection). Relevant
+framing, owned-artifact and retained test sources are unchanged from `0b84454`.
+No path/ownership assertion was relaxed. Linux CI remains the qualification gate.
+
+## Published sequence and dependencies
+
+- #39: `8a707c2`, image host orchestration and declarations; CI pending.
+- #46: `94cb3f1`, public client/configuration; stacked on #39.
+- #48: `ae3faff`, offline engineering/reference; stacked on #46.
+- MCP helper parity follows #48; full compatibility orchestration remains open.
+- F's issue #43 owns the web lifecycle contract needed before retiring public
+  console/diagnostic terminal launch. E requested URL/project selection,
+  readiness failure and disposal semantics before changing `src/console.js`.
+- G was given staging/test registration and writable npm cache findings on #40.
+  Existing source facades remain until complete installed-consumer qualification.
+
+### Review command boundary
+
+`library-review-command.ts` owns argument parsing, source preparation and capture
+composition, retaining the source facade and existing typed review workflow.
+The unchanged review suite passes against both frozen and migrated wrappers:
+12 historical cases, and 17 current review/application cases. They retain one-call
+capture, two-owner output claims, failed restoration, corrupted evidence and
+unknown timeout without replay. The source payload is byte-identical for the
+same pinned request. Public parser/report and installed declaration comparisons
+are added to the existing library contract gate.
+
+G was asked on #40 to register the retained review/application/shot suites plus
+installed MCP and both OpenCode adapters in the shared CI selection, with cache
+preparation and the existing Linux temporary fixture directory. Their assertions
+must execute before final qualification; a local pass is not full CI evidence.
+
+- PR #52 also types the screenshot boundary. Fourteen paired observations preserve
+  single dispatch, response precedence, malformed responses and publication errors;
+  the two retained screenshot tests pass. Installed declarations cover ShotClient.
+
+### MCP context and installed consumer follow-up
+
+PR #39 completed full CI (run 42524333282) and merged as `10236646`.
+PR #46 is now based on main. Review/screenshot PR #52 head `24b0ec5`
+passes 13 library/screenshot tests, including installed declarations.
+
+Queue metadata validation now moves to `library-mcp-metadata.ts`; paired
+historical cases cover owner/document/file pins, sequence/revision validation,
+Unicode, root hints, private metadata stripping and input non-mutation.
+An inherited defect is retained explicitly: projectDirectory advertises 4096
+characters but the shared identifier predicate limits it to 256. Changing that
+acceptance range requires a separate behavior decision and downstream check.
+
+MCP/OpenCode fixtures use the host temporary directory rather than assuming
+`/tmp/opencode`. G was notified that offline-cache preparation must include the
+supported V1 host dependency, not just runtime dependencies. Installed MCP and
+both OpenCode lines remain open until the unchanged assertions pass in CI.
+
+MCP catalog routing now uses `library-mcp-catalog.ts` with explicit catalog and
+post ports. Seventy-two paired observations preserve local/broker routing,
+notification failures, backend restrictions, response formatting and owner pins.
+The installed OpenCode suite passes all nine tests after online preparation of
+the V1 host dependency; actual consumer installs remain offline.
+
+The installed MCP warning was traced to eager application configuration parsing
+for optional companion startup, not missing installed assets. The existing
+poison-config fixture failed because the parse error became a console warning.
+The entrypoint now skips companion launch when configuration is unavailable,
+preserves that error for the first queued operation, and retains exactly-once
+best-effort startup and diagnostics for valid configuration. Existing tests are
+unchanged; a new regression covers ping, config-required failure and subsequent
+ping without a broker or companion call. F was notified in #43.
+
+Final validation for this MCP delivery: full build, lint and test typecheck pass;
+17 library/installed MCP/companion tests pass, including closed strict protocol
+DTO declarations. Nine installed OpenCode tests pass. Three existing full
+MCP integration cases remain locally blocked by missing /proc process identity
+or opened-artifact verification, with guards and assertions preserved for CI.
