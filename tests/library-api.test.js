@@ -212,6 +212,8 @@ import { resolveProject } from './node_modules/fmcad/dist/src/dist/composition/l
 import { t, preferences, savePreferences } from './node_modules/fmcad/dist/src/dist/composition/library-i18n.js';
 import { createReporter, setupV1, setupV2 } from './node_modules/fmcad/dist/src/dist/composition/library-opencode-presence.js';
 void t; void preferences; void savePreferences; void createReporter; void setupV1; void setupV2;
+import {createEventSink as createProjectEvents} from './node_modules/fmcad/dist/src/dist/composition/library-project-events.js';
+void createProjectEvents;
 declare const openControlCenter: OpenControlCenter;
 void consoleCommand(['--web'], {stdout:{write(text:string){void text;}},openControlCenter});
 void resolveProject;
@@ -255,6 +257,9 @@ void resolveProject;
       const api = createFmcad(${JSON.stringify(options)});
       if (api.query.catalog().length < 250) throw Error('Missing public catalog');
       await api.dispose();
+      const {createEventSink}=require('./node_modules/fmcad/dist/src/dist/composition/library-project-events.js');
+      const sink=createEventSink('/project');
+      await sink.dispose();
     `], { cwd: directory, env: { ...process.env, HOME: '/nonexistent', XDG_CONFIG_HOME: '/nonexistent' }, encoding: 'utf8' });
     const poison = path.join(directory, 'invalid-help-config.json');
     fs.writeFileSync(poison, '{invalid application configuration');

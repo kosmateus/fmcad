@@ -1,3 +1,4 @@
+import { createEventSink } from "./library-project-events";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import {
@@ -86,11 +87,7 @@ export function createReporter(
   const reporter = candidate;
   let events = eventsOverride;
   try {
-    events ||= (
-      hostRequire("../../opencode/project-logger.cjs") as {
-        createEventSink(project: string): EventSink;
-      }
-    ).createEventSink(project);
+    events ||= createEventSink(project);
   } catch {
     events = { async publish() {}, dispose() {} };
   }

@@ -102,5 +102,9 @@
   "src/opencode/presence.cjs": {
     "commit": "0b84454d8e5d22abb23bcf52999c506894ebf5bf",
     "sha256": "3ce3b706253f373dc9916363bd191e37937ba2da90e493568baa6816811e9b54"
+  },
+  "src/opencode/project-logger.cjs": {
+    "commit": "7cc23f1e19207ab268aaaf1eb4795d33196a5a6d",
+    "sha256": "33d7ef3c69bf2290ae4fdf44a1e4366c7e98437539bbae79ccee38d75216547d"
   }
 }

@@ -19,7 +19,7 @@ function loadBoundary(historical,trace,{absent=false,failTouch=false,failClose=f
   const original=Module._load;
   Module._load=function(name,...args){
     if(name.endsWith('/telemetry/opencode-presence'))return adapter;
-    if(name.endsWith('/project-logger.cjs'))return logger;
+    if((name.endsWith('/project-logger.cjs')||name==='./library-project-events'))return logger;
     return original.call(this,name,...args);
   };
   try{
@@ -37,7 +37,7 @@ function loadBoundary(historical,trace,{absent=false,failTouch=false,failClose=f
     // The reporter creates its logger lazily; keep the scoped require override
     // active only while the synchronous factory/setup prefix runs.
     return {api:isolated.exports,scoped:callback=>{
-      const saved=Module._load;Module._load=function(name,...args){if(name.endsWith('/project-logger.cjs'))return logger;return saved.call(this,name,...args);};
+      const saved=Module._load;Module._load=function(name,...args){if((name.endsWith('/project-logger.cjs')||name==='./library-project-events'))return logger;return saved.call(this,name,...args);};
       try{return callback();}finally{Module._load=saved;}
     }};
   }finally{Module._load=original;}

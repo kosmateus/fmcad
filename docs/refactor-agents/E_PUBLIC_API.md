@@ -467,3 +467,20 @@ the real producer constructor with poisoned application configuration.
 
 Producer validation: full build and targeted lint pass; all 18 default-process,
 stdio/framing and actual installed MCP tests pass with zero skips.
+
+### Passive OpenCode event client boundary
+
+The active reporter now imports typed library-project-events directly. This
+extracts only queue-location derivation, no-follow regular-file token reads,
+bounded authenticated IPC and the typed event sink. The legacy observer reuses
+these helpers; its queue observations, log retention, child entrypoint and
+authenticated diagnostic branch remain unchanged under F. Historical comparisons
+cover success/split/malformed/null/oversized frames, denial, disconnect, socket
+errors, timeout, exact token bytes, invalid events, disabling and disposal.
+
+Four paired IPC/reporter tests and two installed declaration/reference checks
+pass. Three retained log migration/rotation/guard tests pass. The real observer
+startup test cannot create its control file on this host. Both the frozen
+original and migrated implementation return LOGGER_NOT_READY; an independent
+abstract-socket bind reproduces EPERM. The retained observer test is unchanged
+and remains a Linux CI gate.
