@@ -752,7 +752,7 @@
           "obligation": "All 251 retained integration callbacks and original CLI assertions through the existing exact owned saved child handoff",
           "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
           "prerequisites": "Offline complete; exact installed build and broker, explicit dedicated project/folder and existing saved-file ownership receipts. Each reviewed source SHA and callback title must match the 251-case manifest before dispatch. No user document or file is adopted.",
-          "runnerStatus": "owned-handoff-source-ready",
+          "runnerStatus": "migration-required",
           "qualification": "not-run",
           "runtimeSource": "tests/scenarios/native-integration-cases.ts",
           "ownerCopies": 1,
@@ -761,7 +761,8 @@
             "mcp",
             "addin"
           ],
-          "cleanup": "Existing ScenarioSession exact close/delete and foreign document/cloud inventory audit; durable child lease and original request reconciliation before cleanup. Any unproved mutation or active child defers cleanup without replay."
+          "cleanup": "Existing ScenarioSession exact close/delete and foreign document/cloud inventory audit; durable child lease and original request reconciliation before cleanup. Any unproved mutation or active child defers cleanup without replay.",
+          "migrationRequirement": "Atomic-isolation, GM36 and GM37 direct child dispatch is being migrated to the existing owned wrapper; per-command original settlement must fence every later admission. Native execution is blocked until these exact source and safety gates pass."
         }
       ]
     }
