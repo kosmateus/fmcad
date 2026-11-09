@@ -300,3 +300,20 @@ Twelve exact shared-case matches and three offline preflight matches await their
 registered execution. The other 553 are explicit retained native obligations
 whose `ScenarioSession` migration is still required; this ledger is not evidence
 that those native fixtures or the overall offline migration are complete.
+
+
+The retained passive project observer now has one strict canonical composition,
+`library-project-observer.ts`; the CJS path keeps its eight historical exports and
+executes `runProjectObserver` only as the child entrypoint. Process startup still
+uses that public path. Queue polling remains read-only, project writes remain
+serialized and bounded (64 projects, 128 pending writes per project), hourly
+rotation remains exclusive, and shutdown retains bounded draining. The public
+`locations` and `createEventSink` exports retain their original function identity.
+
+The frozen dce47c5 source is public repository history. The paired observer suite
+runs the same five rotation/correlation/protocol cases against actual old and
+current observer subprocesses: the historical child executes a checked source
+copy with the same staged dependencies. Protocol refusals cover wrong tokens,
+malformed/incomplete/oversized observations, relative project paths and oversized
+IPC packets while asserting unchanged durable queue bytes. Strict compilation
+and lint pass; paired process execution is pending central staging.

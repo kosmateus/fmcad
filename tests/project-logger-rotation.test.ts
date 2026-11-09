@@ -6,24 +6,17 @@ const load = createRequire(
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
+import net from "node:net";
 import path from "node:path";
-type Events = typeof import("../src/composition/library-project-events");
-interface Logger extends Pick<Events, "locations" | "createEventSink"> {
-  appendSafe(file: string, text: string): Promise<void>;
-  workspaceLog(
-    cwd: string,
-    config: ReturnType<Events["locations"]>,
-  ): string | null;
-  ensureProjectLogger(options: {
-    queueDir: string;
-    pollMs?: number;
-    heartbeatMs?: number;
-  }): Promise<
-    | import("../src/composition/library-project-events").ObserverResponse
-    | { enabled: false; code?: string }
-  >;
-  stopProjectLogger(options: { queueDir: string }): Promise<unknown>;
-}
+type Logger = Pick<
+  typeof import("../src/composition/library-project-observer"),
+  | "appendSafe"
+  | "workspaceLog"
+  | "locations"
+  | "ensureProjectLogger"
+  | "stopProjectLogger"
+  | "createEventSink"
+>;
 const { appendSafe, workspaceLog, locations } = load(
   "../src/opencode/project-logger.cjs",
 ) as Logger;
@@ -219,4 +212,135 @@ test("logger refuses symlink logs, symlink directories and archive overwrite", a
     { code: "UNSAFE_DIRECTORY" },
   );
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+function observerRequest(socketPath: string, text: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ path: socketPath });
+    let response = "";
+    socket.setTimeout(2000, () =>
+      socket.destroy(new Error("Observer response timeout")),
+    );
+    socket.once("error", reject);
+    socket.once("connect", () => socket.end(text + "\n"));
+    socket.on("data", (bytes) => {
+      response += bytes.toString("utf8");
+    });
+    socket.once("end", () => resolve(response));
+  });
+}
+
+test("observer rejects unauthorized and malformed observations without mutating queue state", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "observer-protocol-"));
+  const queueDir = path.join(dir, "queue");
+  const project = path.join(dir, "project");
+  fs.mkdirSync(queueDir);
+  fs.mkdirSync(project);
+  const file = path.join(queueDir, "queue-state.json");
+  const queue = JSON.stringify({
+    version: 1,
+    jobs: {},
+    active: null,
+    blocked: null,
+    lease: null,
+    paused: false,
+  });
+  fs.writeFileSync(file, queue);
+  const config = locations(queueDir);
+  let started = false;
+  try {
+    const ready = await ensureProjectLogger({
+      queueDir,
+      pollMs: 20,
+      heartbeatMs: 40,
+    });
+    assert.ok("ok" in ready);
+    assert.equal(ready.ok, true);
+    started = true;
+    const control: unknown = JSON.parse(
+      fs.readFileSync(path.join(config.stateDir, "observer.json"), "utf8"),
+    );
+    assert.ok(
+      control &&
+        typeof control === "object" &&
+        "token" in control &&
+        typeof control.token === "string",
+    );
+    const core = load("../src/dist/core") as typeof import("@fmcad/core");
+    const invocation = core.createInvocationContext({
+      clientId: "client",
+      requestId: "request",
+      instanceId: "instance",
+      source: "cli",
+    });
+    const valid = {
+      version: 1,
+      atMs: Date.now(),
+      name: "client.requested",
+      invocation,
+      data: { status: "accepted" },
+    };
+    for (const message of [
+      { method: "attach", token: "wrong-token", cwd: project },
+      {
+        method: "observation",
+        token: control.token,
+        cwd: project,
+        event: { ...valid, invocation: { ...invocation, clientId: "" } },
+      },
+      {
+        method: "observation",
+        token: control.token,
+        cwd: project,
+        event: { ...valid, data: { status: "x".repeat(6500) } },
+      },
+      {
+        method: "observation",
+        token: control.token,
+        cwd: "relative",
+        event: valid,
+      },
+      {
+        method: "client",
+        token: control.token,
+        cwd: project,
+        event: "unknown_event",
+      },
+    ])
+      assert.deepEqual(
+        JSON.parse(
+          await observerRequest(config.socket, JSON.stringify(message)),
+        ),
+        { ok: false },
+      );
+    assert.deepEqual(JSON.parse(await observerRequest(config.socket, "{")), {
+      ok: false,
+    });
+    assert.equal(await observerRequest(config.socket, "x".repeat(8193)), "");
+    assert.equal(fs.existsSync(path.join(project, ".cad")), false);
+    assert.equal(fs.readFileSync(file, "utf8"), queue);
+    assert.deepEqual(
+      JSON.parse(
+        await observerRequest(
+          config.socket,
+          JSON.stringify({
+            method: "attach",
+            token: control.token,
+            cwd: project,
+          }),
+        ),
+      ),
+      { ok: true },
+    );
+    const log = workspaceLog(project, config);
+    assert.ok(log);
+    for (let i = 0; i < 100 && !fs.existsSync(log); i++)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.match(fs.readFileSync(log, "utf8"), /observer_attached/);
+    assert.equal(fs.readFileSync(file, "utf8"), queue);
+  } finally {
+    if (started) await stopProjectLogger({ queueDir });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
