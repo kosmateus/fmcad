@@ -220,3 +220,35 @@ Final validation for this MCP delivery: full build, lint and test typecheck pass
 DTO declarations. Nine installed OpenCode tests pass. Three existing full
 MCP integration cases remain locally blocked by missing /proc process identity
 or opened-artifact verification, with guards and assertions preserved for CI.
+
+### Command registration and help migration
+
+PR #62 (`33f7539`) contains the typed MCP catalog/metadata and the installed
+companion correction. Its full CI and G's added retained gates are pending.
+
+Command registration now lives in `library-commands.ts`; all 505 canonical
+routes, 337 aliases, flags, argument limits and longest-prefix dispatch are
+compared with the frozen predecessor. Typed help modules implement English and
+Polish rendering, contextual sections, manual registration and text formatting.
+Every registered help page and the legacy/broker manual data are compared with
+the predecessor. The three native documentation audits remain unfinished.
+
+Two stale descriptions of legacy document selection now match the already
+migrated `legacy_document.py`: one case-insensitive open-name match is required,
+with ambiguity rejected before activation. This changes documentation only.
+The comparison tests explicitly account for these exact wording corrections;
+route/alias behavior and all other text remain covered.
+
+The retained help/registry run exposed two inherited defects without weakening
+assertions: batch.summary's audit pointed to the removed `.js` test rather than
+`tests/batch-summary.test.ts`; two registry upload fixtures supplied only a WSL
+environment variable, although detection now also requires the OS signature.
+The audit points to the existing typed test and the two fixtures use the retained
+fake-WSL helper. Production platform detection and upload assertions are unchanged.
+
+Validation for command/help delivery: build, lint and test typecheck pass;
+60 retained library/registry/help/manual/capability tests pass. The installed
+consumer additionally runs the npm-created `fmcad` executable link for detailed
+batch help with poisoned configuration, no source tree/host SDK and a read-only
+package; it returns complete bundled workflow help with empty stderr. Historical
+hashes of all nine migrated modules match the recorded `0b84454` git bytes.

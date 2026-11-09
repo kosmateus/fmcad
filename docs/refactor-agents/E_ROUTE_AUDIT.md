@@ -72,3 +72,10 @@ V1/V2 tests. The companion poison-config regression is fixed without changing
 existing assertions. Full CI and G's retained-gate registration remain required.
 Legacy queue submission/recovery and compatibility framing orchestration still
 remain in `mcp-stdio-compat.js`; they are not declared migrated by this extraction.
+
+Command registration and help composition use typed `library-commands` and
+`library-help*` modules, including typed legacy/broker manuals. The paired route
+comparison covers all 505 canonical entries and 337 aliases, argument limits,
+flags and dispatch. Paired help comparisons cover every EN/PL page, contextual
+sections, manual data and ANSI wrapping. Only two stale document-selection
+sentences change, reflecting the existing unique-match activation guard.

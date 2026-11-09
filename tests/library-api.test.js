@@ -193,6 +193,9 @@ test('outside-repository consumer imports built JS and declarations with no sour
       import { queueMetadata } from './node_modules/fmcad/dist/src/dist/composition/library-mcp-metadata.js';
       import { createCatalogPost } from './node_modules/fmcad/dist/src/dist/composition/library-mcp-catalog.js';
       void queueMetadata; void createCatalogPost;
+      import { commands, findCommand } from './node_modules/fmcad/dist/src/dist/composition/library-commands.js';
+      import { detail, globalHelp } from './node_modules/fmcad/dist/src/dist/composition/library-help.js';
+      void commands; void findCommand; void detail; void globalHelp;
       import type { FmcadOptions, ExecutionReceipt, ReviewRequest, ReviewServiceOptions, PythonCheckReport } from 'fmcad/api';
       declare const options: FmcadOptions;
       declare const reviewOptions: ReviewServiceOptions;
@@ -234,6 +237,15 @@ test('outside-repository consumer imports built JS and declarations with no sour
       if (api.query.catalog().length < 250) throw Error('Missing public catalog');
       await api.dispose();
     `], { cwd: directory, env: { ...process.env, HOME: '/nonexistent', XDG_CONFIG_HOME: '/nonexistent' }, encoding: 'utf8' });
+    const poison = path.join(directory, 'invalid-help-config.json');
+    fs.writeFileSync(poison, '{invalid application configuration');
+    const help = require('node:child_process').spawnSync(process.execPath, [path.join(directory, 'node_modules/.bin/fmcad'), 'help', 'batch', 'run'], {
+      cwd: directory, encoding: 'utf8', env: {...process.env, FMCAD_CONFIG: poison, LC_ALL:'en_US.UTF-8'},
+    });
+    assert.equal(help.status, 0, help.stderr);
+    assert.equal(help.stderr, '');
+    assert.match(help.stdout, /Help: batch run/);
+    assert.match(help.stdout, /Worked Workflow: Multi-component parametric sketch-to-solid/);
     assert(!fs.existsSync(path.join(installed, 'src')));
     assert(!fs.existsSync(path.join(directory, 'node_modules/@opencode-ai')));
     assert(!fs.existsSync(path.join(directory, 'node_modules/@opencode')));
@@ -474,4 +486,59 @@ test('typed MCP catalog preserves local routing, notification errors and exact o
     };
     assert.deepEqual(await observe(current),await observe(historical));
   }
+});
+
+test('typed command registration preserves every route, alias, flag and argument limit', () => {
+  const historical = historicalPublicBoundary('commands');
+  const current = require('../src/commands');
+  const previous = 'legacy document lookup activates the first case-insensitive open-name match; duplicate names are not rejected.';
+  const corrected = 'document lookup requires one case-insensitive open-name match; duplicate names are rejected before activation.';
+  const expected = historical.commands.map(command => ({...command, description:command.description.replace(previous, corrected)}));
+  assert.deepEqual(current.commands, expected);
+  assert.deepEqual(current.globalFlags, historical.globalFlags);
+  assert.deepEqual(current.legacyCommands, expected.slice(0, historical.legacyCommands.length));
+  for (const command of expected) {
+    for (const spelling of [command.key, ...(command.aliases || [])]) {
+      assert.equal(current.findCommand(spelling.split(' ')), current.commands.find(entry => entry.key === command.key));
+      assert.equal(current.findCommand([...spelling.split(' '), 'argument-α']).key, historical.findCommand([...spelling.split(' '), 'argument-α']).key);
+    }
+  }
+  for (const key of Object.keys(historical.SPECIAL)) assert.deepEqual(current.SPECIAL[key](),historical.SPECIAL[key]());
+  assert.deepEqual(current.DOC_SUB, historical.DOC_SUB);
+  for (const [key, descriptor] of Object.entries(historical.OPS_DETAIL)) assert.deepEqual(current.OPS_DETAIL[key], {...descriptor,desc:descriptor.desc.replace(previous,corrected)});
+  assert.equal(current.findCommand(['not-a-command']),undefined);
+  const documentSource = fs.readFileSync(path.join(root,'runtime/python/fmcad/adapters/fusion/legacy_document.py'),'utf8');
+  assert.match(documentSource, /if len\(matches\) != 1:/);
+  assert(documentSource.indexOf('if len(matches) != 1:') < documentSource.indexOf('doc.activate()'));
+});
+
+test('typed help preserves every registered English and Polish page and text layout', () => {
+  assert.deepEqual(require('../src/legacy-manual'), historicalPublicBoundary('legacy-manual'));
+  assert.deepEqual(require('../src/broker-manual'), historicalPublicBoundary('broker-manual'));
+  const oldHelp = historicalPublicBoundary('help'), help = require('../src/help');
+  const oldPolish = historicalPublicBoundary('help-pl'), polish = require('../src/help-pl');
+  const oldDetails = historicalPublicBoundary('help-details'), details = require('../src/help-details');
+  const oldManual = historicalPublicBoundary('help-manual'), manual = require('../src/help-manual');
+  const oldFormat = historicalPublicBoundary('help-format'), format = require('../src/help-format');
+  const commands = require('../src/commands').commands;
+  const original = {LC_ALL:process.env.LC_ALL,FMCAD_CONFIG:process.env.FMCAD_CONFIG};
+  process.env.FMCAD_CONFIG = path.join(tmpdir(),'fmcad-help-no-config-'+process.pid);
+  try {
+    for (const language of ['en_US.UTF-8','pl_PL.UTF-8']) {
+      process.env.LC_ALL = language;
+      assert.equal(help.globalHelp(),oldHelp.globalHelp());
+      for (const entry of commands) assert.equal(help.detail(...entry.key.split(' ')),oldHelp.detail(...entry.key.split(' ')),entry.key);
+      assert.equal(help.detail('missing','route'),oldHelp.detail('missing','route'));
+    }
+    for (const entry of commands) {
+      assert.equal(polish.description(entry),oldPolish.description(entry),entry.key);
+      assert.equal(polish.detail(entry),oldPolish.detail(entry),entry.key);
+      assert.equal(details.contextualHelp(entry),oldDetails.contextualHelp(entry),entry.key);
+      assert.equal(manual.manualHelp(entry),oldManual.manualHelp(entry),entry.key);
+    }
+    for (const width of [20,40,80,120]) for (const text of ['plain words '.repeat(30),'  indented text\n{\"json\":true}\n\nŻółć','\u001b[31mred words '.repeat(15)+'\u001b[0m']) assert.equal(format.formatHelp(text,width),oldFormat.formatHelp(text,width));
+    const guide = historicalPublicBoundary('help-guide');
+    guide.sections = guide.sections.map(section => ({...section,text:section.text.replace('Legacy --doc operations activate the FIRST case-insensitive document match, not a uniqueness-safe selector.','Legacy --doc operations require one case-insensitive open-document name match; ambiguous names fail before activation.')}));
+    assert.deepEqual(require('../src/help-guide'),guide);
+  } finally { for (const [key,value] of Object.entries(original)) { if(value === undefined) delete process.env[key]; else process.env[key]=value; } }
 });
