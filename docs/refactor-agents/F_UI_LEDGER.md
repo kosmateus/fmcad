@@ -355,3 +355,13 @@ central staging; focused lint passes. The exact native scope, stricter original
 user-view precondition and pending lifecycle/native execution are recorded in
 F_GLOBAL_STATE_NATIVE_OBLIGATIONS.md. No simulator capability advertises native
 materials, motion, viewport rendering or workspace behavior.
+
+Delegated final test migration: `atomic-workflow-recovery.test.ts` retains all
+12 cases and all 149 original assertion expressions (plus four explicit JSON/
+optional-value narrowing assertions). All four large child-process/Python
+program literals are byte-identical to the current predecessor, including A's
+scoped fake-WSL fixture fixes. Queue fixture metadata now supplies the required
+public DTO fields; deliberate minimal fence snapshots stay explicit fixture
+boundaries. Strict compilation and lint pass. The actual broker/checker/process
+suite remains a required post-staging execution; historical manifest approvals
+are preserved as historical evidence and are not a new qualification claim.
