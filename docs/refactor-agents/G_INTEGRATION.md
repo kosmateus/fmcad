@@ -307,3 +307,29 @@ registered and 257 explicit gaps. Package inspection reports 1,581 files,
 `0c80e85af09e93821e6cec3149c32870674c6d2c`. The compatibility loader remains an
 active public consumer and is not retired. E1–E4, F1–F4, G and offline acceptance
 remain open; native preparation remains `NOTRUN` and Fusion was not executed.
+
+### Ninth A–F merge checkpoint
+
+Merged main `cf3e6ad` adds Agent E's typed review and screenshot boundaries from
+PR #52. Its exact head `24b0ec5` passed all 22 jobs in workflow `42529230482`;
+no merge-SHA workflow is registered. The combined candidate and eventual merge
+head still require fresh full CI.
+
+G adds review, review-application, screenshot, installed MCP and the packed V1/V2
+OpenCode adapter suite to the existing contracts gate. The existing offline-cache
+preparation and Linux `/tmp/opencode` setup are retained. Registration becomes
+491 test sources / 239 registered / 252 explicit gaps; exactly five debt entries
+close as execution-path gaps, not as whole-package acceptance.
+
+Build, lint, formatting, strict test types and nine registration tests pass. All
+30 library/review/application/screenshot cases pass with the external installed
+tarball and declarations unchanged. The ten installed MCP/OpenCode cases cannot
+create their hard-coded `/tmp/opencode` fixtures in this restricted host, so no
+assertion runs locally and none is relaxed; Linux candidate CI is the required
+evidence. Simulator typing and the 58-method / 21-property API check pass.
+
+Inventory is 658 runtime files and 420 public routes. Package inspection reports
+1,585 files, 3,378,941 compressed bytes and 16,648,056 unpacked bytes, shasum
+`cd897a4821b64c68320f074daa18aea12e616ccd`. Review/shot/MCP/OpenCode loaders
+remain active and are not retired. E1–E4, G and offline acceptance remain open;
+native review/screenshot/Fusion qualification was not run.

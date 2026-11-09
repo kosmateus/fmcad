@@ -161,3 +161,23 @@ No path/ownership assertion was relaxed. Linux CI remains the qualification gate
   readiness failure and disposal semantics before changing `src/console.js`.
 - G was given staging/test registration and writable npm cache findings on #40.
   Existing source facades remain until complete installed-consumer qualification.
+
+### Review command boundary
+
+`library-review-command.ts` owns argument parsing, source preparation and capture
+composition, retaining the source facade and existing typed review workflow.
+The unchanged review suite passes against both frozen and migrated wrappers:
+12 historical cases, and 17 current review/application cases. They retain one-call
+capture, two-owner output claims, failed restoration, corrupted evidence and
+unknown timeout without replay. The source payload is byte-identical for the
+same pinned request. Public parser/report and installed declaration comparisons
+are added to the existing library contract gate.
+
+G was asked on #40 to register the retained review/application/shot suites plus
+installed MCP and both OpenCode adapters in the shared CI selection, with cache
+preparation and the existing Linux temporary fixture directory. Their assertions
+must execute before final qualification; a local pass is not full CI evidence.
+
+- PR #52 also types the screenshot boundary. Fourteen paired observations preserve
+  single dispatch, response precedence, malformed responses and publication errors;
+  the two retained screenshot tests pass. Installed declarations cover ShotClient.

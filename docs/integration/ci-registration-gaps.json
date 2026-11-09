@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "baselineSha": "246356900061f7b95dc6bcddc6c067aaad72ceb0",
+  "baselineSha": "cf3e6ad9532b02ea11ac76560893daa9c79e2163",
   "meaning": "Explicit open registration debt at the latest G checkpoint, never a passing coverage waiver. New orphan files fail CI.",
   "gaps": {
     "tests/addin-bridge.test.js": {
@@ -1005,12 +1005,6 @@
       "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
       "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
     },
-    "tests/mcp-installed-package.test.js": {
-      "owner": "E",
-      "status": "unregistered",
-      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
-      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
-    },
     "tests/mcp-stdio-queue-lifecycle.test.js": {
       "owner": "E",
       "status": "unregistered",
@@ -1100,12 +1094,6 @@
       "status": "unregistered",
       "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
       "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
-    },
-    "tests/opencode-adapters.test.js": {
-      "owner": "E",
-      "status": "unregistered",
-      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
-      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
     },
     "tests/opencode-presence.test.js": {
       "owner": "E",
@@ -1341,19 +1329,7 @@
       "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
       "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
     },
-    "tests/review-application.test.js": {
-      "owner": "E",
-      "status": "unregistered",
-      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
-      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
-    },
     "tests/review-pixels.test.js": {
-      "owner": "E",
-      "status": "unregistered",
-      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
-      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
-    },
-    "tests/review.test.js": {
       "owner": "E",
       "status": "unregistered",
       "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
@@ -1496,12 +1472,6 @@
       "status": "unregistered",
       "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
       "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
-    },
-    "tests/shot.test.js": {
-      "owner": "E",
-      "status": "unregistered",
-      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
-      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
     },
     "tests/sketch-geometry-proof-bundle.test.js": {
       "owner": "C",

@@ -56,7 +56,7 @@ before any integration; record exact merged SHA and full matrix results here.
 | B       | PR #36 / #44 / #45 merged through `0d6f757` | Persistence plus anti-omission/profile increments; semantic mapping, shared reopen and lifecycle/recovery proof remain open. |
 | C       | PR #37 `a4943f3`               | Claim only at observation; canonical modeling services, Python boundaries and negative/readback evidence required.    |
 | D       | PR #38 `ee0fd54`               | Claim only at observation; file/source/version/publication and recovery contracts required.                           |
-| E       | PR #39 / #46 / #48 / #50 merged through `2463569` | Image, client/configuration, engineering/reference and MCP reconciliation helper boundaries; remaining public routes and complete installed parity stay open. |
+| E       | PR #39 / #46 / #48 / #50 / #52 merged through `cf3e6ad` | Image, client/configuration, engineering/reference, MCP reconciliation and review/shot boundaries; remaining public routes and complete installed parity stay open. |
 | F       | PR #41 merged as `04a42b4`     | First lifecycle/race delivery and UI ledger; controls, production broker parity, retention and TUI retirement remain open. |
 | G       | PR #40                         | Registration guard and inventories are an initial delivery, not G1–G4 completion.                                     |
 
@@ -413,3 +413,38 @@ unpacked bytes, shasum `0c80e85af09e93821e6cec3149c32870674c6d2c`.
 E1–E4, F1–F4, G and offline acceptance remain incomplete. The schema-2 native
 handoff remains preparation only; Fusion was not executed and every native
 obligation remains `NOTRUN` pending offline completion and real Fusion access.
+
+## Ninth merged A–F checkpoint — review and screenshot boundaries
+
+Merged main `cf3e6ad9532b02ea11ac76560893daa9c79e2163` contains Agent E's review
+and screenshot boundary delivery from PR #52. Its exact head
+`24b0ec58075974a254b63b2fb86109a23c228daf` passed all 22 jobs in workflow
+`42529230482`. No merge-SHA workflow is registered; the combined G candidate and
+eventual merge head still require their own complete matrices.
+
+Typed review composition now owns argument parsing, source preparation and capture
+coordination with explicit client/output/filesystem ports. Typed screenshot
+composition preserves one dispatch, response precedence and publication failure
+behavior. Review request identity, output claims, partial capture/restoration
+evidence and unknown timeouts remain pinned without replay. The source loaders
+remain public consumers.
+
+G registers five delivered retained gates in `test:contracts`: review,
+review-application, screenshot, installed MCP and the packed V1/V2 OpenCode
+adapter suite. Static registration therefore moves to 491 sources / 239 registered
+/ 252 explicit gaps, and the debt ledger removes exactly those five entries.
+Existing CI cache preparation and `/tmp/opencode` fixture setup remain unchanged.
+
+The combined pinned build, lint, formatting, strict test typecheck and nine
+registration tests pass. All 30 library/review/application/screenshot cases pass,
+including the unchanged external tarball installation and strict declarations.
+This restricted host cannot create the hard-coded `/tmp/opencode` directory, so
+the ten newly registered installed MCP/OpenCode cases stop at fixture creation;
+their assertions are unchanged and the fresh Linux candidate matrix is required.
+Simulator strict typing and the 58-method / 21-property API shape check pass.
+
+Runtime inventory is 658 files and public routes remain 420. Package inspection
+reports 1,585 files, 3,378,941 compressed bytes and 16,648,056 unpacked bytes,
+shasum `cd897a4821b64c68320f074daa18aea12e616ccd`. No review, screenshot, MCP or
+OpenCode loader is retired. E1–E4, G and offline acceptance remain incomplete;
+native review/screenshot quality and Fusion qualification were not run.
