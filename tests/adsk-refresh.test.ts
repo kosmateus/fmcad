@@ -1,19 +1,53 @@
-const { test } = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs/promises");
-const os = require("node:os");
-const path = require("node:path");
-const { createHash } = require("node:crypto");
-const { execFileSync } = require("node:child_process");
-const {
-  refresh,
-  verifyCache,
-  modules,
-  prefix,
-  sha256,
-  network,
-} = require("../dist/scripts/adsk-refresh/refresh.js");
+import test, { type TestContext } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+const repository = path.resolve(__dirname, "../..");
+const load = createRequire(path.join(repository, "package.json"));
+const { refresh, verifyCache, modules, prefix, sha256, network } = load(
+  "./dist/scripts/adsk-refresh/refresh.js",
+) as typeof import("../scripts/adsk-refresh/refresh");
 
+interface TreeEntry {
+  path: string;
+  type: string;
+  mode?: string;
+  sha?: string;
+  size?: number;
+}
+interface FixtureOptions {
+  commit?: string;
+  release?: string;
+  files?: Record<string, string | Buffer>;
+  tree?: (entries: TreeEntry[]) => unknown;
+  fail?: (url: string) => boolean;
+  error?: string;
+  truncated?: boolean;
+  movingHead?: string;
+  corrupt?: string;
+}
+function present<T>(value: T | null | undefined): T {
+  assert.ok(value != null);
+  return value;
+}
+function record(value: unknown): Record<string, unknown> {
+  assert.ok(
+    value !== null && typeof value === "object" && !Array.isArray(value),
+  );
+  return value as Record<string, unknown>;
+}
+function text(value: unknown): string {
+  assert.equal(typeof value, "string");
+  return value as string;
+}
+function array(value: unknown): unknown[] {
+  assert.ok(Array.isArray(value));
+  return value;
+}
 const policy = {
   licenseHash: sha256("fixture-license"),
   licenseSection: "fixture license terms",
@@ -22,12 +56,12 @@ const core =
   'class Point3D(Base):\n    @staticmethod\n    def create(x: float = 0.0, y: float = 0.0, z: float = 0.0) -> Point3D:\n        """Returns the new Point3D object or null if the creation failed."""\n        return Point3D()\n';
 const commitA = "a".repeat(40);
 const commitB = "b".repeat(40);
-const blobHash = (b) =>
+const blobHash = (b: Buffer) =>
   createHash("sha1").update(`blob ${b.length}\0`).update(b).digest("hex");
-function fixture(options = {}) {
+function fixture(options: FixtureOptions = {}) {
   const commit = options.commit || commitA;
   let head = commit;
-  const files = {
+  const files: Record<string, string | Buffer> = {
     LICENSE: "fixture-license",
     "README.md": `**Updated as of Fusion ${options.release || "May 2026 Major"} Release**\n\nLicense\n-------\n\nfixture license terms\n\nAcknowledgements\n---\n`,
     ...Object.fromEntries(
@@ -38,7 +72,7 @@ function fixture(options = {}) {
     ),
     ...options.files,
   };
-  const entries = Object.entries(files).map(([name, s]) => {
+  const entries: TreeEntry[] = Object.entries(files).map(([name, s]) => {
     const b = Buffer.from(s);
     return {
       path: name,
@@ -49,13 +83,13 @@ function fixture(options = {}) {
     };
   });
   options.tree?.(entries);
-  const urls = [];
+  const urls: string[] = [];
   return {
     urls,
     get head() {
       return head;
     },
-    async get(url, limit) {
+    async get(url: string, limit: number) {
       urls.push(url);
       if (options.fail?.(url)) throw new Error(options.error || "offline");
       let b;
@@ -76,9 +110,9 @@ function fixture(options = {}) {
           url.includes(`/${commit}/`),
           "all blobs pinned even if HEAD advances",
         );
-        const name = url.split(`/${commit}/`)[1];
+        const name = present(url.split(`/${commit}/`)[1]);
         assert.ok(Object.hasOwn(files, name));
-        b = Buffer.from(files[name]);
+        b = Buffer.from(present(files[name]));
         if (options.corrupt === name) b = b.subarray(1);
       }
       assert.ok(b.length <= limit);
@@ -86,7 +120,7 @@ function fixture(options = {}) {
     },
   };
 }
-async function temporary(t) {
+async function temporary(t: TestContext) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "adsk-test-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   return dir;
@@ -95,7 +129,10 @@ test("pinned refresh never resolves a moving branch and rejects mismatches befor
   const root = await temporary(t);
   await refresh(root, fixture(), policy);
   const before = await fs.readFile(path.join(root, "current.json"), "utf8");
-  const lock = { commit: commitA, snapshot: JSON.parse(before).snapshot };
+  const lock = {
+    commit: commitA,
+    snapshot: text(record(JSON.parse(before) as unknown)["snapshot"]),
+  };
   const pinned = fixture({ movingHead: commitB });
   await refresh(root, pinned, policy, lock);
   assert.equal(
@@ -177,7 +214,7 @@ test("A→B snapshots, immutable reads, deterministic generation and retained no
   );
 });
 
-const failures = {
+const failures: Record<string, FixtureOptions> = {
   offline: { fail: (u) => u.includes("/commits/"), error: "offline" },
   forbidden: { fail: (u) => u.includes("/git/trees/"), error: "403" },
   timeout: {
@@ -191,12 +228,13 @@ const failures = {
   backslash: { tree: (e) => e.push({ path: "foo\\escape", type: "blob" }) },
   symlink: {
     tree: (e) => {
-      e.find((x) => x.path === prefix + "core.py").mode = "120000";
+      present(e.find((x) => x.path === prefix + "core.py")).mode = "120000";
     },
   },
   oversized: {
     tree: (e) => {
-      e.find((x) => x.path === prefix + "core.py").size = 9 * 1024 * 1024;
+      present(e.find((x) => x.path === prefix + "core.py")).size =
+        9 * 1024 * 1024;
     },
   },
   totalLimit: {
@@ -211,7 +249,7 @@ const failures = {
         1,
       ),
   },
-  duplicate: { tree: (e) => e.push(e[0]) },
+  duplicate: { tree: (e) => e.push(present(e[0])) },
   extraDefinition: { files: { [prefix + "new.py"]: "# unreviewed" } },
   nestedNotice: {
     files: { "Fusion_API_Python_Reference/LICENSE": "new license" },
@@ -276,18 +314,22 @@ test("cache rejects symlink files and snapshot directories", async (t) => {
 });
 test("network adapter sends an optional token only to the HTTPS GitHub API", async (t) => {
   const original = global.fetch;
-  const originalToken = process.env.GITHUB_TOKEN;
+  const originalToken = process.env["GITHUB_TOKEN"];
   t.after(() => {
     global.fetch = original;
-    if (originalToken === undefined) delete process.env.GITHUB_TOKEN;
-    else process.env.GITHUB_TOKEN = originalToken;
+    if (originalToken === undefined) delete process.env["GITHUB_TOKEN"];
+    else process.env["GITHUB_TOKEN"] = originalToken;
   });
-  process.env.GITHUB_TOKEN = "fixture-token";
-  const requests = [];
-  global.fetch = async (url, options) => {
+  process.env["GITHUB_TOKEN"] = "fixture-token";
+  const requests: {
+    url: Parameters<typeof fetch>[0];
+    headers: Record<string, unknown>;
+    redirect: RequestRedirect | undefined;
+  }[] = [];
+  global.fetch = async (url, options = {}) => {
     requests.push({
       url,
-      headers: options.headers,
+      headers: record(options.headers),
       redirect: options.redirect,
     });
     return new Response("ok");
@@ -299,13 +341,16 @@ test("network adapter sends an optional token only to the HTTPS GitHub API", asy
     "http://api.github.com/",
   ];
   for (const url of urls) await network.get(url, 1024);
-  assert.equal(requests[0].headers.Authorization, "Bearer fixture-token");
+  assert.equal(
+    present(requests[0]).headers["Authorization"],
+    "Bearer fixture-token",
+  );
   for (const request of requests.slice(1))
-    assert.equal(request.headers.Authorization, undefined);
+    assert.equal(request.headers["Authorization"], undefined);
   for (const request of requests) assert.equal(request.redirect, "error");
-  delete process.env.GITHUB_TOKEN;
-  await network.get(urls[0], 1024);
-  assert.equal(requests.at(-1).headers.Authorization, undefined);
+  delete process.env["GITHUB_TOKEN"];
+  await network.get(present(urls[0]), 1024);
+  assert.equal(present(requests.at(-1)).headers["Authorization"], undefined);
 });
 
 test("network adapter rejects HTTP, deadline, size, redirect and truncation errors", async (t) => {
@@ -313,7 +358,7 @@ test("network adapter rejects HTTP, deadline, size, redirect and truncation erro
   t.after(() => {
     global.fetch = original;
   });
-  global.fetch = async (url, options) => {
+  global.fetch = async (url, options = {}) => {
     assert.equal(options.redirect, "error");
     assert.ok(options.signal instanceof AbortSignal);
     return new Response("forbidden", { status: 403 });
@@ -395,18 +440,22 @@ test("concurrent refreshes and readers only observe complete snapshots", async (
 });
 test("code-only package wiring includes generated manifests and notices", async (t) => {
   const root = await temporary(t);
-  const packageJson = JSON.parse(
-    await fs.readFile(path.join(__dirname, "../package.json"), "utf8"),
+  const packageJson = record(
+    JSON.parse(
+      await fs.readFile(path.join(repository, "package.json"), "utf8"),
+    ) as unknown,
   );
+  const scripts = record(packageJson["scripts"]);
+  const packageFiles = array(packageJson["files"]).map(text);
   assert.ok(
-    packageJson.scripts.build.includes(
+    text(scripts["build"]).includes(
       "--pinned scripts/adsk-refresh/api-lock.json",
     ),
   );
-  assert.ok(packageJson.scripts["build:dev"].includes("--dev"));
+  assert.ok(text(scripts["build:dev"]).includes("--dev"));
   const typingDirectory = "dist/runtime/python/typing";
   assert.ok(
-    packageJson.files.some(
+    packageFiles.some(
       (entry) =>
         entry === typingDirectory || typingDirectory.startsWith(entry + "/"),
     ),
@@ -418,7 +467,7 @@ test("code-only package wiring includes generated manifests and notices", async 
     JSON.stringify({
       name: "adsk-package-fixture",
       version: "1.0.0",
-      files: packageJson.files,
+      files: packageFiles,
     }),
   );
   await refresh(
@@ -432,7 +481,9 @@ test("code-only package wiring includes generated manifests and notices", async 
       encoding: "utf8",
     }),
   );
-  const paths = packed[0].files.map((f) => f.path);
+  const paths = array(record(array(packed as unknown)[0])["files"]).map((f) =>
+    text(record(f)["path"]),
+  );
   for (const name of [
     "manifest.json",
     "NOTICES.md",

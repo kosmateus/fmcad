@@ -147,7 +147,10 @@ export interface ProjectActionsHandler {
   ): ProjectActionResponse;
 }
 
-export type ProjectActionsExecutor = ProjectActionsHandler["execute"];
+/** HTTP compositions may await an injected executor; the retained-store handler stays synchronous. */
+export type ProjectActionsExecutor = (
+  ...args: Parameters<ProjectActionsHandler["execute"]>
+) => ProjectActionResponse | Promise<ProjectActionResponse>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);

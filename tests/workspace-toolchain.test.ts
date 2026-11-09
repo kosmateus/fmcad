@@ -1,32 +1,52 @@
-const assert = require("node:assert/strict");
-const { execFileSync, spawnSync } = require("node:child_process");
-const fs = require("node:fs");
-const path = require("node:path");
-const test = require("node:test");
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import test from "node:test";
 
-const root = path.resolve(__dirname, "..");
+import { createRequire } from "node:module";
+const root = path.resolve(__dirname, "../..");
+const load = createRequire(path.join(root, "package.json"));
+function record(value: unknown): Record<string, unknown> {
+  assert.ok(
+    value !== null && typeof value === "object" && !Array.isArray(value),
+  );
+  return value as Record<string, unknown>;
+}
+function text(value: unknown): string {
+  assert.equal(typeof value, "string");
+  return value as string;
+}
+function array(value: unknown): unknown[] {
+  assert.ok(Array.isArray(value));
+  return value;
+}
 const workspaces = [
   ["@fmcad/core", "packages/core"],
   ["@fmcad/node-adapters", "packages/node-adapters"],
   ["@fmcad/opencode-adapter", "packages/opencode-adapter"],
   ["@fmcad/control-center", "packages/control-center"],
-];
+] as const;
 
 test("declares one public root package and four private workspaces", () => {
-  const rootPackage = require(path.join(root, "package.json"));
+  const rootPackage = record(load(path.join(root, "package.json")));
   assert.deepEqual(
-    rootPackage.workspaces,
+    rootPackage["workspaces"],
     workspaces.map(([, directory]) => directory),
   );
-  assert.equal(rootPackage.engines.node, ">=22.13.0 <23 || >=24.0.0 <25");
-  assert.notEqual(rootPackage.private, true);
+  assert.equal(
+    record(rootPackage["engines"])["node"],
+    ">=22.13.0 <23 || >=24.0.0 <25",
+  );
+  assert.notEqual(rootPackage["private"], true);
 
   for (const [name, directory] of workspaces) {
-    const workspace = require(path.join(root, directory, "package.json"));
-    assert.equal(workspace.name, name);
-    assert.equal(workspace.private, true);
-    assert.ok(workspace.exports["."].types.endsWith(".d.ts"));
-    assert.ok(workspace.exports["."].require.endsWith(".js"));
+    const workspace = record(load(path.join(root, directory, "package.json")));
+    const exports = record(record(workspace["exports"])["."]);
+    assert.equal(workspace["name"], name);
+    assert.equal(workspace["private"], true);
+    assert.ok(text(exports["types"]).endsWith(".d.ts"));
+    assert.ok(text(exports["require"]).endsWith(".js"));
   }
 });
 
@@ -40,7 +60,7 @@ test("build emits resolvable JavaScript and declarations without TS runtime impo
       fs.existsSync(declarationPath),
       `${name} declaration entry is missing`,
     );
-    assert.equal(require.resolve(name, { paths: [root] }), runtimePath);
+    assert.equal(load.resolve(name, { paths: [root] }), runtimePath);
     assert.doesNotMatch(
       fs.readFileSync(runtimePath, "utf8"),
       /(?:from\s*|require\s*\()\s*["'][^"']+\.tsx?["']/,
@@ -50,7 +70,7 @@ test("build emits resolvable JavaScript and declarations without TS runtime impo
 
   for (const subpath of ["server", "web"]) {
     assert.doesNotThrow(() =>
-      require.resolve(`@fmcad/control-center/${subpath}`, { paths: [root] }),
+      load.resolve(`@fmcad/control-center/${subpath}`, { paths: [root] }),
     );
   }
 });
@@ -64,6 +84,7 @@ test("core can be imported without loading external dependencies or starting ser
   for (const [, dependency] of runtime.matchAll(
     /\brequire\s*\(\s*["']([^"']+)["']/g,
   )) {
+    assert.ok(dependency);
     assert.ok(
       dependency.startsWith("./"),
       `core barrel loaded external dependency: ${dependency}`,
@@ -102,7 +123,7 @@ test("ESLint rejects a forbidden core-to-adapter or host import", async () => {
     ["terminal-kit", "no-restricted-imports"],
     ["@opencode-ai/plugin", "no-restricted-imports"],
     ["../../node-adapters/src/index.js", "no-restricted-imports"],
-  ];
+  ] as const;
 
   for (const [moduleName, expectedRule] of forbiddenImports) {
     const [result] = await eslint.lintText(
@@ -111,6 +132,7 @@ test("ESLint rejects a forbidden core-to-adapter or host import", async () => {
         filePath: path.join(root, "packages/core/src/architecture-fixture.ts"),
       },
     );
+    assert.ok(result);
     assert.ok(
       result.messages.some((message) => message.ruleId === expectedRule),
       `expected core import ${moduleName} to be rejected`,
@@ -149,19 +171,22 @@ test("ESLint detects package-local TypeScript cycles", async () => {
 });
 
 test("npm pack publishes only the root package, not private workspaces", () => {
-  const packed = JSON.parse(
-    execFileSync("npm", ["pack", "--dry-run", "--ignore-scripts", "--json"], {
-      cwd: root,
-      encoding: "utf8",
-    }),
+  const packed = array(
+    JSON.parse(
+      execFileSync("npm", ["pack", "--dry-run", "--ignore-scripts", "--json"], {
+        cwd: root,
+        encoding: "utf8",
+      }),
+    ) as unknown,
   );
   assert.equal(packed.length, 1);
-  assert.equal(packed[0].name, "fmcad");
-  assert.ok(
-    packed[0].files.some(({ path: file }) => file === "dist/bin/fmcad.js"),
-  );
-  assert.ok(packed[0].files.some(({ path: file }) => file === "server.mjs"));
-  assert.ok(
-    packed[0].files.every(({ path: file }) => !file.startsWith("packages/")),
-  );
+  const item = record(packed[0]);
+  const files = array(item["files"]).map((value) => {
+    const entry = record(value);
+    return { path: text(entry["path"]) };
+  });
+  assert.equal(item["name"], "fmcad");
+  assert.ok(files.some(({ path: file }) => file === "dist/bin/fmcad.js"));
+  assert.ok(files.some(({ path: file }) => file === "server.mjs"));
+  assert.ok(files.every(({ path: file }) => !file.startsWith("packages/")));
 });

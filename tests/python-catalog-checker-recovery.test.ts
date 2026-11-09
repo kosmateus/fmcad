@@ -1,22 +1,62 @@
-"use strict";
+import test, { type TestContext } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+import { record } from "./integration/offline-cli";
+const root = path.resolve(__dirname, "../..");
+const load = createRequire(path.join(root, "package.json"));
+const { prepareReceiptScript } = load("./src/queue-instance") as Pick<
+  ReturnType<
+    typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
+  >,
+  "prepareReceiptScript"
+>;
+interface EvidencePass {
+  fileCount: number;
+  hasValues: boolean;
+  hasLateRuntime: boolean;
+  userRoot: boolean;
+  workerRoot: boolean;
+  changedCanonicalPrefix: boolean;
+  projectedStubs: number;
+}
+function evidencePass(value: unknown): EvidencePass {
+  assert.ok(value !== null && typeof value === "object");
+  const row = value as Record<string, unknown>;
+  assert.equal(typeof row["fileCount"], "number");
+  assert.equal(typeof row["projectedStubs"], "number");
+  for (const key of [
+    "hasValues",
+    "hasLateRuntime",
+    "userRoot",
+    "workerRoot",
+    "changedCanonicalPrefix",
+  ])
+    assert.equal(typeof row[key], "boolean");
+  return value as EvidencePass;
+}
+const { cadBundleUnits } = load(
+  "./packages/node-adapters/dist/python/bundle",
+) as typeof import("../packages/node-adapters/src/python/bundle");
+const { preparePythonArtifact } = load(
+  "./packages/node-adapters/dist/python/artifact",
+) as typeof import("../packages/node-adapters/src/python/artifact");
+const { pythonUnitContexts } = load(
+  "./packages/node-adapters/dist/python/context-binding",
+) as typeof import("../packages/node-adapters/src/python/context-binding");
+const { createPythonChecker } = load(
+  "./packages/node-adapters/dist/python/checker",
+) as typeof import("../packages/node-adapters/src/python/checker");
 
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs/promises");
-const os = require("node:os");
-const path = require("node:path");
-const { cadBundleUnits } = require("../packages/node-adapters/dist/python/bundle");
-const { preparePythonArtifact } = require("../packages/node-adapters/dist/python/artifact");
-const {
-  pythonUnitContexts,
-} = require("../packages/node-adapters/dist/python/context-binding");
-const { createPythonChecker } = require("../packages/node-adapters/dist/python/checker");
-
-const runtime = path.resolve("dist/runtime/python");
+const runtime = path.join(root, "dist/runtime/python");
 const typingRoot = path.join(runtime, "typing");
 
-async function fakeChecker(t) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "fmcad-catalog-recovery-"));
+async function fakeChecker(t: TestContext) {
+  const root = await fs.mkdtemp(
+    path.join(os.tmpdir(), "fmcad-catalog-recovery-"),
+  );
   const evidence = path.join(root, "checker-passes.jsonl");
   const engine = path.join(root, "recording-engine.cjs");
   t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -64,8 +104,9 @@ process.exitCode = diagnostics.length ? 1 : 0;
 }
 
 function sourceParts() {
-  const units = cadBundleUnits(path.resolve("dist"), "full");
-  const requestRoot = '\n\n_CATALOG_REQUEST: dict[str, str] = {"operation": "entity.list"}\n\n';
+  const units = cadBundleUnits(path.join(root, "dist"), "full");
+  const requestRoot =
+    '\n\n_CATALOG_REQUEST: dict[str, str] = {"operation": "entity.list"}\n\n';
   const workerRoot = `def run(_context: str):
     CATALOG_USER_ROOT: int = "wrong"
     CATALOG_WORKER_ROOT: int = "wrong"
@@ -74,20 +115,28 @@ function sourceParts() {
   const wrapper = requestRoot + workerRoot;
   const original = preparePythonArtifact([
     ...units,
-    { id: "wrapper", filename: "<fmcad-wrapper>", source: wrapper, role: "wrapper" },
+    {
+      id: "wrapper",
+      filename: "<fmcad-wrapper>",
+      source: wrapper,
+      role: "wrapper",
+    },
   ]);
   return { units, wrapper, original };
 }
 
-async function readEvidence(file) {
+async function readEvidence(file: string) {
   const text = await fs.readFile(file, "utf8").catch(() => "");
-  return text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  return text
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => evidencePass(JSON.parse(line) as unknown));
 }
 
 test("receipt-wrapped canonical catalog source retains runtime, roots, maps and wire identity", async (t) => {
   const { evidence, checker } = await fakeChecker(t);
   const { units, original } = sourceParts();
-  const { prepareReceiptScript } = require("../src/queue-instance");
   const prepared = prepareReceiptScript(
     original.script,
     true,
@@ -96,7 +145,7 @@ test("receipt-wrapped canonical catalog source retains runtime, roots, maps and 
     { mapPath: (value) => value },
   );
   assert.equal(prepared.units.length, 2);
-  assert.equal(prepared.context.origin, undefined);
+  assert.equal(record(prepared.context)["origin"], undefined);
   const contexts = pythonUnitContexts(prepared);
   assert.deepEqual(contexts["embedded:0"], { kind: "raw", entrypoint: "run" });
 
@@ -115,15 +164,21 @@ test("receipt-wrapped canonical catalog source retains runtime, roots, maps and 
   assert.ok(passes.every((pass) => pass.hasValues && pass.hasLateRuntime));
   assert.ok(passes.every((pass) => pass.userRoot && pass.workerRoot));
   assert.ok(
-    report.diagnostics.some((item) =>
-      item.unitId === "wrapper" && item.filename === "<fmcad-wrapper>" &&
-      item.message.startsWith("CATALOG_USER_ROOT")),
+    report.diagnostics.some(
+      (item) =>
+        item.unitId === "wrapper" &&
+        item.filename === "<fmcad-wrapper>" &&
+        item.message.startsWith("CATALOG_USER_ROOT"),
+    ),
     JSON.stringify(report.diagnostics),
   );
   assert.ok(
-    report.diagnostics.some((item) =>
-      item.unitId === "wrapper" && item.filename === "<fmcad-wrapper>" &&
-      item.message.startsWith("CATALOG_WORKER_ROOT")),
+    report.diagnostics.some(
+      (item) =>
+        item.unitId === "wrapper" &&
+        item.filename === "<fmcad-wrapper>" &&
+        item.message.startsWith("CATALOG_WORKER_ROOT"),
+    ),
     JSON.stringify(report.diagnostics),
   );
   assert.equal(units.length, 152);
@@ -132,7 +187,6 @@ test("receipt-wrapped canonical catalog source retains runtime, roots, maps and 
 test("a changed canonical byte is preserved in analysis and cannot be reported as a passing artifact", async (t) => {
   const { evidence, checker } = await fakeChecker(t);
   const { original } = sourceParts();
-  const { prepareReceiptScript } = require("../src/queue-instance");
   const changedSource = original.script.replace(
     "JSON-only values and validation",
     "JSON-only valuez and validation",

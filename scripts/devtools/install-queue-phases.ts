@@ -141,20 +141,20 @@ export function assertQuiescent(value: unknown): void {
       "QUEUE_NOT_QUIESCENT",
       "Active/unresolved/leased/queued work exists; original owners must resolve or explicitly hand it off. No source changed.",
     );
-  const jobsValue = value.jobs;
+  const jobsValue = value["jobs"];
   const jobs = isRecord(jobsValue)
     ? Object.values(jobsValue)
     : jobsValue
       ? [jobsValue]
       : [];
   if (
-    value.active ||
-    value.blocked ||
-    value.lease ||
-    value.held ||
-    value.controlBlocked ||
-    value.stopping ||
-    jobs.some((job) => !isRecord(job) || !terminal(job.state))
+    value["active"] ||
+    value["blocked"] ||
+    value["lease"] ||
+    value["held"] ||
+    value["controlBlocked"] ||
+    value["stopping"] ||
+    jobs.some((job) => !isRecord(job) || !terminal(job["state"]))
   ) {
     throw failure(
       "QUEUE_NOT_QUIESCENT",
@@ -249,7 +249,7 @@ export async function install(
           "BROKER_NOT_STOPPED",
           "Original broker did not stop; installation was not started",
         );
-      report.activeBrokerReplaced = true;
+      report["activeBrokerReplaced"] = true;
     }
     if (fs.existsSync(stateFile)) assertQuiescent(readJson(stateFile));
     files = inspectSources(root, stage, options.archive);
@@ -288,9 +288,9 @@ export async function install(
         applied.push(file);
         atomicFile(target, fs.readFileSync(path.join(stage, name)));
       }
-      report.state = "installed";
-      report.afterBuildHash = buildHash(root);
-      report.brokerLeftStopped = true;
+      report["state"] = "installed";
+      report["afterBuildHash"] = buildHash(root);
+      report["brokerLeftStopped"] = true;
       durable(path.join(backup, "manifest.json"), report);
     } catch (error) {
       for (const file of applied.reverse()) {
@@ -327,7 +327,7 @@ export async function install(
   } finally {
     if (!retainFence) {
       const currentFence = readJson(recoveryFile);
-      if (isRecord(currentFence) && currentFence.nonce === fence.nonce)
+      if (isRecord(currentFence) && currentFence["nonce"] === fence.nonce)
         fs.unlinkSync(recoveryFile);
     }
   }

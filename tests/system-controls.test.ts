@@ -1,55 +1,131 @@
-"use strict";
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { fork } from "node:child_process";
+import { once } from "node:events";
+import test, { type TestContext } from "node:test";
+import { createRequire } from "node:module";
 
-const assert = require("node:assert/strict");
-const crypto = require("node:crypto");
-const fs = require("node:fs");
-const http = require("node:http");
-const os = require("node:os");
-const path = require("node:path");
-const { fork } = require("node:child_process");
-const { once } = require("node:events");
-const test = require("node:test");
-
-const {
-  createBrokerControlPort,
-} = require("../src/dist/node-adapters/broker-ipc/control");
-const {
-  createCollector,
-} = require("../packages/node-adapters/dist/console/system-data");
-const {
-  createControlCenterSystemControls,
-  createSystemControlRuntime,
-} = require("../packages/node-adapters/dist/control-center/system-controls");
-const {
-  createSystemControls,
-  createSystemControlsRoute,
-} = require("../packages/control-center/dist/server/system-controls");
-const {
-  createControlCenterHttpServer,
-} = require("../packages/control-center/dist/server/http");
-const {
-  composeControlCenterService,
-} = require("../packages/control-center/dist/server/composition");
-const {
-  CONTROL_CENTER_PROTOCOL_VERSION,
-} = require("../packages/control-center/dist/server/protocol");
+const root = path.resolve(__dirname, "../..");
+const fixtures = path.join(root, "tests/fixtures");
+const load = createRequire(path.join(root, "package.json"));
+import type { BrokerControlSnapshot } from "../packages/core/src";
+import type { ControlCenterHttpOptions } from "../packages/control-center/src/server/http";
+import type {
+  SystemControlApplicationOptions,
+  SystemControlReceiptRecord,
+} from "../packages/control-center/src/server/system-controls";
+import type {
+  SystemControlAction,
+  SystemControlCommand,
+} from "../packages/control-center/src/contracts/system-controls";
+import type {
+  SystemControlTranslate,
+  SystemControlPendingStorage,
+} from "../packages/control-center/src/web/system-controls";
+import type { ConsoleQueryPrincipal } from "../packages/control-center/src/contracts/query";
+import type { ServiceOptions } from "../src/composition/library-console-services";
+const { createBrokerControlPort } = load(
+  "./src/dist/node-adapters/broker-ipc/control",
+) as typeof import("../packages/node-adapters/src/broker-ipc/control");
+const { createCollector } = load(
+  "./packages/node-adapters/dist/console/system-data",
+) as typeof import("../packages/node-adapters/src/console/system-data");
+const { createControlCenterSystemControls, createSystemControlRuntime } = load(
+  "./packages/node-adapters/dist/control-center/system-controls",
+) as typeof import("../packages/node-adapters/src/control-center/system-controls");
+const { createSystemControls, createSystemControlsRoute } = load(
+  "./packages/control-center/dist/server/system-controls",
+) as typeof import("../packages/control-center/src/server/system-controls");
+const { createControlCenterHttpServer } = load(
+  "./packages/control-center/dist/server/http",
+) as typeof import("../packages/control-center/src/server/http");
+const { composeControlCenterService } = load(
+  "./packages/control-center/dist/server/composition",
+) as typeof import("../packages/control-center/src/server/composition");
+const { CONTROL_CENTER_PROTOCOL_VERSION } = load(
+  "./packages/control-center/dist/server/protocol",
+) as typeof import("../packages/control-center/src/server/protocol");
 const {
   SystemControlsClient,
   createSystemControlCommand,
   renderSystemControls,
   renderSystemControlConfirmation,
   renderSystemControlReceipt,
-} = require("../packages/control-center/dist/web/system-controls");
-const {
-  SYSTEM_CONTROLS_API_VERSION,
-} = require("../packages/control-center/dist/contracts/system-controls");
-const { request } = require("../src/queue-connection");
-const { durable, readJson } = require("../src/queue-instance");
-const { createServices } = require("../src/console-services");
-const {
-  createControlCenterSystemControlsRuntime,
-} = require("../src/control-center-system-controls.cjs");
+} = load(
+  "./packages/control-center/dist/web/system-controls",
+) as typeof import("../packages/control-center/src/web/system-controls");
+const { SYSTEM_CONTROLS_API_VERSION } = load(
+  "./packages/control-center/dist/contracts/system-controls",
+) as typeof import("../packages/control-center/src/contracts/system-controls");
+const { request } = load(
+  "./src/queue-connection",
+) as typeof import("../src/entrypoints/queue-connection");
+const { durable, readJson: readJsonRaw } = load("./src/queue-instance") as Pick<
+  ReturnType<
+    typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
+  >,
+  "durable" | "readJson"
+>;
+const { createServices } = load(
+  "./src/console-services",
+) as typeof import("../src/composition/library-console-services");
+const { createControlCenterSystemControlsRuntime } = load(
+  "./src/control-center-system-controls.cjs",
+) as typeof import("../src/composition/library-control-center-system-controls");
 
+function recordValue(value: unknown): Record<string, unknown> {
+  assert.ok(
+    value !== null && typeof value === "object" && !Array.isArray(value),
+  );
+  return value as Record<string, unknown>;
+}
+function text(value: unknown): string {
+  assert.equal(typeof value, "string");
+  return value as string;
+}
+function readJson(file: string, maxBytes?: number): Record<string, unknown> {
+  return recordValue(readJsonRaw(file, maxBytes));
+}
+function snapshot(value: {
+  snapshot: BrokerControlSnapshot | null;
+}): BrokerControlSnapshot {
+  assert.ok(value.snapshot);
+  return value.snapshot;
+}
+function errorCode(value: unknown): unknown {
+  return value !== null && typeof value === "object" && "code" in value
+    ? value.code
+    : undefined;
+}
+function isReceipt(value: unknown): value is SystemControlReceiptRecord {
+  if (value === null || typeof value !== "object") return false;
+  const row = recordValue(value),
+    binding = recordValue(row["binding"]);
+  return (
+    ["pause", "drain", "resume", "start"].includes(String(binding["action"])) &&
+    typeof binding["requestId"] === "string" &&
+    typeof binding["instanceId"] === "string" &&
+    typeof binding["expectedGeneration"] === "number" &&
+    ["prepared", "completed", "unresolved", "failed"].includes(
+      String(row["status"]),
+    )
+  );
+}
+interface LifecycleOptions {
+  paused?: boolean;
+  unknown?: boolean;
+  activeCount?: number;
+  buildHash?: string;
+  clientToken?: string;
+}
+type Dirs = ReturnType<typeof sandbox>;
+const { isBrokerControlSnapshot } = load(
+  "./src/dist/core",
+) as typeof import("../packages/core/src");
 const auth = {
   clientId: "system-control-owner",
   clientToken: "private-offline",
@@ -59,10 +135,10 @@ const principal = {
   projectIds: ["fixture-project"],
   globalRead: true,
 };
-const globalScope = { kind: "global" };
-const projectScope = { kind: "project", projectId: "fixture-project" };
+const globalScope = { kind: "global" } as const;
+const projectScope = { kind: "project", projectId: "fixture-project" } as const;
 
-function sandbox(t) {
+function sandbox(t: TestContext) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-system-controls-"));
   const home = path.join(root, "home");
   const project = path.join(root, "project");
@@ -84,15 +160,15 @@ function sandbox(t) {
 }
 
 async function startLifecycleProcess(
-  t,
-  dirs,
+  t: TestContext,
+  dirs: Dirs,
   {
     paused = false,
     unknown = false,
     activeCount = 0,
     buildHash,
     clientToken,
-  } = {},
+  }: LifecycleOptions = {},
 ) {
   const args = [
     dirs.queue,
@@ -102,7 +178,7 @@ async function startLifecycleProcess(
     ...(buildHash ? [`--build-hash=${buildHash}`] : []),
   ];
   const child = fork(
-    path.join(__dirname, "fixtures/system-controls-lifecycle.cjs"),
+    path.join(fixtures, "system-controls-lifecycle.cjs"),
     args,
     {
       env: {
@@ -118,8 +194,9 @@ async function startLifecycleProcess(
     },
   );
   let stderr = "";
+  assert.ok(child.stderr);
   child.stderr.on("data", (bytes) => (stderr += bytes));
-  const ready = await Promise.race([
+  const ready: unknown[] = await Promise.race([
     once(child, "message"),
     once(child, "exit").then(() => {
       throw new Error(
@@ -127,7 +204,8 @@ async function startLifecycleProcess(
       );
     }),
   ]);
-  assert.equal(ready[0].ready, true);
+  const readyMessage = recordValue(ready[0]);
+  assert.equal(readyMessage["ready"], true);
   t.after(async () => {
     if (child.exitCode === null && child.signalCode === null) {
       const exited = once(child, "exit");
@@ -138,15 +216,15 @@ async function startLifecycleProcess(
   return child;
 }
 
-async function startLifecycle(t, options = {}) {
+async function startLifecycle(t: TestContext, options: LifecycleOptions = {}) {
   const dirs = sandbox(t);
   const child = await startLifecycleProcess(t, dirs, options);
   return { ...dirs, child };
 }
 
-async function startProductionQueueClient(t, dirs) {
+async function startProductionQueueClient(t: TestContext, dirs: Dirs) {
   const child = fork(
-    path.join(__dirname, "fixtures/system-controls-production-http.cjs"),
+    path.join(fixtures, "system-controls-production-http.cjs"),
     ["control-center-system-test"],
     {
       env: {
@@ -161,6 +239,7 @@ async function startProductionQueueClient(t, dirs) {
     },
   );
   let stderr = "";
+  assert.ok(child.stderr);
   child.stderr.on("data", (bytes) => (stderr += bytes));
   const exitPromise = once(child, "exit");
   t.after(async () => {
@@ -169,49 +248,63 @@ async function startProductionQueueClient(t, dirs) {
       await exitPromise;
     }
   });
-  const ready = await Promise.race([
+  const ready: unknown[] = await Promise.race([
     once(child, "message"),
     exitPromise.then(() => {
       throw new Error(stderr || "Production QueueClient fixture exited early");
     }),
   ]);
-  assert.equal(ready[0].ready, true);
-  const relative = path.relative(dirs.root, ready[0].queueDirectory);
+  const readyMessage = recordValue(ready[0]);
+  assert.equal(readyMessage["ready"], true);
+  const relative = path.relative(
+    dirs.root,
+    text(readyMessage["queueDirectory"]),
+  );
   assert.ok(
     relative && !relative.startsWith("..") && !path.isAbsolute(relative),
   );
   return {
     child,
-    queue: ready[0].queueDirectory,
-    auth: ready[0].auth,
+    queue: text(readyMessage["queueDirectory"]),
+    auth: {
+      clientId: text(recordValue(readyMessage["auth"])["clientId"]),
+      clientToken: text(recordValue(readyMessage["auth"])["clientToken"]),
+    },
     exitPromise,
   };
 }
 
-function receiptReader(queue) {
+function receiptReader(
+  queue: string,
+): NonNullable<SystemControlApplicationOptions["readReceipt"]> {
   return async ({ requestId, principal: caller }) => {
     if (caller.subject !== auth.clientId) return null;
     const digest = crypto.createHash("sha256").update(requestId).digest("hex");
     const file = path.join(queue, `lifecycle-control-${digest}.json`);
     try {
       const record = readJson(file);
-      if (record.binding?.clientId !== caller.subject) return null;
+      if (
+        record["binding"] == null ||
+        recordValue(record["binding"])["clientId"] !== caller.subject
+      )
+        return null;
+      assert.ok(isReceipt(record));
       return record;
     } catch (error) {
-      if (error.code === "ENOENT") return null;
+      if (errorCode(error) === "ENOENT") return null;
       throw error;
     }
   };
 }
 
-function hasUnresolvedControl(queue) {
+function hasUnresolvedControl(queue: string) {
   let names;
   try {
     names = fs
       .readdirSync(queue)
       .filter((name) => /^lifecycle-control-[a-f0-9]{64}\.json$/.test(name));
   } catch (error) {
-    if (error.code === "ENOENT") return false;
+    if (errorCode(error) === "ENOENT") return false;
     throw error;
   }
   if (names.length > 10_000)
@@ -220,22 +313,25 @@ function hasUnresolvedControl(queue) {
     });
   return names.some((name) => {
     const receipt = readJson(path.join(queue, name), 64 * 1024);
-    return receipt.status !== "completed";
+    return receipt["status"] !== "completed";
   });
 }
 
-function createIpc(queue, { dropAckAction = null } = {}) {
-  const calls = [];
+function createIpc(
+  queue: string,
+  { dropAckAction = null }: { dropAckAction?: string | null } = {},
+) {
+  const calls: string[] = [];
   let dropped = false;
   const client = {
-    call(action, values) {
+    call(action: string, values?: unknown) {
       calls.push(action);
       return request(
         queue,
         {
           action,
           auth,
-          ...(values || {}),
+          ...(values == null ? {} : recordValue(values)),
           ...(action === dropAckAction && !dropped
             ? { dropAck: (dropped = true) }
             : {}),
@@ -248,11 +344,16 @@ function createIpc(queue, { dropAckAction = null } = {}) {
 }
 
 function createApplication(
-  queue,
-  ipc,
+  queue: string,
+  ipc: ReturnType<typeof createIpc>,
   {
     receipt = receiptReader(queue),
     unresolved = () => hasUnresolvedControl(queue),
+  }: {
+    receipt?: NonNullable<SystemControlApplicationOptions["readReceipt"]>;
+    unresolved?: NonNullable<
+      SystemControlApplicationOptions["hasUnresolvedControl"]
+    >;
   } = {},
 ) {
   return createSystemControls({
@@ -270,23 +371,32 @@ function createApplication(
 
 async function freeHttpPort() {
   const probe = http.createServer();
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     probe.once("error", reject);
     probe.listen(0, "127.0.0.1", resolve);
   });
-  const port = probe.address().port;
-  await new Promise((resolve) => probe.close(resolve));
+  const address = probe.address();
+  assert.ok(address && typeof address === "object");
+  const port = address.port;
+  await new Promise<void>((resolve, reject) =>
+    probe.close((error) => (error ? reject(error) : resolve())),
+  );
   return port;
 }
 
 async function openHttp(
-  t,
-  application,
+  t: TestContext,
+  application: ReturnType<typeof createSystemControls> | null,
   {
     dropPostAck = false,
     projectActions,
     systemControls,
     resolvePrincipal = () => principal,
+  }: {
+    dropPostAck?: boolean;
+    projectActions?: ControlCenterHttpOptions["projectActions"];
+    systemControls?: ControlCenterHttpOptions["systemControls"];
+    resolvePrincipal?: ControlCenterHttpOptions["resolvePrincipal"];
   } = {},
 ) {
   const port = await freeHttpPort();
@@ -345,7 +455,7 @@ async function openHttp(
   let storedCookie = "";
   let postCount = 0;
   let dropped = false;
-  const fetcher = async (input, init = {}) => {
+  const fetcher: typeof fetch = async (input, init = {}) => {
     const headers = new Headers(init.headers);
     if (storedCookie) headers.set("cookie", storedCookie);
     if (init.method === "POST") {
@@ -354,7 +464,7 @@ async function openHttp(
     }
     const response = await fetch(input, { ...init, headers });
     const setCookie = response.headers.get("set-cookie");
-    if (setCookie) storedCookie = setCookie.split(";", 1)[0];
+    if (setCookie) storedCookie = setCookie.split(";", 1)[0] ?? "";
     if (dropPostAck && init.method === "POST" && !dropped) {
       dropped = true;
       await response.arrayBuffer();
@@ -376,10 +486,10 @@ async function openHttp(
   };
 }
 
-function translations(key, params = {}) {
-  const values = {
+const translations: SystemControlTranslate = (key, params = {}) => {
+  const values: Record<string, string> = {
     "system.controls.title": "Shared broker control",
-    "system.controls.scope.project": `This is global control for the one shared broker; it affects every project, including ${params.projectName}.`,
+    "system.controls.scope.project": `This is global control for the one shared broker; it affects every project, including ${params["projectName"]}.`,
     "system.controls.scope.managedOnly":
       "Pausing stops new fmcad-managed requests only. It does not stop Fusion or unrelated applications.",
     "system.controls.status.label": "Broker status",
@@ -387,7 +497,7 @@ function translations(key, params = {}) {
     "system.controls.phase.paused": "Paused. New managed requests are held.",
     "system.controls.phase.pausing":
       "Pausing; active managed requests may still be running.",
-    "system.controls.phase.draining": `Draining; waiting for ${params.activeOperations} active managed requests.`,
+    "system.controls.phase.draining": `Draining; waiting for ${params["activeOperations"]} active managed requests.`,
     "system.controls.phase.stopped": "Stopped",
     "system.controls.phase.unknown": "Broker state is unknown",
     "system.controls.phase.recoveryBlocked":
@@ -401,7 +511,7 @@ function translations(key, params = {}) {
     "system.controls.action.refresh": "Refresh broker status",
     "system.controls.action.reconcile": "Check original request",
     "system.controls.action.pending": "Waiting for broker confirmation",
-    "system.controls.action.confirmed": `Broker confirmed ${params.phase}.`,
+    "system.controls.action.confirmed": `Broker confirmed ${params["phase"]}.`,
     "system.controls.action.unknown":
       "Outcome unknown. Checking the original receipt; the action will not be sent again.",
     "system.controls.action.receiptPending":
@@ -410,7 +520,7 @@ function translations(key, params = {}) {
       "Do not repeat an action while its receipt is pending or unknown.",
     "system.controls.error.unauthorized":
       "You are not authorized to control the shared broker.",
-    "system.controls.error.unsupported": `${params.action} is not supported by this broker.`,
+    "system.controls.error.unsupported": `${params["action"]} is not supported by this broker.`,
     "system.controls.error.offline":
       "The broker is offline. No action was confirmed.",
     "system.controls.error.generationConflict":
@@ -419,7 +529,7 @@ function translations(key, params = {}) {
       "The broker instance changed. Refresh status before acting.",
     "system.controls.error.reconciliationRequired":
       "The broker has unresolved work. Resume and start are disabled until it is reconciled.",
-    "system.controls.error.capabilityUnavailable": `This control is unavailable: ${params.reason}.`,
+    "system.controls.error.capabilityUnavailable": `This control is unavailable: ${params["reason"]}.`,
     "system.controls.error.storageUnavailable":
       "Persistent browser storage is unavailable. Controls are disabled to prevent replay.",
     "system.controls.accessible.status": "Shared broker control status.",
@@ -427,15 +537,15 @@ function translations(key, params = {}) {
       "Applies globally to managed requests from all projects.",
     "system.controls.accessible.pending":
       "Waiting for authoritative broker receipt.",
-    "system.controls.accessible.action": `${params.action} shared broker.`,
-    "system.controls.accessible.disabled": `${params.action} unavailable: ${params.reason}.`,
+    "system.controls.accessible.action": `${params["action"]} shared broker.`,
+    "system.controls.accessible.disabled": `${params["action"]} unavailable: ${params["reason"]}.`,
     "system.controls.confirm.cancel": "Cancel",
   };
   return values[key] ?? key;
-}
+};
 
-function memoryStorage() {
-  const values = new Map();
+function memoryStorage(): SystemControlPendingStorage {
+  const values = new Map<string, string>();
   return {
     getItem(key) {
       return values.get(key) ?? null;
@@ -456,7 +566,7 @@ test("System control API reads real broker capabilities and makes project scope 
   const status = await api.status(projectScope, principal);
   assert.equal(status.state, "available");
   assert.equal(status.effectiveScope.kind, "global");
-  assert.equal(status.snapshot.phase, "RUNNING");
+  assert.equal(snapshot(status).phase, "RUNNING");
   assert.equal(status.capabilities.pause, true);
   assert.equal(status.capabilities.drain, true);
   assert.equal(status.capabilities.resume, false);
@@ -468,8 +578,8 @@ test("System control API reads real broker capabilities and makes project scope 
       scope: projectScope,
       action: "start",
       requestId: "start-while-running",
-      instanceId: status.snapshot.instanceId,
-      expectedGeneration: status.snapshot.generation,
+      instanceId: snapshot(status).instanceId,
+      expectedGeneration: snapshot(status).generation,
     },
     principal,
   );
@@ -494,8 +604,8 @@ test("System control API reads real broker capabilities and makes project scope 
       scope: projectScope,
       action: "pause",
       requestId: "fenced-request",
-      instanceId: status.snapshot.instanceId,
-      expectedGeneration: status.snapshot.generation,
+      instanceId: snapshot(status).instanceId,
+      expectedGeneration: snapshot(status).generation,
     },
   );
   const storageUnavailable = renderSystemControls(
@@ -590,17 +700,17 @@ test("real HTTP route enforces session/CSRF and a lost lifecycle ACK reconciles 
   );
   const status = await browser.status(globalScope);
   assert.equal(browser.canMutate(), true);
-  const command = {
+  const command: SystemControlCommand = {
     version: SYSTEM_CONTROLS_API_VERSION,
     scope: globalScope,
     action: "pause",
     requestId: crypto.randomUUID(),
-    instanceId: status.snapshot.instanceId,
-    expectedGeneration: status.snapshot.generation,
+    instanceId: snapshot(status).instanceId,
+    expectedGeneration: snapshot(status).generation,
   };
   const result = await browser.execute(command);
   assert.equal(result.state, "confirmed");
-  assert.equal(result.snapshot.phase, "PAUSED");
+  assert.equal(snapshot(result).phase, "PAUSED");
   assert.equal(ipc.calls.filter((call) => call === "pause").length, 1);
   assert.equal(httpFixture.postCount, 1);
   assert.equal((await browser.status(globalScope)).capabilities.resume, true);
@@ -639,7 +749,9 @@ test("installed composition joins production HTTP, Node lifecycle IPC and durabl
     systemControls: runtime.handle,
     close: runtime.close,
   });
-  t.after(() => composition.close());
+  assert.ok(composition.close);
+  const closeComposition = composition.close;
+  t.after(() => closeComposition());
   const httpFixture = await openHttp(t, null, {
     systemControls: composition.systemControls,
     resolvePrincipal: composition.resolvePrincipal,
@@ -658,7 +770,7 @@ test("installed composition joins production HTTP, Node lifecycle IPC and durabl
   );
   const receipt = await browser.execute(command);
   assert.equal(receipt.state, "confirmed");
-  assert.equal(receipt.snapshot.phase, "PAUSED");
+  assert.equal(snapshot(receipt).phase, "PAUSED");
   assert.equal(ipc.calls.filter((action) => action === "pause").length, 1);
   assert.equal(httpFixture.postCount, 1);
   assert.equal((await browser.receipt(command)).state, "confirmed");
@@ -675,26 +787,36 @@ test("default QueueClient production HTTP uses authenticated lifecycle IPC and t
   const port = await freeHttpPort();
   const resultPromise = once(queueClient.child, "message");
   queueClient.child.send({ action: "run", port });
-  const [message] = await resultPromise;
+  const messages: unknown[] = await resultPromise;
+  const message = recordValue(messages[0]);
   await queueClient.exitPromise;
-  if (message.error)
+  if (message["error"])
     assert.fail(
-      `${message.error.code}: ${message.error.message}; status=${JSON.stringify(message.error.status)}`,
+      `${recordValue(message["error"])["code"]}: ${recordValue(message["error"])["message"]}; status=${JSON.stringify(recordValue(message["error"])["status"])}`,
     );
-  assert.equal(message.result.state, "confirmed");
-  assert.equal(message.result.phase, "PAUSED");
-  assert.equal(message.result.clientId, queueClient.auth.clientId);
+  assert.equal(recordValue(message["result"])["state"], "confirmed");
+  assert.equal(recordValue(message["result"])["phase"], "PAUSED");
+  assert.equal(
+    recordValue(message["result"])["clientId"],
+    queueClient.auth.clientId,
+  );
   const digest = crypto
     .createHash("sha256")
-    .update(message.result.requestId)
+    .update(text(recordValue(message["result"])["requestId"]))
     .digest("hex");
   const saved = readJson(
     path.join(queueClient.queue, `lifecycle-control-${digest}.json`),
   );
-  assert.equal(saved.status, "completed");
-  assert.equal(saved.binding.action, "pause");
-  assert.equal(saved.binding.instanceId, message.result.instanceId);
-  assert.equal(saved.binding.clientId, queueClient.auth.clientId);
+  assert.equal(saved["status"], "completed");
+  assert.equal(recordValue(saved["binding"])["action"], "pause");
+  assert.equal(
+    recordValue(saved["binding"])["instanceId"],
+    recordValue(message["result"])["instanceId"],
+  );
+  assert.equal(
+    recordValue(saved["binding"])["clientId"],
+    queueClient.auth.clientId,
+  );
 });
 
 test("two same-origin tabs share the pending intent and do not post a second global action", async (t) => {
@@ -717,8 +839,11 @@ test("two same-origin tabs share the pending intent and do not post a second glo
     firstTab.status(globalScope),
     secondTab.status(globalScope),
   ]);
-  assert.equal(first.snapshot.generation, second.snapshot.generation);
-  const makeCommand = (snapshot, action) => ({
+  assert.equal(snapshot(first).generation, snapshot(second).generation);
+  const makeCommand = (
+    snapshot: BrokerControlSnapshot,
+    action: SystemControlAction,
+  ) => ({
     version: SYSTEM_CONTROLS_API_VERSION,
     scope: globalScope,
     action,
@@ -727,8 +852,8 @@ test("two same-origin tabs share the pending intent and do not post a second glo
     expectedGeneration: snapshot.generation,
   });
   const results = await Promise.allSettled([
-    firstTab.execute(makeCommand(first.snapshot, "pause")),
-    secondTab.execute(makeCommand(second.snapshot, "drain")),
+    firstTab.execute(makeCommand(snapshot(first), "pause")),
+    secondTab.execute(makeCommand(snapshot(second), "drain")),
   ]);
   assert.equal(
     results.filter((value) => value.status === "fulfilled").length,
@@ -739,9 +864,10 @@ test("two same-origin tabs share the pending intent and do not post a second glo
     1,
   );
   const rejected = results.find((value) => value.status === "rejected");
-  assert.equal(rejected.reason.code, "CONTROL_RECEIPT_PENDING");
+  assert.ok(rejected);
+  assert.equal(errorCode(rejected.reason), "CONTROL_RECEIPT_PENDING");
   assert.equal(httpFixture.postCount, 1);
-  assert.equal((await firstTab.status(globalScope)).snapshot.generation, 1);
+  assert.equal(snapshot(await firstTab.status(globalScope)).generation, 1);
 });
 
 test("server generation fencing rejects distinct concurrent request IDs", async (t) => {
@@ -749,13 +875,13 @@ test("server generation fencing rejects distinct concurrent request IDs", async 
   const ipc = createIpc(fixture.queue);
   const api = createApplication(fixture.queue, ipc);
   const status = await api.status(globalScope, principal);
-  const makeCommand = (action) => ({
+  const makeCommand = (action: SystemControlAction) => ({
     version: SYSTEM_CONTROLS_API_VERSION,
     scope: globalScope,
     action,
     requestId: crypto.randomUUID(),
-    instanceId: status.snapshot.instanceId,
-    expectedGeneration: status.snapshot.generation,
+    instanceId: snapshot(status).instanceId,
+    expectedGeneration: snapshot(status).generation,
   });
   const results = await Promise.all([
     api.execute(makeCommand("pause"), principal),
@@ -777,23 +903,25 @@ test("server generation fencing rejects distinct concurrent request IDs", async 
 
 test("a foreign pause is observed but opening another tab never resumes it", async (t) => {
   const fixture = await startLifecycle(t);
-  const foreignFence = await request(fixture.queue, {
-    action: "control-status",
-    auth: { ...auth, clientId: "foreign-client" },
-  });
+  const foreignFence = recordValue(
+    await request(fixture.queue, {
+      action: "control-status",
+      auth: { ...auth, clientId: "foreign-client" },
+    }),
+  );
   await request(fixture.queue, {
     action: "pause",
     auth: { ...auth, clientId: "foreign-client" },
     control: {
       requestId: "foreign-pause",
-      instanceId: foreignFence.instanceId,
-      expectedGeneration: foreignFence.generation,
+      instanceId: foreignFence["instanceId"],
+      expectedGeneration: foreignFence["generation"],
     },
   });
   const ipc = createIpc(fixture.queue);
   const api = createApplication(fixture.queue, ipc);
   const status = await api.status(projectScope, principal);
-  assert.equal(status.snapshot.phase, "PAUSED");
+  assert.equal(snapshot(status).phase, "PAUSED");
   assert.equal(
     status.capabilities.resume,
     true,
@@ -814,21 +942,21 @@ test("unknown resume stays held and is never replayed", async (t) => {
     browserStorage,
   );
   const status = await browser.status(globalScope);
-  const command = {
+  const command: SystemControlCommand = {
     version: SYSTEM_CONTROLS_API_VERSION,
     scope: globalScope,
     action: "resume",
     requestId: crypto.randomUUID(),
-    instanceId: status.snapshot.instanceId,
-    expectedGeneration: status.snapshot.generation,
+    instanceId: snapshot(status).instanceId,
+    expectedGeneration: snapshot(status).generation,
   };
   const result = await browser.execute(command);
   assert.equal(result.state, "unknown");
   assert.equal(browser.canMutate(), false);
   assert.equal(ipc.calls.filter((call) => call === "resume").length, 1);
-  assert.equal(readJson(path.join(fixture.queue, "counts.json")).probes, 1);
+  assert.equal(readJson(path.join(fixture.queue, "counts.json"))["probes"], 1);
   const held = await browser.status(globalScope);
-  assert.equal(held.snapshot.unresolved, true);
+  assert.equal(snapshot(held).unresolved, true);
   assert.equal(held.capabilities.resume, false);
   assert.equal(held.capabilities.start, false);
   const duplicate = await browser.execute(command);
@@ -898,8 +1026,8 @@ test("a durable pending receipt disables new control intents across browser sess
       scope: globalScope,
       action: "pause",
       requestId: "new-session-action",
-      instanceId: status.snapshot.instanceId,
-      expectedGeneration: status.snapshot.generation,
+      instanceId: snapshot(status).instanceId,
+      expectedGeneration: snapshot(status).generation,
     },
     principal,
   );
@@ -914,21 +1042,21 @@ test("drain reports many active managed operations instead of reporting zero or 
   const api = createApplication(fixture.queue, ipc);
   const status = await api.status(projectScope, principal);
   assert.equal(status.effectiveScope.kind, "global");
-  assert.equal(status.snapshot.activeOperations, 128);
+  assert.equal(snapshot(status).activeOperations, 128);
   const receipt = await api.execute(
     {
       version: SYSTEM_CONTROLS_API_VERSION,
       scope: projectScope,
       action: "drain",
       requestId: "drain-five-workers",
-      instanceId: status.snapshot.instanceId,
-      expectedGeneration: status.snapshot.generation,
+      instanceId: snapshot(status).instanceId,
+      expectedGeneration: snapshot(status).generation,
     },
     principal,
   );
   assert.equal(receipt.state, "accepted");
-  assert.equal(receipt.snapshot.activeOperations, 128);
-  assert.equal(receipt.snapshot.phase, "PAUSING");
+  assert.equal(snapshot(receipt).activeOperations, 128);
+  assert.equal(snapshot(receipt).phase, "PAUSING");
   const after = await api.status(projectScope, principal);
   const html = renderSystemControls(
     after,
@@ -937,7 +1065,7 @@ test("drain reports many active managed operations instead of reporting zero or 
     "Fixture Project",
   );
   assert.match(html, /Draining; waiting for 128 active managed requests/);
-  assert.equal(after.snapshot.activeOperations, 128);
+  assert.equal(snapshot(after).activeOperations, 128);
   await request(fixture.queue, {
     action: "fixture-finish-workers",
     auth,
@@ -953,12 +1081,12 @@ test("drain reports many active managed operations instead of reporting zero or 
     },
   );
   assert.equal(reconciled.state, "confirmed");
-  assert.equal(reconciled.snapshot.phase, "PAUSED");
-  assert.equal(reconciled.snapshot.activeOperations, 0);
+  assert.equal(snapshot(reconciled).phase, "PAUSED");
+  assert.equal(snapshot(reconciled).activeOperations, 0);
 });
 
 test("start is exposed only for a real STOPPED snapshot and confirms the new paused instance", async () => {
-  const stopped = {
+  const stopped: BrokerControlSnapshot = {
     protocol: 1,
     instanceId: "stopped-instance",
     generation: 7,
@@ -969,7 +1097,7 @@ test("start is exposed only for a real STOPPED snapshot and confirms the new pau
     gateClosed: true,
     capabilities: { start: true },
   };
-  const started = {
+  const started: BrokerControlSnapshot = {
     ...stopped,
     instanceId: "started-instance",
     generation: 0,
@@ -977,7 +1105,7 @@ test("start is exposed only for a real STOPPED snapshot and confirms the new pau
     capabilities: { pause: true, drain: true, resume: true, start: false },
   };
   let running = false;
-  const records = new Map();
+  const records = new Map<string, SystemControlReceiptRecord>();
   const client = {
     async call() {
       throw Object.assign(new Error("not running"), {
@@ -1011,7 +1139,7 @@ test("start is exposed only for a real STOPPED snapshot and confirms the new pau
   });
   const status = await api.status(globalScope, principal);
   assert.equal(status.state, "available");
-  assert.equal(status.snapshot.phase, "STOPPED");
+  assert.equal(snapshot(status).phase, "STOPPED");
   assert.equal(status.capabilities.start, true);
   const result = await api.execute(
     {
@@ -1025,8 +1153,8 @@ test("start is exposed only for a real STOPPED snapshot and confirms the new pau
     principal,
   );
   assert.equal(result.state, "confirmed");
-  assert.equal(result.snapshot.instanceId, started.instanceId);
-  assert.equal(result.snapshot.phase, "PAUSED");
+  assert.equal(snapshot(result).instanceId, started.instanceId);
+  assert.equal(snapshot(result).phase, "PAUSED");
   assert.equal(running, true);
 
   const unsupported = createSystemControls({
@@ -1055,21 +1183,27 @@ test("production HTTP starts only a clean STOPPED fixture through the existing s
           code: "QUEUE_NOT_RUNNING",
         });
     },
-    call(action, values) {
+    call(action: string, values?: unknown) {
       if (!brokerRunning)
         throw Object.assign(new Error("broker offline"), {
           code: "QUEUE_NOT_RUNNING",
         });
-      return request(dirs.queue, { action, auth, ...(values || {}) });
+      return request(dirs.queue, {
+        action,
+        auth,
+        ...(values == null ? {} : recordValue(values)),
+      });
     },
     dispose() {},
   };
-  const legacyControl = {
+  const legacyControl: ServiceOptions["control"] = {
     client,
     current: null,
     async read() {
-      this.current = await client.call("control-status");
-      return this.current;
+      const value = await client.call("control-status");
+      assert.ok(isBrokerControlSnapshot(value));
+      this.current = value;
+      return value;
     },
   };
   const startService = createServices({
@@ -1079,8 +1213,8 @@ test("production HTTP starts only a clean STOPPED fixture through the existing s
     },
     control: legacyControl,
     async ensureBroker(config) {
-      assert.equal(config.queue.startPaused, true);
-      assert.equal(config.queue.exclusiveStart, true);
+      assert.equal(config.queue?.["startPaused"], true);
+      assert.equal(config.queue?.["exclusiveStart"], true);
       starts++;
       await startLifecycleProcess(t, dirs, { paused: true, buildHash });
       brokerRunning = true;
@@ -1105,7 +1239,7 @@ test("production HTTP starts only a clean STOPPED fixture through the existing s
   );
   const stopped = await browser.status(globalScope);
   assert.equal(stopped.state, "available");
-  assert.equal(stopped.snapshot.phase, "STOPPED");
+  assert.equal(snapshot(stopped).phase, "STOPPED");
   assert.equal(stopped.capabilities.start, true);
   const command = createSystemControlCommand(
     stopped,
@@ -1115,8 +1249,8 @@ test("production HTTP starts only a clean STOPPED fixture through the existing s
   );
   const result = await browser.execute(command);
   assert.equal(result.state, "confirmed");
-  assert.equal(result.snapshot.phase, "PAUSED");
-  assert.notEqual(result.snapshot.instanceId, stopped.snapshot.instanceId);
+  assert.equal(snapshot(result).phase, "PAUSED");
+  assert.notEqual(snapshot(result).instanceId, snapshot(stopped).instanceId);
   assert.equal(starts, 1);
   assert.equal(httpFixture.postCount, 1);
 
@@ -1140,7 +1274,7 @@ test("production HTTP starts only a clean STOPPED fixture through the existing s
     "a server-side durable receipt makes duplicate delivery idempotent",
   );
   const running = await browser.status(globalScope);
-  assert.equal(running.snapshot.phase, "PAUSED");
+  assert.equal(snapshot(running).phase, "PAUSED");
   assert.equal(running.capabilities.start, false);
   assert.equal(running.capabilities.resume, true);
 });
@@ -1196,8 +1330,8 @@ test("production STOPPED observation disables start for queued retained work", a
   });
   const status = await api.status(globalScope, principal);
   assert.equal(status.state, "available");
-  assert.equal(status.snapshot.phase, "STOPPED");
-  assert.equal(status.snapshot.unresolved, true);
+  assert.equal(snapshot(status).phase, "STOPPED");
+  assert.equal(snapshot(status).unresolved, true);
   assert.equal(status.capabilities.start, false);
   const result = await api.execute(
     {
@@ -1205,8 +1339,8 @@ test("production STOPPED observation disables start for queued retained work", a
       scope: globalScope,
       action: "start",
       requestId: "blocked-start",
-      instanceId: status.snapshot.instanceId,
-      expectedGeneration: status.snapshot.generation,
+      instanceId: snapshot(status).instanceId,
+      expectedGeneration: snapshot(status).generation,
     },
     principal,
   );
@@ -1215,7 +1349,7 @@ test("production STOPPED observation disables start for queued retained work", a
   assert.equal(startCalls, 0);
 });
 
-test("offline status and first host CPU observation remain unknown, not zero", async (t) => {
+test("offline status and first host CPU observation remain unknown, not zero", async () => {
   const api = createSystemControls({
     control: {
       async read() {
@@ -1248,16 +1382,22 @@ test("offline status and first host CPU observation remain unknown, not zero", a
 
   const hostOs = {
     ...os,
-    platform: () => "win32",
+    platform: (): NodeJS.Platform => "win32",
     hostname: () => "offline-fixture",
-    cpus: () => [{ times: { user: 10, nice: 0, sys: 5, idle: 85, irq: 0 } }],
+    cpus: () => [
+      {
+        model: "fixture",
+        speed: 1,
+        times: { user: 10, nice: 0, sys: 5, idle: 85, irq: 0 },
+      },
+    ],
     totalmem: () => 100,
     freemem: () => 50,
     uptime: () => 20,
     loadavg: () => [0, 0, 0],
   };
   const collector = createCollector({ os: hostOs, now: () => 1_000 });
-  const first = collector.read();
+  const first = collector.read({});
   assert.equal(first.host.cpuPercent, null);
   assert.equal(
     first.host.processCount,
@@ -1275,7 +1415,7 @@ test("HTTP POST is rejected by the session CSRF gate before the route can dispat
   const session = await httpFixture.fetcher(
     `${httpFixture.origin}/api/v1/console/session`,
   );
-  const csrfToken = (await session.json()).csrfToken;
+  const csrfToken = text(recordValue(await session.json())["csrfToken"]);
   const response = await httpFixture.fetcher(
     `${httpFixture.origin}/api/v1/console/system-controls`,
     {
@@ -1297,7 +1437,7 @@ test("production HTTP routes project actions through the approved injected handl
   const fixture = await startLifecycle(t);
   const ipc = createIpc(fixture.queue);
   const api = createApplication(fixture.queue, ipc);
-  const received = [];
+  const received: { caller: ConsoleQueryPrincipal; body: unknown }[] = [];
   const composition = composeControlCenterService({
     readPort: null,
     resolvePrincipal: () => principal,
@@ -1308,10 +1448,17 @@ test("production HTTP routes project actions through the approved injected handl
         state: "ok",
         code: "PROJECT_ARCHIVED",
         projectId: "fixture-project",
+        revision: null,
+        monitoring: null,
+        archivedAtMs: null,
+        alias: null,
+        reasons: [],
       };
     },
   });
-  t.after(() => composition.close());
+  assert.ok(composition.close);
+  const closeComposition = composition.close;
+  t.after(() => closeComposition());
   const httpFixture = await openHttp(t, api, {
     projectActions: composition.projectActions,
     resolvePrincipal: composition.resolvePrincipal,
@@ -1319,7 +1466,9 @@ test("production HTTP routes project actions through the approved injected handl
   const sessionResponse = await httpFixture.fetcher(
     `${httpFixture.origin}/api/v1/console/session`,
   );
-  const { csrfToken } = await sessionResponse.json();
+  const csrfToken = text(
+    recordValue(await sessionResponse.json())["csrfToken"],
+  );
   const payload = {
     version: 1,
     action: "archive",
@@ -1338,8 +1487,9 @@ test("production HTTP routes project actions through the approved injected handl
     },
   );
   assert.equal(response.status, 200);
-  assert.equal((await response.json()).code, "PROJECT_ARCHIVED");
+  assert.equal(recordValue(await response.json())["code"], "PROJECT_ARCHIVED");
   assert.equal(received.length, 1);
+  assert.ok(received[0]);
   assert.equal(received[0].caller.subject, principal.subject);
   assert.deepEqual(received[0].body, payload);
 });
@@ -1358,7 +1508,7 @@ test("production HTTP reports missing System and project action ports as unavail
   const session = await httpFixture.fetcher(
     `${httpFixture.origin}/api/v1/console/session`,
   );
-  const { csrfToken } = await session.json();
+  const csrfToken = text(recordValue(await session.json())["csrfToken"]);
   const projectAction = await httpFixture.fetcher(
     `${httpFixture.origin}/api/v1/console/project-actions`,
     {
@@ -1372,7 +1522,7 @@ test("production HTTP reports missing System and project action ports as unavail
   );
   assert.equal(projectAction.status, 503);
   assert.equal(
-    (await projectAction.json()).code,
+    recordValue(await projectAction.json())["code"],
     "PROJECT_ACTIONS_UNAVAILABLE",
   );
 });
