@@ -37,15 +37,40 @@ class Base:
 
 
 class Property(Base):
-    """No physical/visual property values are modeled by the metadata fixture."""
+    """Immutable descriptor metadata; no physical/visual property value."""
+
+    def __init__(self, parent: Appearance | Material, id: str, name: str) -> None:
+        self.model_parent: Appearance | Material = parent
+        self.model_id: str = id
+        self.model_name: str = name
+
+    @property
+    def id(self) -> str:
+        self.model_parent.model_valid()
+        return self.model_id
+
+    @property
+    def name(self) -> str:
+        self.model_parent.model_valid()
+        return self.model_name
+
+    @property
+    def isReadOnly(self) -> bool:
+        self.model_parent.model_valid()
+        return True
+
+    @property
+    def parent(self) -> Base:
+        self.model_parent.model_valid()
+        return self.model_parent
 
 
 class Properties(Collection[Property]):
     def itemById(self, id: str) -> Property | None:
-        return None
+        return next((item for item in self.values if item.id == id), None)
 
     def itemByName(self, name: str) -> Property | None:
-        return None
+        return next((item for item in self.values if item.name == name), None)
 
 
 class Material(Base):
@@ -126,7 +151,8 @@ class Materials(Collection[Material]):
             raise ValueError("Material copy name is empty or already exists")
         materialToCopy.model_valid()
         material = Material(self, name, materialToCopy.description)
-        material.model_properties = deepcopy(materialToCopy.materialProperties)
+        material.model_properties = Properties([Property(material, item.id, item.name)
+                                                for item in materialToCopy.materialProperties])
         self.values.append(material)
         self.model_document.isModified = True
         return material
@@ -194,7 +220,8 @@ class Appearances(Collection[Appearance]):
             raise ValueError("Appearance copy name is empty or already exists")
         appearanceToCopy.model_valid()
         appearance = Appearance(self, name)
-        appearance.model_properties = deepcopy(appearanceToCopy.appearanceProperties)
+        appearance.model_properties = Properties([Property(appearance, item.id, item.name)
+                                                  for item in appearanceToCopy.appearanceProperties])
         self.values.append(appearance)
         self.model_document.isModified = True
         return appearance
@@ -204,7 +231,9 @@ class MaterialLibrary(Base):
     def __init__(self) -> None:
         self.model_materials: Materials = Materials(self, None)
         self.model_appearances: Appearances = Appearances(self, None)
-        self.model_appearances.values.append(Appearance(self.model_appearances, "Model metadata appearance"))
+        appearance = Appearance(self.model_appearances, "Model metadata appearance")
+        appearance.model_properties = Properties([Property(appearance, "model:test-property", "Model descriptor only")])
+        self.model_appearances.values.append(appearance)
         self.model_materials.values.append(Material(self.model_materials, "Model metadata material", "No physical properties or native library identity implied"))
 
     @property

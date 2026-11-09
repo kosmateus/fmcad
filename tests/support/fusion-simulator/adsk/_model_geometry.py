@@ -245,12 +245,27 @@ class Sketch(core.Base):
         self.objectType: str = "adsk::fusion::Sketch"
         self.entityToken: str = "model-sketch:" + str(uuid.uuid4())
         self.model_plane: fusion.ConstructionPlane = plane
+        self.model_light_bulb: bool = True
         self.name: str = "Sketch" + str(component.sketches.count + 1)
         self.profiles: Profiles = Profiles()
         self.sketchCurves: SketchCurves = SketchCurves(self)
         self.originPoint: SketchPoint = SketchPoint(self, core.Point3D(0, 0, 0))
         self.geometricConstraints: GeometricConstraints = GeometricConstraints(self)
         self.sketchDimensions: SketchDimensions = SketchDimensions(self)
+
+    @property
+    def isLightBulbOn(self) -> bool:
+        if not self.parentComponent.model_design.model_doc.isValid:
+            raise ValueError("Sketch document is closed")
+        return self.model_light_bulb
+
+    @isLightBulbOn.setter
+    def isLightBulbOn(self, value: bool) -> None:
+        document = self.parentComponent.model_design.model_doc
+        if not document.isValid:
+            raise ValueError("Sketch document is closed")
+        self.model_light_bulb = value
+        document.isModified = True
 
     def model_regenerate(self) -> None:
         # This is a closed-form axis-aligned rectangle, not a general constraint solver.
@@ -375,6 +390,22 @@ class PhysicalProperties(core.Base):
         self.volume: float = volume
 
 
+class _PrismBoundaryCardinality:
+    """Exact box-boundary cardinality, without pretending to expose native topology."""
+    def __init__(self, boundaries: list[tuple[tuple[float, float, float], ...]]) -> None:
+        self.model_boundaries: list[tuple[tuple[float, float, float], ...]] = boundaries
+
+    @property
+    def count(self) -> int:
+        return len(self.model_boundaries)
+
+    def item(self, index: int) -> object:
+        raise NotImplementedError("Only rectangular-prism boundary cardinality is modeled")
+
+    def __iter__(self) -> Iterator[object]:
+        raise NotImplementedError("Native face/edge geometry and identities are not modeled")
+
+
 class BRepBody(core.Base):
     def __init__(self, feature: ExtrudeFeature, bounds: core.BoundingBox3D) -> None:
         self.model_feature: ExtrudeFeature = feature
@@ -469,6 +500,30 @@ class BRepBody(core.Base):
         return core.BoundingBox3D.create(
             core.Point3D(min(first.x, second.x)+origin.x, min(first.y, second.y)+origin.y, origin.z+min(0, distance)),
             core.Point3D(max(first.x, second.x)+origin.x, max(first.y, second.y)+origin.y, origin.z+max(0, distance)))
+
+    def model_corners(self) -> list[tuple[float, float, float]]:
+        if not self.parentComponent.model_design.model_doc.isValid or not self.model_active:
+            raise ValueError("Topology target is closed or rolled back")
+        bounds = self.boundingBox
+        low, high = bounds.minPoint.asArray(), bounds.maxPoint.asArray()
+        if any(high[i] <= low[i] for i in range(3)):
+            raise ValueError("Rectangular prism requires three positive extents")
+        return [(x, y, z) for x in (low[0], high[0])
+                for y in (low[1], high[1]) for z in (low[2], high[2])]
+
+    @property
+    def faces(self) -> _PrismBoundaryCardinality:
+        corners = self.model_corners()
+        return _PrismBoundaryCardinality([
+            tuple(point for point in corners if point[axis] == coordinate)
+            for axis in range(3) for coordinate in sorted({point[axis] for point in corners})])
+
+    @property
+    def edges(self) -> _PrismBoundaryCardinality:
+        corners = self.model_corners()
+        return _PrismBoundaryCardinality([
+            (first, second) for i, first in enumerate(corners) for second in corners[i + 1:]
+            if sum(first[axis] != second[axis] for axis in range(3)) == 1])
 
     @property
     def preciseBoundingBox(self) -> core.BoundingBox3D:

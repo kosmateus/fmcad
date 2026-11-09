@@ -26,11 +26,12 @@ METHODS: dict[str, dict[str, list[str]]] = {
                "ConstructionPlaneInput": ["setByOffset", "setByTwoPlanes", "setByAngle"],
                "Occurrences": ["addNewComponent"],
                "UserParameter": ["deleteMe"], "UserParameters": ["add", "itemByName"], "ExportManager": ["createFusionArchiveExportOptions", "execute"],
-               "Design": ["cast", "findEntityByToken"]},
+               "Design": ["cast", "findEntityByToken", "computeAll"]},
 }
 
 PARAMETER_PROPERTIES = ["name", "expression", "value", "unit", "comment"]
-PROPERTIES = [("fusion", "BRepBody", "fusion", "BRepBody", ["appearance", "material"]),
+PROPERTIES = [("core", "Property", "core", "Property", ["id", "name", "isReadOnly", "parent"]),
+              ("fusion", "BRepBody", "fusion", "BRepBody", ["appearance", "material", "faces", "edges"]),
               ("fusion", "BaseComponent", "fusion", "Component", ["allOccurrences"]),("core", "Appearance", "core", "Appearance", ["id", "name", "parent", "appearanceProperties"]),
               ("core", "MaterialLibrary", "core", "MaterialLibrary", ["appearances"]),
               ("fusion", "Design", "fusion", "Design", ["appearances"]), ("core", "Material", "core", "Material", ["id", "name", "description", "parent", "materialProperties"]),
@@ -41,7 +42,7 @@ PROPERTIES = [("fusion", "BRepBody", "fusion", "BRepBody", ["appearance", "mater
               ("core", "Viewport", "core", "Viewport", ["camera", "parentDocument"]),
               ("core", "Application", "core", "Application", ["activeViewport"]), ("fusion", "Parameter", "fusion", "UserParameter", PARAMETER_PROPERTIES),
               ("fusion", "SketchPoint", "fusion", "SketchPoint", ["worldGeometry"]),
-              ("fusion", "Sketch", "fusion", "Sketch", ["healthState", "errorOrWarningMessage"]),
+              ("fusion", "Sketch", "fusion", "Sketch", ["healthState", "errorOrWarningMessage", "isLightBulbOn"]),
               ("fusion", "SketchCurve", "fusion", "SketchLine", ["isConstruction"]),
               ("fusion", "SketchEntity", "fusion", "SketchLine", ["isFixed"]),
               ("core", "Attribute", "core", "Attribute", ["value"]),

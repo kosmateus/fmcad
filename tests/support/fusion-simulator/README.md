@@ -193,9 +193,9 @@ are refused. IDs are model-generated, not Autodesk IDs or a guarantee of global
 native-ID uniqueness. The supported design graph deep-copies these resources into
 saved revisions and rebinds the document when reopened.
 
-The fixture exposes no physical or visual properties. An empty property collection
-means no such fixture data is modeled, not that a real library material has no
-properties. Density/mass, assignments/inheritance, visual appearance properties, textures, rendering,
+The fixture exposes no physical or visual property values. Its material property
+collection is empty; this means no such fixture data is modeled, not that a real
+library material has no properties. Density/mass, assignments/inheritance, visual appearance properties, textures, rendering,
 cloud material catalogs and property editing remain unsupported. The shared material
 case chooses an exact available library item, as the historical test did, and uses
 production list/create/edit handlers; expected IDs and names follow that selection.
@@ -204,8 +204,13 @@ Actual native copy/rename/persistence behavior remains a qualification assumptio
 ## Design-local appearance metadata (v16)
 
 Appearance/Appearances mirror the pinned API for ID, name, parent, property lookup
-and detached addByCopy. A synthetic immutable library appearance has no visual
-properties. Reading projection therefore returns null for this fixture; no texture,
+and detached addByCopy. A synthetic immutable library appearance exposes one
+read-only descriptor, `model:test-property`, with only ID/name/parent metadata and
+no value. Copies detach the descriptor and bind its parent to the target resource;
+descriptor getters reject closed documents. The descriptor is not an Autodesk
+library property or a visual/physical value. This makes descriptor enumeration
+checks nonempty without claiming property editing support. Reading projection
+therefore returns null for this fixture; no texture,
 projection algorithm, rendered image, assignment or inheritance is simulated.
 Local resources persist in the supported saved graph and rebind to the reopened
 document. Library writes and writes through a closed document are refused.
@@ -232,3 +237,23 @@ after the recipe operations. Native ThreadInfo tables, cosmetic feature creation
 helical teeth and arbitrary BRep stay unsupported. Curated catalog names are nominal
 (e.g. `M10`); full installed designations (e.g. `M10x1.5`) are rejected by both the
 historical and current catalog. This is documented in B_ASSERTION_AUDIT.md.
+
+## Declared engineering calculations
+
+`engineering-declarations` adds no SDK model API. It runs the production cam,
+assembly dependency, sampled withdrawal and conservative envelope calculations
+against the existing document/unit/frame boundaries. The historical numeric
+assertions and explicit unresolved/blocked fields remain unchanged; each owned
+saved fixture has independent box-state readback. Cam contact, follower forces,
+continuous collision, native joint solving and BRep motion remain unsupported.
+Production audit readback in the definition family now also observes the supported
+design graph and catches parameter changes that do not affect the box dimensions.
+That comparison is not a claim of native full-topology or timeline-health fidelity.
+
+The audit's face/edge cardinalities are derived from the eight corners of a
+nondegenerate axis-aligned rectangular prism: coplanar groups of four corners form
+its six faces, and vertex pairs differing along exactly one axis form its twelve
+edges. This extends the existing rectangular extrusion model only. Collection
+indexing/enumeration deliberately refuses unsupported native face/edge objects;
+there are no synthetic topology identities, general BRep or surface algorithms.
+The pinned API check includes the two BRepBody collection getter shapes.

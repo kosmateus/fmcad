@@ -518,6 +518,18 @@ class Design(core.Product):
     def cast(arg: object) -> Design | None:
         return arg if isinstance(arg, Design) else None
 
+    def computeAll(self) -> bool:
+        """Regenerate the supported rectangular graph, never an arbitrary solver."""
+        if not self.model_doc.isValid:
+            raise ValueError("Design document is closed")
+        for component in self.allComponents:
+            for sketch in component.sketches:
+                sketch.model_regenerate()
+            for body in component.bRepBodies:
+                # The existing bounds evaluator regenerates the profile and extent.
+                _ = body.boundingBox
+        return True
+
     def findEntityByToken(self, entityToken: str) -> list[core.Base]:
         if not self.model_doc.isValid:
             return []
