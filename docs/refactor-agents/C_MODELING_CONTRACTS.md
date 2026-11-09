@@ -489,3 +489,11 @@ evidence were checked. See [the native obligation register](C_NATIVE_ASSERTION_O
 for exact readbacks, capability requirements and unresolved legacy runner
 migration prerequisites. This accounting does not claim those runners are ready
 for concurrent Fusion execution or that native acceptance has passed.
+
+
+The follow-up feature/hierarchy supplement accounts for another 266 frozen sites
+(161 feature-mode, 105 hierarchy): ten exact shared lifecycle invariants and
+256 native-context obligations. The hard-coded addin/concatenated-handler fixture
+and mutable hierarchy suite globals remain explicitly listed migration
+prerequisites, not native-ready runners. Across both C supplements, all 1,228
+assigned sites are identified without modifying their frozen sources.

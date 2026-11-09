@@ -161,3 +161,62 @@ bound request/job/client receipts, owned document/file identities, the original
 assertion values and tolerances, unchanged foreign inventory and certainty-aware
 cleanup evidence. On unknown mutation outcome, report the original request and
 leave cleanup deferred; never resubmit the uncertain mutation.
+
+## Additional feature-mode and hierarchy accounting
+
+The second supplement, `assertion-dispositions-modeling-features.json`, accounts
+for all 266 frozen sites in `live-feature-modes.js` (161) and
+`live-component-hierarchy.js` (105): ten precise shared invariants and 256
+retained native-context obligations, all marked not-run. Source hashes and
+individual evidence literals remain unchanged.
+
+`live-feature-modes.js` still selects a hard-coded addin endpoint and concatenates
+legacy CAD assets. Its report, component and document state are shared across
+feature groups. Before native qualification, use the existing prepared CAD path
+and ScenarioSession with the same mode steps/readbacks on both supported
+backends. Preserve the historical XZ direction and hole extent hypotheses, the
+explicit getter-inspection gaps, original tolerances and indeterminate-result
+stop. `live-component-hierarchy.js` already pins doc-id and honors broker blocks,
+but needs its environment/report globals and cleanup moved into the common
+owner lifecycle. Neither retained source is labeled native-ready.
+
+### tests/live-feature-modes.js
+
+| Obligation group | Required observation |
+| --- | --- |
+| `feature-mode-script-envelope` | Preserve exact bundled-handler provenance, unique result marker and in-script name/creationId/active/unsaved/foreign-inventory guards. Any indeterminate call or malformed result must latch a stop including cleanup. |
+| `feature-mode-measurement` | Require finite measured volume in mm3 and bounds in mm with the retained 0.001 mm and max(0.001,abs(volume)*1e-5) tolerances; retain named datum and parameter setup for the dependent feature modes. |
+| `feature-mode-profile-fixture` | Build the retained point/rectangle/circle section on its exact supplied plane and require exactly one closed profile for non-point geometry. |
+| `feature-mode-xz-line` | Build the XZ line with negated local Y, optional fixed-start/vertical/driving dimension, then independently verify world endpoints [x,0,0] and [x,0,height] within 0.001 mm. |
+| `feature-mode-native-inspection` | Read native feature token/type/health and mode-specific extent/start definitions, hole direction/type/cylinders, sweep orientation/scaling or loft guide properties. Require health 0; do not force a timeline rollback to read unsupported rail/orientation getters. |
+| `feature-mode-recompute-isolation` | Require actual recompute and healthy result; each named component owns its mode fixture, and failed modes retain read-only history inspection without retrying mutations after uncertainty. |
+| `feature-mode-document-creation` | Require explicit --run, a matching pre-creation inventory and absent random name, then record a new exact name/creationId and unsaved state. |
+| `extrude-through-all-participants` | Cut a 5x5 mm through profile only from the designated 20x20 mm stock at heights 10/16/10; require stock volume 375*height, untouched other-body volume 1600 and both exact bounds plus native ThroughAll extent. |
+| `extrude-to-entity-offsets` | Extrude a 4x3 mm profile from +2 mm to a parametrized target minus1 mm at heights20/26/20; read volume12*(height-3), exact bounds, ToEntity/OffsetStart native types and retained offset expressions. |
+| `hole-through-all-to-entity` | For throughAll/toEntity holes, preserve native input direction diagnostics and participant selection; at stock heights10/17/10 require analytic (400-pi*4)*height volume, unchanged stock envelope and healthy native hole readback. |
+| `hole-reverse-types` | For simple/counterbore/countersink reverse-through holes, retain extra removal volumes, regenerate10/17/10 mm stock, require native defaultDirection false and actual +Z unit direction within1e-6. |
+| `sweep-straight-orientation` | Parallel and perpendicular 4x2 mm straight sweeps must regenerate lengths20/25/20 with volume8*length, exact bounds and native orientation enum matching the requested mode. |
+| `sweep-bent-orientation` | On the45degree radius20 mm XZ arc, preserve distinct parallel/perpendicular analytic volumes and extrema, then compare the native sweep orientation enum. No replacement of the original trigonometric bounds. |
+| `sweep-guide-rail` | Regenerate straight route/parallel rail at lengths20/25/20; require volume8*length, exact4x2 mm envelope and native scale enum. Preserve the explicit getter-inspection gap without timeline mutation. |
+| `sweep-guide-rail-scaling` | Independently perturb only the driving rail spread1/2/1 mm; require scale=1+spread/2, integrated frustum volume8*20*(1+s+s^2)/3, exact scaled extrema and native profile-scaling enum. |
+| `loft-rails-centerline` | For one rail and one centerline variants, regenerate profile separation20/26/20; require pi*16*height volume, radius4 mm bounds, guideCount1 and the exact isCenterLine mode. |
+| `feature-mode-owned-cleanup` | Close only the guarded owned unsaved document after known completion and require the complete original document inventory afterward. Unknown execution retains the exact owned identity and blocks cleanup/replay. |
+
+### tests/live-component-hierarchy.js
+
+| Obligation group | Required observation |
+| --- | --- |
+| `hierarchy-command-envelope` | Preserve command exit, unique parsed marker, epoch blocker and recursive unknown/pending detection; a returned transport result alone cannot qualify the component method. |
+| `hierarchy-owner-guard` | Read all native document identities and foreign saved/modified/name state; before mutation require one active owned name/creationId, null cloud file and unsaved status. |
+| `hierarchy-cad-dispatch` | Use the declared operation and immutable doc-id/component scope, require matching successful operation/document envelope and nonempty native result, and retain any nested unknown outcome as a no-replay stop. |
+| `hierarchy-readback-evidence` | Keep each exact labeled comparison and numeric tolerance; an operation is validated only after an original native invocation has corresponding readback assertions. |
+| `hierarchy-owned-close` | Do not close after uncertainty or explicit broker block. Otherwise require the unique exact name/creationId, no saved cloud file and the returned closedCreationId. |
+| `hierarchy-document-creation` | Create one random-name fixture absent from baseline, require exactly one added identity/name, null file and unsaved state, and bind all subsequent native work to it. |
+| `hierarchy-from-bodies` | Move the explicit root10x8x4 mm BRep into a new component; require exactly one returned body and atomic=false, preserving the documented non-atomic behavior. |
+| `hierarchy-rename` | Rename the moved-body component, require affectsAllInstances true and exact returned name, then independently inspect that the renamed definition still owns one native body. |
+| `hierarchy-reparent` | Unground the translated child, reparent under the requested target and require worldPosePreserved plus exact nested path; independently compare min/max/size within0.001 mm and destination child ownership. |
+| `hierarchy-linked-duplicate` | Duplicate the moved occurrence in linked mode at X50 mm; preserve the renamed definition token, explicit linked mode and two affected paths, then read the actual50 mm proxy-bounds displacement. |
+| `hierarchy-parts` | Find all three native definitions, require linked quantity2/bodyCount1 for the renamed component and quantity1 for parent/child, retain child BRep count1 and explicit subassembly scope. |
+| `hierarchy-rigid-group` | Create the requested rigid group from the moved and target occurrences without including children; require a nonempty native group token and exact requested name. |
+| `hierarchy-align` | Unground the source at X30 mm, align it to the target root transform, require residual<=1e-8 and actual origin0, independently read X minimum0 within0.001 mm and unchanged body dimensions. |
+| `hierarchy-final-accounting` | On known unblocked execution close the owned fixture, require no owned leftovers and restored original active document while preserving foreign inventory; blocked/unknown states must remain explicit and not be retried. |
