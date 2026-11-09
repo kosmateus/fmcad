@@ -124,6 +124,7 @@ export const simulatorCapabilities = new Set([
   "saved-reopen",
   "saved-revisions",
   "dimensioned-rectangle",
+  "rectangular-audit",
   "camera-state",
   "pose-visibility",
   "animation-sequence",
@@ -132,6 +133,10 @@ export const simulatorCapabilities = new Set([
   "body-style-assignment",
   "thread-recipes",
   "gear-pair-analytics",
+  "engineering-declarations",
+  "mechanical-declarations",
+  "retained-declarations",
+  "owned-child-cli",
   "cad-commands",
   "parameter-crud",
   "parameter-expressions",
@@ -224,6 +229,8 @@ export class CheckedSimulatorBackend implements ScenarioBackend {
     return local;
   }
   async execute(request: ScriptRequest): Promise<Execution> {
+    if (request.inspectCli)
+      throw new Error("Public CLI inspection requires the broker backend");
     const key = request.owner.clientId + "/" + request.requestId;
     if (this.#requests.has(key))
       throw new Error(

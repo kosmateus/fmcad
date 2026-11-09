@@ -15,12 +15,16 @@
         },
         "after": {
           "source": "tests/helpers/live-broker.js",
-          "sha256": "7f5b54c61965d11fb95199dd91283328e8ea732982379c7cb7832741ef31a9b5",
+          "sha256": "482db0841347fa908e02e08e0db8e0cf823eca7d30158e48e30e75c3ef523323",
           "count": 0
         },
         "retainedIds": [],
         "removed": [],
         "addedIds": []
+      },
+      "workingTreeReview": {
+        "reason": "Owned child CLI handoff records original request identity before admission and harvests exact broker receipts; zero assertion sites in both helper versions. Historical comparison remains preserved.",
+        "historicalAfterSha256": "7f5b54c61965d11fb95199dd91283328e8ea732982379c7cb7832741ef31a9b5"
       }
     },
     {
@@ -36,12 +40,16 @@
         },
         "after": {
           "source": "tests/helpers/live-cli.js",
-          "sha256": "ba5a19453ca9ded452e2e774285ceb99bb314a38fefa1abf32dbecbab82f8ee8",
+          "sha256": "59d7432c9a4537261a8932c2afb049e57f7a03fc6af776066b3a3a6c8472af07",
           "count": 0
         },
         "retainedIds": [],
         "removed": [],
         "addedIds": []
+      },
+      "workingTreeReview": {
+        "reason": "Owned child CLI handoff records original request identity before admission and harvests exact broker receipts; zero assertion sites in both helper versions. Historical comparison remains preserved.",
+        "historicalAfterSha256": "ba5a19453ca9ded452e2e774285ceb99bb314a38fefa1abf32dbecbab82f8ee8"
       }
     },
     {

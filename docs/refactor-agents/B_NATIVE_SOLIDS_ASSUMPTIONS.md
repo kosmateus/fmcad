@@ -4,8 +4,10 @@ The shared `native-solids-*` sequence retains the rib, web, annular-sector,
 arc-strip and O-ring requests, body counts, measurements and tolerances from
 `tests/live-shape-native-solids.js`. It uses an owned saved fixture and the same
 runner/receipts/cleanup as other shared families. The historical source stays
-intact. Its old unsaved-fixture assertions remain separate unmigrated lifecycle
-obligations; moving normal geometry onto a saved file does not satisfy them.
+intact. The factory also runs the same sequence on an owned unsaved fixture with
+passive pre-command checks of creation ID, unique name, null file ID, active
+selection and unchanged foreign inventory. This variant preserves the old
+unsaved precondition independently of saved-file coverage.
 
 The model deliberately lacks `native-profile-sector-torus`. Selecting this suite
 on either model transport produces required `unsupported` failures before any
@@ -25,12 +27,17 @@ The declared outer arc includes 90 degrees, where Y is 20 mm; minimum Y is zero.
 For that declared sector the analytical Y span is therefore 20 mm, whereas the
 historical expectation is approximately 17.320508 mm (the endpoint Y value).
 
-This is an analytical inconsistency, not an observed native Fusion result. The
-migration preserves the historical assertion and marks qualification blocked;
-it does not change it to fit a simulator, manufacture passing output, or silently
-lower tolerance. C/G must review the recipe/reference behavior and authorize a
-separately evidenced expectation correction before this family can qualify.
-No native execution is requested while the offline refactor remains incomplete.
+The continuation compared the historical `a26222ff617b0e9597b2a91b50474bdca8d0a0ce`
+recipe (`assets/cad/shapes.py`, `_shapes_annular_segment`) with the current
+adapter above. Both construct radius-driven inner/outer arcs, the same start and
+sweep and radial end caps, followed by extrusion. The semantic recipe is unchanged.
+The integration review therefore corrects the shared expected bounds to
+`[30, 20, 5]`, retaining the exact request and 0.001 mm tolerance. The frozen
+historical source and assertion inventory keep the original expression so this
+change remains reviewable. `native-solids.test.ts` independently enumerates
+sector endpoints and interior cardinal-angle extrema; it proves that the old
+Y span excludes the declared 90-degree outer-arc point. It does not produce or
+simulate a BRep body. Native Fusion bounds/volume qualification remains NOTRUN.
 
 Other native obligations include closed profile selection, successful native
 BRep construction, actual solidness, bounds and physical volume, plus retained

@@ -12,6 +12,22 @@ export async function componentCommand(
 ): Promise<Execution> {
   if (!request.command || !request.target)
     throw new Error("Owned CAD command required");
+  if (request.command.spelling) {
+    const { findCommand } = createRequire(path.join(root, "package.json"))(
+      "./src/commands",
+    ) as typeof import("../../src/composition/library-commands");
+    if (
+      !request.command.spelling.length ||
+      request.command.spelling.some(
+        (word) => !/^[a-z][a-z0-9-]*$/u.test(word),
+      ) ||
+      findCommand([...request.command.spelling])?.target !==
+        request.command.operation
+    )
+      throw new Error(
+        "CLI alias does not resolve to the expected canonical operation",
+      );
+  }
   const { executeCad } = createRequire(path.join(root, "package.json"))(
     "./src/cad",
   ) as typeof import("../../src/composition/cad-execution");
@@ -39,12 +55,16 @@ export async function componentCommand(
         ...(request.target.file
           ? { docFileId: request.target.file.fileId }
           : {}),
-        component: "root",
+        component: request.command.component ?? "root",
       },
     );
     return {
       requestId: request.requestId,
-      state: unsettled ? "unknown" : "succeeded",
+      state: unsettled
+        ? "unknown"
+        : output["success"] === false
+          ? "failed"
+          : "succeeded",
       sdkSettled: !unsettled,
       mayHaveMutated: true,
       stdout: JSON.stringify(output),

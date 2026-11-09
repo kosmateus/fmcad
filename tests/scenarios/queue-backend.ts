@@ -40,6 +40,23 @@ export class QueueScenarioBackend implements ScenarioBackend {
     return this.pathMapper(local);
   }
   async execute(request: ScriptRequest): Promise<Execution> {
+    if (request.command?.spelling) {
+      const words = request.command.spelling;
+      if (
+        !words.length ||
+        words.some((word) => !/^[a-z][a-z0-9-]*$/u.test(word))
+      )
+        throw new Error("Invalid owned CAD command spelling");
+      const { findCommand } = createRequire(
+        path.join(this.root, "package.json"),
+      )(
+        "./src/commands",
+      ) as typeof import("../../src/composition/library-commands");
+      if (findCommand([...words])?.target !== request.command.operation)
+        throw new Error(
+          "CLI alias does not resolve to the expected canonical operation",
+        );
+    }
     let client = this.#clients.get(request.owner.clientId);
     if (!client) {
       client = new this.#module.QueueClient(request.owner.clientId, {
@@ -58,36 +75,46 @@ export class QueueScenarioBackend implements ScenarioBackend {
       `request-${request.requestId.split(":").at(-1)}.py`,
     );
     fs.writeFileSync(filename, request.source, { flag: "wx", mode: 0o600 });
-    const argv = request.command
-      ? [
-          "cad",
-          ...request.command.operation.split("."),
-          "--data",
-          JSON.stringify(request.command.data),
-          "--doc",
-          request.target!.name,
-          "--doc-id",
-          request.target!.creationId,
-          "--doc-file-id",
-          request.target!.file!.fileId,
-          "--json",
-        ]
-      : [
-          "run",
-          filename,
-          ...(request.helpers ? ["--helpers", request.helpers] : []),
-          ...(request.target
-            ? [
-                "--doc",
-                request.target.name,
-                "--doc-id",
-                request.target.creationId,
-              ]
-            : []),
-          ...(request.target?.file
-            ? ["--doc-file-id", request.target.file.fileId]
-            : []),
-        ];
+    const argv = request.inspectCli
+      ? request.inspectCli === "active"
+        ? ["active"]
+        : ["doc", "list"]
+      : request.command
+        ? [
+            ...(request.command.spelling ?? [
+              "cad",
+              ...request.command.operation.split("."),
+            ]),
+            "--data",
+            JSON.stringify(request.command.data),
+            "--doc",
+            request.target!.name,
+            "--doc-id",
+            request.target!.creationId,
+            ...(request.command.component
+              ? ["--component", request.command.component]
+              : []),
+            ...(request.target!.file
+              ? ["--doc-file-id", request.target!.file.fileId]
+              : []),
+            "--json",
+          ]
+        : [
+            "run",
+            filename,
+            ...(request.helpers ? ["--helpers", request.helpers] : []),
+            ...(request.target
+              ? [
+                  "--doc",
+                  request.target.name,
+                  "--doc-id",
+                  request.target.creationId,
+                ]
+              : []),
+            ...(request.target?.file
+              ? ["--doc-file-id", request.target.file.fileId]
+              : []),
+          ];
     const job = await client.submit({
       requestId: request.requestId,
       kind: "command",
@@ -157,6 +184,21 @@ export function queueExecution(
     sdkSettled,
     mayHaveMutated: execution["mayHaveMutated"] !== false,
     stdout: typeof value["stdout"] === "string" ? value["stdout"] : "",
+    ...(typeof value["stderr"] === "string" ? { stderr: value["stderr"] } : {}),
+    ...(typeof execution["exitCode"] === "number"
+      ? { exitCode: execution["exitCode"] }
+      : {}),
+    ...(typeof job["id"] === "string" && typeof job["state"] === "string"
+      ? {
+          brokerReceipt: {
+            requestId,
+            jobId: job["id"],
+            clientId: owner.clientId,
+            state: job["state"],
+            operationResult: job["operationResult"],
+          },
+        }
+      : {}),
     ...(state === "succeeded" ? {} : { error: JSON.stringify(original) }),
   };
 }

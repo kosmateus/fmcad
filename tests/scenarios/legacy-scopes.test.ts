@@ -117,6 +117,17 @@ test("required profiles account for every retained live suite and separate diagn
       "style-assignments",
       "thread-recipes",
       "gear-pair",
+      "engineering-declarations",
+      "mechanical-declarations",
+      "retained-thread",
+      "retained-seal",
+      "retained-fasteners",
+      "retained-mechanism",
+      "retained-pose",
+      "retained-interference",
+      "retained-containment",
+      "retained-gm-contracts",
+      "child-cli",
     ],
   );
 });

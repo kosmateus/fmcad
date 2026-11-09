@@ -1,12 +1,25 @@
 import test from "node:test";
 import path from "node:path";
-import { program } from "./programs";
+import { program, guard } from "./programs";
 import assert from "node:assert/strict";
 import { fixture, remaining } from "./test-support";
 import { simulatorFolder } from "./simulator";
 import { transactionScenarios } from "./transaction-cases";
 import { runScenarios, resumeCleanup } from "./runner";
 for (const protocol of ["mcp", "addin"] as const) {
+  test(`retained unsaved definition lifecycle and original assertions via ${protocol}`, async (t) => {
+    const { backend, model, directory } = await fixture(t, protocol);
+    const [report] = await runScenarios(
+      backend,
+      transactionScenarios(undefined, 1),
+      directory,
+      10,
+    );
+    assert.equal(report?.status, "passed", JSON.stringify(report));
+    assert.equal(report.cleanup, "complete");
+    assert.equal(report.document?.file, undefined);
+    assert.deepEqual(await remaining(model), { active: null, documents: [] });
+  });
   for (const concurrency of [1, 2, 10]) {
     test(`definition reference and replay contracts via ${protocol}, concurrency ${concurrency}`, async (t) => {
       const { backend, model, directory } = await fixture(t, protocol);
@@ -69,7 +82,7 @@ test("a lost completed definition response recovers original evidence without re
     ...backend,
     async execute(request: Parameters<typeof backend.execute>[0]) {
       const result = await backend.execute(request);
-      if (request.command) {
+      if (request.command?.operation === "definition.instantiate") {
         calls++;
         throw new Error("Lost original command reply");
       }
@@ -100,7 +113,8 @@ test("foreign batch context defers cleanup until original evidence is recovered"
     ...backend,
     async execute(request: Parameters<typeof backend.execute>[0]) {
       const result = await backend.execute(request);
-      if (!request.command) return result;
+      if (request.command?.operation !== "definition.instantiate")
+        return result;
       const output = JSON.parse(result.stdout) as Record<string, unknown>;
       const context = output["context"] as Record<string, unknown>;
       context["docId"] = "foreign-document";
@@ -136,4 +150,41 @@ assert not units.isValidExpression('__import__("builtins").str(23) + " mm"','cm'
 `),
   );
   assert.equal(result.success, true, result.error);
+});
+
+test("definition replay audit detects a parameter mutation that geometry-only readback misses", async (t) => {
+  const { backend, model, directory } = await fixture(t);
+  let literalCalls = 0;
+  const faulty = {
+    ...backend,
+    async execute(request: Parameters<typeof backend.execute>[0]) {
+      const result = await backend.execute(request);
+      if (
+        request.command?.data["runId"] === "literal" &&
+        ++literalCalls === 2
+      ) {
+        assert.ok(request.target);
+        const mutated = await model.execute(
+          program(`${guard(request.target)}
+design.userParameters.add("unexpected_replay_parameter", adsk.core.ValueInput.createByString("1 mm"), "mm", "injected defect")
+`),
+        );
+        assert.equal(mutated.success, true, mutated.error);
+      }
+      return result;
+    },
+  };
+  const [report] = await runScenarios(
+    faulty,
+    transactionScenarios(simulatorFolder, 1),
+    directory,
+    1,
+  );
+  assert.equal(report?.status, "failed");
+  assert.equal(report?.cleanup, "complete");
+  assert.match(report?.error ?? "", /unexpected_replay_parameter/u);
+  assert.ok(
+    report?.requests.some((request) => request.phase === "after-replay"),
+  );
+  assert.deepEqual(await remaining(model), { active: null, documents: [] });
 });

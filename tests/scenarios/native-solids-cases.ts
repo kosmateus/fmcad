@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import type { Scenario } from "./runner";
 import { number, record, type FixtureFolder } from "./contracts";
-import { cadCommand } from "./cad-programs";
 
 export const nativeSolidsCapability = "native-profile-sector-torus";
+/** 0..120 degrees includes the interior outer-arc Y extremum at 90 degrees. */
+export const nativeAnnularBounds = [30, 20, 5] as const;
 const array = (value: unknown): unknown[] => {
   assert.ok(Array.isArray(value));
   return value;
@@ -16,27 +17,36 @@ const near = (actual: unknown, expected: number, tolerance: number) =>
 
 /** Retained native kernel obligations. The model does not advertise this capability. */
 export function nativeSolidsScenarios(
-  folder: FixtureFolder,
+  folder: FixtureFolder | undefined,
   owners = 2,
 ): Scenario[] {
   return Array.from({ length: owners }, (_, index): Scenario => ({
-    id: "native-solids-" + index,
-    fixture: folder,
-    requires: ["documents", "saved-fixtures", nativeSolidsCapability],
+    id: "native-solids-" + (folder ? "" : "unsaved-") + index,
+    ...(folder
+      ? { fixture: folder }
+      : { scope: "exclusive-instance" as const }),
+    requires: [
+      "documents",
+      ...(folder ? ["saved-fixtures"] : []),
+      nativeSolidsCapability,
+    ],
     async run(session) {
       let sequence = 0;
       const cad = async (operation: string, data: Record<string, unknown>) => {
-        const output = await session.execute(
-          "solid-" + sequence++ + "-" + operation,
-          cadCommand(session.document, operation, data),
-          session.document,
-          "cad-v1",
+        if (!folder)
+          await session.verifyOwnedUnsaved("observe-solids-" + sequence++);
+        const output = await session.cad(
+          "cad-solid-" + sequence++ + "-" + operation,
+          operation,
+          data,
         );
-        assert.equal(output["error"], null, String(output["error"]));
+        assert.equal(output["success"], true);
+        assert.equal(output["operation"], operation);
         const result = record(output["result"]);
-        assert.equal(result["success"], true);
-        assert.equal(result["operation"], operation);
-        assert.equal(result["status"], "pass");
+        // CLI envelope supplies the execution outcome. Raw entity.inspect has
+        // no success/operation/status fields; all native geometry checks follow.
+        if (result["status"] !== undefined)
+          assert.equal(result["status"], "pass");
         return result;
       };
       const profile = async (
@@ -126,11 +136,11 @@ export function nativeSolidsScenarios(
         operation: "newBody",
       });
       const annularVolume = Math.PI * (120 / 360) * (20 ** 2 - 10 ** 2) * 5;
-      // Deliberately retain the historical expectation. Its Y bound conflicts
-      // with the analytic outer-arc extremum at 90 degrees; see the native ledger.
+      // Correct the historical endpoint-only Y expectation; radius, request,
+      // measured API and 0.001mm tolerance are unchanged. See the evidence note.
       await measure(
         body(annular),
-        [30, 20 * Math.sin((2 * Math.PI) / 3), 5],
+        [...nativeAnnularBounds],
         annularVolume,
         0.001,
         0.01,

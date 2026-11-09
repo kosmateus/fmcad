@@ -39,7 +39,9 @@ function matching(
   const context = {
     doc: session.document.name,
     docId: session.document.creationId,
-    docFileId: session.document.file!.fileId,
+    ...(session.document.file
+      ? { docFileId: session.document.file.fileId }
+      : {}),
     component: "root",
   };
   assert.equal(output["runId"], request["runId"]);
@@ -67,19 +69,47 @@ function matching(
   assert.equal(fs.existsSync(path.join(directory, "run.lock")), false);
 }
 export function transactionScenarios(
-  folder: FixtureFolder,
+  folder: FixtureFolder | undefined,
   owners = 2,
 ): Scenario[] {
   return Array.from({ length: owners }, (_, index): Scenario => ({
-    id: "definition-transaction-" + index,
-    fixture: folder,
+    id: "definition-transaction-" + (folder ? "" : "unsaved-") + index,
+    ...(folder
+      ? { fixture: folder }
+      : { scope: "exclusive-instance" as const }),
     requires: [
       "documents",
-      "saved-fixtures",
+      ...(folder ? ["saved-fixtures"] : []),
       "dimensioned-rectangle",
+      "rectangular-audit",
       "cad-commands",
     ],
     async run(session) {
+      let auditSequence = 0;
+      let observation = 0;
+      const cad = async (
+        phase: string,
+        operation: string,
+        data: Record<string, unknown>,
+      ) => {
+        if (!folder)
+          await session.verifyOwnedUnsaved(
+            "observe-definition-" + observation++,
+          );
+        return session.cad(phase, operation, data);
+      };
+      const audit = async () => {
+        const output = await cad("cad-audit-" + auditSequence++, "audit", {});
+        return record(output["result"]);
+      };
+      const normalized = (value: unknown): unknown =>
+        JSON.parse(
+          JSON.stringify(value, (key, item: unknown) =>
+            key === "token" ? undefined : item,
+          ),
+        ) as unknown;
+      const empty = await audit();
+      assert.equal(record(empty["counts"])["bodyDefinitions"], 0);
       const request = {
         runId: "literal",
         reportPath: path.join(session.directory, "literal"),
@@ -109,7 +139,7 @@ export function transactionScenarios(
           }),
         ],
       };
-      const initial = await session.cad(
+      const initial = await cad(
         "cad-definition",
         "definition.instantiate",
         request,
@@ -149,11 +179,15 @@ export function transactionScenarios(
           number(record(record(steps[3]!["output"])["result"])["value"]) - 1771,
         ) <= 0.02,
       );
+      const observed = await audit();
+      assert.equal(record(observed["counts"])["bodyDefinitions"], 1);
+      assert.deepEqual(observed["issues"], []);
+      const beforeAudit = normalized(observed);
       const before = await session.execute(
         "before-replay",
         boxState(session.document),
       );
-      const replayed = await session.cad(
+      const replayed = await cad(
         "cad-replay",
         "definition.instantiate",
         request,
@@ -166,6 +200,7 @@ export function transactionScenarios(
         await session.execute("after-replay", boxState(session.document)),
         before,
       );
+      assert.deepEqual(normalized(await audit()), beforeAudit);
       const changed = structuredClone(request);
       changed.parameters.name = "MustNotExist";
       changed.parameters.width = "31 mm";
@@ -180,6 +215,7 @@ export function transactionScenarios(
         ),
         before,
       );
+      assert.deepEqual(normalized(await audit()), beforeAudit);
       const negative = {
         runId: "negative",
         reportPath: path.join(session.directory, "negative"),
@@ -201,7 +237,7 @@ export function transactionScenarios(
           }),
         ],
       };
-      const failed = await session.cad("cad-negative", "batch.run", negative);
+      const failed = await cad("cad-negative", "batch.run", negative);
       assert.equal(failed["success"], false);
       assert.equal(failed["status"], "failed");
       const failedSteps = rows(failed["steps"]);
@@ -216,6 +252,7 @@ export function transactionScenarios(
         await session.execute("after-negative", boxState(session.document)),
         before,
       );
+      assert.deepEqual(normalized(await audit()), beforeAudit);
       const numericRequest = {
         runId: "numeric",
         reportPath: path.join(session.directory, "numeric"),
@@ -252,7 +289,7 @@ export function transactionScenarios(
           }),
         ],
       };
-      const numeric = await session.cad(
+      const numeric = await cad(
         "cad-numeric",
         "definition.instantiate",
         numericRequest,
@@ -274,6 +311,10 @@ export function transactionScenarios(
           ) - 1944,
         ) <= 0.02,
       );
+      const numericObserved = await audit();
+      assert.equal(record(numericObserved["counts"])["bodyDefinitions"], 2);
+      assert.deepEqual(numericObserved["issues"], []);
+      const beforeInvalidAudit = normalized(numericObserved);
       const beforeInvalid = await session.execute(
         "before-invalid",
         boxState(session.document),
@@ -295,7 +336,7 @@ export function transactionScenarios(
           error: /\$param must be the sole key/u,
         },
       ].entries()) {
-        const invalid = await session.cad(
+        const invalid = await cad(
           "cad-invalid-" + caseIndex,
           "definition.instantiate",
           {
@@ -343,7 +384,7 @@ export function transactionScenarios(
           }),
         ],
       };
-      const preview = await session.cad(
+      const preview = await cad(
         "cad-literal-preview",
         "definition.instantiate",
         { ...noEvalRequest, mode: "preview" },
@@ -352,7 +393,7 @@ export function transactionScenarios(
         record(rows(preview["operations"])[0]!["data"])["width"],
         literal,
       );
-      const noEval = await session.cad(
+      const noEval = await cad(
         "cad-literal-rejection",
         "definition.instantiate",
         noEvalRequest,
@@ -372,6 +413,7 @@ export function transactionScenarios(
         await session.execute("after-code-literal", boxState(session.document)),
         beforeInvalid,
       );
+      assert.deepEqual(normalized(await audit()), beforeInvalidAudit);
     },
   }));
 }

@@ -715,3 +715,117 @@ Both preserve source inventory hash
 `197fc55b9ea020705259bd49ef8a3d8de891a3ca41b36f5a3b1ee5e176770a4e`
 before/after. These results close the component checker gate for this family;
 broker integration and native qualification remain separate obligations.
+
+## Continuation — complete definition audit readback and declared engineering checks
+
+The shared definition scenario had retained box dimensions and volume but omitted
+nine original audit assertions and four call-site checks of request/journal
+matching. It now runs the production `audit` operation before creation, after each
+replay/rejected run/negative check, and after numeric parameters and final literal
+rejection. Counts, empty issue lists and token-normalized complete snapshots retain
+the original expectations. Independent geometry readback remains. A deliberate
+parameter mutation during replay is invisible to the previous box readback and
+must now fail the audit comparison while cleaning the known settled fixture.
+
+A new bounded `engineering-declarations` family extracts 26 assertions from the
+retained engineering suite: cam sample/profile limits and unresolved release,
+explicit cycle intervals, assembly dependency/service ordering, sampled withdrawal
+clearance, and conservative translation envelopes. Input values, order within each
+case, literal expectations and numerical tolerances are unchanged. Both transports
+use the same saved-fixture body and independently verify that the pre-existing box
+has not changed. No native cam, contact, force or continuous collision solver is
+modeled. Reply-loss tests recover the original receipt without replay; a deliberately
+false continuous-qualification result must fail and still clean the fixture.
+
+The retained definition and engineering source files were compared byte-for-byte
+with their recorded archived commits `c566075` and `c7a3b72`. Their original files
+remain untouched. The individual ledger now contains 227 mappings (226 current
+sites and one removed predecessor); 3,481 current sites remain open. This is not
+B1–B4 closure. The original unsaved lifecycle/CLI envelope, atomic batch-reference,
+complete topology/audit semantics and unported native suites remain obligations.
+
+Validation is pending the integrated build and focused execution. The required
+model manifest contains 21 families; the new family needs the same broker
+MCP/addin × concurrency 1/2/10 matrix with ten owners. Existing required transaction,
+camera, pose, animation and style-family broker registrations also need completion.
+Native Fusion qualification remains NOTRUN.
+
+PR #100's only nonancestor commit, merge `e75a661`, introduces the native-solids
+classification already present in #104. Its two manifest assertions for the
+`native-solids-*` scenario and historical-bound blocker had been dropped by the
+newer generic inventory test. Both guards are now retained alongside that generic
+native-capability refusal test; the pending historical bound is not waived.
+
+### GM12/GM14 retained declarations
+
+`mechanical-declaration-cases.ts` ports the original helix, spring and cam numeric
+contracts into the existing saved-fixture runner. Fourteen real handler calls are
+batched with `cadSequence`; the original pressure/curvature tolerances, sampled
+normal offsets, force/stiffness values and explicit unknown cycle remain. The
+bounded model does not provide native Coil, roller contact or dynamics evidence.
+
+Historical correction: GM14 G14-04/G14-07 previously called the throwing `fmcad`
+helper for an explicitly unknown cycle, so their assertions were unreachable.
+The archived `a26222ff617b0e9597b2a91b50474bdca8d0a0ce:assets/cad/cam.py`
+already returned `success=status == 'pass'` and `final='unknown'` when release was
+unresolved. Current production retains that behavior. Those two CLI cases now use
+`cad`, require exit 1 and `success:false`, and retain every original unknown,
+release and dynamics assertion. This corrects the test harness expectation without
+changing production behavior or qualifying an unknown result as success. The
+shared raw-handler sequence explicitly expects that false/unknown pair; SDK
+settlement and original-request recovery requirements are unchanged.
+
+### Current continuation: retained callbacks and owned native handoff
+
+The required-model manifest now contains 31 families. New bounded families cover
+GM12/14 and 47 original declaration callbacks across GM13/15/16/17/18/19/20;
+D contributes 83 original GM25–37 cases. Each callback owns its document and uses
+the existing runner and actual handlers. Concurrency remains configurable with
+Fusion default 10; the broker matrix uses both protocols at 1/2/10. The fixed
+parameter/document/cloud/box factories now honor owner copies. Attributes and
+transactions include ten saved and ten unsaved fixtures per profile: passive
+pre-operation probes preserve the historical unsaved, null-file, unique-name,
+active-document and foreign-inventory assertions. Saved persistence is separate.
+
+`legacy-handoff.ts` extends the existing live CLI helpers. Each selected retained
+integration case gets an exact saved owner lease, before-admission original
+request intent, driver PID/birth and terminal broker lookup. The parent never
+replays child commands and will not clean while the child or its original command
+may still run. The 251 original cases in 34 sources are individually selected and
+source-hash pinned; their actual assertions run in the child. The `child-cli`
+required model family executes this boundary through the real installed CLI.
+Bare shared document names are refused. This does not make unrelated standalone
+live runners ready: their bodies must use owned lifecycle/receipt continuation.
+
+Shared runner additions retain canonical CLI envelopes on unsaved documents,
+component selectors, real alias resolution and original rejected terminal results.
+Malformed/foreign marker results latch uncertainty. Case-specific unknown outcomes
+hold cleanup durably. Checkpoint/import child intents bind the original request,
+parent creation ID and owned artifact path before dispatch; cleanup requires the
+matching exact child closure receipt. Passive observations never activate a fixture
+before testing its original active-state precondition. Global snapshots include
+cloud file IDs and active restoration verifies the actual returned document.
+
+Validation completed earlier in this continuation: engineering 9/9 component
+checks; bounded inventory/model/ownership gates 11/11; pinned SDK model shape
+verification 76 methods/78 property accessors. Newly added handoff, unsaved,
+checkpoint and retained-callback variants still require their integrated runtime
+checks and exact-final-commit CI. Native geometry/rendering remains NOTRUN.
+
+Original GitHub run 42684222462 artifacts are now available for diagnosis. Both
+attribute failures coincide with the outer 12-minute process-group termination:
+start 19:44:15.621 UTC, TERM boundary 19:56:15.621. Owner 0 entered its final get
+SDK turn at 19:56:14.405 (native deadline 19:59:14.405), then retained an unknown
+receipt; owner 1 passed its assertions and its cleanup worker exited at
+19:56:15.852, without SDK mutation or Python check output. These are termination
+consequences, not evidence for weakening attribute or cleanup assertions. The
+local immutable thread replay instead failed before thread execution with checker
+timeouts; it is not the same observed failure as the original CI thread artifacts.
+
+### Retained native and local source handoff (2026-11-09)
+
+The existing ScenarioSession now journals both public commands and registered transport requests before sending them. Native child imports must present exact original-request closure receipts before a callback returns; copied creation IDs are permitted only for the explicitly opted-in same-request native-object import proof. Missing/malformed SDK markers, unknown nested outcomes and unverified user-camera restoration keep cleanup deferred without replay. Raw public active/doc-list inspection retains the original CLI output and broker receipt. Document-free transport cases use the same exclusive scheduler and inventory audit.
+
+The native engineering and thread bodies are strict-typed ports of the retained assertions. Fifteen engineering groups use only declared analytic inputs; they are exposed as retained-engineering through the identical callbacks, operands and tolerances on both backends. The independent BRep datum audit and remaining kernel groups stay native-only. Batch-reference preserves its conservative retain-on-failure behavior; joint limits retain both diagnose and verify modes, setter ordering and 1e-10 limit comparisons. Native qualification remains NOT RUN. Current source compilation passed before the final shared API additions; current complete runtime, safety and exact-commit CI are still required.
+
+Original CI attributes failures were outer twelve-minute process termination fallout: the lost get-attribute started at 19:56:14.405 and was interrupted at the 19:56:15.621 wall deadline; the other owner's assertions passed and its close worker exited 231ms after that deadline. The existing deferred/failed cleanup classifications were retained. No assertion or identity guard was relaxed for this failure.

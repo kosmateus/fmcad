@@ -83,10 +83,16 @@ function commandFlags(env = process.env) {
 
 function spawnSync(command, args, options) {
   if (path.basename(args?.[0] || '') === 'fmcad.js') {
-    const realCli = path.resolve(options?.cwd || process.cwd(), args[0]) === path.resolve(__dirname, '../../bin/fmcad.js');
-    args = [args[0], ...commandFlags(), ...args.slice(1)];
+    const cliPath = path.resolve(options?.cwd || process.cwd(), args[0]);
+    const installedRoot = (options?.env || process.env).FMCAD_LIVE_RUNTIME_ROOT;
+    const realCli = cliPath === path.resolve(__dirname, '../../bin/fmcad.js') ||
+      installedRoot && cliPath === path.resolve(installedRoot, 'dist/bin/fmcad.js');
+    const owned = realCli && process.env.FMCAD_LIVE_OWNED_SCOPE
+      ? require('../../dist/tests/scenarios/legacy-handoff').reserveCli(args.slice(1), options?.env || process.env) : null;
+    args = owned ? [args[0], ...owned.words] : [args[0], ...commandFlags(), ...args.slice(1)];
     if (realCli) args[0] = path.join(__dirname, 'live-cli.js');
-    options = { ...options, env: { ...(options?.env || process.env), ...scope.environment() } };
+    options = { ...options, env: { ...(options?.env || process.env), ...scope.environment(),
+      ...(owned ? { FMCAD_LIVE_COMMAND_INTENT: owned.filename } : {}) } };
     // The CLI/broker owns SDK and queue budgets separately. A wall-clock child
     // timeout would also count queue waiting and could kill an admitted caller.
     if (context()) options = { ...options, timeout: 0 };
@@ -133,6 +139,7 @@ function createBackend(server, dependencies = {}) {
   client._post = async (payload, sessionId, controlPlane) => {
     payload = scope.payload(payload);
     if (controlPlane) throw new Error('SDK traffic cannot bypass the broker');
+    if (process.env.FMCAD_LIVE_OWNED_SCOPE) throw new Error('Owned native observations must use the journaled CLI command path');
     const command = dependencies.command === true && payload.params?.name === 'execute_python';
     let file, argv;
     if (command) {

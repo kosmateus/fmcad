@@ -21,9 +21,13 @@ export interface ScriptRequest {
   readonly owner: Owner;
   readonly requestId: string;
   readonly source: string;
+  readonly inspectCli?: "active" | "doc-list";
   readonly command?: {
     readonly operation: string;
     readonly data: Record<string, unknown>;
+    readonly component?: string;
+    readonly spelling?: readonly string[];
+    readonly expectRejected?: true;
   };
   readonly helpers?: "cad-v1";
   readonly target?: Document;
@@ -35,6 +39,15 @@ export interface Execution {
   readonly sdkSettled: boolean;
   readonly mayHaveMutated: boolean;
   readonly stdout: string;
+  readonly stderr?: string;
+  readonly exitCode?: number;
+  readonly brokerReceipt?: {
+    readonly requestId: string;
+    readonly jobId: string;
+    readonly clientId: string;
+    readonly state: string;
+    readonly operationResult: unknown;
+  };
   readonly error?: string;
 }
 export interface ScenarioBackend {

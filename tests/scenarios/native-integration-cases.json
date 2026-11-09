@@ -1,0 +1,1513 @@
+{
+  "schemaVersion": 1,
+  "qualification": "not-run",
+  "meaning": "Retained real CLI assertions, each launched once in a fresh owned saved fixture. Shared model declarations do not qualify this native CLI boundary.",
+  "cases": [
+    {
+      "id": "atomic-cwg-regression-0",
+      "source": "tests/integration/atomic-cwg-regression.test.js",
+      "title": "S10 CWG skeleton batch runs in the default atomic mode",
+      "sourceSha256": "929b28eec5df6f6d5cdc7d5b2dc2b9820f2bbbde96026430a925dcc2036359c3"
+    },
+    {
+      "id": "atomic-cwg-regression-1",
+      "source": "tests/integration/atomic-cwg-regression.test.js",
+      "title": "S10 explicit atomic:false preserves legacy stop-after-error semantics",
+      "sourceSha256": "929b28eec5df6f6d5cdc7d5b2dc2b9820f2bbbde96026430a925dcc2036359c3"
+    },
+    {
+      "id": "atomic-isolation-0",
+      "source": "tests/integration/atomic-isolation.test.js",
+      "title": "S6 wrong/absent document is rejected with no wrong-target mutation",
+      "sourceSha256": "8942db7fdc586319f5c0def1067ed999925c8373bae7c72bc171bf6a5d3a2b1a"
+    },
+    {
+      "id": "atomic-isolation-1",
+      "source": "tests/integration/atomic-isolation.test.js",
+      "title": "S6 active open command: atomic batch is refused without mutating the document",
+      "sourceSha256": "8942db7fdc586319f5c0def1067ed999925c8373bae7c72bc171bf6a5d3a2b1a"
+    },
+    {
+      "id": "atomic-isolation-2",
+      "source": "tests/integration/atomic-isolation.test.js",
+      "title": "S7 transport timeout stays unknown with no replay and no second mutation",
+      "sourceSha256": "8942db7fdc586319f5c0def1067ed999925c8373bae7c72bc171bf6a5d3a2b1a"
+    },
+    {
+      "id": "atomic-isolation-3",
+      "source": "tests/integration/atomic-isolation.test.js",
+      "title": "S8 pre-existing run.lock blocks a mutating batch (queue/conflict)",
+      "sourceSha256": "8942db7fdc586319f5c0def1067ed999925c8373bae7c72bc171bf6a5d3a2b1a"
+    },
+    {
+      "id": "atomic-isolation-4",
+      "source": "tests/integration/atomic-isolation.test.js",
+      "title": "S8 same runId run twice is refused (no mix, no replay)",
+      "sourceSha256": "8942db7fdc586319f5c0def1067ed999925c8373bae7c72bc171bf6a5d3a2b1a"
+    },
+    {
+      "id": "atomic-isolation-5",
+      "source": "tests/integration/atomic-isolation.test.js",
+      "title": "S9 external-effect operations are rejected before any mutation",
+      "sourceSha256": "8942db7fdc586319f5c0def1067ed999925c8373bae7c72bc171bf6a5d3a2b1a"
+    },
+    {
+      "id": "atomic-transaction-0",
+      "source": "tests/integration/atomic-transaction.test.js",
+      "title": "S1 default success (no atomic): committed with real geometry, one native transaction",
+      "sourceSha256": "7cdee2e494abe24041ea7ea89ffc0fc9be4ff22137ca3778eae639dd1453e435"
+    },
+    {
+      "id": "atomic-transaction-1",
+      "source": "tests/integration/atomic-transaction.test.js",
+      "title": "S2 error after mutation (no atomic): abort restores the exact baseline",
+      "sourceSha256": "7cdee2e494abe24041ea7ea89ffc0fc9be4ff22137ca3778eae639dd1453e435"
+    },
+    {
+      "id": "atomic-transaction-2",
+      "source": "tests/integration/atomic-transaction.test.js",
+      "title": "S2 explicit atomic:true behaves identically to the default",
+      "sourceSha256": "7cdee2e494abe24041ea7ea89ffc0fc9be4ff22137ca3778eae639dd1453e435"
+    },
+    {
+      "id": "atomic-transaction-3",
+      "source": "tests/integration/atomic-transaction.test.js",
+      "title": "S3 partial handler (before-ref-publish): abort leaves no orphan object",
+      "sourceSha256": "7cdee2e494abe24041ea7ea89ffc0fc9be4ff22137ca3778eae639dd1453e435"
+    },
+    {
+      "id": "atomic-transaction-4",
+      "source": "tests/integration/atomic-transaction.test.js",
+      "title": "S4 edit existing model (parameter + name) before error is restored",
+      "sourceSha256": "7cdee2e494abe24041ea7ea89ffc0fc9be4ff22137ca3778eae639dd1453e435"
+    },
+    {
+      "id": "atomic-transaction-5",
+      "source": "tests/integration/atomic-transaction.test.js",
+      "title": "S4 unsupported edit (external-effect) is rejected preflight before mutation",
+      "sourceSha256": "7cdee2e494abe24041ea7ea89ffc0fc9be4ff22137ca3778eae639dd1453e435"
+    },
+    {
+      "id": "atomic-transaction-6",
+      "source": "tests/integration/atomic-transaction.test.js",
+      "title": "S5 final validation failure aborts the whole batch",
+      "sourceSha256": "7cdee2e494abe24041ea7ea89ffc0fc9be4ff22137ca3778eae639dd1453e435"
+    },
+    {
+      "id": "atomic-transaction-7",
+      "source": "tests/integration/atomic-transaction.test.js",
+      "title": "S4 transform edit (occurrence move) before error is restored",
+      "sourceSha256": "7cdee2e494abe24041ea7ea89ffc0fc9be4ff22137ca3778eae639dd1453e435"
+    },
+    {
+      "id": "atomic-transaction-8",
+      "source": "tests/integration/atomic-transaction.test.js",
+      "title": "S4 material edit (assign) before error is restored",
+      "sourceSha256": "7cdee2e494abe24041ea7ea89ffc0fc9be4ff22137ca3778eae639dd1453e435"
+    },
+    {
+      "id": "gm01-definition-0",
+      "source": "tests/integration/gm01-definition.test.js",
+      "title": "gm01: G01-06 batch run --json returns the full report contract (hash, steps, outputs)",
+      "sourceSha256": "f7e6e7425f01e7ecdcedc28eafa21e58c14d9dbbe0db9f7c15675496489886b3"
+    },
+    {
+      "id": "gm01-definition-1",
+      "source": "tests/integration/gm01-definition.test.js",
+      "title": "gm01: G01-07 batch summary reads the latest report and selects a 1-based step",
+      "sourceSha256": "f7e6e7425f01e7ecdcedc28eafa21e58c14d9dbbe0db9f7c15675496489886b3"
+    },
+    {
+      "id": "gm01-definition-2",
+      "source": "tests/integration/gm01-definition.test.js",
+      "title": "gm01: G01-10 definition instantiate runs the same definition twice with different parameters",
+      "sourceSha256": "f7e6e7425f01e7ecdcedc28eafa21e58c14d9dbbe0db9f7c15675496489886b3"
+    },
+    {
+      "id": "gm01-definition-3",
+      "source": "tests/integration/gm01-definition.test.js",
+      "title": "gm01: G01-11 partial failure after a seed is recorded and replay is refused",
+      "sourceSha256": "f7e6e7425f01e7ecdcedc28eafa21e58c14d9dbbe0db9f7c15675496489886b3"
+    },
+    {
+      "id": "gm02-data-import-0",
+      "source": "tests/integration/gm02-data-import.test.js",
+      "title": "gm02: G02-01 param import applies parameters with units and forward references",
+      "sourceSha256": "0ba08bbc33a8a55df3edaa332f0474b13c8524a8da49b95c2605e27471f30e73"
+    },
+    {
+      "id": "gm02-data-import-1",
+      "source": "tests/integration/gm02-data-import.test.js",
+      "title": "gm02: G02-02 catalog import creates an owned part definition and occurrence",
+      "sourceSha256": "0ba08bbc33a8a55df3edaa332f0474b13c8524a8da49b95c2605e27471f30e73"
+    },
+    {
+      "id": "gm02-data-import-2",
+      "source": "tests/integration/gm02-data-import.test.js",
+      "title": "gm02: G02-10 placement import re-places an owned, ungrounded catalog occurrence",
+      "sourceSha256": "0ba08bbc33a8a55df3edaa332f0474b13c8524a8da49b95c2605e27471f30e73"
+    },
+    {
+      "id": "gm03-entity-0",
+      "source": "tests/integration/gm03-entity.test.js",
+      "title": "gm03: G03-01 entity find scopes a body and returns reusable refs",
+      "sourceSha256": "286973348276a85116ab50a5c84fd59ace8a3125a142bac3da391e0aeb377048"
+    },
+    {
+      "id": "gm03-entity-1",
+      "source": "tests/integration/gm03-entity.test.js",
+      "title": "gm03: G03-02 entity stats applies analytic filters (geometry, radius, axis)",
+      "sourceSha256": "286973348276a85116ab50a5c84fd59ace8a3125a142bac3da391e0aeb377048"
+    },
+    {
+      "id": "gm03-entity-2",
+      "source": "tests/integration/gm03-entity.test.js",
+      "title": "gm03: G03-03 entity stats enforces expect counts and reports mismatch",
+      "sourceSha256": "286973348276a85116ab50a5c84fd59ace8a3125a142bac3da391e0aeb377048"
+    },
+    {
+      "id": "gm03-entity-3",
+      "source": "tests/integration/gm03-entity.test.js",
+      "title": "gm03: G03-04 entity stats groups by geometry with numeric statistics",
+      "sourceSha256": "286973348276a85116ab50a5c84fd59ace8a3125a142bac3da391e0aeb377048"
+    },
+    {
+      "id": "gm03-entity-4",
+      "source": "tests/integration/gm03-entity.test.js",
+      "title": "gm03: G03-05 model fillet resolves a GM03 query and captures a snapshot",
+      "sourceSha256": "286973348276a85116ab50a5c84fd59ace8a3125a142bac3da391e0aeb377048"
+    },
+    {
+      "id": "gm03-entity-5",
+      "source": "tests/integration/gm03-entity.test.js",
+      "title": "gm03: G03-06 query results declare snapshot associativity",
+      "sourceSha256": "286973348276a85116ab50a5c84fd59ace8a3125a142bac3da391e0aeb377048"
+    },
+    {
+      "id": "gm03-entity-6",
+      "source": "tests/integration/gm03-entity.test.js",
+      "title": "gm03: G03-07 short edges and topology change resolve through current geometry",
+      "sourceSha256": "286973348276a85116ab50a5c84fd59ace8a3125a142bac3da391e0aeb377048"
+    },
+    {
+      "id": "gm04-datum-0",
+      "source": "tests/integration/gm04-datum.test.js",
+      "title": "gm04: G04-01 datum transform converts points and vectors with a rigid matrix",
+      "sourceSha256": "8c266dc5e0bf3f2875792700d07c1dab4a4b02581a57fb6a23659f83992df939"
+    },
+    {
+      "id": "gm04-datum-1",
+      "source": "tests/integration/gm04-datum.test.js",
+      "title": "gm04: G04-02 datum frame stores metadata and datum point creates native geometry",
+      "sourceSha256": "8c266dc5e0bf3f2875792700d07c1dab4a4b02581a57fb6a23659f83992df939"
+    },
+    {
+      "id": "gm04-datum-2",
+      "source": "tests/integration/gm04-datum.test.js",
+      "title": "gm04: G04-03 datum plane-on-path creates a plane normal to a sketch path",
+      "sourceSha256": "8c266dc5e0bf3f2875792700d07c1dab4a4b02581a57fb6a23659f83992df939"
+    },
+    {
+      "id": "gm04-datum-3",
+      "source": "tests/integration/gm04-datum.test.js",
+      "title": "gm04: G04-04 plane-on-path rejects out-of-range positions and reports section orientation",
+      "sourceSha256": "8c266dc5e0bf3f2875792700d07c1dab4a4b02581a57fb6a23659f83992df939"
+    },
+    {
+      "id": "gm04-datum-4",
+      "source": "tests/integration/gm04-datum.test.js",
+      "title": "gm04: G04-05 occurrence transform sets an absolute root-frame pose",
+      "sourceSha256": "8c266dc5e0bf3f2875792700d07c1dab4a4b02581a57fb6a23659f83992df939"
+    },
+    {
+      "id": "gm04-datum-5",
+      "source": "tests/integration/gm04-datum.test.js",
+      "title": "gm04: G04-06 joint frame reads signed motion axes after a revolute joint",
+      "sourceSha256": "8c266dc5e0bf3f2875792700d07c1dab4a4b02581a57fb6a23659f83992df939"
+    },
+    {
+      "id": "gm04-datum-6",
+      "source": "tests/integration/gm04-datum.test.js",
+      "title": "gm04: G04-07 datum transform preserves signed coordinates and vectors",
+      "sourceSha256": "8c266dc5e0bf3f2875792700d07c1dab4a4b02581a57fb6a23659f83992df939"
+    },
+    {
+      "id": "gm06-sketch-0",
+      "source": "tests/integration/gm06-sketch.test.js",
+      "title": "gm06: G06-01 sketch build creates an ellipse with driving dimensions",
+      "sourceSha256": "b924faaaba4ef9a607410bfbd3bd5baafa0e5035ab110d107143e83d19faf527"
+    },
+    {
+      "id": "gm06-sketch-1",
+      "source": "tests/integration/gm06-sketch.test.js",
+      "title": "gm06: G06-02 sketch geometry adds a validated ellipse on a supported plane",
+      "sourceSha256": "b924faaaba4ef9a607410bfbd3bd5baafa0e5035ab110d107143e83d19faf527"
+    },
+    {
+      "id": "gm06-sketch-2",
+      "source": "tests/integration/gm06-sketch.test.js",
+      "title": "gm06: G06-03 sketch dimension adds major/minor radius dimensions",
+      "sourceSha256": "b924faaaba4ef9a607410bfbd3bd5baafa0e5035ab110d107143e83d19faf527"
+    },
+    {
+      "id": "gm06-sketch-3",
+      "source": "tests/integration/gm06-sketch.test.js",
+      "title": "gm06: G06-04 sketch inspect reads back ellipse curves, axes and dimensions",
+      "sourceSha256": "b924faaaba4ef9a607410bfbd3bd5baafa0e5035ab110d107143e83d19faf527"
+    },
+    {
+      "id": "gm06-sketch-4",
+      "source": "tests/integration/gm06-sketch.test.js",
+      "title": "gm06: G06-05 sketch transform rotates and translates with before/after",
+      "sourceSha256": "b924faaaba4ef9a607410bfbd3bd5baafa0e5035ab110d107143e83d19faf527"
+    },
+    {
+      "id": "gm06-sketch-5",
+      "source": "tests/integration/gm06-sketch.test.js",
+      "title": "gm06: G06-06 sketch edit movePoints repositions a center without deleting constraints",
+      "sourceSha256": "b924faaaba4ef9a607410bfbd3bd5baafa0e5035ab110d107143e83d19faf527"
+    },
+    {
+      "id": "gm06-sketch-6",
+      "source": "tests/integration/gm06-sketch.test.js",
+      "title": "gm06: G06-07 sketch dimension-plan proposes reviewed dimensions without mutating",
+      "sourceSha256": "b924faaaba4ef9a607410bfbd3bd5baafa0e5035ab110d107143e83d19faf527"
+    },
+    {
+      "id": "gm06-sketch-7",
+      "source": "tests/integration/gm06-sketch.test.js",
+      "title": "gm06: G06-08 sketch dimension-apply applies explicitly accepted proposals",
+      "sourceSha256": "b924faaaba4ef9a607410bfbd3bd5baafa0e5035ab110d107143e83d19faf527"
+    },
+    {
+      "id": "gm06-sketch-8",
+      "source": "tests/integration/gm06-sketch.test.js",
+      "title": "gm06: G06-09 an ellipse profile lofts between two offset sections",
+      "sourceSha256": "b924faaaba4ef9a607410bfbd3bd5baafa0e5035ab110d107143e83d19faf527"
+    },
+    {
+      "id": "gm06-sketch-9",
+      "source": "tests/integration/gm06-sketch.test.js",
+      "title": "gm06: G06-10 constrained points refuse moves; XZ/YZ transforms keep the axis direction",
+      "sourceSha256": "b924faaaba4ef9a607410bfbd3bd5baafa0e5035ab110d107143e83d19faf527"
+    },
+    {
+      "id": "gm06-sketch-10",
+      "source": "tests/integration/gm06-sketch.test.js",
+      "title": "gm06: G06-11 re-planning after apply recognizes dimensions and adds no duplicates",
+      "sourceSha256": "b924faaaba4ef9a607410bfbd3bd5baafa0e5035ab110d107143e83d19faf527"
+    },
+    {
+      "id": "gm07-profile-curve-0",
+      "source": "tests/integration/gm07-profile-curve.test.js",
+      "title": "gm07: G07-01 sketch profile-file imports an open cam without adding a chord",
+      "sourceSha256": "635aaca1fc457c6b3d1f67d4a230958c3c6f39d9d6132b72d746772ec0c0a75b"
+    },
+    {
+      "id": "gm07-profile-curve-1",
+      "source": "tests/integration/gm07-profile-curve.test.js",
+      "title": "gm07: G07-02 sketch profile-file honors closed loops and winding",
+      "sourceSha256": "635aaca1fc457c6b3d1f67d4a230958c3c6f39d9d6132b72d746772ec0c0a75b"
+    },
+    {
+      "id": "gm07-profile-curve-2",
+      "source": "tests/integration/gm07-profile-curve.test.js",
+      "title": "gm07: G07-03 curve fit returns sample provenance and fitted geometry",
+      "sourceSha256": "635aaca1fc457c6b3d1f67d4a230958c3c6f39d9d6132b72d746772ec0c0a75b"
+    },
+    {
+      "id": "gm07-profile-curve-3",
+      "source": "tests/integration/gm07-profile-curve.test.js",
+      "title": "gm07: G07-04 curve inspect reports continuity, closure and crossings",
+      "sourceSha256": "635aaca1fc457c6b3d1f67d4a230958c3c6f39d9d6132b72d746772ec0c0a75b"
+    },
+    {
+      "id": "gm07-profile-curve-4",
+      "source": "tests/integration/gm07-profile-curve.test.js",
+      "title": "gm07: G07-05 curve offset builds a normal offset and exposes its dimension",
+      "sourceSha256": "635aaca1fc457c6b3d1f67d4a230958c3c6f39d9d6132b72d746772ec0c0a75b"
+    },
+    {
+      "id": "gm07-profile-curve-5",
+      "source": "tests/integration/gm07-profile-curve.test.js",
+      "title": "gm07: G07-06 curve offset blocks an infeasible inward offset at the radius",
+      "sourceSha256": "635aaca1fc457c6b3d1f67d4a230958c3c6f39d9d6132b72d746772ec0c0a75b"
+    },
+    {
+      "id": "gm08-surface-0",
+      "source": "tests/integration/gm08-surface.test.js",
+      "title": "G08-01: model.revolve solid:false produces a surface body",
+      "sourceSha256": "c1d0b7a3161ba3652e4020e9e23baa40d41f7c7826d95d303e1b3a8e55dfd0f2"
+    },
+    {
+      "id": "gm08-surface-1",
+      "source": "tests/integration/gm08-surface.test.js",
+      "title": "G08-02: surface.patch continuity G1/G2 is blocked (no public API)",
+      "sourceSha256": "c1d0b7a3161ba3652e4020e9e23baa40d41f7c7826d95d303e1b3a8e55dfd0f2"
+    },
+    {
+      "id": "gm08-surface-2",
+      "source": "tests/integration/gm08-surface.test.js",
+      "title": "G08-03: surface.stitch with protected zones is blocked",
+      "sourceSha256": "c1d0b7a3161ba3652e4020e9e23baa40d41f7c7826d95d303e1b3a8e55dfd0f2"
+    },
+    {
+      "id": "gm08-surface-3",
+      "source": "tests/integration/gm08-surface.test.js",
+      "title": "G08-04: surface.trim with protected zones is blocked",
+      "sourceSha256": "c1d0b7a3161ba3652e4020e9e23baa40d41f7c7826d95d303e1b3a8e55dfd0f2"
+    },
+    {
+      "id": "gm08-surface-4",
+      "source": "tests/integration/gm08-surface.test.js",
+      "title": "G08-05: surface.offset with protected zones is blocked",
+      "sourceSha256": "c1d0b7a3161ba3652e4020e9e23baa40d41f7c7826d95d303e1b3a8e55dfd0f2"
+    },
+    {
+      "id": "gm08-surface-5",
+      "source": "tests/integration/gm08-surface.test.js",
+      "title": "G08-06: surface.extend with protected zones is blocked (critical-zone protection)",
+      "sourceSha256": "c1d0b7a3161ba3652e4020e9e23baa40d41f7c7826d95d303e1b3a8e55dfd0f2"
+    },
+    {
+      "id": "gm08-surface-6",
+      "source": "tests/integration/gm08-surface.test.js",
+      "title": "G08-07: surface.check measures free edges and solid closure",
+      "sourceSha256": "c1d0b7a3161ba3652e4020e9e23baa40d41f7c7826d95d303e1b3a8e55dfd0f2"
+    },
+    {
+      "id": "gm08-surface-7",
+      "source": "tests/integration/gm08-surface.test.js",
+      "title": "G08-08: capsule/arm from a reference with section/shell regeneration",
+      "sourceSha256": "c1d0b7a3161ba3652e4020e9e23baa40d41f7c7826d95d303e1b3a8e55dfd0f2"
+    },
+    {
+      "id": "gm09-feature-0",
+      "source": "tests/integration/gm09-feature.test.js",
+      "title": "G09-01: feature.inspect reads structural role, unit, expression and extent",
+      "sourceSha256": "d6de1322919a8f489878dc42f431a6ed5d335898689d866ddc9c86d2dae6ee8b"
+    },
+    {
+      "id": "gm09-feature-1",
+      "source": "tests/integration/gm09-feature.test.js",
+      "title": "G09-02: change.preview resolves a typed before/after plan without mutation",
+      "sourceSha256": "d6de1322919a8f489878dc42f431a6ed5d335898689d866ddc9c86d2dae6ee8b"
+    },
+    {
+      "id": "gm09-feature-2",
+      "source": "tests/integration/gm09-feature.test.js",
+      "title": "G09-03: feature.edit resolves parameters by role and by name selectors",
+      "sourceSha256": "d6de1322919a8f489878dc42f431a6ed5d335898689d866ddc9c86d2dae6ee8b"
+    },
+    {
+      "id": "gm09-feature-3",
+      "source": "tests/integration/gm09-feature.test.js",
+      "title": "G09-04: feature.edit applies startOffset/distance extent and restores the marker",
+      "sourceSha256": "d6de1322919a8f489878dc42f431a6ed5d335898689d866ddc9c86d2dae6ee8b"
+    },
+    {
+      "id": "gm09-feature-4",
+      "source": "tests/integration/gm09-feature.test.js",
+      "title": "G09-05: assembly-aware combine refuses cross-component tools",
+      "sourceSha256": "d6de1322919a8f489878dc42f431a6ed5d335898689d866ddc9c86d2dae6ee8b"
+    },
+    {
+      "id": "gm09-feature-5",
+      "source": "tests/integration/gm09-feature.test.js",
+      "title": "G09-06: ambiguous or unknown role selectors are rejected",
+      "sourceSha256": "d6de1322919a8f489878dc42f431a6ed5d335898689d866ddc9c86d2dae6ee8b"
+    },
+    {
+      "id": "gm09-feature-6",
+      "source": "tests/integration/gm09-feature.test.js",
+      "title": "G09-07: marker restore never deletes geometry and reports downstream health",
+      "sourceSha256": "d6de1322919a8f489878dc42f431a6ed5d335898689d866ddc9c86d2dae6ee8b"
+    },
+    {
+      "id": "gm10-shapes-0",
+      "source": "tests/integration/gm10-shapes.test.js",
+      "title": "G10-01: shape.annular_segment drives radii and reports the sector span",
+      "sourceSha256": "7a6e24b7a3a5417faf1f1d6ca2eb431ff9d8ed2e0f8d7822ec9c3635b0e24e5d"
+    },
+    {
+      "id": "gm10-shapes-1",
+      "source": "tests/integration/gm10-shapes.test.js",
+      "title": "G10-02: shape.arc_strip builds a curved strip from arc and three-point centerlines",
+      "sourceSha256": "7a6e24b7a3a5417faf1f1d6ca2eb431ff9d8ed2e0f8d7822ec9c3635b0e24e5d"
+    },
+    {
+      "id": "gm10-shapes-2",
+      "source": "tests/integration/gm10-shapes.test.js",
+      "title": "G10-03: shape.can composes blank revolve, shell and fillets",
+      "sourceSha256": "7a6e24b7a3a5417faf1f1d6ca2eb431ff9d8ed2e0f8d7822ec9c3635b0e24e5d"
+    },
+    {
+      "id": "gm10-shapes-3",
+      "source": "tests/integration/gm10-shapes.test.js",
+      "title": "G10-04: shape.impeller wires hub -> blade -> pattern dependencies",
+      "sourceSha256": "7a6e24b7a3a5417faf1f1d6ca2eb431ff9d8ed2e0f8d7822ec9c3635b0e24e5d"
+    },
+    {
+      "id": "gm10-shapes-4",
+      "source": "tests/integration/gm10-shapes.test.js",
+      "title": "G10-05: shape.boss_pattern repeats a boss with hole across a circular layout",
+      "sourceSha256": "7a6e24b7a3a5417faf1f1d6ca2eb431ff9d8ed2e0f8d7822ec9c3635b0e24e5d"
+    },
+    {
+      "id": "gm10-shapes-5",
+      "source": "tests/integration/gm10-shapes.test.js",
+      "title": "G10-06: shape.slot is generated on a frame-aligned plane",
+      "sourceSha256": "7a6e24b7a3a5417faf1f1d6ca2eb431ff9d8ed2e0f8d7822ec9c3635b0e24e5d"
+    },
+    {
+      "id": "gm10-shapes-6",
+      "source": "tests/integration/gm10-shapes.test.js",
+      "title": "G10-07: mixed profiles reuse the shared sketch builder (three-point rounded profile)",
+      "sourceSha256": "7a6e24b7a3a5417faf1f1d6ca2eb431ff9d8ed2e0f8d7822ec9c3635b0e24e5d"
+    },
+    {
+      "id": "gm10-shapes-7",
+      "source": "tests/integration/gm10-shapes.test.js",
+      "title": "G10-08: recipes report the dependency chain and non-atomic regeneration",
+      "sourceSha256": "7a6e24b7a3a5417faf1f1d6ca2eb431ff9d8ed2e0f8d7822ec9c3635b0e24e5d"
+    },
+    {
+      "id": "gm11-gear-0",
+      "source": "tests/integration/gm11-gear.test.js",
+      "title": "G11-01: shape.gear builds an involute gear with analytic diameters and approximation error",
+      "sourceSha256": "5832a88d0b8db29d8cb9bf0b479ad8650859e87b55b16d02b9f94b63a0b10872"
+    },
+    {
+      "id": "gm11-gear-1",
+      "source": "tests/integration/gm11-gear.test.js",
+      "title": "G11-02: undercut detection and root treatment are explicit",
+      "sourceSha256": "5832a88d0b8db29d8cb9bf0b479ad8650859e87b55b16d02b9f94b63a0b10872"
+    },
+    {
+      "id": "gm11-gear-2",
+      "source": "tests/integration/gm11-gear.test.js",
+      "title": "G11-03: profile shift, bore, hub and key are honored",
+      "sourceSha256": "5832a88d0b8db29d8cb9bf0b479ad8650859e87b55b16d02b9f94b63a0b10872"
+    },
+    {
+      "id": "gm11-gear-3",
+      "source": "tests/integration/gm11-gear.test.js",
+      "title": "G11-04: gear.pair-check reports ratio/sign, center distance and backlash sum",
+      "sourceSha256": "5832a88d0b8db29d8cb9bf0b479ad8650859e87b55b16d02b9f94b63a0b10872"
+    },
+    {
+      "id": "gm11-gear-4",
+      "source": "tests/integration/gm11-gear.test.js",
+      "title": "G11-05: analytic diameter expressions match d=mz, db, da, df",
+      "sourceSha256": "5832a88d0b8db29d8cb9bf0b479ad8650859e87b55b16d02b9f94b63a0b10872"
+    },
+    {
+      "id": "gm11-gear-5",
+      "source": "tests/integration/gm11-gear.test.js",
+      "title": "G11-06: single closed tooth loop — healthState 0, addendum readback",
+      "sourceSha256": "5832a88d0b8db29d8cb9bf0b479ad8650859e87b55b16d02b9f94b63a0b10872"
+    },
+    {
+      "id": "gm11-gear-6",
+      "source": "tests/integration/gm11-gear.test.js",
+      "title": "G11-07: regeneration is a declared recipe (driving radii, sampled flanks)",
+      "sourceSha256": "5832a88d0b8db29d8cb9bf0b479ad8650859e87b55b16d02b9f94b63a0b10872"
+    },
+    {
+      "id": "gm12-spring-0",
+      "source": "tests/integration/gm12-spring.test.js",
+      "title": "G12-01: curve.helix generates a real helical centerline (recipe, never native Coil)",
+      "sourceSha256": "af712e14c2a179b22c1650f961a8132d42a561228d8ab155314ebb70e0d944af"
+    },
+    {
+      "id": "gm12-spring-1",
+      "source": "tests/integration/gm12-spring.test.js",
+      "title": "G12-02: helix pitch/turns/height, handedness and mutually exclusive inputs",
+      "sourceSha256": "af712e14c2a179b22c1650f961a8132d42a561228d8ab155314ebb70e0d944af"
+    },
+    {
+      "id": "gm12-spring-2",
+      "source": "tests/integration/gm12-spring.test.js",
+      "title": "G12-03: shape.spring reports wire length, mass, solid height and diameters",
+      "sourceSha256": "af712e14c2a179b22c1650f961a8132d42a561228d8ab155314ebb70e0d944af"
+    },
+    {
+      "id": "gm12-spring-3",
+      "source": "tests/integration/gm12-spring.test.js",
+      "title": "G12-04: ground ends are a declared recipe gap (native Coil gate), never faked",
+      "sourceSha256": "af712e14c2a179b22c1650f961a8132d42a561228d8ab155314ebb70e0d944af"
+    },
+    {
+      "id": "gm12-spring-4",
+      "source": "tests/integration/gm12-spring.test.js",
+      "title": "G12-05: spring.evaluate reports stiffness, wire length, mass, solid height and forces",
+      "sourceSha256": "af712e14c2a179b22c1650f961a8132d42a561228d8ab155314ebb70e0d944af"
+    },
+    {
+      "id": "gm12-spring-5",
+      "source": "tests/integration/gm12-spring.test.js",
+      "title": "G12-06: spring.configure checks guide clearance and rejects coil bind",
+      "sourceSha256": "af712e14c2a179b22c1650f961a8132d42a561228d8ab155314ebb70e0d944af"
+    },
+    {
+      "id": "gm12-spring-6",
+      "source": "tests/integration/gm12-spring.test.js",
+      "title": "G12-07: spring.evaluate reproduces the P054 fixture (k, forces, solid height)",
+      "sourceSha256": "af712e14c2a179b22c1650f961a8132d42a561228d8ab155314ebb70e0d944af"
+    },
+    {
+      "id": "gm12-spring-7",
+      "source": "tests/integration/gm12-spring.test.js",
+      "title": "G12-08: spring.configure resolves installed/compressed state with solid-height margin",
+      "sourceSha256": "af712e14c2a179b22c1650f961a8132d42a561228d8ab155314ebb70e0d944af"
+    },
+    {
+      "id": "gm13-thread-0",
+      "source": "tests/integration/gm13-thread.test.js",
+      "title": "G13-01: thread.catalog queries the curated ISO metric table with lead",
+      "sourceSha256": "83c64bf21e8c854a3c3638b99ebffbb864a600c68a0854c876bae7ee677fa375"
+    },
+    {
+      "id": "gm13-thread-1",
+      "source": "tests/integration/gm13-thread.test.js",
+      "title": "G13-02: model.thread extension keeps representations distinct (custom profile is a recipe)",
+      "sourceSha256": "83c64bf21e8c854a3c3638b99ebffbb864a600c68a0854c876bae7ee677fa375"
+    },
+    {
+      "id": "gm13-thread-2",
+      "source": "tests/integration/gm13-thread.test.js",
+      "title": "G13-03: thread.custom-profile computes lead = starts * pitch and profile depth",
+      "sourceSha256": "83c64bf21e8c854a3c3638b99ebffbb864a600c68a0854c876bae7ee677fa375"
+    },
+    {
+      "id": "gm13-thread-3",
+      "source": "tests/integration/gm13-thread.test.js",
+      "title": "G13-04: thread.pair-check verifies fit, engagement depth and hand mismatch",
+      "sourceSha256": "83c64bf21e8c854a3c3638b99ebffbb864a600c68a0854c876bae7ee677fa375"
+    },
+    {
+      "id": "gm13-thread-4",
+      "source": "tests/integration/gm13-thread.test.js",
+      "title": "G13-05: contradictory profile and pair inputs are rejected",
+      "sourceSha256": "83c64bf21e8c854a3c3638b99ebffbb864a600c68a0854c876bae7ee677fa375"
+    },
+    {
+      "id": "gm13-thread-5",
+      "source": "tests/integration/gm13-thread.test.js",
+      "title": "G13-06: one-turn advance and multi-start lead are computed honestly (no geometry)",
+      "sourceSha256": "83c64bf21e8c854a3c3638b99ebffbb864a600c68a0854c876bae7ee677fa375"
+    },
+    {
+      "id": "gm14-cam-0",
+      "source": "tests/integration/gm14-cam.test.js",
+      "title": "G14-01: cam.profile reproduces source pressure angle and curvature",
+      "sourceSha256": "7e41ecb022220e933f696459715b2d384912991895ffd47a2ec3abf956b57689"
+    },
+    {
+      "id": "gm14-cam-1",
+      "source": "tests/integration/gm14-cam.test.js",
+      "title": "G14-02: pitch→working profile is a normal (not radial) R5 offset with follower phase",
+      "sourceSha256": "7e41ecb022220e933f696459715b2d384912991895ffd47a2ec3abf956b57689"
+    },
+    {
+      "id": "gm14-cam-2",
+      "source": "tests/integration/gm14-cam.test.js",
+      "title": "G14-03: cam.evaluate checks declared pressure/curvature limits",
+      "sourceSha256": "7e41ecb022220e933f696459715b2d384912991895ffd47a2ec3abf956b57689"
+    },
+    {
+      "id": "gm14-cam-3",
+      "source": "tests/integration/gm14-cam.test.js",
+      "title": "G14-04: cam.cycle-check resolves release only with an explicit return law",
+      "sourceSha256": "7e41ecb022220e933f696459715b2d384912991895ffd47a2ec3abf956b57689"
+    },
+    {
+      "id": "gm14-cam-4",
+      "source": "tests/integration/gm14-cam.test.js",
+      "title": "G14-05: cam.profile reproduces the sample rise flank and R5 normal offset",
+      "sourceSha256": "7e41ecb022220e933f696459715b2d384912991895ffd47a2ec3abf956b57689"
+    },
+    {
+      "id": "gm14-cam-5",
+      "source": "tests/integration/gm14-cam.test.js",
+      "title": "G14-06: rise-only release is preserved (no chord/eccentric, no forced coupling)",
+      "sourceSha256": "7e41ecb022220e933f696459715b2d384912991895ffd47a2ec3abf956b57689"
+    },
+    {
+      "id": "gm14-cam-6",
+      "source": "tests/integration/gm14-cam.test.js",
+      "title": "G14-07: drop/dynamics are blocked as missing data, not a fake-completed cycle",
+      "sourceSha256": "7e41ecb022220e933f696459715b2d384912991895ffd47a2ec3abf956b57689"
+    },
+    {
+      "id": "gm15-seal-0",
+      "source": "tests/integration/gm15-seal.test.js",
+      "title": "G15-01: shape o_ring builds a free torus with volume V = 2*pi^2*R*r^2",
+      "sourceSha256": "323eda7a316955f57ae8cbf4250f8a4ff492e0a52f7793ed5987d45b7593cb85"
+    },
+    {
+      "id": "gm15-seal-1",
+      "source": "tests/integration/gm15-seal.test.js",
+      "title": "G15-02: seal gland computes groove depth, squeeze/fill and hard-stop",
+      "sourceSha256": "323eda7a316955f57ae8cbf4250f8a4ff492e0a52f7793ed5987d45b7593cb85"
+    },
+    {
+      "id": "gm15-seal-2",
+      "source": "tests/integration/gm15-seal.test.js",
+      "title": "G15-03: seal profile accepts a custom gasket cross-section (not an O-ring)",
+      "sourceSha256": "323eda7a316955f57ae8cbf4250f8a4ff492e0a52f7793ed5987d45b7593cb85"
+    },
+    {
+      "id": "gm15-seal-3",
+      "source": "tests/integration/gm15-seal.test.js",
+      "title": "G15-04: seal evaluate reports squeeze/fill and notEvaluated extrusion gap",
+      "sourceSha256": "323eda7a316955f57ae8cbf4250f8a4ff492e0a52f7793ed5987d45b7593cb85"
+    },
+    {
+      "id": "gm15-seal-4",
+      "source": "tests/integration/gm15-seal.test.js",
+      "title": "G15-05: seal gland separates undeformed cross-section from the installed envelope",
+      "sourceSha256": "323eda7a316955f57ae8cbf4250f8a4ff492e0a52f7793ed5987d45b7593cb85"
+    },
+    {
+      "id": "gm15-seal-5",
+      "source": "tests/integration/gm15-seal.test.js",
+      "title": "G15-06: dock sequence-check resolves connect and reverse disconnect order",
+      "sourceSha256": "323eda7a316955f57ae8cbf4250f8a4ff492e0a52f7793ed5987d45b7593cb85"
+    },
+    {
+      "id": "gm15-seal-6",
+      "source": "tests/integration/gm15-seal.test.js",
+      "title": "G15-07: seal profile circle cross-section is a plain O-ring with closed continuity",
+      "sourceSha256": "323eda7a316955f57ae8cbf4250f8a4ff492e0a52f7793ed5987d45b7593cb85"
+    },
+    {
+      "id": "gm15-seal-7",
+      "source": "tests/integration/gm15-seal.test.js",
+      "title": "G15-08: dock sequence-check keeps worst-case seal-before-open margin >= 0.5 mm",
+      "sourceSha256": "323eda7a316955f57ae8cbf4250f8a4ff492e0a52f7793ed5987d45b7593cb85"
+    },
+    {
+      "id": "gm16-fasteners-0",
+      "source": "tests/integration/gm16-fasteners.test.js",
+      "title": "G16-01: mount create locates a PCB with pin+slot without over-constraining",
+      "sourceSha256": "008c427f462967c3d4dde84bb1e811aeb67a0a4a39c3f3d00db04f4ceaa0c332"
+    },
+    {
+      "id": "gm16-fasteners-1",
+      "source": "tests/integration/gm16-fasteners.test.js",
+      "title": "G16-02: mount check flags over-constraint and requires connector support",
+      "sourceSha256": "008c427f462967c3d4dde84bb1e811aeb67a0a4a39c3f3d00db04f4ceaa0c332"
+    },
+    {
+      "id": "gm16-fasteners-2",
+      "source": "tests/integration/gm16-fasteners.test.js",
+      "title": "G16-03: fastener stack computes clamped length, engagement and bottoming",
+      "sourceSha256": "008c427f462967c3d4dde84bb1e811aeb67a0a4a39c3f3d00db04f4ceaa0c332"
+    },
+    {
+      "id": "gm16-fasteners-3",
+      "source": "tests/integration/gm16-fasteners.test.js",
+      "title": "G16-04: fastener check validates engagement, bottoming and tool access",
+      "sourceSha256": "008c427f462967c3d4dde84bb1e811aeb67a0a4a39c3f3d00db04f4ceaa0c332"
+    },
+    {
+      "id": "gm16-fasteners-4",
+      "source": "tests/integration/gm16-fasteners.test.js",
+      "title": "G16-05: fastener schedule reports declared data and flags missing entries",
+      "sourceSha256": "008c427f462967c3d4dde84bb1e811aeb67a0a4a39c3f3d00db04f4ceaa0c332"
+    },
+    {
+      "id": "gm16-fasteners-5",
+      "source": "tests/integration/gm16-fasteners.test.js",
+      "title": "G16-06: bearing stack-check distinguishes the fixed ring and assumes no preload",
+      "sourceSha256": "008c427f462967c3d4dde84bb1e811aeb67a0a4a39c3f3d00db04f4ceaa0c332"
+    },
+    {
+      "id": "gm16-fasteners-6",
+      "source": "tests/integration/gm16-fasteners.test.js",
+      "title": "G16-07: shaft interface mates a D-flat bore to a D-flat shaft",
+      "sourceSha256": "008c427f462967c3d4dde84bb1e811aeb67a0a4a39c3f3d00db04f4ceaa0c332"
+    },
+    {
+      "id": "gm16-fasteners-7",
+      "source": "tests/integration/gm16-fasteners.test.js",
+      "title": "G16-08: retention bayonet resolves the assembly and unlock path",
+      "sourceSha256": "008c427f462967c3d4dde84bb1e811aeb67a0a4a39c3f3d00db04f4ceaa0c332"
+    },
+    {
+      "id": "gm16-fasteners-8",
+      "source": "tests/integration/gm16-fasteners.test.js",
+      "title": "G16-09: snap define records geometry and material without a material default",
+      "sourceSha256": "008c427f462967c3d4dde84bb1e811aeb67a0a4a39c3f3d00db04f4ceaa0c332"
+    },
+    {
+      "id": "gm16-fasteners-9",
+      "source": "tests/integration/gm16-fasteners.test.js",
+      "title": "G16-10: shape hose_barb keeps channel continuity and barb seating interference",
+      "sourceSha256": "008c427f462967c3d4dde84bb1e811aeb67a0a4a39c3f3d00db04f4ceaa0c332"
+    },
+    {
+      "id": "gm16-fasteners-10",
+      "source": "tests/integration/gm16-fasteners.test.js",
+      "title": "G16-11: snap evaluate reproduces the fixture cantilever beam model",
+      "sourceSha256": "008c427f462967c3d4dde84bb1e811aeb67a0a4a39c3f3d00db04f4ceaa0c332"
+    },
+    {
+      "id": "gm16-fasteners-11",
+      "source": "tests/integration/gm16-fasteners.test.js",
+      "title": "G16-12: a D-flat shaft refuses a round bore (non-interchangeable geometry)",
+      "sourceSha256": "008c427f462967c3d4dde84bb1e811aeb67a0a4a39c3f3d00db04f4ceaa0c332"
+    },
+    {
+      "id": "gm17-mechanism-0",
+      "source": "tests/integration/gm17-mechanism.test.js",
+      "title": "G17-01: mechanism couple resolves gear ratio/sign and screw lead",
+      "sourceSha256": "3fd248612acf2b36644dce1c5b1c69393601d6348e9b60e274d7b3d08f70276f"
+    },
+    {
+      "id": "gm17-mechanism-1",
+      "source": "tests/integration/gm17-mechanism.test.js",
+      "title": "G17-02: mechanism couple honors zero phase and engagement from measured values",
+      "sourceSha256": "3fd248612acf2b36644dce1c5b1c69393601d6348e9b60e274d7b3d08f70276f"
+    },
+    {
+      "id": "gm17-mechanism-2",
+      "source": "tests/integration/gm17-mechanism.test.js",
+      "title": "G17-03: mechanism inspect reports the residual and engagement of actual values",
+      "sourceSha256": "3fd248612acf2b36644dce1c5b1c69393601d6348e9b60e274d7b3d08f70276f"
+    },
+    {
+      "id": "gm17-mechanism-3",
+      "source": "tests/integration/gm17-mechanism.test.js",
+      "title": "G17-04: mechanism stop-check verifies program vs hard limits and engagement",
+      "sourceSha256": "3fd248612acf2b36644dce1c5b1c69393601d6348e9b60e274d7b3d08f70276f"
+    },
+    {
+      "id": "gm17-mechanism-4",
+      "source": "tests/integration/gm17-mechanism.test.js",
+      "title": "G17-05: native motion link is gated; the explicit evaluated track is always returned",
+      "sourceSha256": "3fd248612acf2b36644dce1c5b1c69393601d6348e9b60e274d7b3d08f70276f"
+    },
+    {
+      "id": "gm17-mechanism-5",
+      "source": "tests/integration/gm17-mechanism.test.js",
+      "title": "G17-06: stop-check keeps counter engagement through an unwrapped >360deg hard stop",
+      "sourceSha256": "3fd248612acf2b36644dce1c5b1c69393601d6348e9b60e274d7b3d08f70276f"
+    },
+    {
+      "id": "gm18-pose-0",
+      "source": "tests/integration/gm18-pose.test.js",
+      "title": "G18-01: pose save/list/delete roundtrips the local manifest",
+      "sourceSha256": "417d25425cec3d81df400f4642d84bef0f1c1c9cab3bbe107692c71725830b0b"
+    },
+    {
+      "id": "gm18-pose-1",
+      "source": "tests/integration/gm18-pose.test.js",
+      "title": "G18-02: pose apply leaves the requested state in place",
+      "sourceSha256": "417d25425cec3d81df400f4642d84bef0f1c1c9cab3bbe107692c71725830b0b"
+    },
+    {
+      "id": "gm18-pose-2",
+      "source": "tests/integration/gm18-pose.test.js",
+      "title": "G18-03: pose evaluate applies temporarily and restores the previous state",
+      "sourceSha256": "417d25425cec3d81df400f4642d84bef0f1c1c9cab3bbe107692c71725830b0b"
+    },
+    {
+      "id": "gm18-pose-3",
+      "source": "tests/integration/gm18-pose.test.js",
+      "title": "G18-04: pose manifest roundtrips all eight state dimensions",
+      "sourceSha256": "417d25425cec3d81df400f4642d84bef0f1c1c9cab3bbe107692c71725830b0b"
+    },
+    {
+      "id": "gm18-pose-4",
+      "source": "tests/integration/gm18-pose.test.js",
+      "title": "G18-05: fill/spring/service states are recorded distinctly (FULL vs EMPTY)",
+      "sourceSha256": "417d25425cec3d81df400f4642d84bef0f1c1c9cab3bbe107692c71725830b0b"
+    },
+    {
+      "id": "gm18-pose-5",
+      "source": "tests/integration/gm18-pose.test.js",
+      "title": "G18-06: the manifest is a local manifest, not a native ConfigurationTable",
+      "sourceSha256": "417d25425cec3d81df400f4642d84bef0f1c1c9cab3bbe107692c71725830b0b"
+    },
+    {
+      "id": "gm19-interference-0",
+      "source": "tests/integration/gm19-interference.test.js",
+      "title": "G19-01: clearance grid expands an instance set into all unordered pairs",
+      "sourceSha256": "dfa6de372537102fe8c7cb88e1feed7834bdb1a72714ff8827c73f555dfb3d1a"
+    },
+    {
+      "id": "gm19-interference-1",
+      "source": "tests/integration/gm19-interference.test.js",
+      "title": "G19-02: an expected contact carries a cause and allowed range and is not deleted",
+      "sourceSha256": "dfa6de372537102fe8c7cb88e1feed7834bdb1a72714ff8827c73f555dfb3d1a"
+    },
+    {
+      "id": "gm19-interference-2",
+      "source": "tests/integration/gm19-interference.test.js",
+      "title": "G19-03: joint ranges sample as a Cartesian product, not a diagonal track",
+      "sourceSha256": "dfa6de372537102fe8c7cb88e1feed7834bdb1a72714ff8827c73f555dfb3d1a"
+    },
+    {
+      "id": "gm19-interference-3",
+      "source": "tests/integration/gm19-interference.test.js",
+      "title": "G19-05: a sample x pair product above budget is reported without testing",
+      "sourceSha256": "dfa6de372537102fe8c7cb88e1feed7834bdb1a72714ff8827c73f555dfb3d1a"
+    },
+    {
+      "id": "gm19-interference-4",
+      "source": "tests/integration/gm19-interference.test.js",
+      "title": "G19-06: motion envelope samples a translation range",
+      "sourceSha256": "dfa6de372537102fe8c7cb88e1feed7834bdb1a72714ff8827c73f555dfb3d1a"
+    },
+    {
+      "id": "gm19-interference-5",
+      "source": "tests/integration/gm19-interference.test.js",
+      "title": "G19-07: motion envelope conservative bound carries an explicit errorBound",
+      "sourceSha256": "dfa6de372537102fe8c7cb88e1feed7834bdb1a72714ff8827c73f555dfb3d1a"
+    },
+    {
+      "id": "gm19-interference-6",
+      "source": "tests/integration/gm19-interference.test.js",
+      "title": "G19-08: unsigned distance, overlap volume and interference stay separate fields",
+      "sourceSha256": "dfa6de372537102fe8c7cb88e1feed7834bdb1a72714ff8827c73f555dfb3d1a"
+    },
+    {
+      "id": "gm19-interference-7",
+      "source": "tests/integration/gm19-interference.test.js",
+      "title": "G19-11: continuousVerified is false without a certifiedPath coverage proof",
+      "sourceSha256": "dfa6de372537102fe8c7cb88e1feed7834bdb1a72714ff8827c73f555dfb3d1a"
+    },
+    {
+      "id": "gm20-containment-0",
+      "source": "tests/integration/gm20-containment.test.js",
+      "title": "G20-01: measure contains classifies inside, outside and boundary points",
+      "sourceSha256": "b159fe6bf383e82da3dffed790eb6f3c0110738fb5e8ccaeaf244bdf9b544425"
+    },
+    {
+      "id": "gm20-containment-1",
+      "source": "tests/integration/gm20-containment.test.js",
+      "title": "G20-02: boundary membership uses the own signed-distance tolerance method",
+      "sourceSha256": "b159fe6bf383e82da3dffed790eb6f3c0110738fb5e8ccaeaf244bdf9b544425"
+    },
+    {
+      "id": "gm20-containment-2",
+      "source": "tests/integration/gm20-containment.test.js",
+      "title": "G20-03: measure corridor reports swept-circle clearance and intrusions",
+      "sourceSha256": "b159fe6bf383e82da3dffed790eb6f3c0110738fb5e8ccaeaf244bdf9b544425"
+    },
+    {
+      "id": "gm20-containment-3",
+      "source": "tests/integration/gm20-containment.test.js",
+      "title": "G20-04: measure region reports occupancy and per-section occupied area",
+      "sourceSha256": "b159fe6bf383e82da3dffed790eb6f3c0110738fb5e8ccaeaf244bdf9b544425"
+    },
+    {
+      "id": "gm20-containment-4",
+      "source": "tests/integration/gm20-containment.test.js",
+      "title": "G20-05: a ring region keeps its open inner channel (exclusion, not filled)",
+      "sourceSha256": "b159fe6bf383e82da3dffed790eb6f3c0110738fb5e8ccaeaf244bdf9b544425"
+    },
+    {
+      "id": "gm20-containment-5",
+      "source": "tests/integration/gm20-containment.test.js",
+      "title": "G20-06: signed distance and union of analytic regions classify boundary/exterior points",
+      "sourceSha256": "b159fe6bf383e82da3dffed790eb6f3c0110738fb5e8ccaeaf244bdf9b544425"
+    },
+    {
+      "id": "gm25-routing-0",
+      "source": "tests/integration/gm25-routing.test.js",
+      "title": "G25-01: route create3d solves a spatial S-curve through waypoints",
+      "sourceSha256": "6fe9df7ccdab3f6952f60c15c02fef8d3788e87f1ba0a0b9999da68b33bb0243"
+    },
+    {
+      "id": "gm25-routing-1",
+      "source": "tests/integration/gm25-routing.test.js",
+      "title": "G25-02: end tangents, normal sections and a stable transport frame at inflection",
+      "sourceSha256": "6fe9df7ccdab3f6952f60c15c02fef8d3788e87f1ba0a0b9999da68b33bb0243"
+    },
+    {
+      "id": "gm25-routing-2",
+      "source": "tests/integration/gm25-routing.test.js",
+      "title": "G25-03: route inspect reports arc length, bend radius and self-clearance",
+      "sourceSha256": "6fe9df7ccdab3f6952f60c15c02fef8d3788e87f1ba0a0b9999da68b33bb0243"
+    },
+    {
+      "id": "gm25-routing-3",
+      "source": "tests/integration/gm25-routing.test.js",
+      "title": "G25-04: route cut-list uses 1.1*L + 2*15 mm interpretation",
+      "sourceSha256": "6fe9df7ccdab3f6952f60c15c02fef8d3788e87f1ba0a0b9999da68b33bb0243"
+    },
+    {
+      "id": "gm25-routing-4",
+      "source": "tests/integration/gm25-routing.test.js",
+      "title": "G25-05: route motion-states evaluates the PAN x TILT cartesian product preserving length",
+      "sourceSha256": "6fe9df7ccdab3f6952f60c15c02fef8d3788e87f1ba0a0b9999da68b33bb0243"
+    },
+    {
+      "id": "gm25-routing-5",
+      "source": "tests/integration/gm25-routing.test.js",
+      "title": "G25-06: route state is explicitly set or native-dependent, never guessed",
+      "sourceSha256": "6fe9df7ccdab3f6952f60c15c02fef8d3788e87f1ba0a0b9999da68b33bb0243"
+    },
+    {
+      "id": "gm25-routing-6",
+      "source": "tests/integration/gm25-routing.test.js",
+      "title": "G25-07: bend limit flags a route whose required radius is too tight",
+      "sourceSha256": "6fe9df7ccdab3f6952f60c15c02fef8d3788e87f1ba0a0b9999da68b33bb0243"
+    },
+    {
+      "id": "gm25-routing-7",
+      "source": "tests/integration/gm25-routing.test.js",
+      "title": "G25-08: modeled service tail is not added twice; AWG is not insulation diameter",
+      "sourceSha256": "6fe9df7ccdab3f6952f60c15c02fef8d3788e87f1ba0a0b9999da68b33bb0243"
+    },
+    {
+      "id": "gm26-fpc-pcb-0",
+      "source": "tests/integration/gm26-fpc-pcb.test.js",
+      "title": "G26-01: fpc fold preserves the neutral-axis length, never scales",
+      "sourceSha256": "73458dd1ef53900205dd4bcb4451ef3f201c82f91e2f7a42eb50fabb14430af0"
+    },
+    {
+      "id": "gm26-fpc-pcb-1",
+      "source": "tests/integration/gm26-fpc-pcb.test.js",
+      "title": "G26-02: fpc flatten straightens bends without changing neutral length",
+      "sourceSha256": "73458dd1ef53900205dd4bcb4451ef3f201c82f91e2f7a42eb50fabb14430af0"
+    },
+    {
+      "id": "gm26-fpc-pcb-2",
+      "source": "tests/integration/gm26-fpc-pcb.test.js",
+      "title": "G26-03: pcb mechanical-exchange reports the STEP-center vs lens datum offset",
+      "sourceSha256": "73458dd1ef53900205dd4bcb4451ef3f201c82f91e2f7a42eb50fabb14430af0"
+    },
+    {
+      "id": "gm26-fpc-pcb-3",
+      "source": "tests/integration/gm26-fpc-pcb.test.js",
+      "title": "G26-04: pcb check requires both-side height zones",
+      "sourceSha256": "73458dd1ef53900205dd4bcb4451ef3f201c82f91e2f7a42eb50fabb14430af0"
+    },
+    {
+      "id": "gm26-fpc-pcb-4",
+      "source": "tests/integration/gm26-fpc-pcb.test.js",
+      "title": "G26-05: port define reports origin, normal, pin1 and mating stroke",
+      "sourceSha256": "73458dd1ef53900205dd4bcb4451ef3f201c82f91e2f7a42eb50fabb14430af0"
+    },
+    {
+      "id": "gm26-fpc-pcb-5",
+      "source": "tests/integration/gm26-fpc-pcb.test.js",
+      "title": "G26-06: connector mate-check passes a correct intended pair",
+      "sourceSha256": "73458dd1ef53900205dd4bcb4451ef3f201c82f91e2f7a42eb50fabb14430af0"
+    },
+    {
+      "id": "gm26-fpc-pcb-6",
+      "source": "tests/integration/gm26-fpc-pcb.test.js",
+      "title": "G26-07: forbidden pair with shared key is a poka-yoke hazard",
+      "sourceSha256": "73458dd1ef53900205dd4bcb4451ef3f201c82f91e2f7a42eb50fabb14430af0"
+    },
+    {
+      "id": "gm26-fpc-pcb-7",
+      "source": "tests/integration/gm26-fpc-pcb.test.js",
+      "title": "G26-08: pack cross-section uses cavity area as the reserve denominator",
+      "sourceSha256": "73458dd1ef53900205dd4bcb4451ef3f201c82f91e2f7a42eb50fabb14430af0"
+    },
+    {
+      "id": "gm26-fpc-pcb-8",
+      "source": "tests/integration/gm26-fpc-pcb.test.js",
+      "title": "G26-09: keepout check flags a keepout outside the board outline",
+      "sourceSha256": "73458dd1ef53900205dd4bcb4451ef3f201c82f91e2f7a42eb50fabb14430af0"
+    },
+    {
+      "id": "gm26-fpc-pcb-9",
+      "source": "tests/integration/gm26-fpc-pcb.test.js",
+      "title": "G26-10: PCB02/04 height zones and through-hole tails, FPC never scaled",
+      "sourceSha256": "73458dd1ef53900205dd4bcb4451ef3f201c82f91e2f7a42eb50fabb14430af0"
+    },
+    {
+      "id": "gm26-fpc-pcb-10",
+      "source": "tests/integration/gm26-fpc-pcb.test.js",
+      "title": "G26-11: equal area but geometrically out-of-fit shape is rejected",
+      "sourceSha256": "73458dd1ef53900205dd4bcb4451ef3f201c82f91e2f7a42eb50fabb14430af0"
+    },
+    {
+      "id": "gm26-fpc-pcb-11",
+      "source": "tests/integration/gm26-fpc-pcb.test.js",
+      "title": "G26-12: native ECAD/flex remains an explicit gate, recipe is the honest alternative",
+      "sourceSha256": "73458dd1ef53900205dd4bcb4451ef3f201c82f91e2f7a42eb50fabb14430af0"
+    },
+    {
+      "id": "gm27-assembly-0",
+      "source": "tests/integration/gm27-assembly.test.js",
+      "title": "G27-01: assembly sequence orders rigid dependencies, media never rigidized",
+      "sourceSha256": "f421dd6360722093c04b93a5d9d5a204c7e49ab149d6373523ef61c2b69db085"
+    },
+    {
+      "id": "gm27-assembly-1",
+      "source": "tests/integration/gm27-assembly.test.js",
+      "title": "G27-02: service path-check verifies a straight tank withdrawal",
+      "sourceSha256": "f421dd6360722093c04b93a5d9d5a204c7e49ab149d6373523ef61c2b69db085"
+    },
+    {
+      "id": "gm27-assembly-2",
+      "source": "tests/integration/gm27-assembly.test.js",
+      "title": "G27-03: D6x40 tool reaches the fastener seat",
+      "sourceSha256": "f421dd6360722093c04b93a5d9d5a204c7e49ab149d6373523ef61c2b69db085"
+    },
+    {
+      "id": "gm27-assembly-3",
+      "source": "tests/integration/gm27-assembly.test.js",
+      "title": "G27-04: fixture access seats a pin/hole and datum pair",
+      "sourceSha256": "f421dd6360722093c04b93a5d9d5a204c7e49ab149d6373523ef61c2b69db085"
+    },
+    {
+      "id": "gm27-assembly-4",
+      "source": "tests/integration/gm27-assembly.test.js",
+      "title": "G27-05: trapped screw requires cover removal first",
+      "sourceSha256": "f421dd6360722093c04b93a5d9d5a204c7e49ab149d6373523ef61c2b69db085"
+    },
+    {
+      "id": "gm27-assembly-5",
+      "source": "tests/integration/gm27-assembly.test.js",
+      "title": "G27-06: head/ring/power service states; exploded endpoint is never an assembly path",
+      "sourceSha256": "f421dd6360722093c04b93a5d9d5a204c7e49ab149d6373523ef61c2b69db085"
+    },
+    {
+      "id": "gm28-optics-0",
+      "source": "tests/integration/gm28-optics.test.js",
+      "title": "G28-01: optics frustum builds the basis and clips against a limiting window",
+      "sourceSha256": "89c6baf22fb3680234a4cd943bce291c1c295ba5075ec928d1715efb5d89b3ae"
+    },
+    {
+      "id": "gm28-optics-1",
+      "source": "tests/integration/gm28-optics.test.js",
+      "title": "G28-02: optics coverage union is below the individual sum with dead zones",
+      "sourceSha256": "89c6baf22fb3680234a4cd943bce291c1c295ba5075ec928d1715efb5d89b3ae"
+    },
+    {
+      "id": "gm28-optics-2",
+      "source": "tests/integration/gm28-optics.test.js",
+      "title": "G28-03: optics occlusion blocks a baffled line, passes a declared window",
+      "sourceSha256": "89c6baf22fb3680234a4cd943bce291c1c295ba5075ec928d1715efb5d89b3ae"
+    },
+    {
+      "id": "gm28-optics-3",
+      "source": "tests/integration/gm28-optics.test.js",
+      "title": "G28-04: sensor alignment-check reports angle deviation and forbidden zones",
+      "sourceSha256": "89c6baf22fb3680234a4cd943bce291c1c295ba5075ec928d1715efb5d89b3ae"
+    },
+    {
+      "id": "gm28-optics-4",
+      "source": "tests/integration/gm28-optics.test.js",
+      "title": "G28-05: near-field gap is reported, not hidden by angle sums",
+      "sourceSha256": "89c6baf22fb3680234a4cd943bce291c1c295ba5075ec928d1715efb5d89b3ae"
+    },
+    {
+      "id": "gm28-optics-5",
+      "source": "tests/integration/gm28-optics.test.js",
+      "title": "G28-06: aligned sensor passes without any optical/RF/magnetic claim",
+      "sourceSha256": "89c6baf22fb3680234a4cd943bce291c1c295ba5075ec928d1715efb5d89b3ae"
+    },
+    {
+      "id": "gm29-appearance-0",
+      "source": "tests/integration/gm29-appearance.test.js",
+      "title": "gm29: G29-01 appearance.create copies a resource and edit renames it",
+      "sourceSha256": "d6d737655f3605a9ef6308fc2e38e7eeb52010e202b3274a2861f316b3f8c8ff"
+    },
+    {
+      "id": "gm29-appearance-1",
+      "source": "tests/integration/gm29-appearance.test.js",
+      "title": "gm29: G29-02 appearance.texture connects a channel on a design-local appearance",
+      "sourceSha256": "d6d737655f3605a9ef6308fc2e38e7eeb52010e202b3274a2861f316b3f8c8ff"
+    },
+    {
+      "id": "gm29-appearance-2",
+      "source": "tests/integration/gm29-appearance.test.js",
+      "title": "gm29: G29-03 appearance.projection reads current type and gates a set request",
+      "sourceSha256": "d6d737655f3605a9ef6308fc2e38e7eeb52010e202b3274a2861f316b3f8c8ff"
+    },
+    {
+      "id": "gm29-appearance-3",
+      "source": "tests/integration/gm29-appearance.test.js",
+      "title": "gm29: G29-04 material.create copies a physical material and edit renames it",
+      "sourceSha256": "d6d737655f3605a9ef6308fc2e38e7eeb52010e202b3274a2861f316b3f8c8ff"
+    },
+    {
+      "id": "gm29-appearance-4",
+      "source": "tests/integration/gm29-appearance.test.js",
+      "title": "gm29: G29-05 entity.attribute set/get store namespaced strings on the root component",
+      "sourceSha256": "d6d737655f3605a9ef6308fc2e38e7eeb52010e202b3274a2861f316b3f8c8ff"
+    },
+    {
+      "id": "gm29-appearance-5",
+      "source": "tests/integration/gm29-appearance.test.js",
+      "title": "gm29: G29-06 material.assign-map reads assignments without assuming equivalence",
+      "sourceSha256": "d6d737655f3605a9ef6308fc2e38e7eeb52010e202b3274a2861f316b3f8c8ff"
+    },
+    {
+      "id": "gm29-appearance-6",
+      "source": "tests/integration/gm29-appearance.test.js",
+      "title": "gm29: G29-07 appearance.assign-map reads assignments (body/face/occurrence scope)",
+      "sourceSha256": "d6d737655f3605a9ef6308fc2e38e7eeb52010e202b3274a2861f316b3f8c8ff"
+    },
+    {
+      "id": "gm29-appearance-7",
+      "source": "tests/integration/gm29-appearance.test.js",
+      "title": "gm29: G29-08 styles.report aggregates appearance/material state and flags duplicates",
+      "sourceSha256": "d6d737655f3605a9ef6308fc2e38e7eeb52010e202b3274a2861f316b3f8c8ff"
+    },
+    {
+      "id": "gm29-appearance-8",
+      "source": "tests/integration/gm29-appearance.test.js",
+      "title": "gm29: G29-09 texture.heightmap writes a deterministic tileable PNG",
+      "sourceSha256": "d6d737655f3605a9ef6308fc2e38e7eeb52010e202b3274a2861f316b3f8c8ff"
+    },
+    {
+      "id": "gm29-appearance-9",
+      "source": "tests/integration/gm29-appearance.test.js",
+      "title": "gm29: G29-10 texture.heightmap is byte-deterministic and never silently overwrites",
+      "sourceSha256": "d6d737655f3605a9ef6308fc2e38e7eeb52010e202b3274a2861f316b3f8c8ff"
+    },
+    {
+      "id": "gm29-appearance-10",
+      "source": "tests/integration/gm29-appearance.test.js",
+      "title": "gm29: G29-11 appearance.create reports typed property descriptors for the copy",
+      "sourceSha256": "d6d737655f3605a9ef6308fc2e38e7eeb52010e202b3274a2861f316b3f8c8ff"
+    },
+    {
+      "id": "gm29-appearance-11",
+      "source": "tests/integration/gm29-appearance.test.js",
+      "title": "gm29: G29-12 appearance.projection read reflects the actual installed projection",
+      "sourceSha256": "d6d737655f3605a9ef6308fc2e38e7eeb52010e202b3274a2861f316b3f8c8ff"
+    },
+    {
+      "id": "gm30-presentation-0",
+      "source": "tests/integration/gm30-presentation.test.js",
+      "title": "gm30: G30-01 section view/inspect/edit reports absolute orientation and hatch",
+      "sourceSha256": "c363874a2d788b5a2c7ca92190e21779220137d92ddeb507fb60521fd6db7a69"
+    },
+    {
+      "id": "gm30-presentation-1",
+      "source": "tests/integration/gm30-presentation.test.js",
+      "title": "gm30: G30-02 section flip is an operation that inverts the cut direction",
+      "sourceSha256": "c363874a2d788b5a2c7ca92190e21779220137d92ddeb507fb60521fd6db7a69"
+    },
+    {
+      "id": "gm30-presentation-2",
+      "source": "tests/integration/gm30-presentation.test.js",
+      "title": "gm30: G30-03 shot.pack applies per-shot visibility and restores it",
+      "sourceSha256": "c363874a2d788b5a2c7ca92190e21779220137d92ddeb507fb60521fd6db7a69"
+    },
+    {
+      "id": "gm30-presentation-3",
+      "source": "tests/integration/gm30-presentation.test.js",
+      "title": "gm30: G30-04 camera.set accepts a named orientation with target and fit",
+      "sourceSha256": "c363874a2d788b5a2c7ca92190e21779220137d92ddeb507fb60521fd6db7a69"
+    },
+    {
+      "id": "gm30-presentation-4",
+      "source": "tests/integration/gm30-presentation.test.js",
+      "title": "gm30: G30-05 camera.set rejects a named orientation combined with eye/up",
+      "sourceSha256": "c363874a2d788b5a2c7ca92190e21779220137d92ddeb507fb60521fd6db7a69"
+    },
+    {
+      "id": "gm30-presentation-5",
+      "source": "tests/integration/gm30-presentation.test.js",
+      "title": "gm30: G30-06 visibility.finalize composes hide/recompute and leaves the requested state",
+      "sourceSha256": "c363874a2d788b5a2c7ca92190e21779220137d92ddeb507fb60521fd6db7a69"
+    },
+    {
+      "id": "gm30-presentation-6",
+      "source": "tests/integration/gm30-presentation.test.js",
+      "title": "gm30: G30-07 shot.pack restores section bulbs and the active component",
+      "sourceSha256": "c363874a2d788b5a2c7ca92190e21779220137d92ddeb507fb60521fd6db7a69"
+    },
+    {
+      "id": "gm30-presentation-7",
+      "source": "tests/integration/gm30-presentation.test.js",
+      "title": "gm30: G30-08 visibility.finalize reports a healthy timeline through checkHealth",
+      "sourceSha256": "c363874a2d788b5a2c7ca92190e21779220137d92ddeb507fb60521fd6db7a69"
+    },
+    {
+      "id": "gm30-presentation-8",
+      "source": "tests/integration/gm30-presentation.test.js",
+      "title": "gm30: G30-09 shot.pack handles several sections and leaves them restored",
+      "sourceSha256": "c363874a2d788b5a2c7ca92190e21779220137d92ddeb507fb60521fd6db7a69"
+    },
+    {
+      "id": "gm31-dfm-0",
+      "source": "tests/integration/gm31-dfm.test.js",
+      "title": "gm31: G31-01 manufacturing.zone applies protection defaults and warns on missing material",
+      "sourceSha256": "b673f6efc6ea70e4ec1ce5397065c52c35195e060138d1fc44f9290da0f635ae"
+    },
+    {
+      "id": "gm31-dfm-1",
+      "source": "tests/integration/gm31-dfm.test.js",
+      "title": "gm31: G31-02 manufacturing.check rejects a global operation that touches a protected zone",
+      "sourceSha256": "b673f6efc6ea70e4ec1ce5397065c52c35195e060138d1fc44f9290da0f635ae"
+    },
+    {
+      "id": "gm31-dfm-2",
+      "source": "tests/integration/gm31-dfm.test.js",
+      "title": "gm31: G31-03 measure.draft reports a signed draft map with the sign convention",
+      "sourceSha256": "b673f6efc6ea70e4ec1ce5397065c52c35195e060138d1fc44f9290da0f635ae"
+    },
+    {
+      "id": "gm31-dfm-3",
+      "source": "tests/integration/gm31-dfm.test.js",
+      "title": "gm31: G31-04 undercut.check detects a face locked against the pull direction",
+      "sourceSha256": "b673f6efc6ea70e4ec1ce5397065c52c35195e060138d1fc44f9290da0f635ae"
+    },
+    {
+      "id": "gm31-dfm-4",
+      "source": "tests/integration/gm31-dfm.test.js",
+      "title": "gm31: G31-05 measure.wall-map checks material continuity and flags void-backed samples",
+      "sourceSha256": "b673f6efc6ea70e4ec1ce5397065c52c35195e060138d1fc44f9290da0f635ae"
+    },
+    {
+      "id": "gm31-dfm-5",
+      "source": "tests/integration/gm31-dfm.test.js",
+      "title": "gm31: G31-06 wall-map reports thin walls and uniformity for shell/rib fixtures",
+      "sourceSha256": "b673f6efc6ea70e4ec1ce5397065c52c35195e060138d1fc44f9290da0f635ae"
+    },
+    {
+      "id": "gm31-dfm-6",
+      "source": "tests/integration/gm31-dfm.test.js",
+      "title": "gm31: G31-07 native sampling is an honest blocked gap and draft alone never proves demoldability",
+      "sourceSha256": "b673f6efc6ea70e4ec1ce5397065c52c35195e060138d1fc44f9290da0f635ae"
+    },
+    {
+      "id": "gm32-sheetmetal-0",
+      "source": "tests/integration/gm32-sheetmetal.test.js",
+      "title": "gm32: G32-01 native flat-pattern authoring is an honest blocked gate",
+      "sourceSha256": "19c524fefec0e5ccbe6a4aebcaea0743be99a38bf3c5684be507cf5f011a9398"
+    },
+    {
+      "id": "gm32-sheetmetal-1",
+      "source": "tests/integration/gm32-sheetmetal.test.js",
+      "title": "gm32: G32-02 sheet.form folds the neutral axis and preserves developed length",
+      "sourceSha256": "19c524fefec0e5ccbe6a4aebcaea0743be99a38bf3c5684be507cf5f011a9398"
+    },
+    {
+      "id": "gm32-sheetmetal-2",
+      "source": "tests/integration/gm32-sheetmetal.test.js",
+      "title": "gm32: G32-03 sheet.flat lays bends straight without scaling the neutral axis",
+      "sourceSha256": "19c524fefec0e5ccbe6a4aebcaea0743be99a38bf3c5684be507cf5f011a9398"
+    },
+    {
+      "id": "gm32-sheetmetal-3",
+      "source": "tests/integration/gm32-sheetmetal.test.js",
+      "title": "gm32: G32-04 sheet.bends derives neutral radius and direction and never guesses allowance",
+      "sourceSha256": "19c524fefec0e5ccbe6a4aebcaea0743be99a38bf3c5684be507cf5f011a9398"
+    },
+    {
+      "id": "gm32-sheetmetal-4",
+      "source": "tests/integration/gm32-sheetmetal.test.js",
+      "title": "gm32: G32-05 sheet.flat reports developed length equal to a declared bend allowance",
+      "sourceSha256": "19c524fefec0e5ccbe6a4aebcaea0743be99a38bf3c5684be507cf5f011a9398"
+    },
+    {
+      "id": "gm32-sheetmetal-5",
+      "source": "tests/integration/gm32-sheetmetal.test.js",
+      "title": "gm32: G32-06 native flat pattern is never faked as a static solid and FPC is not sheet metal",
+      "sourceSha256": "19c524fefec0e5ccbe6a4aebcaea0743be99a38bf3c5684be507cf5f011a9398"
+    },
+    {
+      "id": "gm34-marking-0",
+      "source": "tests/integration/gm34-marking.test.js",
+      "title": "gm34: G34-01 marking.create returns an annotation descriptor with verbatim content",
+      "sourceSha256": "d4a3c9dbea8ae30944e2ed414a7560020c3c82e04bb312339a62536fef67d0aa"
+    },
+    {
+      "id": "gm34-marking-1",
+      "source": "tests/integration/gm34-marking.test.js",
+      "title": "gm34: G34-02 emboss/engrave marks are gated geometry recipes, never images",
+      "sourceSha256": "d4a3c9dbea8ae30944e2ed414a7560020c3c82e04bb312339a62536fef67d0aa"
+    },
+    {
+      "id": "gm34-marking-2",
+      "source": "tests/integration/gm34-marking.test.js",
+      "title": "gm34: G34-03 marking.check verifies MIN/MAX derivation against a computed level",
+      "sourceSha256": "d4a3c9dbea8ae30944e2ed414a7560020c3c82e04bb312339a62536fef67d0aa"
+    },
+    {
+      "id": "gm34-marking-3",
+      "source": "tests/integration/gm34-marking.test.js",
+      "title": "gm34: G34-04 marking.check enforces flow-derived arrows and protected zones",
+      "sourceSha256": "d4a3c9dbea8ae30944e2ed414a7560020c3c82e04bb312339a62536fef67d0aa"
+    },
+    {
+      "id": "gm34-marking-4",
+      "source": "tests/integration/gm34-marking.test.js",
+      "title": "gm34: G34-05 marking.create preserves user content and source item/BOM association",
+      "sourceSha256": "d4a3c9dbea8ae30944e2ed414a7560020c3c82e04bb312339a62536fef67d0aa"
+    },
+    {
+      "id": "gm36-explode-animation-0",
+      "source": "tests/integration/gm36-explode-animation.test.js",
+      "title": "G36-01: explode.plan yields a deterministic cock/release/return schedule over instances",
+      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+    },
+    {
+      "id": "gm36-explode-animation-1",
+      "source": "tests/integration/gm36-explode-animation.test.js",
+      "title": "G36-02: explode.render moves and restores occurrence transforms with trails/balloons",
+      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+    },
+    {
+      "id": "gm36-explode-animation-2",
+      "source": "tests/integration/gm36-explode-animation.test.js",
+      "title": "G36-03: animation.sequence plans camera/visibility/section tracks into a manifest",
+      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+    },
+    {
+      "id": "gm36-explode-animation-3",
+      "source": "tests/integration/gm36-explode-animation.test.js",
+      "title": "G36-04: animation.sequence samples a joint track without authoring native actions",
+      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+    },
+    {
+      "id": "gm36-explode-animation-4",
+      "source": "tests/integration/gm36-explode-animation.test.js",
+      "title": "G36-05: animation.capabilities reports no native action/video authoring",
+      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+    },
+    {
+      "id": "gm36-explode-animation-5",
+      "source": "tests/integration/gm36-explode-animation.test.js",
+      "title": "G36-06: animation.export without a declared encoder is blocked, not a fake film",
+      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+    },
+    {
+      "id": "gm36-explode-animation-6",
+      "source": "tests/integration/gm36-explode-animation.test.js",
+      "title": "G36-07: explode.plan timing and easing are deterministic (frameCount and phase slices)",
+      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+    },
+    {
+      "id": "gm36-explode-animation-7",
+      "source": "tests/integration/gm36-explode-animation.test.js",
+      "title": "G36-08: explode.render restore:false leaves the final exploded pose",
+      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+    },
+    {
+      "id": "gm37-checking-evidence-0",
+      "source": "tests/integration/gm37-checking-evidence.test.js",
+      "title": "G37-01: check.set evaluates scalar/vector/count/boolean predicates distinctly",
+      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+    },
+    {
+      "id": "gm37-checking-evidence-1",
+      "source": "tests/integration/gm37-checking-evidence.test.js",
+      "title": "G37-02: check.set scalar predicate reuses declared-value comparison with tolerance",
+      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+    },
+    {
+      "id": "gm37-checking-evidence-2",
+      "source": "tests/integration/gm37-checking-evidence.test.js",
+      "title": "G37-03: check.set continues after an ordinary fail and skips dependents of an error",
+      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+    },
+    {
+      "id": "gm37-checking-evidence-3",
+      "source": "tests/integration/gm37-checking-evidence.test.js",
+      "title": "G37-04: missing data and stale evidence are distinct from fail",
+      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+    },
+    {
+      "id": "gm37-checking-evidence-4",
+      "source": "tests/integration/gm37-checking-evidence.test.js",
+      "title": "G37-05: evidence.package reports manifest, completeness and stale items",
+      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+    },
+    {
+      "id": "gm37-checking-evidence-5",
+      "source": "tests/integration/gm37-checking-evidence.test.js",
+      "title": "G37-06: evidence.check marks missing required evidence unresolved, not failed",
+      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+    },
+    {
+      "id": "gm37-checking-evidence-6",
+      "source": "tests/integration/gm37-checking-evidence.test.js",
+      "title": "G37-07: deliver composes checks and evidence into an acceptance manifest",
+      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+    },
+    {
+      "id": "gm37-checking-evidence-7",
+      "source": "tests/integration/gm37-checking-evidence.test.js",
+      "title": "G37-08: an empty required checklist is an error, never acceptance",
+      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+    },
+    {
+      "id": "gm37-checking-evidence-8",
+      "source": "tests/integration/gm37-checking-evidence.test.js",
+      "title": "G37-09: a stale supplier approval blocks delivery (G7/G8 evidence required)",
+      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+    },
+    {
+      "id": "gm37-checking-evidence-9",
+      "source": "tests/integration/gm37-checking-evidence.test.js",
+      "title": "G37-10: deliver does not accept a document marked valid but unverified",
+      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+    },
+    {
+      "id": "recipes-0",
+      "source": "tests/integration/recipes.test.js",
+      "title": "X-01: engine shell/can + mount pattern (engine-can.json)",
+      "sourceSha256": "31f86daf8c7affe725326f200b276ade0c5204acc401d5728802b72221559a51"
+    },
+    {
+      "id": "recipes-1",
+      "source": "tests/integration/recipes.test.js",
+      "title": "X-02: engine vane/impeller/insulator (engine-impeller.json)",
+      "sourceSha256": "31f86daf8c7affe725326f200b276ade0c5204acc401d5728802b72221559a51"
+    },
+    {
+      "id": "recipes-2",
+      "source": "tests/integration/recipes.test.js",
+      "title": "X-03: filter pleats, cage and slots (filter-pleats.json)",
+      "sourceSha256": "31f86daf8c7affe725326f200b276ade0c5204acc401d5728802b72221559a51"
+    },
+    {
+      "id": "recipes-3",
+      "source": "tests/integration/recipes.test.js",
+      "title": "X-04: engine materials/texture/sections/captures (engine-materials.json)",
+      "sourceSha256": "31f86daf8c7affe725326f200b276ade0c5204acc401d5728802b72221559a51"
+    },
+    {
+      "id": "recipes-4",
+      "source": "tests/integration/recipes.test.js",
+      "title": "X-05: CWG skeleton + catalog + envelopes (cwg-skeleton.json)",
+      "sourceSha256": "31f86daf8c7affe725326f200b276ade0c5204acc401d5728802b72221559a51"
+    },
+    {
+      "id": "recipes-5",
+      "source": "tests/integration/recipes.test.js",
+      "title": "X-06: CWG ring PCB + optics (cwg-ring-pcb.json)",
+      "sourceSha256": "31f86daf8c7affe725326f200b276ade0c5204acc401d5728802b72221559a51"
+    },
+    {
+      "id": "recipes-6",
+      "source": "tests/integration/recipes.test.js",
+      "title": "X-07: CWG PAN/TILT, counter and media (cwg-pan-tilt.json)",
+      "sourceSha256": "31f86daf8c7affe725326f200b276ade0c5204acc401d5728802b72221559a51"
+    },
+    {
+      "id": "recipes-7",
+      "source": "tests/integration/recipes.test.js",
+      "title": "X-08: CWG spring-piston + cam (cwg-spring-piston-cam.json)",
+      "sourceSha256": "31f86daf8c7affe725326f200b276ade0c5204acc401d5728802b72221559a51"
+    },
+    {
+      "id": "recipes-8",
+      "source": "tests/integration/recipes.test.js",
+      "title": "X-09: CWG tank/dock/valves (cwg-tank-dock.json)",
+      "sourceSha256": "31f86daf8c7affe725326f200b276ade0c5204acc401d5728802b72221559a51"
+    },
+    {
+      "id": "recipes-9",
+      "source": "tests/integration/recipes.test.js",
+      "title": "X-10: CWG enclosure + release (cwg-enclosure.json)",
+      "sourceSha256": "31f86daf8c7affe725326f200b276ade0c5204acc401d5728802b72221559a51"
+    }
+  ]
+}

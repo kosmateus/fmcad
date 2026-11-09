@@ -837,9 +837,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -848,9 +849,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -859,9 +861,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -870,9 +873,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -881,9 +885,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -892,9 +897,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -903,9 +909,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -914,9 +921,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -925,9 +933,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -936,9 +945,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -947,9 +957,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -958,9 +969,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -969,9 +981,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -980,9 +993,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -991,9 +1005,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -1002,9 +1017,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -1013,9 +1029,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-shape-native-solids.js",
@@ -1024,9 +1041,10 @@
       "scenario": "native-solids-*",
       "capabilities": ["native-profile-sector-torus"],
       "evidence": "tests/scenarios/native-solids-cases.ts",
-      "reason": "The exact native rib/web, curved-sector or torus body/readback expectation is retained in the shared saved-fixture sequence. The bounded rectangular model cannot establish native curved profiles, topology or BRep solid measurements; no canned kernel results are supplied.",
-      "qualification": "blocked-historical-bound-expectation",
-      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md"
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
     },
     {
       "source": "tests/live-legacy.js",
@@ -2069,6 +2087,435 @@
       "evidenceAssertion": "near(internal[\"workingAngle\"], (20 * Math.PI) / 180);",
       "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
       "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "b49f4ef1317d264dc389-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.equal(record(empty[\"counts\"])[\"bodyDefinitions\"], 0);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "d7e76f405d4d846bc4b6-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.equal(record(observed[\"counts\"])[\"bodyDefinitions\"], 1);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "d0b22e4ab1b25456b577-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.deepEqual(observed[\"issues\"], []);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "93c9f47d49e563cec69f-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.deepEqual(normalized(await audit()), beforeAudit);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "3285eba459b31c1e8c62-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.deepEqual(normalized(await audit()), beforeAudit);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "3285eba459b31c1e8c62-2",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.deepEqual(normalized(await audit()), beforeAudit);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "d0529802a1ab096f25a0-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.equal(record(numericObserved[\"counts\"])[\"bodyDefinitions\"], 2);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "d0b22e4ab1b25456b577-2",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.deepEqual(numericObserved[\"issues\"], []);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "3285eba459b31c1e8c62-3",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.deepEqual(normalized(await audit()), beforeInvalidAudit);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "3b138996d7add23a166b-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "matching(session, initial, request);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "063836ac140724adc827-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "matching(session, replayed, request);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "9fa5f50d9f45dc4cb83e-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "matching(session, failed, negative);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "9fa5f50d9f45dc4cb83e-2",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "matching(session, numeric, numericRequest);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "642d19e11f9f792d3194-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(pitch.length, 2001);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "881d22330b23640e4477-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "near(array(pitch[0])[0], 15, 1e-8);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "7ad44511ed3d66138a67-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "near(record(profile[\"normalOffset\"])[\"value\"], 5, 1e-8);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "ab10ca041bdad9d0a914-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "record(item)[\"interval\"] === \"release\"",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "124abdc5a5792342b407-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "record(item)[\"status\"] === \"pass\"",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "1157837228e627191044-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "number(record(evaluated[\"maxPressureAngle\"])[\"value\"]) <= 89",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "5348f0ccdb8659e7b53b-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "number(record(evaluated[\"minPitchCurvatureRadius\"])[\"value\"]) >= 0.1",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "351e863e0dc8ed8848b9-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "\"rise,dwell,release\"",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "e6ccd6e0361ba3dd0d9d-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(cycle[\"cycleStatus\"], \"pass\");",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "ba020a329ae34aa2372c-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(array(cycle[\"unresolvedIntervals\"]).length, 0);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "d8fba67a0c50e2d72562-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "\"blocked (no proper definition or evidence)\"",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "4071bedece6157d7ed67-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "\"base,connector,shaft,housing\"",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "68145f457d72d3133338-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "\"housing,shaft,connector,base\"",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "989a3fd2a0d2478ac2c0-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(array(removal[\"removeBlockers\"]).join(\",\"), \"shaft\");",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "3a147c33601a082d036a-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(assembly[\"mediaRigidized\"], false);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "d5853d4d8cfee32bc072-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(array(removal[\"servicePrerequisites\"]).length, 1);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "d72a3ade02021da39c32-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(record(assembly[\"phaseAssignments\"])[\"base\"], \"foundation\");",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "59df636539e74c0249fc-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(withdrawal[\"feasible\"], true);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "496b8b22ba0a97023a9b-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(array(withdrawal[\"blockers\"]).length, 0);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "8d1c6808b2185ed05b0c-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "near(withdrawal[\"minClearance\"], 0.5, 1e-9);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "651733828f0e203653cb-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "near(array(record(withdrawal[\"sweptBounds\"])[\"max\"])[1], 5, 1e-9);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "950907e22c8e3feb82a1-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(envelope[\"representation\"], \"conservative\");",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "58b21446c8a5ab254364-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(envelope[\"sampleCount\"], 3);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "3657d7736ba4ce034fe3-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "near(maximum[0], 3, 1e-9);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "897f18e5e012053a3297-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(maximum[1] + \"|\" + maximum[2], \"2|3\");",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "a1bf9b379ca3609b6385-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(envelope[\"continuousVerified\"], false);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
     }
   ]
 }

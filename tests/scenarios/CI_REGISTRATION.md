@@ -87,3 +87,11 @@ pair calculations on saved owned fixtures. Register it for MCP/addin, concurrenc
 1/2/10 and ten owners as the twentieth bounded family. It does not implement native
 gear teeth, gear contact or the missing composite-shape suite. Unit and registration
 checks pass; production checker, broker and native qualification remain required.
+
+The continuation adds `engineering-declarations` as the twenty-first bounded
+family: cam/dependency/service/conservative-envelope calculations plus independent
+unchanged saved-fixture geometry. Include both protocols and concurrency 1/2/10
+with ten owners. Retained native contact, force and continuous collision assertions
+are separate obligations. The complete required-model manifest must drive the
+broker matrix; transactions, camera, poses, animation, materials, appearances and
+style-assignments cannot be omitted merely because their unit tests execute.

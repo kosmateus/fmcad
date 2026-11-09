@@ -94,7 +94,15 @@ test("native scenario extraction does not claim supported model coverage", () =>
   const manifest = load("./tests/live-required-profiles.json") as {
     profiles: Record<
       string,
-      { cases: { id: string; command: string; qualification?: string }[] }
+      {
+        cases: {
+          id: string;
+          command: string;
+          sharedScenario?: string;
+          qualification?: string;
+          expectationCorrection?: string;
+        }[];
+      }
     >;
   };
   const modeled = new Set(
@@ -137,6 +145,16 @@ test("native scenario extraction does not claim supported model coverage", () =>
   assert.equal(solids.model, "pending");
   assert.deepEqual(solids.sharedScenarios, []);
   assert.deepEqual(solids.nativeScenarios, ["native-solids"]);
+  const nativeSolids = manifest.profiles["native-qualification"]!.cases.find(
+    (row) => row.id === solids.id,
+  );
+  assert.ok(nativeSolids);
+  assert.equal(nativeSolids.sharedScenario, "native-solids-*");
+  assert.equal(nativeSolids.qualification, "not-run");
+  assert.match(
+    String(nativeSolids.expectationCorrection),
+    /20mm.*90degree.*0\.001mm/u,
+  );
 });
 
 test("historical byte identity claims retain their archived hashes", () => {

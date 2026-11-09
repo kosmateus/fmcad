@@ -109,7 +109,7 @@
       "id": "definitions",
       "source": "tests/live-definitions.js",
       "runner": "all",
-      "model": "pending",
+      "model": "partial",
       "scope": "Literal definitions, idempotent run IDs and failed-check stop",
       "prerequisites": "Installed matching broker and an isolated owned fixture",
       "baseline": {
@@ -117,7 +117,7 @@
         "path": "tests/live-definitions.js",
         "sha256": "68333e6b02ec2cd6fa83fd55b2b5f8923a8beb9928997a2e7c88c5cc6bc6dc01"
       },
-      "sharedScenarios": []
+      "sharedScenarios": ["transactions"]
     },
     {
       "id": "design-styles",
@@ -141,7 +141,7 @@
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": ["gear-pair"]
+      "sharedScenarios": ["gear-pair", "engineering-declarations"]
     },
     {
       "id": "entity-attributes",

@@ -37,7 +37,12 @@ for (const protocol of ["mcp", "addin"] as const) {
     assert.equal(report?.cleanup, "deferred");
     const phases = report!.requests.map((request) => request.phase);
     assert.deepEqual(
-      phases.filter((phase) => phase.startsWith("cad-")).slice(-6),
+      phases
+        .filter(
+          (phase) =>
+            phase.startsWith("cad-") && !phase.startsWith("cad-audit-"),
+        )
+        .slice(-6),
       [
         "cad-numeric",
         "cad-invalid-0",

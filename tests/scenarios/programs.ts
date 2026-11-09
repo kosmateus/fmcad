@@ -26,6 +26,7 @@ matches = [d for d in app.documents if d.creationId == ${quoted(document.creatio
 assert len(matches) == 1, 'Owned creationId is unavailable'
 doc = matches[0]
 assert doc.name == ${quoted(document.name)}, 'Owned document identity changed'
+assert sum(d.name == ${quoted(document.name)} for d in app.documents) == 1, 'Ambiguous owned name'
 assert doc.activate()
 assert app.activeDocument is not None and app.activeDocument.creationId == doc.creationId`;
 }
@@ -36,7 +37,7 @@ file = cast('adsk.core.DataFile | None', doc.dataFile)
 assert file is not None
 assert file.id == ${quoted(document.file.fileId)} and file.versionNumber == ${document.file.version}
 assert file.parentProject.id == ${quoted(document.file.projectId)} and file.parentFolder.id == ${quoted(document.file.folderId)}`
-    : "assert not doc.isSaved, 'Owned document unexpectedly became saved'";
+    : "assert not doc.isSaved, 'Owned document unexpectedly became saved'\nassert doc.dataFile is None, 'Unsaved owned document unexpectedly has a cloud file'";
 }
 export function guard(document: Document): string {
   return `${select(document)}
@@ -53,6 +54,7 @@ export function create(
 from typing import cast
 app = adsk.core.Application.get()
 assert not any(d.name == ${quoted(name)} for d in app.documents)
+assert app.userInterface.activeCommand in (None, '', 'SelectCommand'), 'Fusion interactive command must be idle before creating a fixture'
 doc = app.documents.add(cast(adsk.core.DocumentTypes, adsk.core.DocumentTypes.FusionDesignDocumentType))
 doc.name = ${quoted(name)}
 identity: dict[str, object] = dict(creationId=doc.creationId, name=doc.name, activeCreationId=app.activeDocument.creationId if app.activeDocument else None, requestId=${quoted(binding.requestId)}, clientId=${quoted(binding.clientId)})
@@ -91,6 +93,7 @@ assert len(matches) <= 1
 if matches:
     doc = matches[0]
     assert doc.name == ${quoted(document.name)}
+    assert app.userInterface.activeCommand in (None, '', 'SelectCommand'), 'Fusion interactive command must be idle before closing a fixture'
 ${savedGuard(document)
   .split("\n")
   .map((line) => "    " + line)
@@ -102,7 +105,22 @@ ${emit(`dict(creationId=${quoted(document.creationId)}, closed=True)`)}`);
 export function snapshot(): string {
   return program(`import adsk.core, json
 app = adsk.core.Application.get()
-${emit("dict(active=app.activeDocument.creationId if app.activeDocument else None, documents=[dict(creationId=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in app.documents])")}`);
+${emit("dict(active=app.activeDocument.creationId if app.activeDocument else None, documents=[dict(creationId=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified,fileId=d.dataFile.id if d.dataFile else None) for d in app.documents])")}`);
+}
+/** Original unsaved fixture guard; deliberately observes before any activation. */
+export function unsavedState(document: Document): string {
+  if (document.file)
+    throw new Error("Unsaved observation received a saved fixture");
+  return program(`import adsk.core, json
+app = adsk.core.Application.get()
+matches = [d for d in app.documents if d.creationId == ${quoted(document.creationId)}]
+assert len(matches) == 1, 'Owned creationId is unavailable'
+doc = matches[0]
+assert doc.name == ${quoted(document.name)}, 'Owned document identity changed'
+assert sum(d.name == ${quoted(document.name)} for d in app.documents) == 1, 'Ambiguous owned name'
+assert not doc.isSaved and doc.dataFile is None, 'Owned fixture unexpectedly became saved'
+assert app.activeDocument is not None and app.activeDocument.creationId == doc.creationId, 'Fixture is not active'
+${emit("dict(creationId=doc.creationId, active=app.activeDocument.creationId, documents=[dict(creationId=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified,fileId=d.dataFile.id if d.dataFile else None) for d in app.documents])")}`);
 }
 export function restoreActive(creationId: string): string {
   return program(`import adsk.core, json
@@ -110,5 +128,6 @@ app = adsk.core.Application.get()
 matches = [d for d in app.documents if d.creationId == ${quoted(creationId)}]
 assert len(matches) == 1, 'Original active document is unavailable'
 assert matches[0].activate()
-${emit(`dict(active=${quoted(creationId)})`)}`);
+assert app.activeDocument is not None and app.activeDocument.creationId == ${quoted(creationId)}, 'Original active document was not restored'
+${emit("dict(active=app.activeDocument.creationId)")}`);
 }
