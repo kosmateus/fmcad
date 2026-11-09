@@ -106,6 +106,7 @@ export function cad(args: string[]) {
   }
   return {
     code: result.status,
+    signal: result.signal,
     json,
     stdout: result.stdout,
     stderr: result.stderr,

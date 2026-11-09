@@ -3,15 +3,143 @@ import { test } from "node:test";
 import { createRequire } from "node:module";
 import * as fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import {
   assertActiveDocumentRestored,
   assertProtectedBaselineDocuments,
   asRecord,
+  asArray,
   assertWorkerMatchesCli,
   type LiveDocumentSnapshot,
   type JsonRecord,
   parsePublicQueueJob,
+  parseWorkerResultReadback,
+  prepareNativeInvocation,
+  readNativeInvocation,
+  observeNativeInvocation,
+  recoverNativeInvocation,
+  type NativeInvocationBinding,
 } from "./live-import-receipts.js";
+
+test("fixed native invocation intent survives lost replies and recovery only reads the original owner request", async (t) => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "fmcad-fixed-intent-"),
+  );
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const binding: NativeInvocationBinding = {
+    requestId: "exact-request",
+    clientId: "exact-client",
+    document: { name: "Exact unsaved", creationId: "exact-creation" },
+    runtimeRoot: directory,
+    buildHash: "build",
+    fixtureId: "fixed-import",
+    manifestSha256: "a".repeat(64),
+    scriptSha256: "b".repeat(64),
+    command: [
+      "installed-cli",
+      "run",
+      "fixed.py",
+      "--request-id",
+      "exact-request",
+      "--doc",
+      "Exact unsaved",
+      "--doc-id",
+      "exact-creation",
+    ],
+  };
+  const filename = prepareNativeInvocation(directory, binding);
+  assert.equal(readNativeInvocation(filename).state, "prepared");
+  assert.deepEqual(readNativeInvocation(filename).binding, binding);
+  assert.throws(() => prepareNativeInvocation(directory, binding), /EEXIST/);
+  assert.throws(
+    () =>
+      prepareNativeInvocation(directory, {
+        ...binding,
+        requestId: "foreign-request",
+      }),
+    /Foreign fixed invocation/,
+  );
+  const terminal = {
+    id: "job",
+    requestId: binding.requestId,
+    clientId: binding.clientId,
+    state: "succeeded",
+    executionOutcome: "succeeded",
+    operationResult: { executionOutcome: "succeeded" },
+  };
+  let lookups = 0;
+  const lookup = async (original: NativeInvocationBinding) => {
+    lookups++;
+    assert.deepEqual(original, binding);
+    return terminal;
+  };
+  await assert.rejects(
+    recoverNativeInvocation(filename, lookup, () => true),
+    /may still submit/,
+  );
+  await assert.rejects(
+    recoverNativeInvocation(filename, lookup, () => null),
+    /may still submit/,
+  );
+  assert.equal(lookups, 0, "Live or unverifiable drivers cannot race recovery");
+  await assert.rejects(
+    recoverNativeInvocation(
+      filename,
+      async () => ({ ...terminal, state: "unknown" }),
+      () => false,
+    ),
+    /unsettled/,
+  );
+  await assert.rejects(
+    recoverNativeInvocation(
+      filename,
+      async () => ({ ...terminal, clientId: "foreign" }),
+      () => false,
+    ),
+  );
+  assert.equal(
+    readNativeInvocation(filename).state,
+    "prepared",
+    "Unknown/foreign receipts must not settle intent",
+  );
+  assert.throws(() =>
+    observeNativeInvocation(
+      filename,
+      { jobId: "job", requestId: "foreign" },
+      terminal,
+    ),
+  );
+  assert.throws(() =>
+    observeNativeInvocation(
+      filename,
+      { jobId: "foreign", requestId: binding.requestId },
+      terminal,
+    ),
+  );
+  observeNativeInvocation(
+    filename,
+    { jobId: "job", requestId: binding.requestId },
+    terminal,
+  );
+  assert.equal(
+    readNativeInvocation(filename).state,
+    "terminal-observed",
+    "CLI observation alone is not independent worker recovery",
+  );
+  await assert.rejects(
+    recoverNativeInvocation(
+      filename,
+      async () => ({ ...terminal, id: "foreign-job" }),
+      () => false,
+    ),
+  );
+  assert.deepEqual(
+    await recoverNativeInvocation(filename, lookup, () => false),
+    terminal,
+  );
+  assert.equal(lookups, 1);
+  assert.equal(readNativeInvocation(filename).state, "settled");
+});
 
 type QueueDomainOptions = {
   now: () => number;
@@ -32,15 +160,6 @@ type QueueDomainPort = {
 };
 type QueueDomainModule = {
   QueueDomain: new (options: QueueDomainOptions) => QueueDomainPort;
-};
-type PublicQueueJob = {
-  id: string;
-  requestId: string;
-  clientId: string;
-  state: string;
-  code?: string;
-  executionOutcome?: string;
-  operationResult: JsonRecord;
 };
 
 const projectRoot = path.resolve(__dirname, "..", "..");
@@ -108,6 +227,119 @@ test("public worker and CLI job DTOs use operationResult and top-level execution
         "missing operation result",
       ),
     /operationResult/,
+  );
+});
+
+test("retained import receipt parsers reject malformed identifiers, operation outcomes and output descriptors", () => {
+  const job = {
+    id: "owned-job",
+    requestId: "owned-request",
+    clientId: "owned-client",
+    state: "failed",
+    code: "EXPECTED_PREFLIGHT_FAILURE",
+    executionOutcome: "failed",
+    operationResult: {
+      code: "EXPECTED_PREFLIGHT_FAILURE",
+      executionOutcome: "failed",
+    },
+  };
+  const complete = {
+    job,
+    outputs: {
+      stdout: {
+        name: "stdout",
+        artifact: { path: "owned-output", sha256: "a".repeat(64) },
+      },
+      stderr: {},
+    },
+    stdout: "real output bytes represented by this DTO fixture",
+    stderr: "expected diagnostic",
+  };
+  assert.deepEqual(parseWorkerResultReadback(complete, "complete"), complete);
+  assert.deepEqual(
+    parsePublicQueueJob(
+      {
+        ...job,
+        code: undefined,
+        executionOutcome: undefined,
+        operationResult: {},
+      },
+      "optional fields",
+    ),
+    {
+      id: job.id,
+      requestId: job.requestId,
+      clientId: job.clientId,
+      state: job.state,
+      operationResult: {},
+    },
+  );
+  for (const value of [null, [], "text", 1])
+    assert.throws(() => asRecord(value, "object shape"), /must be an object/u);
+  const array = [{ owned: true }];
+  assert.equal(asArray(array, "array shape"), array);
+  for (const value of [null, {}, "text", 1])
+    assert.throws(() => asArray(value, "array shape"), /must be an array/u);
+  for (const key of [
+    "id",
+    "requestId",
+    "clientId",
+    "state",
+    "code",
+    "executionOutcome",
+  ])
+    assert.throws(
+      () => parsePublicQueueJob({ ...job, [key]: 1 }, "job field"),
+      /must be a string/u,
+    );
+  for (const operationResult of [
+    null,
+    [],
+    "text",
+    { code: 1 },
+    { executionOutcome: false },
+  ])
+    assert.throws(() =>
+      parsePublicQueueJob({ ...job, operationResult }, "result shape"),
+    );
+  const malformed = [
+    { ...complete, job: null },
+    { ...complete, outputs: [] },
+    { ...complete, outputs: { stdout: "unbound descriptor" } },
+    { ...complete, outputs: { stdout: { artifact: null } } },
+    { ...complete, outputs: { stdout: { name: 1 } } },
+    { ...complete, stdout: {} },
+    { ...complete, stderr: [] },
+  ];
+  for (const value of malformed)
+    assert.throws(() =>
+      parseWorkerResultReadback(value, "malformed worker result"),
+    );
+  assert.deepEqual(parseWorkerResultReadback({ job }, "no optional output"), {
+    job,
+  });
+  assertWorkerMatchesCli(job, structuredClone(job), "same terminal projection");
+  for (const key of [
+    "id",
+    "requestId",
+    "clientId",
+    "state",
+    "code",
+    "executionOutcome",
+  ])
+    assert.throws(() =>
+      assertWorkerMatchesCli(
+        job,
+        { ...job, [key]: "foreign" },
+        "foreign terminal projection",
+      ),
+    );
+  assert.throws(() =>
+    assertWorkerMatchesCli(
+      job,
+      { ...job, operationResult: { ...job.operationResult, extra: true } },
+      "changed operation result",
+    ),
   );
 });
 

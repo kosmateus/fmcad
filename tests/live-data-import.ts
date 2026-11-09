@@ -1,3 +1,24 @@
+import { ownedLease, writeHandoff } from "./scenarios/legacy-handoff";
+import { assertLocalImportOutcome } from "./live-import-contracts.js";
+import { operationNames } from "./live-import-contracts.js";
+import {
+  requiredItem,
+  parseCadCliOutput,
+  validateOperationResult,
+  parseDocumentSnapshot,
+  parseRuntimeConfig,
+  type RuntimeConfig,
+  type CatalogInstance,
+  type FailureResult,
+  type GenericResult,
+  type OperationResultMap,
+  type DataOperationResult,
+  type CadCliOutput,
+  type WorkerOutput,
+  type CatalogIdMapEntry,
+  type Operation,
+  type CadOptions,
+} from "./live-import-contracts.js";
 // Opt-in live coverage for the existing versioned data-import operations.
 // All writes are confined to one exact, unsaved document created by this run.
 import assert from "node:assert/strict";
@@ -11,7 +32,6 @@ import type {
   SpawnSyncReturns,
 } from "node:child_process";
 import {
-  assertActiveDocumentRestored,
   assertProtectedBaselineDocuments,
   asArray,
   asRecord,
@@ -21,18 +41,10 @@ import {
   type LiveDocumentState,
   type JsonRecord,
   type PublicQueueJob,
-  type QueueOutputDescriptor,
   type WorkerResultReadback,
 } from "./live-import-receipts.js";
 
-interface DocumentIdentity extends LiveDocumentState {}
-interface ToolResponse {
-  failed: boolean;
-  text: string;
-}
-interface BackendPort {
-  callTool(request: JsonRecord): Promise<ToolResponse>;
-}
+type DocumentIdentity = LiveDocumentState;
 interface QueueClientPort {
   call(name: string, input: JsonRecord): Promise<unknown>;
   dispose(): void;
@@ -44,17 +56,7 @@ interface LiveBrokerModule {
     args: string[],
     options: SpawnSyncOptionsWithStringEncoding,
   ): SpawnSyncReturns<string>;
-  createBackend(
-    config: JsonRecord,
-    dependencies: { command: boolean },
-  ): BackendPort;
-  disposeBackend(client: BackendPort): void;
   fixture(name: string, creationId?: string): void;
-}
-interface RuntimeConfig extends JsonRecord {
-  backend: string;
-  transport: string;
-  timeoutMs: number;
 }
 interface QueueClientModule {
   QueueClient: new (
@@ -73,117 +75,6 @@ interface QueueResponseFilesModule {
     artifact: JsonRecord,
     limit: number,
   ): Buffer;
-}
-interface ParameterReadback extends JsonRecord {
-  name: string;
-  expression: string;
-  unit?: string;
-  value: number;
-}
-interface CatalogInstance extends JsonRecord {
-  id: string;
-  occurrence: EntityReference;
-  item?: string;
-  parent?: string | null;
-  componentName?: string;
-}
-interface EntityReference extends JsonRecord {
-  path?: string;
-}
-interface PlacementPose extends JsonRecord {
-  status: string;
-  actual: number[];
-}
-interface FailureResult extends JsonRecord {
-  error: string;
-  mutationMayHaveOccurred?: boolean;
-}
-interface ParameterResult extends JsonRecord {
-  parameters: ParameterReadback[];
-}
-interface CatalogImportResult extends JsonRecord {
-  instances: CatalogInstance[];
-  idMap: Record<string, CatalogIdMapEntry>;
-}
-interface CatalogCheckResult extends JsonRecord {
-  differences: unknown[];
-  instances: CatalogInstance[];
-}
-interface PlacementResult extends JsonRecord {
-  poses: PlacementPose[];
-}
-interface CotsReplacementResult extends JsonRecord {
-  replacements: Array<
-    { before: EntityReference; after: EntityReference } & JsonRecord
-  >;
-  datumChecks: Array<{ status: string } & JsonRecord>;
-  unresolved: Array<{ id: string; field: string; status: string } & JsonRecord>;
-}
-interface EntityInspectResult extends JsonRecord {
-  kind: string;
-  occurrencePath: string;
-}
-interface ComponentResult extends JsonRecord {
-  component: { name: string } & JsonRecord;
-  bodies: EntityReference[];
-}
-interface ComponentCreateResult extends JsonRecord {
-  component: { name: string } & JsonRecord;
-}
-interface ShapeResult extends JsonRecord {
-  bodies: EntityReference[];
-}
-interface VolumeResult extends JsonRecord {
-  value: number;
-}
-interface ExportResult extends JsonRecord {
-  exists: boolean;
-  bytes: number;
-}
-interface EntityListResult extends JsonRecord {
-  entities: Array<{ path: string } & JsonRecord>;
-}
-interface GenericResult extends JsonRecord {}
-interface OperationResultMap {
-  "param.import": ParameterResult;
-  "param.inspect": ParameterResult;
-  "catalog.import": CatalogImportResult;
-  "catalog.check": CatalogCheckResult;
-  "placement.import": PlacementResult;
-  "placement.check": PlacementResult;
-  "cots.replace": CotsReplacementResult;
-  "entity.inspect": EntityInspectResult;
-  "component.inspect": ComponentResult;
-  "component.create": ComponentCreateResult;
-  "shape.box": ShapeResult;
-  "measure.volume": VolumeResult;
-  "export.step": ExportResult;
-  "entity.list": EntityListResult;
-  "document.status": GenericResult;
-}
-type DataOperationResult =
-  OperationResultMap[Operation] | FailureResult | GenericResult;
-interface CadCliOutput<
-  T extends JsonRecord = DataOperationResult & JsonRecord,
-> extends JsonRecord {
-  success: boolean;
-  status?: string;
-  result: T;
-  document?: string;
-  documentIdentity?: { creationId?: string } | null;
-  method?: string;
-  modelValidated?: boolean;
-  mutation?: boolean;
-  error?: string;
-  workerEvidence?: { receipt: PublicQueueJob; workerOutput: WorkerOutput };
-}
-interface WorkerOutput {
-  stdout: string | null;
-  stderr: string | null;
-  descriptors: Record<string, QueueOutputDescriptor> | null;
-}
-interface CatalogIdMapEntry extends JsonRecord {
-  definition: string;
 }
 interface CallReport extends JsonRecord {
   label: string;
@@ -251,32 +142,9 @@ interface LiveReport extends JsonRecord {
   cleanupError?: string;
   finishedAt?: string;
 }
-const operationNames = [
-  "param.import",
-  "param.inspect",
-  "catalog.import",
-  "catalog.check",
-  "placement.import",
-  "placement.check",
-  "cots.replace",
-  "entity.inspect",
-  "component.inspect",
-  "component.create",
-  "shape.box",
-  "measure.volume",
-  "export.step",
-  "entity.list",
-  "document.status",
-] as const;
-type Operation = (typeof operationNames)[number];
 interface OperationMetadata {
   readOnly: boolean;
   dataImport?: boolean;
-}
-interface CadOptions {
-  component?: string;
-  native?: boolean;
-  expect?: "pass" | "blocked" | "unknown" | "local-pass" | "local-unknown";
 }
 interface CliOptions {
   queue?: boolean;
@@ -334,12 +202,17 @@ if (!process.argv.includes("--run"))
   throw new Error(
     "Explicit --run is required; this suite creates and mutates one owned scratch document.",
   );
+const lease = ownedLease();
+assert.ok(
+  lease && lease.mode === "owned-unsaved-script",
+  "Run this suite through the owned native-import ScenarioSession; raw creation is not admitted",
+);
 const clientId = requiredEnvironment("FMCAD_LIVE_CLIENT");
 const selectedRuntime = selectInstalledRuntime();
 const suffix = randomUUID().replaceAll("-", "_");
-const name = "FMCAD_DATA_IMPORT_" + suffix;
-const owner = "fmcad-live-data-import-" + suffix;
-const artifactParent = path.join(root, ".test-artifacts");
+const name = lease.document.name;
+const owner = lease.owner.clientId;
+const artifactParent = path.join(lease.directory, "legacy", "artifacts");
 fs.mkdirSync(artifactParent, { recursive: true });
 const artifactRoot = fs.mkdtempSync(
   path.join(artifactParent, "live-data-import-"),
@@ -392,7 +265,6 @@ const report: LiveReport = {
     },
   ],
 };
-let client: BackendPort | undefined;
 let receiptClient: QueueClientPort | undefined;
 let identity: DocumentIdentity | null = null;
 let baseline: LiveDocumentSnapshot | null = null;
@@ -416,16 +288,6 @@ function originalDocuments(): LiveDocumentSnapshot {
 
 function isOperation(value: string): value is Operation {
   return Object.hasOwn(operationMeta, value);
-}
-
-function requiredItem<T>(
-  values: readonly T[],
-  index: number,
-  label: string,
-): T {
-  const value = values[index];
-  assert.ok(value, `${label}[${index}] is missing`);
-  return value;
 }
 
 function workerEvidenceFor(output: CadCliOutput): {
@@ -456,12 +318,12 @@ function parseJsonOutput(
   const text = (result.stdout || "").trim();
   try {
     return parseCadCliOutput(JSON.parse(text) as unknown, label);
-  } catch (_) {
+  } catch {
     for (const line of text.split(/\r?\n/).reverse()) {
       if (!line.startsWith("{")) continue;
       try {
         return parseCadCliOutput(JSON.parse(line) as unknown, label);
-      } catch (_) {
+      } catch {
         /* try the preceding output line */
       }
     }
@@ -469,233 +331,6 @@ function parseJsonOutput(
   throw new Error(
     `${label} did not return JSON: ${result.stderr || text || result.error?.message}`,
   );
-}
-
-function parseCadCliOutput(value: unknown, label: string): CadCliOutput {
-  const row = asRecord(value, `${label} output`);
-  assert.equal(
-    typeof row["success"],
-    "boolean",
-    `${label}.success must be boolean`,
-  );
-  const result =
-    row["result"] === undefined
-      ? {}
-      : asRecord(row["result"], `${label}.result`);
-  let documentIdentity: { creationId?: string } | null | undefined;
-  if (row["documentIdentity"] === null) documentIdentity = null;
-  else if (row["documentIdentity"] !== undefined) {
-    const identityRow = asRecord(
-      row["documentIdentity"],
-      `${label}.documentIdentity`,
-    );
-    assert.ok(
-      identityRow["creationId"] === undefined ||
-        typeof identityRow["creationId"] === "string",
-    );
-    documentIdentity =
-      typeof identityRow["creationId"] === "string"
-        ? { creationId: identityRow["creationId"] }
-        : {};
-  }
-  return {
-    success: row["success"] as boolean,
-    ...(typeof row["status"] === "string" ? { status: row["status"] } : {}),
-    result: result as DataOperationResult,
-    ...(typeof row["document"] === "string"
-      ? { document: row["document"] }
-      : {}),
-    ...(documentIdentity === null
-      ? { documentIdentity: null }
-      : documentIdentity
-        ? { documentIdentity }
-        : {}),
-    ...(typeof row["method"] === "string" ? { method: row["method"] } : {}),
-    ...(typeof row["modelValidated"] === "boolean"
-      ? { modelValidated: row["modelValidated"] }
-      : {}),
-    ...(typeof row["mutation"] === "boolean"
-      ? { mutation: row["mutation"] }
-      : {}),
-    ...(typeof row["error"] === "string" ? { error: row["error"] } : {}),
-  };
-}
-
-function requireArray(value: unknown, label: string): unknown[] {
-  assert.ok(Array.isArray(value), `${label} must be an array`);
-  return value;
-}
-
-function validateOperationResult(
-  operation: Operation,
-  expectation: CadOptions["expect"],
-  result: JsonRecord,
-): void {
-  if (expectation === "blocked") {
-    assert.equal(
-      typeof result["error"],
-      "string",
-      `${operation} failure must include its native error`,
-    );
-    return;
-  }
-  if (expectation === "local-pass" || expectation === "local-unknown") return;
-
-  if (operation === "param.import" || operation === "param.inspect") {
-    for (const [index, value] of requireArray(
-      result["parameters"],
-      `${operation}.parameters`,
-    ).entries()) {
-      const row = asRecord(value, `${operation}.parameters[${index}]`);
-      assert.equal(typeof row["name"], "string");
-      assert.equal(typeof row["expression"], "string");
-      assert.equal(typeof row["value"], "number");
-    }
-  } else if (operation === "catalog.import" || operation === "catalog.check") {
-    const instances = requireArray(
-      result["instances"],
-      `${operation}.instances`,
-    );
-    for (const [index, value] of instances.entries()) {
-      const row = asRecord(value, `${operation}.instances[${index}]`);
-      assert.equal(typeof row["id"], "string");
-      asRecord(
-        row["occurrence"],
-        `${operation}.instances[${index}].occurrence`,
-      );
-    }
-    if (operation === "catalog.import") {
-      const idMap = asRecord(result["idMap"], "catalog.import.idMap");
-      for (const [id, value] of Object.entries(idMap)) {
-        const entry = asRecord(value, `catalog.import.idMap.${id}`);
-        assert.equal(typeof entry["definition"], "string");
-      }
-    } else requireArray(result["differences"], "catalog.check.differences");
-  } else if (
-    operation === "placement.import" ||
-    operation === "placement.check"
-  ) {
-    for (const [index, value] of requireArray(
-      result["poses"],
-      `${operation}.poses`,
-    ).entries()) {
-      const row = asRecord(value, `${operation}.poses[${index}]`);
-      assert.equal(typeof row["status"], "string");
-      const actual = requireArray(
-        row["actual"],
-        `${operation}.poses[${index}].actual`,
-      );
-      assert.ok(
-        actual.every(
-          (value) => typeof value === "number" && Number.isFinite(value),
-        ),
-        `${operation}.poses[${index}].actual must contain finite numbers`,
-      );
-    }
-  } else if (operation === "cots.replace") {
-    for (const [index, value] of requireArray(
-      result["replacements"],
-      "cots.replace.replacements",
-    ).entries()) {
-      const row = asRecord(value, `cots.replace.replacements[${index}]`);
-      asRecord(row["before"], `cots.replace.replacements[${index}].before`);
-      asRecord(row["after"], `cots.replace.replacements[${index}].after`);
-    }
-    requireArray(result["datumChecks"], "cots.replace.datumChecks");
-    requireArray(result["unresolved"], "cots.replace.unresolved");
-  } else if (operation === "entity.inspect") {
-    assert.equal(typeof result["kind"], "string");
-    assert.equal(typeof result["occurrencePath"], "string");
-  } else if (operation === "component.inspect") {
-    const component = asRecord(
-      result["component"],
-      "component.inspect.component",
-    );
-    assert.equal(typeof component["name"], "string");
-    requireArray(result["bodies"], "component.inspect.bodies");
-  } else if (operation === "component.create") {
-    const component = asRecord(
-      result["component"],
-      "component.create.component",
-    );
-    assert.equal(typeof component["name"], "string");
-  } else if (operation === "shape.box")
-    requireArray(result["bodies"], "shape.box.bodies");
-  else if (operation === "measure.volume") {
-    const value = result["value"];
-    assert.equal(typeof value, "number");
-    assert.ok(Number.isFinite(value));
-  } else if (operation === "export.step") {
-    assert.equal(typeof result["exists"], "boolean");
-    assert.equal(typeof result["bytes"], "number");
-  } else if (operation === "entity.list") {
-    for (const [index, value] of requireArray(
-      result["entities"],
-      "entity.list.entities",
-    ).entries()) {
-      assert.equal(
-        typeof asRecord(value, `entity.list.entities[${index}]`)["path"],
-        "string",
-      );
-    }
-  }
-}
-
-function parseDocumentSnapshot(
-  value: unknown,
-  label: string,
-): LiveDocumentSnapshot {
-  const row = asRecord(value, label);
-  const documents = asArray(row["documents"], `${label}.documents`).map(
-    (entry, index) => {
-      const document = asRecord(entry, `${label}.documents[${index}]`);
-      assert.equal(typeof document["creationId"], "string");
-      assert.equal(typeof document["name"], "string");
-      assert.equal(typeof document["saved"], "boolean");
-      assert.equal(typeof document["modified"], "boolean");
-      assert.ok(
-        document["fileId"] === null || typeof document["fileId"] === "string",
-      );
-      return {
-        creationId: document["creationId"] as string,
-        name: document["name"] as string,
-        saved: document["saved"] as boolean,
-        modified: document["modified"] as boolean,
-        fileId: document["fileId"] as string | null,
-      };
-    },
-  );
-  const identities = new Set<string>();
-  for (const document of documents) {
-    assert.ok(
-      !identities.has(document.creationId),
-      `${label} contains duplicate creationId ${document.creationId}`,
-    );
-    identities.add(document.creationId);
-  }
-  assert.ok(
-    row["activeCreationId"] === null ||
-      typeof row["activeCreationId"] === "string",
-    `${label}.activeCreationId must be a creationId or null`,
-  );
-  if (typeof row["activeCreationId"] === "string")
-    assert.ok(
-      identities.has(row["activeCreationId"]),
-      `${label}.activeCreationId does not identify an open document`,
-    );
-  return {
-    documents,
-    activeCreationId: row["activeCreationId"] as string | null,
-  };
-}
-
-function parseRuntimeConfig(value: unknown): RuntimeConfig {
-  const loaded = asRecord(value, "Runtime configuration result");
-  const cfg = asRecord(loaded["cfg"], "Runtime configuration cfg");
-  assert.equal(typeof cfg["backend"], "string");
-  assert.equal(typeof cfg["transport"], "string");
-  assert.equal(typeof cfg["timeoutMs"], "number");
-  return cfg as RuntimeConfig;
 }
 
 function selectInstalledRuntime(): {
@@ -722,46 +357,59 @@ function selectInstalledRuntime(): {
   return { root: runtimeRoot, buildHash, cliPath };
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function errorStack(error: unknown): string {
   return error instanceof Error ? error.stack || error.message : String(error);
 }
 
-async function script(body: string, readOnly = true): Promise<JsonRecord> {
-  const request = {
-    featureType: "script",
-    object: {
-      readOnly,
-      script:
-        "import adsk.core, json\ndef run(_context: str):\n" +
-        body
-          .split("\n")
-          .map((line) => "    " + line)
-          .join("\n"),
-    },
-  };
-  assert.ok(client, "Backend client is not initialized");
-  let out: ToolResponse;
+async function script(body: string): Promise<JsonRecord> {
+  const filename = path.join(
+    artifactRoot,
+    "observation-" + randomUUID() + ".py",
+  );
+  const source =
+    "DOC_NAME = None\nimport adsk.core, json\ndef run(_context: str):\n" +
+    body
+      .split("\n")
+      .map((line) => "    " + line)
+      .join("\n") +
+    "\n";
+  fs.writeFileSync(filename, source, { flag: "wx", mode: 0o600 });
   try {
-    out = await client.callTool(request);
+    const invocation = await cli(
+      [
+        "run",
+        filename,
+        "--doc",
+        name,
+        "--doc-id",
+        lease!.document.creationId,
+        "--timeout",
+        "60000",
+      ],
+      "owned observation",
+    );
+    assert.equal(
+      invocation.process.status,
+      0,
+      invocation.process.stderr || invocation.process.stdout,
+    );
+    assert.equal(
+      invocation.call.workerReceipt?.state,
+      "succeeded",
+      "Observation requires its exact original successful worker receipt",
+    );
+    const lines = (invocation.call.workerOutput?.stdout ?? "")
+      .split(/\r?\n/u)
+      .filter((line) => line.trim());
+    assert.equal(
+      lines.length,
+      1,
+      "Observation must return exactly one JSON record",
+    );
+    return asRecord(JSON.parse(lines[0]!) as unknown, "Fusion observation");
   } catch (error) {
     unsafe = true;
     throw error;
-  }
-  if (out.failed) {
-    unsafe = true;
-    throw new Error(out.text || "Read-only Fusion observation failed");
-  }
-  try {
-    return asRecord(JSON.parse(out.text) as unknown, "Fusion observation");
-  } catch (error) {
-    unsafe = true;
-    throw new Error(
-      `Fusion observation was not JSON: ${errorMessage(error)}; ${out.text}`,
-    );
   }
 }
 
@@ -1100,59 +748,11 @@ async function cad(
       `${operation} expected an explicit unknown result, got ${status}`,
     );
     assertWorkerTerminal(invocation.call);
-  } else if (options.expect === "local-pass") {
-    assert.equal(
-      result.status,
-      0,
-      `${operation} local preflight failed: ${result.stderr || result.stdout}`,
-    );
-    assert.equal(output.success, true);
-    assert.equal(status, "pass");
-    assert.equal(
-      output.documentIdentity,
-      null,
-      "Local preflight unexpectedly claimed a live document identity",
-    );
-    assert.equal(output.method, "CLI data preflight");
-    assert.equal(
-      output.modelValidated,
-      false,
-      "Local preflight claimed native model validation",
-    );
-    assert.equal(output.mutation, false);
-  } else if (options.expect === "local-unknown") {
-    assert.equal(
-      result.status,
-      1,
-      `${operation} unknown local check must not exit as success`,
-    );
-    assert.equal(
-      result.signal,
-      null,
-      `${operation} local check ended by signal`,
-    );
-    assert.equal(
-      output.success,
-      true,
-      `${operation} local result should not claim a native failure`,
-    );
-    assert.equal(
-      status,
-      "unknown",
-      `${operation} without observations must remain unknown`,
-    );
-    assert.equal(
-      output.documentIdentity,
-      null,
-      "Local preflight unexpectedly claimed a live document identity",
-    );
-    assert.equal(output.method, "CLI data preflight");
-    assert.equal(
-      output.modelValidated,
-      false,
-      "Local preflight claimed native model validation",
-    );
-    assert.equal(output.mutation, false);
+  } else if (
+    options.expect === "local-pass" ||
+    options.expect === "local-unknown"
+  ) {
+    assertLocalImportOutcome(operation, result, output, status, options.expect);
   } else {
     assert.equal(
       result.status,
@@ -1395,10 +995,6 @@ async function main(): Promise<void> {
     const cfg = parseRuntimeConfig(
       runtimeConfigModule.loadConfig({ routing: "queue" }),
     );
-    client = liveBroker.createBackend(
-      { ...cfg, timeoutMs: 60000 },
-      { command: cfg.backend === "addin" },
-    );
     receiptClient = new queueClientModule.QueueClient(clientId, {
       cfg,
       existingCredentialsOnly: true,
@@ -1417,29 +1013,66 @@ async function main(): Promise<void> {
     report.clientId = clientId;
     report.runtimeRoot = selectedRuntime.root;
     report.runtimeBuildHash = selectedRuntime.buildHash;
-    liveBroker.fixture(name);
-    baseline = await state();
+    const coordinator = asRecord(
+      JSON.parse(
+        fs.readFileSync(
+          path.join(lease!.directory, "..", "index.json"),
+          "utf8",
+        ),
+      ) as unknown,
+      "Owned coordinator",
+    );
+    assert.equal(coordinator["runId"], lease!.owner.runId);
+    assert.ok(
+      asArray(coordinator["scenarioIds"], "Scenario inventory").includes(
+        lease!.owner.scenarioId,
+      ),
+    );
+    const before = asRecord(coordinator["before"], "Coordinator baseline");
+    baseline = parseDocumentSnapshot(
+      { documents: before.documents, activeCreationId: before["active"] },
+      "Original pre-creation inventory",
+    );
     report.before = baseline;
     assert.ok(
       !baseline.documents.some((doc) => doc.name === name),
       "Test document name already exists",
     );
-    const creation = await cli(
-      ["doc", "new", "--name", name, "--json", "--timeout", "60000"],
-      "doc new",
+    const parent = asRecord(
+      JSON.parse(
+        fs.readFileSync(path.join(lease!.directory, "report.json"), "utf8"),
+      ) as unknown,
+      "Owned parent report",
     );
-    const created = creation.process;
+    const creation = asArray(parent["requests"], "Original requests")
+      .map((value) => asRecord(value, "Request"))
+      .find((value) => value["phase"] === "create");
+    assert.ok(creation, "The original parent creation request is required");
+    const created = asRecord(creation.result, "Original creation execution");
     assert.equal(
-      created.status,
+      created["exitCode"],
       0,
-      created.stderr || created.stdout || created.error?.message,
+      String(created["stderr"] || created["stdout"] || created["error"] || ""),
+    );
+    const createdWorker = asRecord(
+      created["brokerReceipt"],
+      "Original creation worker receipt",
     );
     assert.equal(
-      creation.call.workerReceipt?.state,
+      createdWorker.state,
       "succeeded",
       "Owned document creation lacks a terminal worker receipt",
     );
-    assert.equal(creation.call.workerReceipt?.executionOutcome, "succeeded");
+    assert.equal(
+      asRecord(createdWorker.operationResult, "Creation operation result")[
+        "executionOutcome"
+      ],
+      "succeeded",
+    );
+    assert.equal(createdWorker.requestId, creation.requestId);
+    assert.equal(createdWorker.clientId, clientId);
+    assert.equal(created["sdkSettled"], true);
+    liveBroker.fixture(name, lease!.document.creationId);
     const afterCreation = await state();
     report.afterCreation = afterCreation;
     saveReport();
@@ -1457,6 +1090,7 @@ async function main(): Promise<void> {
     const createdDocument = added[0];
     assert.ok(createdDocument);
     identity = createdDocument;
+    assert.equal(identity.creationId, lease!.document.creationId);
     assert.equal(identity.name, name);
     assert.equal(identity.saved, false, "Test document must remain unsaved");
     assert.equal(
@@ -2125,69 +1759,28 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     console.error(errorStack(error));
   } finally {
-    if (identity && !unsafe) {
-      try {
-        const own = ownedDocument();
-        await ownedState();
-        const closed = await script(
-          `app = adsk.core.Application.get()
-matches = [d for d in app.documents if d.creationId == ${JSON.stringify(own.creationId)} and d.name == ${JSON.stringify(name)}]
-assert len(matches) == 1, 'Owned document identity is ambiguous; leaving it open'
-doc = matches[0]
-assert not doc.isSaved, 'Owned document was saved unexpectedly; leaving it open'
-assert doc.close(False), 'Owned document close failed'
-documents = [dict(creationId=d.creationId, name=d.name, saved=d.isSaved, modified=d.isModified,
-                  fileId=d.dataFile.id if d.isSaved and d.dataFile else None) for d in app.documents]
-print(json.dumps(dict(closedCreationId=${JSON.stringify(own.creationId)}, documents=documents,
-                      activeCreationId=app.activeDocument.creationId if app.activeDocument else None)))`,
-          false,
-        );
-        assert.equal(closed["closedCreationId"], own.creationId);
-        const after = parseDocumentSnapshot(
-          closed,
-          "Post-cleanup Fusion document inventory",
-        );
-        liveBroker.fixture(name);
-        assert.equal(
-          after.documents.some((doc) => doc.creationId === own.creationId),
-          false,
-          "Close(False) did not remove the exact owned document",
-        );
-        assertProtectedBaselineDocuments(
-          originalDocuments(),
-          after,
-          "After closing the owned fixture",
-        );
-        assertActiveDocumentRestored(
-          originalDocuments(),
-          after,
-          "Close(False)",
-        );
-        report.after = after;
-        for (const fixturePath of [catalogPath, stepPath]) {
-          if (fs.existsSync(fixturePath)) fs.unlinkSync(fixturePath);
-        }
-        report.cleanup = {
-          closedCreationId: closed["closedCreationId"],
-          protectedDocumentsRestored: true,
-          activeDocumentRestored: after.activeCreationId,
-          syntheticFilesRemoved: true,
-        };
-      } catch (error) {
-        report.status = "failed";
-        report.cleanupError = errorStack(error);
-        process.exitCode = 1;
-      }
-    } else {
-      report.cleanup = {
-        closed: false,
-        reason: unsafe
-          ? "An SDK/transport result was uncertain; retained the owned fixture for inspection."
-          : "Native checks did not all complete; retained the owned fixture for inspection.",
-      };
-    }
+    report.cleanup = {
+      closed: false,
+      owner: "ScenarioSession",
+      deferred: unsafe,
+      reason: unsafe
+        ? "An SDK/transport result was uncertain; preserve original receipts and never replay."
+        : "The exact owned parent performs close and independent post-cleanup assertions.",
+    };
+    writeHandoff(
+      path.join(lease!.directory, "legacy", "completion.json"),
+      {
+        owner: lease!.owner,
+        document: lease!.document,
+        safeForCleanup: !unsafe,
+        reportPath,
+        catalogPath,
+        stepPath,
+        status: report.status,
+      },
+      true,
+    );
     receiptClient?.dispose();
-    if (client) liveBroker.disposeBackend(client);
     report.finishedAt = new Date().toISOString();
     saveReport();
     console.log(
