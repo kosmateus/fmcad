@@ -1,14 +1,13 @@
-"use strict";
-
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const {
-  LEGACY_BUSY_BUILD,
-  legacyBusyEvidence,
-} = require("../src/queue-preflight");
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+const load = createRequire(path.resolve("tests/queue-preflight.test.js"));
+const { LEGACY_BUSY_BUILD, legacyBusyEvidence } = load(
+  "../src/queue-preflight",
+) as typeof import("../src/entrypoints/queue-preflight");
 
 test("legacy FUSION_BUSY proof is scoped to its exact build, instance and zero-RPC record", (t) => {
   const directory = fs.mkdtempSync(
@@ -42,11 +41,12 @@ test("legacy FUSION_BUSY proof is scoped to its exact build, instance and zero-R
     LEGACY_BUSY_BUILD,
     directory,
   );
+  assert.ok(evidence);
   assert.equal(evidence.method, "attested-legacy-control-flow");
   assert.equal(evidence.jobId, job.id);
   assert.equal(
     evidence.preflightStartSHA256,
-    require("../src/queue-instance").hash(fs.readFileSync(start)),
+    load("../src/queue-instance").hash(fs.readFileSync(start)),
   );
   assert.equal(evidence.probeCompleted, true);
   assert.equal(evidence.observedIdle, false);

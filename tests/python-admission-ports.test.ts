@@ -1,21 +1,38 @@
-"use strict";
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const { PassThrough } = require("node:stream");
-const fixture = require("./fixtures/python-admission-broker.cjs");
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { PassThrough } from "node:stream";
+import { createRequire } from "node:module";
+const load = createRequire(__filename);
+const fixtureRoot = process.env["FMCAD_ADMISSION_CONSUMER_PACKAGE"]
+  ? __dirname
+  : path.resolve(__dirname, "../../tests");
+const fixture = load(
+  path.join(fixtureRoot, "fixtures/python-admission-broker.cjs"),
+) as (
+  t: import("node:test").TestContext,
+  options?: { typedService?: boolean },
+) => Promise<AdmissionFixture>;
 const packageRoot =
-  process.env.FMCAD_ADMISSION_CONSUMER_PACKAGE || path.resolve(__dirname, "..");
-const { runQueued, QueueClient, inputFiles } = require(
+  process.env["FMCAD_ADMISSION_CONSUMER_PACKAGE"] ||
+  path.resolve(__dirname, "../..");
+const { runQueued, QueueClient, inputFiles } = load(
   path.join(packageRoot, "dist/src/queue-client"),
-);
-const { startStdio } = require(path.join(packageRoot, "dist/src/mcp-stdio"));
-const { createFmcad } = require("node:module").createRequire(
-  path.join(packageRoot, "package.json"),
-)("fmcad/api");
+) as typeof import("../src/queue-client");
+const { startStdio } = load(
+  path.join(packageRoot, "dist/src/mcp-stdio"),
+) as typeof import("../src/entrypoints/mcp-stdio");
+const { createFmcad } = createRequire(path.join(packageRoot, "package.json"))(
+  "fmcad/api",
+) as typeof import("../src/api");
 
-async function cli(f, source, id, client = "owner") {
+async function cli(
+  f: AdmissionFixture,
+  source: string,
+  id: string,
+  client = "owner",
+) {
   let stdout = "",
     stderr = "";
   const code = await runQueued(
@@ -24,45 +41,51 @@ async function cli(f, source, id, client = "owner") {
     { client, "request-id": id },
     {
       stdout: {
-        write: (s) => {
+        write: (s: string) => {
           stdout += s;
         },
       },
       stderr: {
-        write: (s) => {
+        write: (s: string) => {
           stderr += s;
         },
       },
     },
   );
-  const marker = (prefix) =>
+  const marker = (prefix: string) =>
     stderr
       .split("\n")
       .filter((line) => line.startsWith(prefix))
-      .map((line) => JSON.parse(line.slice(prefix.length)));
+      .map(
+        (line) => JSON.parse(line.slice(prefix.length)) as { jobId: string },
+      );
   return {
     code,
     stdout,
     stderr,
-    job: marker("FMCAD_QUEUE_JOB ")[0],
+    job: marker("FMCAD_QUEUE_JOB ")[0]!,
     reports: marker("FMCAD_PYTHON_CHECK "),
   };
 }
-async function mcpResult(f, jobId, owner = "owner") {
+async function mcpResult(
+  f: AdmissionFixture,
+  jobId: string,
+  owner = "owner",
+): Promise<AdmissionResult> {
   const stdin = new PassThrough();
   let output = "";
-  const clients = [];
-  const server = startStdio(["--routing", "queue", "--client", owner], {
+  const clients: InstanceType<typeof QueueClient>[] = [];
+  const dependencies = {
     stdin,
     stdout: {
-      write: (s) => {
+      write: (s: string) => {
         output += s;
       },
     },
     stderr: { write() {} },
     loadConfig: () => ({ cfg: f.cfg }),
     QueueClient: class extends QueueClient {
-      constructor(...args) {
+      constructor(...args: ConstructorParameters<typeof QueueClient>) {
         super(...args);
         clients.push(this);
       }
@@ -73,7 +96,11 @@ async function mcpResult(f, jobId, owner = "owner") {
         assert.fail("Owned report observation must not contact SDK");
       }
     },
-  });
+  };
+  const server = startStdio(
+    ["--routing", "queue", "--client", owner],
+    dependencies,
+  );
   stdin.end(
     JSON.stringify({
       jsonrpc: "2.0",
@@ -84,6 +111,7 @@ async function mcpResult(f, jobId, owner = "owner") {
   );
   // Broker-only queue-result reads do not open a physical MCP client. Await
   // the actual stdio server lifecycle rather than an obsolete client close.
+  assert.ok(server);
   await server.closed;
   clients.forEach((client) => client.dispose());
   return JSON.parse(output.trim()).result.structuredContent;
@@ -130,17 +158,20 @@ test("real CLI/worker, MCP and public API preserve the same owner report; reject
   assert.deepEqual(accepted.reports, result.pythonChecks);
   assert.equal(result.pythonChecks.length, 1);
   const report = result.pythonChecks[0];
+  assert.ok(report);
   assert.equal(report.status, "passed");
   assert.equal(report.provenance.checker, "basedpyright");
-  const wireHash = (source) =>
-    require("node:crypto").createHash("sha256").update(source).digest("hex");
+  const wireHash = (source: string) =>
+    load("node:crypto").createHash("sha256").update(source).digest("hex");
   assert.ok(
     f.calls.some((payload) => {
       const script =
         payload.params?.arguments?.object?.script ??
         payload.params?.arguments?.code;
-      return typeof script === "string" &&
-        wireHash(script) === report.provenance.wireHash;
+      return (
+        typeof script === "string" &&
+        wireHash(script) === report.provenance.wireHash
+      );
     }),
     "The real checker report must bind the exact Python bytes at the physical sender",
   );
@@ -166,9 +197,9 @@ test("real CLI/worker, MCP and public API preserve the same owner report; reject
     ),
     "Private diagnostics are absent from global status",
   );
-  const invocation = (name) => ({
-    version: 1,
-    kind: "run",
+  const invocation = (name: string) => ({
+    version: 1 as const,
+    kind: "run" as const,
     request: {
       name,
       args: null,
@@ -210,11 +241,11 @@ test("real CLI/worker, MCP and public API preserve the same owner report; reject
   assert.ok(
     !fs
       .readFileSync(path.join(f.dir, "queue-state.json"), "utf8")
-      .includes(refused.pythonChecks[0].provenance.artifactHash),
+      .includes(refused.pythonChecks[0]!.provenance.artifactHash),
     "Full diagnostics stay in the owner result instead of inflating retained queue state",
   );
   assert.ok(
-    refused.pythonChecks[0].diagnostics.some(
+    refused.pythonChecks[0]!.diagnostics.some(
       (d) => d.filename === bad && d.rule === "reportAssignmentType",
     ),
   );
@@ -226,6 +257,7 @@ test("real CLI/worker, MCP and public API preserve the same owner report; reject
   assert.deepEqual(apiRefused.pythonChecks, refused.pythonChecks);
   assert.equal(apiRefused.outcome.executionOutcome, "not_started");
   const apiBad = await api.execute(invocation(bad), { requestId: "api-bad" });
+  assert.ok(apiBad.jobId);
   const apiBadResult = await owner.wait(apiBad.jobId);
   assert.equal(apiBadResult.job.state, "failed");
   assert.equal(f.calls.length, before);
@@ -257,8 +289,8 @@ test("real CLI/worker, MCP and public API preserve the same owner report; reject
         },
       }),
       (error) =>
-        error.code === "PYTHON_CHECK_REJECTED" &&
-        error.pythonCheck.status === "failed",
+        field(error, "code") === "PYTHON_CHECK_REJECTED" &&
+        field(field(error, "pythonCheck"), "status") === "failed",
     );
     assert.equal(f.calls.length, before);
   }
@@ -275,7 +307,11 @@ test("actual prepared typed service keeps input/reset/document drift fences and 
     "typed.py",
     'def run(context: str) -> None:\n    print("TYPED_SERVICE")\n',
   );
-  async function submit(client, id, extra = {}) {
+  async function submit(
+    client: AdmissionQueue,
+    id: string,
+    extra: Record<string, unknown> = {},
+  ) {
     const argv = ["run", source, "--doc", "A"];
     return client.submit({
       kind: "command",
@@ -288,14 +324,15 @@ test("actual prepared typed service keeps input/reset/document drift fences and 
       ...extra,
     });
   }
-  let started, finish, checkedPeer, firstResult;
-  const activeSdk = new Promise((resolve) => {
+  let started!: () => void, finish!: () => void, checkedPeer!: () => void;
+  let firstResult: AdmissionResult;
+  const activeSdk = new Promise<void>((resolve) => {
       started = resolve;
     }),
-    finishSdk = new Promise((resolve) => {
+    finishSdk = new Promise<void>((resolve) => {
       finish = resolve;
     });
-  const peerChecked = new Promise((resolve) => {
+  const peerChecked = new Promise<void>((resolve) => {
     checkedPeer = resolve;
   });
   f.observeProduct(async () => {
@@ -376,11 +413,11 @@ test("actual prepared typed service keeps input/reset/document drift fences and 
   assert.equal(f.products(), products);
   assert.equal(JSON.parse(observed.stdout).currentState.fingerprint, "A-2");
   for (const cause of ["input", "reset", "pause"]) {
-    let reached, release;
-    const ready = new Promise((resolve) => {
+    let reached!: () => void, release!: () => void;
+    const ready = new Promise<void>((resolve) => {
         reached = resolve;
       }),
-      proceed = new Promise((resolve) => {
+      proceed = new Promise<void>((resolve) => {
         release = resolve;
       });
     f.observe(async (prepared) => {
@@ -461,11 +498,11 @@ test("actual prepared typed service keeps input/reset/document drift fences and 
 test("offline raw preparation cannot publish accepted work after broker ownership is released", async (t) => {
   const f = await fixture(t),
     owner = await f.client("raw-stop");
-  let reached, release;
-  const ready = new Promise((resolve) => {
+  let reached!: () => void, release!: () => void;
+  const ready = new Promise<void>((resolve) => {
       reached = resolve;
     }),
-    proceed = new Promise((resolve) => {
+    proceed = new Promise<void>((resolve) => {
       release = resolve;
     });
   f.observe(async (prepared) => {
@@ -499,7 +536,7 @@ test("offline raw preparation cannot publish accepted work after broker ownershi
     })
     .then(
       (value) => ({ value }),
-      (error) => ({ error }),
+      (error: unknown) => ({ error }),
     );
   try {
     await Promise.race([
@@ -524,8 +561,9 @@ test("offline raw preparation cannot publish accepted work after broker ownershi
     );
     release();
     const result = await submission;
-    assert.equal(result.error?.code, "BROKER_STOPPING");
-    assert.equal(result.error.notStarted, true);
+    assert.ok("error" in result);
+    assert.equal(field(result.error, "code"), "BROKER_STOPPING");
+    assert.equal(field(result.error, "notStarted"), true);
     await f.close();
     assert.equal(f.calls.length, before);
     assert.ok(!fs.existsSync(path.join(f.dir, "broker.lock")));
@@ -533,10 +571,80 @@ test("offline raw preparation cannot publish accepted work after broker ownershi
       fs.readFileSync(path.join(f.dir, "queue-state.json"), "utf8"),
     );
     assert.ok(
-      !Object.values(state.jobs).some((job) => job.requestId === "pending-raw"),
+      !Object.values(state.jobs).some(
+        (job) => field(job, "requestId") === "pending-raw",
+      ),
     );
   } finally {
     release();
     f.observe(async () => {});
   }
 });
+
+interface AdmissionCheck {
+  status: string;
+  provenance: { checker: string; artifactHash: string; wireHash: string };
+  diagnostics: { filename: string; rule: string }[];
+}
+interface AdmissionResult {
+  job: {
+    id: string;
+    state: string;
+    code?: string;
+    sequenceId?: string;
+    operationResult: { executionOutcome: string };
+  };
+  pythonChecks: AdmissionCheck[];
+  stdout: string;
+  execution: unknown;
+  instanceId: string;
+  generation: number;
+  buildHash: string;
+  revision: number;
+}
+interface AdmissionQueue extends Omit<
+  InstanceType<typeof QueueClient>,
+  "wait" | "call"
+> {
+  wait(jobId: string): Promise<AdmissionResult>;
+  call(
+    action: string,
+    values?: Record<string, unknown>,
+  ): Promise<AdmissionResult>;
+}
+interface AdmissionFixture {
+  home: string;
+  dir: string;
+  cfg: import("@fmcad/core").FmcadConfiguration;
+  calls: {
+    params?: { arguments?: { object?: { script?: unknown }; code?: unknown } };
+  }[];
+  products(): number;
+  maximum(): number;
+  close(): Promise<void>;
+  fingerprint(value: string): void;
+  script(name: string, source: string): string;
+  client(name: string): Promise<AdmissionQueue>;
+  observe(
+    fn: (prepared: {
+      pythonArtifact?: { script: string };
+      record: { binding: { jobId: string } };
+      pythonCertificate: { report: { status: string } };
+    }) => Promise<void>,
+  ): void;
+  observeProduct(fn: (script: string) => Promise<void>): void;
+}
+
+function record(value: unknown): Record<string, unknown> {
+  assert.ok(
+    value !== null && typeof value === "object" && !Array.isArray(value),
+  );
+  return value as Record<string, unknown>;
+}
+function field(value: unknown, key: string): unknown {
+  return record(value)[key];
+}
+function text(value: unknown): string {
+  assert.ok(typeof value === "string");
+  return value;
+}

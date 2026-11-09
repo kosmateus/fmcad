@@ -641,3 +641,18 @@ parsing is unchanged. A separately frozen 5292078 planner comparison pins all
 object-reference wrapper bytes except this corrected annotation; the original
 composition still produces the same complete assembled artifact. Strict source
 compilation and lint pass; runtime checks follow the central rebuild.
+
+### Remaining admission and probe test boundaries (2026-11-09)
+
+Migrated `python-admission-{ports,transport,observer}` and
+`queue-{preflight,probe-recovery}` to strict TypeScript, retaining 17 direct test
+registrations, all 165 predecessor assertion calls, and all 25 multiline
+Python/child-process literals byte for byte. Added narrowing guards bring the
+assertion count to 185; the transport loop still exercises both MCP and add-in.
+The installed consumer branch resolves production modules from the installed
+package and its copied physical fixture from the adjacent harness directory.
+The real CLI/worker/MCP/API, exact checker bytes, owner visibility, physical
+admission counts, unknown/failed probe distinction, and installed observer proof
+remain mandatory. No timeout, expected state, checker failure or assertion was
+relaxed. Narrow strict checks and ESLint passed; actual checker/runtime execution
+is pending the coordinated final build and runtime slot.
