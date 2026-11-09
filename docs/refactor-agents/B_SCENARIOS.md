@@ -614,3 +614,22 @@ running on the corrected sources; the earlier 10/11 test run is not called green
 The immutable appearance MCP component profile passes with complete cleanup and
 matching source hash `1c169b45a431d83e306c93653ed48e53d3385c949515feb0a7eb832c6eabeb44`;
 its addin profile is running. Full CI remains the mandatory merge gate.
+
+## JavaScript-to-TypeScript assertion syntax review
+
+PR #99 (`c691d72`) preserves the explicit root-body style assignment fragment.
+Its corrected nontransaction regression reports 245/246 passing. The sole failure
+was the unstaged generated src/queue-broker module in the new worktree; after the
+normal stage-queue-runtime step, all three unchanged broker-path tests pass. The
+first broad run is retained as 245/246, not relabeled as a clean full run. All 11
+assignment checks pass on the corrected sources in that regression.
+
+A separate review ledger now pairs 138 of the 396 removed port assertions with
+unique current expressions using deliberately narrow syntax normalization. It
+preserves regexes, literal content, operators, optional access and array holes,
+rejects malformed/multiple-expression fragments and leaves ambiguous pairs open.
+The remaining 258 sites are explicitly listed. Frozen commits/hashes and IDs bind
+the evidence to the already audited predecessors. This reduces syntax-review work;
+it does not assert changed helper behavior equivalent or increase migration coverage.
+Eight focused audit tests and runtime-test compilation pass. Full exact-head CI
+and the unresolved production transaction contract still prevent stack merging.

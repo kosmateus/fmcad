@@ -133,3 +133,32 @@ need semantic disposition; wrapper sites overlap and these are not runtime cover
 percentages. Required-model registration contains 18 families, with transactions
 still blocked by the production settlement contract. Texture, inherited styles,
 physical mass and complete style-suite wrapper/cleanup equivalence remain open.
+
+## Syntax-only review of the JavaScript-to-TypeScript ports
+
+`tests/live-assertion-port-review.json` partitions all 396 removed static sites in
+the three ports. One-to-one pairs must match the parsed expression after only
+formatting/quote spelling, literal property-access spelling, parentheses and erased
+TypeScript assertions are normalized. Regex bytes/flags, raw templates, values,
+operators, optional access, comma operators and array holes remain significant.
+Ambiguous matches stay open; replacement IDs cannot be reused. Source/predecessor
+commits and both frozen source hashes remain attached to each partition.
+
+| Source | Syntax-only pairs | Still open |
+| --- | ---: | ---: |
+| live-data-import-fixed.ts | 55 | 33 |
+| live-data-import.ts | 75 | 61 |
+| live-sketch-operations.ts | 8 | 164 |
+| Total | 138 | 258 |
+
+This is evidence about individual expression syntax only. It does not prove helper
+implementations, call order, asynchronous transport behavior, fixture ownership or
+native execution equivalent, and adds no shared/native migration dispositions.
+The remaining 258 port sites, other historical changes and intermediate revisions
+still need semantic review. Eight focused inventory/history/disposition tests pass.
+
+Reproduce without consulting live Fusion:
+
+```sh
+node dist/tests/scenarios/assertion-port-review.js /absolute/output.json
+```
