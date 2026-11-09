@@ -533,8 +533,8 @@ test(
         query.collection === "tasks" && query.filters?.state === undefined,
     );
     await page
-      .getByRole("button", { name: /Wszystkie/ })
-      .first()
+      .locator(".queue-list-header .segmented")
+      .getByRole("button", { name: /^Wszystkie/ })
       .click();
     await allTasksRequest;
     await page.getByRole("row", { name: /E2E queued task/ }).waitFor();
@@ -588,8 +588,8 @@ test(
         query.collection === "tasks" && query.filters?.state === undefined,
     );
     await page
-      .getByRole("button", { name: /Wszystkie/ })
-      .first()
+      .locator(".queue-list-header .segmented")
+      .getByRole("button", { name: /^Wszystkie/ })
       .click();
     await restoreAllTasksRequest;
     const taskSearchRequest = waitForQuery(
