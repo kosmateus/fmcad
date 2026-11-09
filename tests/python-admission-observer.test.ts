@@ -10,9 +10,7 @@ const load = createRequire(
 );
 const root = path.resolve(__dirname, "../..");
 const dist = path.join(root, "dist/src");
-const { buildHash, hash, prepareReceiptScript } = load(
-  path.join(dist, "queue-instance"),
-) as ReturnType<
+const { buildHash } = load(path.join(dist, "queue-instance")) as ReturnType<
   typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
 >;
 const { resolveRuntimePaths } = load(
@@ -21,16 +19,7 @@ const { resolveRuntimePaths } = load(
 const { hash: canonicalHash } = load(
   path.join(dist, "dist/core/application/cad/json"),
 ) as typeof import("../packages/core/src/application/cad/json");
-const {
-  cadBundleUnits,
-  preparePythonArtifact,
-  pythonArtifactManifest,
-  retainPythonOrigin,
-} = load(
-  path.join(dist, "python"),
-) as typeof import("../packages/node-adapters/src/python/bundle") &
-  typeof import("../packages/node-adapters/src/python/artifact") &
-  typeof import("../packages/node-adapters/src/python/context-binding");
+load(path.join(dist, "python"));
 const { createProductionQueueAdmission, migrationAdmissionPreflight } = load(
   path.join(dist, "queue-admission"),
 ) as typeof import("../src/queue-admission");

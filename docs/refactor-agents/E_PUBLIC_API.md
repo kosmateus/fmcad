@@ -648,7 +648,7 @@ Migrated `python-admission-{ports,transport,observer}` and
 `queue-{preflight,probe-recovery}` to strict TypeScript, retaining 17 direct test
 registrations, all 165 predecessor assertion calls, and all 25 multiline
 Python/child-process literals byte for byte. Added narrowing guards bring the
-assertion count to 185; the transport loop still exercises both MCP and add-in.
+assertion count to 183; the transport loop still exercises both MCP and add-in.
 The installed consumer branch resolves production modules from the installed
 package and its copied physical fixture from the adjacent harness directory.
 The real CLI/worker/MCP/API, exact checker bytes, owner visibility, physical

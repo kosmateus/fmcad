@@ -644,7 +644,3 @@ function record(value: unknown): Record<string, unknown> {
 function field(value: unknown, key: string): unknown {
   return record(value)[key];
 }
-function text(value: unknown): string {
-  assert.ok(typeof value === "string");
-  return value;
-}

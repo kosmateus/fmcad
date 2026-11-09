@@ -37,7 +37,7 @@ const { request } = load(
 
 test("failed terminal recovery probe can be replaced; unresolved, mismatched and busy probes cannot", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "qp-"));
-  let broker: Awaited<ReturnType<typeof serve>> | undefined;
+  let broker: Awaited<ReturnType<typeof serve>> | undefined = undefined;
   t.after(async () => {
     await broker?.close();
     fs.rmSync(dir, { recursive: true, force: true });
