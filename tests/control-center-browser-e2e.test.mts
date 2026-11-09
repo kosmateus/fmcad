@@ -508,7 +508,9 @@ test(
     );
 
     await page.getByRole("combobox", { name: /Zakres projektu:/ }).click();
-    await page.getByRole("option", { name: "Globalnie", exact: true }).click();
+    await page
+      .getByRole("option", { name: "Wszystkie projekty", exact: true })
+      .click();
     await page.getByRole("heading", { name: "Przegląd globalny" }).waitFor();
     await page.getByText("POŁĄCZONO", { exact: true }).waitFor();
     assert.match(await page.locator("#app").innerText(), /POŁĄCZONO/);
@@ -958,7 +960,9 @@ test(
       (query) => query.collection === "logs" && query.scope?.kind === "global",
     );
     await page.getByRole("combobox", { name: /Zakres projektu:/ }).click();
-    await page.getByRole("option", { name: "Globalnie", exact: true }).click();
+    await page
+      .getByRole("option", { name: "Wszystkie projekty", exact: true })
+      .click();
     await globalLogsRequest;
 
     await page.getByRole("tab", { name: "Logi" }).click();
@@ -1372,7 +1376,9 @@ test(
       (query) => query.collection === "tasks" && query.scope?.kind === "global",
     );
     await page.getByRole("combobox", { name: /Zakres projektu:/ }).click();
-    await page.getByRole("option", { name: "Globalnie", exact: true }).click();
+    await page
+      .getByRole("option", { name: "Wszystkie projekty", exact: true })
+      .click();
     await networkTestGlobalRequest;
     expectingNetworkOutage = true;
     for (const request of pendingRequests) outageRequests.add(request);

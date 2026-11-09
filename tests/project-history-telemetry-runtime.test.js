@@ -537,3 +537,48 @@ test("installed producer composition persists registered jobs and refuses identi
   });
   assert.equal(other.collections.tasks.length, 0);
 });
+
+test("history snapshots retain SQLite statements across forced garbage collection", async (t) => {
+  const f = fixture(t);
+  const current = job("project-one", "gc-job", "gc-client", "gc-request");
+  addAdmission(f, "project-one", current);
+  const runtime = f.runtime("project-one", "gc-source");
+  runtime.source.publishJob(current, { projectId: "project-one" });
+  await runtime.flush();
+  const modulePath =
+    require.resolve("../packages/node-adapters/dist/persistence/project-history/index.js");
+  const program = `
+    const assert = require('node:assert/strict');
+    const { openProjectRegistry, openRegisteredProjectHistoryStore } = require(${JSON.stringify(modulePath)});
+    const registry = openProjectRegistry({ filePath: ${JSON.stringify(path.join(f.data, "projects.json"))} });
+    const store = openRegisteredProjectHistoryStore(registry, {
+      projectId: 'project-one', projectRoot: ${JSON.stringify(f.projects.get("project-one"))}, readOnly: true,
+    });
+    const parse = JSON.parse;
+    let collections = 0;
+    JSON.parse = (...args) => { global.gc(); collections++; return parse(...args); };
+    try {
+      const snapshot = store.readSnapshot();
+      assert.deepEqual(snapshot.jobs.map(row => row.jobId), ['gc-job']);
+      assert.equal(snapshot.events.length, 1);
+      assert.ok(collections > 0);
+      assert.throws(() => store.readSnapshot(1), { code: 'HISTORY_SNAPSHOT_TOO_LARGE' });
+      assert.equal(store.readSnapshot().jobs.length, 1);
+    } finally {
+      JSON.parse = parse;
+      store.close();
+      registry.close?.();
+    }
+  `;
+  const result = require("node:child_process").spawnSync(
+    process.execPath,
+    ["--expose-gc", "-e", program],
+    {
+      encoding: "utf8",
+      timeout: 30_000,
+    },
+  );
+  assert.ifError(result.error);
+  assert.equal(result.signal, null, result.stderr);
+  assert.equal(result.status, 0, result.stderr);
+});
