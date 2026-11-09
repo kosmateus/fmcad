@@ -78,6 +78,7 @@ test("reviewed assertion mappings name retained individual assertions and real e
         "animation-plan-*",
         "native-solids-*",
         "document-lifecycle",
+        "material-metadata-*",
       ].includes(text(row["scenario"])),
     );
     assert.ok(text(row["reason"]).length > 40);

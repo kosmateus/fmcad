@@ -25,7 +25,7 @@ in full but their immediate-predecessor semantic comparisons remain outstanding.
 
 ## Required profile manifest
 
-`tests/live-required-profiles.json` separates fifteen registered shared model families,
+`tests/live-required-profiles.json` separates sixteen registered shared model families,
 required retained native obligations and diagnostic helpers/external fixtures.
 `node tests/run-live.js --list-profiles` lists it without contacting Fusion.
 Native commands are qualification entrypoints, not authorization to run unconverted

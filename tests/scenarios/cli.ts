@@ -22,6 +22,7 @@ import {
   nativeSolidsCapability,
   nativeSolidsScenarios,
 } from "./native-solids-cases";
+import { materialScenarios } from "./material-cases";
 import { animationScenarios } from "./animation-cases";
 import { poseScenarios } from "./pose-cases";
 import { cameraScenarios } from "./camera-cases";
@@ -53,6 +54,7 @@ interface Options {
     | "attributes"
     | "transactions"
     | "native-solids"
+    | "materials"
     | "animation"
     | "poses"
     | "camera"
@@ -105,6 +107,7 @@ export function parse(argv: string[]): Options {
         value === "attributes" ||
         value === "transactions" ||
         value === "native-solids" ||
+        value === "materials" ||
         value === "animation" ||
         value === "poses" ||
         value === "camera" ||
@@ -354,6 +357,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
             : []),
           ...(options.suite === "native-solids" && options.folder
             ? nativeSolidsScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "materials" || options.suite === "all") &&
+          options.folder
+            ? materialScenarios(options.folder, options.owners)
             : []),
           ...((options.suite === "animation" || options.suite === "all") &&
           options.folder

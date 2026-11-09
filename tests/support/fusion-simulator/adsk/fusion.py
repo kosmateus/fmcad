@@ -489,6 +489,7 @@ class Component(core.Base):
 class Design(core.Product):
     def __init__(self, doc: core.Document) -> None:
         self.model_doc: core.Document = doc
+        self.model_materials: core.Materials = core.Materials(self, doc)
         self.userParameters: UserParameters = UserParameters(doc)
         self.allParameters: UserParameters = self.userParameters
         self.allComponents: core.Collection[Component] = core.Collection()
@@ -497,6 +498,10 @@ class Design(core.Product):
         self.rootComponent: Component = Component(self)
         self.allComponents.values.append(self.rootComponent)
         self.exportManager: ExportManager = ExportManager(doc, self.userParameters)
+
+    @property
+    def materials(self) -> core.Materials:
+        return self.model_materials
 
     @staticmethod
     def cast(arg: object) -> Design | None:

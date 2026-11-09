@@ -123,13 +123,13 @@
       "id": "design-styles",
       "source": "tests/live-design-styles.js",
       "runner": "standalone",
-      "model": "pending",
+      "model": "partial",
       "scope": "Material/appearance editing, scope and retained design state",
       "prerequisites": "Installed matching broker and an isolated owned fixture",
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": []
+      "sharedScenarios": ["materials"]
     },
     {
       "id": "engineering-analytics",

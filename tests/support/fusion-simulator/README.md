@@ -1,6 +1,6 @@
 # Partial Fusion test model
 
-Model version 12 implements document identity/lifecycle, numeric user-parameter CRUD,
+Model version 15 implements document identity/lifecycle, numeric user-parameter CRUD,
 saved-file identity and deletion, and a **test state export**. The exported `.f3d` fixture contains a JSON marker
 `nativeF3d: false`; it is not a native Fusion archive and must not be imported into Fusion.
 Native export/import assertions require `native-f3d`, which this model does not advertise.
@@ -25,7 +25,8 @@ assumption, not a claim about measured Fusion cloud timing.
 Model controls such as `advance_model`, `save_delay_steps`, `delete_delay_steps`
 and operation counters are used only by model/fault tests. Shared scenarios use
 only the pinned Autodesk interface. The model has no network cloud service,
-geometry kernel, feature/constraint regeneration, camera or UI event simulation.
+general geometry kernel, general feature/constraint solver or UI event simulation.
+Bounded rectangular regeneration and explicit camera snapshots are described below.
 It is test-only and excluded from the published package.
 
 Numeric parameters support explicit length/angle units, scalar values, bounded
@@ -182,3 +183,20 @@ geometry handlers assign that name to the feature and return the body's own ref.
 No body-rename behavior is fabricated in the simulator. Native renderer visibility
 and inherited visibility rules remain qualification obligations; no native run has
 been performed.
+
+## Design-local material metadata (v15)
+
+A single explicitly synthetic, immutable library fixture supplies metadata only.
+`Materials.addByCopy`, local ID/name lookup, name/description edits and design
+ownership are modeled. Copies detach metadata; closed documents and library writes
+are refused. IDs are model-generated, not Autodesk IDs or a guarantee of global
+native-ID uniqueness. The supported design graph deep-copies these resources into
+saved revisions and rebinds the document when reopened.
+
+The fixture exposes no physical or visual properties. An empty property collection
+means no such fixture data is modeled, not that a real library material has no
+properties. Density/mass, assignments/inheritance, appearances, textures, rendering,
+cloud material catalogs and property editing remain unsupported. The shared material
+case chooses an exact available library item, as the historical test did, and uses
+production list/create/edit handlers; expected IDs and names follow that selection.
+Actual native copy/rename/persistence behavior remains a qualification assumption.

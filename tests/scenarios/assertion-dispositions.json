@@ -1038,6 +1038,146 @@
       "evidence": "tests/scenarios/creation-active.test.ts",
       "reason": "Restores the removed historical creation-active assertion using the original successful creation observation before any guarded activation can mask it. Returned and durable observations must agree; known inactive creation cleans only its proven owned document, while contradictory observations defer cleanup.",
       "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "a6f121d3d61e3765a9e6-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "7f12ebeb81519ccb3a18-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "03cb1a77b8ca2ba3fc64-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "949e6d7ae957778a33fb-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "e654854f6ba4188e1e0b-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "113aae782a0bb68c8417-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "167f054892850c55342f-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "3918390340e8d2c201ca-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "5fc88123f91c8184e16f-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "7817cbecd848ba6fbdc1-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "54b4aae6acdb0d0c05e9-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "a8dcf03e37781dfedc49-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "7d410ccada59a9419244-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "c798c045f8785d2c9c78-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
     }
   ]
 }

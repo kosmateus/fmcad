@@ -80,6 +80,11 @@
           "id": "animation",
           "scope": "owned-document",
           "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite animation --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "materials",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite materials --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
         }
       ]
     },

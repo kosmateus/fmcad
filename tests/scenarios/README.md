@@ -175,3 +175,9 @@ has a documented historical analytical conflict, so native qualification remains
 blocked even though the sequence is registered. See
 `docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md`. Do not run native Fusion until
 the offline refactor is complete.
+
+`--suite materials` runs the historical material-library selection, local copy,
+rename, collision rejection and list readback on saved fixtures, then independently
+checks metadata after revision/reopen. Source library selection is environmental;
+steps, expected local IDs/names and assertions are identical on both backends.
+Physical properties, appearances, assignments and rendering remain separate work.

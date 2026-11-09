@@ -36,6 +36,131 @@ class Base:
     pass
 
 
+class Property(Base):
+    """No physical/visual property values are modeled by the metadata fixture."""
+
+
+class Properties(Collection[Property]):
+    def itemById(self, id: str) -> Property | None:
+        return None
+
+    def itemByName(self, name: str) -> Property | None:
+        return None
+
+
+class Material(Base):
+    def __init__(self, owner: Materials, name: str, description: str = "") -> None:
+        self.model_owner: Materials = owner
+        self.model_id: str = "model-material:" + str(uuid4())
+        self.model_name: str = name
+        self.model_description: str = description
+        self.model_properties: Properties = Properties()
+
+    def model_valid(self) -> None:
+        doc = self.model_owner.model_document
+        if doc is not None and not doc.isValid:
+            raise ValueError("Material belongs to a closed document")
+
+    def model_write(self) -> None:
+        self.model_valid()
+        doc = self.model_owner.model_document
+        if doc is None:
+            raise ValueError("Modeled library materials are read-only")
+        doc.isModified = True
+
+    @property
+    def id(self) -> str:
+        self.model_valid()
+        return self.model_id
+
+    @property
+    def name(self) -> str:
+        self.model_valid()
+        return self.model_name
+
+    @name.setter
+    def name(self, value: str) -> None:
+        if not value.strip():
+            raise ValueError("Material name must be nonempty")
+        if any(item is not self and item.name == value for item in self.model_owner):
+            raise ValueError("Material name already exists")
+        self.model_write()
+        self.model_name = value
+
+    @property
+    def description(self) -> str:
+        self.model_valid()
+        return self.model_description
+
+    @description.setter
+    def description(self, value: str) -> None:
+        self.model_write()
+        self.model_description = value
+
+    @property
+    def materialProperties(self) -> Properties:
+        self.model_valid()
+        return self.model_properties
+
+    @property
+    def parent(self) -> Base:
+        return self.model_owner.model_parent
+
+
+class Materials(Collection[Material]):
+    def __init__(self, parent: Base, document: Document | None) -> None:
+        super().__init__()
+        self.model_parent: Base = parent
+        self.model_document: Document | None = document
+
+    def itemById(self, id: str) -> Material | None:
+        return next((item for item in self.values if item.id == id), None)
+
+    def itemByName(self, name: str) -> Material | None:
+        return next((item for item in self.values if item.name == name), None)
+
+    def addByCopy(self, materialToCopy: Material, name: str) -> Material:
+        if self.model_document is None or not self.model_document.isValid:
+            raise ValueError("Material copies require an open target document")
+        if not name.strip() or self.itemByName(name) is not None:
+            raise ValueError("Material copy name is empty or already exists")
+        materialToCopy.model_valid()
+        material = Material(self, name, materialToCopy.description)
+        material.model_properties = deepcopy(materialToCopy.materialProperties)
+        self.values.append(material)
+        self.model_document.isModified = True
+        return material
+
+
+class MaterialLibrary(Base):
+    def __init__(self) -> None:
+        self.model_materials: Materials = Materials(self, None)
+        self.model_materials.values.append(Material(self.model_materials, "Model metadata material", "No physical properties or native library identity implied"))
+
+    @property
+    def id(self) -> str:
+        return "model-library:metadata"
+
+    @property
+    def name(self) -> str:
+        return "Model metadata library"
+
+    @property
+    def materials(self) -> Materials:
+        return self.model_materials
+
+
+class MaterialLibraries(Collection[MaterialLibrary]):
+    def __init__(self) -> None:
+        super().__init__([MaterialLibrary()])
+
+    def itemById(self, id: str) -> MaterialLibrary | None:
+        return next((item for item in self.values if item.id == id), None)
+
+    def itemByName(self, name: str) -> MaterialLibrary | None:
+        return next((item for item in self.values if item.name == name), None)
+
+
 class Attribute(Base):
     def __init__(self, collection: Attributes, group: str, name: str, value: str) -> None:
         self.model_collection: Attributes = collection
@@ -586,11 +711,16 @@ class Application(Base):
     _instance: ClassVar[Application | None] = None
 
     def __init__(self) -> None:
-        self.version: str = "fmcad-simulator-v14-not-Fusion"
+        self.version: str = "fmcad-simulator-v15-not-Fusion"
         self.activeDocument: Document | None = None
         self.documents: Documents = Documents(self)
         self.userInterface: UserInterface = UserInterface()
         self.data: Data = Data(self)
+        self.model_material_libraries: MaterialLibraries = MaterialLibraries()
+
+    @property
+    def materialLibraries(self) -> MaterialLibraries:
+        return self.model_material_libraries
 
     @property
     def activeViewport(self) -> Viewport:

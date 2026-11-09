@@ -127,6 +127,7 @@ export const simulatorCapabilities = new Set([
   "camera-state",
   "pose-visibility",
   "animation-sequence",
+  "material-metadata",
   "cad-commands",
   "parameter-crud",
   "parameter-expressions",

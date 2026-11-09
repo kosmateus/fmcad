@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 METHODS: dict[str, dict[str, list[str]]] = {
-    "core": {"BoundingBox3D": ["create"], "Point3D": ["create", "asArray", "copy"], "Vector3D": ["create", "asArray"],
+    "core": {"Materials": ["addByCopy", "itemById", "itemByName"], "MaterialLibraries": ["itemById", "itemByName"], "Properties": ["itemById", "itemByName"], "BoundingBox3D": ["create"], "Point3D": ["create", "asArray", "copy"], "Vector3D": ["create", "asArray"],
              "UnitsManager": ["isValidExpression", "evaluateExpression"],
              "Attributes": ["add", "itemByName", "itemsByGroup"],
              "Plane": ["create"], "Matrix3D": ["create", "asArray"],
@@ -30,7 +30,10 @@ METHODS: dict[str, dict[str, list[str]]] = {
 }
 
 PARAMETER_PROPERTIES = ["name", "expression", "value", "unit", "comment"]
-PROPERTIES = [("fusion", "Component", "fusion", "Component", ["attributes"]),
+PROPERTIES = [("core", "Material", "core", "Material", ["id", "name", "description", "parent", "materialProperties"]),
+              ("core", "MaterialLibrary", "core", "MaterialLibrary", ["id", "name", "materials"]),
+              ("core", "Application", "core", "Application", ["materialLibraries"]),
+              ("fusion", "Design", "fusion", "Design", ["materials"]), ("fusion", "Component", "fusion", "Component", ["attributes"]),
               ("fusion", "BRepBody", "fusion", "BRepBody", ["isLightBulbOn", "isVisible"]), ("core", "Camera", "core", "Camera", ["eye", "target", "upVector", "cameraType", "perspectiveAngle", "viewOrientation", "isFitView", "isSmoothTransition"]),
               ("core", "Viewport", "core", "Viewport", ["camera", "parentDocument"]),
               ("core", "Application", "core", "Application", ["activeViewport"]), ("fusion", "Parameter", "fusion", "UserParameter", PARAMETER_PROPERTIES),

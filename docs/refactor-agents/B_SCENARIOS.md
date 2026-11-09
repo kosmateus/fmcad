@@ -465,3 +465,30 @@ The immutable pose component profile at `c51dacf` has now passed both MCP and
 addin with complete cleanup. Source hashes before and after both runs are identical:
 `9109371b62dcd5f3f08995d5aa08ced778b1b01964c966df8f2ad7e8513db653`.
 This is production-checker/model evidence, not native Fusion qualification.
+
+## Delivery ledger — design-local material metadata
+
+Creation proof PR #94 (`c521ea7`) carries the restored historical activation gate.
+The immutable production-checker animation profile has passed MCP at that head
+with identical before/after source hash `32035565...`; addin is still running.
+
+Model v15 adds an explicitly synthetic read-only library and design-local material
+metadata collections. Copies detach names/descriptions, retain design ownership,
+refuse library/closed-document mutation, and survive saved revision/reopen with the
+supported graph. No physical/visual properties, density, mass, assignments,
+inheritance, appearances or rendering are modeled or claimed by this delivery.
+
+The shared material prefix preserves the historical library selection, exact local
+copy IDs, rename, second copy, collision rejection and list readback. Independent
+metadata readback and revision/reopen add persistence checks. Both transports pass
+at concurrency 1/2/10 (28 saved fixtures). Loss tests recover original copy evidence
+without replay; a protected saved document remains unchanged after deterministic
+foreign-ID substitution, and assertion failure cleans the owned file before any
+rename. Eleven distinct material tests and four profile/disposition checks pass.
+
+Strict simulator typing has zero errors; the pinned API verifier passes 72 methods
+and 58 property accessors against snapshot `83dc3697...`. Fourteen additional
+historical assertion mappings are recorded (112 total reviewed mappings, including
+18 native obligations and one removed historical assertion). This is partial style
+migration; appearance/property/assignment/mass contracts remain open. Full
+non-transaction regression and exact-head CI are still required.
