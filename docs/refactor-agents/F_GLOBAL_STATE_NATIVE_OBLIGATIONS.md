@@ -66,3 +66,34 @@ Fusion version; bound request/job/client/document/file identities; native
 readback with the original inputs and tolerances; unchanged foreign inventory;
 and successful owned cleanup or explicit deferred cleanup after uncertainty.
 Never retry an uncertain mutation merely to obtain a green observation.
+
+## Owned native source checkpoint
+
+The camera (39), pose (70), design-style (85), animation (97) and motion (76)
+families now have explicit factories under `tests/scenarios/native-*-cases.ts`.
+They use the existing `ScenarioSession`, exclusive-instance barrier, durable
+request receipts, exact owned unsaved identity and foreign-document guards.
+The material/appearance, visibility, joint geometry/limits, native PNG/MP4 and
+workspace assertions remain in the case bodies. Local output paths are reserved
+inside each session directory and exact owned files are removed only after a
+settled result. Missing/foreign compiled CAD envelopes defer cleanup and never
+replay the original mutation. The motion profiler still observes the production
+CAD request, including preflight plus five actual in-pose checks.
+
+Original user-view capture and restoration use the production camera handlers;
+style tolerances and the stricter motion absolute 1e-7 camera check are retained.
+Pose/design/animation now require an active Design document before fixture setup,
+so the shared lifecycle can retain a restorable user camera as well as document
+and workspace identity. This is a stricter native test precondition, not a change
+to production operations. The historical style test already required this.
+Native script dispatch preserves its active-document guard before activation.
+The public CLI keeps string component selectors; dictionary token refs use the
+same production compiled-request path as the historical embedded native tests.
+
+Strict source compilation and focused lint pass. Camera and global-state tests
+cover unsupported model capabilities and lost/missing/foreign native replies;
+their execution is pending central staging. The ledger therefore still says
+`migration-required` until those lifecycle checks run; its `ownedHandoffSource`
+field records the implemented factory without claiming Fusion qualification.
+All native `qualification` values remain `not-run`. Style-save (201 sites) is
+being completed by package C on the same helpers and lifecycle.

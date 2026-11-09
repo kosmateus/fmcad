@@ -347,3 +347,11 @@ host: the same three checker/preflight failures reproduce against dce47c5. This
 is a recorded environment limitation, not a weakened assertion or a green claim.
 Native global-state factories are being moved onto the existing ScenarioSession;
 source compilation and unsupported/lost-response tests do not qualify Fusion.
+
+The remaining native camera/pose/design-style/animation/motion sources are now
+ported onto the existing ScenarioSession. Strict TypeScript checks use the
+current core sources while the shared component-reference declaration awaits
+central staging; focused lint passes. The exact native scope, stricter original
+user-view precondition and pending lifecycle/native execution are recorded in
+F_GLOBAL_STATE_NATIVE_OBLIGATIONS.md. No simulator capability advertises native
+materials, motion, viewport rendering or workspace behavior.
