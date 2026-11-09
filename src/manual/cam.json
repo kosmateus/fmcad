@@ -7,7 +7,7 @@
     "examples": [
       {"label":"Half-cosine rise with R5 roller","data":{"schemaVersion":1,"frame":"component","baseRadius":"15 mm","rollerRadius":"5 mm","rise":{"law":"halfCosine","lift":"10 mm","angle":"240 deg"},"followerLine":[0,1,0],"phase":"0 deg","direction":"ccw"},"requires":"A selected component; read-only.","output":"result.maxPressureAngle is about 10.96 deg and result.minPitchCurvatureRadius about 18.33 mm for these inputs."}
     ],
-    "audit":{"sources":["assets/cad/cam.py:cam_profile,_cam_compute,_cam_rise"],"verified":["Half-cosine rise reproduction","Normal offset (not radial) working profile","Rise-only source stays open"],"tests":["tests/cam_test.py","tests/cam.test.js"],"gaps":[],"bugs":["Drop edge and dynamics remain blocked"]}
+    "audit":{"sources":["assets/cad/cam.py:cam_profile,_cam_compute,_cam_rise"],"verified":["Half-cosine rise reproduction","Normal offset (not radial) working profile","Rise-only source stays open"],"tests":["tests/cam_test.py","tests/cam.test.ts"],"gaps":[],"bugs":["Drop edge and dynamics remain blocked"]}
   },
   "cam.evaluate": {
     "sections": [
@@ -17,7 +17,7 @@
     "examples": [
       {"label":"Check pressure angle and curvature","data":{"schemaVersion":1,"frame":"component","baseRadius":"15 mm","rollerRadius":"5 mm","rise":{"law":"halfCosine","lift":"10 mm","angle":"240 deg"},"maximumPressureAngle":"12 deg","minimumCurvatureRadius":"10 mm"},"requires":"A selected component; read-only.","output":"result.checks show pass for pressure-angle (10.96 < 12 deg) and curvature (18.33 > 10 mm)."}
     ],
-    "audit":{"sources":["assets/cad/cam.py:cam_evaluate,_cam_compute"],"verified":["Declared-limit evaluation","notEvaluated for missing limits","Rise-only source preservation"],"tests":["tests/cam_test.py","tests/cam.test.js"],"gaps":[],"bugs":["Drop edge and dynamics remain blocked"]}
+    "audit":{"sources":["assets/cad/cam.py:cam_evaluate,_cam_compute"],"verified":["Declared-limit evaluation","notEvaluated for missing limits","Rise-only source preservation"],"tests":["tests/cam_test.py","tests/cam.test.ts"],"gaps":[],"bugs":["Drop edge and dynamics remain blocked"]}
   },
   "cam.cycle-check": {
     "sections": [
@@ -27,6 +27,6 @@
     "examples": [
       {"label":"Rise with spring return","data":{"schemaVersion":1,"frame":"component","rise":{"law":"halfCosine","lift":"10 mm","angle":"240 deg"},"returnLaw":"spring-return"},"requires":"A selected component; read-only.","output":"result.cycleStatus is pass; release is resolved by the declared spring return law."}
     ],
-    "audit":{"sources":["assets/cad/cam.py:cam_cycle_check"],"verified":["Unresolved release/dwell reported, never auto-closed","No forced bilateral follower coupling","Drop edge/dynamics blocked"],"tests":["tests/cam_test.py","tests/cam.test.js"],"gaps":[],"bugs":["Drop edge and dynamics remain blocked"]}
+    "audit":{"sources":["assets/cad/cam.py:cam_cycle_check"],"verified":["Unresolved release/dwell reported, never auto-closed","No forced bilateral follower coupling","Drop edge/dynamics blocked"],"tests":["tests/cam_test.py","tests/cam.test.ts"],"gaps":[],"bugs":["Drop edge and dynamics remain blocked"]}
   }
 }

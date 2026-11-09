@@ -175,3 +175,28 @@ The broker validates the witness against the execution-bound failed receipt.
 Validation: `python -m unittest discover -s tests -p shapes_test.py` passes 32
 tests, including invalid primitive dimensions with zero sketches/native trace,
 and an injected post-mutation `ValueError` that must remain an exception.
+
+
+## Continuation checkpoint: retained model consumers
+
+The remaining curve, selection-rule and BRep host compositions now have strict
+TypeScript owners. Forty-four retained model test suites also compile as strict
+TypeScript and retain their historical assertions and real readbacks. Invalid
+catalog payloads now additionally exercise `executeCad` and require zero SDK
+calls. Entity-query verifies the pinned document/file guard in the dispatched
+script. The installed consumer compiles declarations for the three compositions.
+
+Manual evidence links now follow the canonical test sources, including the
+surface/datum policy metadata that failed the public-consumer CI gate. The
+Python geometry fixture owns its temporary directory. The style-motion test
+uses the existing scoped fake-WSL fixture after reproducing its platform failure
+against the unchanged predecessor. Neither production path mapping nor the
+expected script assertions changed.
+
+Executed local groups: 27 core catalog tests, 47 secondary catalog tests,
+32 artifact-history/selection tests, 51 specialist tests (including focused
+reruns of two repaired fixtures), and nine parameter-dispatch tests pass without
+skips. Python selections pass 61 and 413 tests respectively. The 44 migrated
+suites pass lint; strict compilation has no C diagnostics. The installed consumer,
+BRep real-checker lifecycle and full final-commit CI remain required gates on the
+stable integrated build. Native Fusion qualification remains a separate stage.

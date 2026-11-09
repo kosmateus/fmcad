@@ -424,3 +424,40 @@ registry-audit operations (`deliver`, `visibility.finalize`) also pass real pinn
 admission. Long local shard processes lost their runner sessions without a final
 result; their partial logs are not recorded as completed shards. Full CI remains
 the authoritative complete-matrix gate.
+
+
+## Retained test migration and continuation evidence
+
+The host wrappers for curve preparation, selection execution and BRep execution
+are now `src/composition/library-{curve,selection-rules,brep-baseline}.ts`.
+Compatibility generation retains the existing CommonJS/public paths. The
+44 retained C test sources use strict interfaces for real modules and bounded
+injected fixtures; no parallel test framework was added. Catalog negatives
+still assert their original validation messages and now also call the actual
+`executeCad` boundary with zero SDK dispatch. Selection/BRep retain exact-owner,
+artifact hash, receipt, result and uncertain-mutation no-replay assertions.
+
+The artifact-history comparison retains all 24 frozen source hashes and effect
+transcripts. Cross-realm historical errors are compared by a checked string
+`message`, preserving the predecessor's exact text. A Node `instanceof Error`
+check cannot recognize the VM realm and must not prepend `Error:` to that text.
+The installed-package consumer additionally compiles the three composition
+module declarations; its execution remains pending the stable integrated build.
+
+Local executed tests: 27 core catalogs, 47 secondary catalogs, 32
+artifact-history/selection, 51 specialists and nine parameter dispatch cases,
+all with zero skipped cases after two focused fixture reruns. Python contract,
+entity, shape and loader selections pass 61 tests; the larger 22-family selection
+passes 413 tests. These are selection counts, not a claim of unique coverage or
+native acceptance. The migrated files pass ESLint; the integrated compiler's
+remaining diagnostics at this checkpoint belong to concurrent broker work.
+
+Two fixture repairs preserve expected behavior: Python geometry uses its own
+temporary directory, and style-motion installs/restores the established fake-WSL
+adapter. The unchanged `dce47c5` style-motion source reproduces the same unsupported
+platform failure on Linux before repair. Manual source references, including the
+surface/datum canonical policies, now identify the actual strict test sources.
+The BRep lifecycle must be rerun after staging stabilizes: a concurrent build
+contract change invalidated its earlier attempt. Final installed consumers,
+complete pinned admission and full CI for the exact integrated commit remain
+open; simulator evidence does not qualify Fusion's native solver or geometry.

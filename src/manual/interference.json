@@ -7,7 +7,7 @@
     "examples": [
       {"label": "Two-body audit with an expected seal contact", "data": {"schemaVersion": 1, "frame": "component", "pairs": [{"a": {"token": "body-a"}, "b": {"token": "body-b"}}], "minimum": "0.2 mm", "expectedContacts": [{"a": {"token": "body-a"}, "b": {"token": "body-b"}, "cause": "seal face", "clearance": {"min": "0 mm", "max": "0.05 mm"}}]}, "requires": "A selected component; body refs resolvable.", "output": "result.results[0].expected is true with its cause; the contact is not deleted."}
     ],
-    "audit": {"sources": ["assets/cad/interference.py:clearance_grid,_grid_pairs,_grid_expected,_grid_cartesian,_grid_measure"], "verified": ["Instance/pair sets with include/exclude", "Expected contacts carry cause and range, never deleted wholesale", "Cartesian joint ranges are a product, not a diagonal", "Budget guard and broad phase", "Unsigned distance and Boolean-failure semantics"], "tests": ["tests/interference_test.py", "tests/interference.test.js"], "gaps": [], "bugs": ["Native interference analysis features are not claimed; the pair primitive is reused"]}
+    "audit": {"sources": ["assets/cad/interference.py:clearance_grid,_grid_pairs,_grid_expected,_grid_cartesian,_grid_measure"], "verified": ["Instance/pair sets with include/exclude", "Expected contacts carry cause and range, never deleted wholesale", "Cartesian joint ranges are a product, not a diagonal", "Budget guard and broad phase", "Unsigned distance and Boolean-failure semantics"], "tests": ["tests/interference_test.py", "tests/interference.test.ts"], "gaps": [], "bugs": ["Native interference analysis features are not claimed; the pair primitive is reused"]}
   },
   "motion.envelope": {
     "sections": [
@@ -17,6 +17,6 @@
     "examples": [
       {"label": "Conservative translation envelope", "data": {"schemaVersion": 1, "frame": "component", "motion": {"type": "translation", "axis": [1, 0, 0], "from": "0 mm", "to": "20 mm"}, "bounds": {"min": [0, 0, 0], "max": [10, 10, 10]}, "representation": "conservative"}, "requires": "A selected component; explicit bounds or a moving ref.", "output": "result.conservativeEnvelope spans x to 30 mm and result.continuousVerified is false."}
     ],
-    "audit": {"sources": ["assets/cad/interference.py:motion_envelope,_envelope_translation,_envelope_rotation"], "verified": ["Sampled vs conservative vs certified envelopes", "Translation sweep and rotation torus bound", "continuousVerified only with a coverage proof"], "tests": ["tests/interference_test.py", "tests/interference.test.js"], "gaps": [], "bugs": ["Certified path requires caller-supplied coverage proof; no solver certification"]}
+    "audit": {"sources": ["assets/cad/interference.py:motion_envelope,_envelope_translation,_envelope_rotation"], "verified": ["Sampled vs conservative vs certified envelopes", "Translation sweep and rotation torus bound", "continuousVerified only with a coverage proof"], "tests": ["tests/interference_test.py", "tests/interference.test.ts"], "gaps": [], "bugs": ["Certified path requires caller-supplied coverage proof; no solver certification"]}
   }
 }

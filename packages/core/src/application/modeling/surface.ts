@@ -301,7 +301,7 @@ export const manuals = Object.fromEntries(
           "trim plan/apply cell selection and protected-zone exclusions",
           "offset/extend signed distance and tangent-chain guards",
         ],
-        tests: ["tests/surface.test.js", "tests/surface_test.py"],
+        tests: ["tests/surface.test.ts", "tests/surface_test.py"],
         gaps: [],
         bugs: [
           "Native acceptance pending; continuity labels are not measured evidence.",

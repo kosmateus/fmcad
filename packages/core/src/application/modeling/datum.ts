@@ -423,7 +423,7 @@ export const manuals = Object.fromEntries(
           "plane-on-path position range preflight without native clamping",
           "joint frame inspection with explicit signed axes and limits",
         ],
-        tests: ["tests/datum.test.js", "tests/datum_test.py"],
+        tests: ["tests/datum.test.ts", "tests/datum_test.py"],
         gaps: [],
         bugs: [
           "Native frame/sign acceptance pending; reported limits are stored values, not revalidated.",
