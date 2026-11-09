@@ -10,7 +10,9 @@ result families, local CLI outcome checks, public worker receipt parsing and
 document baseline comparison. `tests/live-import-contracts.test.ts` and
 `tests/live-import-receipt.test.ts` exercise nonempty valid inputs, malformed
 fields, wrong identities/outcomes and actual local catalog/placement commands.
-Their latest runtime result is **pending**, so this is source coverage only.
+The current pure boundary run passed **13/13 tests, 0 skipped**, covering the
+139 mapped contract sites, real local CLI commands, original-request durable
+intent/recovery and child-owner/process uncertainty fences.
 
 343 sites retain specific native or installed-owner obligations. The mapping
 separates fixed-source identity, creation, parameter effects, catalog occurrence
@@ -49,7 +51,9 @@ creationId before the per-request intent; a restarted process or new requestId
 cannot replay the same pristine-fixture program. Recovery never releases it.
 A CLI terminal is only `terminal-observed`. Independent
 recovery requires the original driver to be dead and reads the exact original
-worker request before marking `settled`; it has no submit or close capability.
+worker request and an explicit `execution.sdkSettled === true` before marking
+`settled`; a terminal public job alone is insufficient. It has no submit or close
+capability.
 GM07/GM12 reuse this helper rather than adding another admission architecture.
 
 Required native run: both MCP and addin protocols, configured concurrency grid
@@ -65,7 +69,16 @@ still does not replace those four native negative cases.
 
 Narrow strict compilation and lint pass for the handoff delta and all related
 typed consumers. The 482 mapping entries resolve to current literal evidence.
-Pending offline gates: durable intent and unsaved-lease fault tests; actual
-owned child execution proof; pure
-contract/local CLI tests; and the existing D runtime recheck queue. Neither a
+Pending offline gates: actual owned child execution proof and the existing D
+runtime recheck queue. Durable intent, SDK settlement, unsaved-lease faults and
+pure contract/local CLI tests passed in the 13-case run. Neither a
 typed file nor a registered native factory is reported as native execution.
+
+Historical correction: the retained ordinary import expected CLI exit 1 for a
+completed local placement check with no observed poses. Accepted predecessor
+`a26222f` reports local `success: true`, `status: unknown` and CLI exit 0; the
+current standalone data-import regression already records this completion
+contract. The shared local assertion is corrected to exit 0. It still requires
+explicit unknown, no document identity, no model validation and no mutation.
+The separate native unknown-mutation assertions still require exit 1 and
+`success: false`; no production behavior changed.

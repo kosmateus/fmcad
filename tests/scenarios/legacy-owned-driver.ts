@@ -7,10 +7,10 @@ import type {
   SpawnSyncOptionsWithStringEncoding,
   SpawnSyncReturns,
 } from "node:child_process";
-import { ownedLease, writeHandoff } from "./scenarios/legacy-handoff";
-import { record, text as requiredText, number } from "./scenarios/contracts";
-import { parsePublicQueueJob } from "./live-import-receipts";
-const root = path.resolve(__dirname, "../..");
+import { ownedLease, writeHandoff } from "./legacy-handoff";
+import { record, text as requiredText, number } from "./contracts";
+import { parsePublicQueueJob } from "../live-import-receipts";
+const root = path.resolve(__dirname, "../../..");
 const load = createRequire(path.join(root, "package.json"));
 const { spawnSync, fixture } = load("./tests/helpers/live-broker") as {
   spawnSync(
@@ -24,7 +24,7 @@ const lease = ownedLease();
 assert.ok(
   lease &&
     lease.mode === "owned-unsaved-script" &&
-    lease.source === "tests/live-legacy-owned.ts",
+    lease.source === "tests/scenarios/legacy-owned-driver.ts",
   "Legacy commands require the explicit owned unsaved child handoff",
 );
 const name = lease.document.name;

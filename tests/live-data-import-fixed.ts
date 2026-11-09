@@ -11,7 +11,7 @@ import {
   type PlacementRow,
   type FixedPayload,
   type FixedEnvelope,
-} from "./live-fixed-import-contracts.js";
+} from "./fixed-import-result-contracts.js";
 // One opt-in, source-pinned cad-v1 run against an externally prepared exact
 // owner scratch. It deliberately does not attempt to satisfy the full native
 // negative-case requirement because cad-v1 does not preserve their failed

@@ -133,9 +133,10 @@ export function ownedLease(
     (file && (!Number.isSafeInteger(version) || version! < 1)) ||
     (value["mode"] === "owned-unsaved-script" &&
       (file ||
-        !["tests/live-data-import.ts", "tests/live-legacy-owned.ts"].includes(
-          String(value["source"]),
-        ))) ||
+        ![
+          "tests/live-data-import.ts",
+          "tests/scenarios/legacy-owned-driver.ts",
+        ].includes(String(value["source"])))) ||
     (protocol !== "mcp" && protocol !== "addin")
   )
     throw new Error("Invalid owned saved fixture version or protocol");

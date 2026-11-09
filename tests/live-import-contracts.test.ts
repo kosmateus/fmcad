@@ -11,7 +11,7 @@ import {
   parseFixtureContract,
   parseMethodResult,
   parseRuntimeBuild,
-} from "./live-fixed-import-contracts.js";
+} from "./fixed-import-result-contracts.js";
 import {
   parseCadCliOutput,
   parseDocumentSnapshot,
@@ -19,7 +19,7 @@ import {
   requiredItem,
   validateOperationResult,
   assertLocalImportOutcome,
-} from "./live-import-contracts.js";
+} from "./import-result-contracts.js";
 import { asArray, asRecord } from "./live-import-receipts.js";
 import { cad } from "./integration/offline-cli";
 

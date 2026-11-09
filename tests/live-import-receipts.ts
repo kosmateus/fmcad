@@ -223,8 +223,23 @@ export async function recoverNativeInvocation(
     false,
     "Original native driver may still submit; defer recovery and cleanup",
   );
-  const value = await lookup(structuredClone(intent.binding));
-  const job = parsePublicQueueJob(value, "Original native worker receipt");
+  const value = asRecord(
+    await lookup(structuredClone(intent.binding)),
+    "Original native worker result",
+  );
+  const execution = asRecord(
+    value["execution"],
+    "Original native SDK execution evidence",
+  );
+  assert.equal(
+    execution["sdkSettled"],
+    true,
+    "Original SDK execution remains unsettled; never replay",
+  );
+  const job = parsePublicQueueJob(
+    value["job"],
+    "Original native worker receipt",
+  );
   assert.equal(job.requestId, intent.binding.requestId);
   assert.equal(job.clientId, intent.binding.clientId);
   assert.ok(

@@ -83,7 +83,7 @@ test("fixed native invocation intent survives lost replies and recovery only rea
   const lookup = async (original: NativeInvocationBinding) => {
     lookups++;
     assert.deepEqual(original, binding);
-    return terminal;
+    return { job: terminal, execution: { sdkSettled: true } };
   };
   await assert.rejects(
     recoverNativeInvocation(filename, lookup, () => true),
@@ -94,10 +94,27 @@ test("fixed native invocation intent survives lost replies and recovery only rea
     /may still submit/,
   );
   assert.equal(lookups, 0, "Live or unverifiable drivers cannot race recovery");
+  for (const execution of [undefined, {}, { sdkSettled: false }]) {
+    await assert.rejects(
+      recoverNativeInvocation(
+        filename,
+        async () => ({ job: terminal, execution }),
+        () => false,
+      ),
+    );
+    assert.equal(
+      readNativeInvocation(filename).state,
+      "prepared",
+      "Terminal job alone cannot settle an unverified SDK operation",
+    );
+  }
   await assert.rejects(
     recoverNativeInvocation(
       filename,
-      async () => ({ ...terminal, state: "unknown" }),
+      async () => ({
+        job: { ...terminal, state: "unknown" },
+        execution: { sdkSettled: true },
+      }),
       () => false,
     ),
     /unsettled/,
@@ -105,7 +122,10 @@ test("fixed native invocation intent survives lost replies and recovery only rea
   await assert.rejects(
     recoverNativeInvocation(
       filename,
-      async () => ({ ...terminal, clientId: "foreign" }),
+      async () => ({
+        job: { ...terminal, clientId: "foreign" },
+        execution: { sdkSettled: true },
+      }),
       () => false,
     ),
   );
@@ -141,7 +161,10 @@ test("fixed native invocation intent survives lost replies and recovery only rea
   await assert.rejects(
     recoverNativeInvocation(
       filename,
-      async () => ({ ...terminal, id: "foreign-job" }),
+      async () => ({
+        job: { ...terminal, id: "foreign-job" },
+        execution: { sdkSettled: true },
+      }),
       () => false,
     ),
   );

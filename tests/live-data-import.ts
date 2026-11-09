@@ -1,6 +1,6 @@
 import { ownedLease, writeHandoff } from "./scenarios/legacy-handoff";
-import { assertLocalImportOutcome } from "./live-import-contracts.js";
-import { operationNames } from "./live-import-contracts.js";
+import { assertLocalImportOutcome } from "./import-result-contracts.js";
+import { operationNames } from "./import-result-contracts.js";
 import {
   requiredItem,
   parseCadCliOutput,
@@ -18,7 +18,7 @@ import {
   type CatalogIdMapEntry,
   type Operation,
   type CadOptions,
-} from "./live-import-contracts.js";
+} from "./import-result-contracts.js";
 // Opt-in live coverage for the existing versioned data-import operations.
 // All writes are confined to one exact, unsaved document created by this run.
 import assert from "node:assert/strict";

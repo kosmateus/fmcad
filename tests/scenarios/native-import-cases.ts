@@ -5,7 +5,7 @@ import type { Scenario } from "./runner";
 import { emit, program } from "./programs";
 import { record, text } from "./contracts";
 import { concurrencyLimit } from "./scheduling";
-import { parseDocumentSnapshot } from "../live-import-contracts";
+import { parseDocumentSnapshot } from "../import-result-contracts";
 import {
   assertActiveDocumentRestored,
   assertProtectedBaselineDocuments,

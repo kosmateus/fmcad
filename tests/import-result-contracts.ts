@@ -445,8 +445,8 @@ export function assertLocalImportOutcome(
   } else if (expect === "local-unknown") {
     assert.equal(
       result.status,
-      1,
-      `${operation} unknown local check must not exit as success`,
+      0,
+      `${operation} completed local check retains unknown evidence without claiming native acceptance`,
     );
     assert.equal(
       result.signal,

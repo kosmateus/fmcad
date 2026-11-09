@@ -21,7 +21,7 @@ export function nativeLegacyScenarios(owners = 10): Scenario[] {
         "Legacy local commands require an unsaved owned fixture",
       );
       try {
-        await session.legacyScript("tests/live-legacy-owned.ts");
+        await session.legacyScript("tests/scenarios/legacy-owned-driver.ts");
       } finally {
         await session.cleanup();
         if (session.report.cleanup === "complete") {
