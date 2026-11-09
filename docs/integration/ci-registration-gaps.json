@@ -1351,7 +1351,7 @@
       "reason": "The original parameter.test and failure-restoration programs require native physical-property and temporary-body readback. They are registered in the required native-fixtures profile with an exact owned saved handoff; neither source checks nor simulator results qualify those observations."
     },
     "tests/fixtures/owned-cli/handoff.test.js": {
-      "owner": "B/G",
+      "owner": "B",
       "status": "indirect-shared-scenario-registered-execution-pending",
       "sourceSha256": "0b115ab7ce96e4c379f2949dc117e8604d27e11e6325a29998b5168a9c69a19c",
       "execution": "indirect-only-through-child-cli",
@@ -1421,7 +1421,8 @@
       ],
       "nextAction": "Collect the six exact-final-commit CI run URLs and scenario artifacts, verify child callbacks actually executed and every owner completed cleanup. Do not run this fixture standalone or treat skipped registration as evidence.",
       "handoffBlocker": "nativeIntegrationEvidence.handoffBlockers/per-command-settlement",
-      "reason": "This child fixture is executed only by the owned child-cli scenario, not as a standalone test. CI registration names six protocol/concurrency jobs, but actual passing child execution, original SDK-settled receipts and cleanup evidence for the final commit are still required."
+      "reason": "This child fixture is executed only by the owned child-cli scenario, not as a standalone test. CI registration names six protocol/concurrency jobs, but actual passing child execution, original SDK-settled receipts and cleanup evidence for the final commit are still required.",
+      "ciEvidenceOwner": "G"
     }
   }
 }
