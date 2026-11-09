@@ -220,3 +220,67 @@ Final validation for this MCP delivery: full build, lint and test typecheck pass
 DTO declarations. Nine installed OpenCode tests pass. Three existing full
 MCP integration cases remain locally blocked by missing /proc process identity
 or opened-artifact verification, with guards and assertions preserved for CI.
+
+### Command registration and help migration
+
+PR #62 (`33f7539`) contains the typed MCP catalog/metadata and the installed
+companion correction. Its full CI and G's added retained gates are pending.
+
+Command registration now lives in `library-commands.ts`; all 505 canonical
+routes, 337 aliases, flags, argument limits and longest-prefix dispatch are
+compared with the frozen predecessor. Typed help modules implement English and
+Polish rendering, contextual sections, manual registration and text formatting.
+Every registered help page and the legacy/broker manual data are compared with
+the predecessor. The three native documentation audits remain unfinished.
+
+Two stale descriptions of legacy document selection now match the already
+migrated `legacy_document.py`: one case-insensitive open-name match is required,
+with ambiguity rejected before activation. This changes documentation only.
+The comparison tests explicitly account for these exact wording corrections;
+route/alias behavior and all other text remain covered.
+
+The retained help/registry run exposed two inherited defects without weakening
+assertions: batch.summary's audit pointed to the removed `.js` test rather than
+`tests/batch-summary.test.ts`; two registry upload fixtures supplied only a WSL
+environment variable, although detection now also requires the OS signature.
+The audit points to the existing typed test and the two fixtures use the retained
+fake-WSL helper. Production platform detection and upload assertions are unchanged.
+
+Validation for command/help delivery: build, lint and test typecheck pass;
+60 retained library/registry/help/manual/capability tests pass. The installed
+consumer additionally runs the npm-created `fmcad` executable link for detailed
+batch help with poisoned configuration, no source tree/host SDK and a read-only
+package; it returns complete bundled workflow help with empty stderr. Historical
+hashes of all nine migrated modules match the recorded `0b84454` git bytes.
+
+### Catalog registry composition
+
+PR #64 contains command registration and bilingual help. Catalog assembly now
+uses `library-catalog-registry.ts`, retaining specialist configuration order,
+validation, local classification, capability authorization and pinned probes.
+Frozen/current catalogs run in separate processes because specialist configure
+functions mutate loaded declaration objects. Every operation, MCP projection,
+invalid argument outcome and CLI contract is compared without shared state.
+Build and lint pass; 33 catalog/library/installed-consumer tests pass, including
+strict declarations for the registry. No A/C/D specialist policy changes.
+
+### Complete MCP compatibility orchestration
+
+PR #46 passed full CI 42524870768 and merged as `7ec4886`; #48 now targets main.
+PR #67 contains typed catalog registry composition.
+
+`mcp-stdio-compat.js` is now a loader for typed catalog composition, queue
+submission/recovery and the historical compatibility forwarder. Queue ports
+preserve single admission, stable request context, owned-artifact reads,
+reconciliation, caller-only wait abort and disposal. The newer bounded stdio
+transport remains separate; its stronger wire rules are not silently applied to
+the compatibility forwarder. Forwarder parity covers 110 request/response pairs
+and session propagation. Nine paired queue scenarios cover successful/failed or
+uncertain outcomes, Python preflight, lost acknowledgement with successful or
+failed recovery, missing results and registration failure.
+
+Full build, lint and test typecheck pass. All 35 library/stdio/catalog-sharing
+tests pass, including installed strict declarations for the complete compatibility
+module. Existing frame bytes, bounded metadata diagnostics, no-retry errors and
+accepted-running-job assertions pass unchanged. Native ownership/inode checks
+remain CI qualification rather than locally weakened assertions.

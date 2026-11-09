@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "baselineSha": "9daedef4f763bd9b229cc88dc376967a488b55e3",
+  "baselineSha": "54b31e48dc27b73e5b0cd5a0def9659f5bc8eacc",
   "meaning": "Explicit open registration debt at the latest G checkpoint, never a passing coverage waiver. New orphan files fail CI.",
   "gaps": {
     "tests/addin-bridge.test.js": {
@@ -182,12 +182,6 @@
       "status": "unregistered",
       "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
       "nextAction": "G and A: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
-    },
-    "tests/command-catalog.test.js": {
-      "owner": "E",
-      "status": "unregistered",
-      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
-      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
     },
     "tests/config-portable.test.js": {
       "owner": "E",
@@ -548,12 +542,6 @@
       "status": "unregistered",
       "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
       "nextAction": "G and G: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
-    },
-    "tests/help-details.test.js": {
-      "owner": "E",
-      "status": "unregistered",
-      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
-      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
     },
     "tests/helpers.test.js": {
       "owner": "E",
@@ -939,12 +927,6 @@
       "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
       "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
     },
-    "tests/manual-coverage.test.js": {
-      "owner": "E",
-      "status": "unregistered",
-      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
-      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
-    },
     "tests/manual-io.test.js": {
       "owner": "E",
       "status": "unregistered",
@@ -988,12 +970,6 @@
       "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
     },
     "tests/mcp-stdio-queue-lifecycle.test.js": {
-      "owner": "E",
-      "status": "unregistered",
-      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
-      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
-    },
-    "tests/mcp-stdio.test.js": {
       "owner": "E",
       "status": "unregistered",
       "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
@@ -1304,12 +1280,6 @@
       "status": "unregistered",
       "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
       "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
-    },
-    "tests/registry.test.js": {
-      "owner": "E",
-      "status": "unregistered",
-      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
-      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
     },
     "tests/review-pixels.test.js": {
       "owner": "E",

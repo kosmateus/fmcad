@@ -72,3 +72,22 @@ V1/V2 tests. The companion poison-config regression is fixed without changing
 existing assertions. Full CI and G's retained-gate registration remain required.
 Legacy queue submission/recovery and compatibility framing orchestration still
 remain in `mcp-stdio-compat.js`; they are not declared migrated by this extraction.
+
+Command registration and help composition use typed `library-commands` and
+`library-help*` modules, including typed legacy/broker manuals. The paired route
+comparison covers all 505 canonical entries and 337 aliases, argument limits,
+flags and dispatch. Paired help comparisons cover every EN/PL page, contextual
+sections, manual data and ANSI wrapping. Only two stale document-selection
+sentences change, reflecting the existing unique-match activation guard.
+
+Catalog registry assembly now uses `library-catalog-registry.ts`. Isolated paired
+processes compare all declarations, specialist validation, local classification,
+MCP schemas/adaptation, CLI contracts and capability/probe outcomes. Installed
+strict consumer compilation covers its exported declarations. Shared specialist
+module mutation is isolated by the harness, not removed from production.
+
+MCP compatibility orchestration is now typed in `library-mcp-compat`,
+`library-mcp-queue` and `library-mcp-forwarder`; the old JS path is a loader.
+Paired historical checks retain wire bytes, sessions, errors, single admission,
+request/document ownership, acknowledgement recovery and caller disposal.
+All 35 library/stdio/catalog-sharing checks pass, including installed declarations.

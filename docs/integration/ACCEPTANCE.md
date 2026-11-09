@@ -53,10 +53,10 @@ before any integration; record exact merged SHA and full matrix results here.
 | Package | Observed delivery              | Required evidence / remaining disposition                                                                             |
 | ------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
 | A       | PR #42 merged as `171c972`     | A1 broker gates restored; A2–A4 admission/recovery/concurrency still required.                                        |
-| B       | PR #36 / #44 / #45 merged through `0d6f757` | Persistence plus anti-omission/profile increments; semantic mapping, shared reopen and lifecycle/recovery proof remain open. |
+| B       | Deliveries merged through `2ed8017` | Persistence, assertion/profile increments and receipt-bound saved reopen/revision scenarios; semantic assertion mapping and remaining lifecycle migration stay open. |
 | C       | PR #37 `a4943f3`               | Claim only at observation; canonical modeling services, Python boundaries and negative/readback evidence required.    |
 | D       | PR #38 `ee0fd54`               | Claim only at observation; file/source/version/publication and recovery contracts required.                           |
-| E       | PR #39 / #46 / #48 / #50 / #52 / #62 merged through `9daedef` | Image, client/configuration, engineering/reference, review/shot and MCP catalog/context boundaries; remaining public routes and complete installed parity stay open. |
+| E       | PR #39 / #46 / #48 / #50 / #52 / #62 / #64 / #67 / #68 merged through `54b31e4` | Image, client/configuration, host commands, review/shot, MCP, command/help and catalog/queue boundaries; UI and complete installed parity stay open. |
 | F       | PR #41 merged as `04a42b4`     | First lifecycle/race delivery and UI ledger; controls, production broker parity, retention and TUI retirement remain open. |
 | G       | PR #40                         | Registration guard and inventories are an initial delivery, not G1–G4 completion.                                     |
 
@@ -92,8 +92,8 @@ python3 -B scripts/integration/native-plan.py --project-id PROJECT_ID --folder-i
 
 This command only constructs scenario objects and validates CLI arguments; it
 does not connect to Fusion, start a broker or execute a scenario. Schema 2 consumes
-B's merged required-profile manifest. It produces 48 shared command arrays for
-eight model families, MCP/addin and concurrency 1/2/10 with ten owners; it also
+B's merged required-profile manifest. It produces 60 shared command arrays for
+ten model families, MCP/addin and concurrency 1/2/10 with ten owners; it also
 retains 27 native obligations as `NOTRUN` argument arrays and nine diagnostics as
 non-substituting cases. It records source/profile hashes, dirty state, receipts
 and cleanup policy. Semantic per-assertion mapping and legacy lifecycle migration
@@ -486,3 +486,142 @@ shasum `e87a7421aa9ad042539f28b0ed2d1b382ebe176e`. MCP compatibility and
 entrypoint loaders remain active installed consumers and are not retired. E1–E4,
 G and offline acceptance remain incomplete; native Fusion qualification was not
 run and all native obligations remain `NOTRUN`.
+
+## Eleventh merged A–F checkpoint — command registration and public help
+
+Merged main `cafe9404a644f9ab27ac230bf3a13687e55d38b3` contains Agent E's
+typed command registration and bilingual help delivery from PR #64. Its exact
+head `3d549933732c4d60a545797638e5e976f5971f20` passed all 22 jobs in
+workflow `42531269978`. No merge-SHA workflow is registered; G's combined
+candidate and eventual merge head still require fresh full matrices.
+
+Typed composition now owns all 505 canonical registrations, 337 aliases, flags,
+argument limits, English/Polish help, contextual sections and legacy/broker
+manual data. Two stale legacy-document selection descriptions now match the
+already-migrated unique case-insensitive guard. The batch-summary audit link and
+two fake-WSL upload fixtures are corrected without changing production platform
+validation or upload assertions. Three native documentation audits remain open.
+
+G registers registry, command-catalog, help-details and manual-coverage alongside
+the already-selected library, capabilities and legacy-manual cases. Static
+registration moves to 491 sources / 246 registered / 245 explicit gaps. The
+exact 60-case public selection passes locally, including all routes/aliases and
+help pages, frozen predecessor comparisons, and a tarball installed outside the
+checkout whose npm-created executable renders complete batch help with poisoned
+configuration, a read-only package and empty stderr.
+
+The combined build, lint, formatting, strict test typecheck, nine registration
+tests, simulator typing and the 58-method / 21-property API shape check pass.
+Runtime inventory is 670 files and public routes remain 420. Package inspection
+reports 1,609 files, 3,382,730 compressed bytes and 16,669,251 unpacked bytes,
+shasum `3307b5262e5df2fb6f0a6497c307fceda5b71b18`.
+
+The source command/help files remain small installed loaders and are not retired.
+E1–E4, G and offline acceptance remain incomplete; queue/framing and native UI
+scope is still open, no Fusion command ran, and native obligations remain
+`NOTRUN`.
+
+## Twelfth merged A–F checkpoint — saved revisions and receipt-bound reopen
+
+Merged main `2ed8017eb2eb53ba9c1a4d0c796dad215dce5823` contains Agent B's saved
+revision and reopen delivery from exact implementation head
+`c4ab2f94bd9df66fa92770340dffa19151be9fef`. All 22 jobs passed that exact head
+in workflow `42529825311`. No workflow is registered for the merge SHA; G's
+combined candidate and eventual merge head still require fresh complete CI.
+
+The shared `reopen` and `revisions` families preserve exact file, folder and
+version ownership while moving to a new creation identity only through the
+original successful request and matching durable receipt. Save observation,
+close, open and deletion recovery read original evidence and do not replay an
+uncertain mutation. The model exercises MCP and addin at concurrency 1/2/10,
+including failure, cancellation, foreign-receipt and cleanup boundaries.
+
+G adds both families to the broker CI matrix for both transports at concurrency
+1/2/10 and keeps ten owners for every new job. Artifact names include concurrency
+to prevent cross-job collisions. A registration guard proves all twelve required
+new matrix cases remain present and that the command uses the matrix concurrency.
+The required-profile ledger already names both families; static coverage therefore
+moves to 493 sources / 248 registered / 245 explicit gaps without waiving debt.
+
+The combined pinned build, strict test typecheck and all 156 shared scenario unit
+cases pass. Simulator typing reports zero diagnostics, the API verifier retains
+58 methods / 21 property accessors, and the two CI-registration assertions pass.
+The unchanged local broker gate passes 28 of 35 cases; seven stop at unavailable
+`/proc` process identity, so no assertion is relaxed and exact-head Linux CI is
+required. A direct component-profile attempt produced no completion evidence
+before it was terminated on this restricted host; it is not recorded as passing.
+
+The native-plan generator now includes both delivered families and validates 60
+MCP/addin command arrays. All 27 native obligations and nine diagnostics remain
+`NOTRUN`; Fusion was not started. Runtime inventory remains 670 files and public
+routes remain 420. Published package content is unchanged at 1,609 files,
+3,382,730 compressed bytes and 16,669,251 unpacked bytes, shasum
+`3307b5262e5df2fb6f0a6497c307fceda5b71b18`.
+
+No facade is retired: the delivery adds owned scenario and recovery evidence but
+does not prove any public loader has no consumers. Semantic per-assertion mapping,
+remaining legacy lifecycle migration, package checklists, full candidate CI and
+merge-head CI keep G and offline acceptance incomplete. Native qualification
+remains a separate real-Fusion milestone after offline completion.
+
+## Thirteenth merged A–F checkpoint — catalog registry composition
+
+Merged main `be50c47d661dc9361a100dd0922a91ca8031e71f` contains Agent E's typed
+catalog registry delivery from PR #67. Its exact head
+`eaa3ff9d43b3713e037f8c567dbef659e9db8829` passed all 22 jobs in workflow
+`42531860636`. The merge SHA has no registered workflow; G's combined candidate
+and eventual merge head still require fresh full CI.
+
+Typed composition now owns catalog assembly, specialist wiring, invocation
+validation and capability dispatch while retaining C/D specialist implementations,
+configuration ordering, local execution classification and broker probe pins.
+Frozen/current comparisons run in isolated processes, and the installed tarball
+compiles the new registry declarations outside the checkout.
+
+The delivered consumer extends the already-registered `library-api` suite, so no
+new source is added to the debt ledger: coverage remains 493 sources / 248
+registered / 245 explicit gaps. After explicit cache preparation and a writable
+temporary directory outside the checkout, all 16 library cases pass locally,
+including the unchanged offline install and strict declaration compile. The full
+build, simulator typing and 58-method / 21-property API verifier also pass.
+
+Runtime inventory increases to 671 files while public routes remain 420. Package
+inspection reports 1,611 files, 3,383,482 compressed bytes and 16,677,940
+unpacked bytes, shasum `43a9119831e0be960bea7c19b0a40db677468bf7`.
+`src/catalog/index.js` remains an installed compatibility loader with active
+consumers and is not retired.
+
+E1–E4, G and offline acceptance remain incomplete; remaining public consumers,
+queue/framing, UI orchestration, package checklists and exact candidate/merge-head
+CI remain open. Native preparation stays `NOTRUN`; Fusion was not executed.
+
+## Fourteenth merged A–F checkpoint — MCP queue recovery and framing
+
+Merged main `54b31e48dc27b73e5b0cd5a0def9659f5bc8eacc` contains Agent E's remaining
+MCP compatibility delivery from PR #68. Its exact head
+`90d7d55575b6722affdb20a9ed3c8da4b77f113f` passed all 22 jobs in workflow
+`42532613149`. No merge-SHA workflow is registered; the combined G candidate and
+eventual merge head still require fresh complete CI.
+
+Strict typed catalog, queue and forwarder modules now own the compatibility path.
+Explicit ports retain request/document context, one submission, lost-acknowledgement
+lookup, owned artifact reads, caller-only wait abort and disposal. The historical
+forwarder keeps its separate framing and bounded diagnostics instead of silently
+inheriting stronger transport semantics. The public JS file remains a loader.
+
+G registers the retained `mcp-stdio` suite alongside the already-selected library
+and catalog-sharing consumers. The exact 35-case selection passes locally after
+explicit cache preparation and outside-checkout installation, with no changed or
+skipped assertions. Coverage moves to 493 sources / 249 registered / 244 explicit
+gaps; only the delivered stdio source is removed from the debt ledger.
+
+The combined full build passes. Runtime inventory increases to 674 files while
+public routes remain 420. Package inspection reports 1,617 files, 3,385,022
+compressed bytes and 16,694,315 unpacked bytes, shasum
+`22dd30f1e463c1b7bcb4989dda969668ff6555fe`.
+
+`src/mcp-stdio-compat.js` remains an active installed loader and is not retired.
+The separately inventoried queue-lifecycle source remains open until its own
+owner/execution evidence is delivered. E1–E4, G and offline acceptance remain
+incomplete; full candidate/merge-head CI and remaining package checklists are
+required. Native preparation remains `NOTRUN`; Fusion was not executed.

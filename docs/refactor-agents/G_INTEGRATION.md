@@ -359,3 +359,95 @@ Inventory is 661 runtime files and 420 public routes. Package inspection reports
 `e87a7421aa9ad042539f28b0ed2d1b382ebe176e`. MCP loaders remain active installed
 consumers and are not retired. E1–E4, G and offline acceptance remain open;
 native preparation remains `NOTRUN` and Fusion was not executed.
+
+### Eleventh A–F merge checkpoint
+
+Merged main `cafe940` adds Agent E's typed command registry and bilingual help
+composition from PR #64. Its exact head `3d54993` passed all 22 jobs in workflow
+`42531269978`; no merge-SHA workflow is registered. The combined candidate and
+eventual merge head still require fresh full CI.
+
+G adds registry, command-catalog, help-details and manual-coverage to the contracts
+gate. With the already-selected library, capabilities and legacy-manual suites,
+the exact 60-case public boundary passes locally. It covers all 505 routes, 337
+aliases, EN/PL help, contextual/manual data, frozen predecessors and the installed
+npm executable outside the checkout. Registration becomes 491 test sources / 246
+registered / 245 explicit gaps.
+
+Build, lint, formatting, strict test types, nine registration tests, simulator
+typing and the 58-method / 21-property API check pass. Inventory is 670 runtime
+files and 420 public routes. Package inspection reports 1,609 files, 3,382,730
+compressed bytes and 16,669,251 unpacked bytes, shasum
+`3307b5262e5df2fb6f0a6497c307fceda5b71b18`.
+
+Command/help source files remain active installed loaders and are not retired.
+E1–E4, G and offline acceptance remain open; three native documentation audits,
+queue/framing and UI orchestration remain, and Fusion was not executed.
+
+### Twelfth A–F merge checkpoint
+
+Merged main `2ed8017` adds Agent B's saved revision and receipt-bound reopen
+families from exact implementation head `c4ab2f9`. All 22 jobs passed that head
+in workflow `42529825311`; the merge SHA has no registered workflow. The combined
+G candidate and eventual merge head still require fresh full CI.
+
+G registers `reopen` and `revisions` in the broker matrix for MCP and addin at
+concurrency 1/2/10 with ten owners. Artifact names include concurrency, and a
+guard verifies the twelve new combinations plus the runtime matrix argument.
+Coverage is 493 test sources / 248 registered / 245 explicit gaps.
+
+Build, strict test types, 156 scenario tests, simulator typing, API verification
+and both registration assertions pass locally. The broker regression selection
+passes 28 of 35; seven unchanged process-identity cases stop at missing `/proc`
+and require exact-head Linux CI. No assertion is waived.
+
+The native generator now validates 60 shared commands for ten families. Its 27
+native obligations and nine diagnostics remain `NOTRUN`; Fusion was not executed.
+Runtime inventory remains 670 files and 420 routes. Package content remains 1,609
+files, 3,382,730 compressed bytes and 16,669,251 unpacked bytes, shasum
+`3307b5262e5df2fb6f0a6497c307fceda5b71b18`.
+
+No facade is retired without consumer evidence. Semantic assertion mapping,
+remaining lifecycle migration, owner checklists, exact candidate CI and later
+merge-head CI keep G and offline acceptance incomplete; native qualification is
+still a separate post-offline milestone requiring real Fusion access.
+
+### Thirteenth A–F merge checkpoint
+
+Merged main `be50c47` adds Agent E's typed catalog registry composition from PR
+#67. Its exact head `eaa3ff9` passed all 22 jobs in workflow `42531860636`; no
+merge-SHA workflow is registered. Fresh full CI remains required on the combined
+candidate and eventual merge head.
+
+The changed `library-api` consumer was already registered, so coverage remains
+493 sources / 248 registered / 245 explicit gaps. After explicit cache preparation
+and a writable temporary directory outside the checkout, all 16 library cases pass,
+including offline installation and strict declarations. Build, simulator typing
+and the 58-method / 21-property API verifier pass.
+
+Inventory is 671 runtime files and 420 public routes. Package inspection reports
+1,611 files, 3,383,482 compressed bytes and 16,677,940 unpacked bytes, shasum
+`43a9119831e0be960bea7c19b0a40db677468bf7`. The catalog loader remains an active
+installed consumer and is not retired. E1–E4, G and offline acceptance remain
+open; native preparation remains `NOTRUN` and Fusion was not executed.
+
+### Fourteenth A–F merge checkpoint
+
+Merged main `54b31e4` adds Agent E's typed MCP queue, compatibility and forwarder
+composition from PR #68. Its exact head `90d7d55` passed all 22 jobs in workflow
+`42532613149`; no merge-SHA workflow is registered. Fresh full CI remains required
+on the combined candidate and eventual merge head.
+
+G adds `mcp-stdio` to the retained contracts gate alongside library and
+catalog-sharing consumers. Their exact 35 cases pass locally after explicit cache
+preparation and outside-checkout installation, with zero failures or skips.
+Coverage becomes 493 test sources / 249 registered / 244 explicit gaps.
+
+Build passes. Inventory is 674 runtime files and 420 public routes. Package
+inspection reports 1,617 files, 3,385,022 compressed bytes and 16,694,315 unpacked
+bytes, shasum `22dd30f1e463c1b7bcb4989dda969668ff6555fe`.
+
+The JS compatibility path remains an active installed loader and is not retired;
+the separate queue-lifecycle source remains open pending its own evidence. E1–E4,
+G and offline acceptance remain incomplete. Native preparation is still `NOTRUN`
+and Fusion was not executed.

@@ -193,6 +193,13 @@ test('outside-repository consumer imports built JS and declarations with no sour
       import { queueMetadata } from './node_modules/fmcad/dist/src/dist/composition/library-mcp-metadata.js';
       import { createCatalogPost } from './node_modules/fmcad/dist/src/dist/composition/library-mcp-catalog.js';
       void queueMetadata; void createCatalogPost;
+      import { commands, findCommand } from './node_modules/fmcad/dist/src/dist/composition/library-commands.js';
+      import { detail, globalHelp } from './node_modules/fmcad/dist/src/dist/composition/library-help.js';
+      void commands; void findCommand; void detail; void globalHelp;
+      import { validateInvocation, executeCapability } from './node_modules/fmcad/dist/src/dist/composition/library-catalog-registry.js';
+      void validateInvocation; void executeCapability;
+import { createQueuePost as queuePost, createForwarder as forwarder, responseMessages } from './node_modules/fmcad/dist/src/dist/composition/library-mcp-compat.js';
+void queuePost; void forwarder; void responseMessages;
       import type { FmcadOptions, ExecutionReceipt, ReviewRequest, ReviewServiceOptions, PythonCheckReport } from 'fmcad/api';
       declare const options: FmcadOptions;
       declare const reviewOptions: ReviewServiceOptions;
@@ -234,6 +241,15 @@ test('outside-repository consumer imports built JS and declarations with no sour
       if (api.query.catalog().length < 250) throw Error('Missing public catalog');
       await api.dispose();
     `], { cwd: directory, env: { ...process.env, HOME: '/nonexistent', XDG_CONFIG_HOME: '/nonexistent' }, encoding: 'utf8' });
+    const poison = path.join(directory, 'invalid-help-config.json');
+    fs.writeFileSync(poison, '{invalid application configuration');
+    const help = require('node:child_process').spawnSync(process.execPath, [path.join(directory, 'node_modules/.bin/fmcad'), 'help', 'batch', 'run'], {
+      cwd: directory, encoding: 'utf8', env: {...process.env, FMCAD_CONFIG: poison, LC_ALL:'en_US.UTF-8'},
+    });
+    assert.equal(help.status, 0, help.stderr);
+    assert.equal(help.stderr, '');
+    assert.match(help.stdout, /Help: batch run/);
+    assert.match(help.stdout, /Worked Workflow: Multi-component parametric sketch-to-solid/);
     assert(!fs.existsSync(path.join(installed, 'src')));
     assert(!fs.existsSync(path.join(directory, 'node_modules/@opencode-ai')));
     assert(!fs.existsSync(path.join(directory, 'node_modules/@opencode')));
@@ -474,4 +490,179 @@ test('typed MCP catalog preserves local routing, notification errors and exact o
     };
     assert.deepEqual(await observe(current),await observe(historical));
   }
+});
+
+test('typed command registration preserves every route, alias, flag and argument limit', () => {
+  const historical = historicalPublicBoundary('commands');
+  const current = require('../src/commands');
+  const previous = 'legacy document lookup activates the first case-insensitive open-name match; duplicate names are not rejected.';
+  const corrected = 'document lookup requires one case-insensitive open-name match; duplicate names are rejected before activation.';
+  const expected = historical.commands.map(command => ({...command, description:command.description.replace(previous, corrected)}));
+  assert.deepEqual(current.commands, expected);
+  assert.deepEqual(current.globalFlags, historical.globalFlags);
+  assert.deepEqual(current.legacyCommands, expected.slice(0, historical.legacyCommands.length));
+  for (const command of expected) {
+    for (const spelling of [command.key, ...(command.aliases || [])]) {
+      assert.equal(current.findCommand(spelling.split(' ')), current.commands.find(entry => entry.key === command.key));
+      assert.equal(current.findCommand([...spelling.split(' '), 'argument-α']).key, historical.findCommand([...spelling.split(' '), 'argument-α']).key);
+    }
+  }
+  for (const key of Object.keys(historical.SPECIAL)) assert.deepEqual(current.SPECIAL[key](),historical.SPECIAL[key]());
+  assert.deepEqual(current.DOC_SUB, historical.DOC_SUB);
+  for (const [key, descriptor] of Object.entries(historical.OPS_DETAIL)) assert.deepEqual(current.OPS_DETAIL[key], {...descriptor,desc:descriptor.desc.replace(previous,corrected)});
+  assert.equal(current.findCommand(['not-a-command']),undefined);
+  const documentSource = fs.readFileSync(path.join(root,'runtime/python/fmcad/adapters/fusion/legacy_document.py'),'utf8');
+  assert.match(documentSource, /if len\(matches\) != 1:/);
+  assert(documentSource.indexOf('if len(matches) != 1:') < documentSource.indexOf('doc.activate()'));
+});
+
+test('typed help preserves every registered English and Polish page and text layout', () => {
+  assert.deepEqual(require('../src/legacy-manual'), historicalPublicBoundary('legacy-manual'));
+  assert.deepEqual(require('../src/broker-manual'), historicalPublicBoundary('broker-manual'));
+  const oldHelp = historicalPublicBoundary('help'), help = require('../src/help');
+  const oldPolish = historicalPublicBoundary('help-pl'), polish = require('../src/help-pl');
+  const oldDetails = historicalPublicBoundary('help-details'), details = require('../src/help-details');
+  const oldManual = historicalPublicBoundary('help-manual'), manual = require('../src/help-manual');
+  const oldFormat = historicalPublicBoundary('help-format'), format = require('../src/help-format');
+  const commands = require('../src/commands').commands;
+  const original = {LC_ALL:process.env.LC_ALL,FMCAD_CONFIG:process.env.FMCAD_CONFIG};
+  process.env.FMCAD_CONFIG = path.join(tmpdir(),'fmcad-help-no-config-'+process.pid);
+  try {
+    for (const language of ['en_US.UTF-8','pl_PL.UTF-8']) {
+      process.env.LC_ALL = language;
+      assert.equal(help.globalHelp(),oldHelp.globalHelp());
+      for (const entry of commands) assert.equal(help.detail(...entry.key.split(' ')),oldHelp.detail(...entry.key.split(' ')),entry.key);
+      assert.equal(help.detail('missing','route'),oldHelp.detail('missing','route'));
+    }
+    for (const entry of commands) {
+      assert.equal(polish.description(entry),oldPolish.description(entry),entry.key);
+      assert.equal(polish.detail(entry),oldPolish.detail(entry),entry.key);
+      assert.equal(details.contextualHelp(entry),oldDetails.contextualHelp(entry),entry.key);
+      assert.equal(manual.manualHelp(entry),oldManual.manualHelp(entry),entry.key);
+    }
+    for (const width of [20,40,80,120]) for (const text of ['plain words '.repeat(30),'  indented text\n{\"json\":true}\n\nŻółć','\u001b[31mred words '.repeat(15)+'\u001b[0m']) assert.equal(format.formatHelp(text,width),oldFormat.formatHelp(text,width));
+    const guide = historicalPublicBoundary('help-guide');
+    guide.sections = guide.sections.map(section => ({...section,text:section.text.replace('Legacy --doc operations activate the FIRST case-insensitive document match, not a uniqueness-safe selector.','Legacy --doc operations require one case-insensitive open-document name match; ambiguous names fail before activation.')}));
+    assert.deepEqual(require('../src/help-guide'),guide);
+  } finally { for (const [key,value] of Object.entries(original)) { if(value === undefined) delete process.env[key]; else process.env[key]=value; } }
+});
+
+test('typed catalog composition preserves declarations, specialists and broker probe pins', () => {
+  async function observeCatalog(root, historical) {
+    const path = require('node:path'), fs = require('node:fs');
+    const filename = path.join(root, 'src/catalog/index.js');
+    let api;
+    if (historical) {
+      const source = fs.readFileSync(path.join(root,'tests/fixtures/public-host-baseline/catalog/index.js.txt'),'utf8');
+      const provenance = require(path.join(root,'tests/fixtures/public-host-baseline/provenance.json'))['src/catalog/index.js'];
+      require('node:assert/strict').equal(require('node:crypto').createHash('sha256').update(source).digest('hex'),provenance.sha256);
+      const Module = require('node:module'), baseline = new Module(filename, module);
+      baseline.filename = filename;
+      baseline.paths = Module._nodeModulePaths(path.dirname(filename));
+      require.cache[filename] = baseline;
+      baseline._compile(source,filename);
+      api = baseline.exports;
+    } else api = require(filename);
+    const observe = fn => {try{return {value:fn()};}catch(error){return {error:{name:error.name,message:error.message,code:error.code}};}};
+    const operations = {};
+    for (const [operation,declaration] of Object.entries(api.catalog)) {
+      const input={version:1,kind:'cad',operation,data:declaration.example,doc:'Model',docId:'creation',docFileId:'file'};
+      operations[operation]={declaration,contract:api.contracts[operation],
+        validation:[declaration.example,{unknown:true},null].map(data=>observe(()=>api.validateCad(operation,structuredClone(data)))),
+        invocation:observe(()=>api.validateInvocation(structuredClone(input))),
+        local:[false,true].map(preview=>observe(()=>api.localInvocation({...input,preview}))) };
+    }
+    const tools = Object.fromEntries(api.mcpTools.map(tool=>[tool.name,{tool,
+      calls:[undefined,{},null,[],{data:{},doc:'Model',docId:'creation',docFileId:'file',preview:true}].map(args=>observe(()=>api.mcpInvocation(tool.name,structuredClone(args))))}]));
+    const search = [{query:'sketch'},{query:'żółć'},{limit:101},null].map(data=>observe(()=>api.executeCapability('capabilities.inspect',data)));
+    const probes=[];
+    for (const backend of ['mcp','addin','invalid']) {
+      const calls=[];
+      const brokerSdkProbePort={boundary:'fmcad-broker',kind:'sdk-probe',probe:async request=>{calls.push(request);return {capabilityId:request.capabilityId,status:'pass',precision:'pass',coverage:'pass',build:'fixture',identity:'verified',mutation:'none',restoration:'not_applicable',limitations:[]};}};
+      try {probes.push({value:await api.executeCapability('capabilities.probe',{capabilityId:'entity.list'},{docId:'creation',docFileId:'file'},{backend,brokerSdkProbePort}),calls});}
+      catch(error){probes.push({error:{name:error.name,message:error.message},calls});}
+    }
+    const reserved = require(path.join(root,'src/commands')).legacyCommands.flatMap(command=>[command.key,...(command.aliases||[])]);
+    return {operations,tools,search,probes,cli:api.cliContracts(reserved)};
+  }
+  const observe = historical => JSON.parse(execFileSync(process.execPath,['-e',
+    '('+observeCatalog.toString()+')('+JSON.stringify(root)+','+historical+').then(result=>process.stdout.write(JSON.stringify(result)),error=>{console.error(error);process.exitCode=1})'],
+    {cwd:root,encoding:'utf8',maxBuffer:32*1024*1024}));
+  const historical=observe(true),current=observe(false);
+  assert.deepEqual(Object.keys(current.operations),Object.keys(historical.operations));
+  for(const [operation,value] of Object.entries(historical.operations)) assert.deepEqual(current.operations[operation],value,operation);
+  assert.deepEqual(Object.keys(current.tools),Object.keys(historical.tools));
+  for(const [tool,value] of Object.entries(historical.tools)) assert.deepEqual(current.tools[tool],value,tool);
+  assert.deepEqual(current.cli,historical.cli);
+  assert.deepEqual(current.search,historical.search);
+  assert.deepEqual(current.probes,historical.probes);
+});
+
+test('compatibility forwarder preserves framing, sessions, receipts and no-retry errors', async () => {
+  const historical = historicalPublicBoundary('mcp-stdio-compat').createForwarder;
+  const current = require('../src/mcp-stdio-compat').createForwarder;
+  async function observe(factory, request, response) {
+    const sent = [], logs = [], calls = [];
+    const forward = factory(async (...args) => {
+      calls.push(args);
+      if (response instanceof Error) throw response;
+      return structuredClone(response);
+    }, (message, frame) => sent.push({ message, frame }), line => logs.push(line), { headers: { Authorization: 'secret' } });
+    await forward(typeof request === 'string' ? request : JSON.stringify(request));
+    return { sent, logs, calls };
+  }
+  const requests = ['{', 'null', '[]', '{}', {jsonrpc:'1.0',id:1,method:'ping'},
+    {jsonrpc:'2.0',id:{},method:'ping'}, {jsonrpc:'2.0',id:null,method:'ping'},
+    {jsonrpc:'2.0',id:1,method:'ping'}, {jsonrpc:'2.0',method:'notifications/initialized'},
+    {jsonrpc:'2.0',id:1,method:'resources/templates/list'}, {jsonrpc:'2.0',id:1,method:'tools/list'}];
+  const responses = [{status:204,raw:''}, {status:500,raw:'secret'},
+    {status:200,raw:'invalid'}, {status:200,raw:'{"jsonrpc":"2.0","id":1,"result":{}}'},
+    {status:200,raw:'{"jsonrpc":"2.0","id":1,"error":{"code":-32601}}'},
+    {status:200,raw:'{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"foreign"},{"name":"fmcad_queue_result"}]}}',queueTools:true,queueReceipt:{jobId:'owned',requestId:'request'}},
+    {status:200,raw:'data: {"jsonrpc":"2.0","method":"notice"}\n\ndata: {"jsonrpc":"2.0","id":1,"result":{}}\n\n'},
+    {status:200,raw:'{"jsonrpc":"2.0","id":2,"result":{}}'},
+    {status:200,raw:'{"jsonrpc":"1.0","id":1,"result":{}}'},
+    new Error('authorization secret disconnected')];
+  for (const request of requests) for (const response of responses)
+    assert.deepEqual(await observe(current,request,response),await observe(historical,request,response));
+  async function sessions(factory) {
+    const calls=[], sent=[];
+    const forward=factory(async (request,session,version)=>{
+      calls.push({request,session,version});
+      return {status:200,sessionId:'retained-session',raw:JSON.stringify({jsonrpc:'2.0',id:request.id,result:{protocolVersion:'2025-03-26'}})};
+    }, message=>sent.push(message));
+    await forward('{"jsonrpc":"2.0","id":"init","method":"initialize"}');
+    await forward('{"jsonrpc":"2.0","id":"next","method":"ping"}');
+    return {calls,sent};
+  }
+  assert.deepEqual(await sessions(current),await sessions(historical));
+});
+
+test('MCP queue migration preserves single admission, recovery, receipts and disposal', async () => {
+  const historical=historicalPublicBoundary('mcp-stdio-compat'), current=require('../src/mcp-stdio-compat');
+  const catalog={tools:()=>[],list:()=>[],fromMcp:()=>assert.fail('raw RPC is not catalog'),isLocal:()=>false};
+  historical.configureCatalogServices(catalog);current.configureCatalogServices(catalog);
+  async function observe(api, scenario) {
+    const calls=[];
+    const job={id:'owned-job',requestId:'owned-request',clientId:'owner',state:scenario==='unknown'?'needs_reconciliation':scenario==='failed'?'failed':'succeeded',revision:3};
+    const value={job,rpc:{status:200,raw:JSON.stringify({jsonrpc:'2.0',id:1,result:{content:[{type:'text',text:'exact'}]}})}};
+    if(scenario==='missing') delete value.rpc;
+    if(scenario==='python') value.execution={pythonCheck:{status:'required'},code:'PYTHON_REQUIRED',executionOutcome:'not_started',mayHaveMutated:false};
+    const client={dir:'unused',auth:{clientId:'owner'},
+      register:async options=>{calls.push(['register',options]);if(scenario==='registration')throw new Error('registration failed');},
+      submit:async input=>{calls.push(['submit',input]);if(['recovered','lost','recovery-failed'].includes(scenario))throw new Error('acknowledgement lost');return job;},
+      findRequest:async requestId=>{calls.push(['findRequest',requestId]);if(scenario==='recovery-failed')throw new Error('recovery disconnected');return scenario==='recovered'?value:null;},
+      wait:async (id,{signal})=>{calls.push(['wait',id,signal.aborted]);return value;},
+      persistRequestContext:(...args)=>calls.push(['persist',...args]),
+      dispose:()=>calls.push(['dispose']),
+    };
+    const post=api.createQueuePost(client,{backend:'addin',timeoutMs:2000},3000,{sessionId:'owner-session',projectDirectory:root});
+    const response=await post({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'execute_python',arguments:{code:'unchanged'},_meta:{fmcad:{requestId:'owned-request',doc:'Exact',docId:'doc-pin',docFileId:'file-pin',projectId:'project-pin',purpose:'Inspect requested design',expectedRevision:3}}}},'wire-session','wire-version');
+    post.close();
+    assert.equal(calls.filter(c=>c[0]==='submit').length,scenario==='registration'?0:1);
+    assert.equal(calls.at(-1)[0],'dispose');
+    return {calls,response};
+  }
+  for(const scenario of ['success','failed','unknown','missing','python','recovered','lost','recovery-failed','registration'])
+    assert.deepEqual(await observe(current,scenario),await observe(historical,scenario),scenario);
 });
