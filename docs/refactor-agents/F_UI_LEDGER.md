@@ -14,22 +14,22 @@ store with Dolt 2.7.2 on a disposable copy. The original database was untouched.
 in progress. Archived status is not current acceptance.
 Archived branch commits are source evidence, not proof of successful qualification.
 
-| Archived task / feature | Current production evidence | Disposition / remaining work |
-| --- | --- | --- |
-| `control-center`, `control-center.1` | `src/composition/control-center.ts`, installed service and authenticated HTTP query routes | Preserve local web service; complete mutation composition and terminal transition. |
-| `web-bundle` | Strict ESM build, local font/vendor manifest and SHA-256 verification; browser-bundle tests | Preserve assets and verify installed consumers on every delivery. |
-| `web-operational-views` | Typed `web/app.ts`, query contracts, overview/tasks/agents/logs, correlated source/response artifacts and exports | Preserve all four views, exact project/task/request bindings, explicit unavailable/unknown data. Repair async lifecycle and selection races. |
-| `web-agents-projects` | Typed presentation/controller, SQLite alias and archive/restore services and tests | Foundations exist, but production composition does not inject project actions and the main app does not mount the richer project controls. Required integration remains. |
-| `web-system-controls` | Main has broker control core/IPC adapters and terminal controls; web has translated control messages only | Required web integration. Archive `impl/console-system-controls` at `3d8f73e` and `integration/control-center` at `fc7940a` contain contracts, server, web and QueueClient adapter. Audit each against current A contracts; do not transplant entire branch. |
-| System status view | Main overview renders a small host strip; archived integration has full System view | Required parity review of broker/process/lock/health detail. A controls broker semantics; F owns presentation. |
-| `web-telemetry` | Passive production telemetry reads broker/presence evidence and registered histories; `console-telemetry` tests | Preserve absent/stale/unknown distinctions. Real running broker browser evidence remains beyond the existing retained-SQLite browser test. |
-| `log-retention` | SQLite page/query/read-snapshot bounds, database cap, bounded ingestion; no explicit purge API in the current history port | New quota-exhaustion test proves failed writes keep the committed revision, original unresolved event/job/file records and foreign project unchanged across reopen; page/read byte bounds reject excessive queries. No automatic deletion is introduced. Remaining retention policy and archived task acceptance must be reconciled. |
-| `locale-catalogs`, `locale-selection` | Imported catalogs, key/argument test, persistent selector and fallback runtime | Preserve catalogs. Main app still contains Polish literals in detail/filter/help surfaces and fixed `pl-PL` host formatting; translation completeness is not UI completeness. |
-| `browser-console` | Fixture interaction suite and production registered-SQLite test | Preserve exact response waits and network/error evidence. Add deterministic delayed-response and disposal regressions; extend production broker coverage. |
-| Terminal project/config discovery | `src/console.js`, `console-project.js`, CLI help | E-owned entrypoint coordination required; do not silently drop options or diagnostic alias. |
-| Terminal keyboard, freeze/follow, search/filter, details/export | Web counterparts are present | Verify web keyboard accessibility and dynamic filtering; terminal-specific rasterization/PTY behavior can retire only with entrypoint change. |
-| Terminal broker pause/lifecycle and system inspection | `console-controller.js`, `console-services.js`, System terminal tab | Keep until web parity is verified. Do not delete controller/services merely because their names start with `console-`. |
-| Terminal rendering/dependencies | `console-app`, renderer/view/chrome/tabs, `terminal-kit`, visual/PTY scripts and tests | Separate retirement PR after parity; E changes public routes, G integrates shared package/staging/CI removals. |
+| Archived task / feature                                         | Current production evidence                                                                                                | Disposition / remaining work                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `control-center`, `control-center.1`                            | `src/composition/control-center.ts`, installed service and authenticated HTTP query routes                                 | Preserve local web service; complete mutation composition and terminal transition.                                                                                                                                                                                                                                                   |
+| `web-bundle`                                                    | Strict ESM build, local font/vendor manifest and SHA-256 verification; browser-bundle tests                                | Preserve assets and verify installed consumers on every delivery.                                                                                                                                                                                                                                                                    |
+| `web-operational-views`                                         | Typed `web/app.ts`, query contracts, overview/tasks/agents/logs, correlated source/response artifacts and exports          | Preserve all four views, exact project/task/request bindings, explicit unavailable/unknown data. Repair async lifecycle and selection races.                                                                                                                                                                                         |
+| `web-agents-projects`                                           | Typed presentation/controller, SQLite alias and archive/restore services and tests                                         | Foundations exist, but production composition does not inject project actions and the main app does not mount the richer project controls. Required integration remains.                                                                                                                                                             |
+| `web-system-controls`                                           | Main has broker control core/IPC adapters and terminal controls; web has translated control messages only                  | Required web integration. Archive `impl/console-system-controls` at `3d8f73e` and `integration/control-center` at `fc7940a` contain contracts, server, web and QueueClient adapter. Audit each against current A contracts; do not transplant entire branch.                                                                         |
+| System status view                                              | Main overview renders a small host strip; archived integration has full System view                                        | Required parity review of broker/process/lock/health detail. A controls broker semantics; F owns presentation.                                                                                                                                                                                                                       |
+| `web-telemetry`                                                 | Passive production telemetry reads broker/presence evidence and registered histories; `console-telemetry` tests            | Preserve absent/stale/unknown distinctions. Real running broker browser evidence remains beyond the existing retained-SQLite browser test.                                                                                                                                                                                           |
+| `log-retention`                                                 | SQLite page/query/read-snapshot bounds, database cap, bounded ingestion; no explicit purge API in the current history port | New quota-exhaustion test proves failed writes keep the committed revision, original unresolved event/job/file records and foreign project unchanged across reopen; page/read byte bounds reject excessive queries. No automatic deletion is introduced. Remaining retention policy and archived task acceptance must be reconciled. |
+| `locale-catalogs`, `locale-selection`                           | Imported catalogs, key/argument test, persistent selector and fallback runtime                                             | Preserve catalogs. Main app still contains Polish literals in detail/filter/help surfaces and fixed `pl-PL` host formatting; translation completeness is not UI completeness.                                                                                                                                                        |
+| `browser-console`                                               | Fixture interaction suite and production registered-SQLite test                                                            | Preserve exact response waits and network/error evidence. Add deterministic delayed-response and disposal regressions; extend production broker coverage.                                                                                                                                                                            |
+| Terminal project/config discovery                               | `src/console.js`, `console-project.js`, CLI help                                                                           | E-owned entrypoint coordination required; do not silently drop options or diagnostic alias.                                                                                                                                                                                                                                          |
+| Terminal keyboard, freeze/follow, search/filter, details/export | Web counterparts are present                                                                                               | Verify web keyboard accessibility and dynamic filtering; terminal-specific rasterization/PTY behavior can retire only with entrypoint change.                                                                                                                                                                                        |
+| Terminal broker pause/lifecycle and system inspection           | `console-controller.js`, `console-services.js`, System terminal tab                                                        | Keep until web parity is verified. Do not delete controller/services merely because their names start with `console-`.                                                                                                                                                                                                               |
+| Terminal rendering/dependencies                                 | `console-app`, renderer/view/chrome/tabs, `terminal-kit`, visual/PTY scripts and tests                                     | Separate retirement PR after parity; E changes public routes, G integrates shared package/staging/CI removals.                                                                                                                                                                                                                       |
 
 ## Coordination
 
@@ -139,22 +139,21 @@ therefore remain an explicit retirement decision with A/E rather than silently
 being included in the web controls. `web-telemetry` records authoritative phase
 boundaries as a remaining producer gap; polling timestamps must not fill it.
 
-
 ## Continuation audit: 9 November 2026
 
 The operational integration and retention described above are now implemented in
 this package; the earlier table is the original discovery inventory, not a second
 list of unimplemented features. The current acceptance state is:
 
-| Area | Implemented evidence | Remaining acceptance |
-| --- | --- | --- |
-| Browser query selection | Task-range buttons are selected inside the task range control in E2E; global project scope is a different control even when Polish labels both start with `Wszystkie` | Chromium rerun of exact request and row assertions; no expected query or result was weakened |
-| Installed System integration | `control-center-production-browser` now opens installed assets, uses an actual QueueClient, authenticated IPC, lifecycle dispatcher/gate and durable receipts; pause/resume/drain each issue one mutation and opening System issues none | Execute on CI host with process-birth observations and Chromium; the offline supervisor makes no native Fusion claim |
-| Telemetry registration | Default MCP entrypoint uses `createMcpStdioTelemetry`; owned operation and close lifecycle are tested by `mcp-default-telemetry` | Complete authoritative phase producer with A; `timing-samples-not-connected` remains an explicit unavailable observation |
-| Retention | Bounded private diagnostic writer/cleanup in `CONTROL_CENTER_RETENTION.md`, bounded history reads and SQLite quota protection | CI across supported Node versions; no deletion of durable project evidence |
-| Presentation retirement | E is changing default `console`/`diagnostic` launch to the browser and retaining `--web`; administrative CLI commands remain with A/E | Merge browser acceptance before deleting terminal paint modules and runtime dependency |
-| Preserved historical contracts | Historical identity counts moved out of the agents renderer; task-event and client-presence assertions use text/domain interfaces without ScreenBuffer | Continue separating mixed terminal suites; preserve source/response ownership, bounds, correlation, false/zero and freshness assertions |
-| Project archival | Alias/restore production handlers are integrated | Archival stays unavailable until queue admission and presence writers share an authoritative activity fence; idle telemetry is insufficient |
+| Area                           | Implemented evidence                                                                                                                                                                                                                     | Remaining acceptance                                                                                                                        |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser query selection        | Task-range buttons are selected inside the task range control in E2E; global project scope is a different control even when Polish labels both start with `Wszystkie`                                                                    | Chromium rerun of exact request and row assertions; no expected query or result was weakened                                                |
+| Installed System integration   | `control-center-production-browser` now opens installed assets, uses an actual QueueClient, authenticated IPC, lifecycle dispatcher/gate and durable receipts; pause/resume/drain each issue one mutation and opening System issues none | Execute on CI host with process-birth observations and Chromium; the offline supervisor makes no native Fusion claim                        |
+| Telemetry registration         | Default MCP entrypoint uses `createMcpStdioTelemetry`; owned operation and close lifecycle are tested by `mcp-default-telemetry`                                                                                                         | Complete authoritative phase producer with A; `timing-samples-not-connected` remains an explicit unavailable observation                    |
+| Retention                      | Bounded private diagnostic writer/cleanup in `CONTROL_CENTER_RETENTION.md`, bounded history reads and SQLite quota protection                                                                                                            | CI across supported Node versions; no deletion of durable project evidence                                                                  |
+| Presentation retirement        | E is changing default `console`/`diagnostic` launch to the browser and retaining `--web`; administrative CLI commands remain with A/E                                                                                                    | Merge browser acceptance before deleting terminal paint modules and runtime dependency                                                      |
+| Preserved historical contracts | Historical identity counts moved out of the agents renderer; task-event and client-presence assertions use text/domain interfaces without ScreenBuffer                                                                                   | Continue separating mixed terminal suites; preserve source/response ownership, bounds, correlation, false/zero and freshness assertions     |
+| Project archival               | Alias/restore production handlers are integrated                                                                                                                                                                                         | Archival stays unavailable until queue admission and presence writers share an authoritative activity fence; idle telemetry is insufficient |
 
 Local test typecheck passes after the browser integration test. Task-event and
 presence suites report 9 passes and 4 environment failures: this host rejects
@@ -225,7 +224,6 @@ bounds. All 17 existing telemetry tests pass; core/node/API compilation passes.
 Full fresh build reached devtools tests and browser assets, then hit unrelated
 `tests/data_import.test.ts` duplicate `require` declaration (reported to owner).
 
-
 ### Current continuation: typed boundaries and authoritative archive (2026-11-09)
 
 The five small console runtime facades now delegate to strict typed host
@@ -266,7 +264,6 @@ exact-head CI are recorded by the integration owner after the rerun, rather than
 inferred from these focused results. These are offline proofs, not native Fusion
 qualification.
 
-
 C completed the two larger retained-test migrations in 03376ae:
 `console-telemetry` preserves all 259 original assertions (plus two narrowing
 checks) and executes 17 passing cases against both dce47c5 and current code.
@@ -277,7 +274,6 @@ slot. E owns the six remaining service/pause/data/root-service/interface/client
 presence test migrations. E completed those six strict migrations in 0c261a1,
 preserving all 44 cases and 268 original assertions; runtime execution is
 recorded separately by E and the integration owner.
-
 
 The final three retained F suites (`project-history-telemetry-runtime`,
 `project-logger-rotation`, `project-responses`) now use strict TypeScript. All
@@ -300,7 +296,6 @@ Twelve exact shared-case matches and three offline preflight matches await their
 registered execution. The other 553 are explicit retained native obligations
 whose `ScenarioSession` migration is still required; this ledger is not evidence
 that those native fixtures or the overall offline migration are complete.
-
 
 The retained passive project observer now has one strict canonical composition,
 `library-project-observer.ts`; the CJS path keeps its eight historical exports and
@@ -373,3 +368,15 @@ The real checker, final-byte admission fence, gate concurrency, cancellation and
 receipt tests remain executable; runtime execution follows the shared build.
 A corrected the existing `readResult` return contract to include null, preserving
 the tested missing-result failure path rather than inventing a terminal receipt.
+
+The delegated six short worker/recovery suites are now strict TypeScript:
+`atomic-audit-upgrade`, `cad-worker-service`, `execution-pipeline-process`,
+`execution-pipeline`, `execution-worker-stages` and `local-build-recovery`.
+All 25 cases and 116 historical assertions remain; additional assertions narrow
+fixture/JSON values or reject forbidden backend access. Both large subprocess
+programs preserve their literal bytes, including the frozen legacy producer.
+The worker stub supplies the complete port and its unreachable service callback
+now returns the declared promise; the original no-call assertions still enforce
+that those paths never execute. Narrow source compilation, lint and structural
+assertion/program comparison pass. Real process, broker and checker execution
+is pending the coordinated post-staging runtime slot.
