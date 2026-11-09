@@ -144,7 +144,7 @@ export function recoveredFile(
   return complete ? file : undefined;
 }
 
-async function poll<T>(
+export async function poll<T>(
   observe: () => Promise<T | undefined>,
   policy: CloudPolling,
 ): Promise<T> {
@@ -209,7 +209,12 @@ export async function cleanupSavedFile(
     if (file.fileId !== owned.fileId || file.version !== owned.version)
       throw new SavedEvidenceError("Foreign file observation during cleanup");
   };
-  const closed = requests.findLast((entry) => entry.phase === "cleanup-close");
+  const closed = requests.findLast(
+    (entry) =>
+      entry.phase === "cleanup-close" ||
+      (entry.phase === "reopen-close" &&
+        resultValue(entry)?.["creationId"] === document.creationId),
+  );
   const closeProof = resultValue(closed);
   if (!closeProof) {
     const value = await dispatch(
