@@ -251,7 +251,7 @@
         "documents"
       ],
       "evidence": "tests/scenarios/runner.ts",
-      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId) {",
+      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId)",
       "reason": "The common dispatch rejects a returned creationId that differs from the immutable scenario owner, retaining the exact equality obligation.",
       "qualification": "offline-shared"
     },
@@ -781,7 +781,7 @@
         "documents"
       ],
       "evidence": "tests/scenarios/runner.ts",
-      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId) {",
+      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId)",
       "reason": "The common owned close dispatch checks the returned exact identity, preserving the closedCreationId equality invariant.",
       "qualification": "offline-shared"
     },

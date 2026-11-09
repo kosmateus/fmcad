@@ -345,7 +345,7 @@
         "documents"
       ],
       "evidence": "tests/scenarios/runner.ts",
-      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId) {",
+      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId)",
       "reason": "Shared dispatch rejects a returned foreign creationId; this preserves the exact identity equality assertion without claiming the dependent native geometry case.",
       "qualification": "offline-shared"
     },
@@ -699,7 +699,7 @@
         "documents"
       ],
       "evidence": "tests/scenarios/runner.ts",
-      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId) {",
+      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId)",
       "reason": "The common close dispatch validates the returned exact creationId, retaining the original close response identity assertion.",
       "qualification": "offline-shared"
     },
@@ -7102,7 +7102,7 @@
         "documents"
       ],
       "evidence": "tests/scenarios/runner.ts",
-      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId) {",
+      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId)",
       "reason": "The common dispatch validates returned identity against the immutable owned creationId, retaining the exact identity equality assertion.",
       "qualification": "offline-shared"
     },
@@ -20398,7 +20398,7 @@
         "documents"
       ],
       "evidence": "tests/scenarios/runner.ts",
-      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId) {",
+      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId)",
       "reason": "The common close dispatch preserves exact returned identity validation.",
       "qualification": "offline-shared"
     },
@@ -28853,7 +28853,7 @@
         "documents"
       ],
       "evidence": "tests/scenarios/runner.ts",
-      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId) {",
+      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId)",
       "reason": "The common dispatcher checks the returned creationId against the immutable scenario owner, retaining this exact identity equality.",
       "qualification": "offline-shared"
     },
@@ -29027,7 +29027,7 @@
         "documents"
       ],
       "evidence": "tests/scenarios/runner.ts",
-      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId) {",
+      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId)",
       "reason": "The common dispatcher checks the returned creationId against the immutable scenario owner, retaining this exact identity equality.",
       "qualification": "offline-shared"
     },
@@ -30526,7 +30526,7 @@
         "documents"
       ],
       "evidence": "tests/scenarios/runner.ts",
-      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId) {",
+      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId)",
       "reason": "The common dispatch retains exact owned creationId equality before accepting native or simulated output.",
       "qualification": "offline-shared"
     },
@@ -31056,7 +31056,7 @@
         "documents"
       ],
       "evidence": "tests/scenarios/runner.ts",
-      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId) {",
+      "evidenceAssertion": "if (target && value[\"creationId\"] !== target.creationId)",
       "reason": "The common close response is validated against the exact immutable owned creationId.",
       "qualification": "offline-shared"
     },
