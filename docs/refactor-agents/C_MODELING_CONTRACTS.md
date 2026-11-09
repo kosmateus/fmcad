@@ -475,3 +475,17 @@ expected document binding and absent receipt assertions remain unchanged.
 The fixed-import source passes strict compilation and lint. The eight isolated
 Python document-guard cases pass with zero skips. The ten real-checker cases
 remain pending a stable build and the coordinated checker execution slot.
+
+
+### Individual retained live assertions
+
+The modeling supplement accounts for all 962 frozen sites from live-cad,
+live-extended, live-sketch-operations and live-thicken-slot-pattern, preserving
+three existing camera mappings and adding 959 individually identified rows.
+There are 46 additional shared invariant mappings, 45 actual installed sketch
+preflight mappings (execution pending the stable build), and 868 precise retained
+native-context obligations marked not-run. Source hashes, unique IDs and literal
+evidence were checked. See [the native obligation register](C_NATIVE_ASSERTION_OBLIGATIONS.md)
+for exact readbacks, capability requirements and unresolved legacy runner
+migration prerequisites. This accounting does not claim those runners are ready
+for concurrent Fusion execution or that native acceptance has passed.

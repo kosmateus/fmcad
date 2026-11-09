@@ -58,6 +58,25 @@ test(
         assert.ok(fs.existsSync(path.join(installed, "dist", unit)), unit);
     }
 
+    const sketchPreflight = execFileSync(
+      process.execPath,
+      [path.join(root, "dist/tests/live-sketch-operations.js"), "--check"],
+      {
+        cwd: directory,
+        env: {
+          ...process.env,
+          FMCAD_LIVE_RUNTIME_ROOT: installed,
+        },
+        encoding: "utf8",
+        timeout: 60000,
+      },
+    );
+    assert.match(
+      sketchPreflight,
+      /OFFLINE CHECK PASS; nine installed operations require Fusion SDK; no broker request was sent\./,
+    );
+    assert.doesNotMatch(sketchPreflight, /FMCAD_QUEUE_|LIVE_SKETCH/);
+
     fs.writeFileSync(
       path.join(directory, "inventory.json"),
       JSON.stringify(inventory),
