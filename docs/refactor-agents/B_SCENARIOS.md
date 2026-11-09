@@ -380,3 +380,21 @@ Animation validation: all six MCP/addin × concurrency 1/2/10 combinations pass
 (28 owned saved fixtures), as do the four disposition/profile barrier checks.
 Runtime-test compilation passes. Native execution remains deferred, and full
 exact-head CI remains required before merge.
+
+## Delivery ledger — preserve historical definition order
+
+Animation PR #90 (`55a31a8`) carries the passing six-profile matrix and eleven
+additional reviewed historical assertions. Full CI is pending.
+
+The first definition migration placed the numeric parameter case after the
+code-like literal rejection, unlike `live-definitions.js` lines 190–242. Corrected
+the shared sequence to run numeric parameters first, with the same 18/9/12 mm
+bounds and 1944 mm³ volume tolerances. Unsupported/rejected input readback now
+compares against an independently observed snapshot after that successful case,
+including both created bodies. No expected geometry was weakened.
+
+Two transport tests pass: injecting loss at the final literal rejection proves
+all earlier numeric and unsupported-syntax assertions completed in their historical
+order, then cleanup is deferred and no later readback is submitted. The existing
+positive transaction suite still requires known settlement from C/G; this order
+correction does not resolve that blocker or the journal-lock issue.

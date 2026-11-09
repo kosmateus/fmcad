@@ -216,100 +216,6 @@ export function transactionScenarios(
         await session.execute("after-negative", boxState(session.document)),
         before,
       );
-      for (const [caseIndex, item] of [
-        {
-          parameters: {},
-          width: { $param: "missing" },
-          error: /Unknown parameter: missing/u,
-        },
-        {
-          parameters: { width: "3 mm" },
-          width: { $param: "width + 1" },
-          error: /Unknown parameter: width \+ 1/u,
-        },
-        {
-          parameters: { width: "3 mm" },
-          width: { $param: "width", eval: true },
-          error: /\$param must be the sole key/u,
-        },
-      ].entries()) {
-        const invalid = await session.cad(
-          "cad-invalid-" + caseIndex,
-          "definition.instantiate",
-          {
-            runId: "unsupported_" + caseIndex,
-            reportPath: path.join(
-              session.directory,
-              "unsupported_" + caseIndex,
-            ),
-            parameters: item.parameters,
-            operations: [
-              step("box", "shape.box", {
-                name: "UnsupportedBox",
-                width: item.width,
-                depth: "2 mm",
-                height: "3 mm",
-              }),
-            ],
-          },
-        );
-        assert.equal(invalid["success"], false);
-        assert.ok(Array.isArray(invalid["errors"]));
-        assert.match(invalid["errors"].join("\n"), item.error);
-      }
-      assert.deepEqual(
-        await session.execute("after-invalid", boxState(session.document)),
-        before,
-      );
-      const literal = '__import__("builtins").str(23) + " mm"';
-      const noEvalRequest = {
-        runId: "no_eval",
-        reportPath: path.join(session.directory, "no_eval"),
-        parameters: { width: literal },
-        operations: [
-          step("box", "shape.box", {
-            name: "NoEvalBox",
-            width: { $param: "width" },
-            depth: "2 mm",
-            height: "3 mm",
-          }),
-          step("later", "shape.box", {
-            name: "NoEvalLater",
-            width: "2 mm",
-            depth: "2 mm",
-            height: "2 mm",
-          }),
-        ],
-      };
-      const preview = await session.cad(
-        "cad-literal-preview",
-        "definition.instantiate",
-        { ...noEvalRequest, mode: "preview" },
-      );
-      assert.equal(
-        record(rows(preview["operations"])[0]!["data"])["width"],
-        literal,
-      );
-      const noEval = await session.cad(
-        "cad-literal-rejection",
-        "definition.instantiate",
-        noEvalRequest,
-      );
-      assert.equal(noEval["success"], false);
-      const noEvalSteps = rows(noEval["steps"]);
-      assert.equal(
-        record(record(noEvalSteps[0]!["request"])["data"])["width"],
-        literal,
-      );
-      assert.match(
-        String(record(noEvalSteps[0]!["error"])["message"]),
-        /Invalid or incompatible expression/u,
-      );
-      assert.equal(noEvalSteps[1]!["status"], "skipped");
-      assert.deepEqual(
-        await session.execute("after-code-literal", boxState(session.document)),
-        before,
-      );
       const numericRequest = {
         runId: "numeric",
         reportPath: path.join(session.directory, "numeric"),
@@ -367,6 +273,104 @@ export function transactionScenarios(
             record(record(numericSteps[3]!["output"])["result"])["value"],
           ) - 1944,
         ) <= 0.02,
+      );
+      const beforeInvalid = await session.execute(
+        "before-invalid",
+        boxState(session.document),
+      );
+      for (const [caseIndex, item] of [
+        {
+          parameters: {},
+          width: { $param: "missing" },
+          error: /Unknown parameter: missing/u,
+        },
+        {
+          parameters: { width: "3 mm" },
+          width: { $param: "width + 1" },
+          error: /Unknown parameter: width \+ 1/u,
+        },
+        {
+          parameters: { width: "3 mm" },
+          width: { $param: "width", eval: true },
+          error: /\$param must be the sole key/u,
+        },
+      ].entries()) {
+        const invalid = await session.cad(
+          "cad-invalid-" + caseIndex,
+          "definition.instantiate",
+          {
+            runId: "unsupported_" + caseIndex,
+            reportPath: path.join(
+              session.directory,
+              "unsupported_" + caseIndex,
+            ),
+            parameters: item.parameters,
+            operations: [
+              step("box", "shape.box", {
+                name: "UnsupportedBox",
+                width: item.width,
+                depth: "2 mm",
+                height: "3 mm",
+              }),
+            ],
+          },
+        );
+        assert.equal(invalid["success"], false);
+        assert.ok(Array.isArray(invalid["errors"]));
+        assert.match(invalid["errors"].join("\n"), item.error);
+      }
+      assert.deepEqual(
+        await session.execute("after-invalid", boxState(session.document)),
+        beforeInvalid,
+      );
+      const literal = '__import__("builtins").str(23) + " mm"';
+      const noEvalRequest = {
+        runId: "no_eval",
+        reportPath: path.join(session.directory, "no_eval"),
+        parameters: { width: literal },
+        operations: [
+          step("box", "shape.box", {
+            name: "NoEvalBox",
+            width: { $param: "width" },
+            depth: "2 mm",
+            height: "3 mm",
+          }),
+          step("later", "shape.box", {
+            name: "NoEvalLater",
+            width: "2 mm",
+            depth: "2 mm",
+            height: "2 mm",
+          }),
+        ],
+      };
+      const preview = await session.cad(
+        "cad-literal-preview",
+        "definition.instantiate",
+        { ...noEvalRequest, mode: "preview" },
+      );
+      assert.equal(
+        record(rows(preview["operations"])[0]!["data"])["width"],
+        literal,
+      );
+      const noEval = await session.cad(
+        "cad-literal-rejection",
+        "definition.instantiate",
+        noEvalRequest,
+      );
+      assert.equal(noEval["success"], false);
+      const noEvalSteps = rows(noEval["steps"]);
+      assert.equal(
+        record(record(noEvalSteps[0]!["request"])["data"])["width"],
+        literal,
+      );
+      assert.match(
+        String(record(noEvalSteps[0]!["error"])["message"]),
+        /Invalid or incompatible expression/u,
+      );
+      assert.equal(noEvalSteps[1]!["status"], "skipped");
+      assert.deepEqual(
+        await session.execute("after-code-literal", boxState(session.document)),
+        beforeInvalid,
       );
     },
   }));
