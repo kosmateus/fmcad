@@ -367,7 +367,7 @@ async function script(body: string): Promise<JsonRecord> {
     "observation-" + randomUUID() + ".py",
   );
   const source =
-    "DOC_NAME = None\nimport adsk.core, json\ndef run(_context: str):\n" +
+    "DOC_NAME = None\nimport adsk.core, json\ndef run(_context: str) -> None:\n" +
     body
       .split("\n")
       .map((line) => "    " + line)

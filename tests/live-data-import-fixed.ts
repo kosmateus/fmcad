@@ -881,7 +881,10 @@ function runFixedProgram(): FixedPayload {
       uncertain = true;
       row.status = "unknown";
       persist();
-      throw new Error("Fixed invocation receipt is foreign or unsettled; inspect the original request and never replay: " + errorMessage(error));
+      throw new Error(
+        "Fixed invocation receipt is foreign or unsettled; inspect the original request and never replay: " +
+          errorMessage(error),
+      );
     }
   } else row.jobId = null;
   row.queueResult = queueResult;
