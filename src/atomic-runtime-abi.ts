@@ -116,7 +116,7 @@ function generatorDependency(runtimeRoot: string) {
 export function escrowAtomicGeneratorDependencies(
   runtimeRoot: string,
   audit: string,
-) {
+): { "jsonc-parser": ReturnType<typeof files.backupTree> } {
   const pkg = readJson(path.join(runtimeRoot, "package.json"));
   const file = load.resolve("jsonc-parser/package.json");
   // Standalone runtime sentinels need not declare npm dependencies. This is an
