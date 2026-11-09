@@ -365,3 +365,11 @@ public DTO fields; deliberate minimal fence snapshots stay explicit fixture
 boundaries. Strict compilation and lint pass. The actual broker/checker/process
 suite remains a required post-staging execution; historical manifest approvals
 are preserved as historical evidence and are not a new qualification claim.
+
+The delegated `python-admission` suite is now strict TypeScript: all 18 cases and
+88 original assertions remain, with explicit JSON/optional-value guards and
+complete local-worker fixture ports. Its Python source literals are unchanged.
+The real checker, final-byte admission fence, gate concurrency, cancellation and
+receipt tests remain executable; runtime execution follows the shared build.
+A corrected the existing `readResult` return contract to include null, preserving
+the tested missing-result failure path rather than inventing a terminal receipt.
