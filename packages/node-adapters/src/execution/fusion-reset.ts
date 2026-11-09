@@ -193,7 +193,7 @@ export function createFusionReset(host: FusionResetHost) {
           "src/cli.js",
           "src/commands.js",
         ],
-        tests: ["tests/fusion-reset.test.js", "tests/console-services.test.js"],
+        tests: ["tests/fusion-reset.test.js", "tests/console-services.test.ts"],
         verified: [
           "Explicit --force parsing",
           "Idle/unknown queue and unsaved-document refusal",

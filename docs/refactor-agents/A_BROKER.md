@@ -732,3 +732,65 @@ weakened. The metadata worker also honestly refuses this local Debian 13 host at
 the existing Ubuntu-only Python capability boundary; GitHub's Ubuntu job remains
 required. Exact archived 843 runtime bytes have been located privately and their
 fingerprint verified for the remaining historical response/facts regressions.
+
+## Remaining recovery host composition and retained queue tests
+
+The nine remaining A host decisions now have canonical strict TypeScript sources:
+`atomic-runtime-abi`, `fusion-reset`, `queue-audit-facts-capture`,
+`queue-audit-response-proof`, `queue-closed-epoch-successor`, `queue-document`,
+`queue-phased`, `queue-settled-epoch-evidence`, and `queue-state`. Frozen public
+`dce47c5` sources and hashes retain their immediate predecessor. File read bounds,
+exact original Python/wire bytes, owner/receipt identity, unknown-outcome refusal,
+exclusive authority publication, snapshot escrow and lazy host composition remain
+unchanged. The reset declaration names its adapter return type; staging rewrites
+workspace type paths into installed runtime paths.
+
+Eight retained queue suites are now strict TypeScript: domain, document, summary,
+scheduling, version transition, config identity, local fence outcome and idle
+build refresh. Their 231 original assertion calls and 37 executed case definitions
+(including the automatic/exclusive loop) remain, with four added boundary type
+assertions. Existing transport-loss lookup counts and parent fixture corrections
+are preserved. Strict compilation with repository safety flags and focused lint
+pass. The 17 pure domain/configuration/idle-client cases pass without skips; real
+broker/checker cases await the stable central build. `recovery-host-migration`
+registers the original retained effects/refusal suites against both the frozen
+host module and its typed replacement; registration alone is not qualification.
+
+## Portable audit-response proof: complete thirteen-case parity
+
+`audit-response-portable.test.ts` executes every case from the formerly gated
+`audit-response-proof.test.js` on both the immediate predecessor and typed proof
+reader. It uses the public frozen 843 audit producer and public Python source;
+the explicit synthetic host identity port is only a fixture. Public Git LF bytes
+are deterministically packaged as CRLF, matching the original producer packaging.
+The public fixture manifest records the original Git source hash. No archived
+private runtime, credentials, ledger or environment files are included.
+
+| Original retained case | Portable executed case |
+| --- | --- |
+| Successful source/process-bound execution | `portable843: successful source/process-bound execution…` retains all ten assertions, compares the complete old/new proof, and checks immutable-file invalidation. |
+| Forged current instance | `portable843: even rehashed original evidence rejects forged current instance` |
+| Wrong source hash | `portable843: even rehashed original evidence rejects wrong source hash` |
+| Nonterminal receipt | `portable843: even rehashed original evidence rejects nonterminal receipt` |
+| Failed Python body | `portable843: even rehashed original evidence rejects failed Python body` |
+| Different original caller | `portable843: even rehashed original evidence rejects different original caller` |
+| Stripped endpoint guard | `portable843: even rehashed original evidence rejects stripped endpoint guard` |
+| Changed checked wire | `portable843: even rehashed original evidence rejects changed checked wire` |
+| Wrong wire identity | `portable843: even rehashed original evidence rejects wrong wire identity` |
+| Forged summary | `portable843: even rehashed original evidence rejects forged summary` |
+| Fabricated endpoint verification | `portable843: even rehashed original evidence rejects fabricated endpoint verification` |
+| Wrong owner | `portable843: even rehashed original evidence rejects wrong owner` |
+| Checker not passed | `portable843: even rehashed original evidence rejects checker not passed` |
+
+All thirteen portable cases pass with zero skips. Each negative case recomputes
+the changed file reference, requires both readers to reject, and verifies that
+reading did not repair or overwrite the forged bytes. Three additional paired
+migration cases pass for full facts-preparation artifacts, manifest scope and
+CLI capability/build refusal. These do not stand in for the thirteen cases.
+
+The privately recovered exact 843 installation separately passes all thirteen
+original retained cases with zero skips (verified historical fingerprint
+`14aca04a4c37e5a3142d2493fc9e559987864779bad0b25dee41d166bcd3960d`).
+This is a pre-final diagnostic with the current staged reader. The same retained
+suite must rerun after final staging and on the exact final commit; neither this
+run nor the portable fixture qualifies real Fusion.
