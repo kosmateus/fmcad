@@ -12,6 +12,7 @@ const policy = application.epochUpgradePolicy(instance.sameInstance);
 export const {
   assertEpochUpgrade,
   assertSettledEpochUpgrade,
+  assertSettledEpochUpgradeRecord,
   createEpochRuntimeUpgrade,
   createSettledEpochRuntimeUpgrade,
 } = policy;

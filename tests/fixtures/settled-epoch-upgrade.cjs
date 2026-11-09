@@ -38,6 +38,7 @@ module.exports = function fixture(base, root) {
   const paused = { ...f.paused, state, identity: { ...f.paused.identity, buildHash: previousBuildHash },
     owner: f.oldOwner, ownerTokenHash: f.pointer.ownerTokenHash, pointerHash: approval.pointerHash, settledEvidence,
     selectedLive: true, historicalDead: true, brokerLive: true,
+    evidenceHash: api.hash(JSON.stringify([f.pointer.qualificationReceipt, ...f.pointer.qualificationEvidence])),
     control: { instanceId: f.oldOwner.nonce, buildHash: previousBuildHash, generation: state.controlGeneration,
       contextEpoch: state.contextEpoch, activeOperations: 0, activeIds: [], gateClosed: true } };
   api.durable(path.join(f.audit, 'paused.json'), paused);

@@ -708,3 +708,27 @@ competing child admission: archive refuses the busy registry without deadlock,
 releases SQLite, and only then may the child accept; retry archive succeeds and a
 subsequent child is refused. Registry acquisition is fail-fast, while SQLite waits
 are bounded; transient contention is an explicit refusal, never inferred idleness.
+
+## Full-CI fixture corrections (Node 24)
+
+The failing offline A groups now explicitly install the existing test-only WSL
+path adapter, including synthetic spawned audit/observer workers. The metadata
+successor test keeps its scoped spawn override active through the actual launch
+(the emitted TypeScript import reads the live spawn property). Production
+platform detection and child environment allowlists are unchanged. A synthetic
+local worker birth now uses the Linux `synthetic:...` form; the previous colonless
+value selected Windows process lookup and could not prove death on CI Linux.
+The settled handoff fixture now carries its original qualification evidence hash,
+and the canonical epoch runtime entry exports the existing checked persisted
+record validator.
+
+Observed reruns execute 27 prerequisite cases, six first-save evidence cases and
+all first-save/control metadata assertions successfully. The persisted-schema
+export test and 27 other epoch handoff cases pass. Final integrated qualification
+is still required: a concurrent build invalidated identity-pinned startup/audit
+runs, and several real checker cases timed out during parallel local load. Those
+runs are not accepted as final evidence; assertions and guard timeouts were not
+weakened. The metadata worker also honestly refuses this local Debian 13 host at
+the existing Ubuntu-only Python capability boundary; GitHub's Ubuntu job remains
+required. Exact archived 843 runtime bytes have been located privately and their
+fingerprint verified for the remaining historical response/facts regressions.

@@ -5,22 +5,18 @@ const fs = require('node:fs');
 const path = require('node:path');
 const api = require('../src/queue-instance');
 const { reference } = require('../src/queue-epoch-lineage');
-// This test launches a real metadata worker against a never-send endpoint.
-// Only that child receives synthetic WSL spelling; production keeps its strict
-// platform check and environment allowlist. Restore the shared spawn immediately.
+// Only explicitly synthetic metadata workers receive the offline path adapter.
+// Keep this scoped through launch: compiled imports read the live spawn property.
 const childProcess = require('node:child_process');
 const physicalSpawn = childProcess.spawn;
-let successor;
-try {
-  childProcess.spawn = (executable, args, options) => {
+test.beforeEach(t => {
+  t.after(require('./fixtures/fake-wsl-platform.cjs')());
+  t.mock.method(childProcess, 'spawn', (executable, args, options) => {
     assert.equal(path.basename(args[0]), 'queue-epoch-successor-worker.js');
     return physicalSpawn(executable, ['--require', require.resolve('./fixtures/fake-wsl-preload.cjs'), ...args], options);
-  };
-  successor = require('../src/queue-epoch-successor');
-} finally {
-  childProcess.spawn = physicalSpawn;
-}
-const { bootstrapSuccessor, inspectSuccessor } = successor;
+  });
+});
+const { bootstrapSuccessor, inspectSuccessor } = require('../src/queue-epoch-successor');
 
 function fixture(t) {
   const base = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'successor-bootstrap-'));

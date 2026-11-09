@@ -1,5 +1,7 @@
 'use strict';
 const test = require('node:test');
+// Only these synthetic physical/checker fixtures emulate WSL path spelling.
+test.beforeEach(t => t.after(require('./fixtures/fake-wsl-platform.cjs')()));
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');

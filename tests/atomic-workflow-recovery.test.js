@@ -333,7 +333,7 @@ test('broker generic reconcile sends no probe and rejects an unscoped follow-up 
       process.exit(1);
     });
   `;
-  const result = spawnSync(process.execPath, ['-e', child], {
+  const result = spawnSync(process.execPath, ['--require', require.resolve('./fixtures/fake-wsl-preload.cjs'), '-e', child], {
     cwd: root,
     encoding: 'utf8',
     timeout: 12000,
@@ -780,7 +780,7 @@ test('broker runs one typed atomic_status observer through the existing gate and
   `;
   const auditOnly = process.env.FMCAD_RECOVERY_AUDIT_ONLY === 'true';
   for (const rawOrigin of auditOnly ? [] : [false, true]) {
-    const result = spawnSync(process.execPath, ['-e', child], {
+    const result = spawnSync(process.execPath, ['--require', require.resolve('./fixtures/fake-wsl-preload.cjs'), '-e', child], {
       cwd: root, encoding: 'utf8', timeout: 45000,
       env: { ...process.env, FMCAD_ATOMIC_RECOVERY_ROOT: root,
         FMCAD_ATOMIC_RECOVERY_TMP: path.join(dir, rawOrigin ? 'raw' : 'typed'),
@@ -800,7 +800,7 @@ test('broker runs one typed atomic_status observer through the existing gate and
     assert.equal(proof.acceptedPaused, true);
   }
   for (const checkerMode of auditOnly ? [] : atomicObserverComposition.negative.modes) {
-    const result = spawnSync(process.execPath, ['-e', child], {
+    const result = spawnSync(process.execPath, ['--require', require.resolve('./fixtures/fake-wsl-preload.cjs'), '-e', child], {
       cwd: root, encoding: 'utf8', timeout: 45000,
       env: { ...process.env, FMCAD_ATOMIC_RECOVERY_ROOT: root,
         FMCAD_ATOMIC_RECOVERY_TMP: path.join(dir, checkerMode),
@@ -812,7 +812,7 @@ test('broker runs one typed atomic_status observer through the existing gate and
     assert.equal(proof.physicalCalls, atomicObserverComposition.negative.physicalSenderCallsPerMode);
     if (checkerMode === 'missing_checker') assert.equal(proof.startupRefused, true);
   }
-  const audited = spawnSync(process.execPath, ['-e', child], {
+  const audited = spawnSync(process.execPath, ['--require', require.resolve('./fixtures/fake-wsl-preload.cjs'), '-e', child], {
     cwd: root, encoding: 'utf8', timeout: 45000,
     env: { ...process.env, FMCAD_ATOMIC_RECOVERY_ROOT: root, FMCAD_ATOMIC_RECOVERY_TMP: path.join(dir, 'audit'),
       FMCAD_ATOMIC_RECOVERY_RAW_ORIGIN: 'false', FMCAD_ATOMIC_RECOVERY_AUDIT: 'true' },
@@ -1195,7 +1195,7 @@ test('raw CLI origin uses only its preserved typed worker envelope and fences he
       process.stdout.write(JSON.stringify({unchangedJobHash:true,jobStillRaw:true,sdkCalls:0}));
     })().catch(error=>{console.error(error);process.exitCode=1});
   `;
-  const result = spawnSync(process.execPath, ['-e', script], {
+  const result = spawnSync(process.execPath, ['--require', require.resolve('./fixtures/fake-wsl-preload.cjs'), '-e', script], {
     input: JSON.stringify({ root, base, job: f.job, scope: f.scope }), encoding: 'utf8', timeout: 10000,
   });
   assert.equal(result.status, 0, result.stderr);

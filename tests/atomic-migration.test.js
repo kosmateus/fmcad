@@ -1,6 +1,8 @@
 'use strict';
 
 const test = require('node:test');
+// Only these synthetic physical/checker fixtures emulate WSL path spelling.
+test.beforeEach(t => t.after(require('./fixtures/fake-wsl-platform.cjs')()));
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -464,7 +466,7 @@ test('actual broker migration startup preserves the exact snapshot and sends no 
   const root = path.resolve(__dirname, '..');
   const config = { backend: 'addin', url: 'http://synthetic.invalid', timeoutMs: 1000, routing: 'queue', queue: {} };
   const f = claimFixture(t, { config, buildHash: require('../src/queue-instance').buildHash() });
-  const result = spawnSync(process.execPath, ['-e', `
+  const result = spawnSync(process.execPath, ['--require', require.resolve('./fixtures/fake-wsl-preload.cjs'), '-e', `
     const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
     const {serve}=require(${JSON.stringify(root + '/src/queue-broker')});
     (async()=>{
@@ -516,7 +518,7 @@ for (const processLoss of [false, true]) test('second-window production replacem
   const root = path.resolve(__dirname, '..');
   const config = { backend: 'addin', url: 'http://synthetic.invalid', timeoutMs: 1000, routing: 'queue', queue: {} };
   const f = claimFixture(t, { config, auditUpgrade: true, processLoss, buildHash: require('../src/queue-instance').buildHash() });
-  const result = spawnSync(process.execPath, ['-e', `
+  const result = spawnSync(process.execPath, ['--require', require.resolve('./fixtures/fake-wsl-preload.cjs'), '-e', `
     const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
     (async()=>{
       const dir=${JSON.stringify(f.dir)},file=path.join(dir,'queue-state.json'),before=fs.readFileSync(file);
@@ -595,7 +597,7 @@ test('process-loss owner audit uses the selected current endpoint, keeps origina
   const config = { backend: 'addin', url: 'http://synthetic.invalid', timeoutMs: 12000, routing: 'queue', queue: {} };
   const f = claimFixture(t, { config, auditUpgrade: true, processLoss: true, prepareCurrentAudit: true,
     buildHash: require('../src/queue-instance').buildHash() });
-  const result = spawnSync(process.execPath, ['-e', `
+  const result = spawnSync(process.execPath, ['--require', require.resolve('./fixtures/fake-wsl-preload.cjs'), '-e', `
     const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
     const {durable}=require(${JSON.stringify(root + '/src/queue-instance')});
     const {request}=require(${JSON.stringify(root + '/src/queue-connection')});
@@ -663,7 +665,7 @@ for (const mode of ['complete', 'creation-unknown', 'creation-forged-id', 'close
   const config = { backend: 'addin', url: 'http://synthetic.invalid', timeoutMs: 12000, routing: 'queue', queue: {} };
   const f = claimFixture(t, { config, auditUpgrade: true, processLoss: true, prepareCurrentAudit: true, epochUpgrade: true, standardQueue: true,
     buildHash: require('../src/queue-instance').buildHash() });
-  const result = spawnSync(process.execPath, ['-e', `
+  const result = spawnSync(process.execPath, ['--require', require.resolve('./fixtures/fake-wsl-preload.cjs'), '-e', `
     const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
     const {durable,hash}=require(${JSON.stringify(root + '/src/queue-instance')});
     const {request}=require(${JSON.stringify(root + '/src/queue-connection')});
@@ -782,7 +784,7 @@ test('facts recovery broker preserves original failed audit and requires a separ
   const config = { backend: 'addin', url: 'http://synthetic.invalid', timeoutMs: 12000, routing: 'queue', queue: {} };
   const f = claimFixture(t, { config, auditUpgrade: true, processLoss: true, prepareCurrentAudit: true,
     responseRecovery: true, buildHash: require('../src/queue-instance').buildHash() });
-  const result = spawnSync(process.execPath, ['-e', `
+  const result = spawnSync(process.execPath, ['--require', require.resolve('./fixtures/fake-wsl-preload.cjs'), '-e', `
     const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
     const {durable,hash}=require(${JSON.stringify(root + '/src/queue-instance')});
     const {request}=require(${JSON.stringify(root + '/src/queue-connection')});
