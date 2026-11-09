@@ -895,17 +895,11 @@ export function nativeCadScenarios(owners = 10): Scenario[] {
             ["checkpoint.create", "checkpoint"],
             ["export.native", "native"],
           ] as const) {
-            const filename = windows.join(
-              text(field(now, "tempDir")),
+            const mapped = path.join(
+              session.directory,
               name + "_" + suffix + ".f3d",
             );
-            const mapped = filename
-              .replace(
-                /^([A-Za-z]):\\/,
-                (_match: string, drive: string) =>
-                  "/mnt/" + drive.toLowerCase() + "/",
-              )
-              .replaceAll("\\", "/");
+            const filename = session.backend.fusionPath(mapped);
             const exists = await cad("export.verify", { path: filename });
             assert.equal(
               field(exists, "exists"),

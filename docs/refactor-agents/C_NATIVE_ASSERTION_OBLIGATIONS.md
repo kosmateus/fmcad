@@ -249,6 +249,9 @@ before initializing subsequent raw CLI row comparisons.
 Creation, close, foreign inventory and original active restoration use the existing
 owned lifecycle. Guard mismatch and unknown nested outcomes durably defer cleanup.
 
+Checkpoint/native exports use the mapped private scenario directory so their
+input paths and child receipts share the same owner boundary; the retained native
+temporary-directory probe, no-overwrite and byte checks remain intact.
 The opt-in checkpoint roundtrip preserves count, bounds, volume and issue checks
 in the same SDK request as the owned import. Its durable child receipt binds the
 original request, parent, input file and new child; closure must be proven before
