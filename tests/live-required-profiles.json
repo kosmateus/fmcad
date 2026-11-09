@@ -743,6 +743,25 @@
           "cleanup": "Parent exact owned close/delete and foreign inventory audit only after both original phases succeed. Any failed/malformed/unknown result retains fixture and original request evidence without replay; inspect native restore before manual resolution.",
           "sourceSha256": "9f777a3a6235d75c9568650fa197d8704a9c6a3cc9e3ea8eb55c195a7a13b0f5",
           "continuationSourceSha256": "9389aa6f1ba70ee39d21db21a0f4af2bbcfba6d6d803f5564b0eafe85f29d2de"
+        },
+        {
+          "id": "native-integration",
+          "source": "tests/scenarios/native-integration-cases.json",
+          "sourceSha256": "341f56c5c4745ad76d69736cc0022b5b3774eab7c6953b9f9b5504ffacd069a3",
+          "disposition": "native-only",
+          "obligation": "All 251 retained integration callbacks and original CLI assertions through the existing exact owned saved child handoff",
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
+          "prerequisites": "Offline complete; exact installed build and broker, explicit dedicated project/folder and existing saved-file ownership receipts. Each reviewed source SHA and callback title must match the 251-case manifest before dispatch. No user document or file is adopted.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-integration-cases.ts",
+          "ownerCopies": 1,
+          "minimumOwnerFixtures": 251,
+          "protocols": [
+            "mcp",
+            "addin"
+          ],
+          "cleanup": "Existing ScenarioSession exact close/delete and foreign document/cloud inventory audit; durable child lease and original request reconciliation before cleanup. Any unproved mutation or active child defers cleanup without replay."
         }
       ]
     }
