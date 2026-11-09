@@ -79,3 +79,9 @@ comparison covers all 505 canonical entries and 337 aliases, argument limits,
 flags and dispatch. Paired help comparisons cover every EN/PL page, contextual
 sections, manual data and ANSI wrapping. Only two stale document-selection
 sentences change, reflecting the existing unique-match activation guard.
+
+Catalog registry assembly now uses `library-catalog-registry.ts`. Isolated paired
+processes compare all declarations, specialist validation, local classification,
+MCP schemas/adaptation, CLI contracts and capability/probe outcomes. Installed
+strict consumer compilation covers its exported declarations. Shared specialist
+module mutation is isolated by the harness, not removed from production.
