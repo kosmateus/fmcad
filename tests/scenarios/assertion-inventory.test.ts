@@ -33,3 +33,26 @@ const text = 'assert.equal(ignored, 0)';`;
   assert.equal(rows[4]!.kind, "embedded-python");
   assert.match(rows[4]!.expression, /and y == 2/u);
 });
+
+test("assertion wrappers retain call-site expected values through named functions and arrow wrappers", () => {
+  const source = `
+function check(label, actual, expected) { assert.equal(actual, expected, label); }
+const equalPose = (actual, expected) => check('pose', actual, expected);
+function verifyFrame(value) { equalPose(value, 24); }
+check('volume', actual, 1771);
+equalPose(actual, 40);
+verifyFrame(actual);
+function unrelated() { return 'assert.equal(fake, 0)'; }
+unrelated();
+`;
+  const expressions = assertionSites("fixture.js", source).map(
+    (row) => row.expression,
+  );
+  for (const expression of [
+    "check('volume', actual, 1771)",
+    "equalPose(actual, 40)",
+    "verifyFrame(actual)",
+  ])
+    assert.ok(expressions.includes(expression), expression);
+  assert.equal(expressions.includes("unrelated()"), false);
+});

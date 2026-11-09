@@ -26,6 +26,58 @@ export function assertionSites(
     ts.ScriptTarget.Latest,
     true,
   );
+  // Discover local assertion wrappers rather than relying on their spelling.
+  // Calls retain their argument expressions, including expected values/tolerances.
+  const functions = new Map<string, Set<string>>();
+  function collect(node: ts.Node): void {
+    let name: string | undefined;
+    let body: ts.Node | undefined;
+    if (ts.isFunctionDeclaration(node) && node.name && node.body) {
+      name = node.name.text;
+      body = node.body;
+    } else if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      (ts.isArrowFunction(node.initializer) ||
+        ts.isFunctionExpression(node.initializer))
+    ) {
+      name = node.name.text;
+      body = node.initializer.body;
+    }
+    if (name && body) {
+      const calls = functions.get(name) ?? new Set<string>();
+      function scan(value: ts.Node): void {
+        if (ts.isCallExpression(value))
+          calls.add(value.expression.getText(file));
+        ts.forEachChild(value, scan);
+      }
+      scan(body);
+      functions.set(name, calls);
+    }
+    ts.forEachChild(node, collect);
+  }
+  collect(file);
+  const helpers = new Set<string>();
+  const assertionName = (name: string) => /^assert(?:\.|$)/u.test(name);
+  const namedHelper = (name: string) =>
+    /^(?:assertion|near|assert[A-Z]\w*)$/u.test(name);
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const [name, calls] of functions) {
+      if (
+        !helpers.has(name) &&
+        [...calls].some(
+          (call) =>
+            assertionName(call) || namedHelper(call) || helpers.has(call),
+        )
+      ) {
+        helpers.add(name);
+        expanded = true;
+      }
+    }
+  }
   const sites: AssertionSite[] = [];
   const occurrences = new Map<string, number>();
   function add(node: ts.Node, kind: AssertionSite["kind"], expression: string) {
@@ -42,9 +94,8 @@ export function assertionSites(
   function visit(node: ts.Node): void {
     if (ts.isCallExpression(node)) {
       const name = node.expression.getText(file);
-      if (/^assert(?:\.|$)/u.test(name))
-        add(node, "assertion", node.getText(file));
-      else if (/^(?:assertion|near|assert[A-Z]\w*)$/u.test(name))
+      if (assertionName(name)) add(node, "assertion", node.getText(file));
+      else if (namedHelper(name) || helpers.has(name))
         add(node, "helper", node.getText(file));
     }
     if (

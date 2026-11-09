@@ -300,3 +300,25 @@ that unknown mutation successful. C/G must provide a receipt-proven rejection
 contract before these required cases can pass. The independent immutable addin
 component run also reproduced the separate journal lock refusal with one owner;
 MCP passed. Both source hashes remained stable. These PRs remain blocked to merge.
+
+## Delivery ledger — assertion helper call sites
+
+The earlier static scanner missed expected values at local helper call sites
+(`check`, camera/pose comparison helpers and their wrappers). Corrected discovery
+adds 2,119 assertion-bearing call sites while preserving all 1,588 frozen IDs.
+The current inventory is 3,707 static sites; wrappers and inner assertions are
+intentionally separate, so this is not a runtime assertion count. Archive
+comparison is now 1,334 sites, 1,333 retained, with the same sole MCP name change.
+Four inventory/disposition tests pass; the 40 reviewed semantic mappings remain
+intact. Dynamic/imported helper resolution and full semantic classification remain
+open; no increase in detected sites is represented as migrated coverage.
+
+Settlement PR #78 (`a32c49e`) is a draft with the C/G dependency and failing
+transaction evidence recorded. Native Fusion remains deferred.
+
+PR #58 merged as `2ed8017` after all 22 checks passed on `c4ab2f9`
+(CI run 42529825311). PR #63 merged as `6c9f6c5` after all 22 checks passed on
+`9be5e0f` (CI run 42530763341). Main's intervening E/F changes were inspected and
+preserved. The immutable PR #75 camera component profile passed on both MCP and
+addin; source hashes before/after were identical (`eb0237a4...`). These successes
+do not remove the separate transaction settlement and journal blockers.
