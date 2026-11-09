@@ -1,24 +1,33 @@
-const test = require("node:test") as typeof import("node:test");
-const assert: typeof import("node:assert/strict") = require("node:assert/strict");
-const { readFileSync } = require("node:fs") as typeof import("node:fs");
-const { resolve } = require("node:path") as typeof import("node:path");
-const { capture, compare, command } =
-  require("../../scripts/refactor-baseline.ts") as import("../../scripts/refactor-baseline").Harness;
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { createRequire } from "node:module";
+const root = resolve(process.cwd());
+const load = createRequire(
+  resolve(root, "tests/contracts/refactor-baseline.test.ts"),
+);
+const { capture, compare, command } = load(
+  "../../scripts/refactor-baseline.ts",
+) as import("../../scripts/refactor-baseline").Harness;
+const data = load(
+  "../../scripts/refactor-benchmark-data.ts",
+) as typeof import("../../scripts/refactor-benchmark-data");
 import type { Snapshot } from "../../scripts/refactor-baseline.ts";
 import type { Allowance } from "../../scripts/refactor-baseline.ts";
 import type {} from "../../scripts/refactor-baseline-benchmark";
 
-const root = resolve(__dirname, "../..");
-const baseline: Snapshot = JSON.parse(
+const baseline: unknown = JSON.parse(
   readFileSync(
     resolve(root, "tests/fixtures/refactor-baseline/contracts.json"),
     "utf8",
   ),
 );
+assertSnapshot(baseline);
 
 test("real legacy fake-backend capture matches the frozen baseline", async () => {
   const candidate = await capture(root);
-  const checkoutAllowances: Allowance[] = JSON.parse(
+  const checkoutAllowances: unknown = JSON.parse(
     readFileSync(
       resolve(
         root,
@@ -27,6 +36,7 @@ test("real legacy fake-backend capture matches the frozen baseline", async () =>
       "utf8",
     ),
   );
+  assertAllowances(checkoutAllowances);
   const active = checkoutAllowances.filter(
     (allowance) =>
       JSON.stringify(
@@ -35,17 +45,17 @@ test("real legacy fake-backend capture matches the frozen baseline", async () =>
         ],
       ) === JSON.stringify(allowance.after),
   );
-  active.push(
-    ...JSON.parse(
-      readFileSync(
-        resolve(
-          root,
-          "tests/fixtures/refactor-baseline/migration-allowances.json",
-        ),
-        "utf8",
+  const migrationAllowances: unknown = JSON.parse(
+    readFileSync(
+      resolve(
+        root,
+        "tests/fixtures/refactor-baseline/migration-allowances.json",
       ),
+      "utf8",
     ),
   );
+  assertAllowances(migrationAllowances);
+  active.push(...migrationAllowances);
   const result = compare(baseline, candidate, active);
   assert.deepEqual(result, {
     status: "pass",
@@ -71,16 +81,17 @@ for (const [name, mutate] of [
   [
     "document switch",
     (s: Snapshot) => {
-      (s.observations.find((x) => x.id === "cad.prepare")!.dto as any).docId =
-        "different";
+      data.record(s.observations.find((x) => x.id === "cad.prepare")!.dto)[
+        "docId"
+      ] = "different";
     },
   ],
   [
     "project switch",
     (s: Snapshot) => {
-      (
-        s.observations.find((x) => x.id === "cad.prepare")!.dto as any
-      ).projectId = "different";
+      data.record(s.observations.find((x) => x.id === "cad.prepare")!.dto)[
+        "projectId"
+      ] = "different";
     },
   ],
   [
@@ -153,9 +164,13 @@ test("comparison rejects duplicate fixtures and unsupported format rather than s
   const duplicate = structuredClone(baseline);
   duplicate.observations.push(structuredClone(duplicate.observations[0]!));
   assert.equal(compare(baseline, duplicate).status, "fail");
-  const unsupported = structuredClone(baseline);
-  (unsupported as any).version = 2;
-  assert.equal(compare(baseline, unsupported).status, "fail");
+  const unsupported = { ...structuredClone(baseline), version: 2 };
+  // Deliberately invalid external DTO reaches the actual comparator unchanged.
+  const result: unknown = Reflect.apply(compare, undefined, [
+    baseline,
+    unsupported,
+  ]);
+  assert.equal(data.record(result)["status"], "fail");
 });
 
 test("batch fixture actually observes execution, immutable artifacts, replay, and unknown stopping", () => {
@@ -166,12 +181,48 @@ test("batch fixture actually observes execution, immutable artifacts, replay, an
     (x) => x.id === "batch.unknown-no-replay",
   )!;
   assert.equal(success.sdkCalls, 2, "replay must not repeat the two SDK calls");
-  assert.equal((success.dto as any).replay.replayed, true);
+  assert.equal(
+    data.record(data.record(success.dto)["replay"])["replayed"],
+    true,
+  );
   assert.equal(
     unknown.sdkCalls,
     1,
     "unknown first step prevents second step and replay",
   );
-  assert.match((unknown.dto as any).replay.error, /no automatic retry/);
-  assert.ok(JSON.parse(success.artifacts["report-manifest"]!).length > 2);
+  assert.match(
+    data.text(data.record(data.record(unknown.dto)["replay"])["error"]),
+    /no automatic retry/,
+  );
+  assert.ok(
+    data.array(JSON.parse(success.artifacts["report-manifest"]!)).length > 2,
+  );
 });
+
+// Validate the persisted transport shape without filtering or rewriting data.
+function assertSnapshot(value: unknown): asserts value is Snapshot {
+  const snapshot = data.record(value);
+  assert.equal(snapshot["version"], 1);
+  for (const value of data.array(snapshot["observations"])) {
+    const observation = data.record(value);
+    data.text(observation["id"]);
+    data.number(observation["sdkCalls"]);
+    data.array(observation["effects"]);
+    assert.ok(Object.hasOwn(observation, "dto"));
+    for (const artifact of Object.values(data.record(observation["artifacts"])))
+      data.text(artifact);
+  }
+}
+
+function assertAllowances(value: unknown): asserts value is Allowance[] {
+  for (const item of data.array(value)) {
+    const allowance = data.record(item);
+    data.text(allowance["id"]);
+    data.text(allowance["reason"]);
+    assert.ok(
+      ["dto", "effects", "artifacts"].includes(data.text(allowance["field"])),
+    );
+    assert.ok(Object.hasOwn(allowance, "before"));
+    assert.ok(Object.hasOwn(allowance, "after"));
+  }
+}
