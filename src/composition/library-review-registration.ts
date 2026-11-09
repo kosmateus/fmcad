@@ -66,8 +66,8 @@ const manual: CommandManual = {
       "primary-owned scratch qualification on Fusion2705.1.25: eight images personally inspected, orthogonal/isometric camera vectors verified, target/original viewport and active document restored",
     ],
     tests: [
-      "tests/review-application.test.js",
-      "tests/review.test.js",
+      "tests/review-application.test.ts",
+      "tests/review.test.ts",
       "tests/review_test.py",
       "tests/shot.test.ts",
     ],

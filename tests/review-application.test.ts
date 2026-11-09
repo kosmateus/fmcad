@@ -1,23 +1,55 @@
-"use strict";
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const Module = require("node:module");
-const { createHash } = require("node:crypto");
-const { capturePng } = require("./capture-png");
-const {
-  decodeReviewPng,
-} = require("../packages/node-adapters/dist/review/pixels");
-const {
-  CAPTURE_PIXEL_THRESHOLDS,
-  evaluateReviewPixels,
-} = require("../packages/core/dist/application/review/pixels");
-const baseline = require("./fixtures/review-report-contract.json");
-const artifactsAdapter = require("../src/dist/review");
+import type {
+  ReviewRequest,
+  ReviewRunPorts,
+} from "../packages/core/src/application/review";
+import type { PreparedPythonArtifact } from "../packages/core/src/domain/python-artifact";
+import { createRequire } from "node:module";
+import { at, list, text } from "./integration/offline-cli";
+const testRoot = process.cwd();
+const runtimeRequire = createRequire(
+  testRoot + "/tests/review-application.test.js",
+);
+function present<T>(value: T | null | undefined): T {
+  assert(value != null);
+  return value;
+}
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+const Module = runtimeRequire("node:module");
+import { createHash } from "node:crypto";
+const { capturePng } = runtimeRequire("./capture-png") as {
+  capturePng(
+    width: number,
+    height: number,
+    seed?: number,
+    blank?: boolean,
+    compressionLevel?: number,
+    variantDelta?: number,
+  ): Buffer;
+};
+const { decodeReviewPng } = runtimeRequire(
+  "../packages/node-adapters/dist/review/pixels",
+) as typeof import("../packages/node-adapters/src/review/pixels");
+const { CAPTURE_PIXEL_THRESHOLDS, evaluateReviewPixels } = runtimeRequire(
+  "../packages/core/dist/application/review/pixels",
+) as typeof import("../packages/core/src/application/review/pixels");
+const baseline = runtimeRequire("./fixtures/review-report-contract.json") as {
+  views: string[];
+  schemaVersion: number;
+  operation: string;
+  status: string;
+  requiresVisualReview: boolean;
+  restoration: string;
+  identityFields: string[];
+};
+const artifactsAdapter = runtimeRequire(
+  "../src/dist/review",
+) as typeof import("../packages/node-adapters/src/review");
 
-const request = (out) => ({
+const request = (out: string): ReviewRequest => ({
   doc: "Part α",
   docId: "creation-1",
   docFileId: null,
@@ -28,8 +60,8 @@ const request = (out) => ({
   requestId: "review-request-1",
 });
 
-function success(requestValue, { blankFirst = false } = {}) {
-  const directions = {
+function success(requestValue: ReviewRequest, { blankFirst = false } = {}) {
+  const directions: Record<string, [number, number, number]> = {
     front: [0, -1, 0],
     back: [0, 1, 0],
     left: [-1, 0, 0],
@@ -51,7 +83,7 @@ function success(requestValue, { blankFirst = false } = {}) {
       index + 1,
       blankFirst && index === 0,
     );
-    const direction = directions[name];
+    const direction = present(directions[name]);
     return {
       name,
       file: name + ".png",
@@ -73,7 +105,7 @@ function success(requestValue, { blankFirst = false } = {}) {
   });
   const pixelIntegrity = evaluateReviewPixels(
     views.map((view, index) => {
-      const direction = directions[view.name];
+      const direction = present(directions[view.name]);
       return {
         name: view.name,
         pixels: decodeReviewPng(
@@ -110,18 +142,24 @@ function success(requestValue, { blankFirst = false } = {}) {
     views,
     captureRecipes,
     pixelIntegrity,
-    errors: [],
-    restoration: { status: baseline.restoration },
+    errors: [] as { stage: string; message: string }[],
+    restoration: { status: baseline.restoration } as {
+      status: string;
+      steps?: { name: string; status: string }[];
+    },
     orientationVerification: { status: "verified" },
   };
 }
 function ports(
-  out,
-  report,
+  out: string,
+  report: ReturnType<typeof success>,
   { failPublication = false, blankFirst = false } = {},
 ) {
   const artifacts = artifactsAdapter.createReviewArtifactStore();
-  const prepared = {
+  const prepared: PreparedPythonArtifact = {
+    context: null,
+    request: null,
+    bytes: [...Buffer.from("prepared review artifact")],
     version: 1,
     runtimeVersion: "cad-v1",
     sha256: "prepared-source-sha256",
@@ -129,6 +167,7 @@ function ports(
     units: [
       {
         id: "legacy-review",
+        source: "prepared review artifact",
         filename: "runtime/python/fmcad/adapters/fusion/legacy_review.py",
         role: "runtime",
         sha256: "review-source-sha256",
@@ -152,56 +191,60 @@ function ports(
     };
   }
   let turns = 0;
-  return {
-    ports: {
-      artifacts,
-      preparation: { prepare: () => prepared },
-      sha256: artifactsAdapter.sha256ReviewImage,
-      execution: {
-        execute: async (input) => {
-          turns++;
-          assert.equal(input.operation, "review");
-          assert.equal(input.context.docId, "creation-1");
-          assert.equal(input.readOnly, false);
-          assert.equal(input.artifact.script, "prepared review artifact");
-          fs.writeFileSync(
-            path.join(out, "backend-report.json"),
-            JSON.stringify(report),
-            { flag: "wx" },
-          );
-          if (report.success)
-            for (const [index, view] of report.views.entries())
-              fs.writeFileSync(
-                path.join(out, view.file),
-                capturePng(32, 32, index + 1, blankFirst && index === 0),
-                {
-                  flag: "wx",
-                },
-              );
-          return { report, failed: false };
-        },
+  const ports: ReviewRunPorts = {
+    artifacts,
+    preparation: { prepare: () => prepared },
+    sha256: artifactsAdapter.sha256ReviewImage,
+    execution: {
+      execute: async (input) => {
+        turns++;
+        assert.equal(input.operation, "review");
+        assert.equal(input.context.docId, "creation-1");
+        assert.equal(input.readOnly, false);
+        assert.equal(input.artifact.script, "prepared review artifact");
+        fs.writeFileSync(
+          path.join(out, "backend-report.json"),
+          JSON.stringify(report),
+          { flag: "wx" },
+        );
+        if (report.success)
+          for (const [index, view] of report.views.entries())
+            fs.writeFileSync(
+              path.join(out, view.file),
+              capturePng(32, 32, index + 1, blankFirst && index === 0),
+              {
+                flag: "wx",
+              },
+            );
+        return { report, failed: false };
       },
     },
-    calls: () => turns,
   };
+  return { ports, calls: () => turns };
 }
 
 test("application preserves the current report fixture and separates transport, images, and CAD status", async (t) => {
-  const appPath = require.resolve("../src/dist/core/application/review");
+  const appPath = runtimeRequire.resolve("../src/dist/core/application/review");
   const originalLoad = Module._load;
-  t.mock.method(Module, "_load", function (requested, ...args) {
-    if (
-      /^node:/.test(requested) ||
-      ["fs", "path", "crypto", "terminal-kit"].includes(requested) ||
-      /(?:^|\/)cli(?:\.js)?$/.test(requested)
-    )
-      assert.fail(
-        "review application must not depend on host effects, terminal-kit, or the CLI",
-      );
-    return originalLoad.call(this, requested, ...args);
-  });
-  delete require.cache[appPath];
-  const application = require("../src/dist/core/application/review");
+  t.mock.method(
+    Module,
+    "_load",
+    function (this: unknown, requested: string, ...args: unknown[]) {
+      if (
+        /^node:/.test(requested) ||
+        ["fs", "path", "crypto", "terminal-kit"].includes(requested) ||
+        /(?:^|\/)cli(?:\.js)?$/.test(requested)
+      )
+        assert.fail(
+          "review application must not depend on host effects, terminal-kit, or the CLI",
+        );
+      return originalLoad.call(this, requested, ...args);
+    },
+  );
+  delete runtimeRequire.cache[appPath];
+  const application = runtimeRequire(
+    "../src/dist/core/application/review",
+  ) as typeof import("../packages/core/src/application/review");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-review-app-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const input = request(path.join(dir, "new"));
@@ -228,7 +271,7 @@ test("application preserves the current report fixture and separates transport, 
     baseline.identityFields,
   );
   assert.deepEqual(
-    manifest.views.map((view) => view.name),
+    list(at(manifest, "views")).map((view) => at(view, "name")),
     baseline.views,
   );
 });
@@ -245,15 +288,15 @@ test("capture and restoration failures retain partial report without implying su
     steps: [{ name: "target.camera", status: "failed" }],
   };
   report.views = report.views.slice(0, 2);
-  report.views[1].status = "attempted";
+  present(report.views[1]).status = "attempted";
   report.errors = [{ stage: "capture.left", message: "capture failed" }];
   const fake = ports(input.out, report);
 
-  const result =
-    await require("../src/dist/core/application/review").executeReview(
-      input,
-      fake.ports,
-    );
+  const result = await (
+    runtimeRequire(
+      "../src/dist/core/application/review",
+    ) as typeof import("../packages/core/src/application/review")
+  ).executeReview(input, fake.ports);
   const manifest = JSON.parse(
     fs.readFileSync(path.join(input.out, "manifest.json"), "utf8"),
   );
@@ -275,18 +318,21 @@ test("valid PNG headers and matching hashes do not admit a blank captured frame"
     blankFirst: true,
   });
 
-  const result =
-    await require("../src/dist/core/application/review").executeReview(
-      input,
-      fake.ports,
-    );
+  const result = await (
+    runtimeRequire(
+      "../src/dist/core/application/review",
+    ) as typeof import("../packages/core/src/application/review")
+  ).executeReview(input, fake.ports);
   assert.equal(result.code, 1);
   assert.equal(result.transport, "completed");
   assert.equal(result.artifacts, "invalid");
-  assert.equal(result.report.success, false);
-  assert.equal(result.report.pixelIntegrity.views[0].status, "blank");
+  assert.equal(result.report["success"], false);
   assert.equal(
-    result.report.errors.at(-1).message,
+    at(result.report, "pixelIntegrity", "views", 0, "status"),
+    "blank",
+  );
+  assert.equal(
+    at(list(result.report["errors"]).at(-1), "message"),
     "Review pixel integrity policy failed",
   );
 });
@@ -300,17 +346,17 @@ test("missing pixel decoder leaves artifact quality unknown instead of passing",
   const fake = ports(input.out, success(input));
   delete fake.ports.artifacts.decodePixels;
 
-  const result =
-    await require("../src/dist/core/application/review").executeReview(
-      input,
-      fake.ports,
-    );
+  const result = await (
+    runtimeRequire(
+      "../src/dist/core/application/review",
+    ) as typeof import("../packages/core/src/application/review")
+  ).executeReview(input, fake.ports);
   assert.equal(result.code, 1);
   assert.equal(result.transport, "completed");
   assert.equal(result.artifacts, "unknown");
-  assert.equal(result.report.status, "unknown");
+  assert.equal(result.report["status"], "unknown");
   assert.match(
-    result.report.errors.at(-1).message,
+    text(at(list(result.report["errors"]).at(-1), "message")),
     /pixel decoder is unavailable/,
   );
 });
@@ -321,17 +367,20 @@ test("manifest publication failure overrides an otherwise valid capture", async 
   const input = request(path.join(dir, "new"));
   const fake = ports(input.out, success(input), { failPublication: true });
 
-  const result =
-    await require("../src/dist/core/application/review").executeReview(
-      input,
-      fake.ports,
-    );
+  const result = await (
+    runtimeRequire(
+      "../src/dist/core/application/review",
+    ) as typeof import("../packages/core/src/application/review")
+  ).executeReview(input, fake.ports);
   assert.equal(result.code, 1);
   assert.equal(result.transport, "completed");
   assert.equal(result.artifacts, "complete");
   assert.equal(result.manifestWritten, false);
-  assert.equal(result.report.success, false);
-  assert.equal(result.report.status, "failed");
-  assert.equal(result.report.errors.at(-1).stage, "publication");
+  assert.equal(result.report["success"], false);
+  assert.equal(result.report["status"], "failed");
+  assert.equal(
+    at(list(result.report["errors"]).at(-1), "stage"),
+    "publication",
+  );
   assert.equal(fs.existsSync(path.join(input.out, "manifest.json")), false);
 });

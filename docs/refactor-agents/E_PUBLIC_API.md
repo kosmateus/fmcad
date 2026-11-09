@@ -569,3 +569,26 @@ paired test over twenty command/argument cases in both successful and uncertain
 dispatch modes, comparing actual document-domain calls, exact generated Python,
 output and failures. Compilation is verified; this new paired runtime test and
 retained document/diagnostic suites still require execution after staging.
+
+### Remaining public consumers and behavioral suites (2026-11-09)
+
+Migrated the final 16 E suites to strict TypeScript: backend response parsing,
+script helpers, real host workers, public/installed API, seven manual families,
+OpenCode adapters, review application/pixels/command, and UI assistance. All 122
+direct test declarations and 752 original assertions remain; seven additional
+assertions guard fixture calls that must never reach a physical or alternate
+route. Dynamic loop cases remain unchanged. Runtime module resolution stays
+anchored at the repository tests directory after emission. The historical UI
+comparison launches the same emitted UI suite; the serialized catalog observer
+keeps its own child-process require. Frozen predecessor files and hashes remain
+unchanged. Review evidence relocations are explicit and checked for old-file
+absence and new-file presence before the descriptor comparison.
+
+Strict compilation and ESLint passed for all 16 files. These checks establish
+only source readiness; actual execution and installed consumer checks are still
+pending coordinated central staging. The real host-worker fixture now creates
+its isolated temporary directory under the OS temporary root, without requiring
+a pre-existing /tmp/opencode directory. The installed reference case no longer
+silently skips when FMCAD_REFERENCE_PYTHON is absent; it also accepts FMCAD_PYTHON
+or the default python3. Debian host qualification remains a reported environment
+limitation, not a reason to relax production platform checks.

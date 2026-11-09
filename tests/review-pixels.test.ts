@@ -1,20 +1,35 @@
-"use strict";
-
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const { createHash } = require("node:crypto");
-const path = require("node:path");
-const { spawnSync } = require("node:child_process");
-const { capturePng } = require("./capture-png");
-const {
-  decodeReviewPng,
-} = require("../packages/node-adapters/dist/review/pixels");
-const {
-  CAPTURE_PIXEL_THRESHOLDS,
-  evaluateReviewPixels,
-} = require("../packages/core/dist/application/review/pixels");
-const { planReview } = require("../packages/core/dist/application/review/plan");
-const decode = (bytes, width, height) =>
+import { createRequire } from "node:module";
+const testRoot = process.cwd();
+const runtimeRequire = createRequire(testRoot + "/tests/review-pixels.test.js");
+function present<T>(value: T | null | undefined): T {
+  assert(value != null);
+  return value;
+}
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+const { capturePng } = runtimeRequire("./capture-png") as {
+  capturePng(
+    width: number,
+    height: number,
+    seed?: number,
+    blank?: boolean,
+    compressionLevel?: number,
+    variantDelta?: number,
+  ): Buffer;
+};
+const { decodeReviewPng } = runtimeRequire(
+  "../packages/node-adapters/dist/review/pixels",
+) as typeof import("../packages/node-adapters/src/review/pixels");
+const { CAPTURE_PIXEL_THRESHOLDS, evaluateReviewPixels } = runtimeRequire(
+  "../packages/core/dist/application/review/pixels",
+) as typeof import("../packages/core/src/application/review/pixels");
+const { planReview } = runtimeRequire(
+  "../packages/core/dist/application/review/plan",
+) as typeof import("../packages/core/src/application/review/plan");
+const decode = (bytes: Buffer, width: number, height: number) =>
   decodeReviewPng(bytes, width, height, CAPTURE_PIXEL_THRESHOLDS);
 
 test("PNG decoding validates actual pixels and is independent of PNG encoding hash", () => {
@@ -43,7 +58,7 @@ test("blank images and same-direction exact duplicate pixels fail despite valid 
     { name: "part", pixels: part, cameraDirection: [0, 1, 0] },
   ]);
   assert.equal(result.status, "failed");
-  assert.equal(result.views[0].status, "blank");
+  assert.equal(present(result.views[0]).status, "blank");
   assert.ok(result.thresholds.minEdgePixelRatio > 0);
 
   const exact = evaluateReviewPixels([
@@ -69,7 +84,10 @@ test("blank images and same-direction exact duplicate pixels fail despite valid 
     },
   ]);
   assert.equal(nearDuplicate.status, "failed");
-  assert.equal(nearDuplicate.duplicatePairs[0].kind, "near-identical-pixels");
+  assert.equal(
+    present(nearDuplicate.duplicatePairs[0]).kind,
+    "near-identical-pixels",
+  );
 });
 
 test("legitimately similar distinct frames are retained as diagnostics, not rejected", () => {
@@ -82,11 +100,11 @@ test("legitimately similar distinct frames are retained as diagnostics, not reje
   assert.equal(result.status, "review-required");
   assert.deepEqual(result.duplicatePairs, []);
   assert.equal(result.similarPairs.length, 1);
-  assert.equal(result.similarPairs[0].reason, "similar-pixels");
+  assert.equal(present(result.similarPairs[0]).reason, "similar-pixels");
 });
 
 test("canonical Fusion and local readback emit identical pixel policy diagnostics", () => {
-  const vectors = [
+  const vectors: [number, number, number][] = [
     [0, -1, 0],
     [0, 1, 0],
     [-1, 0, 0],
@@ -98,7 +116,7 @@ test("canonical Fusion and local readback emit identical pixel policy diagnostic
   ].map((bytes, index) => ({
     name: "frame-" + index,
     bytes,
-    direction: vectors[index],
+    direction: present(vectors[index]),
   }));
   const local = evaluateReviewPixels(
     inputs.map((frame) => {
@@ -106,12 +124,16 @@ test("canonical Fusion and local readback emit identical pixel policy diagnostic
       return {
         name: frame.name,
         pixels: decode(frame.bytes, 32, 32),
-        cameraDirection: frame.direction.map((value) => value / length),
+        cameraDirection: frame.direction.map((value) => value / length) as [
+          number,
+          number,
+          number,
+        ],
       };
     }),
   );
   const source = path.resolve(
-    __dirname,
+    testRoot + "/tests",
     "../runtime/python/fmcad/domain/capture_integrity.py",
   );
   const python = `import base64, json, pathlib, sys
@@ -138,39 +160,40 @@ print(json.dumps(namespace['analyze_capture_pixels'](frames), allow_nan=False))
 });
 
 test("selectable ROI/detail/section recipes are validated and keep safe output names", () => {
-  const request = {
-    doc: "Fixture",
-    docId: "creation",
-    docFileId: null,
-    out: "/tmp/out",
-    fusionOut: "C:\\mapped\\out",
-    width: 32,
-    height: 32,
-    requestId: "recipes",
-    recipes: [
-      {
-        name: "roi-top",
-        kind: "roi",
-        orientation: "top",
-        target: [0, 0, 0],
-        extents: [2, 3],
-      },
-      {
-        name: "detail-front",
-        kind: "detail",
-        orientation: "front",
-        target: [1, 2, 3],
-        scale: 0.25,
-      },
-      {
-        name: "section-side",
-        kind: "section",
-        orientation: "left",
-        sectionName: "Mid cut",
-        visible: true,
-      },
-    ],
-  };
+  const request: import("../packages/core/src/application/review").ReviewRequest =
+    {
+      doc: "Fixture",
+      docId: "creation",
+      docFileId: null,
+      out: "/tmp/out",
+      fusionOut: "C:\\mapped\\out",
+      width: 32,
+      height: 32,
+      requestId: "recipes",
+      recipes: [
+        {
+          name: "roi-top",
+          kind: "roi",
+          orientation: "top",
+          target: [0, 0, 0],
+          extents: [2, 3],
+        },
+        {
+          name: "detail-front",
+          kind: "detail",
+          orientation: "front",
+          target: [1, 2, 3],
+          scale: 0.25,
+        },
+        {
+          name: "section-side",
+          kind: "section",
+          orientation: "left",
+          sectionName: "Mid cut",
+          visible: true,
+        },
+      ],
+    };
   const plan = planReview(request);
   assert.deepEqual(plan.views, ["roi-top", "detail-front", "section-side"]);
   assert.deepEqual(plan.recipes, request.recipes);

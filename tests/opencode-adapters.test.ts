@@ -1,24 +1,70 @@
-"use strict";
-const os = require('node:os');
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const { pathToFileURL, fileURLToPath } = require("node:url");
-const { createRequire } = require("node:module");
-const { execFileSync, spawnSync } = require("node:child_process");
-const root = path.resolve(__dirname, "..");
+import type { FmcadOptions, FmcadServices } from "../src/api";
+import type { Dependencies } from "../packages/opencode-adapter/src/shared/contracts";
+interface ToolContext {
+  sessionID: string;
+  agent: string;
+  messageID: string;
+  id: string;
+  directory: string;
+  worktree: string;
+  signal: AbortSignal;
+  metadata(): void;
+  abort?: AbortSignal;
+  ask?: (value: unknown) => Promise<void>;
+}
+interface Definition {
+  name: string;
+  args?: unknown;
+  execute(input: unknown, context: ToolContext): Promise<unknown>;
+}
+interface TestPlugin {
+  id: string;
+  server(
+    input: unknown,
+    options?: unknown,
+  ): Promise<{ tool: Record<string, Definition>; dispose(): Promise<void> }>;
+  setup(context: unknown): Promise<() => Promise<void>>;
+}
+import { createRequire } from "node:module";
+import type { TestContext } from "node:test";
+import { at, record, list, text } from "./integration/offline-cli";
+const testRoot = process.cwd();
+const runtimeRequire = createRequire(
+  testRoot + "/tests/opencode-adapters.test.js",
+);
+function present<T>(value: T | null | undefined): T {
+  assert(value != null);
+  return value;
+}
+import os from "node:os";
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { execFileSync, spawnSync } from "node:child_process";
+const root = path.resolve(testRoot + "/tests", "..");
 
 // An actual npm-packed plugin, outside the repository and its dependency ancestry.
 // Only the library port is replaced; host entrypoint, schemas, validation,
 // permissions, SDK tool helper and cleanup are the shipped implementation.
-async function fixture(t, host, { realServices = false, projectDirectory = "/project/session-worktree" } = {}) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-plugin-consumer-'));
-  let pkg;
+async function fixture(
+  t: TestContext,
+  host: "v1" | "v2",
+  { realServices = false, projectDirectory = "/project/session-worktree" } = {},
+) {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "fmcad-plugin-consumer-"),
+  );
+  const pkg = path.join(directory, "node_modules/fmcad");
   t.after(() => {
     if (pkg && fs.existsSync(pkg)) {
-      for (const entry of fs.readdirSync(pkg, { recursive: true, withFileTypes: true })) {
-        if (entry.isDirectory()) fs.chmodSync(path.join(entry.parentPath, entry.name), 0o755);
+      for (const entry of fs.readdirSync(pkg, {
+        recursive: true,
+        withFileTypes: true,
+      })) {
+        if (entry.isDirectory())
+          fs.chmodSync(path.join(entry.parentPath, entry.name), 0o755);
       }
       fs.chmodSync(pkg, 0o755);
     }
@@ -26,39 +72,64 @@ async function fixture(t, host, { realServices = false, projectDirectory = "/pro
   });
   const hostPackage = host === "v1" ? ["@opencode-ai/plugin@1.18.29"] : [];
   const packed = JSON.parse(
-    execFileSync("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", directory], {
-      cwd: root,
-      encoding: "utf8",
-      maxBuffer: 16 * 1024 * 1024,
-    }),
+    execFileSync(
+      "npm",
+      ["pack", "--ignore-scripts", "--json", "--pack-destination", directory],
+      {
+        cwd: root,
+        encoding: "utf8",
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    ),
   )[0];
-  fs.writeFileSync(path.join(directory, "package.json"), '{"private":true,"type":"module"}');
+  fs.writeFileSync(
+    path.join(directory, "package.json"),
+    '{"private":true,"type":"module"}',
+  );
   execFileSync(
     "npm",
-    ["install", "--offline", "--prefix", directory, "--ignore-scripts", "--omit=dev", "--no-audit", "--no-fund", path.join(directory, packed.filename), ...hostPackage],
+    [
+      "install",
+      "--offline",
+      "--prefix",
+      directory,
+      "--ignore-scripts",
+      "--omit=dev",
+      "--no-audit",
+      "--no-fund",
+      path.join(directory, packed.filename),
+      ...hostPackage,
+    ],
     { cwd: directory, encoding: "utf8", timeout: 120000 },
   );
-  pkg = path.join(directory, "node_modules/fmcad");
-  for (const entry of fs.readdirSync(pkg, { recursive: true, withFileTypes: true })) {
-    if (entry.isDirectory()) fs.chmodSync(path.join(entry.parentPath, entry.name), 0o555);
+  for (const entry of fs.readdirSync(pkg, {
+    recursive: true,
+    withFileTypes: true,
+  })) {
+    if (entry.isDirectory())
+      fs.chmodSync(path.join(entry.parentPath, entry.name), 0o555);
   }
   fs.chmodSync(pkg, 0o555);
   const localRequire = createRequire(path.join(directory, "consumer.cjs"));
   const composition = localRequire(
     path.join(pkg, "dist/src/dist/composition/opencode.js"),
-  );
-  const publicApi = localRequire(path.join(pkg, "dist/src/dist/api/index.js"));
-  const configuration = localRequire(path.join(pkg, "dist/src/config.js"));
-  const calls = [],
-    instances = [],
-    permissions = [],
-    events = [];
+  ) as { dependencies: () => Dependencies };
+  const publicApi = localRequire(
+    path.join(pkg, "dist/src/dist/api/index.js"),
+  ) as typeof import("../src/api");
+  const configuration = localRequire(
+    path.join(pkg, "dist/src/config.js"),
+  ) as typeof import("../src/composition/library-configuration");
+  const calls: unknown[][] = [],
+    instances: FmcadOptions[] = [],
+    permissions: unknown[] = [],
+    events: unknown[] = [];
   let closeCount = 0,
     disposed = 0,
     transforms = 0,
     eventAborted = false,
-    rejectPermission;
-  let execute = async () => ({
+    rejectPermission: unknown;
+  let execute: (...input: unknown[]) => Promise<unknown> = async () => ({
     version: 1,
     jobId: "job-1",
     requestId: "req-1",
@@ -66,9 +137,7 @@ async function fixture(t, host, { realServices = false, projectDirectory = "/pro
     outcome: { state: "unknown" },
     result: null,
   });
-  const catalog = localRequire(
-    path.join(pkg, "dist/src/dist/api/index.js"),
-  ).createCatalogServices();
+  const catalog = publicApi.createCatalogServices();
   composition.dependencies = () => ({
     catalog,
     requestID: () => "req-generated",
@@ -80,7 +149,7 @@ async function fixture(t, host, { realServices = false, projectDirectory = "/pro
         const loaded = configuration.loadConfig({ cwd }).cfg;
         return { ...loaded, ...(options["config"] || {}) };
       }
-      return {};
+      return {} as FmcadOptions["config"];
     },
     presence: () => ({
       touch: (...value) => events.push(["touch", ...value]),
@@ -92,53 +161,57 @@ async function fixture(t, host, { realServices = false, projectDirectory = "/pro
     create: (options) => {
       instances.push(options);
       if (realServices) return publicApi.createFmcad(options);
-      return {
+      const services = {
         start: async () => calls.push(["start"]),
         dispose: async () => {
           disposed++;
         },
-        execute: async (...input) => {
+        execute: async (...input: unknown[]) => {
           calls.push(["execute", ...input]);
           return execute(...input);
         },
         query: {
           status: async () => ({ active: true }),
-          result: async (id) => ({ jobId: id, state: "unknown" }),
-          request: async (id) => ({ requestId: id, state: "unknown" }),
+          result: async (id: string) => ({ jobId: id, state: "unknown" }),
+          request: async (id: string) => ({ requestId: id, state: "unknown" }),
         },
-        control: async (request) => {
+        control: async (request: unknown) => {
           calls.push(["control", request]);
           return { state: "queued_cancelled" };
         },
       };
+      return services as unknown as FmcadServices;
     },
   });
   let entrypoint;
-  let namespace;
   if (host === "v2") {
-    const manifest = JSON.parse(fs.readFileSync(path.join(pkg, "package.json"), "utf8"));
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(pkg, "package.json"), "utf8"),
+    );
     assert.equal(manifest.peerDependencies["@opencode/plugin"], ">=2.1.3 <3");
     assert.equal(manifest.engines.opencode, ">=1.18.29 <2 || >=2.1.3 <3");
     entrypoint = path.resolve(pkg, manifest.exports["."].default);
   } else {
     // 1.18.29 shared.ts resolvePackageEntrypoint: ./server, then main.
     const manifest = JSON.parse(
-      fs.readFileSync(path.join(pkg, "package.json")),
+      fs.readFileSync(path.join(pkg, "package.json"), "utf8"),
     );
     entrypoint = path.resolve(
       pkg,
       manifest.exports["./server"].default || manifest.main,
     );
   }
-  namespace ??= await import(pathToFileURL(entrypoint).href);
-  const plugin = namespace.default;
+  const namespace = await import(pathToFileURL(entrypoint).href);
+  const plugin = namespace.default as TestPlugin;
   assert.deepEqual(Object.keys(namespace), ["default"]);
   assert.equal(plugin.id, "fmcad");
   assert.equal(typeof plugin.server, "function");
   assert.equal(typeof plugin.setup, "function");
   assert.equal(instances.length, 0, "root import must be effect free");
-  let cleanup, definitions, v2Context;
-  const ctx = {
+  let cleanup: (() => Promise<void>) | undefined,
+    definitions: Record<string, Definition> | undefined,
+    v2Context: Record<string, unknown> | undefined;
+  const ctx: ToolContext = {
     sessionID: "ses-caller",
     agent: "build",
     messageID: "msg-1",
@@ -148,14 +221,14 @@ async function fixture(t, host, { realServices = false, projectDirectory = "/pro
     signal: new AbortController().signal,
     metadata() {},
   };
-  const authorize = async (value) => {
+  const authorize = async (value: unknown) => {
     permissions.push(value);
     if (rejectPermission) throw rejectPermission;
   };
   if (host === "v1") {
     await assert.rejects(
       plugin.server({}),
-      (error) => error.code === "FMCAD_UNSUPPORTED_HOST",
+      (error: unknown) => record(error)["code"] === "FMCAD_UNSUPPORTED_HOST",
     );
     // The 1.18.29 object loader's readV1Plugin/applyPlugin selects .server,
     // not the setup property. The actual pinned SDK validates V1 args below.
@@ -177,7 +250,10 @@ async function fixture(t, host, { realServices = false, projectDirectory = "/pro
       location: { directory: "/plugin/location" },
       options: { config: { timeoutMs: 5000 } },
       session: {
-        async get(input, options) {
+        async get(
+          input: { sessionID: string },
+          options: { signal: AbortSignal },
+        ) {
           assert.equal(input.sessionID, ctx.sessionID);
           assert.equal(options.signal, ctx.signal);
           return {
@@ -188,8 +264,8 @@ async function fixture(t, host, { realServices = false, projectDirectory = "/pro
       },
       permission: { assert: authorize },
       event: {
-        async *subscribe({ signal }) {
-          await new Promise((resolve) =>
+        async *subscribe({ signal }: { signal: AbortSignal }) {
+          await new Promise<void>((resolve) =>
             signal.addEventListener(
               "abort",
               () => {
@@ -202,12 +278,14 @@ async function fixture(t, host, { realServices = false, projectDirectory = "/pro
         },
       },
       tool: {
-        async transform(callback) {
+        async transform(
+          callback: (editor: { add(definition: Definition): void }) => void,
+        ) {
           transforms++;
           definitions = {};
           const editor = {
-            add(definition) {
-              definitions[definition.name] = definition;
+            add(definition: Definition) {
+              present(definitions)[definition.name] = definition;
             },
           };
           callback(editor);
@@ -229,7 +307,7 @@ async function fixture(t, host, { realServices = false, projectDirectory = "/pro
     for (const version of ["3.0.0", "2.1.2", "2.0.0", "2.1.3-beta"]) {
       await assert.rejects(
         plugin.setup({ ...v2, app: { version } }),
-        (error) => error.code === "FMCAD_UNSUPPORTED_HOST",
+        (error: unknown) => record(error)["code"] === "FMCAD_UNSUPPORTED_HOST",
       );
     }
     assert.equal(transforms, 0);
@@ -238,20 +316,26 @@ async function fixture(t, host, { realServices = false, projectDirectory = "/pro
       !fs.existsSync(path.join(directory, "node_modules/@opencode-ai")),
     );
   }
-  const invoke = async (name, input, signal) => {
+  const invoke = async (name: string, input: unknown, signal?: AbortSignal) => {
     if (signal) {
       ctx.signal = signal;
       ctx.abort = signal;
     }
-    const definition = definitions[name];
+    const definition = present(present(definitions)[name]);
     if (host === "v1") {
       const { z } = await import(
         pathToFileURL(path.join(directory, "node_modules/zod/index.js")).href
       );
-      input = z.object(definition.args).parse(input);
+      input = (
+        z as { object(args: unknown): { parse(value: unknown): unknown } }
+      )
+        .object(definition.args)
+        .parse(input);
     }
     const result = await definition.execute(input, ctx);
-    return JSON.parse(host === "v1" ? result : result.content);
+    return record(
+      JSON.parse(text(host === "v1" ? result : at(result, "content"))),
+    );
   };
   return {
     directory,
@@ -261,16 +345,16 @@ async function fixture(t, host, { realServices = false, projectDirectory = "/pro
     permissions,
     events,
     invoke,
-    cleanup,
+    cleanup: present(cleanup),
     plugin,
-    deny(value) {
+    deny(value: unknown) {
       rejectPermission = value;
     },
-    execute(value) {
+    execute(value: (...args: unknown[]) => Promise<unknown>) {
       execute = value;
     },
     counts: () => ({ closeCount, disposed, transforms, eventAborted }),
-    failSetup(error) {
+    failSetup(error: unknown) {
       return plugin.setup({
         ...v2Context,
         tool: {
@@ -283,12 +367,12 @@ async function fixture(t, host, { realServices = false, projectDirectory = "/pro
   };
 }
 
-for (const host of ["v1", "v2"]) {
+for (const host of ["v1", "v2"] as const) {
   test(`packed ${host}: catalog, session context, permission deny, receipts/control and own cleanup`, async (t) => {
     const f = await fixture(t, host);
     const help = await f.invoke("fmcad_help", {});
-    assert.equal(help.directory, "/project/session-worktree");
-    assert.ok(help.operations.length > 10);
+    assert.equal(help["directory"], "/project/session-worktree");
+    assert.ok(list(help["operations"]).length > 10);
     assert.equal(f.calls.length, 0);
     const rejection = Object.assign(new Error("denied"), {
       code: "HOST_PERMISSION_DENIED",
@@ -317,51 +401,61 @@ for (const host of ["v1", "v2"]) {
     assert.equal(f.instances.length, 0);
     f.deny(undefined);
     const result = await f.invoke("fmcad_execute", input);
-    assert.equal(result.state, "unknown");
-    assert.equal(result.outcome.state, "unknown");
+    assert.equal(result["state"], "unknown");
+    assert.equal(record(result["outcome"])["state"], "unknown");
     const actions = f.permissions.map(
-      (value) => value.action || value.permission,
+      (value) => record(value)["action"] || record(value)["permission"],
     );
     assert.deepEqual(actions.slice(-2), [
       "fmcad_execute",
       host === "v2" ? "shell" : "bash",
     ]);
     assert.equal(
-      f.instances[0].context.projectDirectory,
+      present(f.instances[0]).context.projectDirectory,
       "/project/session-worktree",
     );
-    assert.equal(f.instances[0].context.sessionId, "ses-caller");
-    assert.equal(f.instances[0].context.projectId, "project-session");
-    assert.equal(f.instances[0].context.clientId, "opencode:ses-caller:build");
-    assert.deepEqual(f.calls.find((value) => value[0] === "execute").slice(1), [
-      input.invocation,
-      {
-        requestId: "req-1",
-        sequence: input.sequence,
-        queueTimeoutMs: 10000,
-        expectedRevision: 7,
-      },
-    ]);
+    assert.equal(present(f.instances[0]).context.sessionId, "ses-caller");
+    assert.equal(present(f.instances[0]).context.projectId, "project-session");
+    assert.equal(
+      present(f.instances[0]).context.clientId,
+      "opencode:ses-caller:build",
+    );
+    assert.deepEqual(
+      present(f.calls.find((value) => value[0] === "execute")).slice(1),
+      [
+        input.invocation,
+        {
+          requestId: "req-1",
+          sequence: input.sequence,
+          queueTimeoutMs: 10000,
+          expectedRevision: 7,
+        },
+      ],
+    );
     assert.equal(
       (
         await f.invoke("fmcad_execute", {
           action: "request",
           requestId: "req-1",
         })
-      ).state,
+      )["state"],
       "unknown",
     );
     assert.equal(
-      (await f.invoke("fmcad_execute", { action: "result", jobId: "job-1" }))
-        .state,
+      (await f.invoke("fmcad_execute", { action: "result", jobId: "job-1" }))[
+        "state"
+      ],
       "unknown",
     );
     await f.invoke("fmcad_execute", { action: "cancel", jobId: "job-1" });
-    assert.deepEqual(f.calls.find((value) => value[0] === "control")[1], {
-      version: 1,
-      action: "cancel",
-      jobId: "job-1",
-    });
+    assert.deepEqual(
+      present(f.calls.find((value) => value[0] === "control"))[1],
+      {
+        version: 1,
+        action: "cancel",
+        jobId: "job-1",
+      },
+    );
     await assert.rejects(f.invoke("fmcad_execute", { action: "serve" }));
     const machineError = Object.assign(
       new Error("Lost admission acknowledgement"),
@@ -376,7 +470,7 @@ for (const host of ["v1", "v2"]) {
     );
     await assert.rejects(
       f.invoke("fmcad_execute", { invocation: { version: 99 } }),
-      (error) => error.code === "FMCAD_INVALID_INPUT",
+      (error: unknown) => record(error)["code"] === "FMCAD_INVALID_INPUT",
     );
     const aborted = new AbortController();
     aborted.abort(machineError);
@@ -395,7 +489,7 @@ for (const host of ["v1", "v2"]) {
     const inactive =
       host === "v2" ? "/opencode-adapter/v1/" : "/opencode-adapter/v2/";
     assert.ok(
-      !Object.keys(require.cache).some(
+      !Object.keys(runtimeRequire.cache).some(
         (file) => file.startsWith(f.pkg) && file.includes(inactive),
       ),
       "inactive adapter is not loaded",
@@ -405,15 +499,16 @@ for (const host of ["v1", "v2"]) {
   test(`packed ${host}: abort is local only, unknown work is not replayed or cancelled`, async (t) => {
     const f = await fixture(t, host);
     const controller = new AbortController();
-    let settle, admitted;
-    const started = new Promise((resolve) => {
+    let settle: ((value: unknown) => void) | undefined,
+      admitted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
       admitted = resolve;
     });
     f.execute(
       () =>
         new Promise((resolve) => {
           settle = resolve;
-          admitted();
+          present(admitted)();
         }),
     );
     const call = f.invoke(
@@ -445,29 +540,35 @@ for (const host of ["v1", "v2"]) {
     );
     assert.equal(f.calls.filter((value) => value[0] === "execute").length, 1);
     assert.equal(f.calls.filter((value) => value[0] === "control").length, 0);
-    settle({ state: "unknown", jobId: "accepted" });
+    present(settle)({ state: "unknown", jobId: "accepted" });
   });
 }
 
-for (const host of ["v1", "v2"]) {
+for (const host of ["v1", "v2"] as const) {
   test(`built ${host}: a stopped broker never falls back to the configured physical endpoint`, async (t) => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-plugin-stopped-broker-'));
+    const home = fs.mkdtempSync(
+      path.join(os.tmpdir(), "fmcad-plugin-stopped-broker-"),
+    );
     const project = path.join(home, "project");
     fs.mkdirSync(project);
     let physicalRequests = 0;
-    const server = require("node:http").createServer((request, response) => {
+    const server = (
+      runtimeRequire("node:http") as typeof import("node:http")
+    ).createServer((request, response) => {
       physicalRequests++;
       request.resume();
       request.on("end", () => response.end("{}"));
     });
-    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
     const configPath = path.join(home, "config.json");
     fs.writeFileSync(
       configPath,
       JSON.stringify({
         backend: "mcp",
         routing: "queue",
-        url: `http://127.0.0.1:${server.address().port}/mcp`,
+        url: `http://127.0.0.1:${record(present(server.address()))["port"]}/mcp`,
         headers: {},
         timeoutMs: 1000,
         tool: "fusion_mcp_execute",
@@ -477,10 +578,12 @@ for (const host of ["v1", "v2"]) {
       }),
     );
     const names = ["XDG_STATE_HOME", "FMCAD_CONFIG", "FMCAD_ROUTING"];
-    const before = Object.fromEntries(names.map((name) => [name, process.env[name]]));
-    process.env.XDG_STATE_HOME = home;
-    process.env.FMCAD_CONFIG = configPath;
-    process.env.FMCAD_ROUTING = "queue";
+    const before = Object.fromEntries(
+      names.map((name) => [name, process.env[name]]),
+    );
+    process.env["XDG_STATE_HOME"] = home;
+    process.env["FMCAD_CONFIG"] = configPath;
+    process.env["FMCAD_ROUTING"] = "queue";
     t.after(async () => {
       for (const name of names) {
         if (before[name] === undefined) delete process.env[name];
@@ -491,7 +594,10 @@ for (const host of ["v1", "v2"]) {
       fs.rmSync(home, { recursive: true, force: true });
     });
 
-    const f = await fixture(t, host, { realServices: true, projectDirectory: project });
+    const f = await fixture(t, host, {
+      realServices: true,
+      projectDirectory: project,
+    });
     const input = {
       invocation: {
         version: 1,
@@ -504,39 +610,68 @@ for (const host of ["v1", "v2"]) {
       requestId: `stopped-${host}`,
     };
     await assert.rejects(f.invoke("fmcad_execute", input), (error) => {
-      assert.match(error.message, /ENOENT|ECONNREFUSED|broker|queue/i);
+      assert.match(
+        text(at(error, "message")),
+        /ENOENT|ECONNREFUSED|broker|queue/i,
+      );
       return true;
     });
-    assert.equal(f.instances.length, 1, "the adapter delegates only to the public library API");
+    assert.equal(
+      f.instances.length,
+      1,
+      "the adapter delegates only to the public library API",
+    );
     await f.cleanup();
-    assert.equal(physicalRequests, 0, "a stopped broker cannot dispatch directly to the MCP endpoint");
+    assert.equal(
+      physicalRequests,
+      0,
+      "a stopped broker cannot dispatch directly to the MCP endpoint",
+    );
   });
 }
 
 test("external root import needs no host SDK and has no service effects", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-plugin-import-'));
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "fmcad-plugin-import-"),
+  );
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   fs.writeFileSync(path.join(directory, "package.json"), '{"private":true}');
   const packed = JSON.parse(
-    execFileSync("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", directory], {
-      cwd: root,
-      encoding: "utf8",
-      maxBuffer: 16 * 1024 * 1024,
-    }),
+    execFileSync(
+      "npm",
+      ["pack", "--ignore-scripts", "--json", "--pack-destination", directory],
+      {
+        cwd: root,
+        encoding: "utf8",
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    ),
   )[0];
   execFileSync(
     "npm",
-    ["install", "--offline", "--prefix", directory, "--ignore-scripts", "--omit=dev", "--no-audit", "--no-fund", path.join(directory, packed.filename)],
+    [
+      "install",
+      "--offline",
+      "--prefix",
+      directory,
+      "--ignore-scripts",
+      "--omit=dev",
+      "--no-audit",
+      "--no-fund",
+      path.join(directory, packed.filename),
+    ],
     { cwd: directory, encoding: "utf8", timeout: 120000 },
   );
-  const pkg = path.join(directory, "node_modules/fmcad");
   const loader = path.join(directory, "no-effects-loader.mjs");
-  fs.writeFileSync(loader, `
+  fs.writeFileSync(
+    loader,
+    `
     export async function resolve(specifier, context, nextResolve) {
       if (/opencode|composition|child_process/.test(specifier)) throw new Error('unexpected import ' + specifier);
       return nextResolve(specifier, context);
     }
-  `);
+  `,
+  );
   const child = spawnSync(
     process.execPath,
     [
@@ -559,9 +694,11 @@ test("external root import needs no host SDK and has no service effects", (t) =>
     },
   );
   assert.equal(child.status, 0, child.stderr);
-  assert(!fs.existsSync(path.join(directory, "node_modules/@opencode-ai/plugin")));
+  assert(
+    !fs.existsSync(path.join(directory, "node_modules/@opencode-ai/plugin")),
+  );
   assert(!fs.existsSync(path.join(directory, "node_modules/@opencode/plugin")));
-  const manifest = require("../package.json");
+  const manifest = runtimeRequire("../package.json");
   assert.equal(manifest.devDependencies["@opencode-ai/plugin"], "1.18.29");
   assert.equal(manifest.devDependencies["@opencode/plugin"], "2.1.3");
   assert.equal(
@@ -603,7 +740,7 @@ test("packed V2 setup failure cleans owned resources and never falls back to V1"
   assert.equal(f.counts().closeCount, 1);
   assert.equal(f.instances.length, 0);
   assert.ok(
-    !Object.keys(require.cache).some(
+    !Object.keys(runtimeRequire.cache).some(
       (file) =>
         file.startsWith(f.pkg) && file.includes("/opencode-adapter/v1/"),
     ),
@@ -613,7 +750,7 @@ test("packed V2 setup failure cleans owned resources and never falls back to V1"
 });
 
 test("public API sequence options and purpose reach existing submit; invalid/local controls never submit", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-plugin-api-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-plugin-api-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const child = spawnSync(
     process.execPath,
