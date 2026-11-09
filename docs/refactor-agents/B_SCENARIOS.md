@@ -492,3 +492,29 @@ historical assertion mappings are recorded (112 total reviewed mappings, includi
 18 native obligations and one removed historical assertion). This is partial style
 migration; appearance/property/assignment/mass contracts remain open. Full
 non-transaction regression and exact-head CI are still required.
+
+## Delivery ledger — restore exact legacy expectations
+
+Material PR #95 (`ce0cef6`) passed all 219 non-transaction scenario tests with a
+writable workspace TMPDIR. The immutable animation production-checker profile at
+`c521ea7` passed both MCP and addin with complete cleanup and identical source
+hashes (`32035565aaff971c47b9b67b046c15a2b47818001580805fb9b44d0433eae800`).
+These are model/checker results; native execution remains deferred.
+
+Auditing the retained parameter/plane/component families against `live-legacy.js`
+found a strict value assertion weakened to a tolerance and several textual list
+assertions replaced only by state readback. Restore strict equality to 2 and the
+rename/delete/angle/parent list outputs, retaining the additional independent state
+checks. Negative fault tests inject a 5e-10 value error or wrong list text while
+leaving the actual model unchanged; both transports must fail and clean the owned
+fixture. No production implementation or historical expectation is weakened.
+
+Twenty individual legacy assertions now map to the existing parameter, plane,
+component, units and 10 mm box/rollback families. The ledger contains 132 reviewed
+mappings, including 18 native obligations and one predecessor-only assertion.
+Legacy native PNG, STEP/STL, unsaved lifecycle and remaining wrapper/ownership
+assertions are still open; this does not mark the complete suite migrated.
+
+Legacy expectation validation: all 42 focused parameter/document/box and injected
+regression tests pass, plus the disposition check. Runtime-test compilation passes.
+The immutable material component profiles are now running at `ce0cef6`.

@@ -1178,6 +1178,206 @@
       "evidence": "tests/scenarios/material-cases.ts",
       "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
       "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "b86c2967a08225d47a82-1",
+      "disposition": "shared",
+      "scenario": "parameter-crud",
+      "capabilities": ["parameter-crud"],
+      "evidence": "tests/scenarios/parameter-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "a93ca684e168c3a69e0b-1",
+      "disposition": "shared",
+      "scenario": "parameter-crud",
+      "capabilities": ["parameter-crud"],
+      "evidence": "tests/scenarios/parameter-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "b208f0c6c55543b411cf-1",
+      "disposition": "shared",
+      "scenario": "parameter-crud",
+      "capabilities": ["parameter-crud"],
+      "evidence": "tests/scenarios/parameter-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "088bd6851df17d4f0acf-1",
+      "disposition": "shared",
+      "scenario": "parameter-crud",
+      "capabilities": ["parameter-crud"],
+      "evidence": "tests/scenarios/parameter-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "6eee89b2dc760dcb97b2-1",
+      "disposition": "shared",
+      "scenario": "construction-planes",
+      "capabilities": ["construction-planes"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "b01fb177d2f0bce4f51d-1",
+      "disposition": "shared",
+      "scenario": "construction-planes",
+      "capabilities": ["construction-planes"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "70180ef3d385085f469c-1",
+      "disposition": "shared",
+      "scenario": "construction-planes",
+      "capabilities": ["construction-planes"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "5c51517976d7bf96283f-1",
+      "disposition": "shared",
+      "scenario": "construction-planes",
+      "capabilities": ["construction-planes"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "438677b9064237639ee9-1",
+      "disposition": "shared",
+      "scenario": "construction-planes",
+      "capabilities": ["construction-planes"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "5fcdf1069113f0239b39-1",
+      "disposition": "shared",
+      "scenario": "construction-planes",
+      "capabilities": ["construction-planes"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "8d2dfb10cd8028aeb180-1",
+      "disposition": "shared",
+      "scenario": "component-tree",
+      "capabilities": ["component-tree"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "4ff35c1a1baac61efb21-1",
+      "disposition": "shared",
+      "scenario": "document-units",
+      "capabilities": ["document-units"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "f423e5a0c7f04c544657-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "dc6e4c77730ce18e0fef-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "667950300b1f6a547fd9-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "1925bfcae89ac069ac52-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "2c799d1a64fd895a93a2-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "e02e01279df56116168b-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "0efd385a85535c43f40c-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "f6ab92257ad47359c65b-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
     }
   ]
 }
