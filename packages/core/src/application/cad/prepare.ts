@@ -37,7 +37,7 @@ if _FMCAD_TYPE_CHECKING:
         operation: str
         data: JsonObject
         doc: str
-        component: _FMCADNotRequired[str | None]
+        component: _FMCADNotRequired[${context.component !== null && typeof context.component === "object" ? "str | JsonObject | None" : "str | None"}]
         projectId: _FMCADNotRequired[str | None]
         docId: _FMCADNotRequired[str | None]
         docFileId: _FMCADNotRequired[str | None]

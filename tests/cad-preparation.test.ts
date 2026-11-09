@@ -161,3 +161,72 @@ test("preparation retains validation and path failures before execution", (t) =>
       );
   }
 });
+
+test("exact component reference objects retain historical token/path/kind bytes and valid Python request typing", () => {
+  for (const component of [
+    {
+      kind: "component",
+      token: "authoritative-component-token",
+      name: "stale display name",
+    },
+    {
+      kind: "occurrence",
+      token: "authoritative-occurrence-token",
+      path: "Parent:1+Child:2",
+      name: "duplicate",
+    },
+  ]) {
+    const context = { doc: "Owned", docId: "exact-document", component };
+    const input = structuredClone(context);
+    const data = {
+      name: "ScopedBody",
+      width: "10 mm",
+      depth: "20 mm",
+      height: "30 mm",
+    };
+    const planner = historical(
+      "5292078741b417d6e921d3252a8bf19b3f0cc15b",
+      "packages/core/src/application/cad/prepare.ts",
+    ) as typeof import("../packages/core/src/application/cad/prepare");
+    const { pythonLiteral } = load(
+      "./src/python.js",
+    ) as typeof import("../packages/node-adapters/src/python/artifact");
+    const before = planner.planCadScript(
+      "shape.box",
+      data,
+      context,
+      current.catalog["shape.box"]!,
+      pythonLiteral,
+    );
+    const after = current.prepareCadScript("shape.box", data, context);
+    const oldAnnotation = "component: _FMCADNotRequired[str | None]";
+    const newAnnotation =
+      "component: _FMCADNotRequired[str | JsonObject | None]";
+    assert.ok(before.wrapper.includes(oldAnnotation));
+    const wrapper = after.units.find((unit) => unit.id === "wrapper");
+    assert.ok(wrapper);
+    assert.equal(
+      wrapper.source,
+      before.wrapper.replace(oldAnnotation, newAnnotation),
+    );
+    assert.deepEqual(after.context, before.context);
+    assert.deepEqual(after.context, context);
+    assert.deepEqual(
+      context,
+      input,
+      "Preparing a reference must not rewrite the caller's token, path or name",
+    );
+    // The old composition uses the same current assembly port. Its whole artifact
+    // must still match, while the independently frozen planner above pins bytes.
+    assert.deepEqual(
+      after,
+      previous.prepareCadScript("shape.box", data, context),
+    );
+    assert.equal(
+      current.buildCadScript("shape.box", data, context),
+      after.script,
+    );
+    assert.ok(after.script.includes(component.token));
+    if (component.path) assert.ok(after.script.includes(component.path));
+  }
+});

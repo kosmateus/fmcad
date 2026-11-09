@@ -632,3 +632,12 @@ teardown. After recording its generated state, only this agent's test process
 tree was stopped to release the shared checker host. OpenCode, later MCP and
 Python admission gates in that slice were not reached and remain pending.
 No timeout, owner, receipt, platform or uncertain-replay rule was relaxed.
+
+The public CAD preparation context again accepts the historical exact component
+or occurrence reference object, including authoritative token/path/kind. The
+Python request annotation now permits JsonObject when the supplied component is
+an object. String/null contexts retain byte-identical wrappers, and CLI string
+parsing is unchanged. A separately frozen 5292078 planner comparison pins all
+object-reference wrapper bytes except this corrected annotation; the original
+composition still produces the same complete assembled artifact. Strict source
+compilation and lint pass; runtime checks follow the central rebuild.

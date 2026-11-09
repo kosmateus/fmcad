@@ -4,7 +4,7 @@ import type { PreparedPythonArtifact } from "../../domain/python-artifact";
 /** Transport-neutral targeting. Output formatting belongs to the entrypoint. */
 export interface CadContext {
   doc?: string | null;
-  component?: string | null;
+  component?: string | Readonly<Record<string, unknown>> | null;
   projectId?: string | null;
   docId?: string | null;
   docFileId?: string | null;
