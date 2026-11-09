@@ -10,18 +10,19 @@ const { buildReport, classifyFeature, gateReadiness } = require("./integrated-qu
 const { createPrivateWorkspace, parseDocumentList, queueIsClear, queueJob, releasedGateMatches,
   runNativeSweep, validateBrokerStateHome, validateExplicitConfig } = require("./integrated-qualification/executor");
 const deferredAdapters = require("./integrated-qualification/deferred_adapters");
+const { qualificationRepository } = require("../../dist/tests/fixtures/qualification-repository.js");
 const manifest = JSON.parse(fs.readFileSync(path.join(__dirname,
   "integrated-qualification/manifest.json"), "utf8"));
 
-test("integrated candidate records source ancestry and leaves all native cases NOTRUN offline", () => {
-  const report = buildReport();
-  assert.equal(report.candidate.base, "b2fb6c0800a9da515d53373512b4f0ed68048b67");
+test("OFFLINE synthetic Git candidate records exact ancestry and leaves all native cases NOTRUN", (t) => {
+  const fixture = qualificationRepository(t);
+  const report = require(fixture.runner).buildReport();
+  assert.equal(report.candidate.base, fixture.base);
   assert.equal(report.features.length, 11);
   assert.equal(report.fusionSessions, 1);
   assert.equal(report.nativeQualification, "NOTRUN");
   assert.ok(report.features.every((feature) => feature.status === "NOTRUN"));
-  assert.ok(report.candidate.sourceBlobs.some((row) => row.equivalentCommit ===
-    "5cfb80bc6122ed5582c11a45581fdc2767feac75"));
+  assert.ok(report.candidate.sourceBlobs.some((row) => row.equivalentCommit === fixture.base));
 });
 
 test("unknown broker outcomes stay NOTRUN and require reconciliation", () => {
@@ -403,11 +404,12 @@ test("FAKE PORT (offline): unknown cleanup stops the sweep and never retries the
 test("FAKE PORT (offline): main remains queue-inert when --run-native lacks coordinator release", (t) => {
   const evidenceDir = fs.mkdtempSync("/tmp/opencode/native-qualification-main-gate-test-");
   t.after(() => fs.rmSync(evidenceDir, { recursive: true, force: true }));
-  const result = spawnSync(process.execPath, [path.join(__dirname, "integrated-qualification/runner.js"),
+  const fixture = qualificationRepository(t);
+  const result = spawnSync(process.execPath, [fixture.runner,
     "--run-native", "--evidence-dir", evidenceDir,
     "--cli", "/missing/fmcad.js", "--installation-root", "/missing", "--config", "/missing/config.json",
     "--broker-state-home", "/missing/state", "--client-id", "offline-client"],
-  { cwd: path.join(__dirname, "../.."), encoding: "utf8", timeout: 10000 });
+  { cwd: fixture.root, encoding: "utf8", timeout: 10000 });
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(result.stdout);
   assert.equal(output.execution.status, "blocked");
@@ -529,3 +531,11 @@ test("FAKE PORT (offline): typed unsupported adapters perform zero queue or Fusi
   assert.equal(port.calls.cleanup, 0);
   assert.equal(fs.existsSync(path.join(evidenceDir, "dispatch-ledger.json")), false);
 });
+
+ test("OFFLINE unrelated Git candidate cannot inherit historical qualification", (t) => {
+  const fixture = qualificationRepository(t);
+  const changed = JSON.parse(fs.readFileSync(fixture.manifest, "utf8"));
+  changed.candidateBase = "b2fb6c0800a9da515d53373512b4f0ed68048b67";
+  fs.writeFileSync(fixture.manifest, JSON.stringify(changed));
+  assert.throws(() => require(fixture.runner).buildReport(), /does not contain/);
+ });

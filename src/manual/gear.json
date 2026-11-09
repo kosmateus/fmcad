@@ -7,7 +7,7 @@
     "examples": [
       {"label": "Standard 20-tooth gear", "data": {"name": "Gear", "module": "2 mm", "teeth": 20, "pressureAngle": "20 deg", "faceWidth": "10 mm"}, "requires": "Native component; Gear and helper names unused.", "output": "result.diameters gives d=4.0 cm, db=d*cos(20deg), da=m*(z+2); result.undercut flags low tooth counts; result.pattern.feature is the final gear."}
     ],
-    "audit": {"sources": ["assets/cad/gear.py:shape_gear,_gear_diameters,_gear_tooth_geometry,_gear_sample","assets/cad/model.py:model_feature(extrude,hole,circular)"], "verified": ["d=mz, db=d*cos(alpha), da=m(z+2) for the standard system", "Involute chordal-segment flanks, driving tip/root radii and circular pattern"], "tests": ["tests/gear_test.py", "tests/shape-library.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/gear.py:shape_gear,_gear_diameters,_gear_tooth_geometry,_gear_sample","assets/cad/model.py:model_feature(extrude,hole,circular)"], "verified": ["d=mz, db=d*cos(alpha), da=m(z+2) for the standard system", "Involute chordal-segment flanks, driving tip/root radii and circular pattern"], "tests": ["tests/gear_test.py", "tests/shape-library.test.ts"], "gaps": [], "bugs": []}
   },
   "gear.pair-check": {
     "sections": [
@@ -17,6 +17,6 @@
     "examples": [
       {"label": "External 20/40 pair", "data": {"gear1": {"module": "2 mm", "teeth": 20, "pressureAngle": "20 deg"}, "gear2": {"module": "2 mm", "teeth": 40, "pressureAngle": "20 deg"}, "external": true, "phase": 0}, "requires": "Open design document (read-only); gears share module 2 mm.", "output": "result.ratio is 2.0, sign 1, centerDistance m*(20+40)/2; result.backlash sums declared allocations."}
     ],
-    "audit": {"sources": ["assets/cad/gear.py:gear_pair_check,_gear_diameters,_gear_undercut"], "verified": ["Ratio/sign, center distance and working angle from the involute model", "Backlash as the sum of per-gear allocations and undercut detection"], "tests": ["tests/gear_test.py", "tests/shape-library.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/gear.py:gear_pair_check,_gear_diameters,_gear_undercut"], "verified": ["Ratio/sign, center distance and working angle from the involute model", "Backlash as the sum of per-gear allocations and undercut detection"], "tests": ["tests/gear_test.py", "tests/shape-library.test.ts"], "gaps": [], "bugs": []}
   }
 }

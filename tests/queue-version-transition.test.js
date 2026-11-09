@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+// Explicit fake physical backends require only synthetic WSL path spelling.
+test.beforeEach(t => t.after(require('./fixtures/fake-wsl-platform.cjs')()));
 const { QueueState } = require('../src/queue-state');
 const brokerModule = require('../src/queue-broker');
 const { brokerConfigHash, serve } = brokerModule;

@@ -16,6 +16,13 @@
     "scripts/migrate-project-responses.ts",
     "scripts/recover-local-build-preflight.ts",
     "scripts/start-installed-queue-phases.ts",
-    "scripts/verify-queue-phases.ts"
+    "scripts/verify-queue-phases.ts",
+    "scripts/compare-python-checkers.cts",
+    "scripts/verify-console.ts",
+    "scripts/assemble-native-evidence.cts",
+    "scripts/read-audit-response-proof.cts",
+    "scripts/qualify-epoch-checker.cts",
+    "scripts/qualify-isolated-epoch.cts",
+    "scripts/qualify-closed-successor-worker.cts"
   ]
 }

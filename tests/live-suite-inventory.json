@@ -135,13 +135,13 @@
       "id": "engineering-analytics",
       "source": "tests/live-engineering-analytics.js",
       "runner": "standalone",
-      "model": "pending",
+      "model": "partial",
       "scope": "Engineering calculations with native geometry/measurement readback",
       "prerequisites": "Installed matching broker and an isolated owned fixture",
       "baseline": {
         "kind": "later"
       },
-      "sharedScenarios": []
+      "sharedScenarios": ["gear-pair"]
     },
     {
       "id": "entity-attributes",

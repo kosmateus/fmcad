@@ -1,1 +1,5 @@
-export { successfulReferenceComputation } from "../../packages/core/src/application/local-pipeline";
+export {
+  successfulReferenceComputation,
+  successfulImportComputation,
+  successfulDrawingComputation,
+} from "../../packages/core/src/application/local-pipeline";

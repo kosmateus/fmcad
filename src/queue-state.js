@@ -24,7 +24,10 @@ class QueueState extends QueueDomain {
       newId: () => randomUUID(), hash: text => createHash('sha256').update(text).digest('hex'),
       commit(draft) {
         const text = JSON.stringify(draft);
-        if (text !== serialized) { store.commit(text); serialized = text; }
+        if (text !== serialized) {
+          store.commit(text); serialized = text;
+          try { options.onCommittedSnapshot?.(draft, path.resolve(dir)); } catch { /* Passive transition telemetry. */ }
+        }
       } });
     this.dir = path.resolve(dir); this.file = path.join(this.dir, 'queue-state.json');
   }

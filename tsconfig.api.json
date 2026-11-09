@@ -47,7 +47,25 @@
     "src/queue-admission.ts",
     "src/queue-fixed-fixture-admission.ts",
     "src/queue-instance-liveness.ts",
-    "src/queue-epoch-lineage.ts"
+    "src/queue-epoch-lineage.ts",
+    "src/queue-atomic-control.ts",
+    "src/queue-atomic-migration.ts",
+    "src/queue-atomic-migration-files.ts",
+    "src/queue-atomic-recovery-audit.ts",
+    "src/queue-atomic-wire.ts",
+    "src/atomic-observation-binding.ts",
+    "src/queue-epoch-runtime-upgrade.ts",
+    "src/composition/queue-atomic-migration-runtime.ts",
+    "src/composition/queue-atomic-migration-types.ts",
+    "src/queue-epoch-prerequisite.ts",
+    "src/queue-atomic-migration-worker.ts",
+    "src/queue-epoch-runtime-worker.ts",
+    "src/queue-epoch-successor-worker.ts",
+    "src/queue-atomic-audit-upgrade.ts",
+    "src/composition/queue-epoch-successor.ts",
+    "src/composition/queue-epoch-successor-types.ts",
+    "src/composition/queue-epoch-successor-control.ts",
+    "src/queue-atomic-migration-stop.ts"
   ],
   "references": [
     {

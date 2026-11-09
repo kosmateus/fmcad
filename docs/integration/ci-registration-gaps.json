@@ -23,15 +23,17 @@
     },
     "tests/integration/gm01-definition.test.js": {
       "owner": "B",
-      "status": "native-or-mixed-awaiting-assertion-disposition",
-      "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
-      "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
+      "status": "offline-extracted-native-pending",
+      "reason": "5 original local scenarios now run from a shared strict TypeScript offline test imported by the retained integration entrypoint; 4 document-bound scenarios still require owned Fusion execution.",
+      "nextAction": "Run the remaining document-bound cases in owned final Fusion qualification; offline execution does not qualify native behavior.",
+      "offlineSource": "tests/integration/gm01-definition-offline.test.ts"
     },
     "tests/integration/gm02-data-import.test.js": {
       "owner": "B",
-      "status": "native-or-mixed-awaiting-assertion-disposition",
-      "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
-      "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
+      "status": "offline-extracted-native-pending",
+      "reason": "6 original local scenarios now run from a shared strict TypeScript offline test imported by the retained integration entrypoint; 3 document-bound scenarios still require owned Fusion execution.",
+      "nextAction": "Run the remaining document-bound cases in owned final Fusion qualification; offline execution does not qualify native behavior.",
+      "offlineSource": "tests/integration/gm02-data-import-offline.test.ts"
     },
     "tests/integration/gm03-entity.test.js": {
       "owner": "B",
@@ -40,12 +42,6 @@
       "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
     },
     "tests/integration/gm04-datum.test.js": {
-      "owner": "B",
-      "status": "native-or-mixed-awaiting-assertion-disposition",
-      "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
-      "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
-    },
-    "tests/integration/gm05-reference.test.js": {
       "owner": "B",
       "status": "native-or-mixed-awaiting-assertion-disposition",
       "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
@@ -141,30 +137,6 @@
       "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
       "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
     },
-    "tests/integration/gm21-fit-stack.test.js": {
-      "owner": "B",
-      "status": "native-or-mixed-awaiting-assertion-disposition",
-      "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
-      "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
-    },
-    "tests/integration/gm22-mass.test.js": {
-      "owner": "B",
-      "status": "native-or-mixed-awaiting-assertion-disposition",
-      "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
-      "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
-    },
-    "tests/integration/gm23-fluid.test.js": {
-      "owner": "B",
-      "status": "native-or-mixed-awaiting-assertion-disposition",
-      "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
-      "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
-    },
-    "tests/integration/gm24-hydraulic.test.js": {
-      "owner": "B",
-      "status": "native-or-mixed-awaiting-assertion-disposition",
-      "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
-      "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
-    },
     "tests/integration/gm25-routing.test.js": {
       "owner": "B",
       "status": "native-or-mixed-awaiting-assertion-disposition",
@@ -213,19 +185,7 @@
       "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
       "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
     },
-    "tests/integration/gm33-thermal.test.js": {
-      "owner": "B",
-      "status": "native-or-mixed-awaiting-assertion-disposition",
-      "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
-      "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
-    },
     "tests/integration/gm34-marking.test.js": {
-      "owner": "B",
-      "status": "native-or-mixed-awaiting-assertion-disposition",
-      "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
-      "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
-    },
-    "tests/integration/gm35-drawing.test.js": {
       "owner": "B",
       "status": "native-or-mixed-awaiting-assertion-disposition",
       "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
@@ -249,25 +209,7 @@
       "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
       "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
     },
-    "tests/native/integrated-qualification-first-smoke.test.js": {
-      "owner": "B",
-      "status": "native-or-mixed-awaiting-assertion-disposition",
-      "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
-      "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
-    },
-    "tests/native/integrated-qualification.test.js": {
-      "owner": "B",
-      "status": "native-or-mixed-awaiting-assertion-disposition",
-      "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
-      "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
-    },
     "tests/native/iw7.4_parameter_test.py": {
-      "owner": "B",
-      "status": "native-or-mixed-awaiting-assertion-disposition",
-      "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",
-      "nextAction": "B/G: reconcile each assertion with the shared-scenario inventory; split and register offline assertions, retain native-only steps for the owned final Fusion qualification."
-    },
-    "tests/native/regional-typed.test.js": {
       "owner": "B",
       "status": "native-or-mixed-awaiting-assertion-disposition",
       "reason": "Requires owned Fusion execution, or mixes offline assertions with native cases. Registering a skipped file would not establish full assertion coverage.",

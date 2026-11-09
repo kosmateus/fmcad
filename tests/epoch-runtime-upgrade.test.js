@@ -107,7 +107,7 @@ test('late ready after one launch can complete without another worker or loss of
 test('bounded configured exclusive idle budget covers mandatory local aggregate preparation without altering an active lease', t => {
   const fs = require('node:fs'), path = require('node:path');
   const { QueueState } = require('../src/queue-state');
-  const root = fs.mkdtempSync('/tmp/opencode/epoch-checker-lease-');
+  const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'epoch-checker-lease-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   for (const idleMs of [60000, 180000]) {
     let now = 1000;
@@ -123,5 +123,49 @@ test('bounded configured exclusive idle budget covers mandatory local aggregate 
     assert.equal(q.data.lease !== null, idleMs === 180000);
     assert.equal(q.data.jobs[second.id].physicalTurns || 0, 0);
     assert.equal(q.leaseMs, 1800000);
+  }
+});
+
+test('typed checker and settled epoch handoffs preserve retained receipts and effects through interrupted stages', async () => {
+  const old = require('./fixtures/historical-module.cjs')(
+    '330849f22302bcf0ee955cd1945ddb2040eff8c7', 'src/queue-epoch-runtime-upgrade.js');
+  const current = require('../src/queue-epoch-runtime-upgrade');
+  for (const settled of [false, true]) for (const stage of [undefined, 'paused', 'escrow', 'stopped', 'installed', 'identity', 'launch-intent', 'complete']) {
+    const outputs = [];
+    for (const api of [old, current]) {
+      const p = fixture();
+      if (settled) {
+        p.approval.purpose = 'quiescent-settled-isolated-epoch-upgrade-v1';
+        p.approval.settledJobIds = p.approval.rejectedJobIds;
+        delete p.approval.rejectedJobIds;
+        p.snapshot.settledEvidence = [{ receipt: 'owned-terminal-receipt', outcome: 'succeeded' }];
+        p.approval.settledEvidenceHash = require('../src/queue-instance').hash(JSON.stringify(p.snapshot.settledEvidence));
+        for (const job of Object.values(p.snapshot.state.jobs)) job.state = 'succeeded';
+      }
+      p.crash = stage;
+      const run = (settled ? api.createSettledEpochRuntimeUpgrade : api.createEpochRuntimeUpgrade)(p);
+      if (stage) await assert.rejects(run(), /fixture crash/);
+      const result = await run();
+      outputs.push({ result, records: p.records, calls: p.calls, snapshot: p.snapshot });
+    }
+    assert.deepEqual(outputs[1], outputs[0], (settled ? 'settled:' : 'checker:') + String(stage));
+  }
+});
+
+test('persisted settled epoch boundary validates schema before typed handoff policy', () => {
+  const p = fixture();
+  p.approval.purpose = 'quiescent-settled-isolated-epoch-upgrade-v1';
+  p.approval.settledJobIds = p.approval.rejectedJobIds; delete p.approval.rejectedJobIds;
+  p.snapshot.settledEvidence = [{ receipt: 'owned' }];
+  p.approval.settledEvidenceHash = require('../src/queue-instance').hash(JSON.stringify(p.snapshot.settledEvidence));
+  for (const job of Object.values(p.snapshot.state.jobs)) job.state = 'succeeded';
+  const api = require('../src/queue-epoch-runtime-upgrade');
+  api.assertSettledEpochUpgradeRecord(p.snapshot, p.approval);
+  for (const mutate of [
+    s => { s.state.jobs = []; }, s => { s.owner.nonce = 3; },
+    s => { s.control.activeIds = 'not-an-array'; }, s => { s.state.jobs['local-failed-1'].details.sdkSettled = 'yes'; },
+  ]) {
+    const changed = structuredClone(p.snapshot); mutate(changed);
+    assert.throws(() => api.assertSettledEpochUpgradeRecord(changed, p.approval), { code: 'EPOCH_UPGRADE_CLAIM_UNPROVEN' });
   }
 });

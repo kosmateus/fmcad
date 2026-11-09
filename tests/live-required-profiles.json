@@ -100,6 +100,11 @@
           "id": "thread-recipes",
           "scope": "owned-document",
           "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite thread-recipes --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "gear-pair",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite gear-pair --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
         }
       ]
     },

@@ -183,6 +183,14 @@ test('outside-repository consumer imports built JS and declarations with no sour
       import { createFmcad, createReviewServices, contractVersions } from 'fmcad/api';
       import { McpClient } from './node_modules/fmcad/dist/src/dist/composition/library-client.js';
       import { loadConfig } from './node_modules/fmcad/dist/src/dist/composition/library-configuration.js';
+      import {buildBridgeScript} from './node_modules/fmcad/dist/src/dist/composition/library-addin-bridge.js';
+      void buildBridgeScript;
+      import {AddinClient} from './node_modules/fmcad/dist/src/dist/composition/library-addin-client.js';
+      import {createBackend} from './node_modules/fmcad/dist/src/dist/composition/library-backends.js';
+      import {parseCadInput} from './node_modules/fmcad/dist/src/dist/composition/library-cad-input.js';
+      void new AddinClient({clientId:'installed-addin'}).close();
+      void createBackend({backend:'mcp'}).close();
+      void parseCadInput(['--data','{}']);
       void new McpClient({clientId: 'installed-owner'}).close();
       void loadConfig;
       import { parseReviewArgs, reviewCmd } from './node_modules/fmcad/dist/src/dist/composition/library-review-command.js';

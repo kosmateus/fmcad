@@ -2,6 +2,21 @@ import * as fs from "node:fs";
 import path from "node:path";
 
 const modules = [
+  "queue-atomic-migration-stop",
+  "queue-atomic-audit-upgrade",
+  "queue-atomic-migration-worker",
+  "queue-epoch-runtime-worker",
+  "queue-epoch-successor-worker",
+
+  "queue-epoch-prerequisite",
+  "queue-atomic-control",
+  "queue-atomic-migration",
+  "queue-atomic-migration-files",
+  "queue-atomic-recovery-audit",
+  "queue-atomic-wire",
+  "atomic-observation-binding",
+  "queue-epoch-runtime-upgrade",
+
   "queue-broker",
   "queue-client",
   "queue-closed-epoch-proof",
@@ -28,7 +43,7 @@ export function stageQueueRuntime(root: string): void {
       // Admission declarations must resolve inside an installed runtime, where
       // the source workspace packages are absent. Executable bytes stay exact.
       const bytes =
-        name === "queue-admission" && extension === ".d.ts"
+        extension === ".d.ts"
           ? Buffer.from(
               emitted
                 .toString("utf8")
@@ -36,6 +51,10 @@ export function stageQueueRuntime(root: string): void {
                 .replaceAll(
                   "../packages/node-adapters/src/python",
                   "./dist/python",
+                )
+                .replaceAll(
+                  "../packages/node-adapters/src",
+                  "./dist/node-adapters",
                 ),
             )
           : emitted;

@@ -1,3 +1,4 @@
+import { gearPairScenarios } from "./gear-pair-cases";
 import { threadRecipeScenarios } from "./thread-recipe-cases";
 import * as fs from "node:fs";
 import path from "node:path";
@@ -57,6 +58,7 @@ interface Options {
     | "attributes"
     | "transactions"
     | "native-solids"
+    | "gear-pair"
     | "thread-recipes"
     | "style-assignments"
     | "appearances"
@@ -113,6 +115,7 @@ export function parse(argv: string[]): Options {
         value === "attributes" ||
         value === "transactions" ||
         value === "native-solids" ||
+        value === "gear-pair" ||
         value === "thread-recipes" ||
         value === "style-assignments" ||
         value === "appearances" ||
@@ -366,6 +369,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
             : []),
           ...(options.suite === "native-solids" && options.folder
             ? nativeSolidsScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "gear-pair" || options.suite === "all") &&
+          options.folder
+            ? gearPairScenarios(options.folder, options.owners)
             : []),
           ...((options.suite === "thread-recipes" || options.suite === "all") &&
           options.folder

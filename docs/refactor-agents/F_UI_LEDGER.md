@@ -166,3 +166,61 @@ The original tests did not assert that a global scope button could substitute
 for a task range button. Scoping the selector fixes an interaction ambiguity
 introduced by restored project navigation; both the unfiltered query predicate
 and the expected 12 task rows remain unchanged.
+
+### Chromium trace and locale correction (2026-11-09)
+
+CI run 42675903303 passed the installed SQLite and authenticated System IPC
+browser cases. The remaining interaction case stopped at filter reset: trace
+call 250 requested `Wyczyść`, while the rendered dialog exposed `Resetuj`.
+The exact dialog selector now uses its localized caption; the same unfiltered
+request and rows remain required. Later modal and response selectors likewise
+use the captions rendered by the production catalog.
+
+Auditing those captions also exposed a production defect: deriving positional
+translation keys from English object insertion order and the alias list bound
+filter validation, search hints and shortcut descriptions to unrelated strings
+in every non-English locale. The translation row keys are now explicit and
+stable. Existing key/argument parity plus independent Polish/German semantic
+regressions pass (3 tests); the complete test typecheck and browser build pass.
+Chromium remains unavailable locally, so the interaction scenario still needs
+the CI rerun; this is not recorded as a browser acceptance pass.
+
+### Atomic observation follow-through
+
+The former JavaScript observation module now delegates to strict typed host
+composition, with pure bounded MCP result validation in core and filesystem
+report snapshots in node-adapters. Public export names and closed-holder,
+owner, original envelope, source ABI, report, queue-generation and instance
+fences remain intact. Preparing a holder now rejects undefined, fractional or
+NaN physical turn counts, matching candidate admission's existing safe-integer
+requirement; malformed evidence must not authorize an SDK observation.
+
+Nine focused historical/regression cases pass, including the existing paused
+scheduler and full canonical source fences. API/core/adapter compilation and
+focused lint pass. Raw-origin isolation now uses the configured temporary root.
+That case still requires CI here: exact pre-migration and migrated versions
+both fail closed because the host does not expose `/proc` for readBytes'
+opened-path verification. The path guard and test's successful projection
+assertion are unchanged; neither is bypassed for this environment.
+
+### Source-reported phase timing implementation
+
+The broker now records completed phase intervals at its own durable state
+transitions, and workers report local prepare/finalize boundaries. Durations
+come from a monotonic clock; read-side polling and wall-clock timestamp
+subtraction do not generate samples. Queue waiting ends at admission, SDK
+measurement begins at the sending transition, and manual queue pauses are
+accounted separately. Unknown SDK outcomes and intervals open during a restart
+remain explicitly incomplete. Observations never affect admission outcomes.
+
+Per-job metadata is bound to the immutable job hash, contains no code or file
+content, keeps exact bounded-size phase aggregates and at most 64 recent queue
+wait samples. Overview uses at most 2048 latest source-reported samples. The
+passive reader now consumes these receipts instead of the disconnected timing
+placeholder; absent legacy receipts remain missing.
+
+Five focused tests pass, including real durable QueueState transitions,
+parallel local intervals, wall-clock adjustment, restart uncertainty and sample
+bounds. All 17 existing telemetry tests pass; core/node/API compilation passes.
+Full fresh build reached devtools tests and browser assets, then hit unrelated
+`tests/data_import.test.ts` duplicate `require` declaration (reported to owner).

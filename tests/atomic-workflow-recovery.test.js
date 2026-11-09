@@ -836,6 +836,10 @@ test('atomic holder preparation is owner-bound, identity-pinned, read-only and r
     clientId: f.job.clientId, observerBuildHash: 'candidate-build', originalBuildHash: 'original-build',
     approvedScope, ...options,
   });
+  for (const physicalTurns of [undefined, NaN, 0, 0.5]) {
+    await assert.rejects(prepare({ ...f.job, physicalTurns }, f.scope),
+      { code: 'WORKFLOW_OWNER_OR_JOB_MISMATCH' });
+  }
   const pinnedJob = structuredClone(f.job);
   pinnedJob.request.cwd = '/tmp/opencode/fmcad-backlog/measured-fasteners';
   pinnedJob.request.payload.data.reportPath = '/tmp/opencode/measured-fasteners-native/batch-v1';
@@ -1129,7 +1133,7 @@ assert sys.modules[holder.__name__] is holder
 
 test('raw CLI origin uses only its preserved typed worker envelope and fences header/byte drift without editing the job', async t => {
   const f = await atomicScopeFixture(t), root = path.resolve(__dirname, '..');
-  const base = fs.mkdtempSync('/tmp/opencode/atomic-raw-origin-');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-raw-origin-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const script = String.raw`
     (async()=>{
@@ -1196,4 +1200,20 @@ test('raw CLI origin uses only its preserved typed worker envelope and fences he
   });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { unchangedJobHash: true, jobStillRaw: true, sdkCalls: 0 });
+});
+
+test('atomic status summary preserves byte bounds and rejects malformed scalar metadata', () => {
+  const reply = stdout => ({ result: { structuredContent: { stdout } } });
+  const parse = value => atomicStatusSummaryFromReply(reply('FMCAD_RESULT ' + JSON.stringify(value)));
+  assert.deepEqual(parse({ status: 'unknown', createdCount: 0, accepted: false, outcome: null }),
+    { status: 'unknown', createdCount: 0, accepted: false, outcome: null });
+  for (const value of [{ createdCount: '0' }, { executeCount: -1 }, { accepted: 0 },
+    { outcome: {} }, { terminationReason: {} }, { unavailableEvidence: Array(17).fill('missing') }]) {
+    assert.throws(() => parse(value), { code: 'WORKFLOW_OBSERVATION_OUTPUT' });
+  }
+  // Three UTF-8 bytes per character: UTF-16 length alone would admit this payload.
+  assert.throws(() => atomicStatusSummaryFromReply(reply('€'.repeat(22000) + '\nFMCAD_RESULT {}')),
+    { code: 'WORKFLOW_OBSERVATION_OUTPUT' });
+  assert.throws(() => atomicStatusSummaryFromReply(reply('FMCAD_RESULT {broken')),
+    { code: 'WORKFLOW_OBSERVATION_OUTPUT' });
 });

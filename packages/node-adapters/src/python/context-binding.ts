@@ -158,27 +158,50 @@ export function mapPythonOrigin(
  * appends guards or entrypoint calls. This is not a checker result/cache. */
 export function bindPythonArtifactManifest(
   source: string,
-  manifest: PythonArtifactManifest,
+  input: unknown,
 ): PythonArtifactManifest {
+  const manifest = object(input);
   let reconstructed: PreparedPythonArtifact;
   try {
-    const mapped = new Set(manifest.sourceMap.map((entry) => entry.unitId));
+    const sourceMap = manifest["sourceMap"],
+      units = manifest["units"];
+    if (!Array.isArray(sourceMap) || !Array.isArray(units))
+      return changed("Original Python source inventory is invalid");
+    const mapped = new Set(
+      sourceMap.map((entry: unknown) => {
+        const row = object(entry);
+        if (typeof row["unitId"] !== "string")
+          return changed("Original Python source inventory is invalid");
+        return row["unitId"];
+      }),
+    );
     reconstructed = preparePythonArtifact(
-      manifest.units.map((unit) => ({
-        ...unit,
-        embedded: !mapped.has(unit.id),
-      })),
-      { context: manifest.context, request: manifest.request },
+      units.map((entry: unknown) => {
+        const unit = object(entry);
+        const id = unit["id"],
+          filename = unit["filename"],
+          source = unit["source"],
+          role = unit["role"];
+        if (
+          typeof id !== "string" ||
+          typeof filename !== "string" ||
+          typeof source !== "string" ||
+          (role !== "runtime" && role !== "wrapper" && role !== "user")
+        )
+          return changed("Original Python source inventory is invalid");
+        return { id, filename, source, role, embedded: !mapped.has(id) };
+      }),
+      { context: manifest["context"], request: manifest["request"] },
     );
   } catch {
     return changed("Original Python source inventory is invalid");
   }
   if (
     reconstructed.script !== source ||
-    reconstructed.artifactHash !== manifest.artifactHash ||
-    reconstructed.sha256 !== manifest.sha256 ||
-    manifest.version !== 1 ||
-    manifest.runtimeVersion !== "cad-v1"
+    reconstructed.artifactHash !== manifest["artifactHash"] ||
+    reconstructed.sha256 !== manifest["sha256"] ||
+    manifest["version"] !== 1 ||
+    manifest["runtimeVersion"] !== "cad-v1"
   )
     changed(
       "Original Python inventory does not match the source being transformed",

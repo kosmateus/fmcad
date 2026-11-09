@@ -85,3 +85,25 @@ The two public launchers now have strict TypeScript sources and compiler-produce
 compatibility paths. Existing launcher parity and incremental staging tests pass
 on Node 22.13.0 and Node 24 (three tests on each); the pinned build and lint pass.
 This bounded migration does not claim retirement of the other source facades.
+
+### Thread recipe broker budget evidence
+
+Run `42675903303`, job `129357066313`, artifact `13700907666` stopped at the old 12-minute command deadline. All ten owners completed five setup/body operations. Six first catalog calls completed; no scenario completed its four CAD checks and cleanup. The first six CAD completions occupied approximately 408 seconds (68 seconds/check aggregate observed throughput), inferred from artifact request-file timestamps, not local worker phase intervals. Forty CAD checks therefore require approximately 45 minutes at this observed throughput, plus setup/readback/cleanup. The provisional command/job budgets are 65/72 minutes for concurrency 1, 2 and 10. These are bounded scheduling allowances, not proof that a profile passed. The 180-second request budget and four local workers remain unchanged.
+
+Three `LOCAL_EXECUTION_FAILED` results coincide with global TERM at 18:55:21 UTC; they do not demonstrate an earlier local phase timeout. Another owner lacked an execution object (`sdkSettled` access failed); that interrupted response requires separate investigation. All cleanup in this artifact remained pending/deferred. Persisted producer phase intervals are needed before attributing the throughput to CPU contention or changing worker counts.
+
+### Local scenarios recovered from the integration directory
+
+The directory label did not mean every case needed Fusion. Fifty-five original cases now run as registered strict TypeScript: five GM01 definition cases, six GM02 data checks, five GM05 reference image cases, six GM21 fit cases, eight GM22 mass cases, six GM23 fluid cases, seven GM24 hydraulic cases, four GM33 thermal cases and eight GM35 external drawing cases. All fifty-five passed locally with the original semantic/numeric assertions; three additional outcome boundary cases passed. Seven wholly local source files leave the gap ledger, reducing it from 45 to 38; the GM01/GM02 entries retain their seven document-bound cases as native-pending. This does not establish feature-wide native qualification.
+
+GM05 now requires its actual Pillow/NumPy/SciPy environment instead of silently skipping; it runs in the existing public-consumer job that installs those pinned dependencies and selects Python. GM35 creates actual SVG/PDF/DXF outputs and registers cleanup before its assertions. Native Drawing authoring remains blocked. Both use the same real CLI calls as the retained tests.
+
+The GM35 ESTIMATED-source case additionally exposed the same generic CLI exit regression as GM02: the actual pre-TypeScript `a26222f` CLI passed 8/8 drawing cases, whereas the candidate passed 7/8 until local external drawing completion was restored. A matching schema-v1 drawing operation, sheet frame, snapshot associativity, `success:true` and `nativeAcceptance:notEvaluated` can complete with status `unknown`. Failed/blocked or uncertain execution/native acceptance cannot use this exception. Original status `unknown` and nonacceptance assertions remain unchanged.
+
+### Offline native-qualification harness tests
+
+Three files under `tests/native` also contained offline tests rather than Fusion execution: integrated qualification, first smoke and regional typed orchestration. The registered suites execute 53 cases with fake API/port implementations, including an additional real-Git unrelated-ancestry rejection case. All 53 passed locally without skips. The remaining registration ledger is 35 sources, not 38. These results test qualification orchestration and refusal semantics; native qualification remains NOTRUN.
+
+Two formerly failing tests assumed the private historical Git ancestry existed in every public checkout. The production ancestry guard correctly rejects the public clean-root candidate. Positive offline ancestry and blocked-main tests now construct a private temporary repository with real synthetic commits, explicit fixture-only source files and a synthetic manifest; they exercise the unchanged production runner. A separate case proves unrelated historical ancestry is still rejected. No private Git objects are copied or published, and the production historical manifest/ancestor checks are unchanged.
+
+The three retained harness test files themselves still require substantive strict TypeScript migration (approximately 1800 lines); registering passing executions does not close that source-migration requirement.

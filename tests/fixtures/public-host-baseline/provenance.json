@@ -106,5 +106,21 @@
   "src/opencode/project-logger.cjs": {
     "commit": "7cc23f1e19207ab268aaaf1eb4795d33196a5a6d",
     "sha256": "33d7ef3c69bf2290ae4fdf44a1e4366c7e98437539bbae79ccee38d75216547d"
+  },
+  "src/cad-input.js": {
+    "commit": "178d37bb7d1877206ae95861aae4c62cbd971008",
+    "sha256": "aa83a8beea9ed36777e51b9721e2232231083a3003e612690928ba83263d749b"
+  },
+  "src/addin-client.js": {
+    "commit": "178d37bb7d1877206ae95861aae4c62cbd971008",
+    "sha256": "efb1f8e1440dd15c9c5b5927c185d5022aa92b784d866a26f76876425e8245fc"
+  },
+  "src/backends.js": {
+    "commit": "178d37bb7d1877206ae95861aae4c62cbd971008",
+    "sha256": "5e331fac465a76a7a4e72b26f03f4f26f682281f8ad0b72013bbafe819d8d940"
+  },
+  "src/addin-bridge.js": {
+    "commit": "178d37bb7d1877206ae95861aae4c62cbd971008",
+    "sha256": "9b4e2b75b578362c578400ac25b0287fb463940155d76639d7f38a459dc7ee9f"
   }
 }

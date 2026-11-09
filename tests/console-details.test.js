@@ -8,6 +8,7 @@ const makeUI = () => textContext('en');
 test('details distinguish absent, false and zero and scope direct results to transport', () => {
   const ui = makeUI();
   assert.doesNotThrow(() => describe(null, ui));
+  assert.doesNotThrow(() => describe({ state: "running" }, ui), "missing archive and task identity must remain unavailable, not crash");
   const detail = describe({ id: 'op', state: 'completed', exitCode: 0, mayHaveMutated: false }, ui, { mode: 'direct' });
   assert.equal(detail.fields.find(field => field.label === 'Process exit code').value, 0);
   assert.equal(detail.fields.find(field => field.label === 'May have mutated').value, 'No');

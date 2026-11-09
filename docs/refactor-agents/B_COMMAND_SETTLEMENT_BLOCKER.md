@@ -87,3 +87,29 @@ heads #70/#72/#75 passed CI before command-level settlement was enforced; do not
 merge those heads as a workaround. Draft #78 and descendant PRs remain blocked.
 The separate intermittent local journal-lock refusal remains unresolved and is
 not the cause shown by these seven Linux failure reports.
+
+## Integration investigation: rejection witness and a separate replay lock failure
+
+The coordinator integrated A `70bf694` with C `71380fd`. The literal no-eval
+rejection now has explicit pre-mutation evidence; the B assertions and settlement
+gate remain unchanged. The integrated transaction check passed eight of ten cases,
+but both concurrency-10 profiles failed later replay with an existing journal lock.
+This is a separate failure from the original unknown literal rejection.
+
+Temporary diagnostic instrumentation (not committed into production or tests)
+observed successful awaited unlink and ENOENT, followed by lock reappearance before
+the next recursive mkdir/open. Pausing all agents' filesystem calls did not prevent
+it. Tracing Node synchronous/callback/promise writes and Python open audit events
+found no additional lock writer. Fsync of the parent directory after unlink did
+not prevent it either. Generic 1,000-cycle concurrent lock, snapshot-publication
+and recursive-mkdir controls passed, as did a ten-owner real journal-adapter control.
+
+The final stat trace provides stronger evidence: the original lock inode 1845281
+had mtime 1794249329472.381; unlink returned ENOENT; the reappearing file had inode
+1847106 and the exact original mtime, but new birth/ctime approximately 0.35–0.45
+seconds after deletion. This is a new inode restored with preserved old metadata,
+consistent with separately observed deleted source files reappearing in this host.
+The writer is not identified: syscall tracing is unavailable because ptrace is
+denied. This does not justify a production retry, stale-lock deletion, new test
+expectation or weaker guard. Exact-candidate CI on an independent runner is still
+required. Local concurrency-10 results remain failed, not waived or called green.

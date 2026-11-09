@@ -423,3 +423,233 @@ case yields successful historical evidence or another physical send. All 22
 recovery/publication/immutable-reader checks pass locally, including real-checker
 accept/reject, source drift, final-byte tampering, bad physical receipt outcome,
 lost scratch reply, concurrent owners and publication retry without SDK replay.
+
+## A3.5 — typed recovery Python and wire preparation
+
+The remaining recovery source preparation, final-byte receipt binding and
+capability/build-gated client control moved to the typed execution adapter.
+The historical module path is now composition only: it injects the existing
+process-bound receipt wrapper from instance control. Frozen predecessor checks
+prove identical Python units, source map, request/context provenance, hashes and
+complete wire records, including Unicode identity and explicit process/document
+pins. Inputs remain unchanged. All 22 recovery checks plus the added byte-parity
+case pass. Non-JSON identity values or a missing Python body now refuse before
+preparation instead of generating unusable source; valid behavior is unchanged.
+
+## A3.6 — typed checker/settled epoch handoff policy
+
+The two distinct epoch handoff state machines and their owner/history/process
+fences moved to strict core TypeScript. Typed stage ports retain cooperative
+stop, exact PID death observation, escrow, install/identity publication, one-time
+launch and unchanged grants. Process comparison remains injected from the
+canonical instance adapter. The process-start claim filesystem adapter remains
+separate and must still validate original durable evidence.
+
+All 25 retained pure handoff/refusal checks pass. A paired frozen `330849f` test
+also compares full reports, snapshots, stage records and ordered effects for both
+checker-rejection and successful-settled purposes across uninterrupted execution
+and seven durable crash stages. Neither purpose acquires the other's authority;
+unknown historical outcomes and zero SDK requests remain explicit.
+
+## A3.7 — typed atomic observer wire binding
+
+Canonical semantic observation identity checks moved to core; final prepared
+artifact verification and receipt-wrapped observer wire construction moved to the
+Node execution adapter. The legacy paths compose those implementations with the
+canonical physical receipt wrapper. Semantic hashes remain the exact existing
+canonical JSON function; final Python hashes remain raw-byte hashes.
+
+All four observer binding tests pass, including frozen `330849f` comparisons of
+complete wire records and artifact bytes with/without an RPC ID, unchanged caller
+input, changed ABI proof rejection, independently pinned identity rejection and
+actual wire/manifest tampering refusal. No physical send or publication authority
+was added to preparation.
+
+## A3.8 — typed owner observation control
+
+Owner observation request derivation and the capability/build-gated client route
+are now strict core policies. The broker composition supplies the existing
+original-invocation/candidate readers; callers still cannot override identity,
+source argv, report path or control generation. Frozen predecessor comparisons
+preserve complete derived requests and rejection codes/messages for foreign
+owners/documents/builds, changed/extra fences, terminal holders and payload
+injection. Six selected control checks pass locally. A disappearing original
+projection fails explicitly before submission rather than dereferencing null;
+there is still no automatic retry after a lost control acknowledgement.
+
+## A3.9 — typed epoch process-start claim adapter
+
+The startup claim reader now resides in the Node execution adapter. It requires
+object-shaped bounded JSON records, original guard/intent, exact paused state and
+identity, credential and grant hashes, cooperative release, immutable candidate
+root, settled physical evidence and independent process liveness. Only after all
+checks does it exclusively publish the broker claim. The facade supplies the
+canonical process observer, settled-evidence reader and installed-root resolver.
+
+Paired frozen predecessor guard-refusal checks pass without publishing a claim.
+The four retained process-backed startup cases now allocate owned temporary
+roots instead of requiring a pre-existing `/tmp/opencode`; here they stop at
+missing `/proc/<pid>/stat` in the original fixture. They remain required Linux CI
+cases, with no fake process observer or waived assertion. Strict adapter typing
+and lint pass. This local host limitation is not native qualification evidence.
+
+## Typed composition registration handoff
+
+Seven source compositions now have strict TypeScript sources: atomic control,
+owner migration, migration files, recovery audit, observer wire, observation
+binding and epoch runtime upgrade. They import canonical policy/adapter types;
+no duplicate implementation or untyped data cast supplies authority. The epoch
+startup composition uses an explicit persisted-record schema validator before
+entering the typed settled policy. Valid settled history and malformed job,
+owner, active-ID and settlement fields have dedicated boundary checks.
+
+The seven sources pass strict API compilation and lint. G must register emitted
+same-path runtime/declaration staging and remove their tracked JavaScript
+composition sources atomically; the temporary coexistence is not final facade
+retirement. Existing generated runtime paths must remain usable by packaged
+consumers and declaration imports must resolve without workspace source paths.
+
+## Successor fixture platform failure (gap05)
+
+CI job 129357072987 failed the nominal observation before sending any SDK
+request; consequently unsafe-fact cases returned a failed local preparation,
+not a successful unsafe authority. Receipt preparation now requires actual WSL
+path capability. The synthetic controller fixture had supplied fake transport
+and checker ports but no synthetic platform spelling. The metadata child failed
+separately at the production platform guard. The 330849f baseline already has
+the strict mapping, so this is not caused by the typed recovery migration.
+
+The controller now installs the existing scoped fake-WSL fixture with restoration.
+The bootstrap fixture scopes a child spawn wrapper to the successor module and
+prepends that same fixture to its metadata-only worker. Production capability
+checks, child environment allowlists, receipt validation and all unsafe-fact
+assertions remain unchanged. Temporary roots respect TMPDIR. Local execution
+reaches the original /proc/<pid>/stat requirement and fails because this host
+has no proc filesystem; real-process Linux CI remains required. No fabricated
+process metadata or test expectation change was used. Syntax checks pass.
+
+## Typed prerequisite and inherited pause reader
+
+The immutable current-audit prerequisite and inherited closed-pause reader now
+live in a strict Node adapter. Persisted records enter through object/field and
+canonical Python-manifest boundaries. A frozen 330849f reader produces the same
+valid audit proof and inherited-pause adoption; both reject six rehashed unsafe
+audit changes and four owner/history/generation/active-operation changes. This
+pure evidence test does not replace or emulate production process liveness.
+Adapter compilation, lint and the paired test pass. G must stage the new
+queue-epoch-prerequisite.ts composition and retire its temporary JS delegate.
+
+## Offline gap13/gap15 fixture completion
+
+Three broker tests with explicit fake physical backends now install and restore
+the existing fake WSL path fixture. Production admission is unchanged. The
+settled-worker fixture used `synthetic-dead-worker`, which both the predecessor
+and typed process observer interpret as a Windows FILETIME because it lacks the
+Linux birth separator. It now uses `synthetic:dead-worker`; the real Linux
+observer still must prove that exact absent PID dead. No observer is mocked.
+The retained live-worker refusal still obtains the real current process birth.
+Locally 38 selected settled evidence cases pass; that live-worker case stops at
+missing /proc/<pid>/stat. Linux CI must execute it unchanged.
+
+## File-only qualification reader source
+
+read-audit-response-proof.cts now types the deliberately narrow historical
+runtime ports and validates persisted object records before owner checks. The
+exact frozen-843 fingerprint, original owner credentials, target/observer IDs,
+external output restriction, exclusive publication and zero-network boundary
+remain intact. Strict compilation/lint and four predecessor/current argument
+refusal comparisons pass. The frozen runtime is still required for full CLI
+qualification; no synthetic proof is reported as a real historical run. G must
+register emitted same-path .cjs staging and retire its original handwritten file.
+
+## Installed checker qualification source
+
+qualify-epoch-checker.cts now uses canonical artifact/manifest/checker-report
+types, explicit installed-runtime ports, and validated JSON envelope fields.
+The exact accepted invocation, UI-guard check, original byte and origin-tamper
+refusals, zero-send metadata startup, immutable history comparison and optional
+settled evidence remain the qualification criteria. Strict compile/lint and
+four predecessor/current CLI refusal comparisons pass. Full installed checker
+plus real-process startup remains required on Linux; this source migration is
+not itself a successful qualification run. G must register same-path .cjs emit
+and retire the handwritten source after integration.
+
+## Isolated qualification and child source
+
+qualify-isolated-epoch.cts types the installed read/audit/scratch/fixed-program
+qualification ports and canonical artifacts/reports. Its closed-successor child
+is now a separate strict qualify-closed-successor-worker.cts rather than an
+untyped program embedded in a string. The child keeps original self-PID/birth,
+canonical synthetic-directory, owner marker, zero-SDK, dispatch idempotency and
+history-byte assertions. No production path receives a synthetic backend.
+
+Both sources compile strictly and pass lint. Four original/current CLI refusal
+cases match. Full checker and subprocess execution still requires the original
+supported Linux process environment; this conversion does not qualify real
+Fusion or historical outcomes. G must stage both same-directory .cjs entries
+and retire only the old outer handwritten file.
+
+## Typed exclusive startup workers
+
+The atomic migration, epoch runtime and successor workers now have strict
+TypeScript sources. They retain their canonical emitted .js entry paths, bounded
+input where already required, exclusive first claims, exact nonce/build startup
+checks, ready/error publication and signal behavior. Broker loading remains
+lazy until the winning claim passes; malformed input is rejected at an object
+boundary. No process liveness implementation is substituted.
+
+Nine hash-verified predecessor/current composition tests compare successful
+startup, host rejection and losing an exclusive claim for all three workers.
+They pass with explicitly synthetic effect ports; real process startup remains
+covered by the unchanged Linux integration cases. Strict compilation/lint pass.
+G must register API emission/staging and retire three old handwritten workers.
+
+## Typed second-window audit authority
+
+The second-window audit-upgrade reader is now a strict adapter with named proof
+and effect contracts plus a typed lazy composition. Exact historical request,
+observer, first escrow, receipt and unresolved-job constraints remain. Five
+retained tests pass, including the real checker preflight with final-byte
+certification and no SDK send; two new frozen-source tests also pass.
+
+The comparison found one pre-existing unsafe case: deleting the departing build
+from completion, observer proof/binding and physical receipt, then rehashing the
+references, let the predecessor accept matching undefined fields. The typed
+reader rejects a missing/empty departing build. This deliberate expected-result
+change follows the handoff's requirement to identify the exact departing
+runtime; equal missing values cannot authorize replacement. The frozen test
+proves old acceptance and new refusal. Valid proofs compare exactly.
+
+Existing tests now use TMPDIR and scoped fake-WSL paths for their fake physical
+ports. G must register the typed composition and two new typed contract tests,
+retiring the temporary handwritten JS delegate.
+
+## Typed pidfd stop adapter
+
+The Node pidfd-stop composition now delegates to a strict adapter. Its Python
+helper bytes, pinned descriptor behavior, two-TERM bound, no-SIGKILL policy,
+exclusive intent/sent/refusal evidence, input and deadlines match the frozen
+predecessor exactly. Parsed helper output must explicitly prove originalDead
+and an integer signal count in 0..2; malformed output stays a failure and is
+never retried by this adapter.
+
+Two tests pass: exact captured predecessor/current helper invocation parity and
+four malformed-response refusals after one invocation. Real local read-only
+preflight also passes (open/close this helper's own pidfd, no signal sent).
+Strict source/test compilation and lint pass. G must register same-path
+queue-atomic-migration-stop.ts emission and typed test compilation.
+
+## Persisted operator schema boundary
+
+The operational upgrade script can now consume named, checked approval,
+pointer/state/snapshot, intent, identity, process/owner, credential/grant,
+reference/escrow and journal-stage readers. They preserve valid persisted
+records and original extra fields without treating deserialization as proof.
+Stage decoding uses a typed decoder map, not a generic unchecked JSON cast.
+Core state/snapshot/approval schema guards and stage types are exported without
+changing handoff policy. Typed schema acceptance alone does not authorize an
+operation: the original owner, digest, purpose and process fences still apply.
+
+Two boundary tests and all 28 existing epoch handoff/crash-recovery tests pass;
+strict compile/lint pass. The older idle-budget test now respects TMPDIR.
+These schemas are the dependency for B's remaining operational upgrade script.

@@ -77,3 +77,32 @@ test('owner-only CLI credential loading never creates a new identity when creden
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(fs.readdirSync(dir), [], 'owner-only admission must not mint a credential or client directory');
 });
+
+test('typed observer control preserves retained owner, exact fence and derived request behavior', () => {
+  const old = require('./fixtures/historical-module.cjs')(
+    '330849f22302bcf0ee955cd1945ddb2040eff8c7', 'src/queue-atomic-control.js');
+  const current = require('../src/queue-atomic-control');
+  const scope = { jobId: 'holder', requestId: 'original', projectDirectory: '/owned/project', reportPath: '/owned/report',
+    commandId: 'fmcad_atomic_' + 'a'.repeat(32), sessionNonce: 'b'.repeat(32), docId: 'owned-doc' };
+  const target = { id: 'holder', requestId: 'original', clientId: 'owner', kind: 'command', state: 'needs_reconciliation',
+    physicalTurns: 1, dispatch: { rpcCount: 1 }, request: { backend: 'addin', buildHash: 'original-build', cwd: scope.projectDirectory,
+      payload: { version: 1, kind: 'cad', operation: 'batch.run', doc: 'Owned model', docId: scope.docId,
+        data: { atomic: true, runId: 'owned-run', reportPath: scope.reportPath } } } };
+  const control = { instanceId: 'broker-owner', buildHash: 'observer-build', generation: 3, contextEpoch: 4 };
+  const message = { jobId: target.id, requestId: 'observe-once', control };
+  const invoke = (api, m = message, t = target) => api.observationRequest(m, 'owner', t, control, scope);
+  assert.deepEqual(invoke(current), invoke(old));
+  for (const mutate of [
+    (m, t) => { m.payload = {}; }, (m, t) => { m.control.generation++; },
+    (m, t) => { m.control.extra = true; }, (m, t) => { m.control.buildHash = 'foreign'; },
+    (m, t) => { t.clientId = 'foreign'; }, (m, t) => { t.state = 'succeeded'; },
+    (m, t) => { t.request.payload.docId = 'foreign'; },
+  ]) {
+    const results = [];
+    for (const api of [old, current]) {
+      const m = structuredClone(message), t = structuredClone(target); mutate(m, t);
+      assert.throws(() => invoke(api, m, t), error => { results.push({ code: error.code, message: error.message }); return true; });
+    }
+    assert.deepEqual(results[1], results[0]);
+  }
+});

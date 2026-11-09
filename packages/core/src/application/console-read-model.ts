@@ -49,7 +49,13 @@ export interface ConsoleSnapshot {
   operations?: ConsoleRow[] | null;
   agents?: ConsoleRow[] | null;
   logs?: ConsoleRow[] | null;
-  taskEvents?: { taskId: string; logs: ConsoleRow[] | null };
+  taskEvents?: {
+    taskId: string;
+    logs: ConsoleRow[] | null;
+    sources?: string[];
+    limited?: boolean;
+    error?: string | null;
+  };
   retention?: Record<string, unknown>;
   [key: string]: unknown;
 }
@@ -79,7 +85,8 @@ export function projectContains(
   return cwd === root || cwd.startsWith(prefix);
 }
 
-export function sourceName(row: ConsoleRow): string | null {
+export function sourceName(row: ConsoleRow | null | undefined): string | null {
+  if (!row) return null;
   const path = nonemptyId(row.sourcePath)
     ? row.sourcePath
     : nonemptyId(row.script)
@@ -87,7 +94,10 @@ export function sourceName(row: ConsoleRow): string | null {
       : row.label?.match(/^run (.+)$/)?.[1];
   return path?.split(/[\\/]/).at(-1) || null;
 }
-export function documentLabel(row: ConsoleRow): string | null {
+export function documentLabel(
+  row: ConsoleRow | null | undefined,
+): string | null {
+  if (!row) return null;
   return nonemptyId(row.document)
     ? row.document
     : sourceName(row)
@@ -477,4 +487,28 @@ export function consoleLogWindowStats(
     }
   }
   return { total: rows.length, counts, first, last, invalid };
+}
+
+export function documentFields(
+  row: ConsoleRow | null | undefined,
+  labels: Pick<ConsolePresenceLabels, "L">,
+) {
+  const value = documentLabel(row);
+  return [
+    { label: labels.L("documentOrScript"), value, full: true },
+    ...(value
+      ? [
+          {
+            label: labels.L("documentSource"),
+            value: labels.L(
+              nonemptyId(row?.document)
+                ? "recordedDocument"
+                : "scriptDocumentFallback",
+            ),
+            full: true,
+            tone: "muted",
+          },
+        ]
+      : []),
+  ];
 }

@@ -682,3 +682,36 @@ tests pass (109 seconds), including the historical comparison. The ledger now ha
 179 mappings (178 current, one removed predecessor); 3,529 frozen current sites
 remain unreviewed. Required broker workflow registration is proposed to G; exact
 integrated CI and native qualification remain mandatory and separate.
+
+The thread recipe production-checker component profiles also pass via MCP and
+addin, each with complete owned-file cleanup and unchanged source inventory hash
+`0ff115689eb6392fe39bab117b1158cb8ae87e7f90be5420d43dd06dbf8fd44d`.
+These are component results, not real broker or native qualification. Integration
+with A/C resolves the literal rejection contract but exposes an independent
+concurrency-10 journal replay lock failure: a successfully unlinked run.lock later
+reappears before replay. Instrumentation and an all-agent tool-pause control still
+reproduce it. No stale lock deletion, retry or weakened assertion is introduced;
+A and the coordinator own the continued writer/durability investigation.
+
+## Declared gear pair analytical follow-up
+
+The `gear-pair` family retains the nine external/internal involute pair assertions
+from live-engineering-analytics with the original inputs, expected values and
+1e-9 tolerances. The tooth count assertion additionally requires the numeric array,
+not only its joined text. Independent owned-box geometry/timeline readback proves
+these analytical operations do not modify that fixture. No native gear teeth,
+contact solver, composite shape or surface coverage is claimed.
+
+All six protocol/concurrency checks pass with 28 owned saved fixtures (50 seconds),
+and all nine inventory/registration/assertion checks pass. Runtime compilation is
+clean. The twentieth required profile is declared and proposed to G; production
+checker/broker/native qualification remains outstanding for this follow-up. The
+ledger has 188 mappings (187 current sites, one predecessor), leaving 3,520 current
+static sites unreviewed. This is still partial migration, not a completion claim.
+
+The gear-pair production-checker component profiles now pass on MCP and add-in,
+with complete owned-file cleanup and fourteen recorded original requests each.
+Both preserve source inventory hash
+`197fc55b9ea020705259bd49ef8a3d8de891a3ca41b36f5a3b1ee5e176770a4e`
+before/after. These results close the component checker gate for this family;
+broker integration and native qualification remain separate obligations.

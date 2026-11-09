@@ -1,5 +1,7 @@
 "use strict";
 const test = require("node:test");
+test.after(require("./fixtures/fake-wsl-platform.cjs")());
+const { assertDocumentStatusAdmission } = require("../dist/tests/fixtures/document-status-admission");
 const assert = require("node:assert/strict");
 const http = require("node:http");
 const path = require("node:path");
@@ -192,14 +194,15 @@ test("public document.status admits the exact prepared light artifact before one
     doc: invocation.doc, docId: invocation.docId, docFileId: invocation.docFileId,
     component: invocation.component, projectId: invocation.projectId, preview: invocation.preview === true,
   });
-  assert.equal(artifact.artifactHash, documentStatusAdmission.artifact.artifactHash);
-  assert.equal(artifact.sha256, documentStatusAdmission.artifact.wireHash);
+  assertDocumentStatusAdmission(artifact);
   client.preparePost = async (payload) => {
     const outgoing = structuredClone(payload);
     assert.equal(outgoing.params.arguments.object.script, artifact.script);
     const certificate = await production.admission.check(outgoing, artifact);
     assert.equal(certificate.report.status, "passed");
     assert.equal(certificate.report.diagnostics.length, 0);
+    assert.equal(certificate.artifact.sha256, artifact.sha256);
+    assert.equal(certificate.artifact.artifactHash, artifact.artifactHash);
     return {
       fence: () => certificate.fence(outgoing),
       send: (sessionId) => {

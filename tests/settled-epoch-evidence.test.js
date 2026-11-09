@@ -9,7 +9,7 @@ const { settledEpochEvidence } = require('../src/queue-settled-epoch-evidence');
 const { assertEpochUpgrade, assertSettledEpochUpgrade, createSettledEpochRuntimeUpgrade } = require('../src/queue-epoch-runtime-upgrade');
 
 function fixture(t) {
-  const root = fs.mkdtempSync('/tmp/opencode/settled-evidence-');
+  const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'settled-evidence-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const instance = { pid: 2147483645, birth: 'synthetic', version: 'fixture' };
   const pointer = { kind: 'isolated-fresh-scratch-epoch', epochId: randomUUID(), ownerClientId: 'owner', ownerTokenHash: 'credential-hash',
@@ -27,7 +27,7 @@ function fixture(t) {
   const remote = { ...binding, terminal: true, outcome: 'succeeded', instance };
   const record = { binding, receipt, instance, remoteReceipt: remote, terminal: true, failed: false, nonterminal: false, pythonCheck: { status: 'passed' } };
   durable(path.join(dir, 'outcome.json'), { state: job.state, ...details }, true);
-  durable(path.join(dir, 'worker-identity.json'), { pid: 2147483644, birth: 'synthetic-dead-worker' }, true);
+  durable(path.join(dir, 'worker-identity.json'), { pid: 2147483644, birth: 'synthetic:dead-worker' }, true);
   require('./fixtures/settled-probes.cjs')(require('../src/queue-instance'), dir, id, build, pointer);
   const rpcFile = path.join(dir, 'rpc-' + rpcId + '.json');
   durable(rpcFile, record, true); durable(receipt, remote, true);

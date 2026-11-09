@@ -596,16 +596,24 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const currentAuditScope = fs.existsSync(currentAuditScopeFile)
     ? readJson<P.AuditScope>(currentAuditScopeFile)
     : null;
+  const phaseTimings = load(
+    "./dist/node-adapters/telemetry/phase-timings",
+  ).createPhaseTimingProducer();
+  const measuredStateOptions = {
+    ...options.stateOptions,
+    onCommittedSnapshot: phaseTimings.queueCommitted,
+  };
   const state = openIsolatedEpoch(
     dir,
     migrationSnapshotHash
       ? {
-          ...options.stateOptions,
+          ...measuredStateOptions,
           recover: false,
           expectedSnapshotHash: migrationSnapshotHash,
         }
-      : options.stateOptions,
+      : measuredStateOptions,
   );
+  phaseTimings.queueCommitted(state.data, state.epoch?.root ?? dir);
   if (state.epoch) identityFile = path.join(state.epoch.root, "instance.json");
   if (options.startPaused === true)
     state.pause(true, "startup:" + marker.nonce);
@@ -1368,6 +1376,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     dir,
     cfg: pinned,
     codeHash,
+    onLocalPhase(job, phase) {
+      phaseTimings.localPhase(state.epoch?.root ?? dir, job, phase);
+    },
     async checkSdkRequest(message, signal) {
       const job = required(state.data.jobs[message.jobId]);
       const prepare =

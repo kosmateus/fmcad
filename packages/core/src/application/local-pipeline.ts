@@ -80,3 +80,59 @@ export function successfulReferenceComputation(
     value["executionOutcome"] !== "unknown"
   );
 }
+
+/** A local import check computes a ledger, not a Fusion acceptance verdict.
+ * Missing source/model evidence remains unknown, matching the historical CLI. */
+export function successfulImportComputation(
+  operation: string | undefined,
+  result: unknown,
+): boolean {
+  if (
+    !operation ||
+    !["catalog.check", "placement.check"].includes(operation) ||
+    result === null ||
+    typeof result !== "object" ||
+    Array.isArray(result)
+  )
+    return false;
+  const value = result as Record<string, unknown>;
+  return (
+    value["operation"] === operation &&
+    value["success"] === true &&
+    value["documentIdentity"] === null &&
+    value["mutation"] === false &&
+    value["modelValidated"] === false &&
+    ["pass", "unknown", "notEvaluated"].includes(String(value["status"])) &&
+    value["outcome"] !== "unknown" &&
+    value["executionOutcome"] !== "unknown"
+  );
+}
+
+/** External drawing output can complete with explicitly unresolved source quality. */
+export function successfulDrawingComputation(
+  operation: string | undefined,
+  result: unknown,
+): boolean {
+  if (
+    !operation ||
+    !["drawing.package", "drawing.check", "drawing.export"].includes(
+      operation,
+    ) ||
+    result === null ||
+    typeof result !== "object" ||
+    Array.isArray(result)
+  )
+    return false;
+  const value = result as Record<string, unknown>;
+  return (
+    value["operation"] === operation &&
+    value["schemaVersion"] === 1 &&
+    value["success"] === true &&
+    value["frame"] === "sheet" &&
+    value["associativity"] === "snapshot" &&
+    value["nativeAcceptance"] === "notEvaluated" &&
+    ["pass", "unknown", "notEvaluated"].includes(String(value["status"])) &&
+    value["outcome"] !== "unknown" &&
+    value["executionOutcome"] !== "unknown"
+  );
+}

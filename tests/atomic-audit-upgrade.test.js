@@ -1,5 +1,6 @@
 'use strict';
 const test = require('node:test');
+test.beforeEach(t => t.after(require('./fixtures/fake-wsl-platform.cjs')()));
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -10,7 +11,7 @@ const { fastenersScope: scope } = require('../src/atomic-workflow-observation');
 const createHistory = require('./fixtures/atomic-audit-upgrade.cjs');
 
 test('second-window approval cannot reuse a qualification that only passed the first handoff', async t => {
-  const dir = fs.mkdtempSync('/tmp/opencode/atomic-audit-qualification-');
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'atomic-audit-qualification-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const candidateRoot = path.resolve(__dirname, '../dist'), installRoot = path.join(dir, 'installed');
   fs.mkdirSync(installRoot);
@@ -28,7 +29,7 @@ test('second-window approval cannot reuse a qualification that only passed the f
 });
 
 function fixture(t) {
-  const dir = fs.mkdtempSync('/tmp/opencode/atomic-audit-upgrade-');
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'atomic-audit-upgrade-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const observerId = '3627db2e-0b9d-4e4f-927f-20cb45deae74', clientId = 'owner';
   const target = { id: scope.jobId, requestId: scope.requestId, clientId, hash: hash('original'), kind: 'command',

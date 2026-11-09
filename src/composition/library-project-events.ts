@@ -4,7 +4,7 @@ import os from "node:os";
 import net from "node:net";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import type { EventSink } from "../../packages/core/src/ports/event-sink";
+import type { EventSink } from "@fmcad/core";
 const load = createRequire(__filename);
 const { createTelemetryEventSink } = load(
   "../node-adapters/telemetry/event-sink",

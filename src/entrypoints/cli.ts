@@ -167,17 +167,15 @@ function context(
   payload?: CadWorkerInvocation,
 ): FmcadOptions["context"] {
   const cwd = process.cwd();
+  // Display names remain in the invocation; they are not durable document IDs.
   const documentId = !payload
     ? undefined
     : payload.kind === "cad"
-      ? (payload.docId ?? payload.docFileId ?? payload.doc)
+      ? (payload.docId ?? payload.docFileId)
       : payload.kind === "cad-command"
-        ? (payload.invocation.docId ??
-          payload.invocation.docFileId ??
-          payload.invocation.doc)
+        ? (payload.invocation.docId ?? payload.invocation.docFileId)
         : (payload.request.identity.docId ??
-          payload.request.identity.docFileId ??
-          payload.request.doc);
+          payload.request.identity.docFileId);
   return {
     clientId:
       stringOption(opts, "client") ??
@@ -586,6 +584,7 @@ export async function main(
             : payload.kind === "cad-command"
               ? payload.invocation.operation
               : undefined,
+          cad?.preview === true,
         );
         return fail(code);
       },

@@ -68,7 +68,7 @@ const manuals = Object.fromEntries(Object.entries(familyDescriptors).map(([opera
   examples: [{ label: operation + ' local request', requires: 'A new output directory parent and, for check/export, an existing drawing.package report. Example paths/values are placeholders.', data: spec.example, output: 'Full report.json plus scene.json (package), checks (check), or sheet.svg/sheet.pdf/sheet.dxf with a manifest (export).' }],
   audit: { sources: ['src/drawing-package.js', 'src/drawing-check.js', 'src/drawing-export.js', 'docs/DRAWING.md'],
     verified: ['External SVG/PDF/DXF emission with dimensions, balloons and item table', 'balloon-to-BOM uniqueness, fit and dimension-vs-geometry checks', 'source status policy (ESTIMATED never a tolerance, OPEN blocks)', 'offline routing without backend'],
-    tests: ['tests/drawing.test.js', 'tests/drawing_test.py'], gaps: [],
+    tests: ['tests/drawing.test.ts', 'tests/drawing_test.py'], gaps: [],
     bugs: ['Native Fusion drawing authoring is an open SDK gate. Text metrics for PDF centering use Helvetica approximations. DXF R12 carries no units or line types; source maps live in report.json and DXF comments.'] },
 }]));
 

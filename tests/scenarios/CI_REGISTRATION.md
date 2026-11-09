@@ -81,3 +81,9 @@ assertions and independent unchanged geometry after curated-query rejection.
 It does not replace the pending native ThreadInfo/cosmetic-feature obligations.
 The new shared scenario uses nominal catalog key M10 and separately verifies
 historically rejected M10x1.5; see B_ASSERTION_AUDIT.md for the preserved mismatch.
+
+The follow-up `gear-pair` family retains nine declared involute external/internal
+pair calculations on saved owned fixtures. Register it for MCP/addin, concurrency
+1/2/10 and ten owners as the twentieth bounded family. It does not implement native
+gear teeth, gear contact or the missing composite-shape suite. Unit and registration
+checks pass; production checker, broker and native qualification remain required.

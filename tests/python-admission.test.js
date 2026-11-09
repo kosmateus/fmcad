@@ -1,5 +1,7 @@
 'use strict';
 const test = require('node:test');
+test.after(require('./fixtures/fake-wsl-platform.cjs')());
+const { assertDocumentStatusAdmission } = require('../dist/tests/fixtures/document-status-admission');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -171,14 +173,13 @@ test('public document.status checks the current six-unit artifact before exactly
   await valid.promise;
   assert.equal(valid.certificate.report.status, 'passed');
   assert.equal(valid.certificate.report.diagnostics.length, 0);
-  assert.equal(artifact.sha256, documentStatusAdmission.artifact.wireHash);
-  assert.equal(artifact.artifactHash, documentStatusAdmission.artifact.artifactHash);
-  assert.equal(artifact.bytes.length, documentStatusAdmission.artifact.bytes);
+  assertDocumentStatusAdmission(artifact);
+  assert.equal(valid.certificate.artifact.sha256, artifact.sha256);
+  assert.equal(valid.certificate.artifact.artifactHash, artifact.artifactHash);
   assert.equal(valid.certificate.report.provenance.checker, documentStatusAdmission.checker.engine);
   assert.equal(valid.certificate.report.provenance.checkerVersion, documentStatusAdmission.checker.version);
   assert.equal(valid.certificate.report.provenance.definitionsHash, documentStatusAdmission.checker.definitionsHash);
-  assert.deepEqual(artifact.units.map(({ id, filename, sha256 }) => ({ id, filename, sha256 })),
-    documentStatusAdmission.artifact.units);
+  assert.deepEqual(valid.certificate.artifact.units, artifact.units);
   assert.equal(valid.senderCalls, documentStatusAdmission.fences.dispatchPreparedSenderCallsPerValidArtifact);
   assert.deepEqual(valid.certificate.artifact.units.map(unit => unit.id),
     ['values', 'fusion-values', 'core', 'identity', 'document_snapshot', 'wrapper']);

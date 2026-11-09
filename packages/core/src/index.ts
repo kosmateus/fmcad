@@ -60,3 +60,5 @@ export * from "./application/cad";
 export * from "./application/broker-control";
 
 export * from "./application/console-model";
+
+export * from "./application/console-details";

@@ -21,7 +21,7 @@ must not be cleared by offline entrypoint checks.
 | OpenCode reporter / retained hooks | `library-opencode-presence` | Historical identities/events, host mapping, local abort and independent disposal failures | Real process-birth presence remains a Linux gate |
 | OpenCode passive event client | `library-project-events` | Historical IPC framing, bounds, private token reads, errors, disabling and disposal; installed declarations | Real observer startup remains a Linux gate; observer policy stays with F |
 | Default MCP telemetry producer | MCP process root delegates to F's `createMcpStdioTelemetry` | Once-only construction/cleanup, failure isolation, clean protocol stdout, installed discovery | Full integrated Linux CI; no inferred execution phases |
-| Config / compatibility client | `library-configuration`, `library-client` | Historical validation/config writes and all direct-dispatch denials | Merged #46; retained gates stay enabled |
+| Config / compatibility client | `library-configuration`, `library-client` | Historical validation/config writes, add-in protocol selection, compatibility factory dispatch and direct-dispatch denials | Final Linux/installed gates stay enabled |
 | Image tools | Typed Python image command and `library-image-*-registration` | Historical argv/preflight/output, real synthetic images and installed assets | Native/image quality qualification is separate |
 | Reference images | Typed local reference pipeline and registration | Real Python worker; original bytes and unknown evidence preserved; installed poison-config test | Full CI with explicit Python interpreter |
 | Engineering local | Typed engineering core, command and registration | Fit/thermal/mass/fluid/hydraulic and historical metadata | Retained public-consumer gate |
@@ -129,8 +129,14 @@ library/CLI/reference run passes all 43 tests.
 The E1–E4 implementations are present in the integrated E/F base `178d37b`.
 Historical PR numbers above describe provenance, not a current queue of remaining
 implementation. Current package verification is against `refactor/agent-e-completion`.
-There are no outstanding E-owned JavaScript service implementations: remaining
-source paths delegate to emitted typed modules. A's execution/ownership, C/D's
+The follow-up source scan found four small but real implementations previously
+missed by this ledger: CAD input file decoding, the public add-in subclass, the
+compatibility backend factory and add-in asset loading. These now delegate to
+`library-cad-input`, `library-addin-client`, `library-backends` and
+`library-addin-bridge`. Paired frozen-source tests preserve worker byte verification,
+protocol fallback, pre-construction direct-routing denial and exact checked bridge
+program bytes. Installed strict declarations cover all four. Remaining E source
+paths delegate to emitted typed modules. A's execution/ownership, C/D's
 operation policies and F's observer/browser internals remain separate ownership.
 
 The default console now uses F's ready web service. `diagnostic` and `--web`
@@ -163,3 +169,21 @@ F's final renderer retirement; G's installed dependency and facade audit. The
 restricted work host cannot provide `/proc` evidence, so no production guards
 are bypassed and no local pass is substituted for those gates. The three native
 audits and native Windows/Fusion UI behavior remain explicitly unqualified.
+
+### Strict retained-test follow-up
+
+Eleven existing E test files have moved to strict TypeScript: console bootstrap
+and installed launch, default and installed MCP, MCP client context, screenshot,
+OpenCode presence/historical hooks/web startup, passive project events and review
+library services. Historical sources remain immutable provenance fixtures.
+Larger CLI/MCP/framing/library/catalog/image/engineering test suites still need
+strict migration under the final whole-project acceptance requirement. They must
+remain registered while this work continues; a filename rename without typed
+ports and decoded external data does not close that requirement.
+
+The passive-event test migration exposed a source/dist nominal identity mismatch:
+E's two passive composition modules now import EventSink from the same public
+core boundary as their node adapter. Runtime behavior is unchanged. Four paired
+IPC/reporter/hook tests pass. The two real presence tests return null reporters on
+this restricted host both before and after migration; Linux qualification remains
+required without substituting fake process birth checks.

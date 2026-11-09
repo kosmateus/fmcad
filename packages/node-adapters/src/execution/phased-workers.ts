@@ -47,6 +47,8 @@ interface PhasedState {
 }
 export interface PhasedWorkerOptions {
   state: PhasedState;
+  /** Measured local boundaries only; failures cannot affect worker ownership. */
+  onLocalPhase?(job: QueueJob, phase: "prepare" | "finalize" | null): void;
   dir: string;
   cfg: {
     backend?: string;
@@ -57,10 +59,7 @@ export interface PhasedWorkerOptions {
   codeHash: string;
   properties(): unknown;
   /** Local analysis must finish before the request becomes SDK-ready. */
-  checkSdkRequest?(
-    message: WorkerMessage,
-    signal: AbortSignal,
-  ): Promise<void>;
+  checkSdkRequest?(message: WorkerMessage, signal: AbortSignal): Promise<void>;
   prepareRequest(job: Job): WorkerRequest;
   onUnknown(job: Job, reason: string): void;
   onFault(error: unknown): void;
@@ -274,7 +273,26 @@ export class PhasedWorkers {
       finish(1);
     }
   }
+  reportLocalPhase(
+    record: WorkerRecord,
+    phase: "prepare" | "finalize" | "local" | null,
+  ): void {
+    try {
+      const job = this.ports.state.status(record.job.id);
+      this.ports.onLocalPhase?.(
+        job,
+        phase === "local"
+          ? (job.physicalTurns ?? 0) > 0
+            ? "finalize"
+            : "prepare"
+          : phase,
+      );
+    } catch {
+      /* Passive telemetry. */
+    }
+  }
   pauseLocal(record: WorkerRecord): void {
+    this.reportLocalPhase(record, null);
     if (record.timer) clearTimeout(record.timer);
     record.timer = null;
     record.localRemaining = Math.max(
@@ -284,6 +302,7 @@ export class PhasedWorkers {
     );
   }
   resumeLocal(record: WorkerRecord): void {
+    this.reportLocalPhase(record, "local");
     record.localStarted = performance.now();
     record.timer = setTimeout(
       () => {
@@ -414,6 +433,7 @@ export class PhasedWorkers {
     pending.reject(error);
   }
   finish(record: WorkerRecord, code: number, directory: string): void {
+    this.reportLocalPhase(record, null);
     const p = this.ports;
     if (record.timer) clearTimeout(record.timer);
     record.checkAbort?.abort();

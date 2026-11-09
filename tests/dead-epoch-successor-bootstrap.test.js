@@ -5,10 +5,25 @@ const fs = require('node:fs');
 const path = require('node:path');
 const api = require('../src/queue-instance');
 const { reference } = require('../src/queue-epoch-lineage');
-const { bootstrapSuccessor, inspectSuccessor } = require('../src/queue-epoch-successor');
+// This test launches a real metadata worker against a never-send endpoint.
+// Only that child receives synthetic WSL spelling; production keeps its strict
+// platform check and environment allowlist. Restore the shared spawn immediately.
+const childProcess = require('node:child_process');
+const physicalSpawn = childProcess.spawn;
+let successor;
+try {
+  childProcess.spawn = (executable, args, options) => {
+    assert.equal(path.basename(args[0]), 'queue-epoch-successor-worker.js');
+    return physicalSpawn(executable, ['--require', require.resolve('./fixtures/fake-wsl-preload.cjs'), ...args], options);
+  };
+  successor = require('../src/queue-epoch-successor');
+} finally {
+  childProcess.spawn = physicalSpawn;
+}
+const { bootstrapSuccessor, inspectSuccessor } = successor;
 
 function fixture(t) {
-  const base = fs.mkdtempSync('/tmp/opencode/successor-bootstrap-');
+  const base = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'successor-bootstrap-'));
   const keys = ['HOME', 'XDG_STATE_HOME', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'];
   const original = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   for (const key of keys) process.env[key] = path.join(base, key.toLowerCase());

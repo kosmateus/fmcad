@@ -73,3 +73,45 @@ test("locale follows system, persists explicit selection, resets and disposes su
   runtime.dispose();
   assert.equal(languageChange, undefined);
 });
+
+// Key/placeholder parity alone cannot detect a shifted positional translation.
+test("localized filters and search preserve the meaning of their actions", () => {
+  const expectations = {
+    pl: {
+      "ui.filter.empty": "Brak pasujących wartości.",
+      "ui.filter.invalidRange":
+        "Podaj poprawny zakres: minimum nie może być większe od maksimum.",
+      "ui.search.placeholder": "Projekt, zadanie, agent, ID…",
+      "ui.search.prompt": "Wpisz wyszukiwaną frazę",
+      "ui.search.apiOnly":
+        "Wyszukiwanie korzysta wyłącznie z danych dostępnych przez API.",
+      "ui.search.globalScope": "Odczyt globalnego zakresu.",
+      "ui.search.emptyDescription": "Spróbuj innej nazwy lub fragmentu.",
+      "ui.search.unavailable": "Wyszukiwanie niedostępne",
+      "ui.help.shortcuts.taskCodeResponse": "Kod / Odpowiedź",
+    },
+    de: {
+      "ui.filter.empty": "Keine passenden Werte.",
+      "ui.filter.invalidRange":
+        "Geben Sie einen gültigen Bereich ein: Das Minimum darf das Maximum nicht überschreiten.",
+      "ui.search.placeholder": "Projekt, Aufgabe, Agent, ID…",
+      "ui.search.prompt": "Suchbegriff eingeben",
+      "ui.search.apiOnly":
+        "Die Suche verwendet nur über die API verfügbare Daten.",
+      "ui.search.globalScope": "Globalen Bereich lesen.",
+      "ui.search.emptyDescription":
+        "Versuchen Sie einen anderen Namen oder Ausschnitt.",
+      "ui.search.unavailable": "Suche nicht verfügbar",
+      "ui.help.shortcuts.taskCodeResponse": "Code / Antwort",
+    },
+  } as const;
+  for (const locale of ["pl", "de"] as const) {
+    for (const [key, expected] of Object.entries(expectations[locale])) {
+      assert.equal(
+        CATALOGS[locale][key as keyof typeof ENGLISH_CATALOG],
+        expected,
+        `${locale}: ${key}`,
+      );
+    }
+  }
+});

@@ -131,6 +131,7 @@ export const simulatorCapabilities = new Set([
   "appearance-metadata",
   "body-style-assignment",
   "thread-recipes",
+  "gear-pair-analytics",
   "cad-commands",
   "parameter-crud",
   "parameter-expressions",

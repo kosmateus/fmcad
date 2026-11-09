@@ -1970,6 +1970,105 @@
       "evidenceAssertion": "\"ISO-style 60-degree V\",",
       "reason": "Preserves this analytical custom-profile or pair-fit assertion with identical inputs, expected value and 1e-9 numerical tolerance. The isolated saved fixture verifies geometry is unchanged. Native thread creation and the historically unsupported catalog query are separate obligations.",
       "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "a86c595d39d7e1b75abb-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(external[\"ratio\"], 2);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "0c29b384e10dde5baee8-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(external[\"nominalCenterDistance\"], 6);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "928ca2f706508db94ce7-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(external[\"workingAngle\"], (20 * Math.PI) / 180);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "5b480e23b5f40d8a2783-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(external[\"backlash\"], 0.01);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "c16e339101806666c365-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "assert.deepEqual(external[\"teeth\"], [20, 40]);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "099713cd58564ea0e163-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(internal[\"ratio\"], -0.5);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "8bdd37e70800d562d652-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(internal[\"nominalCenterDistance\"], 2);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "31c26b1819600ded2943-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(internal[\"centerDistance\"], 2);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "1ccb988f0dac66b5cead-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(internal[\"workingAngle\"], (20 * Math.PI) / 180);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
     }
   ]
 }

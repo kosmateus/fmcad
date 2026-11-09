@@ -99,25 +99,7 @@ export class QueueScenarioBackend implements ScenarioBackend {
       inputFiles: this.#module.inputFiles(argv, request.directory),
     });
     const result = await client.wait(job.id);
-    if (
-      result.job.clientId !== request.owner.clientId ||
-      result.job.requestId !== request.requestId
-    )
-      throw new Error("Foreign original job result");
-    const state =
-      result.job.state === "succeeded"
-        ? "succeeded"
-        : result.job.state === "failed"
-          ? "failed"
-          : "unknown";
-    return {
-      requestId: result.job.requestId,
-      state,
-      sdkSettled: result.execution.sdkSettled === true,
-      mayHaveMutated: result.execution.mayHaveMutated !== false,
-      stdout: result.stdout,
-      ...(state === "succeeded" ? {} : { error: JSON.stringify(result) }),
-    };
+    return queueExecution(result, request.owner, request.requestId);
   }
   async lookup(owner: Owner, requestId: string): Promise<Execution | null> {
     let client = this.#clients.get(owner.clientId);
@@ -133,23 +115,7 @@ export class QueueScenarioBackend implements ScenarioBackend {
     if (original === null) return null;
     const value = record(original);
     if (!value["job"]) return null;
-    const job = record(value["job"]),
-      execution = record(value["execution"]);
-    if (job["clientId"] !== owner.clientId || job["requestId"] !== requestId)
-      throw new Error("Foreign recovery result");
-    return {
-      requestId,
-      state:
-        job["state"] === "succeeded"
-          ? "succeeded"
-          : job["state"] === "failed"
-            ? "failed"
-            : "unknown",
-      sdkSettled: execution["sdkSettled"] === true,
-      mayHaveMutated: execution["mayHaveMutated"] !== false,
-      stdout: typeof value["stdout"] === "string" ? value["stdout"] : "",
-      error: String(job["code"] ?? ""),
-    };
+    return queueExecution(value, owner, requestId);
   }
   close(): void {
     for (const client of this.#clients.values()) client.dispose();
@@ -162,3 +128,35 @@ type QueueModule = Omit<ClientModule, "QueueClient"> & {
     options: Record<string, unknown>,
   ) => Queue & { findRequest(id: string): Promise<unknown> };
 };
+
+/** A terminal broker job alone cannot prove that its SDK work has settled. */
+export function queueExecution(
+  original: unknown,
+  owner: Pick<Owner, "clientId">,
+  requestId: string,
+): Execution {
+  const value = record(original);
+  const job = record(value["job"]);
+  if (job["clientId"] !== owner.clientId || job["requestId"] !== requestId)
+    throw new Error("Foreign original job result");
+  const raw = value["execution"];
+  const execution =
+    raw !== null && typeof raw === "object" && !Array.isArray(raw)
+      ? record(raw)
+      : {};
+  const sdkSettled = execution["sdkSettled"] === true;
+  const state =
+    sdkSettled && job["state"] === "succeeded"
+      ? "succeeded"
+      : sdkSettled && job["state"] === "failed"
+        ? "failed"
+        : "unknown";
+  return {
+    requestId,
+    state,
+    sdkSettled,
+    mayHaveMutated: execution["mayHaveMutated"] !== false,
+    stdout: typeof value["stdout"] === "string" ? value["stdout"] : "",
+    ...(state === "succeeded" ? {} : { error: JSON.stringify(original) }),
+  };
+}

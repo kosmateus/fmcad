@@ -9,7 +9,8 @@ const { openIsolatedEpoch } = require('../src/queue-isolated-epoch');
 const { createSuccessorControl } = require('../src/queue-epoch-successor-control');
 
 function fixture(t, mode = 'success') {
-  const base = fs.mkdtempSync('/tmp/opencode/successor-control-');
+  t.after(require('./fixtures/fake-wsl-platform.cjs')());
+  const base = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'successor-control-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const f = require('./fixtures/dead-epoch-successor.cjs')(base, path.resolve(__dirname, '..'), { inFlight: true });
   fs.rmSync(path.join(f.audit, 'isolated-scratch-qualification'), { recursive: true, force: true }); // Prospective synthetic proof only.
@@ -79,7 +80,7 @@ test('FAKE ports: current facts precede exactly one new scratch, old work stays 
   await assert.rejects(f.control.create(f.message(':create'), f.clientId), { code: 'EPOCH_AUDIT_REQUIRED' });
   assert.equal(f.sdk(), 0);
   const observed = await settled(f, 'observe', f.message(':observe'));
-  assert.equal(observed.status, 'complete'); assert.equal(f.sdk(), 1);
+  assert.equal(observed.status, 'complete', JSON.stringify(observed)); assert.equal(f.sdk(), 1);
   const start = api.readJson(path.join(f.audit, 'dead-epoch-current-observation/start.json'));
   assert.deepEqual(start.binding.auditExpectedProcess, f.authority.expectedProcess);
   const created = await settled(f, 'create', f.message(':create'));

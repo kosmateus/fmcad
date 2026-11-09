@@ -26,8 +26,15 @@ import {
 } from "./mcp-framing.js";
 import type { McpResponse } from "./mcp-framing.js";
 
-export interface StdioWritable extends Writable {
-  write(chunk: Uint8Array | string): boolean;
+/** Minimal output boundary: only explicit false requests a drain wait. */
+type StdioEvents = {
+  [K in "on" | "once" | "removeListener"]?: (
+    event: string,
+    listener: Parameters<Writable[K]>[1]
+  ) => unknown;
+};
+export interface StdioWritable extends StdioEvents {
+  write(chunk: Uint8Array | string): unknown;
 }
 
 export interface McpFrameWriterOptions {

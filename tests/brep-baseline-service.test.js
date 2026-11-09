@@ -93,6 +93,7 @@ test('typed CLI and MCP execute capture → owned inspect → compare through th
   process.chdir(project);
   process.env.XDG_STATE_HOME = state;
   const apis = [];
+  const trace = (phase) => process.stderr.write(`[BREP lifecycle] ${phase}\n`);
   let broker;
   const nativeCalls = [];
   const instance = {
@@ -174,8 +175,11 @@ test('typed CLI and MCP execute capture → owned inspect → compare through th
   });
   const brokerDirectory = queueDirectory();
   t.after(async () => {
+    trace('cleanup: disposing clients');
     for (const api of apis) await api.dispose();
+    trace('cleanup: draining broker');
     await broker?.close();
+    trace('cleanup: broker drained');
     process.chdir(previousCwd);
     if (oldState === undefined) delete process.env.XDG_STATE_HOME;
     else process.env.XDG_STATE_HOME = oldState;
@@ -186,10 +190,14 @@ test('typed CLI and MCP execute capture → owned inspect → compare through th
   broker = await serve(config, {
     dir: brokerDirectory, confirmOwnership: true, createBackend: () => fakeBackend, pollMs: 5,
     spawnWorker(executable, args, options) {
-      return require('node:child_process').spawn(executable, ['--require', preload, ...args], options);
+      const worker = require('node:child_process').spawn(executable, ['--require', preload, ...args], options);
+      trace('worker spawned');
+      worker.once('close', (code, signal) => trace(`worker closed code=${code} signal=${signal}`));
+      return worker;
     },
   });
 
+  trace('capture: starting CLI');
   let cliOutput = '', cliErrors = '';
   const cliCode = await cliMain([
     'measure', 'baseline', 'capture', '--doc', context.doc,
@@ -201,6 +209,7 @@ test('typed CLI and MCP execute capture → owned inspect → compare through th
     stderr: { write: value => { cliErrors += value; } },
     setExitCode: () => {},
   });
+  trace(`capture: CLI returned ${cliCode}`);
   assert.equal(cliCode, 0, cliErrors);
   const captured = JSON.parse(cliOutput);
   assert.equal(captured.success, true);
@@ -254,6 +263,7 @@ test('typed CLI and MCP execute capture → owned inspect → compare through th
     }
     assert.fail(`MCP baseline job ${jobId} did not settle`);
   };
+  trace('inspect: starting MCP');
   const inspected = await mcpCall('inspect', 'measure.baseline.inspect', { baseline: captured.result.baseline });
   assert.equal(inspected.success, true);
   assert.equal(inspected.result.manifest.source.version, '7');
@@ -263,9 +273,11 @@ test('typed CLI and MCP execute capture → owned inspect → compare through th
   const compareInput = mcpInvocation('fmcad_cad_measure_baseline_compare', {
     ...context, data: { baseline: captured.result.baseline, bodies: data.bodies, tolerances },
   }).invocation;
+  trace('compare: starting MCP');
   const compared = await mcpCall('compare', 'measure.baseline.compare', compareInput.data, {
     doc: context.doc, docId: context.docId, docFileId: context.docFileId,
   });
+  trace('compare: returned');
   assert.equal(compared.success, true);
   assert.equal(compared.result.passed, true);
   assert.equal(compared.result.geometryEqual, true);

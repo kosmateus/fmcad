@@ -611,3 +611,17 @@ test("generated typed literals preserve JSON values and do not introduce dynamic
   }).check({ artifact, context: { kind: "raw" } });
   assert.equal(report.status, "passed", JSON.stringify(report));
 });
+
+test("persisted manifest boundary validates source inventory before canonical reconstruction", () => {
+  const artifact = original(), manifest = pythonArtifactManifest(artifact);
+  assert.deepEqual(bindPythonArtifactManifest(artifact.script, JSON.parse(JSON.stringify(manifest))), manifest);
+  for (const value of [null, [], 1, { ...manifest, units: null }, { ...manifest, sourceMap: {} }])
+    assert.throws(() => bindPythonArtifactManifest(artifact.script, value), { code: "PYTHON_CONTEXT_CHANGED" });
+  for (const change of [
+    m => { m.units[0].source = 3; }, m => { m.units[0].role = "invented"; },
+    m => { m.units[0].id = null; }, m => { m.sourceMap[0].unitId = []; },
+  ]) {
+    const changed = structuredClone(manifest); change(changed);
+    assert.throws(() => bindPythonArtifactManifest(artifact.script, changed), { code: "PYTHON_CONTEXT_CHANGED" });
+  }
+});

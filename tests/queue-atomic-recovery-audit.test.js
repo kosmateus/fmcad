@@ -241,3 +241,24 @@ test('typed migration evidence adapter preserves immutable inventories, backups 
     assert.equal(fs.readFileSync(receipt, 'utf8'), '{"owner":"one"}');
   }
 });
+
+test('typed recovery preparation preserves predecessor source, provenance and final bound wire bytes', t => {
+  const old = require('./fixtures/historical-module.cjs')(
+    '5102259463ba490b942d4d94dc8db959bfcfbe0e', 'src/queue-atomic-recovery-audit.js');
+  const current = require('../src/queue-atomic-recovery-audit');
+  const directory = fixtureDirectory(t, 'recovery-python-parity-');
+  const identity = { resolvedIdentity: { name: 'Owned Ż', creationId: 'creation-A', fileId: null },
+    flags: [true, false, null], runId: 'run-A', commandId: 'command-A' };
+  const binding = { purpose: 'atomic-recovery-audit-v1', currentInstance: { pid: 123, birth: 'boot:123', version: '2706' },
+    expectedDocument: { name: 'Owned Ż', creationId: 'creation-A', fileId: null }, firstSave: true };
+  const before = old.prepareRecoveryAudit(path.resolve(__dirname, '..'), identity, binding);
+  const after = current.prepareRecoveryAudit(path.resolve(__dirname, '..'), identity, binding);
+  assert.deepEqual(after, before);
+  const input = { payload: { jsonrpc: '2.0', id: 2, method: 'tools/call', params: {
+    name: 'execute_python', arguments: { code: after.artifact.script + '\n\nrun("")\n', persistent: false } } },
+    reader: after, receipt: path.join(directory, 'receipt.json'), instance: binding.currentInstance,
+    buildHash: 'build-A', jobId: 'job-A', auditBinding: binding, rpcId: 'rpc-A' };
+  const untouched = structuredClone(input);
+  assert.deepEqual(current.prepareRecoveryAuditWire(input), old.prepareRecoveryAuditWire(input));
+  assert.deepEqual(input, untouched);
+});

@@ -191,9 +191,6 @@ const ALIASES: Partial<Record<AppExtraMessageKey, string>> = {
   "ui.modal.task.notInFreshSnapshot": "ui.project.task.unavailable",
   "ui.modal.log.source": "ui.logs.source.aria",
   "ui.modal.log.unretainedMessage": "ui.logs.message.empty",
-  "ui.filter.empty": "common.noResults",
-  "ui.search.apiOnly": "ui.footer.source",
-  "ui.search.globalScope": "scope.global",
   "ui.help.readOnly": "ui.footer.source",
   "ui.help.shortcuts.viewSearch": "common.search",
   "ui.help.shortcuts.globalSearch": "ui.search.global.aria",
@@ -208,12 +205,110 @@ const ALIASES: Partial<Record<AppExtraMessageKey, string>> = {
   "ui.help.freezeNote": "ui.freeze.banner",
 };
 
-const EXTRA_KEYS = Object.keys(ENGLISH_APP_EXTRA_CATALOG).filter(
-  (key) =>
-    key !== "ui.modal.task.artifactLines" &&
-    key !== "ui.toast.exported" &&
-    !Object.hasOwn(ALIASES, key),
-);
+// Stable keys for the translated rows below. Catalog insertion order and alias
+// changes must never shift a translation onto an unrelated user action.
+const TEXT_KEYS = [
+  "ui.page.projects.description",
+  "ui.modal.backToEvent",
+  "ui.modal.backToTask",
+  "ui.modal.copyEntry",
+  "ui.modal.close",
+  "ui.modal.relatedTask",
+  "ui.modal.task.title",
+  "ui.modal.task.refresh",
+  "ui.modal.task.snapshotRevision",
+  "ui.modal.task.tab.events",
+  "ui.modal.task.tab.code",
+  "ui.modal.task.tab.response",
+  "ui.modal.task.section.purposeOperation",
+  "ui.modal.task.section.resultTimes",
+  "ui.modal.task.section.identity",
+  "ui.modal.task.openAgent",
+  "ui.modal.task.events.loadingDescription",
+  "ui.modal.task.events.emptyDescription",
+  "ui.modal.task.source.original",
+  "ui.modal.task.source.sent",
+  "ui.modal.task.source.current",
+  "ui.modal.task.copyHash",
+  "ui.modal.task.sourceLoadingDescription",
+  "ui.modal.task.sourceChoose",
+  "ui.modal.task.sourceChooseDescription",
+  "ui.modal.task.outputNote",
+  "ui.modal.task.compatibleResponse",
+  "ui.modal.task.provenance",
+  "ui.modal.task.artifactEmptyDescription",
+  "ui.modal.task.artifactTruncated",
+  "ui.modal.task.artifactResponseRetained",
+  "ui.modal.task.artifactRpcRetained",
+  "ui.modal.task.outputLoading",
+  "ui.modal.task.outputLoadingDescription",
+  "ui.modal.task.outputChoose",
+  "ui.modal.task.outputChooseDescription",
+  "ui.modal.task.noEventsSnapshot",
+  "ui.modal.task.noEventIdentity",
+  "ui.modal.task.field.purpose",
+  "ui.modal.task.field.kind",
+  "ui.modal.task.field.document",
+  "ui.modal.task.field.source",
+  "ui.modal.task.field.sourceState",
+  "ui.modal.task.field.submitted",
+  "ui.modal.task.field.started",
+  "ui.modal.task.field.finished",
+  "ui.modal.task.field.timeout",
+  "ui.modal.task.field.exitCode",
+  "ui.modal.task.field.outcome",
+  "ui.modal.task.field.mayHaveMutated",
+  "ui.modal.task.field.operation",
+  "ui.modal.task.field.sourceOrdinal",
+  "ui.modal.task.field.revision",
+  "ui.modal.log.title",
+  "ui.modal.agent.title",
+  "ui.modal.log.localTime",
+  "ui.modal.log.utcTime",
+  "ui.modal.log.event",
+  "ui.modal.log.message",
+  "ui.modal.agent.presenceSource",
+  "ui.modal.agent.lastSignal",
+  "ui.modal.agent.activeTask",
+  "ui.modal.agent.identityNote",
+  "ui.filter.title",
+  "ui.filter.numeric.description",
+  "ui.filter.numeric.min",
+  "ui.filter.numeric.max",
+  "ui.filter.includeMissing",
+  "ui.filter.searchValues.placeholder",
+  "ui.filter.searchValues.aria",
+  "ui.filter.selectVisible",
+  "ui.filter.selectNone",
+  "ui.filter.contains",
+  "ui.filter.caseInsensitive",
+  "ui.filter.empty",
+  "ui.filter.invalidRange",
+  "ui.search.title",
+  "ui.search.placeholder",
+  "ui.search.prompt",
+  "ui.search.apiOnly",
+  "ui.help.shortcuts.filtersSort",
+  "ui.search.globalScope",
+  "ui.search.emptyDescription",
+  "ui.search.unavailable",
+  "ui.settings.refreshInterval",
+  "ui.settings.interval.fast",
+  "ui.settings.interval.standard",
+  "ui.settings.interval.slow",
+  "ui.settings.refreshNote",
+  "ui.export.description",
+  "ui.export.csv.description",
+  "ui.export.csv.title",
+  "ui.export.json.description",
+  "ui.export.json.title",
+  "ui.toast.copyFailed",
+  "ui.toast.exportNoSnapshot",
+  "ui.toast.refreshIntervalUpdated",
+  "ui.toast.eventIdentityMissing",
+  "ui.toast.searchResultProjectMissing",
+  "ui.toast.agentLogIdentityMissing",
+] as const satisfies readonly AppExtraMessageKey[];
 
 const TEXTS: Readonly<Record<Exclude<LocaleCode, "en">, readonly string[]>> = {
   bg: [
@@ -2950,10 +3045,10 @@ export function appExtraCatalogFor(
 ): AppExtraCatalog {
   if (locale === "en") return ENGLISH_APP_EXTRA_CATALOG;
   const values = TEXTS[locale];
-  if (values.length !== EXTRA_KEYS.length)
+  if (values.length !== TEXT_KEYS.length)
     throw new Error(`Invalid app-extra catalog for ${locale}`);
   const catalog: Record<string, MessageValue> = {};
-  EXTRA_KEYS.forEach((key, index) => {
+  TEXT_KEYS.forEach((key, index) => {
     const value = values[index];
     if (value === undefined)
       throw new Error(`Missing app-extra translation: ${locale}.${key}`);
@@ -2968,6 +3063,18 @@ export function appExtraCatalogFor(
       throw new Error(`Missing app-extra alias target: ${target}`);
     catalog[key] = value;
   }
+  const follow = base["ui.logs.follow.enabled"];
+  if (typeof follow !== "string")
+    throw new Error("Missing localized log-follow action");
+  catalog["ui.help.shortcuts.follow"] = follow;
+  catalog["ui.help.shortcuts.taskCodeResponse"] =
+    String(catalog["ui.modal.task.tab.code"]) +
+    " / " +
+    String(catalog["ui.modal.task.tab.response"]);
+  catalog["ui.help.shortcuts.taskEventsAgent"] =
+    String(catalog["ui.modal.log.event"]) +
+    " / " +
+    String(catalog["ui.modal.agent.title"]);
   catalog["ui.modal.task.artifactLines"] = PLURALS[locale].lines;
   catalog["ui.toast.exported"] = PLURALS[locale].exported;
   return catalog as AppExtraCatalog;

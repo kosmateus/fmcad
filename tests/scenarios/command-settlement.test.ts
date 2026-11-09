@@ -7,10 +7,11 @@ import { fixture, remaining } from "./test-support";
 import { simulatorFolder } from "./simulator";
 import { transactionScenarios } from "./transaction-cases";
 import { runScenarios, resumeCleanup } from "./runner";
+import { queueExecution } from "./queue-backend";
 import { commandResult } from "./command-result";
 
 for (const protocol of ["mcp", "addin"] as const) {
-  for (const defect of ["unknown", "foreign"] as const) {
+  for (const defect of ["unknown", "foreign", "missing-execution"] as const) {
     test(`${protocol}: ${defect} original command evidence cannot authorize cleanup`, async (t) => {
       const { backend, model, directory } = await fixture(t, protocol);
       let commands = 0;
@@ -22,6 +23,21 @@ for (const protocol of ["mcp", "addin"] as const) {
           if (!request.command) return result;
           commands++;
           const output = JSON.parse(result.stdout);
+          if (defect === "missing-execution") {
+            bad = queueExecution(
+              {
+                job: {
+                  clientId: request.owner.clientId,
+                  requestId: request.requestId,
+                  state: "succeeded",
+                },
+                stdout: result.stdout,
+              },
+              request.owner,
+              request.requestId,
+            );
+            return bad;
+          }
           if (defect === "unknown") {
             output.status = "unknown";
             output.outcome = "unknown";

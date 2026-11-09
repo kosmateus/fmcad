@@ -185,3 +185,15 @@ runs offline outside checkout with lifecycle scripts disabled and includes one
 real complete-helper check. Transport/SDK activity is synthetic. No submitted
 source is executed by the checker, and no live Fusion, geometry or physical
 correctness is claimed.
+
+The retained `document-status-admission-6bb.json` evidence records a Windows CRLF
+working tree. Its four extracted runtime sources (`values`, `fusion-values`,
+`identity`, `document_snapshot`) are text-identical to the LF Git checkout; the
+injected owner lines, prepared core, and wrapper are unchanged. The typed
+`document-status-admission` test helper reconstructs only those historical source
+line endings and verifies the original wire hash, artifact hash, byte length,
+and all six unit hashes. It does not refresh or weaken the historical fixture.
+Admission tests separately check the actual checkout artifact with the real
+checker and require its current certificate and single physical send. Mutating a
+snapshot expression or target identity fails the historical comparison. This
+allows platform checkout spelling without accepting behavioral/source drift.

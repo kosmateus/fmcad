@@ -16,7 +16,7 @@ module.exports = function fixture(base, root) {
     job.details = { code: job.code, exitCode: 0, sdkSettled: true, mayHaveMutated: true, publicationOutcome: 'published' };
     job.dispatch = { rpcState: 'terminal', rpcCount: 1, completedCount: 1 }; job.physicalTurns = 1;
     api.durable(path.join(dir, 'outcome.json'), { state: job.state, ...job.details }, true);
-    api.durable(path.join(dir, 'worker-identity.json'), { pid: 2147483644, birth: 'synthetic-dead-worker' }, true);
+    api.durable(path.join(dir, 'worker-identity.json'), { pid: 2147483644, birth: 'synthetic:dead-worker' }, true);
     require('./settled-probes.cjs')(api, dir, job.id, previousBuildHash, f.pointer);
     const binding = { jobId: job.id, rpcId, requestHash: 'b'.repeat(64), sourceHash: 'c'.repeat(64),
       buildHash: previousBuildHash, isolatedEpoch: f.pointer.epochId,

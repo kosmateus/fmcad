@@ -5,7 +5,7 @@ import {
   createInvocationContext,
   createObservationPublisher,
 } from "@fmcad/core";
-import type { EventSink } from "../../packages/core/src/ports/event-sink";
+import type { EventSink } from "@fmcad/core";
 import type { OpenCodePresenceReporter } from "../../packages/node-adapters/src/telemetry/opencode-presence";
 const hostRequire = createRequire(__filename);
 const { createOpenCodePresence, defaultOpenCodePresenceDirectory } =

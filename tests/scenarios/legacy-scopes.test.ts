@@ -116,6 +116,7 @@ test("required profiles account for every retained live suite and separate diagn
       "appearances",
       "style-assignments",
       "thread-recipes",
+      "gear-pair",
     ],
   );
 });

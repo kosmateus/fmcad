@@ -83,6 +83,7 @@ test("reviewed assertion mappings name retained individual assertions and real e
       [
         "attributes-*",
         "thread-recipes-*",
+        "gear-pair-*",
         "definition-transaction-*",
         "camera-state-*",
         "pose-visibility-*",

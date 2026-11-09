@@ -298,6 +298,7 @@ export interface BrokerModules {
   "../package.json": { version: string };
   "./request-timeout": { requestTimeout(config: P.Config): number };
   "./dist/node-adapters/broker-ipc/normal-admission": typeof import("../packages/node-adapters/dist/broker-ipc/normal-admission");
+  "./dist/node-adapters/telemetry/phase-timings": typeof import("../packages/node-adapters/src/telemetry/phase-timings");
   "./queue-phased": {
     PhasedWorkers: new (
       options: Omit<

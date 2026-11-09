@@ -79,7 +79,7 @@ const manuals = Object.fromEntries(Object.entries(descriptors).map(([op, spec]) 
   audit: {
     sources: ['src/data-import.js', 'docs/DATA_IMPORT.md'],
     verified: ['versioned adapter preflight and strict CSV/JSON parsing', 'ownership/revision/provenance and onExisting policy', 'catalog/placement/param record validation and offline checks', 'cots.replace datum-map consistency and impact invalidation'],
-    tests: ['tests/data_import.test.js', 'tests/data_import_test.py'],
+    tests: ['tests/data_import.test.ts', 'tests/data_import_test.py'],
     gaps: [], bugs: ['Offline checks do not inspect a live Fusion model; kernel failures are never retried.'],
   },
 }]));

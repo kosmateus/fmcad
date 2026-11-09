@@ -644,7 +644,10 @@ test(
     );
     await page.getByRole("button", { name: "Filtruj Stan" }).click();
     await page.getByRole("dialog", { name: "state" }).waitFor();
-    await page.getByRole("button", { name: "Wyczyść" }).click();
+    await page
+      .getByRole("dialog", { name: "state" })
+      .getByRole("button", { name: "Resetuj", exact: true })
+      .click();
     await clearFilterRequest;
 
     const textFilterRequest = waitForQuery(
@@ -842,7 +845,7 @@ test(
     );
     await page.getByRole("tab", { name: "Odpowiedź" }).click();
     await page
-      .getByRole("button", { name: "Wczytaj odpowiedź zgodności" })
+      .getByRole("button", { name: "Wczytaj zgodną odpowiedź" })
       .click();
     await responseDetailRequest;
     await page.getByText("Synthetic E2E retained response.").waitFor();
@@ -1150,11 +1153,11 @@ test(
     await page.getByRole("button", { name: "Zamknij okno" }).click();
 
     await page.getByRole("button", { name: "Pomoc", exact: true }).click();
-    await page.getByRole("dialog", { name: "Pomoc i skróty" }).waitFor();
+    await page.getByRole("dialog", { name: "Pomoc", exact: true }).waitFor();
     await page.locator("#overlay-root .overlay").click({
       position: { x: 2, y: 2 },
     });
-    await page.getByRole("dialog", { name: "Pomoc i skróty" }).waitFor({
+    await page.getByRole("dialog", { name: "Pomoc", exact: true }).waitFor({
       state: "detached",
     });
     await page
@@ -1172,7 +1175,7 @@ test(
     assert.ok(isRecord(preferences));
     assert.equal(preferences["refreshIntervalMs"], 8000);
     await page
-      .getByRole("dialog", { name: "Ustawienia podglądu" })
+      .getByRole("dialog", { name: "Ustawienia", exact: true })
       .waitFor({ state: "detached" });
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Przegląd globalny" }).waitFor();
@@ -1192,7 +1195,9 @@ test(
     await page.getByRole("button", { name: "Zamknij", exact: true }).click();
 
     await page.getByRole("button", { name: "Eksportuj dane" }).click();
-    await page.getByRole("dialog", { name: "Eksport danych" }).waitFor();
+    await page
+      .getByRole("dialog", { name: "Eksportuj", exact: true })
+      .waitFor();
     const exportRequest = page.waitForRequest(
       (request) =>
         request.url().includes("/api/v1/console/export") &&
@@ -1209,7 +1214,9 @@ test(
     assert.match(download.suggestedFilename(), /^fmcad-tasks-.*\.csv$/);
     record("CSV export downloads backend-generated retained query data");
     await page.getByRole("button", { name: "Eksportuj dane" }).click();
-    await page.getByRole("dialog", { name: "Eksport danych" }).waitFor();
+    await page
+      .getByRole("dialog", { name: "Eksportuj", exact: true })
+      .waitFor();
     const jsonExportRequest = page.waitForRequest(
       (request) => {
         if (

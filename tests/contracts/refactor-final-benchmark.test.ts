@@ -1,3 +1,5 @@
+const data =
+  require("../../scripts/refactor-benchmark-data.ts") as typeof import("../../scripts/refactor-benchmark-data");
 const test = require("node:test") as typeof import("node:test");
 const assert: typeof import("node:assert/strict") = require("node:assert/strict");
 const { mkdtempSync, mkdirSync, rmSync, readFileSync } =
@@ -166,6 +168,7 @@ test("multi-client MCP status uses only isolated injected QueueClient wrappers",
     const result = command(
       process.execPath,
       [
+        "--experimental-strip-types",
         resolve(root, "scripts/refactor-baseline-benchmark.ts"),
         "--final-worker",
         root,
@@ -198,6 +201,7 @@ test("multi-client MCP status uses only isolated injected QueueClient wrappers",
     const multi = command(
       process.execPath,
       [
+        "--experimental-strip-types",
         resolve(root, "scripts/refactor-baseline-benchmark.ts"),
         "--multi-worker",
         root,
@@ -211,23 +215,24 @@ test("multi-client MCP status uses only isolated injected QueueClient wrappers",
       env,
     );
     assert.equal(multi.status, "pass", multi.stderr);
-    const clients = JSON.parse(multi.stdout);
+    const clients = data.workerData(data.json(multi.stdout));
     assert.equal(clients.status, "pass");
     assert.equal(clients.processCount, fixture.clients);
     assert.ok(
-      clients.clients.every(
-        (client: any) =>
-          client.data.processCount === 1 &&
-          client.data.childProcessLaunchCalls === 0,
+      clients.clients?.every(
+        (client) =>
+          client.data?.processCount === 1 &&
+          client.data?.childProcessLaunchCalls === 0,
       ),
     );
     assert.equal(clients.processCount, fixture.clients);
-    assert.equal(clients.fakeQueue.registerCalls, fixture.clients);
-    assert.equal(clients.fakeQueue.queueSummaryCalls, fixture.clients);
+    assert.equal(clients.fakeQueue?.registerCalls, fixture.clients);
+    assert.equal(clients.fakeQueue?.queueSummaryCalls, fixture.clients);
 
     const apiImport = command(
       process.execPath,
       [
+        "--experimental-strip-types",
         resolve(root, "scripts/refactor-baseline-benchmark.ts"),
         "--final-worker",
         root,
@@ -251,4 +256,36 @@ test("multi-client MCP status uses only isolated injected QueueClient wrappers",
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("malformed benchmark report fields never become successful measurements", () => {
+  for (const value of [
+    null,
+    [],
+    { workloads: { help: { coldRuns: "not-an-array" } } },
+    {
+      version: 1,
+      workloads: {
+        help: { coldRuns: [{ data: { processCount: "1" } }], warmRuns: [] },
+      },
+    },
+  ])
+    assert.equal(isCompleteFinalRuntime(value), false);
+  assert.throws(
+    () =>
+      data.report({ measurements: { package: { data: [{ size: "1024" }] } } }),
+    /finite benchmark/,
+  );
+  assert.throws(
+    () => data.workerData({ first: { fakeQueue: { registerCalls: "1" } } }),
+    /finite benchmark/,
+  );
+  assert.throws(
+    () => data.workerData({ rssBytes: Number.NaN }),
+    /finite benchmark/,
+  );
+  const missing = data.workerData({ processCount: 1 });
+  assert.equal(missing.rssBytes, undefined);
+  assert.equal(missing.first, undefined);
+  assert.equal(missing.clients, undefined);
 });

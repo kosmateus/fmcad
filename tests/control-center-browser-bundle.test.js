@@ -147,7 +147,10 @@ test("browser build emits standalone ESM and a hash-bound static allowlist", asy
   });
   execFileSync(
     process.execPath,
-    [path.join(repository, "dist/scripts/devtools/stage-core.js"), "--identity-only"],
+    [
+      path.join(repository, "dist/scripts/devtools/stage-core.js"),
+      "--identity-only",
+    ],
     { cwd: repository, encoding: "utf8" },
   );
   const manifest = resolver.readControlCenterAssetManifest(installation);
