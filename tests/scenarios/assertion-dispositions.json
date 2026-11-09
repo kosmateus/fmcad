@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "status": "partial-migration",
-  "meaning": "Only listed mappings have been reviewed; qualification fields distinguish offline evidence, native obligations and blockers. Every unlisted frozen assertion remains an open migration or native-classification obligation.",
+  "status": "complete-retained-site-dispositions",
+  "meaning": "Across this ledger and the explicit supplemental assertion-dispositions files, every one of 3707 retained current sites and one historical site has an individual reviewed disposition. This is complete accounting, not execution qualification: pending offline checks and every native NOTRUN obligation retain their separate evidence requirements.",
   "mappings": [
     {
       "source": "tests/live-definitions.js",

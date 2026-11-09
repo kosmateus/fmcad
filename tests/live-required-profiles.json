@@ -718,6 +718,31 @@
           "execution": "explicit-owned-scope-only"
         }
       ]
+    },
+    "native-fixtures": {
+      "required": true,
+      "qualification": "pending",
+      "cases": [
+        {
+          "id": "iw74-parameter-test",
+          "source": "tests/native/iw7.4_parameter_test.py",
+          "continuationSource": "tests/native/iw7.4_parameter_failures.py",
+          "disposition": "native-only",
+          "obligation": "Exact original parameter.test v2 width cases, independent temporary-body restoration, callback-error restoration and no-forward-work budget refusal",
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-parameter-test --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Offline complete; exact installed build/broker/cad-v1, explicit dedicated project and folder permitting owned file create/delete. Existing ScenarioSession creates and receipts each owned saved scratch file; exact creation/name/file/version/project/folder pins and original request identities. No preexisting user file is accepted as fixture.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-parameter-test-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10,
+          "protocols": [
+            "mcp",
+            "addin"
+          ],
+          "cleanup": "Parent exact owned close/delete and foreign inventory audit only after both original phases succeed. Any failed/malformed/unknown result retains fixture and original request evidence without replay; inspect native restore before manual resolution."
+        }
+      ]
     }
   }
 }

@@ -1,4 +1,8 @@
 import {
+  nativeParameterTestCapability,
+  nativeParameterTestScenarios,
+} from "./native-parameter-test-cases";
+import {
   nativeRpcRecoveryScenarios,
   nativeRpcRecoveryCapability,
   prepareNativeRpcRecoveryBroker,
@@ -178,6 +182,7 @@ interface Options {
     | "native-rpc-recovery"
     | "native-definitions"
     | "native-attributes"
+    | "native-parameter-test"
     | "native-import"
     | "native-extended"
     | "native-sketch-operations"
@@ -266,6 +271,7 @@ export function parse(argv: string[]): Options {
         value === "native-rpc-recovery" ||
         value === "native-definitions" ||
         value === "native-attributes" ||
+        value === "native-parameter-test" ||
         value === "native-import" ||
         value === "native-extended" ||
         value === "native-sketch-operations" ||
@@ -449,6 +455,9 @@ export function scenariosFor(
       : []),
     ...(options.suite === "native-attributes"
       ? unsavedAttributeScenarios(options.owners)
+      : []),
+    ...(options.suite === "native-parameter-test" && options.folder
+      ? nativeParameterTestScenarios(options.folder, options.owners)
       : []),
     ...(options.suite === "native-import"
       ? nativeImportScenarios(options.owners)
@@ -646,6 +655,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           "original-user-view",
           "original-user-view-absolute-camera",
           nativeSolidsCapability,
+          nativeParameterTestCapability,
           nativeCadCapability,
           nativeComponentHierarchyCapability,
           ...(options.protocol === "addin"
