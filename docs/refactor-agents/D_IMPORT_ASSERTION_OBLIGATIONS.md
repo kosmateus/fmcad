@@ -82,3 +82,16 @@ contract. The shared local assertion is corrected to exit 0. It still requires
 explicit unknown, no document identity, no model validation and no mutation.
 The separate native unknown-mutation assertions still require exit 1 and
 `success: false`; no production behavior changed.
+
+
+The extraction review keeps the original 482 IDs, source lines and expressions
+in the frozen inventory. Three named snapshots come from public repository
+commit `dce47c5`, with hashes identical to that inventory. Before the inventory
+uses them, its existing loader verifies `tests/live-import-extraction-review.json`:
+all seven current caller/contract/lifecycle evidence sources must match their
+complete hashes and 536 current assertion sites, and all 482 original semantic
+dispositions must still resolve to current literal evidence. Added current
+receipt guards are therefore tracked separately from retained obligations.
+Changed snapshots, current guards, extracted assertions and missing dispositions
+have explicit rejection tests. This source review does not claim runtime or
+native execution; the new guard tests await the central build and pure-test slot.

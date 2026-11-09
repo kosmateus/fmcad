@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -130,9 +131,136 @@ export function currentSources(root: string): string[] {
   ].sort();
 }
 
+/** Explicit review boundary for the three import sources whose assertions moved.
+ * The old sites remain obligations. Every current source byte and assertion site
+ * is checked separately before any frozen source may be used by the inventory.
+ */
+export const reviewedImportSources = [
+  "tests/live-data-import-fixed.ts",
+  "tests/live-data-import.ts",
+  "tests/live-import-receipts.ts",
+] as const;
+interface ReviewedSource {
+  source: string;
+  sha256: string;
+  assertions: AssertionSite[];
+}
+interface ExtractionReview {
+  schemaVersion: number;
+  retained: { source: string; snapshot: string; sha256: string }[];
+  current: ReviewedSource[];
+}
+export function reviewedImportSnapshots(
+  root: string,
+): ReadonlyMap<string, string> {
+  const review = JSON.parse(
+    fs.readFileSync(
+      path.join(root, "tests/live-import-extraction-review.json"),
+      "utf8",
+    ),
+  ) as ExtractionReview;
+  assert.equal(review.schemaVersion, 1);
+  assert.deepEqual(
+    review.retained.map((row) => row.source),
+    [...reviewedImportSources],
+  );
+  const snapshots = new Map<string, string>();
+  const originalSites = new Map<string, AssertionSite>();
+  for (const row of review.retained) {
+    const expected =
+      "tests/fixtures/history/" +
+      path.basename(row.source, ".ts") +
+      "-dce47c5.ts.txt";
+    assert.equal(
+      row.snapshot,
+      expected,
+      "Only the named public pre-extraction source snapshots are permitted",
+    );
+    const content = fs.readFileSync(path.join(root, expected), "utf8");
+    assert.equal(
+      digest(content),
+      row.sha256,
+      "Retained import snapshot changed: " + row.source,
+    );
+    snapshots.set(row.source, content);
+    for (const site of assertionSites(row.source, content))
+      originalSites.set(row.source + ":" + site.id, site);
+  }
+  const ledger = JSON.parse(
+    fs.readFileSync(
+      path.join(root, "tests/scenarios/assertion-dispositions-import.json"),
+      "utf8",
+    ),
+  ) as {
+    mappings: {
+      source: string;
+      assertionId: string;
+      evidence: string;
+      evidenceAssertion: string;
+      requiredObservation?: string;
+    }[];
+  };
+  assert.equal(
+    originalSites.size,
+    482,
+    "Review must preserve all original import assertions",
+  );
+  assert.deepEqual(
+    ledger.mappings.map((row) => row.source + ":" + row.assertionId).sort(),
+    [...originalSites.keys()].sort(),
+    "Every retained import assertion needs exactly one semantic disposition",
+  );
+  const expectedCurrent = [
+    ...new Set([
+      ...reviewedImportSources,
+      ...ledger.mappings.map((row) => row.evidence),
+    ]),
+  ].sort();
+  assert.deepEqual(
+    review.current.map((row) => row.source),
+    expectedCurrent,
+    "Current review must cover original callers and every extracted evidence source",
+  );
+  const current = new Map<string, string>();
+  for (const row of review.current) {
+    assert.ok(
+      row.source.startsWith("tests/") && !row.source.split("/").includes(".."),
+    );
+    const content = fs.readFileSync(path.join(root, row.source), "utf8");
+    assert.equal(
+      digest(content),
+      row.sha256,
+      "Review changed current import source: " + row.source,
+    );
+    assert.deepEqual(
+      assertionSites(row.source, content),
+      row.assertions,
+      "Review changed current import assertions: " + row.source,
+    );
+    current.set(row.source, content);
+  }
+  for (const row of ledger.mappings) {
+    const original = originalSites.get(row.source + ":" + row.assertionId);
+    assert.ok(original);
+    if (row.requiredObservation !== undefined)
+      assert.equal(row.requiredObservation, original.expression);
+    assert.ok(
+      row.evidenceAssertion.length > 0 &&
+        current.get(row.evidence)?.includes(row.evidenceAssertion),
+      "Retained import evidence disappeared: " +
+        row.source +
+        ":" +
+        row.assertionId,
+    );
+  }
+  return snapshots;
+}
+
 export function inventorySources(root: string) {
+  const reviewed = reviewedImportSnapshots(root);
   return currentSources(root).map((source) => {
-    const content = fs.readFileSync(path.join(root, source), "utf8");
+    const content =
+      reviewed.get(source) ?? fs.readFileSync(path.join(root, source), "utf8");
     return {
       source,
       sha256: digest(content),
