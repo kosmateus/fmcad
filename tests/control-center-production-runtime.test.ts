@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
@@ -6,11 +7,12 @@ import { test } from "node:test";
 import type { ConsoleQueryScope } from "../packages/control-center/dist/contracts/query.js";
 import { setupProjects } from "./control-center-test-support.js";
 
+const load = createRequire(__filename);
 const root = process.cwd();
-const { createControlCenterComposition } = require(
+const { createControlCenterComposition } = load(
   path.join(root, "dist/src/dist/composition/control-center.js"),
 ) as typeof import("../dist/library-build/src/composition/control-center.js");
-const { createPassiveConsoleTelemetry } = require(
+const { createPassiveConsoleTelemetry } = load(
   path.join(
     root,
     "dist/src/dist/node-adapters/control-center/passive-runtime.js",

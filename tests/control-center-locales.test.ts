@@ -1,11 +1,13 @@
+import { createRequire } from "node:module";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+const load = createRequire(__filename);
 const root = path.resolve(__dirname, "../..");
-const { CATALOGS, ENGLISH_CATALOG, LOCALE_CODES } = require(
+const { CATALOGS, ENGLISH_CATALOG, LOCALE_CODES } = load(
   path.join(root, "packages/control-center/dist/web/locale-catalogs.js"),
 ) as typeof import("../packages/control-center/dist/web/locale-catalogs.js");
-const { createLocaleRuntime, LOCALE_STORAGE_KEY } = require(
+const { createLocaleRuntime, LOCALE_STORAGE_KEY } = load(
   path.join(root, "packages/control-center/dist/web/locale-runtime.js"),
 ) as typeof import("../packages/control-center/dist/web/locale-runtime.js");
 

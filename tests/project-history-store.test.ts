@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import * as fs from "node:fs";
@@ -17,8 +18,9 @@ import {
   setupProjects,
 } from "./control-center-test-support.js";
 
+const load = createRequire(__filename);
 const repositoryRoot = process.cwd();
-const historyAdapters = require(
+const historyAdapters = load(
   path.join(
     repositoryRoot,
     "packages/node-adapters/dist/persistence/project-history/index.js",
@@ -249,7 +251,7 @@ test("quota exhaustion preserves unresolved history, foreign projects and commit
   );
   t.after(() => foreign.close());
   const protectedForeign = foreign.readSnapshot();
-  const core = require(
+  const core = load(
     path.join(repositoryRoot, "packages/core/dist/index.js"),
   ) as typeof import("../packages/core/dist/index.js");
   let store = openHistory(fixture.registry, project);
