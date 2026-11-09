@@ -17,6 +17,7 @@ import { cloudScenarios } from "./cloud-cases";
 import { boxScenarios } from "./box-cases";
 import { attributeScenarios } from "./attribute-cases";
 import { reopenScenarios, revisionScenarios } from "./reopen-cases";
+import { rectangleScenarios } from "./rectangle-cases";
 import { sketchScenarios } from "./sketch-cases";
 import { runScenarios, resumeCleanup } from "./runner";
 import { concurrencyLimit, defaultConcurrency, sourceHash } from "./scheduling";
@@ -42,6 +43,7 @@ interface Options {
     | "cloud"
     | "boxes"
     | "attributes"
+    | "rectangles"
     | "revisions"
     | "reopen"
     | "sketches"
@@ -88,6 +90,7 @@ export function parse(argv: string[]): Options {
         value === "cloud" ||
         value === "boxes" ||
         value === "attributes" ||
+        value === "rectangles" ||
         value === "revisions" ||
         value === "reopen" ||
         value === "sketches" ||
@@ -326,6 +329,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           ...((options.suite === "attributes" || options.suite === "all") &&
           options.folder
             ? attributeScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "rectangles" || options.suite === "all") &&
+          options.folder
+            ? rectangleScenarios(options.folder, options.owners)
             : []),
           ...((options.suite === "revisions" || options.suite === "all") &&
           options.folder

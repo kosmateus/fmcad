@@ -22,6 +22,12 @@ class ExtentDirections:
     NegativeExtentDirection: ClassVar[int] = 1
 
 
+class DimensionOrientations:
+    AlignedDimensionOrientation: ClassVar[int] = 0
+    HorizontalDimensionOrientation: ClassVar[int] = 1
+    VerticalDimensionOrientation: ClassVar[int] = 2
+
+
 class SketchPoint(core.Base):
     def __init__(self, sketch: Sketch, geometry: core.Point3D) -> None:
         self.objectType: str = "adsk::fusion::SketchPoint"
@@ -29,8 +35,13 @@ class SketchPoint(core.Base):
         self.parentSketch: Sketch = sketch
         self.geometry: core.Point3D = geometry
 
+    @staticmethod
+    def cast(arg: object) -> SketchPoint | None:
+        return arg if isinstance(arg, SketchPoint) else None
+
     @property
     def worldGeometry(self) -> core.Point3D:
+        self.parentSketch.model_regenerate()
         return self.parentSketch.sketchToModelSpace(self.geometry)
 
 
@@ -69,8 +80,23 @@ class SketchLineList(core.Collection[SketchLine]):
     pass
 
 
+class ProfileCurve(core.Base):
+    def __init__(self, entity: SketchLine) -> None:
+        self.sketchEntity: SketchLine = entity
+
+
+class ProfileLoop(core.Base):
+    def __init__(self, sketch: Sketch) -> None:
+        self.isOuter: bool = True
+        self.profileCurves: core.Collection[ProfileCurve] = core.Collection(
+            [ProfileCurve(line) for line in sketch.sketchCurves.sketchLines])
+
+
 class Profile(core.Base):
     def __init__(self, sketch: Sketch, first: core.Point3D, second: core.Point3D) -> None:
+        self.objectType: str = "adsk::fusion::Profile"
+        self.parentSketch: Sketch = sketch
+        self.profileLoops: core.Collection[ProfileLoop] = core.Collection([ProfileLoop(sketch)])
         self.model_sketch: Sketch = sketch
         self.model_first: core.Point3D = first
         self.model_second: core.Point3D = second
@@ -114,6 +140,105 @@ class SketchCurves:
         self.sketchLines: SketchLines = SketchLines(sketch)
 
 
+class CoincidentConstraint(core.Base):
+    def __init__(self, point: SketchPoint, entity: SketchPoint) -> None:
+        self.objectType: str = "adsk::fusion::CoincidentConstraint"
+        self.entityToken: str = "model-constraint:" + str(uuid.uuid4())
+        self.parentSketch: Sketch = point.parentSketch
+        self.point: SketchPoint = point
+        self.entity: SketchPoint = entity
+
+
+class GeometricConstraints(core.Collection[CoincidentConstraint]):
+    def __init__(self, sketch: Sketch) -> None:
+        super().__init__()
+        self.model_sketch: Sketch = sketch
+
+    def addCoincident(self, point: SketchPoint, entity: core.Base) -> CoincidentConstraint:
+        sketch = self.model_sketch
+        lines = sketch.sketchCurves.sketchLines
+        if (not isinstance(entity, SketchPoint) or point.parentSketch is not sketch
+                or entity is not sketch.originPoint or not lines.count
+                or point is not lines.item(0).startSketchPoint
+                or point.geometry.asArray() != [0, 0, 0]):
+            raise NotImplementedError("Only an origin-anchored rectangle coincidence is modeled")
+        if self.count:
+            raise ValueError("Duplicate origin constraint")
+        constraint = CoincidentConstraint(point, entity)
+        self.values.append(constraint)
+        sketch.parentComponent.model_design.model_doc.isModified = True
+        return constraint
+
+
+class ModelParameter(core.Base):
+    def __init__(self, dimension: SketchLinearDimension, expression: str) -> None:
+        self.model_dimension: SketchLinearDimension = dimension
+        self.model_expression: str = expression
+        self.name: str = "d" + str(dimension.parentSketch.sketchDimensions.count + 1)
+
+    @property
+    def expression(self) -> str:
+        return self.model_expression
+
+    @expression.setter
+    def expression(self, expression: str) -> None:
+        dimension = self.model_dimension
+        sketch = dimension.parentSketch
+        # Expressions are retained, evaluated from the document parameter graph.
+        value = sketch.parentComponent.model_design.unitsManager.evaluateExpression(expression, "cm")
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError("Rectangle dimensions must be positive")
+        self.model_expression = expression
+        sketch.model_regenerate()
+        sketch.parentComponent.model_design.model_doc.isModified = True
+
+    @property
+    def value(self) -> float:
+        return self.model_dimension.parentSketch.parentComponent.model_design.unitsManager.evaluateExpression(self.model_expression, "cm")
+
+
+class SketchLinearDimension(core.Base):
+    def __init__(self, first: SketchPoint, second: SketchPoint, orientation: int, axis: str) -> None:
+        self.objectType: str = "adsk::fusion::SketchLinearDimension"
+        self.entityToken: str = "model-dimension:" + str(uuid.uuid4())
+        self.parentSketch: Sketch = first.parentSketch
+        self.entityOne: SketchPoint = first
+        self.entityTwo: SketchPoint = second
+        self.orientation: int = orientation
+        self.isDriving: bool = True
+        self.model_axis: str = axis
+        self.parameter: ModelParameter = ModelParameter(self,
+            str(abs(second.geometry.x - first.geometry.x) if axis == "x" else abs(second.geometry.y - first.geometry.y)) + " cm")
+
+
+class SketchDimensions(core.Collection[SketchLinearDimension]):
+    def __init__(self, sketch: Sketch) -> None:
+        super().__init__()
+        self.model_sketch: Sketch = sketch
+
+    def addDistanceDimension(self, pointOne: SketchPoint, pointTwo: SketchPoint,
+                             orientation: int, textPoint: core.Point3D,
+                             isDriving: bool = True) -> SketchLinearDimension:
+        sketch = self.model_sketch
+        lines = sketch.sketchCurves.sketchLines
+        if not isDriving or lines.count != 4 or not sketch.geometricConstraints.count:
+            raise NotImplementedError("Only driving dimensions of an anchored rectangle are modeled")
+        axis = next((axis for i, axis in enumerate(("x", "y"))
+                     if pointOne is lines.item(i).startSketchPoint and pointTwo is lines.item(i).endSketchPoint), None)
+        expected = DimensionOrientations.HorizontalDimensionOrientation if axis == "x" else DimensionOrientations.VerticalDimensionOrientation
+        if axis is None or orientation not in (DimensionOrientations.AlignedDimensionOrientation, expected):
+            raise NotImplementedError("Only first/second rectangle edge dimensions are modeled")
+        if (lines.item(0).endSketchPoint.geometry.x <= 0
+                or lines.item(1).endSketchPoint.geometry.y <= 0):
+            raise NotImplementedError("Only positive-quadrant rectangle dimensions are modeled")
+        if any(d.model_axis == axis for d in self):
+            raise ValueError("Duplicate rectangle dimension")
+        dimension = SketchLinearDimension(pointOne, pointTwo, orientation, axis)
+        self.values.append(dimension)
+        sketch.parentComponent.model_design.model_doc.isModified = True
+        return dimension
+
+
 class Sketch(core.Base):
     def __init__(self, component: fusion.Component, plane: fusion.ConstructionPlane) -> None:
         self.parentComponent: fusion.Component = component
@@ -123,6 +248,20 @@ class Sketch(core.Base):
         self.name: str = "Sketch" + str(component.sketches.count + 1)
         self.profiles: Profiles = Profiles()
         self.sketchCurves: SketchCurves = SketchCurves(self)
+        self.originPoint: SketchPoint = SketchPoint(self, core.Point3D(0, 0, 0))
+        self.geometricConstraints: GeometricConstraints = GeometricConstraints(self)
+        self.sketchDimensions: SketchDimensions = SketchDimensions(self)
+
+    def model_regenerate(self) -> None:
+        # This is a closed-form axis-aligned rectangle, not a general constraint solver.
+        for dimension in self.sketchDimensions:
+            value = dimension.parameter.value
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError("Rectangle dimensions must remain positive")
+            indices = (1, 2) if dimension.model_axis == "x" else (2, 3)
+            for index in indices:
+                setattr(self.sketchCurves.sketchLines.item(index).startSketchPoint.geometry,
+                        dimension.model_axis, value)
 
     def model_coordinates_supported(self) -> None:
         component = self.parentComponent
@@ -194,6 +333,9 @@ class ExtrudeFeatureInput(core.Base):
     def __init__(self, profile: Profile) -> None:
         self.model_profile: Profile = profile
         self.model_distance: float | None = None
+        self.isSolid: bool = True
+        self.model_extent: core.ValueInput | None = None
+        self.model_direction: int = 1
 
     def setOneSideExtent(self, extent: ExtentDefinition, direction: int, taperAngle: core.ValueInput | None = None) -> bool:
         from .fusion import model_literal
@@ -203,10 +345,14 @@ class ExtrudeFeatureInput(core.Base):
             raise NotImplementedError("Tapered extrusion is not modeled")
         if direction not in (ExtentDirections.PositiveExtentDirection, ExtentDirections.NegativeExtentDirection):
             raise NotImplementedError("Only one-sided extrusion is modeled")
-        distance = model_literal(extent.model_distance, "cm")
+        raw = extent.model_distance.value
+        units = self.model_profile.parentSketch.parentComponent.model_design.unitsManager
+        distance = units.evaluateExpression(raw, "cm") if isinstance(raw, str) else raw
         if distance == 0:
             return False
-        self.model_distance = distance * (1 if direction == ExtentDirections.PositiveExtentDirection else -1)
+        self.model_direction = 1 if direction == ExtentDirections.PositiveExtentDirection else -1
+        self.model_extent = extent.model_distance
+        self.model_distance = distance * self.model_direction
         return True
 
     def setDistanceExtent(self, isSymmetric: bool, distance: core.ValueInput) -> bool:
@@ -225,13 +371,33 @@ class PhysicalProperties(core.Base):
 class BRepBody(core.Base):
     def __init__(self, feature: ExtrudeFeature, bounds: core.BoundingBox3D) -> None:
         self.model_feature: ExtrudeFeature = feature
-        self.boundingBox: core.BoundingBox3D = bounds
+        self.model_bounds: core.BoundingBox3D = bounds
         self.name: str = "Body" + str(feature.model_component.bRepBodies.count + 1)
         self.isVisible: bool = True
         self.objectType: str = "adsk::fusion::BRepBody"
         self.parentComponent: fusion.Component = feature.model_component
         self.entityToken: str = "model-body:" + str(uuid.uuid4())
         self.attributes: core.Attributes = core.Attributes(self.parentComponent.model_design.model_doc)
+
+    @property
+    def boundingBox(self) -> core.BoundingBox3D:
+        source = self.model_feature.model_input
+        if source is None:
+            return self.model_bounds
+        profile = source.model_profile
+        profile.parentSketch.model_regenerate()
+        first, second = profile.model_first, profile.model_second
+        origin = profile.parentSketch.model_plane.geometry.origin
+        raw = source.model_extent.value if source.model_extent is not None else None
+        if raw is None:
+            raise ValueError("Missing extrusion distance")
+        units = self.parentComponent.model_design.unitsManager
+        distance = (units.evaluateExpression(raw, "cm") if isinstance(raw, str) else raw) * source.model_direction
+        if not math.isfinite(distance) or distance == 0:
+            raise ValueError("Extrusion distance must remain finite and nonzero")
+        return core.BoundingBox3D.create(
+            core.Point3D(min(first.x, second.x)+origin.x, min(first.y, second.y)+origin.y, origin.z+min(0, distance)),
+            core.Point3D(max(first.x, second.x)+origin.x, max(first.y, second.y)+origin.y, origin.z+max(0, distance)))
 
     @property
     def physicalProperties(self) -> PhysicalProperties:
@@ -267,7 +433,13 @@ class BRepBodies:
 class ExtrudeFeature(core.Base):
     def __init__(self, component: fusion.Component, bounds: core.BoundingBox3D) -> None:
         self.model_component: fusion.Component = component
+        self.model_input: ExtrudeFeatureInput | None = None
         self.model_timeline_index: int = component.model_design.timeline.count
+        self.objectType: str = "adsk::fusion::ExtrudeFeature"
+        self.entityToken: str = "model-extrude:" + str(uuid.uuid4())
+        self.parentComponent: fusion.Component = component
+        self.healthState: int = 0
+        self.errorOrWarningMessage: str = ""
         self.name: str = "Extrude" + str(component.features.extrudeFeatures.count + 1)
         self.bodies: BRepBodies = BRepBodies()
         body = BRepBody(self, bounds)
@@ -297,13 +469,17 @@ class ExtrudeFeatures(core.Collection[ExtrudeFeature]):
         distance = input.model_distance
         if distance is None:
             raise ValueError("Extrusion extent is missing")
+        if not input.isSolid:
+            raise NotImplementedError("Surface extrusions are not modeled")
         profile = input.model_profile
+        profile.model_sketch.model_regenerate()
         first, second = profile.model_first, profile.model_second
         origin = profile.model_sketch.model_plane.geometry.origin
         bounds = core.BoundingBox3D.create(
             core.Point3D(min(first.x, second.x)+origin.x, min(first.y, second.y)+origin.y, origin.z+min(0, distance)),
             core.Point3D(max(first.x, second.x)+origin.x, max(first.y, second.y)+origin.y, origin.z+max(0, distance)))
         feature = ExtrudeFeature(self.model_component, bounds)
+        feature.model_input = input
         self.values.append(feature)
         self.model_component.features.values.append(feature)
         design.timeline.values.append(fusion.TimelineObject(feature))

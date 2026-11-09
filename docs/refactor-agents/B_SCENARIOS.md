@@ -172,3 +172,28 @@ version; close(False) discards edits; reopen establishes a new creation ID; reop
 parameters and bounded geometry match the saved version. These are qualification
 obligations, not native results. General native formats, solver/topology behavior,
 transactional suite migration and complete per-assertion dispositions remain open.
+
+## Delivery ledger — bounded dimensioned rectangles
+
+PR #45 merged as `0d6f757` after all 22 checks passed on `895eb69`
+([CI](https://github.com/kosmateus/fmcad/actions/runs/42524676732)).
+PR #58 (`c4ab2f9`) adds revision/reopen receipts. Its production-checker component
+revision scenario passed through MCP and addin in an immutable checkout, with
+identical source hashes before and after both runs. Full CI remains the merge gate.
+
+The new `rectangles` shared family executes the production `shape.box` recipe,
+checks independent rectangular-prism dimensions and volume, modifies a driving
+parameter, saves/reopens the owned version and checks regeneration again. Each
+transport exercises ten separate owners at concurrency 1/2/10. Model v11 adds
+only an analytical anchored rectangle with two driving dimensions and retained
+extrusion expressions; it rejects unsupported constraints rather than simulating
+arbitrary solver success. API shape coverage increases to 61 methods / 21 accessors.
+
+Native-only assumptions and exclusions are recorded in the simulator README.
+This delivery unlocks the box prerequisite for definitions and batch scenarios;
+it does not claim those migrations or the full assertion disposition audit done.
+
+Local rectangle delivery validation: all 163 scenario unit tests pass, simulator
+strict typing reports zero errors, and the expanded API verifier passes. The
+six rectangle transport/concurrency combinations cover 60 owned saved fixtures;
+a separate negative test checks unsupported, foreign and duplicate dimensions.
