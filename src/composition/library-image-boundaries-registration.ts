@@ -125,7 +125,7 @@ const manual: CommandManual = {
       "actual worker main compact unresolved reason counts with processing stubbed",
       "worker status and publication contract source review",
     ],
-    tests: ["tests/image-boundaries.test.js"],
+    tests: ["tests/image-boundaries.test.ts"],
     gaps: [],
     bugs: [
       "Fake-interpreter CLI tests do not certify image quality or geometry. Raster working-resolution and sampled curve validation only; original curves can be refit globally. blocked publishes no repaired geometry; partial I/O failures are retained.",

@@ -185,7 +185,7 @@ const manuals: Record<string, CommandManual> = Object.fromEntries(
           "offline routing without backend",
         ],
         tests: [
-          "tests/reference.test.js",
+          "tests/reference.test.ts",
           "tests/reference_images_test.py",
           "tests/reference_native_test.py",
         ],

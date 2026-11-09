@@ -120,7 +120,7 @@ const manual: CommandManual = {
       "duplicate/unknown options and required paths",
       "stdout envelope passthrough and interpreter failure guidance",
     ],
-    tests: ["tests/image-trace.test.js", "tests/image_trace_test.py"],
+    tests: ["tests/image-trace.test.ts", "tests/image_trace_test.py"],
     gaps: [],
     bugs: [
       "Raster tracing is approximate; exact traced cubic import does not certify CAD profiles or solids. Partial output is retained on failure.",

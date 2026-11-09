@@ -100,7 +100,7 @@ workers/tests are executing. Focused suites:
 
 ```sh
 node --test tests/execution-pipeline.test.js tests/phased-queue.test.js \
-  tests/console-pause.test.js tests/queue-native-receipt.test.js \
+  dist/tests/console-pause.test.js tests/queue-native-receipt.test.js \
   tests/fusion-reset.test.js tests/queue-probe-recovery.test.js
 ```
 

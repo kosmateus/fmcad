@@ -88,7 +88,7 @@ correctness, physical safety, Autodesk authorization or cloud durability.
 ## Verification
 
 - `npm run build:code`, `npm run typecheck:tests`, `npm run lint`.
-- `node --test dist/tests/command-catalog.test.js tests/cad.test.js tests/registry.test.js`:
+- `node --test dist/tests/command-catalog.test.js tests/cad.test.js dist/tests/registry.test.js`:
   projection parity, aliases, negative schema/specialist cases, local execution,
   missing services, malformed declarations, and executable Python registry parity
   (including duplicate-handler detection with mocked `adsk`).

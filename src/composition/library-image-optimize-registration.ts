@@ -119,7 +119,7 @@ const manual: CommandManual = {
       "documented weights/request validated before image decoding",
       "actual worker main compact best refs and boundary metrics with processing stubbed",
     ],
-    tests: ["tests/image-optimize.test.js"],
+    tests: ["tests/image-optimize.test.ts"],
     gaps: [],
     bugs: [
       "Transport tests use a fake interpreter; actual worker schema/summary tests stop before image decoding or stub processing. These tests do not certify image quality. Scale-1 boundary metrics do not guarantee a subpixel gap-free model. Bounded search is not globally optimal or CAD validation. Partial outputs are retained; best may be null.",

@@ -157,7 +157,7 @@ it is not production telemetry, CAD, or physical-model validation.
 npm run build:code
 npm run typecheck:tests
 npm run lint
-node --test tests/opencode-adapters.test.js tests/library-api.test.js tests/library-api-broker.test.js
+node --test tests/opencode-adapters.test.js tests/library-api.test.js dist/tests/library-api-broker.test.js
 ```
 
 Adapter tests install the actual `npm pack` tarball into temporary consumers

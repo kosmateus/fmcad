@@ -33,7 +33,7 @@ function entry(
       ],
       tests: [
         "tests/legacy.test.js",
-        "tests/registry.test.js",
+        "tests/registry.test.ts",
         "tests/manual-legacy.test.js",
         "tests/manual_legacy_test.py",
       ],

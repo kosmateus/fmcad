@@ -910,9 +910,23 @@ test('unchanged retained UI suite also passes against the frozen historical impl
 test('remaining host registrations preserve public descriptors and manuals', () => {
   for(const name of ['image-trace','image-optimize','image-boundaries','engineering-local','reference','review']){
     const historical=historicalPublicBoundary(name),current=require('../src/'+name);
-    // Evidence filenames move with strict test migration; retain frozen source
-    // hashes and normalize only this explicitly relocated assertion file.
-    if (name === 'review') historical.manual.audit.tests = historical.manual.audit.tests.map(file => file === 'tests/shot.test.js' ? 'tests/shot.test.ts' : file);
+    // Evidence moves with strict test migration. Check both sides of each
+    // explicit relocation; preserve every other descriptor/manual value and
+    // the unchanged, hash-verified historical source.
+    const relocated = new Map(['shot','reference','image-trace','image-optimize','image-boundaries',
+      'engineering-fit','engineering-thermal','engineering-mass','engineering-fluid','engineering-hydraulic']
+      .map(test => ['tests/'+test+'.test.js','tests/'+test+'.test.ts']));
+    const relocate = value => {
+      if(typeof value === 'string' && relocated.has(value)) {
+        const target=relocated.get(value);
+        assert.equal(fs.existsSync(path.join(root,value)),false,'old evidence was retired: '+value);
+        assert.equal(fs.existsSync(path.join(root,target)),true,'typed evidence exists: '+target);
+        return target;
+      }
+      if(value && typeof value === 'object') for(const key of Object.keys(value)) value[key]=relocate(value[key]);
+      return value;
+    };
+    relocate(historical);
     for(const key of ['descriptor','manual','descriptors','manuals','localOperations'])
       assert.deepEqual(current[key],historical[key],name+':'+key);
     if(current.methods)assert.deepEqual(Object.fromEntries(Object.entries(current.methods).map(([key,{run,...metadata}])=>[key,metadata])),Object.fromEntries(Object.entries(historical.methods).map(([key,{run,...metadata}])=>[key,metadata])));

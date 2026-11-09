@@ -172,7 +172,7 @@ unchanged.
 ```sh
 npm run build:code
 node --test tests/python-admission.test.js tests/python-admission-transport.test.js
-node --test tests/library-api-broker.test.js
+node --test dist/tests/library-api-broker.test.js
 node --test tests/python-admission-packaging.test.js
 node --test tests/python-checker.test.js tests/python-checker-completeness.test.js
 node --test tests/run-identity.test.js tests/queue-cloud-save.test.js
