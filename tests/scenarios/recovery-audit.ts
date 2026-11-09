@@ -65,7 +65,11 @@ export async function auditRecovery(
       row["backendIdentity"] !== backend.identity
     )
       throw new Error("Foreign recovery scenario report");
-    if (row["cleanup"] !== "complete" && row["status"] !== "unsupported")
+    if (
+      row["cleanup"] !== "complete" &&
+      row["status"] !== "unsupported" &&
+      !(row["status"] === "not-run" && row["cleanup"] === "not-created")
+    )
       return;
   }
   const owner = {

@@ -4,7 +4,6 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { TextDecoder } = require('node:util');
-const kit = require('terminal-kit');
 const { resolveRuntimePaths, resolvePython } = require('./dist/config-platform/index.js');
 const { sourceHashMismatch } = require('./dist/core');
 const { readSource } = require('./dist/node-adapters/console/bounded-read');
@@ -87,38 +86,4 @@ async function openSource(row, options = {}) {
 }
 
 // Return every logical line; ui.scroll owns vertical offset. Width is the usable
-// content width, after the caller reserves any scrollbar columns.
-function sourceLines(preview, width, horizontal = 0) {
-  width = Number.isFinite(width) ? Math.max(0, Math.floor(width)) : 0;
-  horizontal = Number.isFinite(horizontal) ? Math.max(0, Math.floor(horizontal)) : 0;
-  const lines = preview?.lines || [];
-  const gutter = String(lines.length || 1).length + 2;
-  return lines.map((line, index) => {
-    const spans = [{ x: 0, text: (String(index + 1).padStart(gutter - 2) + '  ').slice(0, width), width: Math.min(width, gutter), fg: 'muted' }];
-    const available = Math.max(0, width - gutter);
-    let column = 0;
-    for (const token of line) {
-      const fg = TONES.has(token.tone) ? token.tone : 'text';
-      for (const character of Array.from(token.text)) {
-        const display = character === '\t' ? ' '.repeat(4 - column % 4)
-          : /[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/u.test(character)
-            ? '\\u' + character.charCodeAt(0).toString(16).padStart(4, '0') : character;
-        const cells = kit.stringWidth(display);
-        const left = Math.max(column, horizontal), right = Math.min(column + cells, horizontal + available);
-        if (right > left) {
-          const text = left === column && right === column + cells ? display
-            : /^ +$/.test(display) ? display.slice(left - column, right - column) : ' '.repeat(right - left);
-          const x = gutter + left - horizontal, last = spans.at(-1);
-          if (last.fg === fg && last.x + last.width === x && last.x >= gutter) { last.text += text; last.width += right - left; }
-          else spans.push({ x, text, width: right - left, fg });
-        } else if (cells === 0 && column > horizontal && column <= horizontal + available && spans.length > 1) {
-          spans.at(-1).text += display;
-        }
-        column += cells;
-      }
-    }
-    return { spans };
-  });
-}
-
-module.exports = { openSource, sourceLines, readSource };
+module.exports = { openSource, readSource };

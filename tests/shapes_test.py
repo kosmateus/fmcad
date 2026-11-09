@@ -321,10 +321,26 @@ class ShapesTests(unittest.TestCase):
                  ('tube', {'outerRadius': '5 mm', 'innerRadius': '6 mm', 'height': '5 mm'}),
                  ('cone', {'baseRadius': '5 mm', 'topRadius': '0 mm', 'height': '5 mm'})]
         for mode, data in cases:
-            with self.assertRaises(ValueError):
-                self.ctx.call('shape.' + mode, dict(data, name='Bad'))
+            result = self.ctx.call('shape.' + mode, dict(data, name='Bad'))
+            self.assertEqual(result['status'], 'failed')
+            self.assertEqual(result['error']['code'], 'INVALID_INPUT')
+            self.assertTrue(result['error']['message'])
+            self.assertEqual(result['rejection'], {
+                'kind': 'cad-input-rejection', 'version': 1,
+                'operation': 'shape.' + mode, 'mutationStatus': 'not_started'})
         self.assertEqual(self.ctx.component.sketches.count, 0)
         self.assertEqual(model.TRACE, [])
+
+    def test_primitive_native_failure_is_not_input_rejection(self):
+        def failed_section(*args):
+            model.TRACE.append(('partial-native-mutation',))
+            raise ValueError('Native section failed after mutation')
+
+        with patch.dict(NAMESPACE, {'_shapes_section': failed_section}):
+            with self.assertRaisesRegex(ValueError, 'after mutation'):
+                self.ctx.call('shape.box', {'name': 'Box', 'width': '5 mm',
+                                           'depth': '5 mm', 'height': '5 mm'})
+        self.assertEqual(model.TRACE, [('partial-native-mutation',)])
 
     def test_name_collision_and_proxy_rejected(self):
         self.ctx.component.sketches.values.append(types.SimpleNamespace(name='Part__section'))

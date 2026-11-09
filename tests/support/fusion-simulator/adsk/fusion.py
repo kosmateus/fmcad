@@ -12,6 +12,7 @@ from typing import ClassVar
 from . import core
 from ._expressions import UNITS, Quantity, evaluate
 from ._model_geometry import (BRepBodies as BRepBodies, BRepBody as BRepBody,
+    CalculationAccuracy as CalculationAccuracy,
     PhysicalProperties as PhysicalProperties, Sketch as Sketch, Sketches as Sketches,
     SketchCurves as SketchCurves, SketchCurve as SketchCurve, SketchLines as SketchLines, SketchLine as SketchLine,
     SketchLineList as SketchLineList, SketchPoint as SketchPoint, Profile as Profile,
@@ -28,6 +29,8 @@ from ._model_geometry import (BRepBodies as BRepBodies, BRepBody as BRepBody,
 
 class UserParameter(core.Base):
     def __init__(self, owner: UserParameters, name: str, expression: str, unit: str, comment: str) -> None:
+        self.objectType: str = "adsk::fusion::UserParameter"
+        self.attributes: core.Attributes = core.Attributes(owner.doc)
         self.userParameters: UserParameters = owner
         self.model_name: str = name
         self.model_expression: str = expression
@@ -431,6 +434,7 @@ class Component(core.Base):
         self.model_design: Design = design
         self.model_name: str | None = name
         self.model_id: str = str(uuid.uuid4())
+        self.model_attributes: core.Attributes = core.Attributes(design.model_doc)
         self.objectType: str = "adsk::fusion::Component"
         self.entityToken: str = "model-component:" + self.model_id
         self.occurrences: Occurrences = Occurrences(self)
@@ -450,6 +454,16 @@ class Component(core.Base):
         self.xConstructionAxis: ConstructionAxis = ConstructionAxis(core.Vector3D(1, 0, 0))
         self.yConstructionAxis: ConstructionAxis = ConstructionAxis(core.Vector3D(0, 1, 0))
         self.zConstructionAxis: ConstructionAxis = ConstructionAxis(core.Vector3D(0, 0, 1))
+
+    @property
+    def allOccurrences(self) -> core.Collection[Occurrence]:
+        if self.occurrences.count:
+            raise NotImplementedError("Assembly-context occurrence enumeration is not modeled")
+        return core.Collection()
+
+    @property
+    def attributes(self) -> core.Attributes:
+        return self.model_attributes
 
     @property
     def id(self) -> str:
@@ -481,6 +495,8 @@ class Component(core.Base):
 class Design(core.Product):
     def __init__(self, doc: core.Document) -> None:
         self.model_doc: core.Document = doc
+        self.model_materials: core.Materials = core.Materials(self, doc)
+        self.model_appearances: core.Appearances = core.Appearances(self, doc)
         self.userParameters: UserParameters = UserParameters(doc)
         self.allParameters: UserParameters = self.userParameters
         self.allComponents: core.Collection[Component] = core.Collection()
@@ -489,6 +505,14 @@ class Design(core.Product):
         self.rootComponent: Component = Component(self)
         self.allComponents.values.append(self.rootComponent)
         self.exportManager: ExportManager = ExportManager(doc, self.userParameters)
+
+    @property
+    def materials(self) -> core.Materials:
+        return self.model_materials
+
+    @property
+    def appearances(self) -> core.Appearances:
+        return self.model_appearances
 
     @staticmethod
     def cast(arg: object) -> Design | None:

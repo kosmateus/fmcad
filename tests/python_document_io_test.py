@@ -481,6 +481,52 @@ data = _cad_cast("_ReferencesInput", payload)
             with patch('builtins.__import__', guarded_import):
                 exec(compile(source, path, 'exec'), {'TYPE_CHECKING': False})
 
+    def test_file_policy_rules_execute_without_native_context(self):
+        import math
+        from typing import cast
+        # Use the production field validator, without importing the SDK core.
+        core = ast.parse((ROOT / 'assets/cad/core.py').read_text())
+        fields = next(node for node in core.body
+                      if isinstance(node, ast.FunctionDef) and node.name == '_cad_fields')
+        namespace = {'_cad_cast': cast, '_external_cast': cast, 'math': math,
+                     'json': json, 'TYPE_CHECKING': False}
+        exec(compile(ast.Module(body=[fields], type_ignores=[]), 'fields', 'exec'), namespace)
+        for family in ('io', 'data_import', 'externalization'):
+            path = ROOT / 'runtime/python/fmcad/domain' / (family + '.py')
+            exec(compile(path.read_text(), str(path), 'exec'), namespace)
+        state = {'document': {'fileId': 'owned'}, 'eye': [0, 0, 10],
+                 'target': [0, 0, 0], 'up': [0, 1, 0], 'units': 'cm',
+                 'cameraType': 'OrthographicCameraType', 'extents': [2, 3]}
+        self.assertEqual(namespace['_io_camera_snapshot'](state)['extents'], [2., 3.])
+        with self.assertRaisesRegex(ValueError, 'positive finite'):
+            namespace['_io_camera_snapshot'](dict(state, extents=[0, 3]))
+        with self.assertRaisesRegex(ValueError, 'isLightBulbOn:boolean'):
+            namespace['_io_visibility_row']({'ref': 'body', 'isLightBulbOn': 1})
+        with self.assertRaisesRegex(RuntimeError, 'restore failed'):
+            namespace['_io_restore_raise']([{'status': 'failed'}], 'restore')
+        old = {'owner': 'ours', 'revision': 'r1', 'digest': 'digest'}
+        plan = dict(old, onExisting='reuse', expectedRevision='r1')
+        namespace['_di_existing'](old, plan, 'item')
+        with self.assertRaisesRegex(ValueError, 'ownership conflict'):
+            namespace['_di_existing'](dict(old, owner='foreign'), plan, 'item')
+        with self.assertRaisesRegex(ValueError, 'expectedRevision conflict'):
+            namespace['_di_existing'](old, dict(plan, onExisting='update', expectedRevision='r2'), 'item')
+        self.assertEqual(old, {'owner': 'ours', 'revision': 'r1', 'digest': 'digest'})
+        pin = {'projectId': 'project', 'fileId': 'file', 'version': 3}
+        runtime = {'items': {'source': {'targetPin': pin}}}
+        actual = namespace['_external_source_pin'](runtime, {'itemId': 'source'})
+        self.assertEqual(actual, pin)
+        self.assertIsNot(actual, pin)
+        with self.assertRaisesRegex(ValueError, 'not yet complete'):
+            namespace['_external_source_pin']({'items': {'source': {'targetPin': None}}},
+                                              {'itemId': 'source'})
+        endpoint = namespace['_external_boundary_endpoint_preflight']
+        endpoint({'rootDatum': 'datum'}, {'item'}, set(), {'datum'})
+        with self.assertRaisesRegex(ValueError, 'exactly one'):
+            endpoint({'rootDatum': 'datum', 'itemId': 'item'}, {'item'}, set(), {'datum'})
+        self.assertIsNone(namespace['_external_probe_local_budget'](1000, 1000))
+        self.assertEqual(namespace['_external_probe_local_budget'](3000, 1000), 2000)
+
     def test_retained_fake_suites_execute_migrated_sources_not_compatibility_copies(self):
         # Existing effect/failure fixtures now exercise the runtime implementations.
         script = r'''
@@ -498,7 +544,7 @@ pathlib.Path.read_text = migrated
 sys.path.insert(0, str(root / 'tests'))
 names = ['document_save_test', 'document_save_publication_test', 'document_identity_test',
          'document_clear_test', 'references_native_test', 'externalization_native_test',
-         'data_import_native_test', 'io_test', 'measure_test', 'checking_test',
+         'data_import_test', 'io_test', 'measure_test', 'checking_test',
          'containment_test', 'interference_test', 'dfm_test', 'appearance_test',
          'attributes_test', 'presentation_test', 'animation_test', 'animation2_test',
          'explode_test', 'cam_test', 'optics_test', 'seal_test', 'fpc_pcb_test',

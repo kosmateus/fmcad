@@ -1,3 +1,4 @@
+import { commandResult } from "./command-result";
 import * as fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -10,7 +11,7 @@ import type {
 } from "./contracts";
 import { record, text } from "./contracts";
 import * as programs from "./programs";
-import { boundedMap, concurrencyLimit, defaultConcurrency } from "./scheduling";
+import { scopedMap, concurrencyLimit, defaultConcurrency } from "./scheduling";
 import * as savedPrograms from "./saved-programs";
 import {
   cleanupSavedFile,
@@ -26,6 +27,7 @@ import { reopenProgram, recoveredReopen } from "./reopen";
 import { auditRecovery } from "./recovery-audit";
 
 export interface Scenario {
+  readonly scope?: "owned-document" | "exclusive-instance";
   readonly id: string;
   readonly requires: readonly string[];
   readonly fixture?: FixtureFolder;
@@ -39,7 +41,8 @@ export interface ScenarioReport {
   readonly protocol: ScenarioBackend["protocol"];
   readonly backendIdentity: string;
   readonly fixture?: FixtureFolder;
-  status: "running" | "passed" | "failed" | "unsupported";
+  status: "running" | "passed" | "failed" | "unsupported" | "not-run";
+  scope?: "owned-document" | "exclusive-instance";
   cleanup: "pending" | "complete" | "deferred" | "failed" | "not-created";
   document?: Document;
   originalDocument?: Document;
@@ -48,6 +51,8 @@ export interface ScenarioReport {
   cleanupError?: string;
 }
 function errorText(error: unknown): string {
+  if (error instanceof AggregateError)
+    return error.message + ": " + error.errors.map(errorText).join("; ");
   return error instanceof Error ? error.message : String(error);
 }
 function creationProof(
@@ -148,12 +153,28 @@ export class ScenarioSession {
       throw new Error("Target does not belong to this scenario");
     return this.#dispatch(phase, source, owned, true, helpers);
   }
+  async cad(
+    phase: string,
+    operation: string,
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    this.signal?.throwIfAborted();
+    if (!this.document.file)
+      throw new Error("CAD scenarios require a saved fixture");
+    if (!phase.startsWith("cad-"))
+      throw new Error("CAD phase must use cad- prefix");
+    return this.#dispatch(phase, "", this.document, true, undefined, {
+      operation,
+      data: structuredClone(data),
+    });
+  }
   async #dispatch(
     phase: string,
     source: string | ((requestId: string) => string),
     target?: Document,
     routeTarget = true,
     helpers?: "cad-v1",
+    command?: { operation: string; data: Record<string, unknown> },
   ): Promise<Record<string, unknown>> {
     if (this.#uncertain)
       throw new Error(
@@ -171,6 +192,7 @@ export class ScenarioSession {
         source: typeof source === "string" ? source : source(requestId),
         directory: this.directory,
         ...(helpers ? { helpers } : {}),
+        ...(command ? { command } : {}),
         ...(target && routeTarget ? { target } : {}),
       });
     } catch (error) {
@@ -193,6 +215,24 @@ export class ScenarioSession {
       !execution.mayHaveMutated
     )
       this.report.cleanup = "not-created";
+    if (command && execution.stdout.trim()) {
+      if (!target) throw new Error("CAD command has no owned target");
+      try {
+        const output = commandResult(execution.stdout, [target]);
+        if (
+          output["context"] === undefined &&
+          output["success"] === true &&
+          !["preview", "validate"].includes(String(command.data["mode"])) &&
+          ["definition.instantiate", "batch.run"].includes(command.operation)
+        )
+          throw new Error("Successful batch has no pinned context");
+        return output;
+      } catch (error) {
+        this.#uncertain = true;
+        this.persist();
+        throw error;
+      }
+    }
     if (execution.state !== "succeeded")
       throw new Error(execution.error || "Fusion operation failed");
     const lines = execution.stdout
@@ -230,13 +270,14 @@ export class ScenarioSession {
     try {
       const requestId = text(this.report.requests.at(-1)?.requestId);
       const returned = creationProof(value, this.report.owner, requestId);
-      const durable = creationProof(
-        readCreation(this.directory),
-        this.report.owner,
-        requestId,
-      );
+      const durableValue = readCreation(this.directory);
+      const durable = creationProof(durableValue, this.report.owner, requestId);
       if (returned.creationId !== durable.creationId)
         throw new Error("Returned and durable creation identities differ");
+      if (value["activeCreationId"] !== durableValue["activeCreationId"])
+        throw new Error(
+          "Returned and durable creation active observations differ",
+        );
       this.#document = returned;
     } catch (error) {
       this.#uncertain = true;
@@ -244,6 +285,10 @@ export class ScenarioSession {
     }
     this.report.document = this.#document;
     this.persist();
+    if (value["activeCreationId"] !== this.document.creationId)
+      throw new Error(
+        "Newly created document was not active at creation completion",
+      );
     this.signal?.throwIfAborted();
     await this.#dispatch(
       "export",
@@ -554,6 +599,7 @@ export async function runScenario(
     signal,
     scenario.fixture,
   );
+  session.report.scope = scenario.scope ?? "owned-document";
   if (
     scenario.requires.some(
       (capability) => !backend.capabilities.has(capability),
@@ -601,6 +647,11 @@ export async function runScenarios(
       ids.has(scenario.id)
     )
       throw new Error("Invalid or duplicate scenario id: " + scenario.id);
+    if (
+      scenario.scope !== undefined &&
+      !["owned-document", "exclusive-instance"].includes(scenario.scope)
+    )
+      throw new Error("Invalid scenario scope");
     ids.add(scenario.id);
   }
   const runId = randomUUID();
@@ -685,26 +736,53 @@ export async function runScenarios(
     scenarioIds: scenarios.map((s) => s.id),
     status: "running",
   });
-  const reports = await boundedMap(scenarios, concurrency, async (scenario) => {
+  const tasks = scenarios.map((scenario) => {
     const owner = {
       runId,
       scenarioId: scenario.id,
       clientId: "scenario:" + runId + ":" + scenario.id,
     };
-    return runScenario(
-      backend,
-      scenario,
-      owner,
-      path.join(runRoot, scenario.id),
-      signal,
-    );
+    const directory = path.join(runRoot, scenario.id);
+    return {
+      exclusive: scenario.scope === "exclusive-instance",
+      run: () => runScenario(backend, scenario, owner, directory, signal),
+      blocked: (reason: string): ScenarioReport => {
+        fs.mkdirSync(directory, { recursive: false, mode: 0o700 });
+        const report: ScenarioReport = {
+          owner,
+          directory,
+          mode: backend.mode,
+          qualification: backend.qualification,
+          backendIdentity: backend.identity,
+          protocol: backend.protocol,
+          scope: scenario.scope ?? "owned-document",
+          status: "not-run",
+          cleanup: "not-created",
+          requests: [],
+          error: reason,
+          ...(scenario.fixture ? { fixture: scenario.fixture } : {}),
+        };
+        persist(path.join(directory, "report.json"), report);
+        return report;
+      },
+    };
+  });
+  const reports = await scopedMap(tasks, concurrency, (report) => {
+    if (report.status === "passed" && report.cleanup === "complete")
+      return "passed";
+    if (report.cleanup === "complete" || report.cleanup === "not-created")
+      return "settled-failure";
+    return "unsettled";
   });
   let auditError: string | undefined;
   try {
     if (
       before &&
       reports.every(
-        (r) => r.cleanup === "complete" || r.status === "unsupported",
+        (r) =>
+          r.cleanup === "complete" ||
+          r.status === "unsupported" ||
+          (r.status === "not-run" && r.cleanup === "not-created"),
       )
     ) {
       const after = await observation("after", programs.snapshot());
@@ -836,6 +914,8 @@ export async function resumeCleanup(
         "Original request remains unsettled; cleanup must stay deferred: " +
           entry.requestId,
       );
+    if (entry.phase.startsWith("cad-") && result.stdout.trim())
+      commandResult(result.stdout);
     recovered.push({ ...entry, result });
   }
   const creation = recovered.filter((entry) => entry.phase === "create");
@@ -894,6 +974,19 @@ export async function resumeCleanup(
     report,
   );
   await session.recoverSavedTransitions();
+  try {
+    for (const entry of recovered)
+      if (entry.phase.startsWith("cad-") && entry.result?.stdout.trim())
+        commandResult(entry.result.stdout, [
+          originalDocument,
+          session.document,
+        ]);
+  } catch (error) {
+    report.cleanup = "deferred";
+    report.cleanupError = errorText(error);
+    session.persist();
+    throw error;
+  }
   try {
     await session.cleanup();
   } catch (error) {

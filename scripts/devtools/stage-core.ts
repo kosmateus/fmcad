@@ -50,6 +50,9 @@ export function stageCore(root: string, identityOnly = false): void {
     for (const input of [source, compiled])
       if (!fs.statSync(path.join(root, input)).isDirectory())
         throw new Error("Missing staging input: " + input);
+  for (const name of ["fmcad.js", "fmcad-mcp.js"])
+    if (!fs.statSync(path.join(root, "dist/launchers", name)).isFile())
+      throw new Error("Missing compiled launcher: " + name);
   for (const [source, compiled, staged] of emissions)
     pruneTypeScriptEmissions(path.join(root, source), [
       path.join(root, compiled),
@@ -213,6 +216,11 @@ export function stageCore(root: string, identityOnly = false): void {
             fs
               .readFileSync(file, "utf8")
               .replaceAll('"@fmcad/core"', `"${core}"`)
+              .replaceAll('require("../python/', 'require("../../python/')
+              .replaceAll(
+                'require("../config-platform/',
+                'require("../../config-platform/',
+              )
               .replace(/"(?:\.\.\/)+core\/src(?=[/\"])/g, `"${core}`),
           );
         }
@@ -283,15 +291,52 @@ export function stageCore(root: string, identityOnly = false): void {
     };
     visit(path.join(root, `src/dist/control-center/${directory}`));
   }
+  // Retired terminal UI artifacts must not survive incremental builds or be
+  // copied back from a stale checkout overlay. Keep live console readers intact.
+  const retiredTerminalFiles = new Set([
+    "console-app.js",
+    "console-chrome.js",
+    "console-detail-view.js",
+    "console-pointer.js",
+    "console-renderer.js",
+    "console-response-view.js",
+    "console-source-view.js",
+    "console-theme.js",
+    "console-ui.js",
+    "console-view.js",
+    "console-tabs/agents.js",
+    "console-tabs/logs.js",
+    "console-tabs/overview.js",
+    "console-tabs/system.js",
+    "console-tabs/tasks.js",
+  ]);
+  for (const file of retiredTerminalFiles)
+    for (const destination of ["src/dist", "dist/src", "dist/src/dist"])
+      fs.rmSync(path.join(root, destination, file), { force: true });
+  const retiredTerminalSource = (source: string): boolean => {
+    const relative = path
+      .relative(path.join(root, "src"), source)
+      .split(path.sep)
+      .join("/");
+    return retiredTerminalFiles.has(relative);
+  };
   // Preserve the transitional relative require layout inside the installed dist.
   // Nothing in this step removes unrelated dist outputs (typing refresh, etc.).
   const runtimeFilter = (source: string): boolean =>
+    !retiredTerminalSource(source) &&
     !source.includes("__pycache__") &&
     !/\.py[co]$/.test(source) &&
     !source.endsWith(".tsbuildinfo") &&
     (!/\.(?:ts|tsx|mts|cts)$/.test(source) ||
       /\.d\.(?:ts|mts|cts)$/.test(source)) &&
     !source.startsWith(path.join(root, "src/api"));
+  // Public launcher paths are emitted from strict TypeScript, never hand-maintained JS.
+  for (const name of ["fmcad.js", "fmcad-mcp.js"]) {
+    fs.copyFileSync(
+      path.join(root, "dist/launchers", name),
+      path.join(root, "bin", name),
+    );
+  }
   for (const name of ["src", "assets", "bin"]) {
     fs.cpSync(path.join(root, name), path.join(root, "dist", name), {
       recursive: true,
@@ -407,4 +452,11 @@ export function stageCore(root: string, identityOnly = false): void {
       ) + "\n",
     );
   }
+}
+
+if (require.main === module) {
+  stageCore(
+    path.resolve(__dirname, "../../.."),
+    process.argv.includes("--identity-only"),
+  );
 }

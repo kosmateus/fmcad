@@ -74,7 +74,13 @@
     "tests/queue-admission-migration.test.ts",
     "tests/queue-fixed-fixture-admission-migration.test.ts",
     "tests/queue-epoch-evidence-migration.test.ts",
-    "tests/audit-publication-isolation.test.ts"
+    "tests/audit-publication-isolation.test.ts",
+    "tests/console-bootstrap.test.ts",
+    "tests/console-installed.test.ts",
+    "tests/mcp-default-telemetry.test.ts",
+    "tests/mcp-installed-package.test.ts",
+    "tests/shot.test.ts",
+    "tests/mcp-client-context.test.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]
 }

@@ -58,3 +58,5 @@ export * from "./application/execution-service";
 export * from "./application/execution-probe";
 export * from "./application/cad";
 export * from "./application/broker-control";
+
+export * from "./application/console-model";

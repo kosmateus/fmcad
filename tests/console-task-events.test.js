@@ -8,9 +8,8 @@ const { readLogs, parseLog } = require('../src/console-logs');
 const { readTaskEvents, eventsFor, createTaskEventReader } = require('../src/console-task-events');
 const { ConsoleModel } = require('../src/console-controller');
 const { correlate } = require('../src/console-details');
-const { identityCounts } = require('../src/console-tabs/agents');
-const { createUI } = require('../src/console-ui');
-const kit = require('terminal-kit');
+const { identityCounts } = require('../src/console-client-identity');
+const { label } = require('../src/console-labels');
 const { clientKind, presenceText } = require('../src/console-client-identity');
 function fixture(t) {
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'task-events-'));
@@ -74,7 +73,7 @@ test('archive lookup bounds bytes and reports unavailable files without replay o
 test('historical clients are not counted as unknown heartbeat signals or zero measured online', () => {
   const agents = [{ id: 'mcp-stdio:one', presence: 'unknown', source: 'job-history' }, { id: 'opencode:two', presence: 'unknown', source: 'job-history' }];
   assert.deepEqual(identityCounts(agents, true), { current: null, history: 2, total: 2, untracked: 2, unknown: 0 });
-  const ui = createUI({ buffer: new kit.ScreenBuffer({ width: 80, height: 24 }), prefs: {}, language: 'en' });
+  const ui = { language: 'en', L: key => label(key, 'en') };
   assert.equal(presenceText(agents[0], ui), 'History only');
   assert.equal(clientKind(agents[0].id), 'MCP stdio'); assert.equal(clientKind(agents[1].id), 'OpenCode');
   assert.equal(clientKind('cli:PC:kamil'), 'CLI');

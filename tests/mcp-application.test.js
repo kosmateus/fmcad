@@ -1,5 +1,5 @@
 "use strict";
-const os = require('node:os');
+const os = require("node:os");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -9,6 +9,59 @@ const { once } = require("node:events");
 const readline = require("node:readline");
 const { randomUUID } = require("node:crypto");
 const root = path.resolve(__dirname, "..");
+
+// Match the public library budget: real worker admission checks both the original
+// Python artifact and receipt wrappers before the fake physical backend runs.
+const publicExecutionBudgetMs = 180000;
+function receiptFromPreparedScript(script) {
+  let source = script;
+  for (let depth = 0; depth < 8; depth++) {
+    const binding = source.match(
+      /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
+    );
+    const file = source.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
+    if (binding && file)
+      return {
+        record: JSON.parse(JSON.parse(binding[1])),
+        target: JSON.parse(file[1])
+          .replace(/^\\\\wsl\$\\[^\\]+/, "")
+          .replaceAll("\\", "/"),
+      };
+    const wrapped = source.match(/exec\(compile\(("(?:\\.|[^"\\])*")/);
+    if (!wrapped) break;
+    source = JSON.parse(wrapped[1]);
+  }
+  assert.fail(
+    "The physical test backend requires an exact prepared receipt binding and path",
+  );
+}
+
+test("MCP physical fixture reads current prepared receipt wrappers and rejects missing bindings", () => {
+  const { prepareReceiptScript } = require("../src/queue-instance");
+  const binding = {
+    requestId: "receipt-request",
+    jobId: "receipt-job",
+    marker: 'quoted " value',
+  };
+  const receiptPath = "/tmp/mcp-receipt.json";
+  for (const official of [false, true]) {
+    const prepared = prepareReceiptScript(
+      "pass\n",
+      official,
+      receiptPath,
+      binding,
+      { mapPath: (value) => value },
+    );
+    assert.deepEqual(receiptFromPreparedScript(prepared.script), {
+      record: binding,
+      target: receiptPath,
+    });
+  }
+  assert.throws(
+    () => receiptFromPreparedScript("pass\n"),
+    /exact prepared receipt/,
+  );
+});
 
 function processClient(
   t,
@@ -292,29 +345,37 @@ test("queue helper invalid input and unsupported methods fail before configurati
 
 test("queue helper forwards a schema-declared optional outcome and rejects other values", async () => {
   const { createMcpApplication } = require("../src/dist/entrypoints/mcp");
-  const queueTools = [{
-    name: "fmcad_queue_reconcile",
-    inputSchema: {
-      required: ["jobId"],
-      properties: {
-        jobId: { type: "string" },
-        acceptedOutcome: { type: "string", enum: ["committed", "aborted"] },
+  const queueTools = [
+    {
+      name: "fmcad_queue_reconcile",
+      inputSchema: {
+        required: ["jobId"],
+        properties: {
+          jobId: { type: "string" },
+          acceptedOutcome: { type: "string", enum: ["committed", "aborted"] },
+        },
       },
     },
-  }];
+  ];
   let forwarded;
   const application = createMcpApplication({
     queueTools,
     compatibility(request) {
       forwarded = request;
-      return { status: 200, raw: JSON.stringify({ jsonrpc: "2.0", id: request.id, result: {} }) };
+      return {
+        status: 200,
+        raw: JSON.stringify({ jsonrpc: "2.0", id: request.id, result: {} }),
+      };
     },
   });
   const valid = request("valid-outcome", "tools/call", {
     name: "fmcad_queue_reconcile",
     arguments: { jobId: "job-1", acceptedOutcome: "committed" },
   });
-  assert.equal(JSON.parse((await application(valid)).raw).result !== undefined, true);
+  assert.equal(
+    JSON.parse((await application(valid)).raw).result !== undefined,
+    true,
+  );
   assert.deepEqual(forwarded.params.arguments, valid.params.arguments);
   const invalid = request("invalid-outcome", "tools/call", {
     name: "fmcad_queue_reconcile",
@@ -431,19 +492,24 @@ test("explicit raw compatibility adapters preserve wire arguments and never prom
 
 test(
   "process MCP and CLI share the production broker/typed worker and execute once per explicit request",
-  { timeout: 30000 },
+  { timeout: 390000 },
   async (t) => {
+    t.after(require("./fixtures/fake-wsl-platform.cjs")());
     const { resolveFmcadConfiguration } = require("../dist/src/dist/core");
     const { queueDirectory } = require("../dist/src/queue-connection");
     const { serve } = require("../dist/src/queue-broker");
     const { durable } = require("../dist/src/queue-instance");
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-broker-'));
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-broker-"));
     const oldState = process.env.XDG_STATE_HOME;
     process.env.XDG_STATE_HOME = directory;
     const dir = queueDirectory();
     const config = {
       ...resolveFmcadConfiguration({
-        adapter: { backend: "mcp", url: "http://localhost:1", timeoutMs: 5000 },
+        adapter: {
+          backend: "mcp",
+          url: "http://localhost:1",
+          timeoutMs: publicExecutionBudgetMs,
+        },
         environment: {},
         file: {},
         platformDefaults: {},
@@ -495,15 +561,7 @@ test(
     };
     let calls = 0;
     function settle(script) {
-      const binding = script.match(
-        /_qr_binding = _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
-      );
-      const file = script.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
-      if (!binding || !file) return;
-      const record = JSON.parse(JSON.parse(binding[1]));
-      const target = JSON.parse(file[1])
-        .replace(/^\\\\wsl\$\\[^\\]+/, "")
-        .replaceAll("\\", "/");
+      const { record, target } = receiptFromPreparedScript(script);
       durable(target, {
         ...record,
         terminal: true,
@@ -512,7 +570,7 @@ test(
       });
     }
     const physical = {
-      server: { timeoutMs: 5000 },
+      server: { timeoutMs: publicExecutionBudgetMs },
       _parse: JSON.parse,
       async _post(payload) {
         calls++;
@@ -554,8 +612,16 @@ test(
         };
       },
     };
+    const preload = path.join(directory, "fake-wsl-preload.cjs");
+    fs.writeFileSync(
+      preload,
+      `require(${JSON.stringify(require.resolve("./fixtures/fake-wsl-platform.cjs"))})();\n`,
+    );
     const broker = await serve(config, {
       dir,
+      spawnWorker(executable, args, options) {
+        return spawn(executable, ["--require", preload, ...args], options);
+      },
       confirmOwnership: true,
       createBackend: () => physical,
       pollMs: 5,
@@ -577,7 +643,11 @@ test(
       if (!response.result?.structuredContent?.jobId)
         return response.result?.structuredContent;
       const jobId = response.result.structuredContent.jobId;
-      for (let i = 0; i < 1000; i++) {
+      for (
+        let i = 0, deadline = Date.now() + publicExecutionBudgetMs;
+        Date.now() < deadline;
+        i++
+      ) {
         const value = await client.request(
           request(`poll-${i}`, "tools/call", {
             name: "fmcad_queue_result",
@@ -687,14 +757,17 @@ test(
 
 test(
   "MCP process identities preserve project-scoped jobs across pause, lost acknowledgement and owner restart",
-  { timeout: 30000 },
+  { timeout: 390000 },
   async (t) => {
+    t.after(require("./fixtures/fake-wsl-platform.cjs")());
     const { resolveFmcadConfiguration } = require("../dist/src/dist/core");
     const { queueDirectory } = require("../src/queue-connection");
     const { serve } = require("../dist/src/queue-broker");
     const { durable } = require("../dist/src/queue-instance");
     const { QueueClient } = require("../src/queue-client");
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-context-process-'));
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "mcp-context-process-"),
+    );
     const projectA = path.join(directory, "project-a");
     const projectB = path.join(directory, "project-b");
     fs.mkdirSync(projectA);
@@ -707,7 +780,7 @@ test(
       adapter: {
         backend: "mcp",
         url: "http://localhost:1/mcp",
-        timeoutMs: 5000,
+        timeoutMs: publicExecutionBudgetMs,
       },
       environment: {},
       file: {},
@@ -748,15 +821,7 @@ test(
       releaseFirstCall = resolve;
     });
     function settle(script) {
-      const binding = script.match(
-        /_qr_binding = _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
-      );
-      const file = script.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
-      if (!binding || !file) return;
-      const record = JSON.parse(JSON.parse(binding[1]));
-      const target = JSON.parse(file[1])
-        .replace(/^\\\\wsl\$\\[^\\]+/, "")
-        .replaceAll("\\", "/");
+      const { record, target } = receiptFromPreparedScript(script);
       durable(target, {
         ...record,
         terminal: true,
@@ -765,7 +830,7 @@ test(
       });
     }
     const physical = {
-      server: { timeoutMs: 5000 },
+      server: { timeoutMs: publicExecutionBudgetMs },
       _parse: JSON.parse,
       async _post(payload) {
         userCalls++;
@@ -811,8 +876,16 @@ test(
         };
       },
     };
+    const preload = path.join(directory, "fake-wsl-preload.cjs");
+    fs.writeFileSync(
+      preload,
+      `require(${JSON.stringify(require.resolve("./fixtures/fake-wsl-platform.cjs"))})();\n`,
+    );
     const broker = await serve(config, {
       dir,
+      spawnWorker(executable, args, options) {
+        return spawn(executable, ["--require", preload, ...args], options);
+      },
       confirmOwnership: true,
       createBackend: () => physical,
       pollMs: 5,
@@ -1000,6 +1073,7 @@ test(
     await until(
       async () => (await owner.call("control-status")).phase === "PAUSED",
       "pause to settle after active SDK turn",
+      publicExecutionBudgetMs,
     );
     const current = await owner.call("control-status");
     const resumed = await owner.call("resume", {
@@ -1010,17 +1084,21 @@ test(
       },
     });
     assert(["RUNNING", "RESUMING"].includes(resumed.phase));
-    const aFinished = await until(async () => {
-      const value = await restarted.request(
-        request("poll-a-" + randomUUID(), "tools/call", {
-          name: "fmcad_queue_request",
-          arguments: { requestId: "request-a" },
-        }),
-      );
-      return value.result?.structuredContent.status === "succeeded"
-        ? value.result.structuredContent
-        : null;
-    }, "recovered project A terminal result");
+    const aFinished = await until(
+      async () => {
+        const value = await restarted.request(
+          request("poll-a-" + randomUUID(), "tools/call", {
+            name: "fmcad_queue_request",
+            arguments: { requestId: "request-a" },
+          }),
+        );
+        return value.result?.structuredContent.status === "succeeded"
+          ? value.result.structuredContent
+          : null;
+      },
+      "recovered project A terminal result",
+      publicExecutionBudgetMs,
+    );
     const replyB = await second.request(
       execute(
         "project-b",
@@ -1061,17 +1139,21 @@ test(
     assert.equal(savedB.clientContext.docId, "creation");
     assert.equal(savedB.clientContext.docFileId, "file");
     assert.equal(savedB.clientContext.projectId, "fusion-project-b");
-    const bFinished = await until(async () => {
-      const value = await second.request(
-        request("poll-b-" + randomUUID(), "tools/call", {
-          name: "fmcad_queue_request",
-          arguments: { requestId: "request-b" },
-        }),
-      );
-      return value.result?.structuredContent.status === "succeeded"
-        ? value.result.structuredContent
-        : null;
-    }, "project B terminal result");
+    const bFinished = await until(
+      async () => {
+        const value = await second.request(
+          request("poll-b-" + randomUUID(), "tools/call", {
+            name: "fmcad_queue_request",
+            arguments: { requestId: "request-b" },
+          }),
+        );
+        return value.result?.structuredContent.status === "succeeded"
+          ? value.result.structuredContent
+          : null;
+      },
+      "project B terminal result",
+      publicExecutionBudgetMs,
+    );
     assert.equal(aFinished.context.projectDirectory, fs.realpathSync(projectA));
     assert.equal(bFinished.context.projectDirectory, fs.realpathSync(projectB));
     const foreignReconcile = await second.request(

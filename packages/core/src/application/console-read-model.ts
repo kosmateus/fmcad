@@ -105,6 +105,65 @@ export function clientKind(id: unknown): string {
         : "Other";
 }
 
+/** Text-only interface; presence semantics must not depend on a terminal renderer. */
+export interface ConsolePresenceLabels {
+  readonly language: string;
+  L(key: string): string;
+  statusText(value: ConsoleRow["presence"]): string;
+}
+
+export function presenceText(
+  row: ConsoleRow,
+  labels: ConsolePresenceLabels,
+): string {
+  if (row.source === "job-history")
+    return labels.language === "pl" ? "Tylko historia" : "History only";
+  return labels.statusText(row.presence);
+}
+
+export function presenceSummary(
+  snapshot: ConsoleSnapshot,
+  labels: ConsolePresenceLabels,
+): string {
+  const agents = snapshot.agents ?? [];
+  const observed =
+    snapshot.available === false
+      ? 0
+      : agents.filter((agent) => agent.presence === "observed").length;
+  if (observed) return `${observed} · ${labels.L("clientPresenceConfirmed")}`;
+  const tracked = agents.filter((agent) =>
+    agent.source?.endsWith("process-heartbeat"),
+  );
+  if (tracked.length)
+    return `0 online · ${tracked.filter((agent) => agent.presence === "offline").length} offline · ${tracked.filter((agent) => agent.presence !== "offline").length} ${labels.L("unconfirmed")}`;
+  return labels.L("clientPresenceUnmeasured");
+}
+
+export function identityCounts(
+  agents: readonly ConsoleRow[] | null | undefined,
+  available?: boolean,
+) {
+  if (!Array.isArray(agents)) return null;
+  const current = agents.filter(
+    (agent) => available !== false && agent.presence === "observed",
+  ).length;
+  return {
+    current: agents.every((agent) => agent.source === "job-history")
+      ? null
+      : current,
+    history: agents.length - current,
+    total: agents.length,
+    untracked: agents.filter((agent) => agent.source === "job-history").length,
+    unknown: agents.filter(
+      (agent) =>
+        agent.source !== "job-history" &&
+        (available === false ||
+          !agent.presence ||
+          agent.presence === "unknown"),
+    ).length,
+  };
+}
+
 export function matchesTask(
   row: ConsoleRow,
   task: ConsoleRow | null | undefined,
@@ -357,4 +416,65 @@ export function controlIntent(
       expectedGeneration: before.generation,
     },
   };
+}
+
+/** Summary classifications preserve unknown outcomes instead of inventing success. */
+export function consoleTaskGroup(
+  row: ConsoleRow,
+): "active" | "waiting" | "unresolved" | "history" {
+  if (row.state === "queued") return "waiting";
+  if (row.state === "running" || row.state === "sending") return "active";
+  return terminalState(row.state) ? "history" : "unresolved";
+}
+export function consoleTaskCounts(
+  rows: readonly ConsoleRow[] | null | undefined,
+) {
+  if (!rows) return null;
+  return rows.reduce<Record<ReturnType<typeof consoleTaskGroup>, number>>(
+    (counts, row) => {
+      counts[consoleTaskGroup(row)]++;
+      return counts;
+    },
+    { active: 0, waiting: 0, unresolved: 0, history: 0 },
+  );
+}
+export function consoleRecordedDuration(row: ConsoleRow): number | null {
+  const start = recordedTime(row.startedAt),
+    end = recordedTime(row.finishedAt);
+  return Number.isFinite(start) && Number.isFinite(end) && end >= start
+    ? end - start
+    : null;
+}
+export function consoleLogWindowStats(
+  rows: readonly ConsoleRow[] | null | undefined,
+) {
+  if (!rows) return null;
+  const counts = new Map(
+    ["INFO", "WARN", "ERROR", "DEBUG", "TRACE", "OTHER"].map((level) => [
+      level,
+      0,
+    ]),
+  );
+  let first: number | null = null,
+    last: number | null = null,
+    invalid = 0;
+  for (const row of rows) {
+    const level = row.level || "OTHER";
+    counts.set(level, (counts.get(level) ?? 0) + 1);
+    const value = row.timestamp;
+    const time =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" &&
+            /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value.trim())
+          ? Date.parse(value)
+          : NaN;
+    if (!Number.isFinite(time) || !Number.isFinite(new Date(time).getTime()))
+      invalid++;
+    else {
+      first = first === null ? time : Math.min(first, time);
+      last = last === null ? time : Math.max(last, time);
+    }
+  }
+  return { total: rows.length, counts, first, last, invalid };
 }

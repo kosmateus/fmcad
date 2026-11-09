@@ -913,3 +913,29 @@ test('interrupted TERM intent can resume against the same live pidfd without ass
   for (const name of ['term-1-intent.json', 'term-2-sent.json', 'term-3-sent.json', 'original-dead.json'])
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(audit, name))), owner);
 });
+
+test('typed owner migration matches retained state, evidence and effects across every interrupted stage', async () => {
+  const old = require('./fixtures/historical-module.cjs')(
+    '330849f22302bcf0ee955cd1945ddb2040eff8c7', 'src/queue-atomic-migration.js');
+  for (const crash of [undefined, 'initial', 'paused', 'backup', 'stop-intent', 'stopped', 'installed', 'launch-intent', 'complete']) {
+    const results = [];
+    for (const create of [old.createMigrator, createMigrator]) {
+      const f = fixture({ crash }); const run = create(f.ports);
+      if (crash) await assert.rejects(run(f.input), { code: 'SIMULATED_CRASH' });
+      const result = await run(f.input);
+      assert.deepEqual(await run(f.input), result);
+      results.push({ result, records: [...f.records], effects: f.effects, state: f.state });
+    }
+    assert.deepEqual(results[1], results[0], crash || 'uninterrupted');
+  }
+  for (const options of [{ admissionMissing: true }, { wrongProof: true }, { staleBirth: true },
+    { backupFailure: true }, { backupChanged: true }, { changedHolder: true }, { activeAfterBackup: true }]) {
+    const results = [];
+    for (const create of [old.createMigrator, createMigrator]) {
+      const f = fixture(options); let code;
+      await assert.rejects(create(f.ports)(f.input), error => { code = error.code; return true; });
+      results.push({ code, records: [...f.records], effects: f.effects, state: f.state });
+    }
+    assert.deepEqual(results[1], results[0], JSON.stringify(options));
+  }
+});

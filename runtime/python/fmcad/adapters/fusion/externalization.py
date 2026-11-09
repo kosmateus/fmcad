@@ -264,21 +264,9 @@ def _external_compensation(runtime: "_ExternalRuntime") -> JsonObject:
     return _external_cast('JsonObject', runtime['compensation'])
 
 
-def _external_is_list(value: object) -> bool:
-    return isinstance(value, list)
-
-
-def _external_is_dict(value: object) -> bool:
-    return isinstance(value, dict)
-
-
 def _external_dict(value: object) -> JsonObject | None:
     if not isinstance(value,dict):return None
     return _external_cast('JsonObject',value)
-
-
-def _external_is_str(value: object) -> bool:
-    return isinstance(value, str)
 
 
 def _external_parameter_test(ctx: "CadContext", data: "JsonObject",
@@ -3185,52 +3173,6 @@ def _external_insert_matrix(ctx: "CadContext",data: "JsonObject",matrix: "list[i
     return _external_cast('_ExternalInsertResult',_external_insert(ctx,data,project_id,matrix))
 
 
-def _external_boundary_endpoint_preflight(endpoint: "_ExternalBoundaryEndpoint",item_ids: "set[str]",group_ids: "set[str]",datum_names: "set[str]") -> "None":
-    _cad_fields(endpoint,(),('itemId','instanceIndex','memberIndex','relativePath','occurrence','originName','rootDatum','componentOrigin'))
-    identities=[key for key in ('itemId','occurrence','rootDatum') if endpoint.get(key) is not None]
-    _external_require(len(identities)==1,'Boundary endpoint requires exactly one itemId, occurrence or rootDatum identity')
-    component_origin=endpoint.get('componentOrigin')
-    _external_require(component_origin is None or type(component_origin) is bool,
-                      'componentOrigin must be boolean')
-    item_id=endpoint.get('itemId')
-    if item_id:
-        _external_require(item_id in item_ids,'Unknown boundary itemId')
-        _external_require(not ('instanceIndex' in endpoint and 'memberIndex' in endpoint),
-                          'Boundary endpoint cannot combine instanceIndex and memberIndex')
-        _external_require('memberIndex' not in endpoint or item_id in group_ids,
-                          'memberIndex is only valid for an extraction-group item')
-        relative_path=endpoint.get('relativePath')
-        if item_id in group_ids:
-            _external_require(_external_is_str(relative_path) and relative_path and
-                              'instanceIndex' not in endpoint,
-                              'Grouped boundary requires an exact member relativePath, not a staged instance index')
-        for key in ('instanceIndex','memberIndex'):
-            if key in endpoint:
-                value=_external_cast('object',endpoint.get(key))
-                _external_require(type(value) is int and value>=0,key+' must be a nonnegative index')
-        if 'relativePath' in endpoint:
-            _external_require(_external_is_str(relative_path) and relative_path,
-                              'relativePath must be an exact nonempty child path')
-    elif endpoint.get('occurrence') is not None:
-        occurrence_value=endpoint.get('occurrence')
-        _external_require(_external_is_dict(occurrence_value),
-                          'Outside boundary occurrence requires an exact token, kind and context path')
-        occurrence=_external_cast('_ExternalOccurrenceReference',occurrence_value)
-        token=occurrence.get('token');path=occurrence.get('path')
-        _external_require(occurrence.get('kind')=='occurrence' and
-                          _external_is_str(token) and token and
-                          _external_is_str(path) and path,
-                          'Outside boundary occurrence requires an exact token, kind and context path')
-        _external_require(not any(key in endpoint for key in ('instanceIndex','memberIndex','relativePath')),
-                          'Occurrence endpoint cannot use item-relative indexes or paths')
-    else:
-        root_datum=endpoint.get('rootDatum')
-        _external_require(_external_is_str(root_datum) and root_datum in datum_names,
-                          'Boundary rootDatum must name a declared root datum')
-        _external_require(not any(key in endpoint for key in ('instanceIndex','memberIndex','relativePath','occurrence','originName')),
-                          'rootDatum endpoint cannot include another context identity')
-
-
 def _external_validate_root_datums(ctx: "CadContext",manifest: "_ExternalManifest") -> "None":
     names: set[str]=set();available: set[str]=set()
     if manifest['mode']!='composeNew':
@@ -4068,35 +4010,6 @@ def _external_restore_local(ctx: "CadContext", expressions: "dict[str, str]") ->
         try:_external_require(_external_required_user_parameter(ctx.design,name).expression==expression,'Expression restore readback differs')
         except Exception as error:errors.append({'parameter':name,'stage':'readback','error':str(error)})
     return errors
-
-
-def _external_source_pin(runtime: "_ExternalRuntime",source: "_ExternalProbeSource",binding: "bool"=False) -> "_ExternalPin":
-    if 'itemId' in source:
-        _cad_fields(source,('itemId',))
-        _external_require(source['itemId'] in runtime['items'],'Unknown source itemId')
-        pin=runtime['items'][source['itemId']]['targetPin']
-        _external_require(pin is not None,'Source item copy/reuse not yet complete')
-        if pin is None:raise ValueError('Source item copy/reuse not yet complete')
-        return _external_cast('_ExternalPin',dict(pin))
-    key='dataFileId' if binding else 'fileId'
-    _cad_fields(source,('projectId',key,'version'),('creationId','context'))
-    version=source.get('version')
-    _external_require(type(version) is int and version>0,'Source version must be a positive integer')
-    _external_require(source.get('context') in (None,'topLevel'),'Source context must be topLevel when specified')
-    file_id=_external_cast('str',source.get('dataFileId') if binding else source.get('fileId'))
-    project_id=_external_cast('str',source.get('projectId'))
-    creation_id=source.get('creationId')
-    context=source.get('context')
-    return _external_cast('_ExternalPin',{'projectId':project_id,'fileId':file_id,'version':_external_cast('int',version),
-            **({'creationId':creation_id} if creation_id else {}),
-            **({'context':context} if context else {})})
-
-
-def _external_probe_local_budget(remaining_ms: "float",reserve_ms: "float") -> "float | None":
-    remaining=int(remaining_ms)
-    reserve=int(reserve_ms)
-    if remaining<=reserve:return None
-    return remaining-reserve
 
 
 def _external_rebind_probe_measurement(ctx: "CadContext",entry: "_ExternalItemState",check: "JsonObject",error: "Exception") -> "tuple[JsonObject, JsonObject]":

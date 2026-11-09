@@ -4,11 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const kit = require('terminal-kit');
 const { openResponse, jsonLines } = require('../src/console-response');
-const { createUI } = require('../src/console-ui');
-const { render } = require('../src/console-response-view');
-const { pointerAction } = require('../src/console-pointer');
 async function fixture(t) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcad-response-'));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
@@ -51,20 +47,4 @@ test('response reads are bounded and malformed JSON remains text', async t => {
 test('JSON highlighting preserves escaped strings and all exact text', () => {
   const text = JSON.stringify({ 'quote"key': 'line\nvalue', flag: true, amount: -1.2e-7 }, null, 2);
   assert.equal(jsonLines(text).map(line => line.map(span => span.text).join('')).join('\n'), text);
-});
-test('response viewer supports bounded modal scrolling and mouse stream selection', () => {
-  for (const Class of [kit.ScreenBuffer, kit.ScreenBufferHD]) for (const [width, height] of [[80, 24], [140, 40]]) {
-    const ui = createUI({ buffer: new Class({ width, height }), prefs: {}, language: 'pl' });
-    const text = JSON.stringify({ values: Array.from({ length: 100 }, (_, i) => i) }, null, 2);
-    const modal = { kind: 'response', row: { id: 'task' }, index: 0, result: { outputs: [
-      { name: 'stdout.txt', path: '/fixture/stdout.txt', lines: jsonLines(text) }, { name: 'stderr.txt', path: '/fixture/stderr.txt', lines: [] },
-    ] } };
-    render(ui, modal);
-    const viewport = ui.hits.find(hit => hit.type === 'viewport');
-    pointerAction('MOUSE_WHEEL_DOWN', { x: viewport.x + 1, y: viewport.y + 1 }, ui, {}, { modal: true });
-    assert.ok(modal.viewport.offset > 0);
-    const stream = ui.hits.find(hit => hit.type === 'response-stream' && hit.index === 1);
-    assert.equal(pointerAction('MOUSE_LEFT_BUTTON_PRESSED', { x: stream.x + 1, y: stream.y + 1 }, ui, {}, { modal: true }).index, 1);
-    assert.ok(ui.hits.every(hit => hit.x >= 0 && hit.y >= 0 && hit.x + hit.width <= width && hit.y + hit.height <= height));
-  }
 });

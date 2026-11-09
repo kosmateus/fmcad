@@ -21,6 +21,10 @@ export interface ScriptRequest {
   readonly owner: Owner;
   readonly requestId: string;
   readonly source: string;
+  readonly command?: {
+    readonly operation: string;
+    readonly data: Record<string, unknown>;
+  };
   readonly helpers?: "cad-v1";
   readonly target?: Document;
   readonly directory: string;

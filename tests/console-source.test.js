@@ -6,8 +6,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
-const kit = require('terminal-kit');
-const { openSource, sourceLines } = require('../src/console-source');
+const { openSource } = require('../src/console-source');
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 async function fixture(t, source = 'x=1\n') {
@@ -110,38 +109,4 @@ test('missing, oversized, non-regular, and non-UTF-8 files report explicit error
   assert.ok(encoding.formatter.error);
   assert.equal(encoding.original, null);
   assert.equal(encoding.sha256, hash(Buffer.from([0xff])));
-});
-
-test('line representations retain all vertical lines and pin numbers during horizontal scrolling', () => {
-  const preview = { lines: [[{ text: 'abcdefghij', tone: 'accent' }], [{ text: 'second', tone: 'success' }], []] };
-  const initial = sourceLines(preview, 8);
-  const shifted = sourceLines(preview, 8, 5);
-  assert.equal(initial.length, 3);
-  assert.deepEqual(initial[0].spans[0], shifted[0].spans[0]);
-  assert.equal(initial[0].spans.map(span => span.text).join(''), '1  abcde');
-  assert.equal(shifted[0].spans.map(span => span.text).join(''), '1  fghij');
-  assert.equal(shifted[0].spans[1].fg, 'accent');
-  assert.equal(initial.slice(1, 2)[0].spans[0].text, '2  ');
-  assert.equal(sourceLines(preview, 8, 500)[0].spans.length, 1);
-  for (const width of [0, 1, 2, 8, 80]) {
-    for (const line of sourceLines(preview, width, 3)) {
-      for (const span of line.spans) {
-        assert.ok(span.x + span.width <= width);
-        assert.ok(kit.stringWidth(span.text) <= span.width);
-      }
-    }
-  }
-});
-
-test('display escapes terminal controls and preserves tab and wide-character bounds', () => {
-  const preview = { lines: [[{ text: '\t界\x1b[31m', tone: 'text' }]] };
-  for (const horizontal of [0, 1, 4, 5, 6, 7]) {
-    const [line] = sourceLines(preview, 14, horizontal);
-    for (const span of line.spans) {
-      assert.ok(span.x + span.width <= 14);
-      assert.ok(kit.stringWidth(span.text) <= span.width);
-      assert.ok(!span.text.includes('\x1b'));
-    }
-    assert.equal(line.spans[0].text, '1  ');
-  }
 });

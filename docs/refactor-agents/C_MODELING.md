@@ -145,3 +145,33 @@ with 262 generated C programs. It adds checking `deliver` and presentation
 `visibility.finalize`; four ordinary visibility operations remain D-owned.
 Four loader/history/coverage tests and installed 272-contract/263-preview consumers
 pass. Full current-head CI and the corrected complete admission matrix remain open.
+
+
+## Final integration: real-checker lifecycle budget
+
+CI run 42661062682 reports LOCAL_PHASE_TIMEOUT in the BREP lifecycle test
+before any native mutation. The test explicitly supplied a five-second command
+budget to the real production checker. Retained admission measurements in the
+contracts ledger are 67–74 seconds per program; capture and compare each prepare
+a separately authorized program. The fixture now allows 180 seconds per command
+and 390 seconds for the two-command lifecycle, matching the installed public
+consumer budget. SDK call counts, owned artifact verification, exact outcomes,
+receipt checks and unknown-result no-replay assertions are unchanged. This test
+is not a latency benchmark. Full Linux CI must confirm completion; this host's
+process-identity restriction remains in force.
+
+### Primitive input rejection boundary
+
+Primitive dimension validation now returns a failed result with a versioned
+`cad-input-rejection` witness, the exact `shape.<mode>` operation, and
+`mutationStatus: not_started`. This intentionally changes the former thrown
+`ValueError` expectation: invalid dimensions are a completed validation decision
+before any sketch or feature creation, so the broker can report the rejection
+without treating the document state as unknown. Only field and length validation
+is caught. Name reservation, native lookup, helper creation and kernel exceptions
+still propagate; a failure after partial native work cannot acquire this witness.
+The broker validates the witness against the execution-bound failed receipt.
+
+Validation: `python -m unittest discover -s tests -p shapes_test.py` passes 32
+tests, including invalid primitive dimensions with zero sketches/native trace,
+and an injected post-mutation `ValueError` that must remain an exception.

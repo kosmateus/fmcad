@@ -308,3 +308,38 @@ includes imports, references, externalization, save/publication and drawings.
 - G's pending drawing regression registration also covers these appended tests.
   No A primitive, B live scenario or E public registry was changed. Full CI on
   exact heads remains mandatory. Native-format qualification remains pending.
+
+### Delivery 7 — finish pure Python file-policy boundaries
+
+- Moved 21 functions, without changing their AST bodies, from SDK adapters into
+  existing domain modules: import plan/metadata/ownership validation; camera,
+  visibility and restore-error rules; externalization endpoint identity, exact
+  source pins, reserved probe budget and their type predicates. This makes these
+  refusal and lineage decisions executable without a Fusion context. Native
+  access, time/filesystem effects, mutation and cleanup remain in SDK adapters.
+- Complete before/after function AST comparison against predecessor `71380fd`
+  passes for all three adapter families. Existing historical composition parity
+  remains intact. Added direct SDK-free execution evidence for foreign ownership,
+  revision conflict, incomplete source copy, ambiguous endpoint identity, invalid
+  camera/visibility state and cleanup failure propagation.
+- Corrected the migrated-suite selector from nonexistent
+  `data_import_native_test` to `data_import_test`. The old optional-file filter
+  silently omitted the real import tests from this aggregate gate.
+- Full document/I/O composition suite passed (7 tests including retained SDK
+  fault suites, 79.7 seconds); 8 AST/boundary/planning checks passed. Genuine
+  native file and geometry qualification remains a separate Fusion obligation.
+  Exact-head generated Python admission and full CI remain required before merge.
+- Enabling the actual import suite exposed two typed-migration regressions:
+  `_di_item_metadata` rejected the `id`, `item` and `geometry` fields that the
+  catalog writer emits (and its TypedDict already declares); strict `_di_plan`
+  rejected `_deadline` left in a reused caller request by `_di_handler`.
+  The metadata validator now admits its declared optional fields, and the handler
+  copies the input before attaching execution bookkeeping. Historical assertions
+  remain unchanged: successful reuse remains successful and COTS import failure
+  is observed after creating the replacement while retaining original occurrences.
+  These two deliberate fixes are exceptions to unchanged extraction ASTs.
+- Final evidence after those corrections: retained compatibility import suite
+  passes all 18 tests; the migrated aggregate including that same suite passes
+  (76.3 seconds); nine AST/pure-boundary/planning checks pass. The final
+  [contract map](D_FILE_CONTRACTS.md) separates executable offline evidence,
+  shared-scenario handoff and native qualification obligations.

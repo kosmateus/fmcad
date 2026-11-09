@@ -51,3 +51,32 @@ export function runReferencePipeline(
     }
   });
 }
+
+/** Completion of an offline reference computation is distinct from confidence
+ * in its image evidence. Never applies to document-bound or broker execution. */
+export function successfulReferenceComputation(
+  operation: string | undefined,
+  result: unknown,
+): boolean {
+  if (
+    !operation ||
+    !["reference.layout", "reference.calibrate", "reference.compare"].includes(
+      operation,
+    ) ||
+    result === null ||
+    typeof result !== "object" ||
+    Array.isArray(result)
+  )
+    return false;
+  const value = result as Record<string, unknown>;
+  return (
+    value["schemaVersion"] === 1 &&
+    value["operation"] === operation &&
+    value["success"] === true &&
+    value["documentIdentity"] === null &&
+    value["nativeAcceptance"] === "notEvaluated" &&
+    ["pass", "unknown", "notEvaluated"].includes(String(value["status"])) &&
+    value["outcome"] !== "unknown" &&
+    value["executionOutcome"] !== "unknown"
+  );
+}

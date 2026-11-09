@@ -10,15 +10,15 @@ import sys
 from pathlib import Path
 
 METHODS: dict[str, dict[str, list[str]]] = {
-    "core": {"BoundingBox3D": ["create"], "Point3D": ["create", "asArray", "copy"], "Vector3D": ["create", "asArray"],
+    "core": {"Appearances": ["addByCopy", "itemById", "itemByName"], "Materials": ["addByCopy", "itemById", "itemByName"], "MaterialLibraries": ["itemById", "itemByName"], "Properties": ["itemById", "itemByName"], "BoundingBox3D": ["create"], "Point3D": ["create", "asArray", "copy"], "Vector3D": ["create", "asArray"],
              "UnitsManager": ["isValidExpression", "evaluateExpression"],
              "Attributes": ["add", "itemByName", "itemsByGroup"],
              "Plane": ["create"], "Matrix3D": ["create", "asArray"],
-             "Application": ["get"], "Documents": ["add", "open"], "Document": ["activate", "close", "saveAs", "save"],
+             "Camera": ["create", "getExtents", "setExtents"], "Application": ["get"], "Documents": ["add", "open"], "Document": ["activate", "close", "saveAs", "save"],
              "Products": ["itemByProductType"], "ValueInput": ["createByString", "createByReal"],
              "Data": ["findFileById"], "DataProjects": ["itemById"], "DataFolders": ["itemById", "itemByName", "add"],
              "DataFiles": ["itemById"], "DataFile": ["deleteMe"]},
-    "fusion": {"SketchPoint": ["cast"], "GeometricConstraints": ["addCoincident"],
+    "fusion": {"BRepBody": ["getPhysicalProperties"], "SketchPoint": ["cast"], "GeometricConstraints": ["addCoincident"],
                "SketchDimensions": ["addDistanceDimension"], "Sketches": ["add", "addWithoutEdges"], "SketchLines": ["addTwoPointRectangle"],
                "Sketch": ["sketchToModelSpace", "modelToSketchSpace"],
                "DistanceExtentDefinition": ["create"], "ExtrudeFeatureInput": ["setOneSideExtent"],
@@ -30,7 +30,16 @@ METHODS: dict[str, dict[str, list[str]]] = {
 }
 
 PARAMETER_PROPERTIES = ["name", "expression", "value", "unit", "comment"]
-PROPERTIES = [("fusion", "Parameter", "fusion", "UserParameter", PARAMETER_PROPERTIES),
+PROPERTIES = [("fusion", "BRepBody", "fusion", "BRepBody", ["appearance", "material"]),
+              ("fusion", "BaseComponent", "fusion", "Component", ["allOccurrences"]),("core", "Appearance", "core", "Appearance", ["id", "name", "parent", "appearanceProperties"]),
+              ("core", "MaterialLibrary", "core", "MaterialLibrary", ["appearances"]),
+              ("fusion", "Design", "fusion", "Design", ["appearances"]), ("core", "Material", "core", "Material", ["id", "name", "description", "parent", "materialProperties"]),
+              ("core", "MaterialLibrary", "core", "MaterialLibrary", ["id", "name", "materials"]),
+              ("core", "Application", "core", "Application", ["materialLibraries"]),
+              ("fusion", "Design", "fusion", "Design", ["materials"]), ("fusion", "Component", "fusion", "Component", ["attributes"]),
+              ("fusion", "BRepBody", "fusion", "BRepBody", ["isLightBulbOn", "isVisible"]), ("core", "Camera", "core", "Camera", ["eye", "target", "upVector", "cameraType", "perspectiveAngle", "viewOrientation", "isFitView", "isSmoothTransition"]),
+              ("core", "Viewport", "core", "Viewport", ["camera", "parentDocument"]),
+              ("core", "Application", "core", "Application", ["activeViewport"]), ("fusion", "Parameter", "fusion", "UserParameter", PARAMETER_PROPERTIES),
               ("fusion", "SketchPoint", "fusion", "SketchPoint", ["worldGeometry"]),
               ("fusion", "Sketch", "fusion", "Sketch", ["healthState", "errorOrWarningMessage"]),
               ("fusion", "SketchCurve", "fusion", "SketchLine", ["isConstruction"]),

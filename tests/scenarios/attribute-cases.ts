@@ -9,6 +9,12 @@ export async function attributeBody(
   session: ScenarioSession,
 ): Promise<Record<string, unknown>> {
   await session.execute("create-box", createBox(session.document, 10));
+  return attributeBodyRef(session);
+}
+
+async function attributeBodyRef(
+  session: ScenarioSession,
+): Promise<Record<string, unknown>> {
   const state = await session.execute(
     "body-ref",
     program(`${guard(session.document)}
@@ -61,6 +67,8 @@ export function attributeScenarios(
       "saved-fixtures",
       "rectangular-extrusion",
       "body-attributes",
+      "saved-revisions",
+      "saved-reopen",
     ],
     async run(session) {
       const ref = await attributeBody(session);
@@ -149,6 +157,35 @@ assert attribute is not None
 ${emit("dict(creationId=doc.creationId, value=attribute.value)")}`),
       );
       assert.equal(readback["value"], secondValue);
+      // Attribute persistence is tested through an actual owned save/reopen, not
+      // by reading the in-memory object that accepted the write.
+      await session.saveRevision();
+      const savedFile = session.document.file;
+      assert.ok(savedFile);
+      await attribute(session, "set", {
+        ...key,
+        value: "discarded unsaved value",
+      });
+      await session.reopen();
+      assert.deepEqual(session.document.file, savedFile);
+      // Entity tokens may change across reopening; reacquire the sole owned body.
+      const reopenedRef = await attributeBodyRef(session);
+      const persisted = await attribute(session, "get", {
+        ref: reopenedRef,
+        group: key.group,
+      });
+      assert.equal(persisted["count"], 1);
+      assert.deepEqual(persisted["attributes"], [
+        { name: "source", value: secondValue },
+      ]);
+      const namespace = await attribute(session, "get", {
+        ref: reopenedRef,
+        group: "OTHER_GROUP",
+      });
+      assert.equal(namespace["count"], 1);
+      assert.deepEqual(namespace["attributes"], [
+        { name: "source", value: "foreign namespace" },
+      ]);
     },
   }));
 }

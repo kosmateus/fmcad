@@ -88,3 +88,51 @@ app.lifecycle['complete']('atomic-batch',app.native_identity,dict(destroyed=True
   assert.equal(native.start(actual).native.identity.commandId, identity.commandId);
   assert.equal(native.completion(actual).native.state.destroyed, true);
 });
+
+test('typed physical instance adapter preserves historical scripts and workflow decisions', async () => {
+  const { createHash } = require('node:crypto');
+  const Module = require('node:module');
+  const filename = require.resolve('../src/queue-instance');
+  const source = fs.readFileSync(path.join(__dirname, 'fixtures/history/queue-instance-6db319b.js.txt'), 'utf8');
+  assert.equal(createHash('sha256').update(source).digest('hex'),
+    '6d47d50ad404ded18821c5db4c3c419c9d48697753f6be455442cfc8f85baabd');
+  const retained = new Module(filename, module);
+  retained.filename = filename;
+  retained.paths = Module._nodeModulePaths(path.dirname(filename));
+  retained._compile(source, filename);
+  const before = retained.exports, after = require('../src/queue-instance');
+  const values = [null, {}, { status: 'pending' }, { status: 'complete' },
+    { identity, destroyed: true, completed: false, outcome: 'aborted' },
+    { identity, destroyed: false, completed: false, outcome: 'unknown' },
+    { operation: 'document.save_as', accepted: true, pending: true, status: 'pending', targetObserved: true,
+      current: { saved: true, modified: false, isComplete: false, creationId: 'doc', fileId: 'file',
+        fileName: 'part', projectId: 'project', folderId: 'folder' },
+      target: { name: 'part', projectId: 'project', folderId: 'folder' } }];
+  for (const value of values) {
+    for (const name of ['nativeWorkflowIdentity', 'workflowNonterminal', 'workflowOutputNonterminal']) {
+      assert.deepEqual(after[name](value), before[name](value), name);
+    }
+    const nested = { content: [{ type: 'text', text: 'FMCAD_RESULT ' + JSON.stringify({ result: value }) }] };
+    assert.equal(after.workflowOutputNonterminal(nested), before.workflowOutputNonterminal(nested));
+  }
+  for (const official of [false, true]) {
+    const args = [official ? 'def run(context: str) -> None:\n    pass\n' : 'x = 1\n', official,
+      '/owned/receipt.json', { jobId: 'job', requestHash: 'request' }, { mapPath: file => 'Z:' + file }];
+    assert.deepEqual(after.prepareReceiptScript(...args), before.prepareReceiptScript(...args));
+  }
+  for (const api of [before, after]) {
+    let calls = 0;
+    const client = { server: { timeoutMs: 30000 }, callTool: async () => {
+      calls += 1;
+      return { text: 'FMCAD_QUEUE_INSTANCE ' + JSON.stringify({ pid: 12, birth: 'boot:1', version: 'v',
+        activeCommand: 'SelectCommand', documents: [] }) };
+    } };
+    const execute = await api.prepareProbe(client);
+    assert.equal(calls, 0);
+    assert.equal(client.server.timeoutMs, 30000);
+    assert.equal((await execute()).pid, 12);
+    assert.equal(client.server.timeoutMs, 30000);
+    await assert.rejects(execute(), { code: 'PREPARED_RPC_CONSUMED' });
+    assert.equal(calls, 1);
+  }
+});

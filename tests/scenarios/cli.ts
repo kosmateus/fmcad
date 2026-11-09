@@ -1,3 +1,4 @@
+import { threadRecipeScenarios } from "./thread-recipe-cases";
 import * as fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -17,6 +18,17 @@ import { cloudScenarios } from "./cloud-cases";
 import { boxScenarios } from "./box-cases";
 import { attributeScenarios } from "./attribute-cases";
 import { reopenScenarios, revisionScenarios } from "./reopen-cases";
+import { transactionScenarios } from "./transaction-cases";
+import {
+  nativeSolidsCapability,
+  nativeSolidsScenarios,
+} from "./native-solids-cases";
+import { styleAssignmentScenarios } from "./style-assignment-cases";
+import { appearanceScenarios } from "./appearance-cases";
+import { materialScenarios } from "./material-cases";
+import { animationScenarios } from "./animation-cases";
+import { poseScenarios } from "./pose-cases";
+import { cameraScenarios } from "./camera-cases";
 import { rectangleScenarios } from "./rectangle-cases";
 import { sketchScenarios } from "./sketch-cases";
 import { runScenarios, resumeCleanup } from "./runner";
@@ -43,6 +55,15 @@ interface Options {
     | "cloud"
     | "boxes"
     | "attributes"
+    | "transactions"
+    | "native-solids"
+    | "thread-recipes"
+    | "style-assignments"
+    | "appearances"
+    | "materials"
+    | "animation"
+    | "poses"
+    | "camera"
     | "rectangles"
     | "revisions"
     | "reopen"
@@ -90,6 +111,15 @@ export function parse(argv: string[]): Options {
         value === "cloud" ||
         value === "boxes" ||
         value === "attributes" ||
+        value === "transactions" ||
+        value === "native-solids" ||
+        value === "thread-recipes" ||
+        value === "style-assignments" ||
+        value === "appearances" ||
+        value === "materials" ||
+        value === "animation" ||
+        value === "poses" ||
+        value === "camera" ||
         value === "rectangles" ||
         value === "revisions" ||
         value === "reopen" ||
@@ -189,7 +219,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       queue = new QueueScenarioBackend(
         "fusion",
         options.protocol,
-        simulatorCapabilities,
+        new Set([...simulatorCapabilities, nativeSolidsCapability]),
         root,
         cfg,
         (file) => platform.toWindowsPath(file, platform.detectPlatform()),
@@ -329,6 +359,42 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           ...((options.suite === "attributes" || options.suite === "all") &&
           options.folder
             ? attributeScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "transactions" || options.suite === "all") &&
+          options.folder
+            ? transactionScenarios(options.folder, options.owners)
+            : []),
+          ...(options.suite === "native-solids" && options.folder
+            ? nativeSolidsScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "thread-recipes" || options.suite === "all") &&
+          options.folder
+            ? threadRecipeScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "style-assignments" ||
+            options.suite === "all") &&
+          options.folder
+            ? styleAssignmentScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "appearances" || options.suite === "all") &&
+          options.folder
+            ? appearanceScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "materials" || options.suite === "all") &&
+          options.folder
+            ? materialScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "animation" || options.suite === "all") &&
+          options.folder
+            ? animationScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "poses" || options.suite === "all") &&
+          options.folder
+            ? poseScenarios(options.folder, options.owners)
+            : []),
+          ...((options.suite === "camera" || options.suite === "all") &&
+          options.folder
+            ? cameraScenarios(options.folder, options.owners)
             : []),
           ...((options.suite === "rectangles" || options.suite === "all") &&
           options.folder

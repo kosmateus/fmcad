@@ -1,6 +1,6 @@
 # Partial Fusion test model
 
-Model version 11 implements document identity/lifecycle, numeric user-parameter CRUD,
+Model version 15 implements document identity/lifecycle, numeric user-parameter CRUD,
 saved-file identity and deletion, and a **test state export**. The exported `.f3d` fixture contains a JSON marker
 `nativeF3d: false`; it is not a native Fusion archive and must not be imported into Fusion.
 Native export/import assertions require `native-f3d`, which this model does not advertise.
@@ -25,7 +25,8 @@ assumption, not a claim about measured Fusion cloud timing.
 Model controls such as `advance_model`, `save_delay_steps`, `delete_delay_steps`
 and operation counters are used only by model/fault tests. Shared scenarios use
 only the pinned Autodesk interface. The model has no network cloud service,
-geometry kernel, feature/constraint regeneration, camera or UI event simulation.
+general geometry kernel, general feature/constraint solver or UI event simulation.
+Bounded rectangular regeneration and explicit camera snapshots are described below.
 It is test-only and excluded from the published package.
 
 Numeric parameters support explicit length/angle units, scalar values, bounded
@@ -127,3 +128,107 @@ This is not a general geometric constraint solver. Native orientation convention
 Fusion recomputation timing, constraint health and topology remain native-only
 qualification assumptions. Parameter deletion/rename dependency rewriting and
 arbitrary direct point editing are outside this bounded capability.
+
+## Definition and batch component path
+
+Shared transaction scenarios call the production Node CAD coordinator. Component
+profiles preserve prepared artifact provenance through the production checker;
+broker profiles submit the normal pinned `cad` command. The simulator supplies
+only SDK results. Definition substitution, report hashing, replay and negative
+step scheduling are not reimplemented in the scenario backend. Command inputs
+are copied at the component boundary, matching the serialized broker boundary.
+
+The analytical model additionally supplies exact rectangular-prism precise bounds
+and volume for the production measurement handlers, numeric parameter attributes,
+and explicit squared/cubed length literals. Native physical accuracy, general
+BRep topology, audit completeness and atomic command-event rollback remain separate
+qualification obligations. This family retains the historical non-atomic
+`onExisting: reuse` definition flow and explicitly non-atomic negative check.
+
+### Explicit camera state (model v13)
+
+Camera snapshots are detached values, and each document owns a viewport. The
+model supports explicit pose and perspective lens values, square orthographic
+extents, exact document-bound restore, and rejection without changing the view.
+The shared case retains the historical 40-degree lens and 80/60/50 mm eye with
+0.00001 internal-unit tolerance. Its coordinator scope is exclusive-instance.
+The API verifier checks the added method and property accessor shapes against the
+same pinned Autodesk snapshot; unit tests independently check copy semantics,
+cross-document state and refusal after document closure.
+
+Native-only assumptions: projection/FOV application may move the eye, so the
+production handler's two-stage apply still needs live verification; restoring
+captured extents depends on the actual viewport aspect ratio. The model's square
+viewport and initial pose are test inputs, not claimed Fusion defaults. Camera
+persistence across save/reopen is not implemented or claimed. Fit, ViewCube
+orientations, smooth transitions, rendered images, PNG bytes and shot packs are
+unsupported; no placeholder pixels qualify those historical assertions. Unknown
+camera writes are never replayed. Recovery can close the original owned document
+from settled receipts, but does not certify camera restoration or run later cases.
+
+### Pose manifest and body visibility (model v14)
+
+The model adds owned component attributes and body light-bulb state. Actual
+production pose handlers store revisioned manifests in those attributes and
+perform apply/evaluate/restore/delete. Fill, spring, route and service fields stay
+manifest-carried declarations; no mass, force, configuration-table or joint solver
+behavior is inferred from them. Root-body visibility readback follows its bulb and
+active timeline state. Ancestor/occurrence visibility and direct isVisible writes
+remain unsupported. The pinned verifier includes the added accessor shapes.
+
+The shared pose case preserves the historical manifest and visibility checks on a
+saved fixture. It uses the exact body token returned by shape.box: the historical
+fixture searched for a body named PoseBody, while both current and archived
+geometry handlers assign that name to the feature and return the body's own ref.
+No body-rename behavior is fabricated in the simulator. Native renderer visibility
+and inherited visibility rules remain qualification obligations; no native run has
+been performed.
+
+## Design-local material metadata (v15)
+
+A single explicitly synthetic, immutable library fixture supplies metadata only.
+`Materials.addByCopy`, local ID/name lookup, name/description edits and design
+ownership are modeled. Copies detach metadata; closed documents and library writes
+are refused. IDs are model-generated, not Autodesk IDs or a guarantee of global
+native-ID uniqueness. The supported design graph deep-copies these resources into
+saved revisions and rebinds the document when reopened.
+
+The fixture exposes no physical or visual properties. An empty property collection
+means no such fixture data is modeled, not that a real library material has no
+properties. Density/mass, assignments/inheritance, visual appearance properties, textures, rendering,
+cloud material catalogs and property editing remain unsupported. The shared material
+case chooses an exact available library item, as the historical test did, and uses
+production list/create/edit handlers; expected IDs and names follow that selection.
+Actual native copy/rename/persistence behavior remains a qualification assumption.
+
+## Design-local appearance metadata (v16)
+
+Appearance/Appearances mirror the pinned API for ID, name, parent, property lookup
+and detached addByCopy. A synthetic immutable library appearance has no visual
+properties. Reading projection therefore returns null for this fixture; no texture,
+projection algorithm, rendered image, assignment or inheritance is simulated.
+Local resources persist in the supported saved graph and rebind to the reopened
+document. Library writes and writes through a closed document are refused.
+Native copy/rename/projection/persistence remain explicitly unqualified.
+
+## Explicit root-body styles (v17)
+
+Root bodies accept exact design-local Appearance and Material resources. Their
+independent getters retain these references across supported saved revisions.
+The initial null getters mean no modeled assignment, not a claim that native
+Fusion has no default physical material. No density/mass or inherited visual state
+is supplied. Foreign/library resource setters, closed or rolled-back targets,
+nonroot bodies and override clearing are refused. Empty allOccurrences is valid
+only for an actually empty assembly; nonempty context enumeration is unsupported.
+The pinned BaseComponent accessor supplies the inherited API shape. Actual native
+resource/getter/persistence behavior is still a qualification assumption.
+
+## Analytic thread recipes
+
+The `thread-recipes` scenario exercises production curated-catalog, custom-profile
+and pair-fit arithmetic against saved owned fixtures. It adds no SDK geometry
+implementation: the pre-existing rectangular body is independently read before and
+after the recipe operations. Native ThreadInfo tables, cosmetic feature creation,
+helical teeth and arbitrary BRep stay unsupported. Curated catalog names are nominal
+(e.g. `M10`); full installed designations (e.g. `M10x1.5`) are rejected by both the
+historical and current catalog. This is documented in B_ASSERTION_AUDIT.md.

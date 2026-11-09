@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "rootDir": "scripts",
+    "declaration": false,
+    "sourceMap": false,
+    "noEmitOnError": true
+  },
+  "include": [
+    "scripts/benchmark-queue-idle.ts",
+    "scripts/drain-idle-maintenance.ts",
+    "scripts/export-queue-phases.ts",
+    "scripts/install-queue-phases.ts",
+    "scripts/migrate-project-log.ts",
+    "scripts/migrate-project-responses.ts",
+    "scripts/recover-local-build-preflight.ts",
+    "scripts/start-installed-queue-phases.ts",
+    "scripts/verify-queue-phases.ts"
+  ]
+}

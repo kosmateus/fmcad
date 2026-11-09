@@ -4,18 +4,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const kit = require('terminal-kit');
 const { ConsoleModel } = require('../src/console-controller');
-const { render } = require('../src/console-view');
 const { readLogs } = require('../src/console-logs');
-const tasks = require('../src/console-tabs/tasks');
-const logs = require('../src/console-tabs/logs');
+const { consoleTaskGroup: group, consoleTaskCounts: counts, consoleRecordedDuration: recordedDuration, consoleLogWindowStats: windowStats } = require('../src/dist/core');
 test('unrecognized outcomes stay unresolved; direct completion stays a transport result', () => {
-  assert.equal(tasks.group({ state: 'future-state' }), 'unresolved');
-  assert.deepEqual(tasks.counts([{ state: 'running' }, { state: 'queued' }, { state: 'unknown' }, { state: 'completed', outcomeScope: 'transport' }]),
+  assert.equal(group({ state: 'future-state' }), 'unresolved');
+  assert.deepEqual(counts([{ state: 'running' }, { state: 'queued' }, { state: 'unknown' }, { state: 'completed', outcomeScope: 'transport' }]),
     { active: 1, waiting: 1, unresolved: 1, history: 1 });
-  assert.equal(tasks.recordedDuration({ startedAt: 10, finishedAt: 5 }), null);
-  assert.equal(logs.windowStats([{ level: 'INFO', timestamp: 'not-a-time' }]).invalid, 1);
+  assert.equal(recordedDuration({ startedAt: 10, finishedAt: 5 }), null);
+  assert.equal(windowStats([{ level: 'INFO', timestamp: 'not-a-time' }]).invalid, 1);
 });
 test('navigation holds the viewport order; passive mode promotes new work and focus is per tab', () => {
   const model = new ConsoleModel(); assert.equal(model.focus, 4);
@@ -43,21 +40,4 @@ test('retained log archives share a bounded budget and truncation does not reuse
   const reset = readLogs(project, {}, 2000, 1024, tracker);
   assert.equal(reset.resynced, true); assert.notEqual(reset.logs.at(-1).id, previous);
   const tiny = readLogs(project, {}, 1, 64, tracker); assert.ok(tiny.logs.length <= 1); assert.ok(tiny.bytesRead <= 64);
-});
-test('view panels and mouse regions fit realistic and minimum terminal sizes', () => {
-  for (const [width, height] of [[80, 24], [110, 30], [140, 40], [200, 52], [270, 75]]) {
-    for (let tab = 0; tab < 5; tab++) {
-      const model = new ConsoleModel(); model.tab = tab;
-      model.update({ mode: 'broker', project: '/fixture/Project', available: true, broker: { state: 'STOPPED', online: false },
-        capabilities: { monitor: true, brokerControl: false }, operations: [{ id: 'fixture-job', state: 'failed', label: 'run fixture.py', order: 1 }],
-        agents: [{ id: 'fixture-client', presence: 'unknown', source: 'job-history' }],
-        logs: [{ id: 'fixture-log', timestamp: '2026-10-20T16:00:00Z', level: 'WARN', component: 'fixture', message: 'Fixture event' }], fusion: {}, retention: {} });
-      const buffer = new kit.ScreenBufferHD({ width, height }); buffer.draw = () => {};
-      const view = render({ model, buffer, prefs: { color: 'auto', frames: 'unicode' }, language: 'pl', modal: null });
-      for (const panel of view.panels) assert.ok(panel.x >= 0 && panel.y >= 0 && panel.x + panel.width <= width && panel.y + panel.height <= height - 2,
-        `${width}x${height} tab ${tab}: ${panel.id}`);
-      for (const hit of view.hits) assert.ok(hit.x >= 0 && hit.y >= 0 && hit.x + hit.width <= width && hit.y + hit.height <= height,
-        `${width}x${height} tab ${tab}: ${hit.type}`);
-    }
-  }
 });

@@ -60,6 +60,46 @@
           "id": "rectangles",
           "scope": "owned-document",
           "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite rectangles --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "transactions",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite transactions --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "camera",
+          "scope": "exclusive-instance",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite camera --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "poses",
+          "scope": "exclusive-instance",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite poses --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "animation",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite animation --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "materials",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite materials --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "appearances",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite appearances --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "style-assignments",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite style-assignments --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+        },
+        {
+          "id": "thread-recipes",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite thread-recipes --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
         }
       ]
     },
@@ -71,7 +111,7 @@
         {
           "id": "animation-methods",
           "source": "tests/live-animation-methods.js",
-          "disposition": "native-only",
+          "disposition": "migration-pending",
           "obligation": "Storyboard creation, animation actions and frame export",
           "command": "node tests/live-animation-methods.js --run",
           "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
@@ -223,7 +263,7 @@
         {
           "id": "pose-methods",
           "source": "tests/live-pose-methods.js",
-          "disposition": "native-only",
+          "disposition": "migration-pending",
           "obligation": "Pose creation/application, capture and restoration",
           "command": "node tests/live-pose-methods.js --run",
           "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
@@ -249,8 +289,10 @@
           "source": "tests/live-shape-native-solids.js",
           "disposition": "migration-pending",
           "obligation": "Native solid creation and geometric properties",
-          "command": "node tests/live-shape-native-solids.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-solids --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run --project-id PROJECT --folder-id FOLDER",
+          "prerequisites": "Offline refactor complete, matching installed build and broker, explicit dedicated project/folder; resolve the documented annular-sector bound conflict before qualification.",
+          "sharedScenario": "native-solids-*",
+          "qualification": "blocked-historical-bound-expectation"
         },
         {
           "id": "sketch-operations",

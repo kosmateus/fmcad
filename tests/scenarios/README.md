@@ -125,3 +125,70 @@ backend receipts bind client/request, prior creation ID and exact file/version.
 A lost reply defers cleanup; recovery reads the original evidence and never repeats
 save/open/close. A failed receipt handoff cannot authorize deleting a different
 file. A revision has no native-format implication: model exports remain marked JSON.
+
+## Exclusive scenario barriers
+
+A shared scenario with `scope: "exclusive-instance"` runs only after every
+earlier scenario has completed its cleanup. Later fixtures are created only
+after it passes and completes cleanup. A failed or unsupported exclusive case
+blocks all later cases with durable `not-run` reports; those fail required
+profiles. An unsettled earlier cleanup also blocks the next group. Ordinary
+settled failures retain bounded concurrency and do not masquerade as success.
+
+Cleanup recovery resolves original requests only. It does not launch blocked
+scenarios or certify restoration of camera, workspace, material or motion state.
+The exclusive scenario must assert its own restoration before returning. This
+is a coordinator barrier, not an interprocess lock: use one coordinator per
+Fusion instance. Native global-state qualification remains deferred.
+
+`--suite camera` is an exclusive shared saved-fixture family for explicit camera
+pose/lens, independent readback, invalid/foreign-state rejection and verified
+restoration. It is also part of `all`. Its model does not render images or simulate
+ViewCube/fit behavior. A failed assertion still attempts restoration after known
+settlement; an unknown write stops further mutations, retains both primary and
+restoration errors, and blocks subsequent scenarios. Recovery does not upgrade
+that result to a passed camera qualification.
+
+`--suite poses` runs the production local pose-manifest save/update/list/apply/
+evaluate/delete sequence on owned saved rectangular bodies. It preserves the
+historical visibility and revision expectations and uses exact returned body refs
+for independent readback. It runs exclusively, restores original visibility after
+known assertion failures, and never retries an unknown apply. Joint poses, native
+configuration tables and rendered visibility are separate native obligations.
+
+The per-assertion ledger separates implemented mappings from qualification:
+`blocked-command-settlement` entries remain failing dependencies, while
+`offline-tested-native-pending` entries have model evidence but no native result.
+Neither label implies completion of the overall live suite.
+
+`--suite animation` executes the production deterministic camera-track planner
+on owned saved fixtures. It asserts the historical frame interpolation values
+and tolerances, then checks independent document state after valid and rejected
+plans. It does not create native storyboard actions, render frames or sample
+joint motion. Those remain explicit native obligations.
+
+`--suite native-solids` is an explicit native obligation using shared saved-fixture
+lifecycle and unchanged rib/web/sector/arc-strip/torus requests and measurements.
+It is outside supported model `all`. Both model transports refuse its capability
+before any SDK call; that refusal fails qualification. The annular-sector Y bound
+has a documented historical analytical conflict, so native qualification remains
+blocked even though the sequence is registered. See
+`docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md`. Do not run native Fusion until
+the offline refactor is complete.
+
+`--suite materials` runs the historical material-library selection, local copy,
+rename, collision rejection and list readback on saved fixtures, then independently
+checks metadata after revision/reopen. Source library selection is environmental;
+steps, expected local IDs/names and assertions are identical on both backends.
+Physical properties, appearances, assignments and rendering remain separate work.
+
+`--suite appearances` preserves the historical local/library list, safe source
+selection by actual ID, copy, rename and nullable projection-read prefix. The same
+steps and assertions run on both backends; independent metadata and revision/reopen
+checks use owned saved files. Texture and assignment checks from the remainder of
+live-design-styles remain open. Model null projection means absent fixture data.
+
+`--suite style-assignments` covers explicit local appearance/material assignment to
+the historical 4 x 5 x 6 mm root body, exact map IDs/counts and renamed list entry.
+It independently checks getter identity and volume before and after owned reopen.
+It does not cover texture probes, inherited defaults, mass or instance overrides.

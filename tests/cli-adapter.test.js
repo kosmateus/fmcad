@@ -296,12 +296,7 @@ test("direct is rejected clearly; queue is compatibility spelling, not a second 
   );
 });
 test("retained legacy families delegate once to existing broker application, never physical client construction", async (t) => {
-  const previousWsl = process.env.WSL_DISTRO_NAME;
-  process.env.WSL_DISTRO_NAME = "LegacyTest";
-  t.after(() => {
-    if (previousWsl === undefined) delete process.env.WSL_DISTRO_NAME;
-    else process.env.WSL_DISTRO_NAME = previousWsl;
-  });
+  t.after(require("./fixtures/fake-wsl-platform.cjs")());
   for (const entry of legacyCommands.filter(
     (entry) => !["help", "family", "init", "run"].includes(entry.kind),
   )) {
@@ -389,7 +384,7 @@ test("unknown and unresolved receipts never become success, replay or cancellati
   );
 });
 test("run preserves pinned typed request, input hashes, broker controls and exact raw streams", async (t) => {
-  const directory = fs.mkdtempSync("/tmp/opencode/cli-run-");
+  const directory = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "cli-run-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const source = path.join(directory, "trusted.py"),
     argsFile = path.join(directory, "args.json"),
@@ -604,7 +599,7 @@ test("localization keeps stable message IDs/arguments and never changes opaque v
   );
 });
 test("Polish offline capabilities inspect help documents purpose without implying config or backend", () => {
-  const directory = fs.mkdtempSync("/tmp/opencode/cli-help-pl-");
+  const directory = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "cli-help-pl-"));
   try {
     const file = path.join(directory, "config.json");
     execFileSync(
@@ -634,7 +629,7 @@ test("Polish offline capabilities inspect help documents purpose without implyin
   }
 });
 test("installed-layout executable works from foreign cwd and malformed Fusion configuration for help and preview", (t) => {
-  const directory = fs.mkdtempSync("/tmp/opencode/cli-offline-");
+  const directory = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "cli-offline-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const badConfig = path.join(directory, "bad.json");
   fs.writeFileSync(badConfig, "{bad");

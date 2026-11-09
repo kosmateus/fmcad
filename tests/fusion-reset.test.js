@@ -211,3 +211,56 @@ test('reset recovery unpauses only its own empty durable queue before starting t
     assert.equal(new QueueState(dir).data.active, null);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('typed physical reset preserves historical refusal and recovery contracts', async t => {
+  const { createHash } = require('node:crypto');
+  const Module = require('node:module');
+  const filename = require.resolve('../src/fusion-reset');
+  const source = fs.readFileSync(path.join(__dirname, 'fixtures/history/fusion-reset-bab4c10.js.txt'), 'utf8');
+  assert.equal(createHash('sha256').update(source).digest('hex'),
+    'f0b1cdafee667690f13feba7c116cca4705db39925610fc0d7f04b1f344fc9ce');
+  const retained = new Module(filename, module);
+  retained.filename = filename;
+  retained.paths = Module._nodeModulePaths(path.dirname(filename));
+  retained._compile(source, filename);
+  const before = retained.exports, after = require('../src/fusion-reset');
+  const outcome = callback => {
+    try { return { value: callback() }; }
+    catch (error) { return { code: error.code, message: error.message }; }
+  };
+  for (const args of [[], ['--force'], ['--force', '--force'], ['--dry-run']]) {
+    assert.deepEqual(outcome(() => after.parse(args)), outcome(() => before.parse(args)));
+  }
+  const documents = [clean('new', 'Bez nazwy'), clean('saved', 'Part', { saved: true, fileId: 'owned-file' }),
+    clean('test', 'FMCAD_CAD_TEST_2026-01-02T03_04_05_006Z')];
+  for (const rows of [documents, [...documents, clean('foreign', 'Personal work')],
+    [clean('saved', 'Part', { saved: true, modified: true, fileId: 'owned-file' })], null, [{}]]) {
+    assert.deepEqual(outcome(() => after.planDocuments(rows)), outcome(() => before.planDocuments(rows)));
+  }
+  assert.equal(after.pythonInventoryCode(documents, ['test'], 123), before.pythonInventoryCode(documents, ['test'], 123));
+  const physical = { pid: 123, birth: '123456', path: 'C:\\Users\\test\\Autodesk\\webdeploy\\production\\abc\\Fusion360.exe',
+    responding: true, fusionCount: 1 };
+  for (const output of [JSON.stringify(physical), 'absent', '{broken', JSON.stringify({ pid: 124 })]) {
+    const commands = [];
+    const exec = (...args) => { commands.push(args); return output; };
+    const previous = outcome(() => before.readFusionProcess(123, exec));
+    const current = outcome(() => after.readFusionProcess(123, exec));
+    assert.deepEqual(current, previous);
+    assert.deepEqual(commands[1], commands[0]);
+  }
+  for (const api of [before, after]) {
+    const calls = [];
+    const client = { call: async action => { calls.push(action); return { retained: true }; } };
+    assert.deepEqual(await api.restoreBroker(client, {}, { resetPause: null }), { retained: true });
+    assert.deepEqual(calls, ['status'], 'An unowned pause grants no resume or restart authority');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'reset-paired-'));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    fs.writeFileSync(path.join(dir, 'broker.lock'), JSON.stringify({ pid: 123, birth: 'birth', nonce: 'old' }));
+    const marker = { buildHash: 'build', resetPause: null };
+    const rejection = Object.assign(new Error('CAS lost'), { code: 'STATE_CONFLICT' });
+    const rejecting = { dir, call: async action => { calls.push(action); throw rejection; } };
+    await assert.rejects(api.stopBroker(rejecting, marker, { buildHash: 'build',
+      control: { instanceId: 'old', generation: 1 } }), error => error === rejection);
+    assert.equal(marker.resetPause, null, 'A rejected pause must not manufacture a reset-owned receipt');
+  }
+});

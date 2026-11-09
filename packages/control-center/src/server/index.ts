@@ -50,3 +50,5 @@ export {
   type EnsureServiceResult,
   type ServiceIdentity,
 } from "./service.js";
+
+export * from "./system-controls.js";

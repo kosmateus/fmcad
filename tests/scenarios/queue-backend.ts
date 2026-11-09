@@ -58,17 +58,36 @@ export class QueueScenarioBackend implements ScenarioBackend {
       `request-${request.requestId.split(":").at(-1)}.py`,
     );
     fs.writeFileSync(filename, request.source, { flag: "wx", mode: 0o600 });
-    const argv = [
-      "run",
-      filename,
-      ...(request.helpers ? ["--helpers", request.helpers] : []),
-      ...(request.target
-        ? ["--doc", request.target.name, "--doc-id", request.target.creationId]
-        : []),
-      ...(request.target?.file
-        ? ["--doc-file-id", request.target.file.fileId]
-        : []),
-    ];
+    const argv = request.command
+      ? [
+          "cad",
+          ...request.command.operation.split("."),
+          "--data",
+          JSON.stringify(request.command.data),
+          "--doc",
+          request.target!.name,
+          "--doc-id",
+          request.target!.creationId,
+          "--doc-file-id",
+          request.target!.file!.fileId,
+          "--json",
+        ]
+      : [
+          "run",
+          filename,
+          ...(request.helpers ? ["--helpers", request.helpers] : []),
+          ...(request.target
+            ? [
+                "--doc",
+                request.target.name,
+                "--doc-id",
+                request.target.creationId,
+              ]
+            : []),
+          ...(request.target?.file
+            ? ["--doc-file-id", request.target.file.fileId]
+            : []),
+        ];
     const job = await client.submit({
       requestId: request.requestId,
       kind: "command",

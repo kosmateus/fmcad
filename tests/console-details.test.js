@@ -1,13 +1,10 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const kit = require('terminal-kit');
-const { createUI } = require('../src/console-ui');
+const { textContext } = require('./fixtures/console-text-context.cjs');
 const { describe, correlate, refresh } = require('../src/console-details');
 const { ConsoleModel } = require('../src/console-controller');
-const chrome = require('../src/console-chrome');
-const { pointerAction } = require('../src/console-pointer');
-const makeUI = (width = 100, height = 30, language = 'en') => createUI({ buffer: new kit.ScreenBuffer({ width, height }), prefs: {}, language });
+const makeUI = () => textContext('en');
 test('details distinguish absent, false and zero and scope direct results to transport', () => {
   const ui = makeUI();
   assert.doesNotThrow(() => describe(null, ui));
@@ -17,19 +14,7 @@ test('details distinguish absent, false and zero and scope direct results to tra
   assert.match(detail.fields.find(field => field.label === 'Result scope').value, /Transport only/);
   assert.ok(!detail.fields.some(field => field.group?.startsWith('Related operations')));
 });
-test('column fields preserve long labels, paths, false and zero without truncation', () => {
-  const ui = makeUI();
-  const label = 'LongCorrelationIdentifier'.repeat(3), value = '/directory/'.repeat(15);
-  const lines = ui.kvLines([{ label, value }, { label: 'False', value: false }, { label: 'Zero', value: 0 },
-    { label: 'Missing', value: null }, { label: 'Message', value, block: true }], 60, { columns: true, labelWidth: 18 });
-  const columns = lines.filter(line => line.spans);
-  assert.equal(columns.map(line => line.spans[0].text).join('').startsWith(label), true);
-  assert.equal(columns.map(line => line.spans[1].text).join('').startsWith(value), true);
-  assert.ok(columns.some(line => line.spans[1].text === 'false'));
-  assert.ok(columns.some(line => line.spans[1].text === '0'));
-  assert.ok(columns.some(line => line.spans[1].text === ui.L('unknown')));
-  assert.equal(lines.filter(line => line.text && line.text !== 'Message').map(line => line.text).join(''), value);
-});
+
 test('correlation excludes absent IDs and modal drilldowns select only matching retained IDs', () => {
   const model = new ConsoleModel();
   model.update({ agents: [{ id: 'a' }, { id: 'b' }], operations: [{ id: 'op', clientId: 'a', requestId: 'req' }, { id: 'other' }],
@@ -56,18 +41,4 @@ test('refresh pins the inspected ID through filtering, retention loss and frozen
   modal.frozen = true; const before = structuredClone(modal);
   model.update({ operations: [{ id: 'op', description: 'new' }] }); refresh(modal, model);
   assert.deepEqual(modal, before);
-});
-test('rich modal scroll and action hit regions work at supported sizes in both languages', () => {
-  for (const [width, height] of [[80, 24], [110, 30], [200, 50]]) for (const language of ['en', 'pl']) {
-    const ui = makeUI(width, height, language);
-    const row = { id: 'op', state: 'running', clientId: 'a', description: 'long purpose '.repeat(200), sourcePath: '/tmp/source.py' };
-    const modal = { kind: 'details', row, contextSnapshot: { operations: [row], agents: [{ id: 'a' }], logs: [{ id: 'e', taskId: 'op' }] } };
-    chrome.modal(ui, modal);
-    const viewport = ui.hits.find(hit => hit.type === 'viewport');
-    assert.ok(viewport.total > viewport.visible);
-    pointerAction('MOUSE_WHEEL_DOWN', { x: viewport.x + 1, y: viewport.y + 1 }, ui, {}, { modal: true });
-    assert.ok(modal.viewport.offset > 0);
-    assert.ok(ui.hits.some(hit => hit.layer === 'modal' && hit.key === 'g'));
-    assert.ok(ui.hits.every(hit => hit.x >= 0 && hit.y >= 0 && hit.x + hit.width <= width && hit.y + hit.height <= height));
-  }
 });

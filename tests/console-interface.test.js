@@ -4,10 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const kit = require('terminal-kit');
 const { ConsoleModel, BrokerControl, exportRows } = require('../src/console-controller');
 const { readLogs } = require('../src/console-logs');
-const { render } = require('../src/console-view');
 const i18n = require('../src/i18n');
 const { parseInvocation } = require('../src/invocation');
 const { QueueState } = require('../src/queue-state');
@@ -120,16 +118,4 @@ test('broker controls use read-only registration, optimistic fences and never re
   fail = true; await broker.read(); await assert.rejects(broker.set(true));
   assert.equal(calls.filter(call => call.action === 'pause').length, 2);
   assert.equal(calls.at(-1).action, 'control-status');
-});
-test('all views and modals render within 80x24, 110x30 and 140x40 in PL/EN without markup', () => {
-  const model = new ConsoleModel(); model.update({ mode: 'direct', project: '/project', available: true,
-    operations: [{ id: 'a', state: 'running', description: '^rUnicode ąę 中' }], agents: [], logs: [], fusion: {}, retention: {} });
-  for (const language of ['pl', 'en']) for (const [width, height] of [[80, 24], [110, 30], [140, 40]]) {
-    const buffer = new kit.ScreenBuffer({ width, height }); buffer.draw = () => {};
-    for (let tab = 0; tab < 5; tab++) {
-      model.tab = tab;
-      render({ model, buffer, term: {}, language, prefs: { color: 'off', frames: 'ascii' }, modal: null });
-      render({ model, buffer, term: {}, language, prefs: { color: 'off', frames: 'unicode' }, modal: { kind: 'details', row: model.snapshot.operations[0] } });
-    }
-  }
 });

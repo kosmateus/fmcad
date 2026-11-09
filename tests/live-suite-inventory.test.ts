@@ -20,6 +20,7 @@ interface Entry {
     | { kind: "later" }
     | { kind: "unchanged" | "changed"; path: string; sha256: string };
   sharedScenarios: string[];
+  nativeScenarios?: string[];
 }
 const inventory = load("./tests/live-suite-inventory.json") as {
   baselineCommit: string;
@@ -87,6 +88,55 @@ test("inventory distinguishes runner registration from pending shared coverage",
       assert.equal(options.suite, suite);
     }
   }
+});
+
+test("native scenario extraction does not claim supported model coverage", () => {
+  const manifest = load("./tests/live-required-profiles.json") as {
+    profiles: Record<
+      string,
+      { cases: { id: string; command: string; qualification?: string }[] }
+    >;
+  };
+  const modeled = new Set(
+    manifest.profiles["required-model"]!.cases.map((row) => row.id),
+  );
+  for (const entry of inventory.entries) {
+    for (const suite of entry.nativeScenarios ?? []) {
+      assert.ok(
+        !modeled.has(suite),
+        "Native obligation promoted to required model coverage",
+      );
+      const obligation = manifest.profiles["native-qualification"]!.cases.find(
+        (row) => row.id === entry.id,
+      );
+      assert.ok(obligation, entry.id);
+      assert.ok(obligation.command.includes("--suite " + suite));
+      assert.equal(
+        parse([
+          "--backend",
+          "fusion",
+          "--run",
+          "--suite",
+          suite,
+          "--project-id",
+          "owned-project",
+          "--folder-id",
+          "owned-folder",
+        ]).suite,
+        suite,
+      );
+      assert.throws(
+        () => parse(["--backend", "fusion", "--suite", suite]),
+        /requires --run/,
+      );
+    }
+  }
+  const solids = inventory.entries.find(
+    (entry) => entry.id === "shape-native-solids",
+  )!;
+  assert.equal(solids.model, "pending");
+  assert.deepEqual(solids.sharedScenarios, []);
+  assert.deepEqual(solids.nativeScenarios, ["native-solids"]);
 });
 
 test("historical byte identity claims retain their archived hashes", () => {

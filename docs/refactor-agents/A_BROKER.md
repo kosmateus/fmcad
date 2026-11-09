@@ -333,3 +333,93 @@ results, context change between turns and restart without replay. They remain in
 `test:contracts` and must pass on the combined head. B/G still own qualification
 of the same saved-file scenarios on real Fusion at concurrency 1/2/10; offline
 broker and publication evidence is not a substitute for that run.
+
+## Primitive input rejection settlement (continuation)
+
+The strict scenario command-result check exposed an existing ambiguity: an invalid
+primitive dimension throws before geometry creation, yet absence of a terminal
+native result correctly leaves the caller uncertain. C now returns a narrowly
+versioned `cad-input-rejection` for `ValueError` from field/dimension validation
+only. Plane/entity resolution, SDK calls and later exceptions still propagate.
+The native wrapper asserts the pinned document before calling the handler, and
+its checked final-byte artifact and physical receipt bind the operation, data,
+context, process and request. A failed transport is never converted to rejection.
+
+The batch reader accepts this witness only for the five primitive operations,
+with exact operation and proof keys, `success: false`, and empty created/affected
+collections. It records `failed`/`not_started`, retains the redacted original
+`INVALID_INPUT` message and skips the remaining steps. Foreign operation proofs,
+extra keys, reported creations and plain exceptions cannot claim `not_started`.
+Failed/unknown journal replay remains forbidden. The expected no-eval result is
+unchanged: reject the literal, skip the next box, and independently observe no
+geometry changes; this only makes the pre-mutation refusal explicitly observable.
+
+Local core/batch/result checks: 22/22 pass. Full build passed. Native receipt and
+same-scenario MCP/addin qualification remain mandatory integration checks; this
+is not a claim that all recovery controllers have been migrated.
+
+## A3.2 — recovery result reader and immutable evidence adapter
+
+The recovery audit result validator now lives in strict core TypeScript, and the
+migration inventory/hash/backup/exclusive-receipt implementation lives in the
+Node persistence adapter. Existing module paths delegate to these canonical
+implementations. The outer recovery controller remains JavaScript; this bounded
+delivery does not relabel it as migrated.
+
+Paired reader checks use frozen `5102259`: accepted facts and malformed identity,
+counts, status, errors and fingerprints retain their outcomes. The predecessor
+accepted the first of multiple terminal markers or text result bodies, ignoring
+conflicting later evidence. The typed reader requires exactly one body and
+marker. This expectation change follows evidence uniqueness; a read-only audit
+still cannot assert historical success, rollback or model validation. The defect
+is demonstrated in the post-migration predecessor, not attributed to a historical
+live Fusion failure without matching evidence.
+
+The filesystem adapter is frozen against `330849f` and retains exact inventory
+hashes, immutable receipt semantics, exclusion rules, symlink rejection, backup
+verification and conflict refusal. Paired real filesystem checks cover successful
+and repeated backup, tampered backup, symlink files/directories and unchanged
+existing receipt bytes. No process identity or opened-file guard is bypassed.
+
+Local results: all 21 recovery/publication tests pass with the real checker and
+pinned Autodesk typing snapshot; both added reader/adapter comparisons pass.
+The fresh worktree initially lacked the build's typing snapshot and correctly
+failed admission. Copying the same content-addressed pinned snapshot used by the
+main build and restaging identity restored the real checker; no assertion or
+production deadline changed. Remaining A3 controllers, physical identity/reset,
+saved-fixture migration and A4 combined CI/native qualification remain open.
+
+## A3.3 — typed owner migration state machine
+
+The migration orchestrator and held-owner fence now live in strict core
+TypeScript with named snapshot, stage, approval and effect ports. The Node path
+only supplies the existing observation/upgrade validators. All durable stage
+ordering, request binding, pause/backup checks, PID-owner proof calls, one-time
+stop/launch and unknown native outcome semantics are preserved.
+
+Frozen `330849f` comparisons execute both implementations through the same
+fixture. They compare complete reports, every retained stage, queue state and
+effect counts after uninterrupted execution, crashes at all eight durable stages,
+and seven authority/admission/backup/fence refusals. All 12 selected migration
+checks pass locally, including the unchanged two-holder upgrade and crash-after-
+signal tests. Real process termination and legacy installed-runtime qualification
+remain required Linux integration work; they are not simulated away by this
+pure state-machine comparison.
+
+## A3.4 — typed recovery controller
+
+The complete recovery request/intent/dispatch/settlement/publication controller
+now lives in the Node execution adapter with explicit message, reader, wire,
+certificate, scope, preparation and runtime ports. The old Node path only composes
+its existing Python preparation and final-byte wire builder into this controller.
+It has no independent SDK, lifecycle or process authority. Canonical core dispatch
+and per-receipt publication policies remain shared; checker/source-byte fences,
+durable start-before-send, original caller reply ID, owner-bound recovery and
+no-replay behavior are unchanged.
+
+Malformed stored non-object evidence and a null matched reply now fail with an
+explicit audit error rather than an incidental property access error. Neither
+case yields successful historical evidence or another physical send. All 22
+recovery/publication/immutable-reader checks pass locally, including real-checker
+accept/reject, source drift, final-byte tampering, bad physical receipt outcome,
+lost scratch reply, concurrent owners and publication retry without SDK replay.

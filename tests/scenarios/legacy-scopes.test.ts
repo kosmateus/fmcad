@@ -108,6 +108,14 @@ test("required profiles account for every retained live suite and separate diagn
       "reopen",
       "revisions",
       "rectangles",
+      "transactions",
+      "camera",
+      "poses",
+      "animation",
+      "materials",
+      "appearances",
+      "style-assignments",
+      "thread-recipes",
     ],
   );
 });

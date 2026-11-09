@@ -147,7 +147,7 @@ npm run build:code
 npm run typecheck:tests
 npm run lint
 npx eslint src/entrypoints/mcp.ts
-node --test tests/mcp-application.test.js tests/mcp-client-context.test.js tests/mcp-installed-package.test.js tests/mcp-catalog.test.js tests/mcp-stdio.test.js tests/mcp-stdio-queue-lifecycle.test.js tests/catalog-worker.test.js tests/library-api.test.js tests/library-api-broker.test.js
+node --test tests/mcp-application.test.js dist/tests/mcp-client-context.test.js dist/tests/mcp-installed-package.test.js tests/mcp-catalog.test.js tests/mcp-stdio.test.js tests/mcp-stdio-queue-lifecycle.test.js tests/catalog-worker.test.js tests/library-api.test.js tests/library-api-broker.test.js
 ```
 
 The process tests execute the entrypoint from an actual npm tarball outside the

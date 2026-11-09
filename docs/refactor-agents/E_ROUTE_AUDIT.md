@@ -10,20 +10,24 @@ The three unfinished audits are `frame context_audit`, `snapshot capture_v2` and
 `snapshot diff_v2`; all retain native qualification requirements. Their gaps
 must not be cleared by offline entrypoint checks.
 
-| Surface | Implementation and service boundary | Evidence | Remaining work |
+| Surface | Typed implementation / boundary | Retained evidence | Acceptance still required |
 | --- | --- | --- | --- |
-| CLI parsing and execution | `src/entrypoints/cli.ts`, `cli/parser.ts`, `cli/application.ts`; library execution and broker receipts | CLI/parser, library-api, queue-cli-recovery-parity tests | Audit legacy dispatch, flags, error framing and all registration metadata |
-| Canonical commands and aliases | `src/commands.js`, `src/help*.js`, shared core catalog | registry, manual-coverage, capabilities tests; generated route mapping | Type remaining registration implementations and check stale prose against migrated handlers |
-| MCP server and framing | `src/entrypoints/mcp*.ts`; catalog services and queue API | mcp-framing, mcp-owned-result-root, mcp-stdio-catalog-sharing, mcp-installed-package | Migrate `src/mcp-stdio-compat.js`; preserve IDs, context, ownership and acknowledgement recovery |
-| Library API | `src/api`, `src/composition/library*.ts` | library-api, workspace-toolchain and installed declaration tests | Audit every supported export, disposal and installed runtime dependency |
-| OpenCode V1 | `packages/opencode-adapter/src/v1`, root entrypoint | adapter and installed consumer tests | Verify supported >=1.18.29 <2 installed object-loader path |
-| OpenCode V2 | `packages/opencode-adapter/src/v2`, root entrypoint | adapter and installed consumer tests | Verify supported >=2.1.3 <3 installed factory path |
-| Configuration and compatibility client | `src/config.js`, `src/client.js`; typed config domain/platform | runtime-consumers, config and client tests | Typed composition implemented in the next delivery; direct transport remains denied |
-| Image trace/optimize/boundaries | `src/image-*.js` metadata/composition; typed local pipeline and Python process ports | runtime-consumers paired historical observations; image command suites | First delivery moves command orchestration into `python/image-command.ts`; full image/native quality qualification is separate |
-| Reference images | `src/reference.js`; typed reference/local-worker pipeline | reference, reference_images, runtime-consumers | Validation and synchronous preflight composition typed in the next host delivery; metadata remains; distinct from D's references-refresh |
-| Engineering local | `src/engineering-local.js`; typed engineering core | engineering-fit/thermal/mass/fluid/hydraulic, batch-local | CLI parsing/publication composition typed in the next host delivery; metadata remains; offline routing retained |
-| Screenshot/review | `src/shot.js`, `src/review.js`; typed review core/adapters | shot, review, review-application | Type CLI boundaries and preserve one-call, partial failures and restoration evidence |
-| Native UI command orchestration | `src/ui.js` | ui, retained-origin-ui-guard and native receipt tests | Type request/lifecycle boundary, coordinate watcher receipts with A and UI implementation with F |
+| CLI routes and errors | `entrypoints/cli`, parser/application; broker receipts and narrow local-reference result policy | CLI/parser, library API, historical CLI failure reproduction | Full Linux CI on final integration |
+| 505 commands / 337 aliases | `library-commands`, `library-help*`, typed manuals and catalog registry | Exact route/flag/argument metadata and EN/PL historical pages | Three native audits remain deferred |
+| MCP framing/catalog/queue | `entrypoints/mcp*`, `library-mcp-*` | 110 paired wire cases, nine queue outcomes, strict metadata, process framing and installed MCP | Linux process/artifact ownership tests |
+| SDK and declarations | `src/api`, `composition/library*` | Strict external consumer compilation, read-only installed package, no host SDK/startup effects, disposal | Final integrated full CI |
+| OpenCode V1/V2 | `packages/opencode-adapter/src/v1` and `/v2` | Installed object/factory loaders, context, permission denial, unknown outcomes and owned cleanup | G cache/gate integration and Linux presence identity |
+| Help locale / preferences | `library-i18n` | All translations, plural/number/duration formatting, malformed config and exclusive-write history | Final full CI |
+| OpenCode reporter / retained hooks | `library-opencode-presence` | Historical identities/events, host mapping, local abort and independent disposal failures | Real process-birth presence remains a Linux gate |
+| OpenCode passive event client | `library-project-events` | Historical IPC framing, bounds, private token reads, errors, disabling and disposal; installed declarations | Real observer startup remains a Linux gate; observer policy stays with F |
+| Default MCP telemetry producer | MCP process root delegates to F's `createMcpStdioTelemetry` | Once-only construction/cleanup, failure isolation, clean protocol stdout, installed discovery | Full integrated Linux CI; no inferred execution phases |
+| Config / compatibility client | `library-configuration`, `library-client` | Historical validation/config writes and all direct-dispatch denials | Merged #46; retained gates stay enabled |
+| Image tools | Typed Python image command and `library-image-*-registration` | Historical argv/preflight/output, real synthetic images and installed assets | Native/image quality qualification is separate |
+| Reference images | Typed local reference pipeline and registration | Real Python worker; original bytes and unknown evidence preserved; installed poison-config test | Full CI with explicit Python interpreter |
+| Engineering local | Typed engineering core, command and registration | Fit/thermal/mass/fluid/hydraulic and historical metadata | Retained public-consumer gate |
+| Screenshot/review | `library-shot`, `library-review-command`, registration | One dispatch, partial/restoration/publication failures; strict declarations | Retained public-consumer gate |
+| Native UI commands | `library-ui-command/domain/host/state` | Historical host/state/guards, unchanged historical suite, serializer defect reproduction | Native Windows/Fusion qualification deferred |
+| Console/diagnostic | `library-console`, `library-console-project`; F `openControlCenter` | Default web and explicit --web parity; installed registered/global readiness, assets and shared-service reuse | Full integration CI; F owns renderer retirement |
 
 ## Ownership handoffs
 
@@ -55,8 +59,8 @@ normal absolute Node installations retain the original shebang. The eight
 previously failing consumer cases pass with unchanged assertions. A writable
 `TMPDIR` is supplied externally; production paths and preflight are unchanged.
 
-Remaining E1–E4 work in the table is open. Native Fusion/UI qualification and
-image quality are not inferred from process fixtures.
+The table separates implemented migration from outstanding integration gates.
+Native Fusion/UI qualification and image quality are not inferred from fixtures.
 
 Screenshot orchestration now uses `library-shot.ts` with explicit client, output,
 file and clock ports. It preserves existing permissive CLI parsing and Buffer
@@ -70,8 +74,8 @@ metadata comparisons retain private-field stripping without mutating callers.
 Installed verification passes 17 library/MCP/companion tests and 9 OpenCode
 V1/V2 tests. The companion poison-config regression is fixed without changing
 existing assertions. Full CI and G's retained-gate registration remain required.
-Legacy queue submission/recovery and compatibility framing orchestration still
-remain in `mcp-stdio-compat.js`; they are not declared migrated by this extraction.
+Queue submission/recovery and compatibility framing were completed separately
+in the typed modules described below; `mcp-stdio-compat.js` is now a loader.
 
 Command registration and help composition use typed `library-commands` and
 `library-help*` modules, including typed legacy/broker manuals. The paired route
@@ -91,3 +95,71 @@ MCP compatibility orchestration is now typed in `library-mcp-compat`,
 Paired historical checks retain wire bytes, sessions, errors, single admission,
 request/document ownership, acknowledgement recovery and caller disposal.
 All 35 library/stdio/catalog-sharing checks pass, including installed declarations.
+
+UI host execution, domain validation/profiles and durable observation/lifecycle
+storage are typed in `library-ui-host`, `library-ui-domain`, `library-ui-state`.
+Historical comparisons and retained tests cover bounded process behavior,
+readiness ownership, exact identities, one-time claims and absorbing state
+transitions. Command/watcher orchestration was completed in the following delivery;
+this does not qualify native Windows/Fusion behavior.
+
+UI command/watch orchestration is now typed in `library-ui-command`; `src/ui.js`
+is a loader. Fifty-five library/UI tests pass, and the retained UI suite also
+passes against the frozen predecessor. The actual native-cancellation generator
+had an undefined serializer identifier; the narrow fix is covered by historical
+reproduction, exact generated bytes, syntax parsing and guarded dispatch counts.
+Native qualification remains deferred, with unknown outcomes preserved.
+
+Image, engineering-local, reference-image and review source registrations are now
+loaders for typed `library-*-registration` modules. Descriptors/manuals and
+reference catalog configuration match frozen predecessors. The retained
+library/registry/reference/review/image run passes 75 tests with two pre-existing
+environment-dependent skips, recorded separately from qualified coverage.
+
+Real reference-image tests now run with an explicit available interpreter: all
+three pass without skips. A reproduced historical CLI exit-code defect confused
+successful offline computation with unresolved image confidence. Narrow shared
+CLI/MCP reference policy preserves unknown evidence and all broker failure gates.
+The installed tarball runs the real worker offline with poisoned Fusion config,
+read-only package files and exact source-byte preservation; the full focused
+library/CLI/reference run passes all 43 tests.
+
+## Current delivery and handoff status — 9 November 2026
+
+The E1–E4 implementations are present in the integrated E/F base `178d37b`.
+Historical PR numbers above describe provenance, not a current queue of remaining
+implementation. Current package verification is against `refactor/agent-e-completion`.
+There are no outstanding E-owned JavaScript service implementations: remaining
+source paths delegate to emitted typed modules. A's execution/ownership, C/D's
+operation policies and F's observer/browser internals remain separate ownership.
+
+The default console now uses F's ready web service. `diagnostic` and `--web`
+remain compatibility aliases; explicit registration, global selection, readiness
+failure and caller-only disposal retain their existing contracts. This intentional
+behavior change retires the TTY-only launch, so its old launch expectation is
+replaced by the same web contract in default and explicit modes. Artifact project
+discovery retains its standalone historical tests, but cannot silently substitute
+for web project registration. Explicit broker administration remains in A's CLI.
+
+Help layout no longer imports terminal-kit at runtime. Typed ANSI grouping and
+pinned Unicode widths preserve frozen historical wrapping, including wide glyphs,
+combining marks, emoji, punctuation, long words and incomplete escape sequences.
+The historical oracle must remain test-only when F/G remove the root terminal-kit
+dependency; no production dependency is needed for help text layout.
+
+MCP process tests had stale fake-backend receipt parsing: the old assignment
+regex silently ignored the current typed receipt binding, so no exact receipt
+could settle. The fixture now unwraps the actual prepared artifact, requires its
+binding/path, and tests both official/nonofficial `prepareReceiptScript` output.
+Fake WSL path spelling is installed in both parent and real worker processes.
+The 180-second public request budget matches the existing library contract and
+retained 67–74-second admission evidence; short deadline contracts remain tested
+separately. Duplicate requests, exact output, owner isolation, pause/restart and
+one physical send per distinct request retain their assertions.
+
+Still required before qualification: final integrated Linux CI on both supported
+Node lines, including real process birth/open-file identity and broker consumers;
+F's final renderer retirement; G's installed dependency and facade audit. The
+restricted work host cannot provide `/proc` evidence, so no production guards
+are bypassed and no local pass is substituted for those gates. The three native
+audits and native Windows/Fusion UI behavior remain explicitly unqualified.

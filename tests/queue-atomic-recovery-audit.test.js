@@ -178,3 +178,66 @@ for (const mode of ['passed', 'failed', 'source_drift', 'final_byte_tamper', 'ba
     assert.equal(hash(JSON.stringify(initialState)), hash(JSON.stringify(state.data)));
   });
 }
+
+test('typed recovery reader preserves predecessor facts and refuses ambiguous result evidence', () => {
+  const old = require('./fixtures/historical-module.cjs')(
+    '5102259463ba490b942d4d94dc8db959bfcfbe0e', 'src/queue-atomic-recovery-audit.js');
+  const identity = { resolvedIdentity: { name: 'owned', creationId: 'owned-id', fileId: null } };
+  const value = summary(identity), line = 'FMCAD_RESULT ' + JSON.stringify(value);
+  const reply = text => ({ result: { content: [{ type: 'text', text }] } });
+  for (const text of [line, JSON.stringify({ stdout: line }), 'progress\r\n' + line + '\r\n'])
+    assert.deepEqual(auditSummary(reply(text), identity), old.auditSummary(reply(text), identity));
+  for (const tail of [line, 'FMCAD_RESULT {"nativeOutcome":"committed"}']) {
+    const ambiguous = reply(line + '\n' + tail);
+    assert.deepEqual(old.auditSummary(ambiguous, identity), value);
+    assert.throws(() => auditSummary(ambiguous, identity), { code: 'AUDIT_OUTPUT_INVALID' });
+  }
+  const multiple = { result: { content: [{ type: 'text', text: line }, { type: 'text', text: line }] } };
+  assert.deepEqual(old.auditSummary(multiple, identity), value);
+  assert.throws(() => auditSummary(multiple, identity), { code: 'AUDIT_OUTPUT_INVALID' });
+  for (const mutate of [
+    s => { s.ui.idle = false; }, s => { s.commandDefinition.status = 'owned'; },
+    s => { s.document.matches = -1; }, s => { s.snapshot.bodies = 0.5; },
+    s => { s.snapshot = null; }, s => { s.requestIdentity = {}; },
+    s => { s.ui.errorType = 'bad error'; }, s => { s.snapshot.isSaved = 'yes'; },
+  ]) {
+    const changed = structuredClone(value); mutate(changed);
+    for (const api of [old, { auditSummary }]) assert.throws(
+      () => api.auditSummary(reply('FMCAD_RESULT ' + JSON.stringify(changed)), identity),
+      { code: 'AUDIT_OUTPUT_INVALID' });
+  }
+});
+
+test('typed migration evidence adapter preserves immutable inventories, backups and refusals', t => {
+  const old = require('./fixtures/historical-module.cjs')(
+    '330849f22302bcf0ee955cd1945ddb2040eff8c7', 'src/queue-atomic-migration-files.js');
+  const current = require('../src/queue-atomic-migration-files');
+  const root = fixtureDirectory(t, 'migration-files-paired-');
+  const source = path.join(root, 'source'); fs.mkdirSync(source);
+  fs.mkdirSync(path.join(source, 'nested'));
+  fs.writeFileSync(path.join(source, 'first'), 'one');
+  fs.writeFileSync(path.join(source, 'nested', 'second'), 'two');
+  fs.writeFileSync(path.join(source, 'excluded'), 'not escrowed');
+  const exclude = name => name === 'excluded';
+  assert.deepEqual(current.inventory(source, exclude), old.inventory(source, exclude));
+  for (const [index, api] of [old, current].entries()) {
+    const destination = path.join(root, 'backup-' + index);
+    const manifest = api.backupTree(source, destination, exclude);
+    assert.deepEqual(manifest, current.inventory(source, exclude));
+    assert.deepEqual(api.backupTree(source, destination, exclude), manifest);
+    assert.equal(api.verifyTree(destination, manifest), undefined);
+    fs.chmodSync(path.join(destination, 'first'), 0o600);
+    fs.writeFileSync(path.join(destination, 'first'), 'tampered');
+    assert.throws(() => api.verifyTree(destination, manifest), { code: 'BACKUP_MISMATCH' });
+    assert.throws(() => api.backupTree(source, destination, exclude), { code: 'BACKUP_MISMATCH' });
+    const link = path.join(root, 'link-' + index); fs.symlinkSync(source, link);
+    assert.throws(() => api.directory(link), { code: 'UNSAFE_MIGRATION_PATH' });
+    const fileLink = path.join(root, 'file-link-' + index); fs.symlinkSync(path.join(source, 'first'), fileLink);
+    assert.throws(() => api.fileHash(fileLink), { code: 'UNSAFE_MIGRATION_FILE' });
+    const receipt = path.join(root, 'receipt-' + index);
+    assert.deepEqual(api.exclusive(receipt, { owner: 'one' }), { owner: 'one' });
+    assert.deepEqual(api.exclusive(receipt, { owner: 'one' }), { owner: 'one' });
+    assert.throws(() => api.exclusive(receipt, { owner: 'two' }), { code: 'MIGRATION_RECEIPT_CONFLICT' });
+    assert.equal(fs.readFileSync(receipt, 'utf8'), '{"owner":"one"}');
+  }
+});

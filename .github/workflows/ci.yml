@@ -112,11 +112,15 @@ jobs:
 
   scenario-broker:
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ matrix.suite == 'sketches' && 22 || 16 }}
+    # The saved/reopen families exercise the real checker and serialized SDK lane.
+    # Budgets use the retained 10-owner artifacts from run 42563032582; they do
+    # not relax any scenario, admission or benchmark assertion.
+    timeout-minutes: ${{ matrix.suite == 'rectangles' && 65 || matrix.suite == 'reopen' && 40 || matrix.suite == 'revisions' && 46 || matrix.suite == 'sketches' && 22 || 16 }}
     strategy:
       fail-fast: false
       matrix:
         protocol: [mcp, addin]
+        concurrency: [10]
         suite:
           [
             foundation,
@@ -127,7 +131,28 @@ jobs:
             boxes,
             attributes,
             sketches,
+            reopen,
+            revisions,
+            rectangles,
+            thread-recipes,
           ]
+        include:
+          - { protocol: mcp, suite: reopen, concurrency: 1 }
+          - { protocol: mcp, suite: reopen, concurrency: 2 }
+          - { protocol: addin, suite: reopen, concurrency: 1 }
+          - { protocol: addin, suite: reopen, concurrency: 2 }
+          - { protocol: mcp, suite: revisions, concurrency: 1 }
+          - { protocol: mcp, suite: revisions, concurrency: 2 }
+          - { protocol: addin, suite: revisions, concurrency: 1 }
+          - { protocol: addin, suite: revisions, concurrency: 2 }
+          - { protocol: mcp, suite: rectangles, concurrency: 1 }
+          - { protocol: mcp, suite: rectangles, concurrency: 2 }
+          - { protocol: addin, suite: rectangles, concurrency: 1 }
+          - { protocol: addin, suite: rectangles, concurrency: 2 }
+          - { protocol: mcp, suite: thread-recipes, concurrency: 1 }
+          - { protocol: mcp, suite: thread-recipes, concurrency: 2 }
+          - { protocol: addin, suite: thread-recipes, concurrency: 1 }
+          - { protocol: addin, suite: thread-recipes, concurrency: 2 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -138,12 +163,14 @@ jobs:
       - run: npm run build
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      # Sketches check four full helper programs per owner; keep time for the final file audit.
-      - run: timeout --signal=TERM --kill-after=15s ${{ matrix.suite == 'sketches' && '18m' || '12m' }} npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite }} --concurrency 10 --owners ${{ (matrix.suite == 'saved' || matrix.suite == 'attributes' || matrix.suite == 'sketches') && 2 || 10 }}
+      # Sketches check four full helper programs per owner. Reopen/revision/
+      # rectangle jobs retain ten owners at 1/2/10 concurrency and enough time
+      # for settled cleanup through the single physical SDK lane.
+      - run: timeout --signal=TERM --kill-after=15s ${{ matrix.suite == 'rectangles' && '58m' || matrix.suite == 'reopen' && '34m' || matrix.suite == 'revisions' && '40m' || matrix.suite == 'sketches' && '18m' || '12m' }} npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite }} --concurrency ${{ matrix.concurrency }} --owners ${{ (matrix.suite == 'saved' || matrix.suite == 'attributes' || matrix.suite == 'sketches') && 2 || 10 }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: scenario-broker-${{ matrix.protocol }}-${{ matrix.suite }}
+          name: scenario-broker-${{ matrix.protocol }}-${{ matrix.suite }}-c${{ matrix.concurrency }}
           path: .test-artifacts/scenarios/
           include-hidden-files: true
 
@@ -200,3 +227,35 @@ jobs:
           name: modeling-admission-${{ matrix.node }}-${{ matrix.shard }}
           path: .test-artifacts/modeling/
           include-hidden-files: true
+
+  public-consumers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            tests/python-requirements.txt
+            tests/python-constraints.txt
+            assets/*requirements.txt
+      - run: python -m pip install -r tests/python-requirements.txt
+      - run: npm ci
+      - run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: npm run test:prepare-offline
+      - run: timeout --signal=TERM --kill-after=15s 18m npm run test:public-consumers
+        env:
+          FMCAD_REFERENCE_PYTHON: python3
+          TERM: xterm

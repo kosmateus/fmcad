@@ -57,3 +57,98 @@ def _di_metadata(plan: "Mapping[str, object]", **values: "JsonValue") -> "JsonRe
     result: JsonRecord = {'owner': owner, 'revision': revision, 'digest': digest}
     result.update(values)
     return result
+
+
+def _di_json_object(value: "JsonValue", label: str) -> "JsonObject":
+    if not isinstance(value, dict):
+        raise ValueError(label + ' must be an object')
+    entries = _cad_cast("dict[object, JsonValue]", value)
+    if any(not isinstance(key, str) for key in entries):
+        raise ValueError(label + ' keys must be strings')
+    return _cad_cast("JsonObject", entries)
+
+def _di_json_records(value: "JsonValue", label: str) -> "list[JsonRecord]":
+    if not isinstance(value, list):
+        raise ValueError(label + ' must be an array')
+    return [_di_json_object(row, label + ' item') for row in value]
+
+def _di_item_metadata(value: "JsonValue") -> "_DiItemMetadata":
+    metadata = _di_json_object(value, 'Stored data-import metadata')
+    _cad_fields(metadata, ('owner', 'revision', 'digest'),
+                ('id', 'item', 'geometry', 'occurrence', 'placement'))
+    for key in ('owner', 'revision', 'digest'):
+        if not isinstance(metadata[key], str):
+            raise ValueError('Stored data-import metadata has invalid ' + key)
+    return _cad_cast("_DiItemMetadata", metadata)
+
+def _di_placement_metadata(value: "JsonValue") -> "_DiPlacementMetadata":
+    metadata = _di_json_object(value, 'Stored placement metadata')
+    _cad_fields(metadata, ('owner', 'revision', 'digest', 'matrix', 'provenance'))
+    for key in ('owner', 'revision', 'digest'):
+        if not isinstance(metadata[key], str):
+            raise ValueError('Stored placement metadata has invalid ' + key)
+    if not isinstance(metadata['matrix'], list):
+        raise ValueError('Stored placement metadata has invalid matrix')
+    matrix = _di_rigid(metadata['matrix'])
+    provenance = _di_json_object(metadata['provenance'], 'Stored placement provenance')
+    checked = dict(metadata)
+    checked.update(matrix=matrix, provenance=provenance)
+    return _cad_cast("_DiPlacementMetadata", checked)
+
+def _di_plan(value: "JsonObject") -> "_DiPlan":
+    fields = ('version', 'operation', 'owner', 'revision', 'expectedRevision', 'onExisting',
+              'digest', 'provenance', 'result', 'unresolved', 'warnings', 'maxItems', 'budgetMs')
+    _cad_fields(value, fields, ('observed',))
+    operation = value['operation']
+    operations = ('param.import', 'catalog.import', 'catalog.check', 'placement.import',
+                  'placement.check', 'cots.replace')
+    if type(value['version']) is not int or value['version'] != 1:
+        raise ValueError('Unsupported data adapter version')
+    if not isinstance(operation, str) or operation not in operations:
+        raise ValueError('Unsupported data import operation')
+    if value['owner'] is not None and not isinstance(value['owner'], str):
+        raise ValueError('Import owner must be text or null')
+    if value['revision'] is not None and not isinstance(value['revision'], str):
+        raise ValueError('Import revision must be text or null')
+    if not operation.endswith('.check') and (not value['owner'] or not value['revision']):
+        raise ValueError('Mutating data import requires owner and revision')
+    if value['expectedRevision'] is not None and not isinstance(value['expectedRevision'], str):
+        raise ValueError('Expected revision must be text or null')
+    if value['onExisting'] not in ('error', 'reuse', 'update'):
+        raise ValueError('Invalid onExisting policy')
+    if not isinstance(value['digest'], str):
+        raise ValueError('Import digest must be text')
+    provenance = _di_json_object(value['provenance'], 'Import provenance')
+    result = _di_json_object(value['result'], 'Import result')
+    if not isinstance(value['unresolved'], list) or not isinstance(value['warnings'], list):
+        raise ValueError('Import unresolved and warnings must be arrays')
+    unresolved = [_di_json_object(row, 'Unresolved item') for row in value['unresolved']]
+    warnings: list[str] = []
+    for warning in value['warnings']:
+        if not isinstance(warning, str):
+            raise ValueError('Import warnings must be text')
+        warnings.append(warning)
+    max_items, budget_ms = value['maxItems'], value['budgetMs']
+    if type(max_items) is not int or max_items < 1 or type(budget_ms) is not int or budget_ms < 1:
+        raise ValueError('Import maxItems and budgetMs must be positive integers')
+    value['provenance'], value['result'] = provenance, result
+    value['unresolved'], value['warnings'] = unresolved, warnings
+    return _cad_cast("_DiPlan", value)
+
+def _di_plan_text(plan: "_DiPlan", key: "Literal['owner', 'revision']") -> str:
+    value = plan[key]
+    if not isinstance(value, str) or not value:
+        raise ValueError('Mutating data import requires ' + key)
+    return value
+
+def _di_existing(old: "JsonObject | None", plan: "_DiPlan", label: str) -> None:
+    if not old:
+        return
+    if old.get('owner') != plan['owner']:
+        raise ValueError(label + ': ownership conflict')
+    if plan['onExisting'] == 'error':
+        raise ValueError(label + ': already exists (onExisting defaults to error)')
+    if plan['onExisting'] == 'reuse' and (old.get('digest') != plan['digest'] or old.get('revision') != plan['revision']):
+        raise ValueError(label + ': reuse requires identical revision and content')
+    if plan['onExisting'] == 'update' and old.get('revision') != plan['expectedRevision']:
+        raise ValueError(label + ': expectedRevision conflict')

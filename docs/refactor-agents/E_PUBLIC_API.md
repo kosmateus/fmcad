@@ -4,6 +4,14 @@ Status: **claimed by Agent E**, 8 November 2026. Implementation branch:
 `refactor/agent-e-public-api`. Starting main: `0b84454`. Read
 [the shared plan](../REFACTOR_PARALLEL_PLAN.md).
 
+Current delivery (9 November 2026): E1–E4 implementations are present in the
+integrated E/F base `178d37b`, with final completion work on
+`refactor/agent-e-completion`. Default console launch now delegates to the ready
+web service, and MCP process fixture receipts follow the current typed artifact.
+The historical ledger below is provenance, not a list of open PRs. Use
+[the route audit](E_ROUTE_AUDIT.md) for implemented surfaces, intentional behavior
+changes and remaining Linux/native qualification gates.
+
 ## Outcome and ownership
 
 Finish public and host-side migration so the installed package exposes the same
@@ -284,3 +292,227 @@ tests pass, including installed strict declarations for the complete compatibili
 module. Existing frame bytes, bounded metadata diagnostics, no-retry errors and
 accepted-running-job assertions pass unchanged. Native ownership/inode checks
 remain CI qualification rather than locally weakened assertions.
+
+### UI host, domain and durable state boundaries
+
+PR #68 contains complete typed MCP compatibility orchestration; retained gate
+registration and full CI remain pending.
+
+UI helper execution, request/identity/profile logic and durable observation/
+lifecycle storage now have typed implementations. The host adapter preserves
+bounded argv/output, exact request/lifecycle readiness, and the crucial distinction
+between stopping an owned action helper and detaching a read-only status helper.
+The state store exposes an explicit file port, retaining exclusive claims,
+fsync-before-publication and absorbing unknown/finished transitions.
+
+Historical parity covers 13 host scenarios, UI validation/identity/probe bytes,
+profile declarations and observation/lifecycle files. All 53 library/UI cases pass
+(the new store fixture's missing os import was corrected without assertion
+changes); the retained real add-in guard also passes. Build, lint and test
+compilation pass. Installed declarations cover all three modules. UI command
+orchestration, watcher recovery and public console integration are still open;
+no native Fusion/Windows qualification is claimed.
+
+### Complete UI command and watcher orchestration
+
+PR #71 contains typed host/domain/state boundaries. `library-ui-command.ts` now
+owns inspect/respond/resolve, SDK probes, native command script preparation,
+watcher status, arming and authorized continuation. The JS path is a loader.
+Existing lease, exact identity/profile, one-time claim and unknown-outcome guards
+remain in place; no retry or native qualification is introduced.
+
+Strict compilation exposed a historical native cancellation defect:
+`terminationScript` called undefined `pythonValue` despite importing
+`pythonLiteral`. Existing tests injected terminateNative, hiding the actual-path
+failure. A regression reproduces the old failure before dispatch, then requires
+one guarded call with the existing serializer and zero calls for unqualified
+profiles. Script bytes match the historical generator with only that missing
+binding repaired; Python AST parsing succeeds. A was notified on #42.
+
+All 55 library/UI tests pass, including installed declarations. The unchanged
+retained UI suite also passes in a separate process against the frozen predecessor.
+Build, lint and test typecheck pass. The historical subprocess explicitly clears
+NODE_TEST_CONTEXT so Node actually runs the child suite; no test is skipped.
+PR #48 passed full CI 42525428442 and merged as `5d5a793`; #50 now targets main.
+
+### Remaining host registration modules
+
+PR #73 contains complete typed UI orchestration. Image trace/optimize/boundaries,
+engineering-local, reference-image and review registration modules now contain
+only loaders at the old JS paths. Typed registration modules retain their actual
+composition and all descriptors/manuals. Direct typed engineering composition
+also exposed a weak provenance type; it now permits the existing structured
+provenance fields alongside the optional CLI inputPath, without runtime changes.
+
+Full build, lint and test typecheck pass. Historical metadata comparisons pass;
+the retained library/registry/reference/review/image run has 75 passes and two
+existing environment-dependent skips. Worker subprocess, no-config offline
+routing, preflight and unchanged outputs are exercised; skipped native/interpreter
+checks are not counted as qualified. No runtime assets or build lists changed.
+
+### Local reference completion versus unresolved evidence
+
+PR #76 preserves remaining host registrations. Selecting available Python image
+dependencies uncovered a pre-existing CLI regression: successful reference layout,
+calibration and comparison returned exit 1 solely because image confidence was
+`unknown`. The documented worker contract permits successful computation with
+unresolved evidence. A shared narrow predicate now accepts only the three exact
+schemaVersion-1, document-free reference envelopes with success:true and
+nativeAcceptance:notEvaluated. CLI uses it only for local receipts and the actual
+invocation operation; MCP retains failed transport/job precedence. Broker unknown
+outcomes and evidence values are unchanged. CLI also rejects explicit fail/blocked
+statuses even if a contradictory success flag is supplied.
+
+Historical code reproduces the exit-code defect. Negative cases retain rejection
+for wrong schema/operation, native identity/acceptance, failed/blocked statuses,
+unknown execution and reconciliation receipts. All 43 library/CLI/reference tests
+pass with no skips, including real image processing in an installed read-only
+tarball outside the repository with poisoned Fusion config and exact source-byte
+preservation. Build, lint and test typecheck pass. An initial installed check caught
+a workspace-only import; the CLI now consumes the existing staged composition
+boundary. Three CLI temp fixtures use os.tmpdir; the legacy WSL fixture uses the
+retained platform helper. Assertions and production platform detection are intact.
+
+### Public console boundary and explicit web launch
+
+The console/project entrypoints now contain typed implementations behind small
+compatibility loaders. Terminal defaults, diagnostic alias, artifact discovery,
+TTY errors and injected launch contracts are compared against frozen historical
+implementations. Explicit `--web` consumes F's published openControlCenter port:
+configured readiness, global view without an implicit project, exact registered
+project selection and caller-only disposal, including output failures. English
+and Polish help explain the distinction. Installed declarations include the
+console ports without private workspace dependencies. Terminal administration
+remains available until F/G's retirement gate resolves; no HTTP broker policy is
+added. This delivery also removes a redundant string expression from the review
+registration module discovered by the full lint gate.
+
+The web route must remain draft until integrated with F's production launcher
+and qualified as an installed consumer. Native qualification remains deferred.
+
+### Shared public-consumer gate proposal for G
+
+The isolated proposal registers 33 retained public suites in a separate Node
+22.13.0/24.x CI job, installs the image test requirements and explicitly sets
+FMCAD_REFERENCE_PYTHON=python3. It warms the optional supported OpenCode V1 host
+metadata in the disposable offline cache without adding production dependencies.
+TERM=xterm describes the injected interactive-terminal fixture. Three temporary
+directories use os.tmpdir and the isolated child preserves PATH for hosts where
+process.execPath is relative; all behavioral assertions are unchanged.
+
+Local initial gate: 227 tests, 220 passed, seven failed, zero skips. Three
+failures require /proc (broker birth/artifact identity), two were hard-coded
+/tmp fixtures corrected here, and two presence reporters cannot establish birth
+identity on this host. Corrected broker fixture reruns reach the retained /proc
+guard; the stopped-broker child reaches a sandbox Unix-socket EPERM rather than
+the Linux ENOENT contract. The additional review/UI/retained-origin run has 34
+passes and one corrected temporary-directory failure; its broker rerun reaches
+the same /proc guard. These are not green qualification claims. Full Linux CI
+must run unchanged assertions before merging.
+
+The isolated E/F integration tree builds and its installed tarball passes real
+console readiness, static assets, registered/global URL selection, both aliases,
+caller disposal and shared-service reuse. The diagnostic compatibility warning
+introduced by F is retained. No terminal implementation is retired.
+
+### Final E/F public-console integration
+
+The integration combines E's public boundary and G proposal with F's published
+terminal-boundary branch (7cc23f1), preserving all F telemetry/build additions.
+It retains the real installed-console probe as tests/console-installed.test.js
+and selects it in the public consumer gate. The test uses the actual launcher,
+registration store and HTTP assets, checks both aliases and global/project URLs,
+and verifies a single shared service survives caller disposal. Cleanup owns the
+spawned child handle and restores test environment; it never trusts a PID from
+discovery. The route audit table now records implemented surfaces separately
+from outstanding full-CI, shared integration and native qualification gates.
+
+Integrated validation: full build, lint, formatting and test typecheck pass.
+All 36 focused console/library/installed-consumer tests pass with zero skips,
+including actual Python reference processing and strict external declarations.
+Full GitHub CI, G's shared-gate acceptance and predecessor merges remain open.
+
+### Final locale and OpenCode reporter inventory
+
+The residual source audit identified i18n.js and opencode/presence.cjs as real
+public implementations, despite their typed consumers. Both now load strict
+library-i18n/library-opencode-presence composition. Translation tables, locale
+precedence, plural/number/duration formatting, config preference preservation,
+exclusive locks and atomic writes match frozen historical behavior. Reporter
+events preserve identity hashes and request/document/turn metadata, best-effort
+failures and independent resource cleanup; retained V1/V2 hooks preserve mapping
+and local subscription abort. Production process-birth checks are unchanged.
+
+Nine retained terminal/historical reporter tests pass. The public gate retains
+these comparisons; installed strict declarations cover both new modules. F has
+been notified that direct-telemetry.js and opencode/project-logger.cjs remain
+shared passive producer boundaries outside this public reporter migration.
+
+Latest installed host rerun after reporter migration: all ten MCP/OpenCode
+V1/V2 consumer tests pass, zero skips. The actual packed plugin verifies owner
+context, permission denial, no replay after unknown outcomes, standalone imports
+and owned cleanup. Full lint and build pass.
+
+Merged after exact-head full CI: #50 at 2463569 and #52 at cf3e6ad, following
+#39/#46/#48. #62 is now based on main and ready; later E deliveries remain
+queued for full CI. #83/#84/#85 contain the shared gate, F integration and final
+public locale/reporter migration. No queued run is recorded as passing.
+
+### Default MCP producer composition
+
+The final F handoff audit found that only injected tests constructed the MCP
+telemetry producer. The default process root now consumes F's actual
+createMcpStdioTelemetry with the existing client/instance identity and queue
+directory. Existing owned-result reporting remains the sole event path here:
+no extra polling, admission, registration fallback or inferred phase is added.
+Injected runtimes retain explicit ports. Construction failures remain bounded
+diagnostics and close remains independent via allSettled.
+
+A process-level lifecycle fixture checks exact construction identity/directory,
+once-only close, failing create/close, clean JSON-RPC stdout and early help/error
+returns without producer construction. Actual installed MCP discovery exercises
+the real producer constructor with poisoned application configuration.
+
+Producer validation: full build and targeted lint pass; all 18 default-process,
+stdio/framing and actual installed MCP tests pass with zero skips.
+
+### Passive OpenCode event client boundary
+
+The active reporter now imports typed library-project-events directly. This
+extracts only queue-location derivation, no-follow regular-file token reads,
+bounded authenticated IPC and the typed event sink. The legacy observer reuses
+these helpers; its queue observations, log retention, child entrypoint and
+authenticated diagnostic branch remain unchanged under F. Historical comparisons
+cover success/split/malformed/null/oversized frames, denial, disconnect, socket
+errors, timeout, exact token bytes, invalid events, disabling and disposal.
+
+Four paired IPC/reporter tests and two installed declaration/reference checks
+pass. Three retained log migration/rotation/guard tests pass. The real observer
+startup test cannot create its control file on this host. Both the frozen
+original and migrated implementation return LOGGER_NOT_READY; an independent
+abstract-socket bind reproduces EPERM. The retained observer test is unchanged
+and remains a Linux CI gate.
+
+### Current-main integration and completed CI merges
+
+Fetched main `9daedef` into #83 and propagated the merge through #84–#87.
+The adjacent package-script conflict was resolved by retaining both A's
+broker-regressions and E's public-consumers, all script tokens, both CI jobs,
+and A/B's completed migrations. The final tree merges cleanly against main.
+Build, lint, formatting and test types pass. All 42 combined historical,
+installed CLI/library/MCP/OpenCode/console/event-client and gate-registration
+checks pass with zero skips. Linux CI now contains 26 jobs; none may be inferred
+from the restricted-host results.
+
+Additional exact-head full-CI merges:
+
+- #62: run 42530327335, merge `9daedef`.
+- #64: run 42531269978, merge `cafe9404`.
+- #67: run 42531860636, merge `be50c47d`.
+- #68: run 42532613149, merge `54b31e48`.
+
+Each run completed all 22 jobs successfully before its expected-head merge.
+Remaining #71/#73/#76/#80 and E/F/shared-gate integration are pending full CI.
+Native qualification, keychain and terminal retirement remain outside this
+completion claim. G has the current route inventory, preserved gate changes
+and exact validation evidence in #40.

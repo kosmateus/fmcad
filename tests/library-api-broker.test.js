@@ -13,7 +13,8 @@ const { createBrokerTransport } = require('../src/dist/fusion-transport/broker')
 const { preparePythonArtifact, pythonArtifactManifest } = require('../src/python');
 
 test('public library admits status once and rejects bad typing before the physical sender', async t => {
-  const home = fs.mkdtempSync('/tmp/opencode/library-broker-');
+  t.after(require('./fixtures/fake-wsl-platform.cjs')());
+  const home = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'library-broker-'));
   const oldState = process.env.XDG_STATE_HOME;
   process.env.XDG_STATE_HOME = home;
   const dir = queueDirectory();

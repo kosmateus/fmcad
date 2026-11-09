@@ -78,7 +78,11 @@ test('canonical catalog, typed CLI/MCP project the same three public operations 
   assert.ok(cadBundleManifest.some(unit => unit.id === 'measure-baseline-application'));
 });
 
-test('typed CLI and MCP execute capture → owned inspect → compare through the fake broker', { timeout: 60000 }, async t => {
+// Capture and compare each run the production Python checker before one SDK turn.
+// The retained admission measurements are 67–74 seconds per generated program;
+// a five-second command budget tests premature cancellation, not this lifecycle.
+const brokerCommandTimeoutMs = 180000;
+test('typed CLI and MCP execute capture → owned inspect → compare through the fake broker', { timeout: 2 * brokerCommandTimeoutMs + 30000 }, async t => {
   t.after(require('./fixtures/fake-wsl-platform.cjs')());
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-brep-broker-'));
   const project = path.join(root, 'project');
@@ -104,7 +108,7 @@ test('typed CLI and MCP execute capture → owned inspect → compare through th
     },
   };
   const fakeBackend = {
-    server: { timeoutMs: 5000 },
+    server: { timeoutMs: brokerCommandTimeoutMs },
     _parse: JSON.parse,
     async _post(envelope) {
       const request = envelope.params.arguments;
@@ -164,7 +168,7 @@ test('typed CLI and MCP execute capture → owned inspect → compare through th
     },
   };
   const config = resolveFmcadConfiguration({
-    adapter: { backend: 'mcp', routing: 'queue', url: 'http://127.0.0.1:8765/mcp', timeoutMs: 5000,
+    adapter: { backend: 'mcp', routing: 'queue', url: 'http://127.0.0.1:8765/mcp', timeoutMs: brokerCommandTimeoutMs,
       headers: {} },
     environment: {}, file: {}, platformDefaults: {}, acceptedService: null,
   });

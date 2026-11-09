@@ -93,3 +93,18 @@ tests/partition-bench-*/
 /src/queue-instance-liveness.d.ts
 /src/queue-epoch-lineage.js
 /src/queue-epoch-lineage.d.ts
+
+# Public launchers compiled from bin/*.ts.
+/bin/fmcad.js
+/bin/fmcad-mcp.js
+
+# Typed development-tool compatibility launchers.
+/scripts/benchmark-queue-idle.js
+/scripts/drain-idle-maintenance.js
+/scripts/export-queue-phases.js
+/scripts/install-queue-phases.js
+/scripts/migrate-project-log.js
+/scripts/migrate-project-responses.js
+/scripts/recover-local-build-preflight.js
+/scripts/start-installed-queue-phases.js
+/scripts/verify-queue-phases.js

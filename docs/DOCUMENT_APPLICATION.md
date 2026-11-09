@@ -130,7 +130,7 @@ npm run typecheck:tests
 npm run lint
 node --test tests/document-application.test.js tests/document-persistence-faults.test.js tests/document-commands.test.js
 node --test tests/document-publication.test.js tests/references-refresh.test.js tests/externalization.test.js tests/data_import.test.js tests/publish.test.js
-node --test tests/review*.test.js tests/shot.test.js tests/backend-cli.test.js tests/manual-legacy.test.js tests/registry.test.js
+node --test tests/review*.test.js dist/tests/shot.test.js tests/backend-cli.test.js tests/manual-legacy.test.js tests/registry.test.js
 ```
 
 New fake SDK/journal/FS tests cover pre-save failures, lost acknowledgement,

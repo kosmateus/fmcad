@@ -202,5 +202,29 @@
     "sourcePath": "src/queue-atomic-recovery-audit.js",
     "file": "queue-atomic-recovery-audit-510.js.txt",
     "sha256": "6735c34e918c70293fd26420dc80b43c300eaa04f405ff0d421e91d2afb68484"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-atomic-migration-files.js",
+    "file": "queue-atomic-migration-files-330849f.js.txt",
+    "sha256": "6db764bd5b642f83bc35c86734b8529ffd58ff131830a4549b28239c7272754a"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-atomic-migration.js",
+    "file": "queue-atomic-migration-330849f.js.txt",
+    "sha256": "882b35f43d466fb40759d100606b34d7386fa9a4eabe1a4276ec465adc76f437"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-saved-audit-path.js",
+    "file": "queue-saved-audit-path-330849f.js.txt",
+    "sha256": "5acc6cfb5a4ee3051a9214baf2b030db675f8cee378198959c900d4ef694cd97"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-saved-fixture-reader.js",
+    "file": "queue-saved-fixture-reader-330849f.js.txt",
+    "sha256": "1942c3b3ec6802d8d0639e15e7e9ab9ae5f5522dc28e576d22fb0095326b0a44"
   }
 ]

@@ -10,8 +10,7 @@ const { once } = require('node:events');
 const { startClientPresence, readClientPresence } = require('../src/client-presence');
 const { brokerSnapshot } = require('../src/console-data');
 const { presenceSummary } = require('../src/console-client-identity');
-const { createUI } = require('../src/console-ui');
-const kit = require('terminal-kit');
+const { label } = require('../src/console-labels');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(fn, timeout = 10000) {
   const end = Date.now() + timeout;
@@ -57,7 +56,7 @@ test('registered queue client publishes real process presence while idle and nor
   const snapshot = brokerSnapshot(project, { dir });
   assert.equal(snapshot.agents.find(agent => agent.id === 'mcp-stdio:live').presence, 'observed');
   assert.equal(snapshot.agents.find(agent => agent.id === 'mcp-stdio:old').source, 'job-history');
-  const ui = createUI({ buffer: new kit.ScreenBuffer({ width: 100, height: 30 }), prefs: {}, language: 'en' });
+  const ui = { language: 'en', L: key => label(key, 'en') };
   assert.match(presenceSummary(snapshot, ui), /presence confirmed/);
   const stale = readClientPresence(project, { now: () => Date.now() + 20000 }).clients[0];
   assert.equal(stale.presence, 'unknown');
@@ -105,7 +104,7 @@ test('multiple processes sharing a client ID prefer a confirmed live signal over
   assert.equal(client.presence, 'observed'); assert.equal(client.processCount, 2); assert.equal(client.observedProcesses, 1);
 });
 test('history-only Overview does not imply a broken measured presence state', () => {
-  const ui = createUI({ buffer: new kit.ScreenBuffer({ width: 100, height: 30 }), prefs: {}, language: 'en' });
+  const ui = { language: 'en', L: key => label(key, 'en') };
   assert.match(presenceSummary({ agents: [{ id: 'old', source: 'job-history', presence: 'unknown' }] }, ui), /history only/);
   assert.doesNotMatch(presenceSummary({ available: false, agents: [{ id: 'live', source: 'queue-client-process-heartbeat', presence: 'observed' }] }, ui), /presence confirmed/);
 });

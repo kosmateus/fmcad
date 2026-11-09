@@ -491,12 +491,21 @@ def _shapes_primitive(ctx: "CadContext", data: "JsonObject", mode: str) -> "Json
              'tube': ('outerRadius', 'innerRadius', 'height'),
              'ring': ('outerRadius', 'innerRadius', 'height'),
              'cone': ('baseRadius', 'topRadius', 'height')}[mode]
-    _model_fields(data, ('name',) + sizes, ('plane',))
-    for key in sizes:
-        if ctx.length(data[key]) <= 0:
-            raise ValueError(key + ' must be a positive length expression')
-    if mode in ('tube', 'ring') and ctx.length(data['innerRadius']) >= ctx.length(data['outerRadius']):
-        raise ValueError('innerRadius must be smaller than outerRadius')
+    # Only input validation belongs to the known nonmutating rejection boundary.
+    # Native lookup, helper creation and kernel failures must still propagate.
+    try:
+        _model_fields(data, ('name',) + sizes, ('plane',))
+        for key in sizes:
+            if ctx.length(data[key]) <= 0:
+                raise ValueError(key + ' must be a positive length expression')
+        if mode in ('tube', 'ring') and ctx.length(data['innerRadius']) >= ctx.length(data['outerRadius']):
+            raise ValueError('innerRadius must be smaller than outerRadius')
+    except ValueError as exc:
+        return {'status': 'failed',
+                'error': {'code': 'INVALID_INPUT', 'message': str(exc)},
+                'rejection': {'kind': 'cad-input-rejection', 'version': 1,
+                              'operation': 'shape.' + mode,
+                              'mutationStatus': 'not_started'}}
     plane = data.get('plane', 'XY')
     entity = _shapes_native(ctx, plane)
     if _cad_type(entity) != 'ConstructionPlane':
