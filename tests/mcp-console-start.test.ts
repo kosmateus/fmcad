@@ -79,3 +79,68 @@ test("MCP help never starts the console or reads user configuration", () => {
   });
   assert.equal(result, undefined);
 });
+
+test("invalid application configuration does not break offline MCP discovery", async () => {
+  const stdin = new PassThrough(),
+    stdout = new PassThrough(),
+    stderr = new PassThrough();
+  let output = "",
+    diagnostics = "",
+    reads = 0;
+  stdout.on("data", (chunk: Buffer) => {
+    output += chunk.toString();
+  });
+  stderr.on("data", (chunk: Buffer) => {
+    diagnostics += chunk.toString();
+  });
+  const runtime = startStdio([], {
+    stdin,
+    stdout,
+    stderr,
+    loadConfig: () => {
+      reads++;
+      throw new Error("Invalid application configuration fixture");
+    },
+    ensureWeb: () =>
+      assert.fail("Invalid configuration cannot start the companion"),
+    QueueClient: class {
+      constructor() {
+        assert.fail("Invalid configuration cannot create a broker client");
+      }
+    },
+  });
+  assert.ok(runtime);
+  stdin.end(
+    [
+      { jsonrpc: "2.0", id: 1, method: "ping" },
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "fmcad_queue_status", arguments: {} },
+      },
+      { jsonrpc: "2.0", id: 3, method: "ping" },
+    ]
+      .map((value) => JSON.stringify(value))
+      .join("\n") + "\n",
+  );
+  await runtime.closed;
+  const messages = output
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(
+    messages.find((value) => value.id === 1),
+    { jsonrpc: "2.0", id: 1, result: {} },
+  );
+  assert.deepEqual(
+    messages.find((value) => value.id === 3),
+    { jsonrpc: "2.0", id: 3, result: {} },
+  );
+  assert.match(
+    messages.find((value) => value.id === 2).error.message,
+    /Invalid application configuration fixture/,
+  );
+  assert.equal(reads, 2);
+  assert.equal(diagnostics, "");
+});

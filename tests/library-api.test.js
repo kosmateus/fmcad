@@ -190,6 +190,9 @@ test('outside-repository consumer imports built JS and declarations with no sour
       import { shotCmd, type ShotClient } from './node_modules/fmcad/dist/src/dist/composition/library-shot.js';
       declare const shotClient: ShotClient;
       void shotCmd(shotClient, []);
+      import { queueMetadata } from './node_modules/fmcad/dist/src/dist/composition/library-mcp-metadata.js';
+      import { createCatalogPost } from './node_modules/fmcad/dist/src/dist/composition/library-mcp-catalog.js';
+      void queueMetadata; void createCatalogPost;
       import type { FmcadOptions, ExecutionReceipt, ReviewRequest, ReviewServiceOptions, PythonCheckReport } from 'fmcad/api';
       declare const options: FmcadOptions;
       declare const reviewOptions: ReviewServiceOptions;
@@ -245,7 +248,7 @@ test('outside-repository consumer imports built JS and declarations with no sour
   }
 });
 
-function historicalPublicBoundary(name) {
+function historicalPublicBoundary(name, additionalExports = '') {
   const fixture = path.join(__dirname, 'fixtures/public-host-baseline', name + '.js.txt');
   const source = fs.readFileSync(fixture, 'utf8');
   const expected = require('./fixtures/public-host-baseline/provenance.json')[`src/${name}.js`];
@@ -254,7 +257,7 @@ function historicalPublicBoundary(name) {
   const baseline = new Module(path.join(root, 'src', name + '.js'), module);
   baseline.filename = baseline.id;
   baseline.paths = module.paths;
-  baseline._compile(source, baseline.filename);
+  baseline._compile(source + additionalExports, baseline.filename);
   return baseline.exports;
 }
 
@@ -413,5 +416,62 @@ test('shot preserves historical single dispatch, response precedence and publica
       };
       assert.deepEqual(await observe(current), await observe(historical));
     }
+  }
+});
+
+test('MCP metadata preserves historical ownership validation and strips only private fields', () => {
+  const historical = historicalPublicBoundary('mcp-stdio-compat', '\nmodule.exports.queueMetadata = queueMetadata;');
+  const current = require('../src/dist/composition/library-mcp-metadata');
+  const cases = [null, [], {}, { unknown: true },
+    { sequence: { action: 'continue', id: 'lease' }, expectedRevision: 0, requestId: 'request-α', sessionId: 'session', doc: 'Żółć', docId: 'creation', docFileId: 'file', projectId: 'project', purpose: 'Inspect', description: 'Inspect', projectDirectory: '/tmp/project', roots: [{ uri: 'file:///tmp/project', name: 'local' }] },
+    { sequence: { action: 'begin', id: 'lease' } }, { sequence: { action: {}, id: 'lease' } },
+    { sequence: { action: 'end', id: 'lease', extra: true } },
+    { expectedRevision: -1 }, { expectedRevision: 1.5 }, { expectedRevision: '1' },
+    { purpose: 'a', description: 'b' }, { description: '\u0000' },
+    { projectDirectory: 'x'.repeat(257) }, { roots: Array(33).fill({uri: 'file:///tmp'}) },
+    { roots: [{ uri: 'file:///tmp', extra: true }] }, { roots: [{uri:'file:///tmp', name: 1}] },
+  ];
+  for (const key of ['requestId','sessionId','doc','docId','docFileId','projectId','projectDirectory']) {
+    for (const value of ['', ' ', 1, 'x'.repeat(257)]) cases.push({[key]: value});
+  }
+  for (const options of cases) {
+    for (const method of ['tools/call', 'ping']) {
+      const request = { jsonrpc:'2.0', id:'α', method, params:{name:'fixture', arguments:{doc:'argument'}, _meta:{other:{keep:true}, fmcad:options}} };
+      const original = structuredClone(request);
+      const observe = api => { try { return {value:api.queueMetadata(request)}; } catch (error) { return {error:{message:error.message,code:error.code}}; } };
+      assert.deepEqual(observe(current), observe(historical));
+      assert.deepEqual(request, original);
+    }
+  }
+});
+
+test('typed MCP catalog preserves local routing, notification errors and exact owner pins', async () => {
+  const historical = historicalPublicBoundary('mcp-stdio-compat');
+  const current = require('../src/mcp-stdio-compat');
+  const catalog = require('../src/dist/api').createCatalogServices();
+  historical.configureCatalogServices(catalog);
+  current.configureCatalogServices(catalog);
+  const call = (name, args, meta) => ({jsonrpc:'2.0',id:'request-α',method:'tools/call',params:{name,arguments:args,...(meta ? {_meta:{fmcad:meta}} : {})}});
+  const args = {doc:'Żółć', docId:'creation',docFileId:'file',data:{},projectId:'project'};
+  const requests = [
+    {jsonrpc:'2.0',id:1,method:'tools/list'}, {jsonrpc:'2.0',method:'tools/list'},
+    {jsonrpc:'2.0',id:null,method:'ping'},
+    call('fmcad_cad_entity_list', args),
+    call('fmcad_cad_entity_list', {...args,preview:true}, {description:'Inspect'}),
+    call('fmcad_cad_entity_list', {...args,preview:true}, {expectedRevision:0}),
+    call('fmcad_cad_entity_list', {...args,purpose:'body'}, {description:'meta'}),
+    call('fmcad_cad_entity_list', {...args,preview:'true'}),
+    call('fmcad_cad_missing', {}), call('other_tool', {raw:true}),
+    {...call('fmcad_cad_entity_list',args), id:undefined},
+    {jsonrpc:'2.0',method:'tools/call',params:{name:'fmcad_cad_entity_list',arguments:args}},
+  ];
+  for (const queued of [false,true]) for (const response of [{success:true}, {success:false}, null]) for (const request of requests) {
+    const observe = async api => {
+      const calls = [];
+      const post = api.createCatalogPost(async (...values) => {calls.push(['post',...values]); return {status:204,raw:''};}, {queued,cfg:{backend:'mcp'}, execute:async (...values) => {calls.push(['execute',...values]); return response;}});
+      try {return {result:await post(structuredClone(request),'session','protocol'),calls};}
+      catch (error) {return {error:{name:error.name,message:error.message},calls};}
+    };
+    assert.deepEqual(await observe(current),await observe(historical));
   }
 });

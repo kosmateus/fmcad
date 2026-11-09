@@ -21,13 +21,30 @@ export function prepareOfflineTestCache(root: string): void {
     ) as unknown,
   );
   const dependencies = record(manifest["dependencies"]);
+  const devDependencies = record(manifest["devDependencies"]);
   if (!Object.keys(dependencies).length)
     throw new Error("No runtime dependencies");
+  const opencodeV1 = devDependencies["@opencode-ai/plugin"];
+  if (typeof opencodeV1 !== "string" || !opencodeV1)
+    throw new Error("Missing supported OpenCode V1 host dependency");
+  const cacheDependencies = {
+    ...dependencies,
+    "@opencode-ai/plugin": opencodeV1,
+  };
+  const packageSpecs = Object.entries(cacheDependencies).map(
+    ([name, version]) => {
+      if (typeof version !== "string" || !version)
+        throw new Error(`Invalid cache dependency: ${name}`);
+      return `${name}@${version}`;
+    },
+  );
+  const cache = process.env["npm_config_cache"];
+  const cacheArgs = cache ? ["--cache", cache] : [];
   const directory = mkdtempSync(path.join(tmpdir(), "fmcad-consumer-cache-"));
   try {
     writeFileSync(
       path.join(directory, "package.json"),
-      JSON.stringify({ private: true, dependencies }),
+      JSON.stringify({ private: true }),
     );
     execFileSync(
       "npm",
@@ -36,8 +53,11 @@ export function prepareOfflineTestCache(root: string): void {
         "--ignore-scripts",
         "--no-audit",
         "--no-fund",
+        "--no-save",
+        ...cacheArgs,
         "--prefix",
         directory,
+        ...packageSpecs,
       ],
       {
         cwd: directory,

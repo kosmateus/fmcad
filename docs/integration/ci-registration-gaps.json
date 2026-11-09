@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "baselineSha": "cf3e6ad9532b02ea11ac76560893daa9c79e2163",
+  "baselineSha": "9daedef4f763bd9b229cc88dc376967a488b55e3",
   "meaning": "Explicit open registration debt at the latest G checkpoint, never a passing coverage waiver. New orphan files fail CI.",
   "gaps": {
     "tests/addin-bridge.test.js": {
@@ -986,24 +986,6 @@
       "status": "unregistered",
       "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
       "nextAction": "G and C: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
-    },
-    "tests/mcp-application.test.js": {
-      "owner": "E",
-      "status": "unregistered",
-      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
-      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
-    },
-    "tests/mcp-catalog.test.js": {
-      "owner": "E",
-      "status": "unregistered",
-      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
-      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
-    },
-    "tests/mcp-client-context.test.js": {
-      "owner": "E",
-      "status": "unregistered",
-      "reason": "No recognized execution path from CI run steps; existing npm test discovery is insufficient.",
-      "nextAction": "G and E: inspect prerequisites, retain assertions, run an isolated offline selection and register it; use B for any native split."
     },
     "tests/mcp-stdio-queue-lifecycle.test.js": {
       "owner": "E",

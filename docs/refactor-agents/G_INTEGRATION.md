@@ -333,3 +333,29 @@ Inventory is 658 runtime files and 420 public routes. Package inspection reports
 `cd897a4821b64c68320f074daa18aea12e616ccd`. Review/shot/MCP/OpenCode loaders
 remain active and are not retired. E1–E4, G and offline acceptance remain open;
 native review/screenshot/Fusion qualification was not run.
+
+### Tenth A–F merge checkpoint
+
+Merged main `9daedef` adds Agent E's typed MCP catalog/context and optional
+companion correction from PR #62. Its exact head `33f7539` passed all 22 jobs in
+workflow `42530327335`; no merge-SHA workflow is registered. The combined
+candidate and eventual merge head still require fresh full CI.
+
+G registers MCP application, catalog and client-context in the contracts gate,
+moving coverage to 491 test sources / 242 registered / 249 explicit gaps. The
+online cache-preparation step now installs explicit runtime package specs plus the
+pinned V1 OpenCode host package, while every consumer install remains offline and
+production dependencies stay unchanged.
+
+Build, lint, formatting, strict test types and nine registration tests pass. All
+17 library/installed-MCP/companion cases and nine packed OpenCode V1/V2 cases pass
+outside the checkout. The retained MCP selection passes 15 of 18 locally; two
+process-identity and one owned-artifact assertion stop only at unavailable
+`/proc` and remain unchanged for Linux candidate CI. Simulator typing and the
+58-method / 21-property API check pass.
+
+Inventory is 661 runtime files and 420 public routes. Package inspection reports
+1,591 files, 3,380,374 compressed bytes and 16,654,784 unpacked bytes, shasum
+`e87a7421aa9ad042539f28b0ed2d1b382ebe176e`. MCP loaders remain active installed
+consumers and are not retired. E1–E4, G and offline acceptance remain open;
+native preparation remains `NOTRUN` and Fusion was not executed.

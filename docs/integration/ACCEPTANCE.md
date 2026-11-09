@@ -56,7 +56,7 @@ before any integration; record exact merged SHA and full matrix results here.
 | B       | PR #36 / #44 / #45 merged through `0d6f757` | Persistence plus anti-omission/profile increments; semantic mapping, shared reopen and lifecycle/recovery proof remain open. |
 | C       | PR #37 `a4943f3`               | Claim only at observation; canonical modeling services, Python boundaries and negative/readback evidence required.    |
 | D       | PR #38 `ee0fd54`               | Claim only at observation; file/source/version/publication and recovery contracts required.                           |
-| E       | PR #39 / #46 / #48 / #50 / #52 merged through `cf3e6ad` | Image, client/configuration, engineering/reference, MCP reconciliation and review/shot boundaries; remaining public routes and complete installed parity stay open. |
+| E       | PR #39 / #46 / #48 / #50 / #52 / #62 merged through `9daedef` | Image, client/configuration, engineering/reference, review/shot and MCP catalog/context boundaries; remaining public routes and complete installed parity stay open. |
 | F       | PR #41 merged as `04a42b4`     | First lifecycle/race delivery and UI ledger; controls, production broker parity, retention and TUI retirement remain open. |
 | G       | PR #40                         | Registration guard and inventories are an initial delivery, not G1–G4 completion.                                     |
 
@@ -448,3 +448,41 @@ reports 1,585 files, 3,378,941 compressed bytes and 16,648,056 unpacked bytes,
 shasum `cd897a4821b64c68320f074daa18aea12e616ccd`. No review, screenshot, MCP or
 OpenCode loader is retired. E1–E4, G and offline acceptance remain incomplete;
 native review/screenshot quality and Fusion qualification were not run.
+
+## Tenth merged A–F checkpoint — MCP catalog and installed discovery
+
+Merged main `9daedef4f763bd9b229cc88dc376967a488b55e3` contains Agent E's MCP
+catalog, context and optional-companion delivery from PR #62. Its exact head
+`33f75395dbbd6d2d27630cb2427d628d235e6846` passed all 22 jobs in workflow
+`42530327335`. No merge-SHA workflow is registered; G's combined candidate and
+eventual merge head still require their own fresh full matrices.
+
+Typed catalog, metadata and protocol composition preserves offline discovery,
+broker-only physical routing, exact owner/document/file pins, notifications and
+private metadata stripping. Invalid application configuration no longer pollutes
+offline MCP discovery through optional companion startup; the first queued
+operation still receives the original error. Valid configuration keeps once-only
+best-effort startup and its diagnostic. The inherited 256-character identifier
+limit beneath the advertised project-directory range is recorded, not silently
+changed.
+
+G registers the retained MCP application, catalog and client-context suites in
+`test:contracts`, moving static registration to 491 sources / 242 registered /
+249 explicit gaps. Offline-cache preparation now installs explicit package specs
+and includes the pinned supported V1 OpenCode host package so npm retains both
+packuments and tarballs. Product dependencies are unchanged.
+
+The combined build, lint, formatting, strict test typecheck and nine registration
+tests pass. All 17 library/installed-MCP/companion cases and all nine packed
+OpenCode V1/V2 cases pass with offline consumer installation outside the checkout.
+The newly registered MCP selection passes 15 of 18 locally; two process-identity
+and one owned-artifact case stop at unavailable `/proc`. Those guards and
+assertions remain unchanged and require the fresh Linux candidate matrix.
+Simulator typing and the 58-method / 21-property API shape check pass.
+
+Runtime inventory is 661 files and public routes remain 420. Package inspection
+reports 1,591 files, 3,380,374 compressed bytes and 16,654,784 unpacked bytes,
+shasum `e87a7421aa9ad042539f28b0ed2d1b382ebe176e`. MCP compatibility and
+entrypoint loaders remain active installed consumers and are not retired. E1–E4,
+G and offline acceptance remain incomplete; native Fusion qualification was not
+run and all native obligations remain `NOTRUN`.

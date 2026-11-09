@@ -1,4 +1,5 @@
 'use strict';
+const os = require('node:os');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -48,7 +49,7 @@ function installedClient(t, executable, directory) {
 }
 
 test('installed npm tarball resolves its declared runtime dependencies without checkout or NODE_PATH', { timeout: 60000 }, async t => {
-  const directory = fs.mkdtempSync('/tmp/opencode/mcp-installed-');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-installed-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const packed = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], {
     cwd: root, encoding: 'utf8',

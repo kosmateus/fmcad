@@ -9,7 +9,7 @@ const { QueueClient, defaultMcpClientId, resolveMcpProjectDirectory } = require(
 const { mcpRequestState, createMcpExecutionContext } = require('../src/dist/core/application/mcp-context');
 
 test('MCP projects are explicit or derived from one validated local root, never cwd', t => {
-  const base = fs.mkdtempSync('/tmp/opencode/mcp-project-context-');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-project-context-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const root = path.join(base, 'root');
   const project = path.join(root, 'project');
@@ -33,7 +33,7 @@ test('MCP projects are explicit or derived from one validated local root, never 
 });
 
 test('persistent owner credentials are distinct from process presence and private request context', t => {
-  const state = fs.mkdtempSync('/tmp/opencode/mcp-owner-context-');
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-owner-context-'));
   const oldState = process.env.XDG_STATE_HOME;
   process.env.XDG_STATE_HOME = state;
   t.after(() => {
