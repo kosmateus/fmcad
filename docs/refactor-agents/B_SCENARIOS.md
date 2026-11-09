@@ -1,7 +1,9 @@
 # Agent B — shared Fusion backend and live scenario migration
 
-Status: **available**. Claim this package in a short PR; inspect current main
-before starting. Read [the shared plan](../REFACTOR_PARALLEL_PLAN.md).
+Status: **claimed by Agent B** on 8 November 2026, starting from `0b84454`.
+The existing shared families and historical assertions remain the baseline.
+Implementation proceeds through separate inventory, transactional/file, analytical
+modeling and profile-registration deliveries; native execution remains deferred. Read [the shared plan](../REFACTOR_PARALLEL_PLAN.md).
 
 ## Outcome and ownership
 
@@ -99,3 +101,40 @@ explicit, justified native-only obligation, fixture isolation/cleanup is proven,
 all required model capabilities pass, and G has a runnable final native manifest.
 Native execution is deferred until the offline refactor is complete. Record
 PR/SHA, per-family checks, assumptions and remaining cases after every delivery.
+
+## Delivery ledger — bounded model persistence
+
+Starting point: `0b84454`; claim PR #36 (`ce68130`). The pinned build and all
+123 existing scenario tests passed before changes. Original archive Git history
+was recovered separately; its AGENTS.md diagnosis rules were read. No archived
+worktrees or database are added to the repository.
+
+The model now snapshots its supported design graph and opens the latest complete
+file into a new document identity. Regression tests prove rectangular geometry,
+attributes, parameters and timeline survive close/reopen, unsaved edits do not
+leak into snapshots, modified/no-op save version behavior, and refusal of foreign,
+incomplete, deleting, deleted and superseded files without creating documents.
+The old refusal test is replaced because bounded geometry persistence is now
+implemented, not because an unsupported native format is accepted.
+
+Validation: strict simulator types (zero errors); pinned API shape verifier
+(58 methods / 21 property accessors); two new persistence tests pass. Full scenario
+and CI evidence will be recorded before merge.
+
+Remaining B1–B4 work is still open. In particular this delivery does not yet add a
+shared saved-reopen scenario: the runner needs a receipt-bound creation-identity
+handoff and loss/restart tests before reopening is safe under its cleanup contract.
+Historical-version opening and native archive formats remain explicit unsupported
+capabilities. Token continuity here is a model assumption requiring native checks.
+
+## Delivery ledger — assertion audit and exclusive legacy profiles
+
+[Assertion audit](B_ASSERTION_AUDIT.md) freezes 1,588 static sites across 39 live
+sources and compares 613 historical sites (612 unchanged; one explicit MCP name
+change). It adds an anti-omission unit gate and a required-profile manifest, while
+leaving semantic per-assertion dispositions explicitly pending. Legacy global-state
+suites now have exclusive barriers and block later work after an uncertain failure.
+This is an intermediate B1/B4 delivery, not package completion or native evidence.
+
+Persistence PR #44 (`fe1c66f`) passed all 124 scenario unit tests locally; full CI
+is pending. The archive contains the pre-refactor Git baseline and is kept separate.

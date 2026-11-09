@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
-const { wrapScript, fusionPath, readJson, workflowNonterminal, workflowOutputNonterminal } = require('../src/queue-instance');
+const { wrapScript, readJson, workflowNonterminal, workflowOutputNonterminal } = require('../src/queue-instance');
 const native = require('../src/queue-native-receipt');
 
 const identity = { commandId: 'fmcad_atomic_' + 'a'.repeat(32), runId: 'native-receipt-test',
@@ -78,10 +78,9 @@ for _name in list(globals()):
         globals().pop(_name)
 app.lifecycle['complete']('atomic-batch',app.native_identity,dict(destroyed=True,completed=True,outcome='committed',accepted=True,createdCount=1,executeCount=1))
 `;
-  // This unit host is Linux; production Fusion receives the Windows/WSL UNC
-  // spelling. Adapt only that filesystem binding, not the receipt writer.
-  const wrapped = wrapScript(code, false, f.record.receipt, f.record.binding).replace(
-    '_qr_path = ' + JSON.stringify(fusionPath(f.record.receipt)), '_qr_path = ' + JSON.stringify(f.record.receipt));
+  // Only the filesystem binding differs from native Fusion; the production
+  // receipt writer and real process identity still execute unchanged.
+  const wrapped = wrapScript(code, false, f.record.receipt, f.record.binding, { mapPath: file => file });
   const result = spawnSync('python3', ['-B', '-c', bootstrap + wrapped + after], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   const script = readJson(f.record.receipt);
