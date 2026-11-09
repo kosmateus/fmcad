@@ -1,15 +1,16 @@
-'use strict';
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 
-test('FAKE isolated host/backend: actual broker dispatch authorizes known cleanup without any SDK or history edits', { timeout: 30000 }, t => {
-  const root = fs.mkdtempSync('/tmp/opencode/closed-epoch-broker-');
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const repo = path.resolve(__dirname, '..');
-  const code = `
+test(
+  "FAKE isolated host/backend: actual broker dispatch authorizes known cleanup without any SDK or history edits",
+  { timeout: 30000 },
+  (t) => {
+    const root = fs.mkdtempSync("/tmp/opencode/closed-epoch-broker-");
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const repo = process.cwd();
+    const code = `
     const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
     const repo=process.argv[1],root=process.argv[2];
     (async()=>{
@@ -42,7 +43,15 @@ test('FAKE isolated host/backend: actual broker dispatch authorizes known cleanu
       process.exit(0);
     })().catch(error=>{console.error(error);process.exit(1);});
   `;
-  const result = spawnSync(process.execPath, ['-e', code, repo, root], { encoding: 'utf8', timeout: 20000 });
-  assert.equal(result.status, 0, result.stderr || String(result.error));
-  assert.deepEqual(JSON.parse(result.stdout.trim()), { metadataAuthorized: true, sdkRequestsSent: 0, historyUnchanged: true });
-});
+    const result = spawnSync(process.execPath, ["-e", code, repo, root], {
+      encoding: "utf8",
+      timeout: 20000,
+    });
+    assert.equal(result.status, 0, result.stderr || String(result.error));
+    assert.deepEqual(JSON.parse(result.stdout.trim()), {
+      metadataAuthorized: true,
+      sdkRequestsSent: 0,
+      historyUnchanged: true,
+    });
+  },
+);

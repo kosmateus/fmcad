@@ -853,3 +853,21 @@ acceptance alone did not detect that emitted `createRequire(path.join(...))`
 could previously run before the `path` import. Their emitted executions must be
 rerun; previous runs of retained JavaScript prove behavior but do not qualify
 these new emitted entrypoints.
+
+
+## Retained successor and grant regressions
+
+Ten further strict sources replace native-fixture-grant, closed-epoch-broker,
+dead-epoch-successor/control/bootstrap, epoch-prerequisite,
+epoch-runtime-startup/upgrade, settled-epoch-startup and successor-process-guard.
+All 225 original assertion ASTs and 51 test declarations are preserved; three
+additional branch assertions narrow the actual bootstrap result variants. The
+existing synthetic fixtures now have shared type declarations only: their bytes,
+process ownership checks, scoped WSL adapter, evidence guards and cleanup remain
+unchanged. Existing malformed and deliberately partial inputs remain intact.
+
+The isolated-epoch proxy declaration now includes its already implemented
+`installEpoch`, `lookup`, historical snapshot and extended summary. This corrects
+the typed host interface without changing execution. Strict compilation and lint
+pass for all migrated sources. Actual emitted execution, pinned historical runs
+and complete final-commit CI remain pending; no native qualification is claimed.

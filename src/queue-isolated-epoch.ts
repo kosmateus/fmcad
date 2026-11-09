@@ -92,7 +92,23 @@ interface Grant {
   savedFirstSave?: unknown;
   nativeFixture?: { kind: string };
 }
-type Facade = QueueDomain & {
+type Facade = Omit<QueueDomain, "summary"> & {
+  historical: QueueSnapshot | null;
+  lookup(id: string): QueueSnapshot["jobs"][string] | undefined;
+  installEpoch(
+    pointer: Pointer,
+    identity: Identity,
+    initialization: { createdAtMs: number; bindingHash: string },
+  ): void;
+  summary(): ReturnType<QueueDomain["summary"]> & {
+    admissionEpoch?: string;
+    admissionScope?: string;
+    qualifiedDocument?: DocumentIdentity;
+    historicalUnknownJobCount?: number;
+    retiredEpochCount?: number;
+    historicalOutcome?: string;
+    historicalModelValidation?: string;
+  };
   epoch: Pointer | null;
   admissionMode: string;
   assertEpoch(normal?: boolean): void;
