@@ -1,11 +1,12 @@
 import { createRequire } from "node:module";
 import type { ConsoleRow } from "@fmcad/core";
-const load = createRequire(
-  path.join(process.cwd(), "tests", "console-document.test.js"),
-);
+
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
+const load = createRequire(
+  path.join(process.cwd(), "tests", "console-document.test.js"),
+);
 const { documentLabel, sourceName, documentFields } = load(
   "../src/console-document",
 ) as typeof import("@fmcad/core");

@@ -1269,7 +1269,10 @@ test(
       (request) => request.url().includes("/api/v1/console/snapshot"),
       { timeout: 10_000 },
     );
-    await page.getByRole("button", { name: "Odśwież widok" }).click();
+    await page
+      .locator(".heading-actions")
+      .getByRole("button", { name: "Odśwież", exact: true })
+      .click();
     await refreshRequest;
     assert.ok(
       fixture.calls.filter((call) => call.method === "snapshot").length >
@@ -1402,7 +1405,10 @@ test(
       page.on("requestfailed", onRequestFailed);
     });
     await http.stop();
-    await page.getByRole("button", { name: "Odśwież widok" }).click();
+    await page
+      .locator(".heading-actions")
+      .getByRole("button", { name: "Odśwież", exact: true })
+      .click();
     const failedSnapshotRequest = await failedSnapshot;
     assert.equal(
       new URL(failedSnapshotRequest.url()).pathname,
@@ -1426,7 +1432,10 @@ test(
       (request) => request.url().includes("/api/v1/console/snapshot"),
       { timeout: 10_000 },
     );
-    await page.getByRole("button", { name: "Odśwież widok" }).click();
+    await page
+      .locator(".heading-actions")
+      .getByRole("button", { name: "Odśwież", exact: true })
+      .click();
     await recoveredSnapshot;
     await page.getByText("POŁĄCZONO").waitFor();
     record("restarting only the owned loopback fixture restores browser reads");
@@ -1750,5 +1759,88 @@ test(
       "true",
     );
     assert.deepEqual(errors, []);
+  },
+);
+
+test(
+  "background query completion preserves the open locale menu and keyboard focus",
+  { timeout: 30_000 },
+  async (t) => {
+    const fixture = createBrowserFixture();
+    const http = await fixture.start();
+    t.after(() => http.close());
+    const browser = await chromium.launch({ headless: true });
+    t.after(() => browser.close());
+    const page = await browser.newPage();
+    await page.route("**/web/index.js", (route) =>
+      route.fulfill({ contentType: "text/javascript", body: "" }),
+    );
+    await page.goto(http.origin);
+    const result = await page.evaluate(async () => {
+      const modulePath = "/assets/control-center/web/app.js";
+      const apiPath = "/assets/control-center/web/api.js";
+      const { ControlCenterApp } = await import(modulePath);
+      const { ConsoleQueryClient } = await import(apiPath);
+      const root = document.getElementById("app")!;
+      const client = new ConsoleQueryClient(location.origin);
+      const query = client.query.bind(client);
+      let release!: () => void, requested!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const seen = new Promise<void>((resolve) => {
+        requested = resolve;
+      });
+      client.query = async (request: { collection: string }) => {
+        const result = await query(request);
+        if (request.collection === "system") {
+          requested();
+          await pending;
+        }
+        return result;
+      };
+      const app = new ControlCenterApp(root, { client });
+      const started = app.start();
+      await seen;
+      await new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      );
+      document.getElementById("locale-selector-trigger")!.click();
+      const option =
+        root.querySelector<HTMLButtonElement>('[data-locale="de"]')!;
+      option.focus();
+      const menu = root.querySelector<HTMLElement>(".locale-menu")!;
+      release();
+      await started;
+      const after = {
+        sameOption: root.querySelector('[data-locale="de"]') === option,
+        open: !menu.hidden && menu.isConnected,
+        expanded: document
+          .getElementById("locale-selector-trigger")!
+          .getAttribute("aria-expanded"),
+        focus: document.activeElement === option,
+      };
+      option.click();
+      const selected = document.documentElement.lang;
+      const detachedOption =
+        root.querySelector<HTMLButtonElement>('[data-locale="pl"]')!;
+      app.dispose();
+      detachedOption.click();
+      return {
+        ...after,
+        selected,
+        afterDispose: document.documentElement.lang,
+        content: root.innerHTML,
+      };
+    });
+    assert.deepEqual(result, {
+      sameOption: true,
+      open: true,
+      expanded: "true",
+      focus: true,
+      selected: "de",
+      afterDispose: "de",
+      content: "",
+    });
   },
 );

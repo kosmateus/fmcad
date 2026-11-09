@@ -1,13 +1,13 @@
 import { createRequire } from "node:module";
 
-const load = createRequire(
-  path.join(process.cwd(), "tests", "console-bounded-read.test.js"),
-);
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+const load = createRequire(
+  path.join(process.cwd(), "tests", "console-bounded-read.test.js"),
+);
 const { readBounded, readSource } = load(
   "../packages/node-adapters/dist/console/bounded-read",
 ) as typeof import("../packages/node-adapters/dist/console/bounded-read");

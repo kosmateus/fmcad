@@ -1,13 +1,14 @@
 import { createRequire } from "node:module";
 import test from "node:test";
-const load = createRequire(
-  path.join(process.cwd(), "tests/project-logger-rotation.test.js"),
-);
+
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import net from "node:net";
 import path from "node:path";
+const load = createRequire(
+  path.join(process.cwd(), "tests/project-logger-rotation.test.js"),
+);
 type Logger = Pick<
   typeof import("../src/composition/library-project-observer"),
   | "appendSafe"

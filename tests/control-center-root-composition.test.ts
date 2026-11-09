@@ -1,13 +1,13 @@
 import { createRequire } from "node:module";
-const load = createRequire(
-  path.join(process.cwd(), "tests/control-center-root-composition.test.js"),
-);
 
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+const load = createRequire(
+  path.join(process.cwd(), "tests/control-center-root-composition.test.js"),
+);
 
 test("installed root stages the trusted service entrypoint and verified static composition", async (t) => {
   const installation = path.join(process.cwd(), "dist");

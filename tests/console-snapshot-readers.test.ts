@@ -1,12 +1,13 @@
 import { createRequire } from "node:module";
-const load = createRequire(
-  path.join(process.cwd(), "tests/console-snapshot-readers.test.js"),
-);
+
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+const load = createRequire(
+  path.join(process.cwd(), "tests/console-snapshot-readers.test.js"),
+);
 const core = load("../packages/core/dist") as typeof import("@fmcad/core");
 const { createSnapshotReaders } = load(
   "../packages/node-adapters/dist/console/snapshots",

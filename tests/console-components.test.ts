@@ -1,11 +1,11 @@
 import { createRequire } from "node:module";
 
-const load = createRequire(
-  path.join(process.cwd(), "tests", "console-components.test.js"),
-);
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
+const load = createRequire(
+  path.join(process.cwd(), "tests", "console-components.test.js"),
+);
 const { ConsoleModel } = load(
   "../src/console-controller",
 ) as typeof import("../src/composition/library-console-controller");

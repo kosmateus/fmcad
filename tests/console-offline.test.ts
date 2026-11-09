@@ -1,12 +1,13 @@
 import { createRequire } from "node:module";
-const load = createRequire(
-  path.join(process.cwd(), "tests/console-offline.test.js"),
-);
+
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+const load = createRequire(
+  path.join(process.cwd(), "tests/console-offline.test.js"),
+);
 const { createAdapter } = load(
   "../src/console-data",
 ) as typeof import("../src/composition/library-console-data");

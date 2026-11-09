@@ -1,14 +1,14 @@
 import { createRequire } from "node:module";
 import type { TestContext } from "node:test";
 
-const load = createRequire(
-  path.join(process.cwd(), "tests", "console-response.test.js"),
-);
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+const load = createRequire(
+  path.join(process.cwd(), "tests", "console-response.test.js"),
+);
 const { openResponse, jsonLines } = load(
   "../src/console-response",
 ) as typeof import("../src/composition/library-console-response");

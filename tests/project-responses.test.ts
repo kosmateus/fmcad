@@ -1,8 +1,6 @@
 import { createRequire } from "node:module";
 import test from "node:test";
-const load = createRequire(
-  path.join(process.cwd(), "tests/project-responses.test.js"),
-);
+
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -13,6 +11,9 @@ import {
   type spawn,
 } from "node:child_process";
 import type { QueueJob, WorkerRequest } from "@fmcad/core";
+const load = createRequire(
+  path.join(process.cwd(), "tests/project-responses.test.js"),
+);
 const { responsePath } = load(
   "../src/queue-response-files",
 ) as typeof import("../packages/node-adapters/src/persistence/owned-results");

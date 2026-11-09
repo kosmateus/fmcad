@@ -317,3 +317,33 @@ copy with the same staged dependencies. Protocol refusals cover wrong tokens,
 malformed/incomplete/oversized observations, relative project paths and oversized
 IPC packets while asserting unchanged durable queue bytes. Strict compilation
 and lint pass; paired process execution is pending central staging.
+
+### Staged process and browser execution checkpoint (2026-11-09)
+
+After central build/staging, the three retained project suites execute: history
+telemetry 6, observer rotation/protocol 5, responses 6; all pass without skips.
+The paired observer test passes both wrappers, each running all five cases
+against the actual dce47c5/current subprocess. Authoritative archive reader tests
+pass 7/7, and the real installed broker admission/archive case passes. Sixteen
+retained tests needed imports before their `createRequire(path.join(...))`
+initializer after actual CJS emission; their original test/assertion ASTs remain
+identical. The forty affected console cases execute successfully.
+
+A deterministic Chromium regression showed background query completion replacing
+an open locale menu, dropping focus and its option nodes. Keeping the existing
+selector host across table rendering fixes this race; final app disposal still
+removes its subscriptions/listeners. The regression fails against the previous
+bundle (closed menu, lost focus, replaced node), then passes after the browser
+build. The full browser run executes eleven cases successfully, including real
+installed SQLite/all locales and real broker System controls. Its remaining main
+case exposed an obsolete refresh label; scoped `common.refresh` selectors now
+match the actual Polish label. That complete main case passes on rerun, including
+pagination, exports, freeze/refresh, mobile layout and outage/recovery guards.
+All twelve current cases have therefore executed successfully across 11+1 runs;
+a single full run on the exact final commit is still required in integration CI.
+
+The Python-dependent console-source cases remain platform-limited on this Debian
+host: the same three checker/preflight failures reproduce against dce47c5. This
+is a recorded environment limitation, not a weakened assertion or a green claim.
+Native global-state factories are being moved onto the existing ScenarioSession;
+source compilation and unsupported/lost-response tests do not qualify Fusion.

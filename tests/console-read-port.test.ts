@@ -4,12 +4,13 @@ import type {
   ObservedBrokerState,
 } from "../packages/node-adapters/src/control-center/broker-observation";
 import { createRequire } from "node:module";
-const load = createRequire(
-  path.join(process.cwd(), "tests", "console-read-port.test.js"),
-);
+
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
+const load = createRequire(
+  path.join(process.cwd(), "tests", "console-read-port.test.js"),
+);
 const { createConsoleReadPort } = load(
   "../packages/node-adapters/dist/console/read-port",
 ) as typeof import("../packages/node-adapters/src/console/read-port");

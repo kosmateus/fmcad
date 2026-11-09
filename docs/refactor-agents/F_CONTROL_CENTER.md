@@ -166,3 +166,11 @@ case pass. Browser follow-through fixes stale table filters after snapshot expir
 and the transposed copy-entry/back-to-task locale mapping. F_UI_LEDGER.md contains
 the exact local scope and environment limits; final browser and exact-head CI
 must still be attached by the integration owner. Native Fusion remains separate.
+
+Actual staged observer/history/response processes and authoritative archive tests
+now pass (including historical/current paired subprocesses). Chromium exposed and
+now covers a locale-menu focus/disposal race during background refresh. All twelve
+browser cases execute successfully across the final eleven-case run plus the
+corrected main-case rerun; exact-final-commit unified CI remains the acceptance
+boundary. The detailed local results and Debian preflight limitation are recorded
+in F_UI_LEDGER.md.

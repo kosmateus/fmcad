@@ -1,9 +1,6 @@
 import type { TestContext } from "node:test";
 import type { SourcePreview } from "../src/composition/library-console-source";
 import { createRequire } from "node:module";
-const load = createRequire(
-  path.join(process.cwd(), "tests", "console-source.test.js"),
-);
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -11,6 +8,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
+const load = createRequire(
+  path.join(process.cwd(), "tests", "console-source.test.js"),
+);
 const { openSource } = load(
   "../src/console-source",
 ) as typeof import("../src/composition/library-console-source");

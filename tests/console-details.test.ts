@@ -1,11 +1,11 @@
 import { createRequire } from "node:module";
 
-const load = createRequire(
-  path.join(process.cwd(), "tests", "console-details.test.js"),
-);
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
+const load = createRequire(
+  path.join(process.cwd(), "tests", "console-details.test.js"),
+);
 const { textContext } = load("./fixtures/console-text-context.cjs") as {
   textContext(language?: string): Parameters<typeof describe>[1];
 };

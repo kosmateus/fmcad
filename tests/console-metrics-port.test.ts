@@ -1,18 +1,20 @@
 import { createRequire } from "node:module";
 import path from "node:path";
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import os from "node:os";
+import fs from "node:fs";
 const load = createRequire(
   path.join(process.cwd(), "tests/console-metrics-port.test.js"),
 );
-import test from "node:test";
-import assert from "node:assert/strict";
 const { createCollector } = load(
   "../packages/node-adapters/dist/console/system-data",
 ) as typeof import("../packages/node-adapters/src/console/system-data");
 const { baseSnapshot } = load(
   "../packages/core/dist",
 ) as typeof import("@fmcad/core");
-import os from "node:os";
-import fs from "node:fs";
+
 const memoryUsage = Object.assign(
   () => ({ rss: 0, heapTotal: 0, heapUsed: 0, external: 0, arrayBuffers: 0 }),
   { rss: () => 0 },

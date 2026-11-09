@@ -1427,6 +1427,7 @@ export class ControlCenterApp {
     const state = this.#state();
     const active = document.activeElement as HTMLElement | null;
     const restoreLocaleFocus = Boolean(active?.closest(".locale-selector"));
+    const previousLocaleHost = $("#locale-selector", this.#root);
     const focusId = active?.id;
     const selectionStart =
       active instanceof HTMLInputElement ? active.selectionStart : null;
@@ -1492,8 +1493,6 @@ export class ControlCenterApp {
               : this.#view === "system"
                 ? localeText.t("ui.page.system.description")
                 : localeText.t("ui.page.projects.description");
-    this.#localeSelector?.dispose();
-    this.#localeSelector = null;
     this.#root.innerHTML = `
       <div class="app-shell">
         <aside class="sidebar ${this.#mobile ? "open" : ""}">
@@ -1545,8 +1544,15 @@ export class ControlCenterApp {
     this.#selects.upgrade(this.#root);
     const localeHost = $("#locale-selector", this.#root);
     if (localeHost) {
-      this.#localeSelector = mountLocaleSelector(localeHost, localeText);
-      if (restoreLocaleFocus) this.#localeSelector.focus();
+      if (previousLocaleHost && this.#localeSelector) {
+        // Background data refresh must preserve the open menu, its keyboard
+        // selection and subscription. Disposal belongs to the app lifecycle.
+        localeHost.replaceWith(previousLocaleHost);
+        if (restoreLocaleFocus) active?.focus({ preventScroll: true });
+      } else {
+        this.#localeSelector?.dispose();
+        this.#localeSelector = mountLocaleSelector(localeHost, localeText);
+      }
     }
     if (focusId) {
       const next = $<HTMLInputElement>(`#${CSS.escape(focusId)}`, this.#root);
