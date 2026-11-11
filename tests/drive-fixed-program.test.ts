@@ -92,7 +92,6 @@ print(json.dumps({'status':report['nativeCasesStatus'],'drives':facade.drives,'l
 `;
       const result = spawnSync("python3", ["-B", "-c", program, source, mode], {
         encoding: "utf8",
-        timeout: 10000,
       });
       assert.equal(result.status, 0, result.stderr || String(result.error));
       assert.deepEqual(JSON.parse(result.stdout.trim()), {

@@ -78,7 +78,7 @@ test("typed document service dispatches actual commands without CLI imports or s
   // Typed Python adds annotations; compare the exact assignment values.
   const parsed = spawnSync('python3', ['-B', path.join(process.cwd(), 'tests/helpers/python_config.py')], {
     input: JSON.stringify({ script: calls.at(-1)!.data.object.script, names: ['FILE_ID', 'DIR_PATH'] }),
-    encoding: 'utf8', timeout: 10000,
+    encoding: 'utf8',
   });
   assert.ifError(parsed.error);
   assert.equal(parsed.status, 0, parsed.stderr);

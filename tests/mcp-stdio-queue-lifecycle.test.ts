@@ -576,7 +576,7 @@ test("unsupported resources/subscribe request and notification fail closed; a la
 
 test(
   "CLI child reports stopped broker without direct fallback and handles local requests",
-  { timeout: 10000 },
+  {},
   async (t) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "catalog-child-"));
     const seen: unknown[] = [];

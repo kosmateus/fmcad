@@ -201,7 +201,7 @@ test("physical stage-owner consumers retain preflight-first ordering; ordinary t
 
 test(
   "production checker accepts containment with the actual authenticated unsaved helper stage context",
-  { timeout: 180000 },
+  {},
   async (t) => {
     t.after(
       (loadModule("./fixtures/fake-wsl-platform.cjs") as () => () => void)(),

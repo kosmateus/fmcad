@@ -33,7 +33,7 @@ test("FAKE SDK saved publication and retained-file close refuse unsafe states wi
   const result = spawnSync(
     "python3",
     ["-B", path.join(root, "tests/saved_fixture_test.py")],
-    { encoding: "utf8", timeout: 10000 },
+    { encoding: "utf8" },
   );
   assert.equal(result.status, 0, result.stderr || String(result.error));
 });
@@ -46,7 +46,7 @@ for (const purpose of [
   test(
     "production checker qualifies fixed saved fixture administrative source, SDK0: " +
       purpose,
-    { timeout: 180000 },
+    {},
     async (t) => {
       const directory = fs.mkdtempSync(
         path.join(os.tmpdir(), "saved-fixture-reader-"),

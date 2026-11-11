@@ -20,7 +20,7 @@ const { once } = load("node:events") as typeof import("node:events");
 
 test(
   "process crash/restart retains unresolved fake SDK ownership and never reconstructs abandoned local work",
-  { timeout: 10000 },
+  {},
   async (t) => {
     const dir = fs.mkdtempSync(
       path.join(

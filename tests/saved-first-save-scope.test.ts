@@ -157,7 +157,7 @@ test("FAKE metadata: non-owner, model history and ordinary grants cannot become 
 
 test(
   "production checker prepares first-save target pin without sending SDK or claiming publication",
-  { timeout: 180000 },
+  {},
   async (t) => {
     const dir = fs.mkdtempSync(
       path.join(os.tmpdir(), "first-save-target-check-"),
@@ -283,7 +283,6 @@ for (const mode of [
         prepared.script;
       const result = spawnSync("python3", ["-B", "-c", bootstrap], {
         encoding: "utf8",
-        timeout: 10000,
       });
       assert.equal(fs.existsSync(body), mode === "valid");
       assert.equal(

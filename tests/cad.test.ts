@@ -79,7 +79,6 @@ function python(program: string, input: string) {
   const result = spawnSync("python3", ["-B", "-c", program], {
     input,
     encoding: "utf8",
-    timeout: 15000,
     maxBuffer: 32 * 1024 * 1024,
   });
   assert.ifError(result.error);

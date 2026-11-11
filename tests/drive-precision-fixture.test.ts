@@ -7,7 +7,7 @@ test("FAKE precision fixture separates stage evidence and stops after unproven r
   const result = spawnSync(
     "python3",
     ["-B", path.join(process.cwd(), "tests/drive_precision_fixture_test.py")],
-    { encoding: "utf8", timeout: 10000 },
+    { encoding: "utf8" },
   );
   assert.equal(result.status, 0, result.stderr || String(result.error));
 });

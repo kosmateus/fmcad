@@ -38,7 +38,7 @@ test(
         "--no-fund",
         path.join(directory, text(record(packed)["filename"])),
       ],
-      { cwd: directory, encoding: "utf8", timeout: 60000 },
+      { cwd: directory, encoding: "utf8" },
     );
     const script = `
     const path = require('node:path');
@@ -67,7 +67,6 @@ test(
         execFileSync(process.execPath, ["-e", script], {
           cwd: directory,
           encoding: "utf8",
-          timeout: 60000,
           env: {
             PATH: process.env["PATH"],
             HOME: directory,

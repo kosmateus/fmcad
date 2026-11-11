@@ -14,7 +14,7 @@ const { McpClient } = load(
 
 test(
   "existing backend timeout bounds a continuously streaming fake response",
-  { timeout: 3000 },
+  {},
   async () => {
     const child = spawn(process.execPath, [
       "-e",

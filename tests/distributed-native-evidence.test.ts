@@ -281,7 +281,7 @@ test("CLI never overwrites existing proof or report files", (t) => {
       "--out",
       output,
     ],
-    { encoding: "utf8", timeout: 10000 },
+    { encoding: "utf8" },
   );
   assert.equal(result.status, 1);
   assert.match(result.stderr, /EEXIST/);

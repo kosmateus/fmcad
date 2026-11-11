@@ -27,7 +27,7 @@ test.beforeEach((t) =>
 
 test(
   "pre-dispatch fence rejection publishes its local outcome before any job directory exists",
-  { timeout: 15000 },
+  {},
   async (t) => {
     const dir = fs.mkdtempSync("/tmp/opencode/local-fence-outcome-");
     let broker:

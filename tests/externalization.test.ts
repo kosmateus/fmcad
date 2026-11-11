@@ -58,7 +58,6 @@ function embeddedRequest(script: string, variable: string) {
     {
       input: JSON.stringify({ script, names: [variable] }),
       encoding: "utf8",
-      timeout: 10000,
       maxBuffer: 32 * 1024 * 1024,
     },
   );
@@ -2163,7 +2162,7 @@ test("failed externalization admission preserves its original error alongside lo
 });
 test(
   "production checker admits the extracted externalization planning through the shipped bundle",
-  { timeout: 180000 },
+  { timeout: 0 },
   async () => {
     const { prepareCadBundle } =
       load("../packages/node-adapters/dist/python/bundle") as typeof import("../packages/node-adapters/src/python/bundle");

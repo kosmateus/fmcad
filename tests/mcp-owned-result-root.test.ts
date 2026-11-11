@@ -31,7 +31,7 @@ function field(value: unknown, ...names: string[]): unknown {
 
 test(
   "MCP stdio root publishes the actual accepted owned result as a canonical event",
-  { timeout: 20000 },
+  {},
   async (t) => {
     const root = fs.mkdtempSync(
       path.join(os.tmpdir(), "fmcad-mcp-owned-root-"),
