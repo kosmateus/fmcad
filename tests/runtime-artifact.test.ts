@@ -282,9 +282,15 @@ test("actual npm tarball runs CLI MCP and worker readonly outside checkout with 
     path.join(runtime, "runtime-build.json"),
   );
   assert.equal(pathsAdapter.runtimeBuildIdentity(paths), manifest.fingerprint);
-  const snapshotPointer = readJson<{ snapshot: string }>(
-    path.join(runtime, "runtime/python/typing/current.json"),
+  const snapshotPointerPath = path.join(
+    runtime,
+    "runtime/python/typing/current.json",
   );
+  assert.ok(
+    fs.existsSync(snapshotPointerPath),
+    "installed package is missing the Python definitions pointer",
+  );
+  const snapshotPointer = readJson<{ snapshot: string }>(snapshotPointerPath);
   assert.match(snapshotPointer.snapshot, /^[a-f0-9]{64}$/);
   const snapshotRoot = path.join(
     runtime,

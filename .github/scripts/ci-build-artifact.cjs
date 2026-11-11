@@ -48,6 +48,17 @@ function sourceOutputs(root) {
 // Include workspace declarations/build info, transitional runtime modules and
 // fixtures as well as the installed dist runtime. Consumers must not recompile.
 function buildOutputs(root) {
+  const definitionsPointer = path.join(
+    root,
+    "dist/runtime/python/typing/current.json",
+  );
+  if (
+    !fs.existsSync(definitionsPointer) ||
+    !fs.lstatSync(definitionsPointer).isFile()
+  )
+    throw new Error(
+      "Missing generated Python definitions pointer: dist/runtime/python/typing/current.json",
+    );
   const outputs = [
     "dist",
     "src/dist",
