@@ -245,7 +245,7 @@ test("prepare builds once per Node and all consumers restore matching complete o
   assert.match(jobs.prepare, /actions\/cache\/restore@v4[\s\S]*npm ci/);
   assert.match(
     jobs.prepare,
-    /npm_config_cache: \$\{\{ runner.temp \}\}\/fmcad-npm-cache[\s\S]*npm run build[\s\S]*npm run typecheck:tests[\s\S]*npm run test:prepare-offline[\s\S]*actions\/cache\/save@v4/,
+    /npm_config_cache: \/tmp\/fmcad-npm-cache[\s\S]*npm run build[\s\S]*npm run typecheck:tests[\s\S]*npm run test:prepare-offline[\s\S]*actions\/cache\/save@v4/,
   );
   assert.doesNotMatch(reusable, /github\.run_id|github\.run_attempt/);
   assert.equal(
@@ -262,13 +262,16 @@ test("prepare builds once per Node and all consumers restore matching complete o
   for (const [name, body] of Object.entries(jobs)) {
     assert.match(body, /timeout-minutes:/, name);
     assert.doesNotMatch(body, /continue-on-error:|\brun: timeout\b/, name);
+    const envBlock = body.match(
+      /^    env:\n([\s\S]*?)(?=^    (?:strategy|steps):)/m,
+    )?.[1];
+    if (envBlock) {
+      assert.match(envBlock, /npm_config_cache: \/tmp\/fmcad-npm-cache/, name);
+      assert.doesNotMatch(envBlock, /\$\{\{\s*runner\./, name);
+    }
     if (name === "prepare") continue;
     assert.match(body, /^    needs: prepare$/m, name);
-    assert.match(
-      body,
-      /npm_config_cache: \$\{\{ runner.temp \}\}\/fmcad-npm-cache/,
-      name,
-    );
+    assert.match(body, /npm_config_cache: \/tmp\/fmcad-npm-cache/, name);
     assert.match(
       body,
       /uses: actions\/cache\/restore@v4\n        id: npm-cache/,
@@ -290,7 +293,7 @@ test("prepare builds once per Node and all consumers restore matching complete o
         : "24.x";
     assert.ok(body.includes(`name: build-${node}`), name);
     assert.ok(
-      body.includes(`path: \${{ runner.temp }}/fmcad-npm-cache`) &&
+      body.includes(`path: \${{ env.npm_config_cache }}`) &&
         body.includes(
           `key: ci-prepared-npm-\${{ runner.os }}-${node}-\${{ hashFiles('package-lock.json') }}`,
         ),
