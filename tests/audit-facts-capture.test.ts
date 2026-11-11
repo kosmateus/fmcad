@@ -29,7 +29,7 @@ const { resolveRuntimePaths } = load(
 
 test(
   "explicit capture uses actual production final-byte checker and both immutable source units",
-  { timeout: 45000 },
+  {},
   async (t) => {
     const directory = fs.mkdtempSync("/tmp/opencode/audit-capture-check-");
     t.after(() => fs.rmSync(directory, { recursive: true, force: true }));

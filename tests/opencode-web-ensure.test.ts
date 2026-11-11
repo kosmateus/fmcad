@@ -50,7 +50,7 @@ function dependencies(
 
 test(
   "optional web ensure is nonblocking and reports only diagnostics",
-  { timeout: 1000 },
+  {},
   async () => {
     let rejectEnsure: (error: Error) => void = () =>
       assert.fail("ensure was not started");

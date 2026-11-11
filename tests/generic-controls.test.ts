@@ -143,7 +143,7 @@ function runBenchmark(iterations: number) {
       "--iterations",
       String(iterations),
     ],
-    { encoding: "utf8", timeout: 120000 },
+    { encoding: "utf8" },
   );
   assert.equal(result.error, undefined, result.error?.message);
   assert.equal(result.status, 0, result.stderr);

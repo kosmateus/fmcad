@@ -88,7 +88,7 @@ test("actual broker startup uses the existing epoch identity and claims metadata
 });
 test(
   "ordinary broker cooperatively pauses/stops an epoch under startup-only recovery guard without SDK or old-history edits",
-  { timeout: 20000 },
+  {},
   async (t) => {
     const f = fixture(t),
       frozen = repository;

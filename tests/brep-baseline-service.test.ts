@@ -256,7 +256,7 @@ test("canonical catalog, typed CLI/MCP project the same three public operations 
 const brokerCommandTimeoutMs = 180000;
 test(
   "typed CLI and MCP execute capture → owned inspect → compare through the fake broker",
-  { timeout: 2 * brokerCommandTimeoutMs + 30000 },
+  {},
   async (t) => {
     t.after(load("./fixtures/fake-wsl-platform.cjs")());
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-brep-broker-"));

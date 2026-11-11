@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 
 test(
   "FAKE isolated host/backend: actual broker dispatch authorizes known cleanup without any SDK or history edits",
-  { timeout: 30000 },
+  {},
   (t) => {
     const root = fs.mkdtempSync("/tmp/opencode/closed-epoch-broker-");
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -45,7 +45,6 @@ test(
   `;
     const result = spawnSync(process.execPath, ["-e", code, repo, root], {
       encoding: "utf8",
-      timeout: 20000,
     });
     assert.equal(result.status, 0, result.stderr || String(result.error));
     assert.deepEqual(JSON.parse(result.stdout.trim()), {

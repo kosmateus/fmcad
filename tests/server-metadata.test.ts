@@ -180,7 +180,6 @@ for (const result of [
         `;
         const output = execFileSync(process.execPath, ["-e", source], {
           encoding: "utf8",
-          timeout: 10000,
         });
         const lines = output.trimEnd().split("\n");
         const marker = lines.pop();

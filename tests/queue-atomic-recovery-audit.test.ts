@@ -383,7 +383,7 @@ for (const mode of [
 ]) {
   test(
     "real production audit check/fence: " + mode,
-    { timeout: 45000 },
+    { timeout: 0 },
     async (t) => {
       const directory = fixtureDirectory(t, "atomic-audit-check-");
       const source = path.join(

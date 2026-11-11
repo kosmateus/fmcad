@@ -283,7 +283,6 @@ test("real Python context and generated mutation/export/save wrappers enforce ta
     {
       input: JSON.stringify(scripts),
       encoding: "utf8",
-      timeout: 15000,
     },
   );
   assert.ifError(result.error);

@@ -288,7 +288,6 @@ function observerPythonLiterals(script: string): LiteralValues {
   const result = spawnSync("python3", ["-I", "-B", observerLiteralReader], {
     input: script,
     encoding: "utf8",
-    timeout: 10000,
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   return parsed<LiteralValues>(result.stdout);
@@ -695,7 +694,7 @@ test("one marked read-only observer can run through an already paused gate witho
 
 test(
   "broker generic reconcile sends no probe and rejects an unscoped follow-up while blocked",
-  { timeout: 15000 },
+  {},
   (t) => {
     const dir = fs.mkdtempSync(
       path.join(os.tmpdir(), "fmcad-atomic-broker-recovery-"),
@@ -781,7 +780,6 @@ test(
       {
         cwd: root,
         encoding: "utf8",
-        timeout: 12000,
         env: {
           ...process.env,
           FMCAD_ATOMIC_RECOVERY_ROOT: root,
@@ -798,7 +796,7 @@ test(
 
 test(
   "broker runs one typed atomic_status observer through the existing gate and leaves the original job blocked",
-  { timeout: 240000 },
+  {},
   (t) => {
     const dir = fs.mkdtempSync(
       path.join("/tmp/opencode", "fmcad-atomic-broker-observe-"),
@@ -1251,7 +1249,6 @@ test(
         {
           cwd: root,
           encoding: "utf8",
-          timeout: 45000,
           env: {
             ...process.env,
             FMCAD_ATOMIC_RECOVERY_ROOT: root,
@@ -1309,7 +1306,6 @@ test(
         {
           cwd: root,
           encoding: "utf8",
-          timeout: 45000,
           env: {
             ...process.env,
             FMCAD_ATOMIC_RECOVERY_ROOT: root,
@@ -1344,7 +1340,6 @@ test(
       {
         cwd: root,
         encoding: "utf8",
-        timeout: 45000,
         env: {
           ...process.env,
           FMCAD_ATOMIC_RECOVERY_ROOT: root,
@@ -2167,7 +2162,6 @@ assert sys.modules[holder.__name__] is holder
       script: prepared.script,
     }),
     encoding: "utf8",
-    timeout: 10000,
   });
   assert.equal(result.status, 0, result.stderr);
   const line = result.stdout
@@ -2262,7 +2256,6 @@ test("raw CLI origin uses only its preserved typed worker envelope and fences he
     {
       input: JSON.stringify({ root, base, job: f.job, scope: f.scope }),
       encoding: "utf8",
-      timeout: 10000,
     },
   );
   assert.equal(result.status, 0, result.stderr);

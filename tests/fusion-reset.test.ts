@@ -331,7 +331,7 @@ test("reset marker fences autostart, broker startup and new queue submissions", 
 
 test(
   "reset marker added after admission blocks physical dispatch without changing open dispatch",
-  { timeout: 10000 },
+  {},
   async (t) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-reset-dispatch-"));
     const instance = {

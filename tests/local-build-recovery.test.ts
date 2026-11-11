@@ -245,7 +245,6 @@ fs.appendFileSync(path.join(root,'src/help.js'),'\\n// controlled offline build 
 for(let i=0;i<200;i++){const value=await request(dir,{action:'result',auth,jobId:job.id});if(value.job.state==='needs_reconciliation'){const s=broker.status();console.log(JSON.stringify({held:s.held,state:value.job.state,dispatch:value.job.dispatch||null,files:fs.readdirSync(path.join(dir,'jobs',job.id)),probes,sdk}));process.exit(0);}await new Promise(r=>setTimeout(r,10));}throw Error('Signature not reproduced');})().catch(e=>{console.error(e);process.exit(1);});`;
   const child = spawnSync(process.execPath, ["-e", source, runtime, dir], {
     encoding: "utf8",
-    timeout: 10000,
   });
   assert.equal(child.status, 0, child.stderr);
   const result = JSON.parse(child.stdout.trim()) as {

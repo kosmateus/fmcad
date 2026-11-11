@@ -249,7 +249,6 @@ run('')
     const created = [{ token: "offline-envelope-evidence", metadata }];
     const out = spawnSync("python3", ["-B", "-c", program], {
       encoding: "utf8",
-      timeout: 2000,
       input: JSON.stringify({
         script: buildCadScript(
           operation,

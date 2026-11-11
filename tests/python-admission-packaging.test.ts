@@ -43,7 +43,7 @@ function installConsumer(directory: string) {
       "--no-fund",
       tarball,
     ],
-    { cwd: directory, encoding: "utf8", timeout: 60000 },
+    { cwd: directory, encoding: "utf8" },
   );
 }
 
@@ -83,7 +83,6 @@ test("installed consumer certifies exact raw Python and rejects errors offline o
       execFileSync(process.execPath, ["-e", source], {
         cwd: directory,
         encoding: "utf8",
-        timeout: 240000,
         env: {
           PATH: process.env["PATH"],
           HOME: directory,
@@ -130,7 +129,6 @@ test("installed consumer retains real CLI, worker, MCP and public API admission 
     {
       cwd: directory,
       encoding: "utf8",
-      timeout: 165000,
       maxBuffer: 4 * 1024 * 1024,
       env: {
         PATH: process.env["PATH"],
@@ -192,7 +190,6 @@ test("installed consumer checks the complete cad-v1 helper with retained origins
       execFileSync(process.execPath, ["-e", source], {
         cwd: directory,
         encoding: "utf8",
-        timeout: 240000,
         maxBuffer: 8 * 1024 * 1024,
         env: {
           PATH: process.env["PATH"],

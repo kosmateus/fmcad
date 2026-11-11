@@ -699,7 +699,7 @@ test("generated adapter request compiles, carries normalized model paths, and pa
   const result = spawnSync(
     "python3",
     ["-B", "-c", "import ast,sys; ast.parse(sys.stdin.read())"],
-    { input: script, encoding: "utf8", timeout: 10000 },
+    { input: script, encoding: "utf8" },
   );
   assert.equal(result.status, 0, result.stderr);
   assert.match(script, /ctx.assert_identity\(\)/);

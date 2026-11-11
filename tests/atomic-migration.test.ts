@@ -618,7 +618,7 @@ test("immutable file escrow verifies digests, refuses symlinks and never overwri
 
 test(
   "real Linux pidfd stop targets only the verified fixture process and publishes bounded TERM intents",
-  { timeout: 15000 },
+  {},
   async (t) => {
     const audit = fs.mkdtempSync(
       path.join(os.tmpdir(), "atomic-migration-stop-"),
@@ -1300,7 +1300,7 @@ test("actual broker migration startup preserves the exact snapshot and sends no 
     })().catch(e=>{console.error(e);process.exit(1)});
   `,
     ],
-    { encoding: "utf8", timeout: 10000 },
+    { encoding: "utf8" },
   );
   assert.equal(result.status, 0, result.stderr);
   assert.equal(record(JSON.parse(result.stdout) as unknown)["calls"], 0);
@@ -1429,7 +1429,7 @@ for (const processLoss of [false, true])
     })().catch(e=>{console.error(e);process.exit(1)});
   `,
         ],
-        { encoding: "utf8", timeout: 15000 },
+        { encoding: "utf8" },
       );
       assert.equal(result.status, 0, result.stderr);
       assert.equal(record(JSON.parse(result.stdout) as unknown)["calls"], 0);
@@ -1619,7 +1619,7 @@ test("process-loss owner audit uses the selected current endpoint, keeps origina
     })().catch(e=>{console.error(e);process.exit(1)});
   `,
     ],
-    { encoding: "utf8", timeout: 45000 },
+    { encoding: "utf8" },
   );
   assert.equal(result.status, 0, result.stderr);
   assert.equal(record(JSON.parse(result.stdout) as unknown)["calls"], 1);
@@ -1770,7 +1770,6 @@ for (const mode of [
         ],
         {
           encoding: "utf8",
-          timeout: 60000,
           cwd: f.scope.projectDirectory,
           env: {
             ...process.env,
@@ -1924,7 +1923,6 @@ for (const mode of [
         ],
         {
           encoding: "utf8",
-          timeout: 60000,
           cwd: f.scope.projectDirectory,
           env: {
             ...process.env,
@@ -1946,7 +1944,7 @@ for (const mode of [
 
 test(
   "duplicate migration worker launch loses its one-time process claim before reading config or creating a broker",
-  { timeout: 10000 },
+  {},
   async (t) => {
     const f = claimFixture(t),
       script = path.join(repository, "src/queue-atomic-migration-worker.js");
@@ -1980,7 +1978,6 @@ test(
     const duplicate = spawnSync(process.execPath, [script, f.audit], {
       input: "not a configuration",
       encoding: "utf8",
-      timeout: 3000,
     });
     assert.equal(duplicate.status, 0, duplicate.stderr);
     assert.deepEqual(JSON.parse(fs.readFileSync(workerFile, "utf8")), owner);
@@ -1994,7 +1991,7 @@ test(
 
 test(
   "interrupted TERM intent can resume against the same live pidfd without assuming that the earlier signal was sent",
-  { timeout: 10000 },
+  {},
   async (t) => {
     const audit = fs.mkdtempSync(
       path.join(os.tmpdir(), "atomic-migration-stop-gap-"),

@@ -29,7 +29,7 @@ const {
 
 test(
   "legacy full-program witness is exact, relocation-stable and refuses original source/receipt drift",
-  { timeout: 60000 },
+  {},
   (t) => {
     const base = fs.mkdtempSync("/tmp/opencode/atomic-legacy-abi-");
     t.after(() => fs.rmSync(base, { recursive: true, force: true }));

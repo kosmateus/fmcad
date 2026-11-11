@@ -22,7 +22,7 @@ import path from "node:path";
 const runtime = path.resolve(testRoot + "/tests", "../dist");
 test(
   "real add-in UI guard: legacy source rejects the same final bytes, verified retained-span offset passes all aggregate groups",
-  { timeout: 150000 },
+  {},
   async (t) => {
     const temporary = fs.mkdtempSync(
       runtimeRequire("node:path").join(

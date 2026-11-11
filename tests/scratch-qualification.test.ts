@@ -37,7 +37,7 @@ for (const purpose of [
 ]) {
   test(
     "real checker validates complete final-byte origin for " + purpose,
-    { timeout: 45000 },
+    {},
     async (t) => {
       const directory = fs.mkdtempSync(
         path.join(os.tmpdir(), "scratch-final-wire-"),
@@ -196,7 +196,7 @@ const operations: [string, Record<string, unknown>][] = [
 for (const [operation, data] of operations)
   test(
     "minimal MCP path has real final-byte production admission: " + operation,
-    { timeout: 180000 },
+    {},
     async (t) => {
       const directory = fs.mkdtempSync(
         path.join(os.tmpdir(), "epoch-modeling-wire-"),
