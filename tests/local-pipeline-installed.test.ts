@@ -46,14 +46,36 @@ test(
       }
       fs.rmSync(root, { recursive: true, force: true });
     });
-    const packedRows: unknown = JSON.parse(
-      execFileSync("npm", ["pack", "--json", "--pack-destination", root], {
-        cwd: sourceRoot,
-        encoding: "utf8",
-        maxBuffer: 16 * 1024 * 1024,
-      }),
-    );
-    const packed = record(list(packedRows)[0]);
+    const packageArtifact = process.env["FMCAD_CI_PACKAGE_TARBALL"];
+    const packageTarball = packageArtifact
+      ? path.resolve(sourceRoot, packageArtifact)
+      : path.join(
+          root,
+          text(
+            record(
+              list(
+                JSON.parse(
+                  execFileSync(
+                    "npm",
+                    [
+                      "pack",
+                      "--ignore-scripts",
+                      "--json",
+                      "--pack-destination",
+                      root,
+                    ],
+                    {
+                      cwd: sourceRoot,
+                      encoding: "utf8",
+                      maxBuffer: 16 * 1024 * 1024,
+                    },
+                  ),
+                ),
+              )[0],
+            )["filename"],
+          ),
+        );
+    assert.ok(fs.existsSync(packageTarball), "Prepared npm package is missing");
     execFileSync(
       "npm",
       [
@@ -64,7 +86,7 @@ test(
         "--omit=dev",
         "--no-audit",
         "--no-fund",
-        path.join(root, text(packed["filename"])),
+        packageTarball,
       ],
       {
         cwd: root,

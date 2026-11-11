@@ -104,16 +104,33 @@ test(
   async (t) => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-installed-"));
     t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-    const packed: unknown = JSON.parse(
-      execFileSync(
-        "npm",
-        ["pack", "--ignore-scripts", "--json", "--pack-destination", directory],
-        {
-          cwd: root,
-          encoding: "utf8",
-        },
-      ),
-    );
+    const packageArtifact = process.env["FMCAD_CI_PACKAGE_TARBALL"];
+    const packageTarball = packageArtifact
+      ? path.resolve(root, packageArtifact)
+      : path.join(
+          directory,
+          text(
+            at(
+              array(
+                JSON.parse(
+                  execFileSync(
+                    "npm",
+                    [
+                      "pack",
+                      "--ignore-scripts",
+                      "--json",
+                      "--pack-destination",
+                      directory,
+                    ],
+                    { cwd: root, encoding: "utf8" },
+                  ),
+                ),
+              )[0],
+              "filename",
+            ),
+          ),
+        );
+    assert(fs.existsSync(packageTarball), "Prepared npm package is missing");
     const isolatedEnv = { ...process.env };
     delete isolatedEnv["NODE_PATH"];
     execFileSync(
@@ -126,7 +143,7 @@ test(
         "--no-fund",
         "--prefix",
         directory,
-        path.join(directory, text(at(array(packed)[0], "filename"))),
+        packageTarball,
       ],
       { cwd: directory, env: isolatedEnv },
     );

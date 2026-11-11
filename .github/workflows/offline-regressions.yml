@@ -1,17 +1,13 @@
 name: Offline regression closure
 
 on:
-  pull_request:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+env:
+  FMCAD_CI_PACKAGE_TARBALL: .test-artifacts/ci-build/fmcad-package.tgz
 
 jobs:
   offline-regressions:
@@ -19,6 +15,8 @@ jobs:
     # Ten explicitly reviewed offline sources per shard; keep the real checker
     # and installed-consumer contracts. Initial budget awaits retained CI timing.
     timeout-minutes: 35
+    env:
+      npm_config_cache: /tmp/fmcad-npm-cache
     strategy:
       fail-fast: false
       matrix:
@@ -47,16 +45,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-          cache: npm
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.npm_config_cache }}
+          key: ci-prepared-npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: python -m pip install -r tests/python-requirements.txt
       - run: npm ci
-      - run: npm run build
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+      - run: tar -xzf build-output.tar.gz
+      - run: node .github/scripts/ci-restore-build-artifact.cjs
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-      - run: npm run test:prepare-offline
+          FMCAD_CI_SOURCE_SHA: ${{ github.sha }}
       - run: mkdir -p /tmp/opencode .test-artifacts/offline-regressions
       - if: matrix.shard == '01'
         run: |
@@ -128,3 +132,4 @@ jobs:
           name: offline-regressions-${{ matrix.node }}-${{ matrix.shard }}
           path: .test-artifacts/offline-regressions/
           include-hidden-files: true
+          overwrite: true

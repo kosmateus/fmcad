@@ -71,6 +71,23 @@ test("CI executes every retained broker regression family and its historical com
   );
   const job = record(record(record(workflow)["jobs"])["broker-regressions"]);
   const steps = list(job["steps"]).map(record);
+  assert.equal(job["needs"], "prepare");
+  assert.ok(
+    steps.some(
+      (step) =>
+        step["uses"] === "actions/download-artifact@v4" &&
+        record(step["with"])["name"] === "build-${{ github.sha }}",
+    ),
+    "Broker regressions restore the candidate build pinned to github.sha",
+  );
+  assert.ok(
+    steps.some(
+      (step) =>
+        step["run"] === "node .github/scripts/ci-restore-build-artifact.cjs" &&
+        record(step["env"])["FMCAD_CI_SOURCE_SHA"] === "${{ github.sha }}",
+    ),
+    "Broker regressions verify the restored source SHA",
+  );
   assert.ok(
     steps.some((step) => step["run"] === "npm run test:broker-regressions"),
   );

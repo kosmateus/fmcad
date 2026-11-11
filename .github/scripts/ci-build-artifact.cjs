@@ -1,6 +1,19 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
+const { createHash } = require("node:crypto");
 const { execFileSync } = require("node:child_process");
+
+const packageArtifact = ".test-artifacts/ci-build/fmcad-package.tgz";
+const manifestArtifact = ".test-artifacts/ci-build/manifest.json";
+const definitionsPointer = "dist/runtime/python/typing/current.json";
+const stagedFixtures = [
+  "dist/tests/fixtures/atomic-audit-upgrade.cjs",
+  "dist/tests/fixtures/epoch-audit.cjs",
+  "dist/tests/fixtures/fake-wsl-platform.cjs",
+  "dist/tests/fixtures/fake-wsl-preload.cjs",
+];
+const requiredFiles = [definitionsPointer, packageArtifact, ...stagedFixtures];
 
 function sourceOutputs(root) {
   const outputs = [];
@@ -45,10 +58,8 @@ function sourceOutputs(root) {
   return outputs;
 }
 
-// Include workspace declarations/build info, transitional runtime modules and
-// fixtures as well as the installed dist runtime. Consumers must not recompile.
-function buildOutputs(root) {
-  const outputs = [
+function outputPaths(root) {
+  return [
     "dist",
     "src/dist",
     "server.mjs",
@@ -63,9 +74,96 @@ function buildOutputs(root) {
       "closed-epoch-successor",
       "historical-module",
     ].map((name) => `tests/fixtures/${name}.cjs`),
+    packageArtifact,
   ];
+}
+
+function buildOutputsWithoutManifest(root) {
+  const pointer = path.join(root, definitionsPointer);
+  if (!fs.existsSync(pointer) || !fs.lstatSync(pointer).isFile())
+    throw new Error(
+      `Missing generated Python definitions pointer: ${definitionsPointer}`,
+    );
+  const outputs = outputPaths(root);
   for (const output of outputs) fs.lstatSync(path.join(root, output));
   return outputs;
+}
+
+// Include workspace declarations/build info, transitional runtime modules and
+// fixtures as well as the installed dist runtime. Consumers must not recompile.
+function buildOutputs(root) {
+  return [...buildOutputsWithoutManifest(root), manifestArtifact].map(
+    (output) => {
+      fs.lstatSync(path.join(root, output));
+      return output;
+    },
+  );
+}
+
+function sha256(file) {
+  return createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+}
+
+function writeManifest(root, sourceSha, toolchain = {}) {
+  if (!/^[a-f0-9]{40}$/i.test(sourceSha || ""))
+    throw new Error("Invalid CI build source SHA");
+  const packageFile = path.join(root, packageArtifact);
+  const packageJson = JSON.parse(
+    fs.readFileSync(path.join(root, "package.json"), "utf8"),
+  );
+  const outputs = buildOutputsWithoutManifest(root);
+  for (const file of requiredFiles) fs.lstatSync(path.join(root, file));
+  const manifest = {
+    schema: 1,
+    sourceSha: sourceSha.toLowerCase(),
+    toolchain: {
+      node: toolchain.node || process.version,
+      npm:
+        toolchain.npm ||
+        execFileSync("npm", ["--version"], { encoding: "utf8" }).trim(),
+      platform: toolchain.platform || process.platform,
+      arch: toolchain.arch || process.arch,
+    },
+    package: {
+      name: packageJson.name,
+      version: packageJson.version,
+      file: packageArtifact,
+      sha256: sha256(packageFile),
+    },
+    requiredFiles,
+    outputs,
+  };
+  fs.writeFileSync(
+    path.join(root, manifestArtifact),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+  return manifest;
+}
+
+function packageProject(root) {
+  const target = path.join(root, packageArtifact);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-ci-package-"));
+  try {
+    const packages = JSON.parse(
+      execFileSync(
+        "npm",
+        ["pack", "--ignore-scripts", "--json", "--pack-destination", temporary],
+        { cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+      ),
+    );
+    if (
+      !Array.isArray(packages) ||
+      packages.length !== 1 ||
+      packages[0].name !== "fmcad" ||
+      typeof packages[0].filename !== "string"
+    )
+      throw new Error("npm pack did not produce the expected fmcad package");
+    fs.copyFileSync(path.join(temporary, packages[0].filename), target);
+    return packages[0];
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
 }
 
 function pack(root, archive) {
@@ -75,9 +173,24 @@ function pack(root, archive) {
   });
 }
 
-module.exports = { buildOutputs, pack };
+function prepare(root, archive, sourceSha) {
+  const source = sourceSha || process.env["FMCAD_CI_SOURCE_SHA"];
+  if (!source) throw new Error("FMCAD_CI_SOURCE_SHA is required");
+  packageProject(root);
+  writeManifest(root, source);
+  pack(root, archive);
+}
+
+module.exports = {
+  buildOutputs,
+  buildOutputsWithoutManifest,
+  pack,
+  packageProject,
+  prepare,
+  writeManifest,
+};
 if (require.main === module) {
   if (process.argv.length !== 3)
     throw new Error("Usage: ci-build-artifact.cjs ARCHIVE");
-  pack(path.resolve(__dirname, "../.."), path.resolve(process.argv[2]));
+  prepare(path.resolve(__dirname, "../.."), path.resolve(process.argv[2]));
 }
