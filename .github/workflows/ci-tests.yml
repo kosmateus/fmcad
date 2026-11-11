@@ -147,6 +147,51 @@ jobs:
       - run: mkdir -p /tmp/opencode
       - run: node --test --test-concurrency=1 dist/tests/scenarios/*.test.js
 
+  modeling-admission:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      npm_config_cache: /tmp/fmcad-npm-cache
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache/restore@v4
+        id: npm-cache
+        with:
+          path: ${{ env.npm_config_cache }}
+          key: ci-prepared-npm-${{ runner.os }}-${{ matrix.node }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-${{ matrix.node }}
+      - run: tar -xzf build-output.tar.gz
+      - if: steps.npm-cache.outputs.cache-hit != 'true'
+        run: npm run test:prepare-offline
+      - name: Run modeling admission shard
+        run: |
+          set -o pipefail
+          mkdir -p .test-artifacts/modeling
+          npm run test:modeling:admission | tee .test-artifacts/modeling/admission.log
+        env:
+          FMCAD_MODELING_ADMISSION_SHARD: ${{ matrix.shard }}/8
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: modeling-admission-${{ matrix.node }}-${{ matrix.shard }}
+          path: .test-artifacts/modeling/
+          include-hidden-files: true
+
   public-consumers:
     needs: prepare
     runs-on: ubuntu-24.04

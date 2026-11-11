@@ -224,6 +224,7 @@ test("prepare builds once per Node and all consumers restore matching complete o
     "broker-regressions",
     "contracts",
     "scenario-model",
+    "modeling-admission",
     "public-consumers",
     "python",
     "control-center-browser",
@@ -237,7 +238,7 @@ test("prepare builds once per Node and all consumers restore matching complete o
   );
   assert.equal(
     (reusable.match(/run: npm run test:prepare-offline\n/g) || []).length,
-    9,
+    10,
   );
   assert.equal(
     (reusable.match(/- run: npm run typecheck:tests\n/g) || []).length,
@@ -252,7 +253,7 @@ test("prepare builds once per Node and all consumers restore matching complete o
   assert.doesNotMatch(reusable, /github\.run_id|github\.run_attempt/);
   assert.equal(
     (reusable.match(/uses: actions\/upload-artifact@v4/g) || []).length,
-    3,
+    4,
   );
   assert.equal((reusable.match(/overwrite: true/g) || []).length, 3);
   assert.match(jobs.prepare, /retention-days: 90/);
@@ -310,6 +311,19 @@ test("prepare builds once per Node and all consumers restore matching complete o
   }
   assert.match(jobs["scenario-model"], /timeout-minutes: 90/);
   assert.match(jobs["scenario-model"], /python-version: "3\.12"/);
+  assert.match(jobs["modeling-admission"], /timeout-minutes: 90/);
+  assert.match(
+    jobs["modeling-admission"],
+    /node: \["22\.13\.0", "24\.x"\][\s\S]*shard: \[0, 1, 2, 3, 4, 5, 6, 7\]/,
+  );
+  assert.match(
+    jobs["modeling-admission"],
+    /FMCAD_MODELING_ADMISSION_SHARD: \$\{\{ matrix\.shard \}\}\/8/,
+  );
+  assert.match(
+    jobs["modeling-admission"],
+    /npm run test:modeling:admission \| tee \.test-artifacts\/modeling\/admission\.log/,
+  );
   for (const [script, body] of [
     ["test:scenarios:unit", jobs["scenario-model"]],
     ["test:control-center:e2e", jobs["control-center-browser"]],
