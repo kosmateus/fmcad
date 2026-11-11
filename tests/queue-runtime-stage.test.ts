@@ -69,11 +69,24 @@ test("missing compiler output rejects before any partial publication", (t) => {
   assert.equal(fs.existsSync(path.join(root, "src")), false);
 });
 
-test("legacy fixture consumers receive emitted CJS from canonical CTS, not handwritten wrappers", (t) => {
+test("legacy fixture consumers receive emitted CJS and runtime CJS fixtures are staged", (t) => {
   const root = fs.mkdtempSync(path.join(tmpdir(), "queue-fixture-emission-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const compiled = path.join(root, "dist/tests/fixtures");
   fs.mkdirSync(compiled, { recursive: true });
+  const source = path.join(root, "tests/fixtures");
+  fs.mkdirSync(source, { recursive: true });
+  const workspaceNames = [
+    "atomic-audit-upgrade.cjs",
+    "epoch-audit.cjs",
+    "fake-wsl-platform.cjs",
+    "fake-wsl-preload.cjs",
+  ];
+  for (const filename of workspaceNames)
+    fs.writeFileSync(
+      path.join(source, filename),
+      "workspace fixture: " + filename,
+    );
   const names = [
     "closed-scratch-artifacts.cjs",
     "closed-epoch-successor.cjs",
@@ -89,6 +102,11 @@ test("legacy fixture consumers receive emitted CJS from canonical CTS, not handw
     assert.deepEqual(
       fs.readFileSync(path.join(root, "tests/fixtures", filename)),
       fs.readFileSync(path.join(compiled, filename)),
+    );
+  for (const filename of workspaceNames)
+    assert.deepEqual(
+      fs.readFileSync(path.join(compiled, filename)),
+      fs.readFileSync(path.join(source, filename)),
     );
 });
 

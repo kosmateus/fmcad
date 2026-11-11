@@ -1273,7 +1273,7 @@ test("actual broker migration startup preserves the exact snapshot and sends no 
       load("../src/queue-instance") as ReturnType<
         typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
       >
-    ).buildHash(),
+    ).buildHash(root),
   });
   const result = spawnSync(
     process.execPath,
@@ -1393,7 +1393,7 @@ for (const processLoss of [false, true])
           load("../src/queue-instance") as ReturnType<
             typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
           >
-        ).buildHash(),
+        ).buildHash(root),
       });
       const result = spawnSync(
         process.execPath,
@@ -1551,7 +1551,7 @@ test("process-loss owner audit uses the selected current endpoint, keeps origina
       load("../src/queue-instance") as ReturnType<
         typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
       >
-    ).buildHash(),
+    ).buildHash(root),
   });
   const result = spawnSync(
     process.execPath,
@@ -1654,7 +1654,7 @@ for (const mode of [
           load("../src/queue-instance") as ReturnType<
             typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
           >
-        ).buildHash(),
+        ).buildHash(root),
       });
       const result = spawnSync(
         process.execPath,
@@ -1823,7 +1823,7 @@ for (const mode of [
           load("../src/queue-instance") as ReturnType<
             typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
           >
-        ).buildHash(),
+        ).buildHash(root),
       });
       const result = spawnSync(
         process.execPath,
