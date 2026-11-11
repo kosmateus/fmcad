@@ -223,6 +223,7 @@ test("prepare builds once per Node and all consumers restore matching complete o
     "prepare",
     "broker-regressions",
     "contracts",
+    "public-consumers",
     "python",
     "control-center-browser",
     "scenario-broker",
@@ -235,7 +236,7 @@ test("prepare builds once per Node and all consumers restore matching complete o
   );
   assert.equal(
     (reusable.match(/run: npm run test:prepare-offline\n/g) || []).length,
-    7,
+    8,
   );
   assert.equal(
     (reusable.match(/- run: npm run typecheck:tests\n/g) || []).length,
@@ -254,6 +255,7 @@ test("prepare builds once per Node and all consumers restore matching complete o
   );
   assert.equal((reusable.match(/overwrite: true/g) || []).length, 3);
   assert.match(jobs.prepare, /retention-days: 90/);
+  assert.match(jobs["broker-regressions"], /- run: mkdir -p \/tmp\/opencode/);
   assert.match(
     jobs.prepare,
     /node \.github\/scripts\/ci-build-artifact\.cjs build-output\.tar\.gz/,
@@ -325,7 +327,21 @@ test("prepare builds once per Node and all consumers restore matching complete o
       assert.ok(scripts.build.startsWith("npm run build:code && "));
     }
   }
+  assert.match(
+    jobs["public-consumers"],
+    /python -m pip install -r tests\/python-requirements\.txt/,
+  );
+  assert.match(
+    jobs["public-consumers"],
+    /- run: npm run test:public-consumers/,
+  );
+  assert.match(jobs["public-consumers"], /FMCAD_REFERENCE_PYTHON: python3/);
   assert.match(jobs["scenario-broker"], /protocol: \[mcp, addin\]/);
+  assert.match(jobs["scenario-broker"], /concurrency: \[1, 2, 10\]/);
+  assert.match(
+    jobs["scenario-broker"],
+    /timeout-minutes: \$\{\{ matrix\.suite\.jobMinutes \}\}/,
+  );
   for (const suite of [
     "foundation",
     "saved",

@@ -73,6 +73,7 @@ jobs:
       - run: tar -xzf build-output.tar.gz
       - if: steps.npm-cache.outputs.cache-hit != 'true'
         run: npm run test:prepare-offline
+      - run: mkdir -p /tmp/opencode
       - run: npm run test:broker-regressions
 
   contracts:
@@ -113,6 +114,48 @@ jobs:
       - run: npm run test:scenarios:component -- --protocol addin --owners 2 --suite foundation
       - run: mkdir -p /tmp/opencode
       - run: npm run test:contracts
+
+  public-consumers:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      npm_config_cache: /tmp/fmcad-npm-cache
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            tests/python-requirements.txt
+            tests/python-constraints.txt
+            assets/*requirements.txt
+      - uses: actions/cache/restore@v4
+        id: npm-cache
+        with:
+          path: ${{ env.npm_config_cache }}
+          key: ci-prepared-npm-${{ runner.os }}-${{ matrix.node }}-${{ hashFiles('package-lock.json') }}
+      - run: python -m pip install -r tests/python-requirements.txt
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-${{ matrix.node }}
+      - run: tar -xzf build-output.tar.gz
+      - if: steps.npm-cache.outputs.cache-hit != 'true'
+        run: npm run test:prepare-offline
+      - run: mkdir -p /tmp/opencode
+      - run: npm run test:public-consumers
+        env:
+          FMCAD_REFERENCE_PYTHON: python3
+          TERM: xterm
 
   python:
     needs: prepare
@@ -188,24 +231,47 @@ jobs:
   scenario-broker:
     needs: prepare
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ matrix.suite == 'sketches' && 22 || 16 }}
+    timeout-minutes: ${{ matrix.suite.jobMinutes }}
     env:
       npm_config_cache: /tmp/fmcad-npm-cache
     strategy:
       fail-fast: false
       matrix:
         protocol: [mcp, addin]
+        concurrency: [1, 2, 10]
         suite:
-          [
-            foundation,
-            saved,
-            parameters,
-            documents,
-            cloud,
-            boxes,
-            attributes,
-            sketches,
-          ]
+          - { id: foundation, owners: 10, jobMinutes: 18 }
+          - { id: saved, owners: 10, jobMinutes: 31 }
+          - { id: parameters, owners: 3, jobMinutes: 36 }
+          - { id: documents, owners: 4, jobMinutes: 41 }
+          - { id: cloud, owners: 10, jobMinutes: 24 }
+          - { id: boxes, owners: 5, jobMinutes: 24 }
+          - { id: attributes, owners: 10, jobMinutes: 71 }
+          - { id: sketches, owners: 10, jobMinutes: 66 }
+          - { id: reopen, owners: 10, jobMinutes: 40 }
+          - { id: revisions, owners: 10, jobMinutes: 46 }
+          - { id: rectangles, owners: 10, jobMinutes: 64 }
+          - { id: transactions, owners: 10, jobMinutes: 46 }
+          - { id: camera, owners: 10, jobMinutes: 31 }
+          - { id: poses, owners: 10, jobMinutes: 36 }
+          - { id: animation, owners: 10, jobMinutes: 41 }
+          - { id: materials, owners: 10, jobMinutes: 31 }
+          - { id: appearances, owners: 10, jobMinutes: 31 }
+          - { id: style-assignments, owners: 10, jobMinutes: 51 }
+          - { id: thread-recipes, owners: 10, jobMinutes: 71 }
+          - { id: gear-pair, owners: 10, jobMinutes: 51 }
+          - { id: engineering-declarations, owners: 10, jobMinutes: 36 }
+          - { id: mechanical-declarations, owners: 10, jobMinutes: 41 }
+          - { id: retained-thread, owners: 2, jobMinutes: 51 }
+          - { id: retained-seal, owners: 2, jobMinutes: 51 }
+          - { id: retained-fasteners, owners: 1, jobMinutes: 51 }
+          - { id: retained-mechanism, owners: 2, jobMinutes: 51 }
+          - { id: retained-pose, owners: 2, jobMinutes: 51 }
+          - { id: retained-interference, owners: 2, jobMinutes: 51 }
+          - { id: retained-containment, owners: 2, jobMinutes: 51 }
+          - { id: retained-gm-contracts, owners: 1, jobMinutes: 186 }
+          - { id: retained-engineering, owners: 1, jobMinutes: 51 }
+          - { id: child-cli, owners: 10, jobMinutes: 31 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -223,12 +289,11 @@ jobs:
       - run: tar -xzf build-output.tar.gz
       - if: steps.npm-cache.outputs.cache-hit != 'true'
         run: npm run test:prepare-offline
-      # Sketches check four full helper programs per owner; keep time for the final file audit.
-      - run: npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite }} --concurrency 10 --owners ${{ (matrix.suite == 'saved' || matrix.suite == 'attributes' || matrix.suite == 'sketches') && 2 || 10 }}
+      - run: npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite.id }} --concurrency ${{ matrix.concurrency }} --owners ${{ matrix.suite.owners }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: scenario-broker-${{ matrix.protocol }}-${{ matrix.suite }}
+          name: scenario-broker-${{ matrix.protocol }}-${{ matrix.suite.id }}-c${{ matrix.concurrency }}
           path: .test-artifacts/scenarios/
           include-hidden-files: true
           overwrite: true

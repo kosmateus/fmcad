@@ -66,16 +66,20 @@ test("CI executes every retained broker regression family and its historical com
   );
   for (const file of files)
     assert.ok(fs.existsSync(path.join(root, file)), file);
-  const workflow = fs.readFileSync(
-    path.join(root, ".github/workflows/ci.yml"),
-    "utf8",
+  const workflow: unknown = YAML.parse(
+    fs.readFileSync(path.join(root, ".github/workflows/ci-tests.yml"), "utf8"),
   );
-  assert.match(workflow, /^\s+- run: npm run test:broker-regressions\s*$/m);
+  const job = record(record(record(workflow)["jobs"])["broker-regressions"]);
+  const steps = list(job["steps"]).map(record);
+  assert.ok(
+    steps.some((step) => step["run"] === "npm run test:broker-regressions"),
+  );
+  assert.ok(steps.some((step) => step["run"] === "mkdir -p /tmp/opencode"));
 });
 
 test("CI executes every required modeled profile with at least ten owned fixtures at every required concurrency", () => {
   const workflow: unknown = YAML.parse(
-    fs.readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8"),
+    fs.readFileSync(path.join(root, ".github/workflows/ci-tests.yml"), "utf8"),
   );
   const job = record(record(record(workflow)["jobs"])["scenario-broker"]);
   assert.equal(job["timeout-minutes"], "${{ matrix.suite.jobMinutes }}");
@@ -139,7 +143,7 @@ test("CI executes every required modeled profile with at least ten owned fixture
 
 test("long CI commands rely on their job timeout instead of shell wrappers", () => {
   const workflow: unknown = YAML.parse(
-    fs.readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8"),
+    fs.readFileSync(path.join(root, ".github/workflows/ci-tests.yml"), "utf8"),
   );
   const jobs = record(record(workflow)["jobs"]);
   for (const [name, command] of [
