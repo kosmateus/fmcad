@@ -201,12 +201,22 @@ test("missing request, older broker and foreign owner never authorize replay", a
           return found;
         }),
       ),
-      {
-        code:
+      (error) => {
+        assert.ok(error instanceof Error);
+        const rejection = error as Error & {
+          code?: string;
+          requestId?: string;
+          notStarted?: boolean;
+        };
+        assert.equal(
+          rejection.code,
           found.job?.clientId === "other"
             ? "NOT_OWNER"
             : "QUEUE_IPC_RESPONSE_LOST",
-        requestId: "stable",
+        );
+        assert.equal(rejection.requestId, "stable");
+        if (found.job === null) assert.notEqual(rejection.notStarted, true);
+        return true;
       },
     );
     assert.equal(mutations, 1);
@@ -283,6 +293,7 @@ test("identity retains execution input and strips only broker-authored fields", 
     argv: ["run", "a.py"],
     cwd: "/owned",
     timeoutMs: 1000,
+    inputFiles: [{ path: "/owned/a.py", sha256: "a".repeat(64) }],
     buildHash: "original",
   };
   assert.deepEqual(
@@ -294,6 +305,10 @@ test("identity retains execution input and strips only broker-authored fields", 
       description: "note",
       isolatedEpoch: "epoch",
     }),
+    input,
+  );
+  assert.notDeepEqual(
+    requestIdentity({ ...input, argv: ["run", "other.py"] }),
     input,
   );
   assert.notDeepEqual(requestIdentity({ ...input, buildHash: "other" }), input);
