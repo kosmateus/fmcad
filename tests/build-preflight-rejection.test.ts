@@ -34,12 +34,17 @@ test("a local build mismatch before sending preflight is terminal not_started, n
   const work = fs.mkdtempSync(path.join(parent, "build-guard-"));
   const runtime = path.join(work, "runtime");
   fs.mkdirSync(runtime);
-  for (const file of ["package.json", "src", "assets", "bin", "runtime"])
+  for (const file of ["package.json", "src", "assets", "bin"])
     fs.cpSync(
       path.join(fixtureDirectory, "..", file),
       path.join(runtime, file),
       { recursive: true },
     );
+  fs.cpSync(
+    path.join(fixtureDirectory, "..", "dist/runtime"),
+    path.join(runtime, "runtime"),
+    { recursive: true },
+  );
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "qlocal-"));
   let probes = 0,
     sdk = 0;
@@ -88,7 +93,7 @@ test("a local build mismatch before sending preflight is terminal not_started, n
   const auth = { clientId: "a", clientToken: "secret-a" };
   await request(dir, { action: "register", ...auth });
   const script = path.join(dir, "operation.py");
-  fs.writeFileSync(script, "def run(context): pass\n");
+  fs.writeFileSync(script, "def run(context: str) -> None: pass\n");
   const job = await request(dir, {
     action: "submit",
     auth,
@@ -153,12 +158,17 @@ test("a build change after fully receipted idle SDK completion does not invent a
   const work = fs.mkdtempSync(path.join(parent, "post-build-")),
     runtime = path.join(work, "runtime");
   fs.mkdirSync(runtime);
-  for (const file of ["package.json", "src", "assets", "bin", "runtime"])
+  for (const file of ["package.json", "src", "assets", "bin"])
     fs.cpSync(
       path.join(fixtureDirectory, "..", file),
       path.join(runtime, file),
       { recursive: true },
     );
+  fs.cpSync(
+    path.join(fixtureDirectory, "..", "dist/runtime"),
+    path.join(runtime, "runtime"),
+    { recursive: true },
+  );
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "qpost-"));
   const qi = load(path.join(runtime, "src/queue-instance")) as ReturnType<
     typeof import("../packages/node-adapters/src/execution/queue-instance.js").createQueueInstance
@@ -268,7 +278,7 @@ test("a build change after fully receipted idle SDK completion does not invent a
   const auth = { clientId: "a", clientToken: "private-a" };
   await request(dir, { action: "register", ...auth });
   const file = path.join(dir, "operation.py");
-  fs.writeFileSync(file, "def run(context): pass\n");
+  fs.writeFileSync(file, "def run(context: str) -> None: pass\n");
   const job = await request(dir, {
     action: "submit",
     auth,
