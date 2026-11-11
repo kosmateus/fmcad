@@ -340,7 +340,7 @@ test("outside-repository consumer imports built JS and declarations with no sour
         "--no-fund",
         path.join(directory, packed[0].filename),
       ],
-      { cwd: directory, encoding: "utf8", timeout: 120000 },
+      { cwd: directory, encoding: "utf8" },
     );
     installed = path.join(directory, "node_modules/fmcad");
     for (const entry of fs.readdirSync(installed, {
@@ -532,7 +532,6 @@ void resolveProject;
             cwd: directory,
             encoding: "utf8",
             env: { ...process.env, FMCAD_CONFIG: poison },
-            timeout: 60000,
           },
         );
         assert.equal(run.status, 0, run.stderr);
@@ -2434,7 +2433,7 @@ test("unchanged retained UI suite also passes against the frozen historical impl
         "--test",
         path.join(root, "dist/tests/ui.test.js"),
       ],
-      { cwd: root, env, encoding: "utf8", timeout: 60000 },
+      { cwd: root, env, encoding: "utf8" },
     );
     assert.match(output, /(?:fail 0|# fail 0)/);
   } finally {

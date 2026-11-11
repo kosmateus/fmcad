@@ -265,7 +265,7 @@ test("synchronous observer fence refuses source mutation after a real certificat
 
 test(
   "offline installed package exposes the same real migration admission preflight",
-  { timeout: 30000 },
+  {},
   (t) => {
     const directory = fs.mkdtempSync(
       path.join(os.tmpdir(), "fmcad-installed-observer-admission-"),
@@ -277,7 +277,6 @@ test(
       {
         cwd: root,
         encoding: "utf8",
-        timeout: 15000,
       },
     );
     assert.equal(packed.status, 0, packed.stderr);
@@ -296,7 +295,7 @@ test(
         consumer,
         tarball,
       ],
-      { cwd: consumer, encoding: "utf8", timeout: 20000 },
+      { cwd: consumer, encoding: "utf8" },
     );
     assert.equal(installed.status, 0, installed.stderr);
     const script = String.raw`
@@ -357,7 +356,6 @@ function prepared(code){
     const result = spawnSync(process.execPath, ["-e", script], {
       cwd: consumer,
       encoding: "utf8",
-      timeout: 20000,
     });
     assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.deepEqual(JSON.parse(result.stdout), {

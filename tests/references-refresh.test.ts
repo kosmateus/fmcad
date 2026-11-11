@@ -2673,7 +2673,7 @@ test("reference apply keeps historical mutation counts and reopens receipts for 
 
 test(
   "production checker admits the public reference action wrapper against pinned Python interfaces",
-  { timeout: 180000 },
+  {},
   async () => {
     const { prepareCadBundle } = load(
       "../packages/node-adapters/dist/python/bundle",

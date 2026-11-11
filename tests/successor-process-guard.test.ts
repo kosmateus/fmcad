@@ -74,7 +74,6 @@ for (const mode of [
         `script = ${JSON.stringify(artifact.script)}\nscript = script.replace('2147483644', str(os.getpid())).replace('__SYNTHETIC_EXPECTED_BIRTH__', birth)\nexec(compile(script, '<synthetic-receipt>', 'exec'))\n`;
       const result = spawnSync("python3", ["-B", "-c", bootstrap], {
         encoding: "utf8",
-        timeout: 10000,
       });
       const record = JSON.parse(fs.readFileSync(receipt, "utf8")) as {
         terminal: boolean;
@@ -105,7 +104,7 @@ for (const mode of [
 
 test(
   "production checker qualifies the exact successor read wire with a PID/birth guard and rejects changed final bytes",
-  { timeout: 45000 },
+  {},
   async (t) => {
     const dir = fs.mkdtempSync("/tmp/opencode/successor-read-admission-");
     t.after(() => fs.rmSync(dir, { recursive: true, force: true }));

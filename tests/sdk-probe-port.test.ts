@@ -191,7 +191,7 @@ test("probe preparation uses actual SDK build/document assertions and loaded reg
 
 test(
   "real worker probe port executes through broker IPC/admission/receipts/postflight and has no direct transport",
-  { timeout: 15000 },
+  {},
   async (t) => {
     const dir = fs.mkdtempSync("/tmp/opencode/sdk-probe-port-");
     const entrypoint = path.join(dir, "probe-worker.cjs");

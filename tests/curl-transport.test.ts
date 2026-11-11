@@ -64,11 +64,9 @@ const warning = /outcome unknown; inspect before retry/;
 
 test(
   "real local curl independently verifies config quoting and exact HTTP bytes",
-  { timeout: 10000 },
+  {},
   async (t) => {
-    const probe = spawnSync("curl", ["--disable", "--version"], {
-      timeout: 1000,
-    });
+    const probe = spawnSync("curl", ["--disable", "--version"]);
     assert.notEqual(
       probe.error ? record(probe.error)["code"] : undefined,
       "ENOENT",

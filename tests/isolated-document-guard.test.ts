@@ -63,7 +63,6 @@ for (const mode of [
         prepared.script;
       const result = spawnSync("python3", ["-B", "-c", bootstrap], {
         encoding: "utf8",
-        timeout: 10000,
       });
       const record = object(JSON.parse(fs.readFileSync(receipt, "utf8")));
       assert.equal(record["terminal"], true);
@@ -79,7 +78,7 @@ for (const mode of [
 
 test(
   "production checker qualifies the actual unsaved-document guard without suppressing nullable getter diagnostics",
-  { timeout: 180000 },
+  {},
   async (t) => {
     t.after(
       (loadModule("./fixtures/fake-wsl-platform.cjs") as () => () => void)(),

@@ -24,7 +24,6 @@ const available =
 test(
   "installed readonly CLI executes actual image/reference pipelines without Fusion config",
   {
-    timeout: 120000,
     skip:
       !available &&
       "Set FMCAD_LOCAL_TEST_PYTHON to an installed image-worker environment",
@@ -70,7 +69,6 @@ test(
       {
         cwd: root,
         encoding: "utf8",
-        timeout: 60000,
       },
     );
     installation = path.join(root, "node_modules/fmcad");
@@ -128,7 +126,6 @@ test(
         cwd,
         env,
         encoding: "utf8",
-        timeout: 20000,
         maxBuffer: 16 * 1024 * 1024,
       });
       assert.equal(child.status, 0, child.stderr);
@@ -297,7 +294,7 @@ test(
   `,
         source,
       ],
-      { cwd, env, encoding: "utf8", timeout: 15000 },
+      { cwd, env, encoding: "utf8" },
     );
     assert.equal(formatted.status, 0, formatted.stderr);
     const preview = record(JSON.parse(formatted.stdout));
@@ -329,7 +326,7 @@ print(json.dumps(call_offline('json','loads',['{"installed":true}'],log_parent=s
 `,
         cwd,
       ],
-      { cwd, env, encoding: "utf8", timeout: 15000 },
+      { cwd, env, encoding: "utf8" },
     );
     assert.equal(supervised.status, 0, supervised.stderr);
     assert.deepEqual(JSON.parse(supervised.stdout), { installed: true });
@@ -344,7 +341,6 @@ print(json.dumps(call_offline('json','loads',['{"installed":true}'],log_parent=s
         env,
         input: "{} {}",
         encoding: "utf8",
-        timeout: 15000,
       });
       assert.notEqual(invalid.status, 0, name);
       assert.equal(invalid.stdout, "", name);

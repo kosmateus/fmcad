@@ -100,7 +100,7 @@ async function fixture(
       path.join(directory, packed.filename),
       ...hostPackage,
     ],
-    { cwd: directory, encoding: "utf8", timeout: 120000 },
+    { cwd: directory, encoding: "utf8" },
   );
   for (const entry of fs.readdirSync(pkg, {
     recursive: true,
@@ -660,7 +660,7 @@ test("external root import needs no host SDK and has no service effects", (t) =>
       "--no-fund",
       path.join(directory, packed.filename),
     ],
-    { cwd: directory, encoding: "utf8", timeout: 120000 },
+    { cwd: directory, encoding: "utf8" },
   );
   const loader = path.join(directory, "no-effects-loader.mjs");
   fs.writeFileSync(

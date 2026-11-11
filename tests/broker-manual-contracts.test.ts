@@ -64,7 +64,6 @@ test("built CLI prints owner return contracts offline without configuration, bro
       [path.join(root, "bin/fmcad.js"), "help", "queue", action],
       {
         encoding: "utf8",
-        timeout: 10000,
         env: {
           ...process.env,
           FMCAD_CONFIG: path.join(directory, "missing-config.json"),

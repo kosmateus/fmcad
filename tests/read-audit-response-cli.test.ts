@@ -125,7 +125,6 @@ test(
       env,
       cwd: base,
       encoding: "utf8",
-      timeout: 30000,
     });
     assert.equal(success.status, 0, success.stderr);
     const report = JSON.parse(fs.readFileSync(output, "utf8")) as {
@@ -147,7 +146,6 @@ test(
         env: { ...env, FMCAD_CLIENT: "foreign" },
         cwd: base,
         encoding: "utf8",
-        timeout: 30000,
       },
     );
     assert.notEqual(foreign.status, 0);

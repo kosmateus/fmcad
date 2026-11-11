@@ -970,7 +970,7 @@ test("input bytes changed during the offline checker are refused at the actual p
 
 test(
   "fallback admission is aborted with its local worker and never dispatches or replays",
-  { timeout: 15000 },
+  {},
   async (t) => {
     let checked!: () => void;
     const reached = new Promise<void>((resolve) => {

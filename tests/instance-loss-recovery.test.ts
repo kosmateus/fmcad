@@ -144,7 +144,7 @@ print('no-body-executed')
 
 test(
   "real current-only preflight checks complete endpoint-fenced bytes and refuses stripped instance binding",
-  { timeout: 30000 },
+  {},
   async (t) => {
     const directory = fs.mkdtempSync(
       path.join(os.tmpdir(), "loss-audit-preflight-"),

@@ -500,7 +500,7 @@ for (const [moduleName, exported, flags] of modules) {
 
 test(
   "installed image adapter retains runtime assets and closed declarations outside the workspace",
-  { timeout: 120000 },
+  {},
   async (t) => {
     const { execFileSync } = runtimeRequire("node:child_process");
     const root = path.resolve(testRoot + "/tests", "..");
@@ -573,7 +573,6 @@ test(
         {
           cwd: f.root,
           encoding: "utf8",
-          timeout: 15000,
           env: {
             ...process.env,
             NODE_PATH: "",

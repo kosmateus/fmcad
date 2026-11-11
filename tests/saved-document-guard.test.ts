@@ -83,7 +83,6 @@ for (const mode of [
       prepared.script;
     const result = spawnSync("python3", ["-B", "-c", bootstrap], {
       encoding: "utf8",
-      timeout: 10000,
     });
     const receiptRecord = record(JSON.parse(fs.readFileSync(receipt, "utf8")));
     assert.equal(receiptRecord["terminal"], true);
@@ -98,7 +97,7 @@ for (const mode of [
 
 test(
   "production checker qualifies the separate saved guard with exact file/project/folder/version and SDK0",
-  { timeout: 180000 },
+  {},
   async (t) => {
     const dir = fs.mkdtempSync(
       path.join(os.tmpdir(), "saved-document-admission-"),

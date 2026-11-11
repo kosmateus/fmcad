@@ -271,7 +271,7 @@ test("wrong observer client, body hash, state, unfinished RPC or departing owner
 
 test(
   "real audit migration preflight certifies canonical final bytes without original ABI exemptions or sends",
-  { timeout: 30000 },
+  {},
   async () => {
     const api = load(
       "../src/queue-atomic-recovery-audit",

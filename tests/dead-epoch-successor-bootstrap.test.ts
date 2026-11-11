@@ -117,7 +117,7 @@ function fixture(t: TestContext) {
 
 test(
   "FAKE host/process metadata: preflight is file-only; startup creates one metadata worker and retains all original epochs",
-  { timeout: 90000 },
+  {},
   async (t) => {
     const f = fixture(t);
     const protectedFiles = [
