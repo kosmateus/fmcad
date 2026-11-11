@@ -87,6 +87,16 @@ export function stageQueueRuntime(root: string): void {
 }
 
 export function stageQueueTestFixtures(root: string): void {
+  const workspaceNames = [
+    "atomic-audit-upgrade.cjs",
+    "epoch-audit.cjs",
+    "fake-wsl-platform.cjs",
+    "fake-wsl-preload.cjs",
+  ];
+  const workspaceArtifacts = workspaceNames.map((filename) => ({
+    filename,
+    bytes: fs.readFileSync(path.join(root, "tests/fixtures", filename)),
+  }));
   const names = [
     "closed-scratch-artifacts.cjs",
     "closed-epoch-successor.cjs",
@@ -96,6 +106,13 @@ export function stageQueueTestFixtures(root: string): void {
     filename,
     bytes: fs.readFileSync(path.join(root, "dist/tests/fixtures", filename)),
   }));
+  const compiledTarget = path.join(root, "dist/tests/fixtures");
+  fs.mkdirSync(compiledTarget, { recursive: true });
+  for (const artifact of workspaceArtifacts)
+    fs.writeFileSync(
+      path.join(compiledTarget, artifact.filename),
+      artifact.bytes,
+    );
   const target = path.join(root, "tests/fixtures");
   fs.mkdirSync(target, { recursive: true });
   for (const artifact of artifacts)
