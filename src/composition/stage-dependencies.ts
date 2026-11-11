@@ -774,7 +774,9 @@ export async function createAuthenticatedStageDependencies(
   const admittedPayload = acceptedPayload(owner.job, owner.accepted);
   const document = isDocumentSave
     ? (
-        load("./document-stages.js") as typeof import("./document-stages.js")
+        loadStaged(
+          "composition/document-stages.js",
+        ) as typeof import("./document-stages.js")
       ).createDocumentSaveStages(
         owner.operationDirectory,
         owner.owner as DocumentSaveStageOwner,
