@@ -213,11 +213,11 @@ function processClient(
       assert.equal(line.done, false, diagnostics);
       return JSON.parse(line.value!) as unknown;
     },
-    async close() {
+    async close(expectedDiagnostics = "") {
       child.stdin.end();
       assert.deepEqual(await closed, [0, null], diagnostics);
       assert.equal((await lines.next()).done, true);
-      assert.equal(diagnostics, "");
+      assert.equal(diagnostics, expectedDiagnostics);
     },
     async kill(signal: NodeJS.Signals = "SIGKILL") {
       child.kill(signal);
@@ -626,7 +626,6 @@ test("explicit raw compatibility adapters preserve wire arguments and never prom
 
 test(
   "process MCP and CLI share the production broker/typed worker and execute once per explicit request",
-  { timeout: 390000 },
   async (t) => {
     t.after(
       (
@@ -930,13 +929,14 @@ test(
       2,
       "one MCP operation and one distinct CLI operation each get one SDK turn",
     );
-    await client.close();
+    await client.close(
+      "fmcad: Control Center unavailable; MCP remains available.\n",
+    );
   },
 );
 
 test(
   "MCP process identities preserve project-scoped jobs across pause, lost acknowledgement and owner restart",
-  { timeout: 390000 },
   async (t) => {
     t.after(
       (
@@ -1417,7 +1417,9 @@ test(
       2,
       "each distinct request dispatches once after resume",
     );
-    await restarted.close();
-    await second.close();
+    const controlCenterWarning =
+      "fmcad: Control Center unavailable; MCP remains available.\n";
+    await restarted.close(controlCenterWarning);
+    await second.close(controlCenterWarning);
   },
 );

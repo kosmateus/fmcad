@@ -1435,7 +1435,11 @@ export async function runScenarios(
   const reports = await scopedMap(tasks, concurrency, (report) => {
     if (report.status === "passed" && report.cleanup === "complete")
       return "passed";
-    if (report.status === "unsupported" && report.cleanup === "not-created")
+    if (
+      report.status === "unsupported" &&
+      report.cleanup === "not-created" &&
+      report.scope !== "exclusive-instance"
+    )
       return "passed";
     if (report.cleanup === "complete" || report.cleanup === "not-created")
       return "settled-failure";
@@ -1674,6 +1678,9 @@ export async function resumeCleanup(
     JSON.parse(text(lines[0]).slice(programs.marker.length)) as unknown,
   );
   let document = creationProof(created, owner, creation[0].requestId);
+  for (const entry of recovered)
+    if (entry.phase.startsWith("cad-") && entry.result?.stdout.trim())
+      commandResult(entry.result.stdout, [document]);
   if (fs.existsSync(path.join(directory, "creation.json"))) {
     const durable = creationProof(
       readCreation(directory),

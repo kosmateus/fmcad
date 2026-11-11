@@ -42,7 +42,13 @@ for (const protocol of ["mcp", "addin"] as const) {
             output.status = "unknown";
             output.outcome = "unknown";
             output.success = false;
-          } else output.context.docId = "unrelated-document";
+          } else {
+            output.context ??= {
+              doc: request.target?.name,
+              docId: request.target?.creationId,
+            };
+            output.context.docId = "unrelated-document";
+          }
           bad = { ...result, stdout: JSON.stringify(output) };
           return bad;
         },

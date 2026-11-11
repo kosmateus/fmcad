@@ -91,12 +91,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            tests/python-requirements.txt
+            tests/python-constraints.txt
+            assets/*requirements.txt
       - uses: actions/cache/restore@v4
         id: npm-cache
         with:
           path: ${{ env.npm_config_cache }}
           key: ci-prepared-npm-${{ runner.os }}-${{ matrix.node }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
+      - run: python -m pip install -r tests/python-requirements.txt
       - uses: actions/download-artifact@v4
         with:
           name: build-${{ matrix.node }}
