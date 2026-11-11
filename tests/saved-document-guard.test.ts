@@ -9,6 +9,9 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 const root = path.resolve(__dirname, "../..");
 const load = createRequire(path.join(root, "package.json"));
+test.after(
+  (load("./tests/fixtures/fake-wsl-platform.cjs") as () => () => void)(),
+);
 const { prepareReceiptScript } = load("./src/queue-instance") as ReturnType<
   typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
 >;

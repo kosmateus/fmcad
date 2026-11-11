@@ -409,6 +409,7 @@ export class PhasedWorkers {
       const checkAbort = new AbortController();
       record.checkAbort = checkAbort;
       record.pending = { message, resolve, reject };
+      this.pauseLocal(record);
       const prepare = async (): Promise<void> => {
         await this.ports.checkSdkRequest?.(message, checkAbort.signal);
         if (
@@ -420,7 +421,6 @@ export class PhasedWorkers {
             record.localFailure || "WORKER_CLOSED",
             "Worker closed during local Python analysis",
           );
-        this.pauseLocal(record);
         if (record.checkAbort === checkAbort) record.checkAbort = undefined;
         this.ports.state.readyTurn(message.jobId);
       };
@@ -432,10 +432,7 @@ export class PhasedWorkers {
         record.preparationRejected = true;
         if (error && typeof error === "object" && "pythonCheck" in error)
           record.pythonCheck = error.pythonCheck;
-        if (this.workers.has(message.jobId)) {
-          this.pauseLocal(record);
-          this.resumeLocal(record);
-        }
+        if (this.workers.has(message.jobId)) this.resumeLocal(record);
         reject(
           Object.assign(
             error instanceof Error ? error : new Error(String(error)),

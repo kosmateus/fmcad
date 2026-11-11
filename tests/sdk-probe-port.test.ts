@@ -1,5 +1,10 @@
 import type { WorkerSdkProbeRequest, WorkerRequest } from "@fmcad/core";
-import type { Client, Rpc, ToolArguments } from "../src/queue-broker-ports";
+import type {
+  Client,
+  Origin,
+  Rpc,
+  ToolArguments,
+} from "../src/queue-broker-ports";
 import { createRequire } from "node:module";
 import { at, text } from "./integration/offline-cli";
 const testRoot = process.cwd();
@@ -16,6 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+test.after(runtimeRequire("./fixtures/fake-wsl-platform.cjs")());
 const { createWorkerSdkProbe, prepareSdkProbe } = runtimeRequire(
   "../packages/node-adapters/dist/execution/sdk-probe",
 ) as typeof import("../packages/node-adapters/src/execution/sdk-probe");
@@ -195,6 +201,7 @@ test(
   async (t) => {
     const dir = fs.mkdtempSync("/tmp/opencode/sdk-probe-port-");
     const entrypoint = path.join(dir, "probe-worker.cjs");
+    const preload = runtimeRequire.resolve("./fixtures/fake-wsl-preload.cjs");
     const input = probeRequest();
     const typed = (
       runtimeRequire(
@@ -257,11 +264,67 @@ require(${JSON.stringify(runtimeRequire.resolve("../src/queue-worker"))}).run(pr
     const physical = {
       server: { timeoutMs: 10000 },
       _parse: JSON.parse,
+      async prepareCallTool(
+        value: ToolArguments,
+        name = "fusion_mcp_execute",
+        origin?: Origin,
+      ) {
+        const client = this as unknown as Client;
+        const prepared = await client.preparePost!(
+          {
+            jsonrpc: "2.0",
+            id: randomUUID(),
+            method: "tools/call",
+            params: { name, arguments: value },
+          },
+          origin,
+        );
+        return Object.assign(
+          async () => {
+            const response = await prepared.send();
+            const content = JSON.parse(response.raw).result.content;
+            return {
+              failed: false,
+              text: content
+                .map((item: { text: string }) => item.text)
+                .join("\n"),
+            };
+          },
+          {
+            fence: () => prepared.fence(),
+          },
+        );
+      },
       async _post(payload: Rpc) {
-        physicalCalls++;
         const script = text(
           at(payload, "params", "arguments", "object", "script"),
         );
+        if (script.includes("FMCAD_QUEUE_INSTANCE")) {
+          emitReceipt(script);
+          stages.push(
+            script.includes("postflight-")
+              ? "postflight"
+              : script.includes("preflight-")
+                ? "preflight"
+                : "startup",
+          );
+          return {
+            status: 200,
+            raw: JSON.stringify({
+              jsonrpc: "2.0",
+              id: payload.id,
+              result: {
+                content: [
+                  {
+                    type: "text",
+                    text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance),
+                  },
+                ],
+              },
+            }),
+          };
+        }
+        physicalCalls++;
         assert.equal(
           at(payload, "params", "arguments", "object", "readOnly"),
           true,
@@ -279,21 +342,6 @@ require(${JSON.stringify(runtimeRequire.resolve("../src/queue-worker"))}).run(pr
         };
       },
       async callTool(value: ToolArguments) {
-        const script = value.object?.script || "";
-        if (script.includes("FMCAD_QUEUE_INSTANCE")) {
-          emitReceipt(script);
-          stages.push(
-            script.includes("postflight-")
-              ? "postflight"
-              : script.includes("preflight-")
-                ? "preflight"
-                : "startup",
-          );
-          return {
-            failed: false,
-            text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance),
-          };
-        }
         const response = await this._post({
           jsonrpc: "2.0",
           id: randomUUID(),
@@ -318,11 +366,19 @@ require(${JSON.stringify(runtimeRequire.resolve("../src/queue-worker"))}).run(pr
           args: readonly string[] = [],
           options: import("node:child_process").SpawnOptions = {},
         ) =>
-          spawn(
-            executable,
-            [entrypoint, present(args[1])],
-            options,
-          )) as typeof spawn,
+          spawn(executable, [entrypoint, present(args[1])], {
+            ...options,
+            env: {
+              ...options.env,
+              NODE_OPTIONS: [
+                options.env?.["NODE_OPTIONS"],
+                "--require",
+                preload,
+              ]
+                .filter(Boolean)
+                .join(" "),
+            },
+          })) as typeof spawn,
       },
     );
     t.after(async () => {
@@ -347,7 +403,7 @@ require(${JSON.stringify(runtimeRequire.resolve("../src/queue-worker"))}).run(pr
       },
     });
     let result;
-    for (let index = 0; index < 1000; index++) {
+    for (;;) {
       result = await request(dir, {
         action: "result",
         auth,
