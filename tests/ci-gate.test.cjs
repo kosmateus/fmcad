@@ -166,7 +166,9 @@ test("retry cannot hide historical skipped jobs or duplicate matrix names", () =
 });
 test("workflow puts all jobs behind the reusable boundary and tests the gate first", () => {
   const read = (file) =>
-    fs.readFileSync(path.join(__dirname, "..", file), "utf8");
+    fs
+      .readFileSync(path.join(__dirname, "..", file), "utf8")
+      .replace(/\r\n/g, "\n");
   const caller = read(".github/workflows/ci.yml");
   const reusable = read(".github/workflows/ci-tests.yml");
   // Structural check: top-level job keys have exactly two spaces indentation.
@@ -194,12 +196,225 @@ test("workflow puts all jobs behind the reusable boundary and tests the gate fir
   assert.doesNotMatch(reusable, /\n  (pull_request|push|workflow_dispatch):/);
   assert.match(
     reusable,
-    /npx prettier --check.*\.github\/workflows\/\*\.yml.*ci-gate\.cjs.*ci-gate\.test\.cjs/,
+    /npx prettier --check.*\.github\/workflows\/\*\.yml.*\.github\/scripts\/\*\.cjs.*ci-gate\.test\.cjs/,
   );
   // The caller never enumerates reusable jobs; a new job belongs to pipeline.
   const withNewJob = `${reusable}\n  future-job:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: exit 1\n`;
   assert.match(withNewJob.split(/^jobs:\n/m)[1], /^  future-job:/m);
   assert.doesNotMatch(caller, /future-job/);
+});
+
+test("prepare builds once per Node and all consumers restore matching complete outputs", () => {
+  const root = path.join(__dirname, "..");
+  const reusable = fs
+    .readFileSync(path.join(root, ".github/workflows/ci-tests.yml"), "utf8")
+    .replace(/\r\n/g, "\n");
+  const scripts = JSON.parse(
+    fs.readFileSync(path.join(root, "package.json"), "utf8"),
+  ).scripts;
+  const jobs = Object.fromEntries(
+    [
+      ...reusable
+        .split(/^jobs:\n/m)[1]
+        .matchAll(/^  ([\w-]+):\n([\s\S]*?)(?=^  [\w-]+:\n|$(?![\s\S]))/gm),
+    ].map(([, name, body]) => [name, body]),
+  );
+  assert.deepEqual(Object.keys(jobs), [
+    "prepare",
+    "broker-regressions",
+    "contracts",
+    "python",
+    "control-center-browser",
+    "scenario-broker",
+    "refactor-regressions",
+  ]);
+  assert.equal((reusable.match(/- run: npm run build\n/g) || []).length, 1);
+  assert.equal(
+    (jobs.prepare.match(/- run: npm run test:prepare-offline\n/g) || []).length,
+    1,
+  );
+  assert.equal(
+    (reusable.match(/run: npm run test:prepare-offline\n/g) || []).length,
+    7,
+  );
+  assert.equal(
+    (reusable.match(/- run: npm run typecheck:tests\n/g) || []).length,
+    1,
+  );
+  assert.match(jobs.prepare, /node: \["22\.13\.0", "24\.x"\]/);
+  assert.match(jobs.prepare, /actions\/cache\/restore@v4[\s\S]*npm ci/);
+  assert.match(
+    jobs.prepare,
+    /npm_config_cache: \$\{\{ runner.temp \}\}\/fmcad-npm-cache[\s\S]*npm run build[\s\S]*npm run typecheck:tests[\s\S]*npm run test:prepare-offline[\s\S]*actions\/cache\/save@v4/,
+  );
+  assert.doesNotMatch(reusable, /github\.run_id|github\.run_attempt/);
+  assert.equal(
+    (reusable.match(/uses: actions\/upload-artifact@v4/g) || []).length,
+    3,
+  );
+  assert.equal((reusable.match(/overwrite: true/g) || []).length, 3);
+  assert.match(jobs.prepare, /retention-days: 90/);
+  assert.match(
+    jobs.prepare,
+    /node \.github\/scripts\/ci-build-artifact\.cjs build-output\.tar\.gz/,
+  );
+  assert.match(jobs.prepare, /name: build-\$\{\{ matrix.node \}\}/);
+  for (const [name, body] of Object.entries(jobs)) {
+    assert.match(body, /timeout-minutes:/, name);
+    assert.doesNotMatch(body, /continue-on-error:|\brun: timeout\b/, name);
+    if (name === "prepare") continue;
+    assert.match(body, /^    needs: prepare$/m, name);
+    assert.match(
+      body,
+      /npm_config_cache: \$\{\{ runner.temp \}\}\/fmcad-npm-cache/,
+      name,
+    );
+    assert.match(
+      body,
+      /uses: actions\/cache\/restore@v4\n        id: npm-cache/,
+      name,
+    );
+    assert.match(
+      body,
+      /if: steps\.npm-cache\.outputs\.cache-hit != 'true'\n        run: npm run test:prepare-offline/,
+      name,
+    );
+    assert.match(
+      body,
+      /npm ci[\s\S]*actions\/download-artifact@v4[\s\S]*tar -xzf build-output\.tar\.gz/,
+      name,
+    );
+    const node =
+      body.includes("matrix:") && body.includes("node: [")
+        ? "${{ matrix.node }}"
+        : "24.x";
+    assert.ok(body.includes(`name: build-${node}`), name);
+    assert.ok(
+      body.includes(`path: \${{ runner.temp }}/fmcad-npm-cache`) &&
+        body.includes(
+          `key: ci-prepared-npm-\${{ runner.os }}-${node}-\${{ hashFiles('package-lock.json') }}`,
+        ),
+      name,
+    );
+    assert.doesNotMatch(
+      body,
+      /npm run (?:build|test:scenarios:unit|test:control-center:e2e)\b/,
+      name,
+    );
+  }
+  for (const [script, body] of [
+    ["test:scenarios:unit", jobs.contracts],
+    ["test:control-center:e2e", jobs["control-center-browser"]],
+  ]) {
+    const parts = scripts[script].split(" && ");
+    assert.ok(
+      body.includes(`- run: ${parts.at(-1)}`),
+      `Retain exact tests from ${script}`,
+    );
+    if (script === "test:scenarios:unit") {
+      assert.equal(parts[0], "tsc -p tsconfig.runtime-tests.json");
+      assert.ok(scripts["build:code"].includes(parts[0]));
+    } else {
+      assert.deepEqual(parts.slice(0, -1), [
+        "npm run build:code",
+        "npm run typecheck:tests",
+      ]);
+      assert.ok(scripts.build.startsWith("npm run build:code && "));
+    }
+  }
+  assert.match(jobs["scenario-broker"], /protocol: \[mcp, addin\]/);
+  for (const suite of [
+    "foundation",
+    "saved",
+    "parameters",
+    "documents",
+    "cloud",
+    "boxes",
+    "attributes",
+    "sketches",
+  ])
+    assert.match(jobs["scenario-broker"], new RegExp(`\\b${suite}\\b`));
+});
+
+test("build tar preserves complete staging, executable modes and symlinks without workspace secrets", () => {
+  const os = require("node:os");
+  const { execFileSync } = require("node:child_process");
+  const {
+    buildOutputs,
+    pack,
+  } = require("../.github/scripts/ci-build-artifact.cjs");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ci-build-artifact-"));
+  try {
+    for (const file of [
+      "dist/library-build/src/queue-broker.js",
+      "src/queue-broker.js",
+      "src/dist/runtime.js",
+      "server.mjs",
+      "docs/COMMAND_REFERENCE.md",
+      "docs/COMMAND_COVERAGE.md",
+      "packages/core/dist/index.d.ts",
+      "tests/fixtures/closed-scratch-artifacts.cjs",
+      "tests/fixtures/closed-epoch-successor.cjs",
+      "tests/fixtures/historical-module.cjs",
+      ".git/config",
+      ".npmrc",
+      "node_modules/private/index.js",
+      "src/queue-handwritten.js",
+    ]) {
+      fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+      fs.writeFileSync(path.join(root, file), file);
+    }
+    fs.chmodSync(
+      path.join(root, "dist/library-build/src/queue-broker.js"),
+      0o755,
+    );
+    for (const name of [
+      "queue-broker",
+      "queue-client",
+      "queue-closed-epoch-proof",
+      "queue-isolated-epoch",
+      "queue-scratch-control",
+      "queue-admission",
+      "queue-fixed-fixture-admission",
+      "queue-instance-liveness",
+      "queue-epoch-lineage",
+    ])
+      for (const extension of [".js", ".d.ts"])
+        fs.writeFileSync(path.join(root, `src/${name}${extension}`), name);
+    fs.writeFileSync(path.join(root, "src/queue-broker-ports.d.ts"), "ports");
+    fs.symlinkSync(
+      "library-build/src/queue-broker.js",
+      path.join(root, "dist/linked.js"),
+    );
+    const outputs = buildOutputs(root);
+    assert.ok(outputs.includes("src/queue-broker.js"));
+    assert.ok(!outputs.includes("src/queue-handwritten.js"));
+    const archive = path.join(root, "artifact.tar.gz");
+    pack(root, archive);
+    const listing = execFileSync("tar", ["-tzf", archive], {
+      encoding: "utf8",
+    });
+    assert.doesNotMatch(
+      listing,
+      /(?:\.git|\.npmrc|node_modules|queue-handwritten)/,
+    );
+    const restored = path.join(root, "restored");
+    fs.mkdirSync(restored);
+    execFileSync("tar", ["-xzf", archive, "-C", restored]);
+    assert.equal(
+      fs.statSync(path.join(restored, "dist/library-build/src/queue-broker.js"))
+        .mode & 0o777,
+      0o755,
+    );
+    assert.equal(
+      fs.readlinkSync(path.join(restored, "dist/linked.js")),
+      "library-build/src/queue-broker.js",
+    );
+    for (const output of outputs)
+      assert.ok(fs.existsSync(path.join(restored, output)), output);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("CI invokes only offline scripts; real Fusion live suites stay local", () => {
