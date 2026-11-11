@@ -223,6 +223,7 @@ test("prepare builds once per Node and all consumers restore matching complete o
     "prepare",
     "broker-regressions",
     "contracts",
+    "scenario-model",
     "public-consumers",
     "python",
     "control-center-browser",
@@ -236,7 +237,7 @@ test("prepare builds once per Node and all consumers restore matching complete o
   );
   assert.equal(
     (reusable.match(/run: npm run test:prepare-offline\n/g) || []).length,
-    8,
+    9,
   );
   assert.equal(
     (reusable.match(/- run: npm run typecheck:tests\n/g) || []).length,
@@ -307,8 +308,10 @@ test("prepare builds once per Node and all consumers restore matching complete o
       name,
     );
   }
+  assert.match(jobs["scenario-model"], /timeout-minutes: 90/);
+  assert.match(jobs["scenario-model"], /python-version: "3\.12"/);
   for (const [script, body] of [
-    ["test:scenarios:unit", jobs.contracts],
+    ["test:scenarios:unit", jobs["scenario-model"]],
     ["test:control-center:e2e", jobs["control-center-browser"]],
   ]) {
     const parts = scripts[script].split(" && ");
