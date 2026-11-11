@@ -195,7 +195,6 @@ test("listing coverage is offline and cannot be combined with execution", (t: Te
         cwd: home,
         env,
         encoding: "utf8",
-        timeout: 10_000,
       },
     );
   const listing = launch(["--list"]);

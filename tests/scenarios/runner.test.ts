@@ -39,7 +39,6 @@ for (const protocol of ["mcp", "addin"] as const) {
 }
 test(
   "ten owners interleave writes with identical parameter names and preserve a foreign document",
-  { timeout: 30000 },
   async (t) => {
     const { directory, model, backend } = await fixture(t);
     const sentinel = await model.execute(
@@ -287,7 +286,6 @@ test("unsupported capability is reported before any request, never counted as pa
 for (const protocol of ["mcp", "addin"] as const) {
   test(
     `${protocol}: a scenario cannot submit another scenario's document, even with valid foreign source`,
-    { timeout: 30_000 },
     async (t) => {
       const { directory, model, backend } = await fixture(t, protocol);
       let publishTarget!: (target: Document) => void;

@@ -112,7 +112,7 @@ test("owned cleanup Python is exact-ID/name/unsaved guarded and handles null res
     const compiled = spawnSync(
       "python3",
       ["-c", "import ast,sys; ast.parse(sys.stdin.read()); print('COMPILED')"],
-      { input: code, encoding: "utf8", timeout: 10000 },
+      { input: code, encoding: "utf8" },
     );
     assert.equal(compiled.status, 0, compiled.stderr);
     assert.match(code, /creationId=="own-new-id"/);

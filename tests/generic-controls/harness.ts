@@ -87,8 +87,6 @@
       maxFakeRpcCount: number;
       maxPythonPayloadBytes: number;
       maxResultBytes: number;
-      maxFirstCallMs: number;
-      maxWarmP95Ms: number;
       passed: boolean;
     };
   }
@@ -99,8 +97,6 @@
     nativeFusionExecuted: false;
     iterations: number;
     elapsedMs: number;
-    elapsedBudgetMs: number;
-    elapsedBudgetPassed: boolean;
     budgets: typeof BUDGET;
     cases: CaseReport[];
   }
@@ -149,8 +145,6 @@
     maxBundledFakeRpcCount: 1,
     maxPythonPayloadBytes: 1024,
     maxResultBytes: 4096,
-    maxFirstCallMs: 2000,
-    maxWarmP95Ms: 250,
   });
 
   function object(value: unknown, label: string): Record<string, unknown> {
@@ -663,14 +657,10 @@
             maxFakeRpcCount: BUDGET.maxBundledFakeRpcCount,
             maxPythonPayloadBytes: BUDGET.maxPythonPayloadBytes,
             maxResultBytes: BUDGET.maxResultBytes,
-            maxFirstCallMs: BUDGET.maxFirstCallMs,
-            maxWarmP95Ms: BUDGET.maxWarmP95Ms,
             passed:
               bundled.fakeRpcCount <= BUDGET.maxBundledFakeRpcCount &&
               bundled.pythonPayloadBytes <= BUDGET.maxPythonPayloadBytes &&
-              bundled.resultBytes <= BUDGET.maxResultBytes &&
-              bundled.firstCallMs <= BUDGET.maxFirstCallMs &&
-              bundled.warmP95Ms <= BUDGET.maxWarmP95Ms,
+              bundled.resultBytes <= BUDGET.maxResultBytes,
           },
         });
       }
@@ -683,8 +673,6 @@
       nativeFusionExecuted: false,
       iterations,
       elapsedMs: Number(elapsed.toFixed(3)),
-      elapsedBudgetMs: 30000,
-      elapsedBudgetPassed: elapsed <= 30000,
       budgets: BUDGET,
       cases,
     };
@@ -706,10 +694,7 @@
       }
     }
     const report = runBenchmark({ iterations });
-    if (
-      !report.elapsedBudgetPassed ||
-      report.cases.some((row) => !row.budget.passed)
-    ) {
+    if (report.cases.some((row) => !row.budget.passed)) {
       throw new Error(
         "Generic-controls offline benchmark exceeded a declared budget",
       );

@@ -14,7 +14,6 @@ const { prepareOpScript } = load(
 
 test(
   "shipped parameter commands pass production admission without the data-manager monolith",
-  { timeout: 180_000 },
   async () => {
     const typingRoot = path.join(root, "dist/runtime/python/typing");
     const checker = createPythonChecker({

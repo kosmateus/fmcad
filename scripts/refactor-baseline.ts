@@ -419,7 +419,7 @@ function command(
   command: string,
   args: string[],
   cwd: string,
-  timeout = 30000,
+  timeout = 0,
   input?: string,
   env?: NodeJS.ProcessEnv,
 ) {

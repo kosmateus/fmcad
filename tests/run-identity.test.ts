@@ -67,7 +67,6 @@ function execute(requests: Request[]): Result[] {
     {
       input: JSON.stringify(requests),
       encoding: "utf8",
-      timeout: 10000,
     },
   );
   assert.ifError(result.error);

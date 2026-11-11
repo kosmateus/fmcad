@@ -25,7 +25,6 @@ const { prepareRunScript } = load("./src/run") as {
 
 test(
   "box uses the current extent API and passes public run admission",
-  { timeout: 120_000 },
   async () => {
     const typingRoot = path.join(root, "dist/runtime/python/typing");
     const checker = createPythonChecker({

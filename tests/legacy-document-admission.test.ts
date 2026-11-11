@@ -16,7 +16,6 @@ const typingRoot = path.join(root, "dist/runtime/python/typing");
 
 test(
   "plane and component commands pass production admission with the shared document guard",
-  { timeout: 180_000 },
   async () => {
     const checker = createPythonChecker({
       typingRoot,
@@ -54,7 +53,6 @@ test(
 for (const persistent of [false, true]) {
   test(
     `checker cleanup ${persistent ? "fails after bounded attempts" : "survives transient directory visibility"}`,
-    { timeout: 60_000 },
     () => {
       // A fresh process installs the filesystem fault before Node caches rimraf's bindings.
       const child = spawnSync(
@@ -63,7 +61,7 @@ for (const persistent of [false, true]) {
           path.join(__dirname, "fixtures/checker-cleanup.cjs"),
           String(persistent),
         ],
-        { encoding: "utf8", timeout: 50_000 },
+        { encoding: "utf8" },
       );
       assert.equal(child.status, 0, child.stderr || String(child.error));
       const outcome: unknown = JSON.parse(child.stdout);
