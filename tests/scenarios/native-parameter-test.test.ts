@@ -131,7 +131,8 @@ for (const protocol of ["mcp", "addin"] as const) {
         false,
       );
       await assert.rejects(
-        () => resumeCleanup(faulted, report.directory),
+        () =>
+          resumeCleanup(faulted, path.join(report.directory, "report.json")),
         /hold|restor|review/iu,
       );
       assert.equal(

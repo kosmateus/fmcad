@@ -391,7 +391,7 @@ class PhysicalProperties(core.Base):
 
 
 class _PrismBoundaryCardinality:
-    """Exact box-boundary cardinality, without pretending to expose native topology."""
+    """Exact box-edge cardinality, without pretending to expose native topology."""
     def __init__(self, boundaries: list[tuple[tuple[float, float, float], ...]]) -> None:
         self.model_boundaries: list[tuple[tuple[float, float, float], ...]] = boundaries
 
@@ -400,10 +400,46 @@ class _PrismBoundaryCardinality:
         return len(self.model_boundaries)
 
     def item(self, index: int) -> object:
-        raise NotImplementedError("Only rectangular-prism boundary cardinality is modeled")
+        raise NotImplementedError("Only rectangular-prism edge cardinality is modeled")
 
     def __iter__(self) -> Iterator[object]:
-        raise NotImplementedError("Native face/edge geometry and identities are not modeled")
+        raise NotImplementedError("Native edge geometry and identities are not modeled")
+
+
+class _PrismFace(core.Base):
+    """Synthetic identity for appearance readback; no native face geometry is exposed."""
+
+    objectType: ClassVar[str] = "adsk::fusion::BRepFace"
+
+    def __init__(self, body: BRepBody, index: int) -> None:
+        self.body: BRepBody = body
+        self.parentComponent: fusion.Component = body.parentComponent
+        self.entityToken: str = f"model-face:{body.entityToken}:{index}"
+        self.isValid: bool = body.parentComponent.model_design.model_doc.isValid and body.model_active
+
+    @property
+    def appearance(self) -> None:
+        return None
+
+    @property
+    def appearanceSourceType(self) -> None:
+        return None
+
+
+class _PrismFaces:
+    def __init__(self, body: BRepBody, boundaries: list[tuple[tuple[float, float, float], ...]]) -> None:
+        self.model_body: BRepBody = body
+        self.model_boundaries = boundaries
+
+    @property
+    def count(self) -> int:
+        return len(self.model_boundaries)
+
+    def item(self, index: int) -> _PrismFace:
+        raise NotImplementedError("Indexed face topology is not modeled")
+
+    def __iter__(self) -> Iterator[_PrismFace]:
+        return (_PrismFace(self.model_body, index) for index in range(self.count))
 
 
 class BRepBody(core.Base):
@@ -512,9 +548,9 @@ class BRepBody(core.Base):
                 for y in (low[1], high[1]) for z in (low[2], high[2])]
 
     @property
-    def faces(self) -> _PrismBoundaryCardinality:
+    def faces(self) -> _PrismFaces:
         corners = self.model_corners()
-        return _PrismBoundaryCardinality([
+        return _PrismFaces(self, [
             tuple(point for point in corners if point[axis] == coordinate)
             for axis in range(3) for coordinate in sorted({point[axis] for point in corners})])
 
