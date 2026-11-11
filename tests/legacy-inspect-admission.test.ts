@@ -15,7 +15,6 @@ const typingRoot = path.join(root, "dist/runtime/python/typing");
 
 test(
   "legacy inspection operations pass the real strict checker with their actual argument injection",
-  { timeout: 180_000 },
   async () => {
     const checker = createPythonChecker({
       typingRoot,

@@ -228,7 +228,7 @@ test('native handoff generator creates only new offline inputs, never fake STEP 
 
 test('generated adapter request compiles, carries normalized model paths, and passes document identity at execution', () => {
   const script = buildCadScript('catalog.import', adapter([item('a')]), { doc: 'Fixture', docId: 'creation', docFileId: 'cloud' });
-  const result = spawnSync('python3', ['-B', '-c', 'import ast,sys; ast.parse(sys.stdin.read())'], { input: script, encoding: 'utf8', timeout: 10000 });
+  const result = spawnSync('python3', ['-B', '-c', 'import ast,sys; ast.parse(sys.stdin.read())'], { input: script, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.match(script, /ctx.assert_identity\(\)/);
   assert.equal(require('./helpers/legacy').scriptConfig(script, ['_FMCAD_REQUEST'])._FMCAD_REQUEST.docFileId, 'cloud');

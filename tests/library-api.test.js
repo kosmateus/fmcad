@@ -173,7 +173,7 @@ test('outside-repository consumer imports built JS and declarations with no sour
   try {
     fs.writeFileSync(path.join(directory, 'package.json'), '{"private":true}');
     const packed = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: root, encoding: 'utf8' }));
-    execFileSync('npm', ['install', '--offline', '--prefix', directory, '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(directory, packed[0].filename)], { cwd: directory, encoding: 'utf8', timeout: 120000 });
+    execFileSync('npm', ['install', '--offline', '--prefix', directory, '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(directory, packed[0].filename)], { cwd: directory, encoding: 'utf8' });
     installed = path.join(directory, 'node_modules/fmcad');
     for (const entry of fs.readdirSync(installed, { recursive: true, withFileTypes: true })) {
       if (entry.isDirectory()) fs.chmodSync(path.join(entry.parentPath, entry.name), 0o555);

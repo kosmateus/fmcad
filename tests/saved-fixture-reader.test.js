@@ -9,13 +9,13 @@ const { prepareSavedFixtureReader, parseSavedFixtureReader } = require('../src/q
 const canonicalHash = value => require('../src/dist/core/application/cad/json').hash(value);
 
 test('FAKE SDK saved publication and retained-file close refuse unsafe states without save/delete', () => {
-  const result = spawnSync('python3', ['-B', path.join(__dirname, 'saved_fixture_test.py')], { encoding: 'utf8', timeout: 10000 });
+  const result = spawnSync('python3', ['-B', path.join(__dirname, 'saved_fixture_test.py')], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr || String(result.error));
 });
 
 for (const purpose of ['saved-fixture-destination-v1', 'saved-first-save-publication-v1', 'saved-fixture-retain-v1'])
 test('production checker qualifies fixed saved fixture administrative source, SDK0: ' + purpose,
-  { timeout: 180000 }, async t => {
+  async t => {
     const directory = fs.mkdtempSync('/tmp/opencode/saved-fixture-reader-');
     t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
     const epochId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

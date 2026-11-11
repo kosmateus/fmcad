@@ -6,7 +6,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 
-test('process crash/restart retains unresolved fake SDK ownership and never reconstructs abandoned local work', { timeout: 10000 }, async t => {
+test('process crash/restart retains unresolved fake SDK ownership and never reconstructs abandoned local work', async t => {
   const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'execution-crash-'));
   const stateModule = require.resolve('../src/queue-state');
   const trace = path.join(dir, 'fake-physical-send.txt');

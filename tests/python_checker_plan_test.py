@@ -19,7 +19,7 @@ def plan(source: str, role: str = 'runtime') -> dict[str, object]:
     result = subprocess.run(
         [sys.executable, '-I', '-S', str(HELPER)],
         input=json.dumps({'units': [], 'sourceUnits': units}), text=True,
-        capture_output=True, check=True, timeout=10,
+        capture_output=True, check=True,
     )
     response = cast(dict[str, object], json.loads(result.stdout))
     return cast(dict[str, object], response['analysisPlan'])

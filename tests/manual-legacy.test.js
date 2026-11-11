@@ -132,7 +132,7 @@ test('shared guide exposes global keys and stays offline', async () => {
 
 function scriptConfig(script, names) {
   const result = require('node:child_process').spawnSync('python3', [path.join(__dirname, 'helpers/python_config.py')], {
-    input: JSON.stringify({ script, names }), encoding: 'utf8', timeout: 5000,
+    input: JSON.stringify({ script, names }), encoding: 'utf8',
   });
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr);

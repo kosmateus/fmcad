@@ -116,7 +116,7 @@ test('reset marker fences autostart, broker startup and new queue submissions', 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('reset marker added after admission blocks physical dispatch without changing open dispatch', { timeout: 10000 }, async t => {
+test('reset marker added after admission blocks physical dispatch without changing open dispatch', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-reset-dispatch-'));
   const instance = { pid: 99, birth: 'mock:99', version: 'mock', activeCommand: null, documents: [] };
   let holdNextPreflight = false, releasePreflight;

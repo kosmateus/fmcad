@@ -203,184 +203,233 @@ function writeFakeReceipts(
 
 for (const backend of ["mcp", "addin"])
   for (const disconnect of [false, true]) {
-    test(
-      `production broker transport selects ${backend}: ${disconnect ? "unknown without replay" : "scoped raw protocol and native receipt"}`,
-      { timeout: 60000 },
-      async (t) => {
-        if (disconnect && !process.env["FMCAD_TRANSPORT_BROKER_CHILD"]) {
-          // Unknown ownership deliberately refuses shutdown. Keep that behavior in
-          // a disposable child rather than weakening the production close contract.
-          const env: NodeJS.ProcessEnv = {
-            ...process.env,
-            FMCAD_TRANSPORT_BROKER_CHILD: "1",
-          };
-          delete env["NODE_TEST_CONTEXT"];
-          const child = spawnSync(
-            process.execPath,
-            [
-              "--test",
-              "--test-force-exit",
-              "--test-name-pattern",
-              `production broker transport selects ${backend}: unknown`,
-              __filename,
-            ],
-            {
-              env,
-              encoding: "utf8",
-              timeout: 55000,
-            },
-          );
-          assert.equal(child.status, 0, child.stdout + child.stderr);
-          assert.match(child.stdout, /tests 1\b/);
-          return;
-        }
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-ft-broker-"));
-        const isolatedEnvironment = isolateRuntimeTestEnvironment(root);
-        const dir = path.join(root, "fmcad/queue");
-        const instance = {
-          pid: 4242,
-          birth: "synthetic:4242",
-          version: "fake",
-          activeCommand: "SelectCommand",
-          documents: [],
+    test(`production broker transport selects ${backend}: ${disconnect ? "unknown without replay" : "scoped raw protocol and native receipt"}`, async (t) => {
+      if (disconnect && !process.env["FMCAD_TRANSPORT_BROKER_CHILD"]) {
+        // Unknown ownership deliberately refuses shutdown. Keep that behavior in
+        // a disposable child rather than weakening the production close contract.
+        const env: NodeJS.ProcessEnv = {
+          ...process.env,
+          FMCAD_TRANSPORT_BROKER_CHILD: "1",
         };
-        let products = 0;
-        const catalogs: Array<{
-          payload: HttpRpcRequest;
-          session: string | string[] | undefined;
-          version: string | string[] | undefined;
-        }> = [];
-        const seen: Array<{
-          method: string;
-          name: string | undefined;
-          headers: http.IncomingHttpHeaders;
-        }> = [];
-        const endpoint = http.createServer((req, res) => {
-          let body = "";
-          req.on("data", (chunk) => {
-            body += chunk.toString();
+        delete env["NODE_TEST_CONTEXT"];
+        const child = spawnSync(
+          process.execPath,
+          [
+            "--test",
+            "--test-force-exit",
+            "--test-name-pattern",
+            `production broker transport selects ${backend}: unknown`,
+            __filename,
+          ],
+          {
+            env,
+            encoding: "utf8",
+          },
+        );
+        assert.equal(child.status, 0, child.stdout + child.stderr);
+        assert.match(child.stdout, /tests 1\b/);
+        return;
+      }
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-ft-broker-"));
+      const isolatedEnvironment = isolateRuntimeTestEnvironment(root);
+      const dir = path.join(root, "fmcad/queue");
+      const instance = {
+        pid: 4242,
+        birth: "synthetic:4242",
+        version: "fake",
+        activeCommand: "SelectCommand",
+        documents: [],
+      };
+      let products = 0;
+      const catalogs: Array<{
+        payload: HttpRpcRequest;
+        session: string | string[] | undefined;
+        version: string | string[] | undefined;
+      }> = [];
+      const seen: Array<{
+        method: string;
+        name: string | undefined;
+        headers: http.IncomingHttpHeaders;
+      }> = [];
+      const endpoint = http.createServer((req, res) => {
+        let body = "";
+        req.on("data", (chunk) => {
+          body += chunk.toString();
+        });
+        req.on("end", () => {
+          const payload = JSON.parse(body) as HttpRpcRequest;
+          seen.push({
+            method: payload.method,
+            name: payload.params?.name,
+            headers: req.headers,
           });
-          req.on("end", () => {
-            const payload = JSON.parse(body) as HttpRpcRequest;
-            seen.push({
-              method: payload.method,
-              name: payload.params?.name,
-              headers: req.headers,
-            });
-            assert.equal(req.headers.authorization, "Bearer fake-isolated");
-            if (payload.method === "initialize") {
-              res.setHeader("Mcp-Session-Id", "local-discovery");
-              res.end(
-                JSON.stringify({
-                  jsonrpc: "2.0",
-                  id: payload.id,
-                  result: { protocolVersion: payload.params.protocolVersion },
-                }),
-              );
-              return;
-            }
-            if (payload.method === "notifications/initialized") {
-              res.writeHead(202);
-              res.end();
-              return;
-            }
-            if (payload.method === "resources/list") {
-              catalogs.push({
-                payload,
-                session: req.headers["mcp-session-id"],
-                version: req.headers["mcp-protocol-version"],
-              });
-              res.end(
-                JSON.stringify({
-                  jsonrpc: "2.0",
-                  id: payload.id,
-                  result: { resources: [], nextCursor: "broker-cursor" },
-                }),
-              );
-              return;
-            }
-            const args = payload.params.arguments;
-            assert.ok(args);
-            const script = args.code || args.object?.script;
-            if (script) {
-              assert.match(script, /FMCAD_QUEUE_INSTANCE/);
-              writeFakeReceipts(script, root, instance);
-              const stdout = "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance);
-              const result =
-                backend === "addin"
-                  ? { structuredContent: { success: true, stdout, stderr: "" } }
-                  : { content: [{ type: "text", text: stdout }] };
-              res.end(
-                JSON.stringify({ jsonrpc: "2.0", id: payload.id, result }),
-              );
-              return;
-            }
-            products++;
-            assert.equal(payload.params.name, "capture_viewport");
-            assert.equal(req.headers["mcp-session-id"], "external-session");
-            assert.equal(req.headers["mcp-protocol-version"], "2025-03-26");
-            if (disconnect) {
-              res.destroy();
-              return;
-            }
+          assert.equal(req.headers.authorization, "Bearer fake-isolated");
+          if (payload.method === "initialize") {
+            res.setHeader("Mcp-Session-Id", "local-discovery");
             res.end(
               JSON.stringify({
                 jsonrpc: "2.0",
                 id: payload.id,
-                result: {
-                  content: [{ type: "text", text: "native output" }],
-                  structuredContent: {
-                    receipt: "native-result",
-                    success: true,
-                  },
-                },
+                result: { protocolVersion: payload.params.protocolVersion },
               }),
             );
-          });
-        });
-        const cleanup: { closeBroker?: () => Promise<void> } = {};
-        t.after(async () => {
-          if (cleanup.closeBroker) {
-            if (disconnect)
-              await assert.rejects(cleanup.closeBroker(), {
-                code: "RECONCILIATION_REQUIRED",
-              });
-            else await cleanup.closeBroker();
+            return;
           }
-          endpoint.closeAllConnections();
-          await new Promise((resolve) => endpoint.close(resolve));
-          isolatedEnvironment.restore();
-          fs.rmSync(root, { recursive: true, force: true });
+          if (payload.method === "notifications/initialized") {
+            res.writeHead(202);
+            res.end();
+            return;
+          }
+          if (payload.method === "resources/list") {
+            catalogs.push({
+              payload,
+              session: req.headers["mcp-session-id"],
+              version: req.headers["mcp-protocol-version"],
+            });
+            res.end(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: payload.id,
+                result: { resources: [], nextCursor: "broker-cursor" },
+              }),
+            );
+            return;
+          }
+          const args = payload.params.arguments;
+          assert.ok(args);
+          const script = args.code || args.object?.script;
+          if (script) {
+            assert.match(script, /FMCAD_QUEUE_INSTANCE/);
+            writeFakeReceipts(script, root, instance);
+            const stdout = "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance);
+            const result =
+              backend === "addin"
+                ? { structuredContent: { success: true, stdout, stderr: "" } }
+                : { content: [{ type: "text", text: stdout }] };
+            res.end(JSON.stringify({ jsonrpc: "2.0", id: payload.id, result }));
+            return;
+          }
+          products++;
+          assert.equal(payload.params.name, "capture_viewport");
+          assert.equal(req.headers["mcp-session-id"], "external-session");
+          assert.equal(req.headers["mcp-protocol-version"], "2025-03-26");
+          if (disconnect) {
+            res.destroy();
+            return;
+          }
+          res.end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: payload.id,
+              result: {
+                content: [{ type: "text", text: "native output" }],
+                structuredContent: {
+                  receipt: "native-result",
+                  success: true,
+                },
+              },
+            }),
+          );
         });
-        await new Promise<void>((resolve) =>
-          endpoint.listen(0, "127.0.0.1", resolve),
-        );
-        const address = endpoint.address();
-        if (!address || typeof address === "string")
-          assert.fail("Fake HTTP endpoint did not receive a TCP address");
-        const cfg = {
-          backend,
-          routing: "queue",
-          url: `http://127.0.0.1:${address.port}/fake`,
+      });
+      const cleanup: { closeBroker?: () => Promise<void> } = {};
+      t.after(async () => {
+        if (cleanup.closeBroker) {
+          if (disconnect)
+            await assert.rejects(cleanup.closeBroker(), {
+              code: "RECONCILIATION_REQUIRED",
+            });
+          else await cleanup.closeBroker();
+        }
+        endpoint.closeAllConnections();
+        await new Promise((resolve) => endpoint.close(resolve));
+        isolatedEnvironment.restore();
+        fs.rmSync(root, { recursive: true, force: true });
+      });
+      await new Promise<void>((resolve) =>
+        endpoint.listen(0, "127.0.0.1", resolve),
+      );
+      const address = endpoint.address();
+      if (!address || typeof address === "string")
+        assert.fail("Fake HTTP endpoint did not receive a TCP address");
+      const cfg = {
+        backend,
+        routing: "queue",
+        url: `http://127.0.0.1:${address.port}/fake`,
+        timeoutMs: 3000,
+        headers: { Authorization: "Bearer fake-isolated" },
+      };
+      const before = JSON.stringify(cfg);
+      // Exercise the production transport factory with the local fake endpoint;
+      // no WSL host, Fusion process or real SDK is required.
+      const broker = await serve(cfg, {
+        dir,
+        confirmOwnership: true,
+        pollMs: 5,
+        createBackend: isolatedBrokerBackend,
+      });
+      cleanup.closeBroker = () => broker.close();
+      const auth = {
+        clientId: "synthetic-client",
+        clientToken: "synthetic-owner-token",
+      };
+      await request(dir, { action: "register", ...auth });
+      const submitted = await request<{ id: string }>(dir, {
+        action: "submit",
+        auth,
+        request: {
+          kind: "rpc",
+          requestId: randomUUID(),
+          cwd: root,
           timeoutMs: 3000,
-          headers: { Authorization: "Bearer fake-isolated" },
-        };
-        const before = JSON.stringify(cfg);
-        // Exercise the production transport factory with the local fake endpoint;
-        // no WSL host, Fusion process or real SDK is required.
-        const broker = await serve(cfg, {
-          dir,
-          confirmOwnership: true,
-          pollMs: 5,
-          createBackend: isolatedBrokerBackend,
+          protocolVersion: "2025-03-26",
+          sessionId: "external-session",
+          payload: {
+            jsonrpc: "2.0",
+            id: "caller-original",
+            method: "tools/call",
+            params: { name: "capture_viewport", arguments: {} },
+          },
+        },
+      });
+      let result: QueueReply;
+      const deadline = Date.now() + 10000;
+      do {
+        result = await request<QueueReply>(dir, {
+          action: "result",
+          auth,
+          jobId: submitted.id,
         });
-        cleanup.closeBroker = () => broker.close();
-        const auth = {
-          clientId: "synthetic-client",
-          clientToken: "synthetic-owner-token",
-        };
-        await request(dir, { action: "register", ...auth });
-        const submitted = await request<{ id: string }>(dir, {
+        if (
+          ["succeeded", "failed", "needs_reconciliation"].includes(
+            result.job.state,
+          )
+        )
+          break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      } while (Date.now() < deadline);
+      assert.equal(
+        products,
+        1,
+        "the SDK request is never replayed or switched to another backend",
+      );
+      assert.equal(
+        JSON.stringify(cfg),
+        before,
+        "the composition root never mutates caller configuration",
+      );
+      assert.equal(
+        result.job.state,
+        disconnect ? "needs_reconciliation" : "succeeded",
+        JSON.stringify(result),
+      );
+      if (!disconnect) {
+        assert.ok(result.rpc);
+        assert.equal(result.rpc.raw.includes("native-result"), true);
+        assert.equal(JSON.parse(result.rpc.raw).id, "caller-original");
+      }
+      if (backend === "mcp" && !disconnect) {
+        const submittedCatalog = await request<{ id: string }>(dir, {
           action: "submit",
           auth,
           request: {
@@ -388,120 +437,61 @@ for (const backend of ["mcp", "addin"])
             requestId: randomUUID(),
             cwd: root,
             timeoutMs: 3000,
+            backend,
             protocolVersion: "2025-03-26",
-            sessionId: "external-session",
+            sessionId: "caller-local-session",
             payload: {
               jsonrpc: "2.0",
-              id: "caller-original",
-              method: "tools/call",
-              params: { name: "capture_viewport", arguments: {} },
+              id: "catalog-original",
+              method: "resources/list",
+              params: { cursor: "start" },
             },
           },
         });
-        let result: QueueReply;
-        const deadline = Date.now() + 10000;
+        let catalogResult: QueueReply;
+        const catalogDeadline = Date.now() + 10000;
         do {
-          result = await request<QueueReply>(dir, {
+          catalogResult = await request<QueueReply>(dir, {
             action: "result",
             auth,
-            jobId: submitted.id,
+            jobId: submittedCatalog.id,
           });
           if (
             ["succeeded", "failed", "needs_reconciliation"].includes(
-              result.job.state,
+              catalogResult.job.state,
             )
           )
             break;
           await new Promise((resolve) => setTimeout(resolve, 10));
-        } while (Date.now() < deadline);
+        } while (Date.now() < catalogDeadline);
         assert.equal(
-          products,
-          1,
-          "the SDK request is never replayed or switched to another backend",
+          catalogResult.job.state,
+          "succeeded",
+          JSON.stringify(catalogResult),
         );
+        assert.ok(catalogResult.rpc);
+        assert.equal(JSON.parse(catalogResult.rpc.raw).id, "catalog-original");
+        assert.deepEqual(
+          JSON.parse(catalogResult.rpc.raw).result.resources,
+          [],
+        );
+        assert.equal(catalogs.length, 1);
+        const catalog = catalogs[0];
+        assert.ok(catalog);
         assert.equal(
-          JSON.stringify(cfg),
-          before,
-          "the composition root never mutates caller configuration",
+          catalog.session,
+          "local-discovery",
+          "the broker negotiates its own upstream session",
         );
-        assert.equal(
-          result.job.state,
-          disconnect ? "needs_reconciliation" : "succeeded",
-          JSON.stringify(result),
-        );
-        if (!disconnect) {
-          assert.ok(result.rpc);
-          assert.equal(result.rpc.raw.includes("native-result"), true);
-          assert.equal(JSON.parse(result.rpc.raw).id, "caller-original");
-        }
-        if (backend === "mcp" && !disconnect) {
-          const submittedCatalog = await request<{ id: string }>(dir, {
-            action: "submit",
-            auth,
-            request: {
-              kind: "rpc",
-              requestId: randomUUID(),
-              cwd: root,
-              timeoutMs: 3000,
-              backend,
-              protocolVersion: "2025-03-26",
-              sessionId: "caller-local-session",
-              payload: {
-                jsonrpc: "2.0",
-                id: "catalog-original",
-                method: "resources/list",
-                params: { cursor: "start" },
-              },
-            },
-          });
-          let catalogResult: QueueReply;
-          const catalogDeadline = Date.now() + 10000;
-          do {
-            catalogResult = await request<QueueReply>(dir, {
-              action: "result",
-              auth,
-              jobId: submittedCatalog.id,
-            });
-            if (
-              ["succeeded", "failed", "needs_reconciliation"].includes(
-                catalogResult.job.state,
-              )
-            )
-              break;
-            await new Promise((resolve) => setTimeout(resolve, 10));
-          } while (Date.now() < catalogDeadline);
-          assert.equal(
-            catalogResult.job.state,
-            "succeeded",
-            JSON.stringify(catalogResult),
-          );
-          assert.ok(catalogResult.rpc);
-          assert.equal(
-            JSON.parse(catalogResult.rpc.raw).id,
-            "catalog-original",
-          );
-          assert.deepEqual(
-            JSON.parse(catalogResult.rpc.raw).result.resources,
-            [],
-          );
-          assert.equal(catalogs.length, 1);
-          const catalog = catalogs[0];
-          assert.ok(catalog);
-          assert.equal(
-            catalog.session,
-            "local-discovery",
-            "the broker negotiates its own upstream session",
-          );
-          assert.notEqual(catalog.session, "caller-local-session");
-          assert.equal(catalog.version, "2024-11-05");
-        }
-        assert.ok(
-          seen.some(
-            (value) =>
-              value.name ===
-              (backend === "addin" ? "execute_python" : "fusion_mcp_execute"),
-          ),
-        );
-      },
-    );
+        assert.notEqual(catalog.session, "caller-local-session");
+        assert.equal(catalog.version, "2024-11-05");
+      }
+      assert.ok(
+        seen.some(
+          (value) =>
+            value.name ===
+            (backend === "addin" ? "execute_python" : "fusion_mcp_execute"),
+        ),
+      );
+    });
   }

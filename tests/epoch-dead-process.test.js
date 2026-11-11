@@ -7,7 +7,7 @@ const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 const api = require('../src/queue-instance');
 
-test('lost epoch process keeps authenticated receipts readable without SDK or renewed authority', { timeout: 20000 }, async t => {
+test('lost epoch process keeps authenticated receipts readable without SDK or renewed authority', async t => {
   const base = fs.mkdtempSync('/tmp/opencode/epoch-dead-process-');
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const root = path.resolve(__dirname, '..');

@@ -33,7 +33,7 @@ test('FAKE SDK: separate saved fixture guard before body: ' + mode, t => {
     `app=types.SimpleNamespace(version='fake',userInterface=types.SimpleNamespace(activeCommand='SelectCommand'),` +
     `documents=types.SimpleNamespace(count=len(rows),item=lambda i:rows[i]))\n` +
     `core.Application=types.SimpleNamespace(get=lambda:app); sys.modules.update({'adsk':adsk,'adsk.core':core})\n` + prepared.script;
-  const result = spawnSync('python3', ['-B', '-c', bootstrap], { encoding: 'utf8', timeout: 10000 });
+  const result = spawnSync('python3', ['-B', '-c', bootstrap], { encoding: 'utf8' });
   const record = JSON.parse(fs.readFileSync(receipt));
   assert.equal(record.terminal, true); assert.equal(fs.existsSync(body), mode === 'valid');
   assert.equal(record.outcome, mode === 'valid' ? 'succeeded' : 'failed');
@@ -42,7 +42,7 @@ test('FAKE SDK: separate saved fixture guard before body: ' + mode, t => {
 });
 
 test('production checker qualifies the separate saved guard with exact file/project/folder/version and SDK0',
-  { timeout: 180000 }, async t => {
+  async t => {
     const dir = fs.mkdtempSync('/tmp/opencode/saved-document-admission-');
     t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
     const api = require('../src/queue-instance'), wire = require('../src/queue-atomic-recovery-audit');

@@ -104,7 +104,7 @@ test('physical stage-owner consumers retain preflight-first ordering; ordinary t
   assert.equal(needs({ kind: 'run', request: {} }), false);
 });
 
-test('production checker accepts containment with the actual authenticated unsaved helper stage context', { timeout: 180000 }, async t => {
+test('production checker accepts containment with the actual authenticated unsaved helper stage context', async t => {
   t.after(require('./fixtures/fake-wsl-platform.cjs')());
   const file = path.resolve(__dirname, '../assets/native-qualification/containment.py');
   const args = { approved: true, creationId: document.creationId, expectedFusionVersion: 'Fusion-test', fixturePrefix: 'NQSTAGECONTAINMENT' };

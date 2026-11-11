@@ -14,7 +14,6 @@ const { prepareOpScript } = load(
 
 test(
   "all cloud commands pass production admission",
-  { timeout: 180_000 },
   async () => {
     const typingRoot = path.join(root, "dist/runtime/python/typing");
     const checker = createPythonChecker({

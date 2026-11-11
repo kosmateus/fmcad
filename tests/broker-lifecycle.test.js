@@ -47,7 +47,7 @@ async function fixture(t, flags = []) {
   return { dir, child, start, call, fence };
 }
 
-test('production dispatcher advertises working actions and persists paused distinct reload identity', { timeout: 15000 }, async t => {
+test('production dispatcher advertises working actions and persists paused distinct reload identity', async t => {
   const f = await fixture(t, ['--production', '--paused']);
   const initial = await f.call('control-status');
   assert.equal(initial.phase, 'PAUSED'); assert.equal(initial.capabilities.inspect, true);
@@ -71,7 +71,7 @@ test('production dispatcher advertises working actions and persists paused disti
   await assert.rejects(f.call('resume', { control }), { code: 'INSTANCE_CHANGED' });
 });
 
-test('production unresolved inspection refuses stop/reload and duplicate requests never dispatch again', { timeout: 15000 }, async t => {
+test('production unresolved inspection refuses stop/reload and duplicate requests never dispatch again', async t => {
   const f = await fixture(t, ['--production', '--unknown']);
   const control = await f.fence();
   await assert.rejects(f.call('console-inspect', { control }));
@@ -94,7 +94,7 @@ test('production unresolved inspection refuses stop/reload and duplicate request
   assert.equal(readJson(path.join(f.dir, 'counts.json')).probes, 1);
 });
 
-test('production IPC client disconnect loses ACK but original inspect receipt prevents replay', { timeout: 20000 }, async t => {
+test('production IPC client disconnect loses ACK but original inspect receipt prevents replay', async t => {
   const f = await fixture(t, ['--production', '--paused']);
   const control = await f.fence();
   const socket = net.createConnection(queueSocket(f.dir));

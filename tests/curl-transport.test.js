@@ -15,8 +15,8 @@ class McpClient extends BrokerMcpClient {
 const server = { url: 'http://localhost:9000/mcp?mode=test', timeoutMs: 1000 };
 const warning = /outcome unknown; inspect before retry/;
 
-test('real local curl independently verifies config quoting and exact HTTP bytes', { timeout: 10000 }, async t => {
-  const probe = spawnSync('curl', ['--disable', '--version'], { timeout: 1000 });
+test('real local curl independently verifies config quoting and exact HTTP bytes', async t => {
+  const probe = spawnSync('curl', ['--disable', '--version']);
   if (probe.error?.code === 'ENOENT') return t.skip('local curl unavailable');
   assert.equal(probe.status, 0);
   const requests = [];

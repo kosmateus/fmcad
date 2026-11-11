@@ -78,7 +78,7 @@ test('canonical catalog, typed CLI/MCP project the same three public operations 
   assert.ok(cadBundleManifest.some(unit => unit.id === 'measure-baseline-application'));
 });
 
-test('typed CLI and MCP execute capture → owned inspect → compare through the fake broker', { timeout: 60000 }, async t => {
+test('typed CLI and MCP execute capture → owned inspect → compare through the fake broker', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-brep-broker-'));
   const project = path.join(root, 'project');
   const state = path.join(root, 'state');

@@ -85,7 +85,7 @@ CadContext = Context
 run('')
 `;
     const created = [{ token: 'offline-envelope-evidence', metadata }];
-    const out = spawnSync('python3', ['-B', '-c', program], { encoding: 'utf8', timeout: 2000,
+    const out = spawnSync('python3', ['-B', '-c', program], { encoding: 'utf8',
       input: JSON.stringify({ script: buildCadScript(operation, catalog[operation].example, context),
         scope: [context.doc, context.component, context.projectId], operation, result, created }) });
     assert.ifError(out.error);

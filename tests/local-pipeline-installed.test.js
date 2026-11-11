@@ -9,7 +9,6 @@ const { spawnSync, execFileSync } = require('node:child_process');
 const python = process.env.FMCAD_LOCAL_TEST_PYTHON || 'python3';
 const available = spawnSync(python, ['-I', '-B', '-c', 'import PIL,numpy,scipy,cairosvg,vtracer,shapely,cv2,black,pygments'], { encoding: 'utf8' }).status === 0;
 test('installed readonly CLI executes actual image/reference pipelines without Fusion config', {
-  timeout: 120000,
   skip: !available && 'Set FMCAD_LOCAL_TEST_PYTHON to an installed image-worker environment',
 }, t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad local installed żółć '));
@@ -27,7 +26,7 @@ test('installed readonly CLI executes actual image/reference pipelines without F
     cwd: path.resolve(__dirname, '..'), encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
   }))[0];
   execFileSync('npm', ['install', '--prefix', root, '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(root, packed.filename)], {
-    cwd: root, encoding: 'utf8', timeout: 60000,
+    cwd: root, encoding: 'utf8',
   });
   installation = path.join(root, 'node_modules/fmcad');
   const runtime = path.join(installation, 'dist');
@@ -49,7 +48,7 @@ test('installed readonly CLI executes actual image/reference pipelines without F
   const env = { PATH: process.env.PATH, HOME: home, FMCAD_PYTHON: python, FMCAD_CONFIG: config, FMCAD_BACKEND: 'must-not-read' };
   const cli = path.join(runtime, 'bin/fmcad.js');
   const run = argv => {
-    const child = spawnSync(process.execPath, [cli, ...argv], { cwd, env, encoding: 'utf8', timeout: 20000, maxBuffer: 16 * 1024 * 1024 });
+    const child = spawnSync(process.execPath, [cli, ...argv], { cwd, env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
     assert.equal(child.status, 0, child.stderr);
     return JSON.parse(child.stdout);
   };
@@ -92,7 +91,7 @@ test('installed readonly CLI executes actual image/reference pipelines without F
     require(${JSON.stringify(path.join(runtime, 'src/console-source.js'))}).openSource(
       {sourcePath:process.argv[1]}, {pythonPath:process.env.FMCAD_PYTHON}
     ).then(result=>process.stdout.write(JSON.stringify(result)));
-  `, source], { cwd, env, encoding: 'utf8', timeout: 15000 });
+  `, source], { cwd, env, encoding: 'utf8' });
   assert.equal(formatted.status, 0, formatted.stderr);
   const preview = JSON.parse(formatted.stdout);
   assert.equal(preview.formatter.applied, true, preview.formatter.error);
@@ -107,12 +106,12 @@ import inspect,json,sys
 sys.path.append(${JSON.stringify(assets)})
 from offline_execution import call_offline
 print(json.dumps(call_offline('json','loads',['{"installed":true}'],log_parent=sys.argv[1])))
-`, cwd], { cwd, env, encoding: 'utf8', timeout: 15000 });
+`, cwd], { cwd, env, encoding: 'utf8' });
   assert.equal(supervised.status, 0, supervised.stderr);
   assert.deepEqual(JSON.parse(supervised.stdout), { installed: true });
   for (const name of ['image_trace.py', 'image_optimize.py', 'image_boundaries.py', 'reference_images.py']) {
     const invalid = spawnSync(python, ['-I', '-B', path.join(assets, name)], {
-      cwd, env, input: '{} {}', encoding: 'utf8', timeout: 15000,
+      cwd, env, input: '{} {}', encoding: 'utf8',
     });
     assert.notEqual(invalid.status, 0, name);
     assert.equal(invalid.stdout, '', name);

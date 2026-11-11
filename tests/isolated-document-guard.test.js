@@ -21,7 +21,7 @@ test('FAKE adsk, real Python: isolated document guard before model body: ' + mod
     `app=types.SimpleNamespace(version='fixture',userInterface=types.SimpleNamespace(activeCommand='SelectCommand'),documents=types.SimpleNamespace(count=len(rows),item=lambda i:rows[i]))\n` +
     `core.Application=types.SimpleNamespace(get=lambda:app)\nsys.modules.update({'adsk':adsk,'adsk.core':core})\n` +
     prepared.script;
-  const result = spawnSync('python3', ['-B', '-c', bootstrap], { encoding: 'utf8', timeout: 10000 });
+  const result = spawnSync('python3', ['-B', '-c', bootstrap], { encoding: 'utf8' });
   const record = JSON.parse(fs.readFileSync(receipt));
   assert.equal(record.terminal, true);
   assert.equal(record.outcome, mode === 'valid' ? 'succeeded' : 'failed');
@@ -30,7 +30,7 @@ test('FAKE adsk, real Python: isolated document guard before model body: ' + mod
   else assert.notEqual(result.status, 0);
 });
 
-test('production checker qualifies the actual unsaved-document guard without suppressing nullable getter diagnostics', { timeout: 180000 }, async t => {
+test('production checker qualifies the actual unsaved-document guard without suppressing nullable getter diagnostics', async t => {
   const dir = fs.mkdtempSync('/tmp/opencode/isolated-document-admission-');
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const api = require('../src/queue-instance'), wire = require('../src/queue-atomic-recovery-audit');

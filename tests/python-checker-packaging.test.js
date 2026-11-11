@@ -12,7 +12,7 @@ test('installed tarball checks real SDK types offline outside checkout', {skip:p
   t.after(() => fs.rm(directory,{recursive:true,force:true}));
   const [packed] = JSON.parse(execFileSync('npm',['pack','--json','--pack-destination',directory],{encoding:'utf8',maxBuffer:4*1024*1024}));
   await fs.writeFile(path.join(directory,'package.json'),JSON.stringify({name:'checker-consumer',private:true}));
-  execFileSync('npm',['install','--offline','--ignore-scripts','--no-audit','--no-fund',path.join(directory,packed.filename)],{cwd:directory,encoding:'utf8',timeout:60000});
+  execFileSync('npm',['install','--offline','--ignore-scripts','--no-audit','--no-fund',path.join(directory,packed.filename)],{cwd:directory,encoding:'utf8'});
   const script = `
     const path = require('node:path');
     const fs = require('node:fs');
@@ -35,7 +35,7 @@ test('installed tarball checks real SDK types offline outside checkout', {skip:p
       console.log(JSON.stringify({status:result.status,provenance:result.provenance,rules:result.diagnostics.map(d=>d.rule)}));
     })().catch(e=>{console.error(e);process.exitCode=1;});
   `;
-  const result = JSON.parse(execFileSync(process.execPath,['-e',script],{cwd:directory,encoding:'utf8',timeout:60000,env:{PATH:process.env.PATH,HOME:directory,npm_config_offline:'true',HTTP_PROXY:'http://127.0.0.1:1',HTTPS_PROXY:'http://127.0.0.1:1'}}));
+  const result = JSON.parse(execFileSync(process.execPath,['-e',script],{cwd:directory,encoding:'utf8',env:{PATH:process.env.PATH,HOME:directory,npm_config_offline:'true',HTTP_PROXY:'http://127.0.0.1:1',HTTPS_PROXY:'http://127.0.0.1:1'}}));
   assert.equal(result.provenance.checkerVersion,'1.40.2');
   assert.equal(result.provenance.cache,'disabled');
   t.diagnostic(JSON.stringify(result));

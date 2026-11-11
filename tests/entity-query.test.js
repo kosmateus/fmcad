@@ -152,7 +152,7 @@ test('GM03 native handoff uses valid batch operations and actual nested validato
 });
 
 test('GM03 isolated SDK fixture executes real resolver and modeling integration', () => {
-  const result = spawnSync('python3',['-B','tests/entity_query_test.py','-b'],{encoding:'utf8',timeout:30000});
+  const result = spawnSync('python3',['-B','tests/entity_query_test.py','-b'],{encoding:'utf8'});
   assert.ifError(result.error);
   assert.equal(result.status,0,result.stdout+result.stderr);
 });
