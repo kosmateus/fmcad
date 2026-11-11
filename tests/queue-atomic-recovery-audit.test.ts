@@ -383,7 +383,9 @@ for (const mode of [
 ]) {
   test(
     "real production audit check/fence: " + mode,
-    { timeout: 0 },
+    {
+      // Leave the test timeout unset; Python checks keep their own limits.
+    },
     async (t) => {
       const directory = fixtureDirectory(t, "atomic-audit-check-");
       const source = path.join(
