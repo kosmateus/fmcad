@@ -90,6 +90,77 @@ const { context, commandFlags, createBackend, rpcResponse } = load(
 ) as LiveBrokerPort;
 const { run, suites, scopedSuites, parseOptions, runBatch, testSourceHash } =
   load("./run-live") as RunPort;
+const multiProcess = load("./live-normal-multidocument-processes") as {
+  parseOptions(argv: string[]): {
+    protocol?: string;
+    processes: number;
+    concurrency: number;
+  };
+  groupManifest(
+    id: string,
+    protocol: string,
+    fingerprint: string,
+    concurrency: number,
+    baseline: {
+      active: string | null;
+      documents: {
+        id: string;
+        name: string;
+        saved: boolean;
+        modified: boolean;
+      }[];
+    },
+    count: number,
+  ): {
+    id: string;
+    buildHash: string;
+    runners: { id: string; documentNames: string[] }[];
+    ownerCount: number;
+    baseline: {
+      active: string | null;
+      documents: {
+        id: string;
+        name: string;
+        saved: boolean;
+        modified: boolean;
+      }[];
+    };
+  };
+  globalConcurrency(
+    reports: { sdkIntervals?: { started: number; finished: number }[] }[],
+  ): { maximum: number; intervals: number };
+  exactState(before: unknown, after: unknown): void;
+  submitWithResponseRecovery(
+    queue: {
+      auth: { clientId: string };
+      call(action: string, values: Record<string, unknown>): Promise<unknown>;
+      submit(input: { requestId: string }): Promise<Record<string, unknown>>;
+    },
+    input: { requestId: string },
+  ): Promise<Record<string, unknown>>;
+  verifyRunnerReports(
+    manifest: {
+      id: string;
+      buildHash: string;
+      ownerCount: number;
+      baseline: { active: string | null };
+      runners: { id: string; documentNames: string[] }[];
+    },
+    reports: Record<string, unknown>[],
+    identities: { pid: number; birth: string }[],
+  ): void;
+  waitWithResponseRecovery(
+    queue: {
+      auth: { clientId: string };
+      findRequest(requestId: string): Promise<{
+        job?: { id: string; requestId: string; clientId: string };
+      } | null>;
+      wait(jobId: string): Promise<Record<string, unknown>>;
+    },
+    jobId: string,
+    requestId: string,
+  ): Promise<Record<string, unknown>>;
+};
 
 test("live SDK tests fail closed outside a broker suite and reject direct mode", () => {
   assert.throws(() => context({}), /no direct fallback/);
@@ -237,6 +308,19 @@ test("broker backend cleanup tolerates clients without a local HTTP agent", () =
   assert.equal(destroyed, true);
 });
 
+test("packaged stage dependencies resolve from both source-tree and installed runtime layouts", () => {
+  const payload = { kind: "run", request: { helperVersion: "cad-v1" } };
+  for (const modulePath of [
+    "../dist/src/composition/stage-dependencies.js",
+    "../dist/src/dist/composition/stage-dependencies.js",
+  ]) {
+    const { requiresPhysicalStageOwner } = load(modulePath) as {
+      requiresPhysicalStageOwner(value: unknown): boolean;
+    };
+    assert.equal(requiresPhysicalStageOwner(payload), true, modulePath);
+  }
+});
+
 test("live runner lists only the supported generic suites", async () => {
   assert.equal(suites.length, 12);
   assert.deepEqual(scopedSuites, ["gm12-spring", "data-import-fixed"]);
@@ -323,6 +407,220 @@ test("runner accepts only broker routing", () => {
   assert.throws(
     () => parseOptions(["--concurrency", "2", "--concurrency", "3"]),
     /Duplicate/,
+  );
+});
+
+test("independent live runners require the shared protocol and manifest owner grid", () => {
+  assert.deepEqual(
+    multiProcess.parseOptions([
+      "--run",
+      "--protocol",
+      "mcp",
+      "--processes",
+      "3",
+      "--concurrency",
+      "10",
+    ]),
+    { protocol: "mcp", processes: 3, concurrency: 10 },
+  );
+  assert.deepEqual(multiProcess.parseOptions(["--run"]), {
+    protocol: undefined,
+    processes: 2,
+    concurrency: 2,
+  });
+  for (const argv of [
+    ["--protocol", "addin"],
+    ["--run", "--protocol", "direct"],
+    ["--run", "--processes", "1"],
+    ["--run", "--concurrency", "3"],
+  ])
+    assert.throws(() => multiProcess.parseOptions(argv));
+
+  const manifest = multiProcess.groupManifest(
+    "10000000-0000-4000-8000-000000000000",
+    "addin",
+    "runtime-build",
+    10,
+    {
+      active: "original-document",
+      documents: [
+        {
+          id: "original-document",
+          name: "User Design",
+          saved: true,
+          modified: false,
+        },
+      ],
+    },
+    3,
+  );
+  assert.equal(manifest.runners.length, 3);
+  assert.equal(manifest.ownerCount, 10);
+  assert.equal(new Set(manifest.runners.map((runner) => runner.id)).size, 3);
+  const documentNames = manifest.runners.flatMap(
+    (runner) => runner.documentNames,
+  );
+  assert.equal(documentNames.length, 30);
+  assert.equal(new Set(documentNames).size, 30);
+});
+
+test("multi-runner SDK intervals prove one queue and final user state is exact", () => {
+  assert.deepEqual(
+    multiProcess.globalConcurrency([
+      { sdkIntervals: [{ started: 1, finished: 2 }] },
+      { sdkIntervals: [{ started: 2, finished: 3 }] },
+    ]),
+    { maximum: 1, intervals: 2 },
+  );
+  assert.equal(
+    multiProcess.globalConcurrency([
+      { sdkIntervals: [{ started: 1, finished: 3 }] },
+      { sdkIntervals: [{ started: 2, finished: 4 }] },
+    ]).maximum,
+    2,
+  );
+  const baseline = {
+    active: "original",
+    documents: [
+      { id: "original", name: "User Design", saved: true, modified: false },
+    ],
+  };
+  assert.doesNotThrow(() => multiProcess.exactState(baseline, baseline));
+  assert.throws(() =>
+    multiProcess.exactState(baseline, {
+      ...baseline,
+      documents: [{ ...baseline.documents[0]!, modified: true }],
+    }),
+  );
+});
+
+test("multi-runner response recovery reads the same owner request without resubmitting", async () => {
+  const requestId = "group:lost-response",
+    job = { id: "original-job", requestId, clientId: "client-a" };
+  let submitCalls = 0,
+    findCalls = 0,
+    waitCalls = 0,
+    resultReads = 0;
+  const recoveredResult = {
+    job: { ...job, state: "succeeded" },
+    stdout: "original output",
+    execution: { sdkSettled: true },
+  };
+  const client = {
+    auth: { clientId: job.clientId },
+    async submit(input: { requestId: string }) {
+      submitCalls++;
+      assert.equal(input.requestId, requestId);
+      throw Object.assign(new Error("dropped submit acknowledgement"), {
+        code: "QUEUE_IPC_RESPONSE_LOST",
+      });
+    },
+    async call(action: string, values: Record<string, unknown>) {
+      assert.equal(action, "find-request");
+      assert.deepEqual(values, { requestId });
+      resultReads++;
+      return { job };
+    },
+    async findRequest(id: string) {
+      findCalls++;
+      assert.equal(id, requestId);
+      return { job };
+    },
+    async wait(jobId: string) {
+      waitCalls++;
+      assert.equal(jobId, job.id);
+      if (waitCalls === 1)
+        throw Object.assign(new Error("dropped result response"), {
+          code: "QUEUE_IPC_RESPONSE_LOST",
+        });
+      return recoveredResult;
+    },
+  };
+  const admission = await multiProcess.submitWithResponseRecovery(client, {
+    requestId,
+  });
+  assert.equal(admission["id"], job.id);
+  assert.equal(admission["requestId"], requestId);
+  const result = await multiProcess.waitWithResponseRecovery(
+    client,
+    job.id,
+    requestId,
+  );
+  assert.equal(record(result["job"])["id"], job.id);
+  assert.equal(result["stdout"], recoveredResult.stdout);
+  assert.equal(submitCalls, 1);
+  assert.equal(resultReads, 1);
+  assert.equal(findCalls, 1);
+  assert.equal(waitCalls, 2);
+});
+
+test("multi-runner evidence requires distinct processes, clients, receipts and closed fixtures", () => {
+  const manifest = multiProcess.groupManifest(
+    "10000000-0000-4000-8000-000000000001",
+    "addin",
+    "runtime-build",
+    1,
+    {
+      active: "original-document",
+      documents: [
+        {
+          id: "original-document",
+          name: "User Design",
+          saved: true,
+          modified: false,
+        },
+      ],
+    },
+    2,
+  );
+  const identities = [
+    { pid: 100, birth: "process-a" },
+    { pid: 101, birth: "process-b" },
+  ];
+  const reports = manifest.runners.map((runner, index) => {
+    const owner = `live:${runner.id}:0`;
+    const document = {
+      name: runner.documentNames[0],
+      creationId: `owned-${index}`,
+    };
+    const receipt = {
+      requestId: owner + ":close",
+      clientId: owner,
+      job: { id: `job-${index}`, requestId: owner + ":close", clientId: owner },
+      result: {
+        job: {
+          id: `job-${index}`,
+          requestId: owner + ":close",
+          clientId: owner,
+        },
+        execution: { sdkSettled: true },
+      },
+    };
+    return {
+      runId: runner.id,
+      status: "passed",
+      buildHash: manifest.buildHash,
+      processIdentity: identities[index],
+      processGroup: { id: manifest.id, runnerId: runner.id },
+      documents: [document],
+      cleanup: [
+        {
+          closed: true,
+          creationId: document.creationId,
+          active: "original-document",
+        },
+      ],
+      receipts: [receipt],
+    };
+  });
+  assert.doesNotThrow(() =>
+    multiProcess.verifyRunnerReports(manifest, reports, identities),
+  );
+  assert.throws(() =>
+    multiProcess.verifyRunnerReports(manifest, reports, [
+      identities[0]!,
+      identities[0]!,
+    ]),
   );
 });
 

@@ -10,7 +10,7 @@
     "audit": {
       "sources": ["packages/core/src/application/inspection.ts:planInspection", "runtime/python/fmcad/domain/inspection.py:inspection_pack", "runtime/python/fmcad/adapters/fusion/inspection.py:_inspection_pack", "packages/node-adapters/src/python/bundle.ts:cadBundleUnits"],
       "verified": ["catalog-owned readonly inventory and unchanged identity/checker boundary", "bounded projections, unsupported services, errors and nonpassing evidence stay explicit", "shared graph/source cache invalidates on source/build changes without skipping hashing", "20-read fake comparator reports actual generated artifact sizes and preparation times, without native claims"],
-      "tests": ["tests/inspection.test.js", "tests/inspection_test.py"], "gaps": [], "bugs": []
+      "tests": ["tests/inspection.test.ts", "tests/inspection_test.py"], "gaps": [], "bugs": []
     }
   }
 }

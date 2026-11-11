@@ -18,30 +18,215 @@ import {
 import type { OwnedDocument, LiveReport } from "./live-recovery-ports";
 const { QueueClient, inputFiles } = clientModule;
 const { loadConfig } = config;
-const { buildHash } = identity;
+const { buildHash, processBirth } = identity;
+
+interface MultiDocumentGroup {
+  readonly version: 1;
+  readonly id: string;
+  readonly protocol: string;
+  readonly buildHash: string;
+  readonly ownerCount: number;
+  readonly baseline: ReturnType<typeof nativeState>;
+  readonly runners: {
+    readonly id: string;
+    readonly documentNames: readonly string[];
+  }[];
+}
+
+function readGroup(file: string, runId: string): MultiDocumentGroup {
+  const resolved = path.resolve(file),
+    stat = fs.lstatSync(resolved);
+  assert.ok(stat.isFile() && !stat.isSymbolicLink());
+  assert.ok(stat.size <= 1024 * 1024, "Multi-runner manifest is bounded");
+  const value = parse(
+    fs.readFileSync(resolved, "utf8"),
+  ) as unknown as MultiDocumentGroup;
+  assert.equal(value.version, 1);
+  assert.match(value.id, /^[a-f0-9-]{36}$/u);
+  assert.ok([1, 2, 10].includes(value.ownerCount));
+  assert.ok(Array.isArray(value.runners) && value.runners.length >= 2);
+  assert.equal(
+    new Set(value.runners.map((runner) => runner.id)).size,
+    value.runners.length,
+  );
+  assert.equal(
+    value.runners.some((runner) => runner.id === runId),
+    true,
+    "Runner ID must be registered in the group manifest",
+  );
+  for (const runner of value.runners) {
+    assert.match(runner.id, /^[a-f0-9-]{36}$/u);
+    assert.equal(runner.documentNames.length, value.ownerCount);
+    assert.equal(
+      new Set(runner.documentNames).size,
+      runner.documentNames.length,
+    );
+    assert.ok(
+      runner.documentNames.every(
+        (name) => typeof name === "string" && name.startsWith("FMCAD_MULTI_"),
+      ),
+    );
+  }
+  nativeState(value.baseline);
+  return value;
+}
+
+function assertGroupSnapshot(
+  baseline: ReturnType<typeof nativeState>,
+  observed: ReturnType<typeof nativeState>,
+  expectedNames: readonly string[],
+  ownNames: readonly string[],
+) {
+  const priorIds = new Set(baseline.documents.map((document) => document.id));
+  const currentById = new Map(
+    observed.documents.map((document) => [document.id, document]),
+  );
+  for (const document of baseline.documents)
+    assert.deepEqual(
+      currentById.get(document.id),
+      document,
+      "Original document identity or state changed during independent runners",
+    );
+  const extras = observed.documents.filter(
+    (document) => !priorIds.has(document.id),
+  );
+  const allowedNames = new Set(expectedNames);
+  assert.ok(
+    extras.every((document) => allowedNames.has(document.name)),
+    "Only registered multi-runner fixtures may exist beside the baseline",
+  );
+  assert.ok(
+    extras.every((document) => !ownNames.includes(document.name)),
+    "This runner left one of its own documents open",
+  );
+  if (observed.active !== baseline.active && observed.active !== null) {
+    const active = currentById.get(observed.active);
+    assert.ok(
+      active && allowedNames.has(active.name),
+      "Active document must be original or one of the registered live fixtures",
+    );
+  }
+  return {
+    originalDocumentsPreserved: baseline.documents.length,
+    peerDocumentsObserved: extras.map((document) => ({
+      id: document.id,
+      name: document.name,
+    })),
+    activeIsOriginal: observed.active === baseline.active,
+  };
+}
+
+async function awaitGroupStart(
+  groupFile: string,
+  runId: string,
+  build: string,
+): Promise<void> {
+  const readyFile = process.env["FMCAD_MULTIDOC_READY_FILE"],
+    startFile = process.env["FMCAD_MULTIDOC_START_FILE"],
+    abortFile = process.env["FMCAD_MULTIDOC_ABORT_FILE"];
+  if (!readyFile && !startFile && !abortFile) return;
+  assert.ok(
+    readyFile && startFile && abortFile,
+    "Incomplete runner gate paths",
+  );
+  const root = path.dirname(path.resolve(groupFile));
+  for (const file of [readyFile, startFile, abortFile]) {
+    const relative = path.relative(root, path.resolve(file));
+    assert.ok(
+      relative !== "" &&
+        !relative.startsWith(".." + path.sep) &&
+        relative !== ".." &&
+        !path.isAbsolute(relative),
+      "Runner gate files must remain under the group root",
+    );
+  }
+  fs.writeFileSync(
+    readyFile,
+    JSON.stringify({ runId, pid: process.pid, buildHash: build }) + "\n",
+    { flag: "wx", mode: 0o600 },
+  );
+  for (;;) {
+    if (fs.existsSync(abortFile))
+      throw new Error("Independent runner group aborted before SDK work");
+    if (fs.existsSync(startFile)) {
+      const stat = fs.lstatSync(startFile);
+      assert.ok(stat.isFile() && !stat.isSymbolicLink());
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
 
 async function main() {
   assert.ok(process.argv.includes("--run"), "Explicit --run required");
   const resumeFile = process.env["FMCAD_MULTIDOC_RESUME_REPORT"];
   const resume = resumeFile ? parse(fs.readFileSync(resumeFile, "utf8")) : null;
-  const runId = randomUUID(),
-    root = path.join("/tmp/opencode/fmcad-normal-multidocument", runId);
+  const groupFile = process.env["FMCAD_MULTIDOC_GROUP_FILE"];
+  const runId = process.env["FMCAD_MULTIDOC_RUN_ID"] || randomUUID();
+  assert.match(runId, /^[a-f0-9-]{36}$/u);
+  assert.ok(!groupFile || !resume, "Grouped runs do not resume prior reports");
+  const root = process.env["FMCAD_MULTIDOC_RUN_ROOT"]
+    ? path.resolve(process.env["FMCAD_MULTIDOC_RUN_ROOT"])
+    : path.join("/tmp/opencode/fmcad-normal-multidocument", runId);
+  const ownerCount = process.env["FMCAD_MULTIDOC_OWNER_COUNT"]
+    ? Number(process.env["FMCAD_MULTIDOC_OWNER_COUNT"])
+    : 2;
+  assert.ok(
+    Number.isSafeInteger(ownerCount) && [1, 2, 10].includes(ownerCount),
+  );
   fs.mkdirSync(root, { recursive: true });
   const { cfg } = loadConfig({ routing: "queue" });
+  const group = groupFile ? readGroup(groupFile, runId) : undefined;
+  const groupRunner = group?.runners.find((runner) => runner.id === runId);
+  if (group) {
+    assert.ok(groupRunner);
+    assert.equal(cfg.backend, group.protocol);
+    assert.equal(buildHash(), group.buildHash);
+    assert.equal(group.ownerCount, ownerCount);
+    assert.ok(
+      group.baseline.active !== null,
+      "Multi-process lifecycle proof requires an original active document that can be restored",
+    );
+    const groupRoot = path.dirname(path.resolve(groupFile!));
+    const relative = path.relative(groupRoot, root);
+    assert.ok(
+      relative !== "" &&
+        !relative.startsWith(".." + path.sep) &&
+        relative !== ".." &&
+        !path.isAbsolute(relative),
+      "Runner evidence must remain under its group directory",
+    );
+  }
   const report: LiveReport = {
     runId,
     buildHash: buildHash(),
     status: "running",
+    processIdentity: { pid: process.pid, birth: processBirth() },
+    ...(group && groupRunner
+      ? {
+          processGroup: {
+            id: group.id,
+            runnerId: runId,
+            ownerCount,
+            expectedDocumentNames: [...groupRunner.documentNames],
+          },
+        }
+      : {}),
     receipts: [],
     documents: [],
   };
-  const persist = () =>
-    fs.writeFileSync(
-      path.join(root, "report.json"),
-      JSON.stringify(report, null, 2),
-    );
-  const clients = [0, 1].map(
-    (index) =>
+  const persist = () => {
+    const file = path.join(root, "report.json"),
+      temporary = file + ".new";
+    fs.writeFileSync(temporary, JSON.stringify(report, null, 2) + "\n", {
+      flag: "w",
+      mode: 0o600,
+    });
+    fs.renameSync(temporary, file);
+  };
+  const clients = Array.from(
+    { length: ownerCount },
+    (_, index) =>
       new QueueClient(
         "live:multidocument:" + (resume?.["runId"] || runId) + ":" + index,
         {
@@ -121,6 +306,16 @@ async function main() {
       inputFiles: inputFiles(argv, root),
       description: "Owned multi-document native test: " + phase,
     });
+    const receiptIndex = report.receipts.findIndex(
+      (row) => row.requestId === requestId,
+    );
+    report.receipts[receiptIndex] = {
+      requestId,
+      phase,
+      clientId: queue.auth.clientId,
+      job,
+    };
+    persist();
     const result = await queue.wait(job.id);
     if (
       result.job.id !== job.id ||
@@ -131,9 +326,13 @@ async function main() {
       throw new Error(
         "Original multidocument request identity or settlement differs; retain both fixtures",
       );
-    report.receipts[
-      report.receipts.findIndex((row) => row.requestId === requestId)
-    ] = { requestId, phase, job, result };
+    report.receipts[receiptIndex] = {
+      requestId,
+      phase,
+      clientId: queue.auth.clientId,
+      job,
+      result,
+    };
     persist();
     assert.equal(result.job.state, "succeeded", JSON.stringify(result));
     const marker = result.stdout
@@ -142,10 +341,10 @@ async function main() {
     assert.ok(marker, "Missing native result marker: " + result.stdout);
     return parse(marker.slice("FMCAD_RESULT ".length));
   }
-  const snapshot = () =>
+  const snapshot = (phase = "baseline") =>
     script(
       0,
-      "baseline",
+      phase,
       `a=adsk.core.Application.get()
 print('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,
     documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d['id']))))`,
@@ -166,15 +365,21 @@ assert design is not None`;
     report.broker = broker(await first.call("queue-summary"));
     assert.equal(report.broker.buildHash, report.buildHash);
     assert.equal(report.broker.admissionScope, "normal-multidocument");
+    if (group) await awaitGroupStart(groupFile!, runId, report.buildHash);
     if (resume) {
       // Continue only this fixture's two proven creations and locally rejected
       // writes. This is not a generic retry path for arbitrary failed workflows.
       assert.equal(resume["buildHash"], report.buildHash);
+      assert.equal(
+        ownerCount,
+        2,
+        "Historical recovery reports have two owners",
+      );
       const documents = resume["documents"],
         receipts = resume["receipts"];
       assert.ok(
         Array.isArray(documents) &&
-          documents.length === 2 &&
+          documents.length === ownerCount &&
           Array.isArray(receipts),
       );
       for (let index = 0; index < 2; index++) {
@@ -214,12 +419,29 @@ assert design is not None`;
       report.before = nativeState(resume["before"]);
       report.documents = documents.map(owned);
     } else {
-      report.before = nativeState(await snapshot());
+      report.before = group
+        ? group.baseline
+        : nativeState(await snapshot("baseline"));
+      if (group) {
+        const observed = nativeState(await snapshot("group-before"));
+        assert.ok(groupRunner);
+        const expected = group.runners.flatMap(
+          (runner) => runner.documentNames,
+        );
+        report.processGroup!.observedBefore = observed;
+        assertGroupSnapshot(
+          report.before,
+          observed,
+          expected,
+          groupRunner.documentNames,
+        );
+      }
       persist();
-      // Both requests use the same physical queue; only preparation is parallel.
+      // All clients have unique owner identities; SDK turns still use the one broker queue.
       const created = await Promise.allSettled(
         clients.map((client, index) => {
           const name =
+            groupRunner?.documentNames[index] ??
             "FMCAD_MULTI_" + runId.replaceAll("-", "_") + "_" + index;
           return script(
             index,
@@ -240,10 +462,11 @@ print('FMCAD_RESULT '+json.dumps(dict(name=d.name,creationId=d.creationId,saved=
       for (const result of created)
         if (result.status === "rejected") throw result.reason;
     }
-    assert.ok(report.documents[0] && report.documents[1]);
-    assert.notEqual(
-      report.documents[0].creationId,
-      report.documents[1].creationId,
+    assert.equal(report.documents.length, ownerCount);
+    assert.ok(report.documents.every((document) => document));
+    assert.equal(
+      new Set(report.documents.map((document) => document.creationId)).size,
+      ownerCount,
     );
     report.writes = await Promise.all(
       report.documents.map((document, index) =>
@@ -272,8 +495,8 @@ print('FMCAD_RESULT '+json.dumps(dict(creationId=d.creationId,count=design.userP
         ),
       ),
     );
-    // The intervals cover these two owners' script bodies on the same Fusion
-    // monotonic clock, not local preparation or work from unrelated clients.
+    // The intervals cover these owners' script bodies on Fusion's monotonic
+    // clock, not local preparation or work from unrelated clients.
     report.sdkIntervals = [...report.writes, ...report.readbacks].map(
       (value) => {
         const interval = object(value),
@@ -316,7 +539,7 @@ print('FMCAD_RESULT '+json.dumps(dict(creationId=d.creationId,count=design.userP
     report.maxOwnScriptConcurrency = maximum;
     // Cleanup is serial and exact. No uncertain mutation is retried or closed.
     report.cleanup = [];
-    for (let index = 0; index < 2; index++) {
+    for (let index = 0; index < ownerCount; index++) {
       const document = report.documents[index];
       assert.ok(document);
       report.cleanup.push(
@@ -342,7 +565,24 @@ print('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.ac
     documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d['id']))))`,
       ),
     );
-    assert.deepEqual(report.after, report.before);
+    if (group) {
+      assert.ok(groupRunner);
+      report.processGroup!.groupAudit = assertGroupSnapshot(
+        report.before,
+        report.after,
+        group.runners.flatMap((runner) => runner.documentNames),
+        groupRunner.documentNames,
+      );
+      assert.ok(
+        report.cleanup.every(
+          (receipt) =>
+            object(receipt)["closed"] === true &&
+            (report.before!.active === null ||
+              object(receipt)["active"] === report.before!.active),
+        ),
+        "Every owned close receipt must restore the shared original active document",
+      );
+    } else assert.deepEqual(report.after, report.before);
     report.status = "passed";
   } catch (error) {
     report.status = "failed";

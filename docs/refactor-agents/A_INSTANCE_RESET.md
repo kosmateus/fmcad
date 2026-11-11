@@ -27,7 +27,7 @@ PowerShell bytes, generation-bound pause ownership, stale recovery, read-only
 queue smoke verification and primary/restoration error retention are unchanged.
 
 The hash-checked `bab4c10` predecessor fixture is compared in
-`fusion-reset.test.js`: force parsing; saved/foreign/owned document decisions;
+`fusion-reset.test.ts`: force parsing; saved/foreign/owned document decisions;
 complete fixture-closure Python bytes; process-inspection command/options and
 malformed observations; unowned-pause observation without resume authority; and
 an injected pause CAS loss that preserves the original exception and grants no

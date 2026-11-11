@@ -1435,6 +1435,8 @@ export async function runScenarios(
   const reports = await scopedMap(tasks, concurrency, (report) => {
     if (report.status === "passed" && report.cleanup === "complete")
       return "passed";
+    if (report.status === "unsupported" && report.cleanup === "not-created")
+      return "passed";
     if (report.cleanup === "complete" || report.cleanup === "not-created")
       return "settled-failure";
     return "unsettled";

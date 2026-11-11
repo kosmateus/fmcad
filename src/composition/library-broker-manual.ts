@@ -96,7 +96,7 @@ export const manuals: Record<string, CommandManual> = Object.fromEntries(
           "tests/queue-scheduling.test.ts",
           "tests/console-pause.test.ts",
           "tests/phased-queue.test.js",
-          "tests/queue-probe-recovery.test.js",
+          "tests/queue-probe-recovery.test.ts",
         ],
         verified: [
           "Offline parsing and typed broker records",

@@ -61,6 +61,15 @@ export interface LiveReport {
   runId: string;
   buildHash: string;
   status: string;
+  processIdentity?: { pid: number; birth: string };
+  processGroup?: {
+    id: string;
+    runnerId: string;
+    ownerCount: number;
+    expectedDocumentNames: string[];
+    observedBefore?: NativeState;
+    groupAudit?: Record<string, unknown>;
+  };
   receipts: PhaseReceipt[];
   documents: OwnedDocument[];
   broker?: Broker;
@@ -131,6 +140,7 @@ export const config = runtimeRequire("./config") as {
 };
 export const identity = runtimeRequire("./queue-instance") as {
   buildHash(): string;
+  processBirth(pid?: number): string;
 };
 export function object(value: unknown): Record<string, unknown> {
   assert.ok(
