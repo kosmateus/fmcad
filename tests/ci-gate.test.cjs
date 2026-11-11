@@ -201,3 +201,30 @@ test("workflow puts all jobs behind the reusable boundary and tests the gate fir
   assert.match(withNewJob.split(/^jobs:\n/m)[1], /^  future-job:/m);
   assert.doesNotMatch(caller, /future-job/);
 });
+
+test("CI invokes only offline scripts; real Fusion live suites stay local", () => {
+  const root = path.join(__dirname, "..");
+  const scripts = JSON.parse(
+    fs.readFileSync(path.join(root, "package.json"), "utf8"),
+  ).scripts;
+  const visited = new Set();
+  function check(command) {
+    assert.doesNotMatch(
+      command,
+      /--backend\s+fusion|test:(?:live|native)|run-live|(?:^|\s)--run(?:\s|$)/,
+    );
+    for (const [, name] of command.matchAll(/npm run ([\w:-]+)/g)) {
+      if (visited.has(name)) continue;
+      visited.add(name);
+      assert.equal(
+        typeof scripts[name],
+        "string",
+        `Missing npm script: ${name}`,
+      );
+      check(scripts[name]);
+    }
+  }
+  check(
+    fs.readFileSync(path.join(root, ".github/workflows/ci-tests.yml"), "utf8"),
+  );
+});
