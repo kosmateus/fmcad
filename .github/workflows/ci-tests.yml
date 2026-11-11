@@ -106,7 +106,7 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       # build already compiles tsconfig.runtime-tests.json; typecheck runs in prepare.
-      - run: node --test dist/tests/scenarios/*.test.js
+      - run: node --test --test-concurrency=1 dist/tests/scenarios/*.test.js
       - run: npm run typecheck:simulator
       - run: node dist/tests/scenarios/verify-api.js
       - run: npm run test:scenarios:component -- --protocol mcp --owners 2 --suite foundation
