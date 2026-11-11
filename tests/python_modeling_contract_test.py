@@ -47,11 +47,12 @@ class MeasurementPolicyContracts(unittest.TestCase):
         self.assertAlmostEqual(current['_measure_value'](math.pi, 'angle', {})['value'], 180)
 
     def test_measurement_policy_import_has_no_sdk_or_host_dependency(self):
+        source = (ROOT / 'runtime/python/fmcad/domain/measure.py').read_text()
         original = builtins.__import__
         def pure_import(name, *args, **kwargs):
             if name != 'math':
                 raise AssertionError('Unexpected measurement policy dependency: ' + name)
             return original(name, *args, **kwargs)
         with patch('builtins.__import__', pure_import):
-            namespace = load((ROOT / 'runtime/python/fmcad/domain/measure.py').read_text(), 'measure-domain')
+            namespace = load(source, 'measure-domain')
             self.assertEqual(namespace['_measure_value'](1, 'mass', {'units': 'g'})['value'], 1000)
