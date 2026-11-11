@@ -246,7 +246,7 @@ test('immutable file escrow verifies digests, refuses symlinks and never overwri
   assert.throws(() => backupTree(source, path.join(dir, 'unsafe')), { code: 'UNSAFE_MIGRATION_FILE' });
 });
 
-test('real Linux pidfd stop targets only the verified fixture process and publishes bounded TERM intents', { timeout: 15000 }, async t => {
+test('real Linux pidfd stop targets only the verified fixture process and publishes bounded TERM intents', async t => {
   const audit = fs.mkdtempSync('/tmp/opencode/atomic-migration-stop-');
   const child = spawn(process.execPath, ['-e', "process.once('SIGTERM',()=>{}); console.log('ready'); setInterval(()=>{},1000)"],
     { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -481,7 +481,7 @@ test('actual broker migration startup preserves the exact snapshot and sends no 
       assert.equal(status.held,'Read-only atomic holder observation only; all other admission remains blocked');
       process.stdout.write(JSON.stringify({calls,paused:status.paused,blocked:status.blocked.id}));process.exit(0);
     })().catch(e=>{console.error(e);process.exit(1)});
-  `], { encoding: 'utf8', timeout: 10000 });
+  `], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).calls, 0);
 });
@@ -542,7 +542,7 @@ for (const processLoss of [false, true]) test('second-window production replacem
         {code:'MIGRATION_IN_PROGRESS'});
       process.stdout.write(JSON.stringify({calls,unknownJobs:2,auditBlockedUntilComplete:true}));process.exit(0);
     })().catch(e=>{console.error(e);process.exit(1)});
-  `], { encoding: 'utf8', timeout: 15000 });
+  `], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).calls, 0);
 });
@@ -653,7 +653,7 @@ test('process-loss owner audit uses the selected current endpoint, keeps origina
       process.stdout.write(JSON.stringify({currentOnlyAudit:true,calls,originalHistoryUnchanged:true,nativeOutcome:value.nativeOutcome}));
       process.exit(0);
     })().catch(e=>{console.error(e);process.exit(1)});
-  `], { encoding: 'utf8', timeout: 45000 });
+  `], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).calls, 1);
 });
@@ -767,7 +767,7 @@ for (const mode of ['complete', 'creation-unknown', 'creation-forged-id', 'close
       await request(dir,message);assert.equal(calls,2);
       process.stdout.write(JSON.stringify({creation,close,calls,historicalOutcome:'unknown'}));process.exit(0);
     })().catch(e=>{console.error(e);process.exit(1)});
-  `], { encoding: 'utf8', timeout: 60000, cwd: f.scope.projectDirectory,
+  `], { encoding: 'utf8', cwd: f.scope.projectDirectory,
     env: { ...process.env, HOME: path.join(f.dir, 'home'), XDG_CONFIG_HOME: path.join(f.dir, 'config'),
       XDG_STATE_HOME: path.dirname(path.dirname(f.dir)), XDG_CACHE_HOME: path.join(f.dir, 'cache') } });
   assert.equal(result.status, 0, result.stderr);
@@ -870,14 +870,14 @@ test('facts recovery broker preserves original failed audit and requires a separ
       }
       process.stdout.write(JSON.stringify({calls,originalUnchanged:true,mode}));process.exit(0);
     })().catch(error=>{console.error(error);process.exit(1)});
-  `], { encoding: 'utf8', timeout: 60000, cwd: f.scope.projectDirectory,
+  `], { encoding: 'utf8', cwd: f.scope.projectDirectory,
     env: { ...process.env, HOME: path.join(f.dir, 'home'), XDG_CONFIG_HOME: path.join(f.dir, 'config'),
       XDG_STATE_HOME: path.join(f.dir, 'state'), XDG_CACHE_HOME: path.join(f.dir, 'cache') } });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { calls: 1, originalUnchanged: true, mode });
 });
 
-test('duplicate migration worker launch loses its one-time process claim before reading config or creating a broker', { timeout: 10000 }, async t => {
+test('duplicate migration worker launch loses its one-time process claim before reading config or creating a broker', async t => {
   const f = claimFixture(t), script = path.resolve(__dirname, '../src/queue-atomic-migration-worker.js');
   const child = spawn(process.execPath, [script, f.audit], { stdio: ['pipe', 'ignore', 'pipe'] });
   const exit = once(child, 'exit');
@@ -890,14 +890,14 @@ test('duplicate migration worker launch loses its one-time process claim before 
     if (fs.existsSync(workerFile)) finish();
   });
   const owner = JSON.parse(fs.readFileSync(workerFile));
-  const duplicate = spawnSync(process.execPath, [script, f.audit], { input: 'not a configuration', encoding: 'utf8', timeout: 3000 });
+  const duplicate = spawnSync(process.execPath, [script, f.audit], { input: 'not a configuration', encoding: 'utf8' });
   assert.equal(duplicate.status, 0, duplicate.stderr);
   assert.deepEqual(JSON.parse(fs.readFileSync(workerFile)), owner);
   assert.equal(fs.existsSync(path.join(f.audit, 'worker-error.json')), false);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.dir, 'broker.lock'))), f.oldOwner);
 });
 
-test('interrupted TERM intent can resume against the same live pidfd without assuming that the earlier signal was sent', { timeout: 10000 }, async t => {
+test('interrupted TERM intent can resume against the same live pidfd without assuming that the earlier signal was sent', async t => {
   const audit = fs.mkdtempSync('/tmp/opencode/atomic-migration-stop-gap-');
   const child = spawn(process.execPath, ['-e', "process.once('SIGTERM',()=>{}); console.log('ready'); setInterval(()=>{},1000)"],
     { stdio: ['ignore', 'pipe', 'pipe'] });

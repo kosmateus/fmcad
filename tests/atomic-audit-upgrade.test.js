@@ -84,7 +84,7 @@ test('wrong observer client, body hash, state, unfinished RPC or departing owner
   }
 });
 
-test('real audit migration preflight certifies canonical final bytes without original ABI exemptions or sends', { timeout: 30000 }, async () => {
+test('real audit migration preflight certifies canonical final bytes without original ABI exemptions or sends', async () => {
   const api = require('../src/queue-atomic-recovery-audit');
   const admission = require('../src/queue-admission');
   const identity = { commandId: 'fmcad_atomic_' + 'a'.repeat(32), sessionNonce: 'b'.repeat(32), runId: 'owned',

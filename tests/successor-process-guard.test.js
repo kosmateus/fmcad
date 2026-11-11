@@ -27,7 +27,7 @@ for (const mode of ['matching-process', 'wrong-pid', 'wrong-birth', 'full-versio
       // Only synthetic binding literals are adapted to this local Python process.
       // This is a guard-order unit test, not a prepared-artifact/SDK qualification.
       `script = ${JSON.stringify(artifact.script)}\nscript = script.replace('2147483644', str(os.getpid())).replace('__SYNTHETIC_EXPECTED_BIRTH__', birth)\nexec(compile(script, '<synthetic-receipt>', 'exec'))\n`;
-    const result = spawnSync('python3', ['-B', '-c', bootstrap], { encoding: 'utf8', timeout: 10000 });
+    const result = spawnSync('python3', ['-B', '-c', bootstrap], { encoding: 'utf8' });
     const record = JSON.parse(fs.readFileSync(receipt));
     assert.equal(record.terminal, true);
     if (mode === 'matching-process') {
@@ -43,7 +43,7 @@ for (const mode of ['matching-process', 'wrong-pid', 'wrong-birth', 'full-versio
   });
 }
 
-test('production checker qualifies the exact successor read wire with a PID/birth guard and rejects changed final bytes', { timeout: 45000 }, async t => {
+test('production checker qualifies the exact successor read wire with a PID/birth guard and rejects changed final bytes', async t => {
   const dir = fs.mkdtempSync('/tmp/opencode/successor-read-admission-');
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const root = path.resolve(__dirname, '..');

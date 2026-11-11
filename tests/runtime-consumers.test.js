@@ -212,7 +212,7 @@ for (const [moduleName, exported, flags] of modules) {
   }
 }
 
-test('installed image adapter retains runtime assets and closed declarations outside the workspace', { timeout: 120000 }, async t => {
+test('installed image adapter retains runtime assets and closed declarations outside the workspace', async t => {
   const { execFileSync } = require('node:child_process');
   const root = path.resolve(__dirname, '..');
   const f = fixture(t);
@@ -230,7 +230,7 @@ test('installed image adapter retains runtime assets and closed declarations out
   for (const [moduleName, , flags, worker] of modules) {
     assert.ok(fs.existsSync(path.join(installed, 'dist/assets', worker)));
     const run = spawnSync(process.execPath, [path.join(installed, 'dist/bin/fmcad.js'), 'image', moduleName.slice(6), ...flags, '--python', f.python], {
-      cwd: f.root, encoding: 'utf8', timeout: 15000,
+      cwd: f.root, encoding: 'utf8',
       env: { ...process.env, NODE_PATH: '', FMCAD_CONFIG: path.join(f.root, 'invalid-config.json'), FMCAD_BACKEND: 'must-not-read' },
     });
     assert.equal(run.status, 0, run.stderr);

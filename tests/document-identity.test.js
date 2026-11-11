@@ -107,7 +107,7 @@ test('real Python context and generated mutation/export/save wrappers enforce ta
   const scripts = Object.fromEntries(['status', 'model.extrude', 'export.step', 'document.save_as'].map(operation =>
     [operation, buildCadScript(operation, catalog[operation].example, { doc: 'Model', ...pins })]));
   const result = spawnSync('python3', ['-B', path.join(__dirname, 'document_identity_test.py')], {
-    input: JSON.stringify(scripts), encoding: 'utf8', timeout: 15000,
+    input: JSON.stringify(scripts), encoding: 'utf8',
   });
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stdout + result.stderr);

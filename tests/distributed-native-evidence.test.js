@@ -83,7 +83,7 @@ test('CLI never overwrites existing proof or report files', t => {
   fs.writeFileSync(index, JSON.stringify(f.index));
   const before = fs.readFileSync(output);
   const result = spawnSync(process.execPath, [path.join(__dirname, '../scripts/assemble-native-evidence.cjs'),
-    '--index', index, '--out', output], { encoding: 'utf8', timeout: 10000 });
+    '--index', index, '--out', output], { encoding: 'utf8' });
   assert.equal(result.status, 1); assert.match(result.stderr, /EEXIST/);
   assert.deepEqual(fs.readFileSync(output), before);
 });

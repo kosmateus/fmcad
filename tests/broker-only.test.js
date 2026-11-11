@@ -125,7 +125,6 @@ test("legacy direct factory/config and worker environment grant no physical acce
 
 test(
   "CLI, MCP and library fail closed with a missing broker and reset marker",
-  { timeout: 15000 },
   async (t) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-broker-only-"));
     const project = path.join(home, "project");

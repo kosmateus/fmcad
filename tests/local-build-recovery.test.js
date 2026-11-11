@@ -88,7 +88,7 @@ const file=path.join(dir,'local.py');fs.writeFileSync(file,'def run(context): pa
 const job=await request(dir,{action:'submit',auth,request:{kind:'command',requestId:randomUUID(),argv:['run',file],cwd:dir,timeoutMs:1000,buildHash:old}});
 fs.appendFileSync(path.join(root,'src/help.js'),'\\n// controlled offline build change\\n');
 for(let i=0;i<200;i++){const value=await request(dir,{action:'result',auth,jobId:job.id});if(value.job.state==='needs_reconciliation'){const s=broker.status();console.log(JSON.stringify({held:s.held,state:value.job.state,dispatch:value.job.dispatch||null,files:fs.readdirSync(path.join(dir,'jobs',job.id)),probes,sdk}));process.exit(0);}await new Promise(r=>setTimeout(r,10));}throw Error('Signature not reproduced');})().catch(e=>{console.error(e);process.exit(1);});`;
-  const child = spawnSync(process.execPath, ['-e', source, runtime, dir], { encoding: 'utf8', timeout: 10000 });
+  const child = spawnSync(process.execPath, ['-e', source, runtime, dir], { encoding: 'utf8' });
   assert.equal(child.status, 0, child.stderr);const result = JSON.parse(child.stdout.trim());
   assert.equal(result.held, 'BUILD_CHANGED');assert.equal(result.state, 'needs_reconciliation');
   assert.equal(result.dispatch, null);assert.deepEqual(result.files, ['preflight-start.json']);

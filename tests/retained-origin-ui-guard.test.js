@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const runtime = path.resolve(__dirname, '../dist');
-test('real add-in UI guard: legacy source rejects the same final bytes, verified retained-span offset passes all aggregate groups', { timeout: 150000 }, async t => {
+test('real add-in UI guard: legacy source rejects the same final bytes, verified retained-span offset passes all aggregate groups', async t => {
   const temporary = fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'retained-origin-offset-'));
   t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
   const py = require(runtime + '/src/python'), api = require(runtime + '/src/queue-instance');

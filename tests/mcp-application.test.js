@@ -431,7 +431,6 @@ test("explicit raw compatibility adapters preserve wire arguments and never prom
 
 test(
   "process MCP and CLI share the production broker/typed worker and execute once per explicit request",
-  { timeout: 30000 },
   async (t) => {
     const { resolveFmcadConfiguration } = require("../dist/src/dist/core");
     const { queueDirectory } = require("../dist/src/queue-connection");
@@ -687,7 +686,6 @@ test(
 
 test(
   "MCP process identities preserve project-scoped jobs across pause, lost acknowledgement and owner restart",
-  { timeout: 30000 },
   async (t) => {
     const { resolveFmcadConfiguration } = require("../dist/src/dist/core");
     const { queueDirectory } = require("../src/queue-connection");

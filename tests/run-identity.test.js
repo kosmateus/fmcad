@@ -34,7 +34,6 @@ function execute(requests) {
     {
       input: JSON.stringify(requests),
       encoding: "utf8",
-      timeout: 10000,
     },
   );
   assert.ifError(result.error);

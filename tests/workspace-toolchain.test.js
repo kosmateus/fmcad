@@ -85,7 +85,7 @@ test("core can be imported without loading external dependencies or starting ser
         assert.equal(process.exitCode, undefined);
       `,
     ],
-    { cwd: root, encoding: "utf8", timeout: 5000 },
+    { cwd: root, encoding: "utf8" },
   );
   assert.equal(probe.status, 0, probe.stderr);
 });

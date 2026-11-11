@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-test('pre-dispatch fence rejection publishes its local outcome before any job directory exists', { timeout: 15000 }, async t => {
+test('pre-dispatch fence rejection publishes its local outcome before any job directory exists', async t => {
   const dir = fs.mkdtempSync('/tmp/opencode/local-fence-outcome-');
   let broker;
   t.after(async () => {

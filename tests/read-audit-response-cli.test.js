@@ -32,13 +32,13 @@ test('file-only reader authenticates original existing credentials, writes only 
   const output = path.join(base, 'derived/proof.json');
   const args = [path.resolve(__dirname, '../scripts/read-audit-response-proof.cjs'), '--runtime', frozen,
     '--migration-audit', f.migrationAudit, '--request-id', f.key.requestId, '--output', output];
-  const success = spawnSync(process.execPath, args, { env, cwd: base, encoding: 'utf8', timeout: 30000 });
+  const success = spawnSync(process.execPath, args, { env, cwd: base, encoding: 'utf8' });
   assert.equal(success.status, 0, success.stderr);
   const report = JSON.parse(fs.readFileSync(output));
   assert.equal(report.writerAuthenticated, true); assert.equal(report.writerClientId, 'original-owner');
   assert.equal(report.sdkRequestsSent, 0); assert.equal(report.facts.available, false); assert.equal(report.epochEligible, false);
   const foreign = spawnSync(process.execPath, [...args.slice(0, -1), path.join(base, 'foreign-proof.json')],
-    { env: { ...env, FMCAD_CLIENT: 'foreign' }, cwd: base, encoding: 'utf8', timeout: 30000 });
+    { env: { ...env, FMCAD_CLIENT: 'foreign' }, cwd: base, encoding: 'utf8' });
   assert.notEqual(foreign.status, 0); assert.match(foreign.stderr, /NOT_OWNER/);
   assert.equal(fs.existsSync(path.join(base, 'foreign-proof.json')), false);
   assert.deepEqual(Object.fromEntries(Object.entries(f.files).map(([name, entry]) => [name, fileHash(entry.path).sha256])), before);

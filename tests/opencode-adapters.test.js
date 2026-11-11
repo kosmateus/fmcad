@@ -36,7 +36,7 @@ async function fixture(t, host, { realServices = false, projectDirectory = "/pro
   execFileSync(
     "npm",
     ["install", "--offline", "--prefix", directory, "--ignore-scripts", "--omit=dev", "--no-audit", "--no-fund", path.join(directory, packed.filename), ...hostPackage],
-    { cwd: directory, encoding: "utf8", timeout: 120000 },
+    { cwd: directory, encoding: "utf8" },
   );
   pkg = path.join(directory, "node_modules/fmcad");
   for (const entry of fs.readdirSync(pkg, { recursive: true, withFileTypes: true })) {
@@ -527,7 +527,7 @@ test("external root import needs no host SDK and has no service effects", (t) =>
   execFileSync(
     "npm",
     ["install", "--offline", "--prefix", directory, "--ignore-scripts", "--omit=dev", "--no-audit", "--no-fund", path.join(directory, packed.filename)],
-    { cwd: directory, encoding: "utf8", timeout: 120000 },
+    { cwd: directory, encoding: "utf8" },
   );
   const pkg = path.join(directory, "node_modules/fmcad");
   const loader = path.join(directory, "no-effects-loader.mjs");

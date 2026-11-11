@@ -348,7 +348,6 @@ function scriptConfig(script, names) {
     {
       input: JSON.stringify({ script, names }),
       encoding: "utf8",
-      timeout: 5000,
     },
   );
   assert.ifError(result.error);

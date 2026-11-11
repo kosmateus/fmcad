@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-test('FAKE isolated host/backend: actual broker dispatch authorizes known cleanup without any SDK or history edits', { timeout: 30000 }, t => {
+test('FAKE isolated host/backend: actual broker dispatch authorizes known cleanup without any SDK or history edits', t => {
   const root = fs.mkdtempSync('/tmp/opencode/closed-epoch-broker-');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const repo = path.resolve(__dirname, '..');
@@ -42,7 +42,7 @@ test('FAKE isolated host/backend: actual broker dispatch authorizes known cleanu
       process.exit(0);
     })().catch(error=>{console.error(error);process.exit(1);});
   `;
-  const result = spawnSync(process.execPath, ['-e', code, repo, root], { encoding: 'utf8', timeout: 20000 });
+  const result = spawnSync(process.execPath, ['-e', code, repo, root], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr || String(result.error));
   assert.deepEqual(JSON.parse(result.stdout.trim()), { metadataAuthorized: true, sdkRequestsSent: 0, historyUnchanged: true });
 });

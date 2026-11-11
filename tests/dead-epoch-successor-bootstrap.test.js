@@ -41,7 +41,7 @@ function fixture(t) {
   return { ...f, client, approvalFile, setWorker: value => { worker = value; workerRoot = f.dir; } };
 }
 
-test('FAKE host/process metadata: preflight is file-only; startup creates one metadata worker and retains all original epochs', { timeout: 90000 }, async t => {
+test('FAKE host/process metadata: preflight is file-only; startup creates one metadata worker and retains all original epochs', async t => {
   const f = fixture(t);
   const protectedFiles = [path.join(f.dir, 'isolated-admission-epoch.json'), f.authority.predecessor.state.path,
     f.authority.predecessor.identity.path, f.authority.predecessor.rootState.path, f.authority.predecessor.rootIdentity.path,

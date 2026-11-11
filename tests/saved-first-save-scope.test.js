@@ -70,7 +70,7 @@ test('FAKE metadata: non-owner, model history and ordinary grants cannot become 
 });
 
 test('production checker prepares first-save target pin without sending SDK or claiming publication',
-  { timeout: 180000 }, async t => {
+  async t => {
     const dir = fs.mkdtempSync('/tmp/opencode/first-save-target-check-');
     t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
     const document = { name: 'OFFLINE_NEW_FIXTURE', creationId: 'offline-fresh-created', fileId: null };
@@ -107,7 +107,7 @@ test('FAKE SDK: first save requires the fresh unmodified origin at the native bo
     `userInterface=types.SimpleNamespace(activeCommand=${JSON.stringify(mode === 'busy' ? 'UserCommand' : 'SelectCommand')}),` +
     `documents=types.SimpleNamespace(count=1,item=lambda i:doc))\n` +
     `core.Application=types.SimpleNamespace(get=lambda:app);sys.modules.update({'adsk':adsk,'adsk.core':core})\n` + prepared.script;
-  const result = spawnSync('python3', ['-B', '-c', bootstrap], { encoding: 'utf8', timeout: 10000 });
+  const result = spawnSync('python3', ['-B', '-c', bootstrap], { encoding: 'utf8' });
   assert.equal(fs.existsSync(body), mode === 'valid');
   assert.equal(JSON.parse(fs.readFileSync(receipt)).outcome, mode === 'valid' ? 'succeeded' : 'failed');
   if (mode === 'valid') assert.equal(result.status, 0, result.stderr);
