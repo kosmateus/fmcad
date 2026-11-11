@@ -13,11 +13,23 @@ const stagedFixtures = [
   "dist/tests/fixtures/fake-wsl-platform.cjs",
   "dist/tests/fixtures/fake-wsl-preload.cjs",
 ];
-const requiredFiles = [definitionsPointer, packageArtifact, ...stagedFixtures];
+const requiredGeneratedFiles = [
+  "bin/fmcad.js",
+  "bin/fmcad-mcp.js",
+  "scripts/assemble-native-evidence.cjs",
+  "scripts/install-queue-phases.js",
+  "scripts/migrate-project-log.js",
+  "scripts/recover-local-build-preflight.js",
+];
+const requiredFiles = [
+  definitionsPointer,
+  packageArtifact,
+  ...stagedFixtures,
+  ...requiredGeneratedFiles,
+];
 
 function sourceOutputs(root) {
   const outputs = [];
-  const sourceRoot = path.join(root, "src");
   const visit = (directory, relative) => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const name = path.join(relative, entry.name);
@@ -54,7 +66,10 @@ function sourceOutputs(root) {
       }
     }
   };
-  visit(sourceRoot, "src");
+  for (const sourceRoot of ["src", "bin", "scripts"]) {
+    const absolute = path.join(root, sourceRoot);
+    if (fs.existsSync(absolute)) visit(absolute, sourceRoot);
+  }
   return outputs;
 }
 

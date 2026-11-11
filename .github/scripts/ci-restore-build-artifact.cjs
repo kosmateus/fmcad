@@ -11,6 +11,14 @@ const stagedFixtures = [
   "dist/tests/fixtures/fake-wsl-platform.cjs",
   "dist/tests/fixtures/fake-wsl-preload.cjs",
 ];
+const requiredGeneratedFiles = [
+  "bin/fmcad.js",
+  "bin/fmcad-mcp.js",
+  "scripts/assemble-native-evidence.cjs",
+  "scripts/install-queue-phases.js",
+  "scripts/migrate-project-log.js",
+  "scripts/recover-local-build-preflight.js",
+];
 
 function verify(root, expectedSha, expected = {}) {
   if (!/^[a-f0-9]{40}$/i.test(expectedSha || ""))
@@ -52,11 +60,13 @@ function verify(root, expectedSha, expected = {}) {
   if (
     !Array.isArray(manifest.requiredFiles) ||
     !manifest.requiredFiles.includes(definitionsPointer) ||
-    !stagedFixtures.every((file) => manifest.requiredFiles.includes(file))
+    !stagedFixtures.every((file) => manifest.requiredFiles.includes(file)) ||
+    !requiredGeneratedFiles.every((file) => manifest.outputs.includes(file)) ||
+    !requiredGeneratedFiles.every((file) =>
+      manifest.requiredFiles.includes(file),
+    )
   )
-    throw new Error(
-      "CI build artifact omits the generated Python definitions pointer",
-    );
+    throw new Error("CI build artifact omits required generated files");
   if (!manifest.requiredFiles.includes(packagePath))
     throw new Error("CI build artifact omits the prepared npm package");
   for (const file of manifest.requiredFiles) {

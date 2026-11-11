@@ -451,6 +451,14 @@ test("build tar preserves complete staging, executable modes and symlinks withou
   } = require("../.github/scripts/ci-restore-build-artifact.cjs");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "ci-build-artifact-"));
   const sourceSha = "b".repeat(40);
+  const requiredRootOutputs = [
+    "bin/fmcad.js",
+    "bin/fmcad-mcp.js",
+    "scripts/assemble-native-evidence.cjs",
+    "scripts/install-queue-phases.js",
+    "scripts/migrate-project-log.js",
+    "scripts/recover-local-build-preflight.js",
+  ];
   try {
     for (const file of [
       "package.json",
@@ -459,6 +467,18 @@ test("build tar preserves complete staging, executable modes and symlinks withou
       "dist/tests/fixtures/epoch-audit.cjs",
       "dist/tests/fixtures/fake-wsl-platform.cjs",
       "dist/tests/fixtures/fake-wsl-preload.cjs",
+      "bin/fmcad.ts",
+      "bin/fmcad.js",
+      "bin/fmcad-mcp.ts",
+      "bin/fmcad-mcp.js",
+      "scripts/assemble-native-evidence.cts",
+      "scripts/assemble-native-evidence.cjs",
+      "scripts/install-queue-phases.ts",
+      "scripts/install-queue-phases.js",
+      "scripts/migrate-project-log.ts",
+      "scripts/migrate-project-log.js",
+      "scripts/recover-local-build-preflight.ts",
+      "scripts/recover-local-build-preflight.js",
       "src/queue-broker.ts",
       "src/queue-broker.js",
       "src/dist/runtime.js",
@@ -530,6 +550,8 @@ test("build tar preserves complete staging, executable modes and symlinks withou
     const outputs = buildOutputs(root);
     assert.ok(outputs.includes("src/queue-broker.js"));
     assert.ok(outputs.includes("src/cad.js"));
+    for (const output of requiredRootOutputs)
+      assert.ok(outputs.includes(output), output);
     assert.ok(!outputs.includes("src/queue-handwritten.js"));
     assert.ok(outputs.includes("dist"));
     const archive = path.join(root, "artifact.tar.gz");
@@ -577,7 +599,37 @@ test("build tar preserves complete staging, executable modes and symlinks withou
       );
     const manifest = verify(restored, sourceSha);
     assert.equal(manifest.sourceSha, sourceSha);
+    for (const output of requiredRootOutputs) {
+      assert.ok(manifest.requiredFiles.includes(output), output);
+      assert.ok(manifest.outputs.includes(output), output);
+    }
     assert.throws(() => verify(restored, "c".repeat(40)), /SHA mismatch/u);
+    const omittedOutput = manifest.requiredFiles.pop();
+    fs.writeFileSync(
+      path.join(restored, ".test-artifacts/ci-build/manifest.json"),
+      JSON.stringify(manifest),
+    );
+    assert.throws(
+      () => verify(restored, sourceSha),
+      /required generated files/u,
+    );
+    manifest.requiredFiles.push(omittedOutput);
+    manifest.outputs = manifest.outputs.filter(
+      (output) => output !== omittedOutput,
+    );
+    fs.writeFileSync(
+      path.join(restored, ".test-artifacts/ci-build/manifest.json"),
+      JSON.stringify(manifest),
+    );
+    assert.throws(
+      () => verify(restored, sourceSha),
+      /required generated files/u,
+    );
+    manifest.outputs.push(omittedOutput);
+    fs.writeFileSync(
+      path.join(restored, ".test-artifacts/ci-build/manifest.json"),
+      JSON.stringify(manifest),
+    );
     const missingFixture = path.join(
       restored,
       "dist/tests/fixtures/fake-wsl-preload.cjs",
