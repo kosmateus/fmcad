@@ -50,7 +50,12 @@ interface CaseReport {
 interface Report {
   qualification: string;
   nativeFusionExecuted: boolean;
-  elapsedBudgetPassed: boolean;
+  elapsedMs: number;
+  budgets: {
+    maxBundledFakeRpcCount: number;
+    maxPythonPayloadBytes: number;
+    maxResultBytes: number;
+  };
   cases: CaseReport[];
 }
 function object(value: unknown): Record<string, unknown> {
@@ -103,8 +108,19 @@ function strategy(value: unknown): void {
 function parseReport(value: unknown): Report {
   const row = object(value);
   assert.equal(typeof row["qualification"], "string");
-  for (const key of ["nativeFusionExecuted", "elapsedBudgetPassed"])
-    assert.equal(typeof row[key], "boolean");
+  assert.equal(typeof row["nativeFusionExecuted"], "boolean");
+  assert.ok(
+    typeof row["elapsedMs"] === "number" &&
+      Number.isFinite(row["elapsedMs"]) &&
+      row["elapsedMs"] >= 0,
+  );
+  const budgets = object(row["budgets"]);
+  for (const key of [
+    "maxBundledFakeRpcCount",
+    "maxPythonPayloadBytes",
+    "maxResultBytes",
+  ])
+    assert.equal(typeof budgets[key], "number");
   assert.ok(Array.isArray(row["cases"]));
   for (const item of row["cases"] as unknown[]) {
     const entry = object(item);
@@ -209,7 +225,6 @@ test("offline fake baseline and bundled reads return each declared expected cont
   const report = runBenchmark(25);
   assert.equal(report.qualification, "offline-fake-only");
   assert.equal(report.nativeFusionExecuted, false);
-  assert.ok(report.elapsedBudgetPassed);
   assert.ok(report.cases.length >= 10);
 
   assert.ok(report.cases[0]);

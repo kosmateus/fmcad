@@ -63,11 +63,8 @@ function required<T>(value: T | null | undefined): T {
   return value;
 }
 function coded(error: unknown): Error & { code: string } {
-  assert.ok(
-    error instanceof Error &&
-      "code" in error &&
-      typeof coded(error).code === "string",
-  );
+  assert.ok(error instanceof Error && "code" in error);
+  assert.equal(typeof error.code, "string");
   return error as Error & { code: string };
 }
 function checkedError(
