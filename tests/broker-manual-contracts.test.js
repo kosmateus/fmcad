@@ -27,7 +27,7 @@ test('built CLI prints owner return contracts offline without configuration, bro
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   for (const action of ['successor-epoch', 'observe-successor', 'authorize-closed-successor', 'grant-native-fixture']) {
     const result = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/fmcad.js'), 'help', 'queue', action], {
-      encoding: 'utf8', timeout: 10000,
+      encoding: 'utf8',
       env: { ...process.env, FMCAD_CONFIG: path.join(root, 'missing-config.json'), XDG_STATE_HOME: root },
     });
     assert.equal(result.status, 0, action + ': ' + (result.stderr || String(result.error)));

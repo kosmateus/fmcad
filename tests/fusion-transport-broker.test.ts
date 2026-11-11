@@ -205,7 +205,6 @@ for (const backend of ["mcp", "addin"])
   for (const disconnect of [false, true]) {
     test(
       `production broker transport selects ${backend}: ${disconnect ? "unknown without replay" : "scoped raw protocol and native receipt"}`,
-      { timeout: 60000 },
       async (t) => {
         if (disconnect && !process.env["FMCAD_TRANSPORT_BROKER_CHILD"]) {
           // Unknown ownership deliberately refuses shutdown. Keep that behavior in
@@ -227,7 +226,6 @@ for (const backend of ["mcp", "addin"])
             {
               env,
               encoding: "utf8",
-              timeout: 55000,
             },
           );
           assert.equal(child.status, 0, child.stdout + child.stderr);

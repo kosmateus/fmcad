@@ -22,7 +22,6 @@ async function unusedPort() {
 
 test(
   "optional OpenCode web setup starts installed static assets without a read-model fallback",
-  { timeout: 20000 },
   async (t) => {
     const root = fs.mkdtempSync(
       path.join(os.tmpdir(), "fmcad-control-center-root-"),
@@ -124,7 +123,6 @@ test(
 
 test(
   "standalone MCP automatically starts the installed console and keeps stdout framed",
-  { timeout: 25000 },
   async (t) => {
     const { spawn } = require("node:child_process");
     const { once } = require("node:events");

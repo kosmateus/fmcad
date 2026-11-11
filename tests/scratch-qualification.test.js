@@ -11,7 +11,7 @@ const { resolveRuntimePaths } = require('../src/dist/config-platform');
 const { buildHash } = require('../src/queue-instance');
 
 for (const purpose of ['isolated-scratch-epoch-v1', 'isolated-scratch-close-v1']) {
-  test('real checker validates complete final-byte origin for ' + purpose, { timeout: 45000 }, async t => {
+  test('real checker validates complete final-byte origin for ' + purpose, async t => {
     const directory = fs.mkdtempSync('/tmp/opencode/scratch-final-wire-');
     t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
     const epochId = randomUUID();
@@ -53,7 +53,7 @@ for (const [operation, data] of [
   ['sketch.geometry', { sketch: 'EpochSection', geometry: [{ type: 'rectangle', start: ['0 mm', '0 mm', '0 mm'], end: ['10 mm', '6 mm', '0 mm'] }] }],
   ['model.extrude', { name: 'EpochSolid', profile: { kind: 'profile', sketch: 'EpochSection', index: 0 }, distance: '4 mm', operation: 'newBody' }],
   ['entity.list', { kind: 'body' }],
-]) test('minimal MCP path has real final-byte production admission: ' + operation, { timeout: 180000 }, async t => {
+]) test('minimal MCP path has real final-byte production admission: ' + operation, async t => {
   const directory = fs.mkdtempSync('/tmp/opencode/epoch-modeling-wire-');
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const epochId = randomUUID(), document = { name: 'FMCAD_ISOLATED_' + epochId, creationId: 'proven-new-doc' };

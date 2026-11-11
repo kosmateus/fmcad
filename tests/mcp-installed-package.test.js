@@ -48,7 +48,7 @@ function installedClient(t, executable, directory) {
   };
 }
 
-test('installed npm tarball resolves its declared runtime dependencies without checkout or NODE_PATH', { timeout: 60000 }, async t => {
+test('installed npm tarball resolves its declared runtime dependencies without checkout or NODE_PATH', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-installed-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const packed = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], {

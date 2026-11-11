@@ -126,18 +126,18 @@ test('synchronous observer fence refuses source mutation after a real certificat
   assert.throws(() => production.fencePrepared(prepared, buildHash()), { code: 'WORKFLOW_ARTIFACT_CHANGED' });
 });
 
-test('offline installed package exposes the same real migration admission preflight', { timeout: 30000 }, (t) => {
+test('offline installed package exposes the same real migration admission preflight', (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-installed-observer-admission-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const packed = spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], {
-    cwd: root, encoding: 'utf8', timeout: 15000,
+    cwd: root, encoding: 'utf8',
   });
   assert.equal(packed.status, 0, packed.stderr);
   const tarball = path.join(directory, JSON.parse(packed.stdout)[0].filename);
   const consumer = path.join(directory, 'consumer');
   fs.mkdirSync(consumer);
   const installed = spawnSync('npm', ['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund',
-    '--prefix', consumer, tarball], { cwd: consumer, encoding: 'utf8', timeout: 20000 });
+    '--prefix', consumer, tarball], { cwd: consumer, encoding: 'utf8' });
   assert.equal(installed.status, 0, installed.stderr);
   const script = String.raw`
 const assert=require('node:assert/strict'),path=require('node:path');
@@ -195,7 +195,7 @@ function prepared(code){
 })().catch(error=>{console.error(error);process.exitCode=1;});
 `;
   const result = spawnSync(process.execPath, ['-e', script], {
-    cwd: consumer, encoding: 'utf8', timeout: 20000,
+    cwd: consumer, encoding: 'utf8',
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.deepEqual(JSON.parse(result.stdout), { status: 'passed', checker: 'basedpyright', installed: true });

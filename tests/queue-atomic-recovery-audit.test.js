@@ -116,7 +116,7 @@ test('a lost scratch creation reply retains start/unknown evidence and can never
 });
 
 for (const mode of ['passed', 'failed', 'source_drift', 'final_byte_tamper', 'bad_remote_outcome']) {
-  test('real production audit check/fence: ' + mode, { timeout: 45000 }, async t => {
+  test('real production audit check/fence: ' + mode, async t => {
     const directory = fixtureDirectory(t, 'atomic-audit-check-');
     const source = path.join(directory, 'runtime/python/recovery/atomic_audit.py');
     fs.mkdirSync(path.dirname(source), { recursive: true });

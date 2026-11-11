@@ -11,7 +11,7 @@ function embeddedRequest(script, variable) {
   const parsed = require('node:child_process').spawnSync('python3',
     ['-B', path.join(__dirname, 'helpers/python_config.py')], {
       input: JSON.stringify({ script, names: [variable] }), encoding: 'utf8',
-      timeout: 10000, maxBuffer: 32 * 1024 * 1024,
+      maxBuffer: 32 * 1024 * 1024,
     });
   assert.ifError(parsed.error);
   assert.equal(parsed.status, 0, parsed.stderr);

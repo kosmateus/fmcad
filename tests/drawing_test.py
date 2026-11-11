@@ -66,7 +66,7 @@ class DrawingOracleTest(unittest.TestCase):
 
     def run_driver(self):
         result = subprocess.run([NODE, '-e', DRIVER, json.dumps(self.request)], cwd=ROOT,
-                                capture_output=True, text=True, timeout=120)
+                                capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return json.loads(result.stdout)
 

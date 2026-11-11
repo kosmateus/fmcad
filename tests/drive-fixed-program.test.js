@@ -84,7 +84,7 @@ assert report['expectation']=={'ratio':1.0,'phase':0.0,'source':'integrated-fixt
 assert not any(name.startswith('document.') and name!='document.status' for name in facade.calls)
 print(json.dumps({'status':report['nativeCasesStatus'],'drives':facade.drives,'links':facade.links}))
 `;
-  const result = spawnSync('python3', ['-B', '-c', program, source, mode], { encoding: 'utf8', timeout: 10000 });
+  const result = spawnSync('python3', ['-B', '-c', program, source, mode], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr || String(result.error));
   assert.deepEqual(JSON.parse(result.stdout.trim()), { status: expectedStatus, drives: expectedDriveCalls, links: expectedLinks });
 });

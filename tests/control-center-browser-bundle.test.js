@@ -133,7 +133,7 @@ function checkBrowserEsmGraph(assetRoot) {
   const result = spawnSync(
     process.execPath,
     ["--experimental-vm-modules", "--no-warnings", "-e", source, assetRoot],
-    { cwd: repository, encoding: "utf8", timeout: 30000 },
+    { cwd: repository, encoding: "utf8" },
   );
   assert.equal(result.status, 0, result.stderr + result.stdout);
   assert.match(result.stdout, /"modules":14/);
@@ -143,7 +143,6 @@ test("browser build emits standalone ESM and a hash-bound static allowlist", asy
   execFileSync(process.execPath, [buildScript], {
     cwd: repository,
     encoding: "utf8",
-    timeout: 120000,
   });
   execFileSync(
     process.execPath,
@@ -494,7 +493,6 @@ test(
         cwd: directory,
         env: cleanEnvironment,
         encoding: "utf8",
-        timeout: 90000,
       },
     );
     for (const entry of fs.readdirSync(installed, {

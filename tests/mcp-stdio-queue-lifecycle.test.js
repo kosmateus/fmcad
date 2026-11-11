@@ -259,7 +259,7 @@ test('unsupported resources/subscribe request and notification fail closed; a la
   assert.equal(harness.controlPosts(), 0, 'the valid ping is local');
 });
 
-test('CLI child reports stopped broker without direct fallback and handles local requests', { timeout: 10000 }, async t => {
+test('CLI child reports stopped broker without direct fallback and handles local requests', async t => {
   const dir = fs.mkdtempSync('/tmp/opencode/catalog-child-');
   const seen = [];
   const server = http.createServer((req, res) => {

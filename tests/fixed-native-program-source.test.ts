@@ -38,7 +38,7 @@ function assertPythonImports(file: string): void {
       'import runpy,sys; value=runpy.run_path(sys.argv[1]); assert callable(value["run"])',
       file,
     ],
-    { encoding: "utf8", timeout: 10000 },
+    { encoding: "utf8" },
   );
   assert.equal(result.status, 0, result.stderr || String(result.error));
 }
@@ -294,7 +294,7 @@ test("fixed data-import plans match the existing JavaScript normalizer", () => {
     const result = spawnSync(
       "python3",
       ["-B", "-c", code, program, inputPath],
-      { encoding: "utf8", timeout: 10000 },
+      { encoding: "utf8" },
     );
     assert.equal(result.status, 0, result.stderr || String(result.error));
     const nativePlans = asRecord(

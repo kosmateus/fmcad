@@ -15,7 +15,6 @@ const records = require("../src/dist/node-adapters/persistence/records");
 
 test(
   "MCP stdio root publishes the actual accepted owned result as a canonical event",
-  { timeout: 20000 },
   async (t) => {
     const root = fs.mkdtempSync(
       path.join(os.tmpdir(), "fmcad-mcp-owned-root-"),

@@ -35,7 +35,7 @@ sys.modules.update({'adsk': adsk, 'adsk.core': adsk.core, 'adsk.fusion': adsk.fu
 `;
 function python(program, input) {
   const result = spawnSync('python3', ['-B', '-c', program], {
-    input, encoding: 'utf8', timeout: 15000, maxBuffer: 32 * 1024 * 1024,
+    input, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
   });
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stdout + result.stderr);

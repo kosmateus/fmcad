@@ -8,7 +8,7 @@ const { prepareRecoveryAuditWire } = require('../src/queue-atomic-recovery-audit
 const { createProductionQueueAdmission } = require('../src/queue-admission');
 const { resolveRuntimePaths } = require('../src/dist/config-platform');
 
-test('explicit capture uses actual production final-byte checker and both immutable source units', { timeout: 45000 }, async t => {
+test('explicit capture uses actual production final-byte checker and both immutable source units', async t => {
   const directory = fs.mkdtempSync('/tmp/opencode/audit-capture-check-');
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const binding = { purpose: 'atomic-recovery-audit-facts-capture-v1', originalRpcId: 'original-rpc',

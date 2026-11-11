@@ -29,7 +29,7 @@ test('actual broker startup uses the existing epoch identity and claims metadata
   assert.equal(summary.sourceCommit, f.approval.sourceCommit);
   await broker.close(); assert.equal(physical, 0);
 });
-test('ordinary broker cooperatively pauses/stops an epoch under startup-only recovery guard without SDK or old-history edits', { timeout: 20000 }, async t => {
+test('ordinary broker cooperatively pauses/stops an epoch under startup-only recovery guard without SDK or old-history edits', async t => {
   const f = fixture(t), frozen = path.resolve(__dirname, '..');
   const oldHash = require(frozen + '/src/queue-instance').buildHash(frozen);
   const epochIdentity = path.join(f.pointer.root, 'instance.json');

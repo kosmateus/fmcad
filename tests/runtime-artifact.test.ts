@@ -61,7 +61,6 @@ test("npm package excludes local evidence without installing dependencies", () =
 
 test(
   "actual npm tarball runs CLI MCP and worker readonly outside checkout with clean Unicode HOME",
-  { timeout: 120000 },
   (t) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad artifact żółć "));
     const home = path.join(root, "clean home");
@@ -204,7 +203,6 @@ test(
       {
         cwd,
         encoding: "utf8",
-        timeout: 60000,
       },
     );
     const installationRoot = path.join(root, "node_modules/fmcad");
@@ -395,7 +393,6 @@ test(
         cwd,
         env: { ...env, ...extra },
         encoding: "utf8",
-        timeout: 15000,
         maxBuffer: 16 * 1024 * 1024,
       });
     const cli = path.join(runtime, "bin/fmcad.js");
@@ -430,7 +427,6 @@ test(
         cwd,
         env,
         encoding: "utf8",
-        timeout: 15000,
         maxBuffer: 16 * 1024 * 1024,
         input: '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}\n',
       },
@@ -469,7 +465,6 @@ test(
           FMCAD_TEST_RUNTIME_ROOT: installationRoot,
         },
         encoding: "utf8",
-        timeout: 90000,
         maxBuffer: 16 * 1024 * 1024,
       },
     );

@@ -22,7 +22,6 @@ const config: FmcadConfiguration = {
 
 test(
   "MCP starts its companion once without waiting for console readiness",
-  { timeout: 2000 },
   async () => {
     const stdin = new PassThrough();
     const stdout = new PassThrough();

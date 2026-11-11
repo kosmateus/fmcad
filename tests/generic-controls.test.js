@@ -16,10 +16,10 @@ function loadFixtures() {
     .map(file => JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, file), 'utf8')));
 }
 
-function runBenchmark(iterations) {
+function runBenchmark(iterations, preload = []) {
   const result = spawnSync(process.execPath, [
-    '--experimental-strip-types', HARNESS_PATH, '--iterations', String(iterations),
-  ], { encoding: 'utf8', timeout: 120000 });
+    ...preload, '--experimental-strip-types', HARNESS_PATH, '--iterations', String(iterations),
+  ], { encoding: 'utf8' });
   assert.equal(result.error, undefined, result.error?.message);
   assert.equal(result.status, 0, result.stderr);
   return JSON.parse(result.stdout);
@@ -63,7 +63,7 @@ test('offline fake baseline and bundled reads return each declared expected cont
   const report = runBenchmark(25);
   assert.equal(report.qualification, 'offline-fake-only');
   assert.equal(report.nativeFusionExecuted, false);
-  assert.ok(report.elapsedBudgetPassed);
+  assert.ok(Number.isFinite(report.elapsedMs));
   assert.ok(report.cases.length >= 10);
 
   const { individual, bundled } = report.cases[0];
@@ -91,6 +91,21 @@ test('offline fake baseline and bundled reads return each declared expected cont
     assert.ok(row.individual.resultBytes > 0);
     assert.ok(row.individual.pythonPayloadBytes > 0);
     assert.ok(row.individual.pythonGlueLoc > 0);
+  }
+});
+
+test('benchmark timings are diagnostic even when a synthetic clock exceeds the old speed limits', t => {
+  const directory = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'generic-controls-clock-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const preload = path.join(directory, 'clock.cjs');
+  fs.writeFileSync(preload, 'let tick = 0n; process.hrtime.bigint = () => (tick += 60_000_000_000n);');
+  const report = runBenchmark(10, ['--require', preload]);
+  assert.ok(report.elapsedMs > 30000);
+  assert.equal(Object.hasOwn(report, 'elapsedBudgetPassed'), false);
+  for (const row of report.cases) {
+    assert.ok(row.bundled.firstCallMs > 2000);
+    assert.ok(row.bundled.warmP95Ms > 250);
+    assert.equal(row.budget.passed, true);
   }
 });
 

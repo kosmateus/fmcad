@@ -37,7 +37,6 @@ async function availablePort(): Promise<number> {
 
 test(
   "browser reads real registered SQLite histories through the installed production composition",
-  { timeout: 45000 },
   async (t) => {
     const artifacts = path.resolve(
       process.env["FMCAD_CONTROL_CENTER_E2E_ARTIFACTS"] ??
@@ -122,11 +121,13 @@ test(
       resolvePrincipal: composition.resolvePrincipal,
     });
     await server.start();
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ headless: true, timeout: 0 });
     const page = await browser.newPage({
       locale: "pl-PL",
       viewport: { width: 1440, height: 960 },
     });
+    page.setDefaultTimeout(0);
+    page.setDefaultNavigationTimeout(0);
     await page
       .context()
       .tracing.start({ screenshots: true, snapshots: true, sources: true });

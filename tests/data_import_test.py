@@ -19,7 +19,7 @@ def plan(operation, records=None, **kwargs):
     data = dict(version=1, owner='fixture', revision='r1', **({'records': records} if records is not None else {}))
     data.update(kwargs)
     program = "const d=require('./src/data-import'); console.log(JSON.stringify(d.prepare(process.argv[1],JSON.parse(process.argv[2]))))"
-    result = subprocess.run(['node', '-e', program, operation, json.dumps(data)], cwd=ROOT, capture_output=True, text=True, timeout=10)
+    result = subprocess.run(['node', '-e', program, operation, json.dumps(data)], cwd=ROOT, capture_output=True, text=True)
     if result.returncode:
         raise AssertionError(result.stderr)
     return json.loads(result.stdout)

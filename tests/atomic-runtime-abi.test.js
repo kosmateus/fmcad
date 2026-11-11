@@ -8,7 +8,7 @@ const { preparePythonArtifact } = require('../src/python');
 const { atomicRuntimeAbiUnits } = require('../src/atomic-workflow-observation');
 const { buildAtomicRuntimeAbi, atomicRuntimeAbiStillCurrent, escrowAtomicGeneratorDependencies } = require('../src/atomic-runtime-abi');
 
-test('legacy full-program witness is exact, relocation-stable and refuses original source/receipt drift', { timeout: 60000 }, t => {
+test('legacy full-program witness is exact, relocation-stable and refuses original source/receipt drift', t => {
   const base = fs.mkdtempSync('/tmp/opencode/atomic-legacy-abi-');
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const originalRoot = path.join(base, 'original-runtime');

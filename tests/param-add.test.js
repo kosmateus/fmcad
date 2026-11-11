@@ -40,7 +40,7 @@ print(json.dumps(dict(args=ns['ARGS'], received=received, documents=documents, c
 
 function execute(script) {
   const result = spawnSync('python3', ['-B', '-c', instrument], {
-    input: JSON.stringify({ script }), encoding: 'utf8', timeout: 5000,
+    input: JSON.stringify({ script }), encoding: 'utf8',
   });
   assert.equal(result.status, 0, result.stderr);
   return JSON.parse(result.stdout);

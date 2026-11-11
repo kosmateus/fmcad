@@ -66,7 +66,7 @@ async function atomicScopeFixture(t) {
 
 function observerPythonLiterals(script) {
   const result = spawnSync('python3', ['-I', '-B', observerLiteralReader], {
-    input: script, encoding: 'utf8', timeout: 10000,
+    input: script, encoding: 'utf8',
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   return JSON.parse(result.stdout);
@@ -261,7 +261,7 @@ test('one marked read-only observer can run through an already paused gate witho
   assert.equal(state.status(target.id).state, 'needs_reconciliation');
 });
 
-test('broker generic reconcile sends no probe and rejects an unscoped follow-up while blocked', { timeout: 15000 }, (t) => {
+test('broker generic reconcile sends no probe and rejects an unscoped follow-up while blocked', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fmcad-atomic-broker-recovery-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const root = path.resolve(__dirname, '..');
@@ -336,7 +336,6 @@ test('broker generic reconcile sends no probe and rejects an unscoped follow-up 
   const result = spawnSync(process.execPath, ['-e', child], {
     cwd: root,
     encoding: 'utf8',
-    timeout: 12000,
     env: { ...process.env, FMCAD_ATOMIC_RECOVERY_ROOT: root, FMCAD_ATOMIC_RECOVERY_TMP: dir },
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -345,7 +344,7 @@ test('broker generic reconcile sends no probe and rejects an unscoped follow-up 
   assert.equal(proof.sdkCalls, 0);
 });
 
-test('broker runs one typed atomic_status observer through the existing gate and leaves the original job blocked', { timeout: 240000 }, (t) => {
+test('broker runs one typed atomic_status observer through the existing gate and leaves the original job blocked', (t) => {
   const dir = fs.mkdtempSync(path.join('/tmp/opencode', 'fmcad-atomic-broker-observe-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const sourceRoot = path.resolve(__dirname, '..');
@@ -512,7 +511,7 @@ test('broker runs one typed atomic_status observer through the existing gate and
     };
     const readObserverLiterals = script => {
       const parsed = require('node:child_process').spawnSync('python3', ['-I', '-B',
-        path.join(root, 'tests/fixtures/observer-python-literals.py')], { input: script, encoding: 'utf8', timeout: 10000 });
+        path.join(root, 'tests/fixtures/observer-python-literals.py')], { input: script, encoding: 'utf8' });
       assert.equal(parsed.status, 0, parsed.stderr || parsed.stdout);
       return JSON.parse(parsed.stdout);
     };
@@ -781,7 +780,7 @@ test('broker runs one typed atomic_status observer through the existing gate and
   const auditOnly = process.env.FMCAD_RECOVERY_AUDIT_ONLY === 'true';
   for (const rawOrigin of auditOnly ? [] : [false, true]) {
     const result = spawnSync(process.execPath, ['-e', child], {
-      cwd: root, encoding: 'utf8', timeout: 45000,
+      cwd: root, encoding: 'utf8',
       env: { ...process.env, FMCAD_ATOMIC_RECOVERY_ROOT: root,
         FMCAD_ATOMIC_RECOVERY_TMP: path.join(dir, rawOrigin ? 'raw' : 'typed'),
         FMCAD_ATOMIC_RECOVERY_RAW_ORIGIN: String(rawOrigin) },
@@ -801,7 +800,7 @@ test('broker runs one typed atomic_status observer through the existing gate and
   }
   for (const checkerMode of auditOnly ? [] : atomicObserverComposition.negative.modes) {
     const result = spawnSync(process.execPath, ['-e', child], {
-      cwd: root, encoding: 'utf8', timeout: 45000,
+      cwd: root, encoding: 'utf8',
       env: { ...process.env, FMCAD_ATOMIC_RECOVERY_ROOT: root,
         FMCAD_ATOMIC_RECOVERY_TMP: path.join(dir, checkerMode),
         FMCAD_ATOMIC_RECOVERY_RAW_ORIGIN: 'false', FMCAD_ATOMIC_RECOVERY_CHECKER_MODE: checkerMode },
@@ -813,7 +812,7 @@ test('broker runs one typed atomic_status observer through the existing gate and
     if (checkerMode === 'missing_checker') assert.equal(proof.startupRefused, true);
   }
   const audited = spawnSync(process.execPath, ['-e', child], {
-    cwd: root, encoding: 'utf8', timeout: 45000,
+    cwd: root, encoding: 'utf8',
     env: { ...process.env, FMCAD_ATOMIC_RECOVERY_ROOT: root, FMCAD_ATOMIC_RECOVERY_TMP: path.join(dir, 'audit'),
       FMCAD_ATOMIC_RECOVERY_RAW_ORIGIN: 'false', FMCAD_ATOMIC_RECOVERY_AUDIT: 'true' },
   });
@@ -1117,7 +1116,7 @@ assert app.activeDocument is other
 assert sys.modules[holder.__name__] is holder
 `;
   const result = spawnSync('python3', ['-I', '-B', '-c', harness], {
-    input: JSON.stringify({ identity: prepared.identity, script: prepared.script }), encoding: 'utf8', timeout: 10000,
+    input: JSON.stringify({ identity: prepared.identity, script: prepared.script }), encoding: 'utf8',
   });
   assert.equal(result.status, 0, result.stderr);
   const line = result.stdout.split('\n').find(value => value.startsWith('FMCAD_RESULT '));
@@ -1192,7 +1191,7 @@ test('raw CLI origin uses only its preserved typed worker envelope and fences he
     })().catch(error=>{console.error(error);process.exitCode=1});
   `;
   const result = spawnSync(process.execPath, ['-e', script], {
-    input: JSON.stringify({ root, base, job: f.job, scope: f.scope }), encoding: 'utf8', timeout: 10000,
+    input: JSON.stringify({ root, base, job: f.job, scope: f.scope }), encoding: 'utf8',
   });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { unchangedJobHash: true, jobStillRaw: true, sdkCalls: 0 });

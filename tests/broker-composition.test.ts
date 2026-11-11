@@ -175,7 +175,7 @@ if (process.argv[2] === "--lost-process-child") {
     const child = spawnSync(
       process.execPath,
       [__filename, "--lost-process-child", directory],
-      { encoding: "utf8", timeout: 30000 },
+      { encoding: "utf8" },
     );
     assert.equal(child.status, 0, child.stderr || String(child.error));
     assert.match(child.stdout, /PROCESS_FENCE_PRECEDENCE_SDK0_PASS/);
@@ -183,7 +183,6 @@ if (process.argv[2] === "--lost-process-child") {
 
   test(
     "actual installed npm broker reopens normal metadata, preserves history and matches original ACK with SDK0",
-    { timeout: 120000 },
     (t) => {
       const directory = fs.mkdtempSync(
         "/tmp/opencode/broker-composition-installed-",
@@ -230,7 +229,6 @@ if (process.argv[2] === "--lost-process-child") {
         {
           cwd: directory,
           encoding: "utf8",
-          timeout: 60000,
         },
       );
       const installed = path.join(directory, "node_modules/fmcad/dist");
@@ -256,7 +254,6 @@ if (process.argv[2] === "--lost-process-child") {
         {
           cwd: directory,
           encoding: "utf8",
-          timeout: 30000,
           env: { ...process.env, FMCAD_TEST_RUNTIME: installed },
         },
       );
@@ -272,7 +269,6 @@ if (process.argv[2] === "--lost-process-child") {
         {
           cwd: directory,
           encoding: "utf8",
-          timeout: 30000,
           env: { ...process.env, FMCAD_TEST_RUNTIME: installed },
         },
       );

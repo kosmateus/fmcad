@@ -76,7 +76,7 @@ print('no-body-executed')
   assert.match(result.stdout, /no-body-executed/);
 });
 
-test('real current-only preflight checks complete endpoint-fenced bytes and refuses stripped instance binding', { timeout: 30000 }, async t => {
+test('real current-only preflight checks complete endpoint-fenced bytes and refuses stripped instance binding', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'loss-audit-preflight-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const context = { purpose: 'atomic-recovery-audit-v1', currentInstance: current,

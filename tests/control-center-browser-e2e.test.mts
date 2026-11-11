@@ -123,7 +123,6 @@ function waitForQuery(
       const payload = requestBody(request);
       return payload ? predicate(payload as CapturedQuery) : false;
     },
-    { timeout: 10_000 },
   );
 }
 
@@ -134,7 +133,6 @@ async function waitForCount(locator: Locator, count: number): Promise<void> {
 
 test(
   "Control Center interactions work in headless Chromium against an isolated query fixture",
-  { timeout: 120_000 },
   async (t) => {
     fs.mkdirSync(artifactsRoot, { recursive: true });
     const runId = `${new Date().toISOString().replaceAll(":", "-")}-${process.pid}`;
@@ -255,7 +253,7 @@ test(
       writeReport();
     });
 
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({ headless: true, timeout: 0 });
     cleanup.browser = browser;
     browserVersion = browser.version();
     const context = await browser.newContext({
@@ -274,6 +272,8 @@ test(
     });
     traceStarted = true;
     const page = await context.newPage();
+    page.setDefaultTimeout(0);
+    page.setDefaultNavigationTimeout(0);
     cleanup.page = page;
     await page.exposeFunction(
       "__recordConsoleControlInventory",
@@ -791,7 +791,6 @@ test(
           return false;
         return requestBody(request)?.["kind"] === "original-source";
       },
-      { timeout: 10_000 },
     );
     await page.getByRole("tab", { name: "Kod" }).click();
     await page
@@ -823,7 +822,6 @@ test(
           return false;
         return requestBody(request)?.["kind"] === "response";
       },
-      { timeout: 10_000 },
     );
     await page.getByRole("tab", { name: "Odpowiedź" }).click();
     await page
@@ -1080,7 +1078,6 @@ test(
           query["search"] === "E2E Active Agent"
         );
       },
-      { timeout: 10_000 },
     );
     await page
       .getByRole("searchbox", { name: "Szukaj globalnie" })
@@ -1151,9 +1148,8 @@ test(
       (request) =>
         request.url().includes("/api/v1/console/export") &&
         request.method() === "POST",
-      { timeout: 10_000 },
     );
-    const downloadEvent = page.waitForEvent("download", { timeout: 10_000 });
+    const downloadEvent = page.waitForEvent("download");
     await page.getByRole("button", { name: /CSV · pełny wynik/ }).click();
     const [download] = await Promise.all([downloadEvent, exportRequest]);
     const downloadPath = await download.path();
@@ -1173,11 +1169,8 @@ test(
           return false;
         return requestBody(request)?.["format"] === "json";
       },
-      { timeout: 10_000 },
     );
-    const jsonDownloadEvent = page.waitForEvent("download", {
-      timeout: 10_000,
-    });
+    const jsonDownloadEvent = page.waitForEvent("download");
     await page.getByRole("button", { name: /JSON · pełny wynik/ }).click();
     const [jsonDownload] = await Promise.all([
       jsonDownloadEvent,
@@ -1211,7 +1204,6 @@ test(
       .click();
     const refreshRequest = page.waitForRequest(
       (request) => request.url().includes("/api/v1/console/snapshot"),
-      { timeout: 10_000 },
     );
     await page.getByRole("button", { name: "Odśwież widok" }).click();
     await refreshRequest;
@@ -1366,7 +1358,6 @@ test(
     expectingNetworkOutage = false;
     const recoveredSnapshot = page.waitForRequest(
       (request) => request.url().includes("/api/v1/console/snapshot"),
-      { timeout: 10_000 },
     );
     await page.getByRole("button", { name: "Odśwież widok" }).click();
     await recoveredSnapshot;
@@ -1426,14 +1417,15 @@ test(
 
 test(
   "disposed browser mounts cannot restart reads or subscriptions",
-  { timeout: 30000 },
   async (t) => {
     const fixture = createBrowserFixture();
     const http = await fixture.start();
     t.after(() => http.close());
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({ headless: true, timeout: 0 });
     t.after(() => browser.close());
     const page = await browser.newPage();
+    page.setDefaultTimeout(0);
+    page.setDefaultNavigationTimeout(0);
     await page.route("**/web/index.js", (route) =>
       route.fulfill({ contentType: "text/javascript", body: "" }),
     );
@@ -1466,11 +1458,11 @@ test(
         return { close() {} };
       };
       const app = new ControlCenterApp(root, { client });
-      void app.start();
+      const started = app.start();
       app.dispose();
       app.dispose();
       release(snapshot);
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await started;
       await app.start();
       return {
         snapshots,
@@ -1492,14 +1484,15 @@ test(
 
 test(
   "closing task details rejects their delayed refresh",
-  { timeout: 30000 },
   async (t) => {
     const fixture = createBrowserFixture();
     const http = await fixture.start();
     t.after(() => http.close());
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({ headless: true, timeout: 0 });
     t.after(() => browser.close());
     const page = await browser.newPage();
+    page.setDefaultTimeout(0);
+    page.setDefaultNavigationTimeout(0);
     await page.goto(http.origin);
     await page.locator('[data-action="task"]').first().click();
     await page.locator('[data-action="task-refresh"]').waitFor();

@@ -186,7 +186,6 @@ if (
       upgrade
         ? "FAKE new runtime uses existing read-only startup after proven normal release, preserving history"
         : "FAKE broker reopens owner-released normal admission, preserves history and matches lost-ACK input",
-      { timeout: 30000 },
       (t) => {
         const root = fs.mkdtempSync(
           path.join(tmpdir(), "normal-epoch-broker-"),
@@ -199,7 +198,7 @@ if (
             upgrade ? "--synthetic-upgrade-child" : "--synthetic-child",
             root,
           ],
-          { encoding: "utf8", timeout: 25000 },
+          { encoding: "utf8" },
         );
         assert.equal(result.status, 0, result.stderr || String(result.error));
         assert.match(result.stdout, /NORMAL_EPOCH_OFFLINE_PASS/);

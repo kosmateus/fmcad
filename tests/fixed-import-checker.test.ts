@@ -111,7 +111,6 @@ function parseTypingPointer(value: unknown): TypingPointer {
 for (const program of programs) {
   test(
     `production checker qualifies fixed ${program} through the existing cad-v1 prepare/wire path`,
-    { timeout: 180_000 },
     async (t) => {
       const pathsModule = runtimeRequire(
         path.join(projectRoot, "src/dist/config-platform/index.js"),

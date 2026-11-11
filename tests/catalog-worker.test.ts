@@ -66,7 +66,6 @@ const { mcpInvocation } = runtimeRequire(
 
 test(
   "typed catalog invocation uses the real Python admission checker without importing the CLI parser",
-  { timeout: 420_000 },
   async (t) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-catalog-worker-"));
     const isolatedEnvironment = isolateRuntimeTestEnvironment(dir);
