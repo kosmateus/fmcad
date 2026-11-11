@@ -108,7 +108,7 @@ function cli(key: string, data: unknown, extra: string[] = []) {
   return spawnSync(
     process.execPath,
     [
-      "bin/fmcad.js",
+      path.join(root, "dist/bin/fmcad.js"),
       ...key.split(" "),
       "--data",
       JSON.stringify(data),
@@ -270,7 +270,7 @@ test("all GM24 real CLI commands and local help/schema; missing and bad data", (
     assert.equal(at(JSON.parse(r.stdout), "documentIdentity"), null);
     const help = spawnSync(
       process.execPath,
-      ["bin/fmcad.js", "help", ...key.split(" ")],
+      [path.join(root, "dist/bin/fmcad.js"), "help", ...key.split(" ")],
       { cwd: root, encoding: "utf8" },
     );
     assert.match(help.stdout, /Local/);

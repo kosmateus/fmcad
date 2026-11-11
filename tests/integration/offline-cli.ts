@@ -33,7 +33,13 @@ export function fmcad(args: string[]): Fields {
   const root = path.resolve(__dirname, "../../..");
   const result = spawnSync(
     process.execPath,
-    [path.join(root, "bin/fmcad.js"), ...args, "--json", "--timeout", "60000"],
+    [
+      path.join(root, "dist/bin/fmcad.js"),
+      ...args,
+      "--json",
+      "--timeout",
+      "60000",
+    ],
     {
       cwd: root,
       encoding: "utf8",
@@ -63,7 +69,7 @@ export function local(args: string[]): Fields {
   const root = path.resolve(__dirname, "../../..");
   const result = spawnSync(
     process.execPath,
-    [path.join(root, "bin/fmcad.js"), ...args, "--json"],
+    [path.join(root, "dist/bin/fmcad.js"), ...args, "--json"],
     {
       cwd: root,
       encoding: "utf8",
@@ -88,7 +94,13 @@ export function cad(args: string[]) {
   const root = path.resolve(__dirname, "../../..");
   const result = spawnSync(
     process.execPath,
-    [path.join(root, "bin/fmcad.js"), ...args, "--json", "--timeout", "60000"],
+    [
+      path.join(root, "dist/bin/fmcad.js"),
+      ...args,
+      "--json",
+      "--timeout",
+      "60000",
+    ],
     {
       cwd: root,
       encoding: "utf8",
