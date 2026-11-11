@@ -492,9 +492,22 @@ class Component(core.Base):
         self.model_design.model_doc.isModified = True
 
 
+class DesignTypes:
+    DirectDesignType: ClassVar[int] = 0
+    ParametricDesignType: ClassVar[int] = 1
+
+
+class DesignSnapshots:
+    @property
+    def hasPendingSnapshot(self) -> bool:
+        return False
+
+
 class Design(core.Product):
     def __init__(self, doc: core.Document) -> None:
         self.model_doc: core.Document = doc
+        self.designType: int = DesignTypes.ParametricDesignType
+        self.snapshots: DesignSnapshots = DesignSnapshots()
         self.model_materials: core.Materials = core.Materials(self, doc)
         self.model_appearances: core.Appearances = core.Appearances(self, doc)
         self.userParameters: UserParameters = UserParameters(doc)

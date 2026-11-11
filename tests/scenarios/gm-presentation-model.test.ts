@@ -49,7 +49,7 @@ try:
 finally:
     if first.isValid: first.close(False)
     if second.isValid: second.close(False)
-`);
+`, false);
   assert.equal(result.success, true, result.error);
   assert.deepEqual(await remaining(model), { active: null, documents: [] });
 });

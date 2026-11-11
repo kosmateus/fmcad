@@ -13,6 +13,32 @@ try:
     a = adsk.fusion.Design.cast(first.products.itemByProductType('DesignProductType'))
     b = adsk.fusion.Design.cast(second.products.itemByProductType('DesignProductType'))
     assert a is not None and b is not None
+    root = a.rootComponent
+    sketch = root.sketches.add(root.xYConstructionPlane)
+    _ = sketch.sketchCurves.sketchLines.addTwoPointRectangle(
+        adsk.core.Point3D.create(0, 0, 0), adsk.core.Point3D.create(2, 3, 0))
+    profile = sketch.profiles.item(0)
+    extrudes = root.features.extrudeFeatures
+    input = extrudes.createInput(profile, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+    extent = adsk.fusion.DistanceExtentDefinition.create(
+        adsk.core.ValueInput.createByString('2 mm'))
+    assert input.setOneSideExtent(extent, adsk.fusion.ExtentDirections.PositiveExtentDirection)
+    assert extrudes.add(input) is not None
+    body = root.bRepBodies.item(0)
+    faces = list(body.faces)
+    assert len(faces) == 6
+    assert len({face.entityToken for face in faces}) == 6
+    for face in faces:
+        assert face.objectType == 'adsk::fusion::BRepFace'
+        assert face.body is body and face.parentComponent is root and face.isValid
+        assert face.appearance is None and face.appearanceSourceType is None
+        assert not hasattr(face, 'geometry')
+    try:
+        body.faces.item(0)
+    except NotImplementedError:
+        pass
+    else:
+        raise AssertionError('Synthetic face identity exposed indexed topology')
     source = app.materialLibraries.item(0).appearances.item(0)
     one = a.appearances.addByCopy(source, 'First descriptor copy')
     two = b.appearances.addByCopy(one, 'Second descriptor copy')
@@ -49,7 +75,7 @@ try:
 finally:
     if first.isValid: first.close(False)
     if second.isValid: second.close(False)
-`);
+`, false);
   assert.equal(result.success, true, result.error);
   assert.deepEqual(await remaining(model), { active: null, documents: [] });
 });
