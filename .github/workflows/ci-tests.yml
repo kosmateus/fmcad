@@ -1,0 +1,160 @@
+name: CI tests
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  broker-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: npm run test:prepare-offline
+      - run: npm run test:broker-regressions
+
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: npx prettier --check --end-of-line auto .github/workflows/*.yml .github/scripts/ci-gate.cjs tests/ci-gate.test.cjs
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck:tests
+      - run: npm run test:scenarios:unit
+      - run: npm run typecheck:simulator
+      - run: node dist/tests/scenarios/verify-api.js
+      - run: npm run test:scenarios:component -- --protocol mcp --owners 2 --suite foundation
+      - run: npm run test:scenarios:component -- --protocol addin --owners 2 --suite foundation
+      - run: npm run test:prepare-offline
+      - run: mkdir -p /tmp/opencode
+      - run: timeout --signal=TERM --kill-after=15s 15m npm run test:contracts
+
+  python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            tests/python-requirements.txt
+            tests/python-constraints.txt
+            assets/*requirements.txt
+      - run: python -m pip install -r tests/python-requirements.txt
+      - run: npm ci
+      - run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: npm run test:python
+
+  control-center-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:control-center:e2e
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FMCAD_CONTROL_CENTER_E2E_ARTIFACTS: .test-artifacts/control-center
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: control-center-browser
+          path: .test-artifacts/control-center/
+          include-hidden-files: true
+
+  scenario-broker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.suite == 'sketches' && 22 || 16 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        protocol: [mcp, addin]
+        suite:
+          [
+            foundation,
+            saved,
+            parameters,
+            documents,
+            cloud,
+            boxes,
+            attributes,
+            sketches,
+          ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      # Sketches check four full helper programs per owner; keep time for the final file audit.
+      - run: timeout --signal=TERM --kill-after=15s ${{ matrix.suite == 'sketches' && '18m' || '12m' }} npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite }} --concurrency 10 --owners ${{ (matrix.suite == 'saved' || matrix.suite == 'attributes' || matrix.suite == 'sketches') && 2 || 10 }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scenario-broker-${{ matrix.protocol }}-${{ matrix.suite }}
+          path: .test-artifacts/scenarios/
+          include-hidden-files: true
+
+  refactor-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: npm run test:regressions
