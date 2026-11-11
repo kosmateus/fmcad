@@ -67,6 +67,46 @@ export async function execute(
   ports: CliApplicationPorts = {},
 ): Promise<ExecutionReceipt> {
   assertBrokerRouting(options.config);
+  if (options.local) {
+    const invocation =
+      input.kind === "cad-command"
+        ? input.invocation
+        : input.kind === "cad"
+          ? input
+          : null;
+    if (!invocation)
+      throw new Error("Local execution requires a CAD invocation");
+    const { executeInvocation } =
+      require("../../composition/catalog-execution.js") as typeof import("../../composition/catalog-execution.js");
+    const result = await executeInvocation(
+      invocation,
+      null,
+      undefined,
+      options.context.projectDirectory === undefined
+        ? {}
+        : { projectDirectory: options.context.projectDirectory },
+    );
+    const { decodePublicResult } = require("../../core/domain/codec.js") as {
+      decodePublicResult(value: unknown): ExecutionReceipt["outcome"];
+    };
+    const { id } = require("../../core/domain/contracts.js") as {
+      id(kind: string, value: string): ExecutionReceipt["outcome"]["requestId"];
+    };
+    const requestId = options.requestId ?? randomUUID();
+    const receipt: ExecutionReceipt = {
+      version: 1,
+      requestId,
+      jobId: null,
+      state: "local",
+      outcome: {
+        ...decodePublicResult(result),
+        requestId: id("request", requestId),
+      },
+      result: structuredClone(result) as ExecutionReceipt["result"],
+    };
+    ports.progress?.(receipt);
+    return receipt;
+  }
   const services = (ports.createFmcad ?? createFmcad)({
     version: 1,
     config: options.config,
