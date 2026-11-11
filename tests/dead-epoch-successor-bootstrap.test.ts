@@ -115,6 +115,66 @@ function fixture(t: TestContext) {
   };
 }
 
+test("FAKE host/process metadata: a released normal epoch keeps authenticated dead-successor startup metadata-only", async (t) => {
+  const f = fixture(t);
+  const { openIsolatedEpoch } = load(
+    "../src/queue-isolated-epoch",
+  ) as typeof import("../src/queue-isolated-epoch");
+  const state = openIsolatedEpoch(f.dir, { recover: false });
+  state.finish(f.priorJob.id, {
+    state: "failed",
+    code: "MODULE_NOT_FOUND",
+    executionOutcome: "not_started",
+    mayHaveMutated: false,
+    sdkSettled: true,
+  });
+  state.pause(true, "synthetic-normal-cold-stop");
+  const pointer = state.epoch;
+  assert.ok(pointer);
+  pointer.restoreActiveCreationId = null;
+  const pointerFile = path.join(f.dir, "isolated-admission-epoch.json");
+  api.durable(pointerFile, pointer);
+  const closed = (
+    load(
+      "./fixtures/closed-scratch-artifacts.cjs",
+    ) as typeof import("./fixtures/closed-scratch-artifacts.cjs")
+  )(f.dir, pointer, repository, "normal-multidocument");
+  // Replace only the prospective archive from this newly created synthetic fixture.
+  fs.unlinkSync(path.join(f.audit, "predecessor-pointer.json"));
+  f.approval.pointerHash = api.hash(fs.readFileSync(pointerFile));
+  f.approval.stateHash = reference(
+    path.join(pointer.root, "queue-state.json"),
+  ).sha256;
+  api.durable(f.approvalFile, f.approval);
+  const protectedFiles = [
+    pointerFile,
+    path.join(pointer.root, "queue-state.json"),
+    path.join(pointer.root, "instance.json"),
+    closed.path,
+    path.join(f.dir, "queue-state.json"),
+  ];
+  const before = protectedFiles.map((file) => fs.readFileSync(file));
+  const complete = await bootstrapSuccessor(f.client, f.cfg, {
+    approval: f.approvalFile,
+    requestId: f.requestId,
+    confirmOwnership: true,
+  });
+  assert.ok("owner" in complete);
+  f.setWorker(complete.owner);
+  assert.equal(complete.kind, "dead-epoch-successor-metadata-ready");
+  assert.equal(complete.sdkRequestsSent, 0);
+  for (const [index, file] of protectedFiles.entries())
+    assert.deepEqual(fs.readFileSync(file), before[index]);
+  const lifecycle = api.readJson(
+    path.join(f.dir, "broker-lifecycle-" + complete.owner.nonce + ".json"),
+  );
+  assert.ok(lifecycle && typeof lifecycle === "object");
+  assert.equal(
+    "receipt" in lifecycle && fs.existsSync(String(lifecycle.receipt)),
+    false,
+  );
+});
+
 test(
   "FAKE host/process metadata: preflight is file-only; startup creates one metadata worker and retains all original epochs",
   {},

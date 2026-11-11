@@ -1176,6 +1176,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "Pinned backend configuration differs from the durable broker identity",
       );
     if (
+      successorRuntime ||
       load(
         "./dist/node-adapters/broker-ipc/normal-admission",
       ).epochStartupPinned(state, oldIdentity?.buildHash, codeHash)
