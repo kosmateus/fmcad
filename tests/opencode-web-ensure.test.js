@@ -24,67 +24,64 @@ function dependencies(ensureWeb, diagnostic) {
   };
 }
 
-test(
-  "optional web ensure is nonblocking and reports only diagnostics",
-  async () => {
-    let rejectEnsure;
-    const diagnostics = [];
-    let ensured = 0;
-    const deps = dependencies(
-      () => {
-        ensured++;
-        return new Promise((_resolve, reject) => {
-          rejectEnsure = reject;
-        });
+test("optional web ensure is nonblocking and reports only diagnostics", async () => {
+  let rejectEnsure;
+  const diagnostics = [];
+  let ensured = 0;
+  const deps = dependencies(
+    () => {
+      ensured++;
+      return new Promise((_resolve, reject) => {
+        rejectEnsure = reject;
+      });
+    },
+    (message) => {
+      diagnostics.push(message);
+    },
+  );
+  const context = {
+    app: { version: "2.1.3" },
+    options: {},
+    location: { directory: "/tmp/fixture-project" },
+    tool: {
+      async transform(edit) {
+        edit({ add() {} });
+        return { async dispose() {} };
       },
-      (message) => {
-        diagnostics.push(message);
+    },
+    session: {
+      async get() {
+        assert.fail("no tool invocation was made");
       },
-    );
-    const context = {
-      app: { version: "2.1.3" },
-      options: {},
-      location: { directory: "/tmp/fixture-project" },
-      tool: {
-        async transform(edit) {
-          edit({ add() {} });
-          return { async dispose() {} };
-        },
+    },
+    permission: {
+      async assert() {
+        assert.fail("no permission flow was started");
       },
-      session: {
-        async get() {
-          assert.fail("no tool invocation was made");
-        },
+    },
+    event: {
+      subscribe({ signal }) {
+        return {
+          async *[Symbol.asyncIterator]() {
+            await new Promise((resolve) =>
+              signal.addEventListener("abort", resolve, { once: true }),
+            );
+          },
+        };
       },
-      permission: {
-        async assert() {
-          assert.fail("no permission flow was started");
-        },
-      },
-      event: {
-        subscribe({ signal }) {
-          return {
-            async *[Symbol.asyncIterator]() {
-              await new Promise((resolve) =>
-                signal.addEventListener("abort", resolve, { once: true }),
-              );
-            },
-          };
-        },
-      },
-    };
-    const dispose = await createV2(deps).setup(context);
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(ensured, 1);
-    assert.equal(typeof dispose, "function");
-    rejectEnsure(new Error("do not log raw service details"));
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.deepEqual(diagnostics, [
-      "Control Center could not be ensured; fmcad tools remain available.",
-    ]);
-    await dispose();
-  },
-);
+    },
+  };
+  const dispose = await createV2(deps).setup(context);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(ensured, 1);
+  assert.equal(typeof dispose, "function");
+  rejectEnsure(new Error("do not log raw service details"));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(diagnostics, [
+    "Control Center could not be ensured; fmcad tools remain available.",
+  ]);
+  await dispose();
+});
 
 test("V1 schedules optional web ensure after plugin hooks are constructed", async () => {
   let hooksReady = false;
