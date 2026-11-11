@@ -48,7 +48,7 @@
 
 ### Offline CI and parallel local Fusion testing
 
-- CI must be fully offline. Real Fusion and live tests run locally only, even when CI uses self-hosted runners.
+- CI runs offline checks and tests only. Real Fusion and live tests run locally only, even when CI uses self-hosted runners.
 - The broker backend simulator is allowed in CI. Classify execution by backend and dependencies, not by filename.
 - Multiple agents may run local live tests concurrently. Each uses their own documents and files; no permission, Fusion reservation, or time slot is needed.
 - Preserve the existing broker's support for parallel clients, owner isolation, document routing, the SDK operation queue, and recovery. Preserve configurable scenario concurrency with a default of 10, parallel offline preparation, and a single queue for SDK operations.
@@ -58,7 +58,7 @@
 - Verify concurrency across independent runner processes, not only among scenarios in one runner.
 - If broker isolation or global Fusion state is inadequate, fix the existing architecture. Do not impose manual reservations or serialize entire suites.
 - Link results to the source SHA, artifacts, and actual runtime.
-- Do not replace the shared add-in or broker while other agents are active. Switch runtimes through a safe lifecycle; routine tasks do not require manual permission.
+- Do not replace the shared add-in or broker while other agents have active runs using it. Switch runtimes through a safe lifecycle; routine tasks do not require manual permission.
 
 ### Beads as the current work record
 
