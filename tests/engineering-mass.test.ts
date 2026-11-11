@@ -38,7 +38,7 @@ function cli(key: string, data: unknown) {
   return spawnSync(
     process.execPath,
     [
-      "bin/fmcad.js",
+      path.join(root, "dist/bin/fmcad.js"),
       ...key.split(" "),
       "--data",
       JSON.stringify(data),
@@ -396,7 +396,7 @@ test("mass real CLI variants, bad input, missing data and schema", () => {
   assert.equal(cli("mass system", { ...d, typo: true }).status, 1);
   const schema = spawnSync(
     process.execPath,
-    ["bin/fmcad.js", "mass", "system", "--schema"],
+    [path.join(root, "dist/bin/fmcad.js"), "mass", "system", "--schema"],
     { cwd: root, encoding: "utf8" },
   );
   assert.equal(schema.status, 0, schema.stderr);

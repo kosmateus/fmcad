@@ -38,7 +38,7 @@ const input = () => ({
 function cli(key: string, args: string[]) {
   return spawnSync(
     process.execPath,
-    ["bin/fmcad.js", ...key.split(" "), ...args],
+    [path.join(root, "dist/bin/fmcad.js"), ...key.split(" "), ...args],
     {
       cwd: root,
       encoding: "utf8",
