@@ -121,7 +121,6 @@ test("installed consumer retains real CLI, worker, MCP and public API admission 
     process.execPath,
     [
       "--test",
-      "--test-timeout=150000",
       "--test-name-pattern",
       "real CLI/worker, MCP and public API",
       path.join(copied, "python-admission-ports.test.js"),
