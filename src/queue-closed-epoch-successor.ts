@@ -158,7 +158,7 @@ export function authorizeClosedSuccessor(
     "epoch-successions",
     hash(approval["requestId"]),
   );
-  const authorityFile = path.join(audit, 'authority["json"]');
+  const authorityFile = path.join(audit, "authority.json");
   if (fs.existsSync(authorityFile)) {
     const authority = read(authorityFile),
       entry = reference(authorityFile);
@@ -271,7 +271,7 @@ export function authorizeClosedSuccessor(
       "EPOCH_SUCCESSOR_FENCE_CHANGED",
       "The predecessor changed before authority publication",
     );
-  const qualifiedFile = path.join(audit, 'installed-qualification["json"]');
+  const qualifiedFile = path.join(audit, "installed-qualification.json");
   // Store the original qualification bytes, not a reserialized equivalent.
   if (!fs.existsSync(qualifiedFile)) {
     fs.copyFileSync(q["path"], qualifiedFile, fs.constants.COPYFILE_EXCL);

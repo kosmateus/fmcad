@@ -510,6 +510,7 @@ const Module=require('node:module');const load=Module._load;Module._load=functio
       dir,
       confirmOwnership: true,
       createBackend: () => physical,
+      nativePath: (file: string) => file,
       pollMs: 5,
       ...brokerOptions,
       spawnWorker(exe: string, args: string[], options: SpawnOptions) {
