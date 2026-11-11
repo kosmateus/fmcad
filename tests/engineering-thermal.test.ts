@@ -46,7 +46,7 @@ function cli(data: unknown, extra: string[] = []) {
   return spawnSync(
     process.execPath,
     [
-      "bin/fmcad.js",
+      path.join(root, "dist/bin/fmcad.js"),
       "thermal",
       "contact-budget",
       "--data",
@@ -203,7 +203,7 @@ test("thermal real CLI variants, bad input, missing data, help and schema", () =
   for (const flag of ["--help", "--schema"]) {
     const r = spawnSync(
       process.execPath,
-      ["bin/fmcad.js", "thermal", "contact-budget", flag],
+      [path.join(root, "dist/bin/fmcad.js"), "thermal", "contact-budget", flag],
       { cwd: root, encoding: "utf8" },
     );
     assert.equal(r.status, 0, r.stderr);
