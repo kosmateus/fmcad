@@ -1,8 +1,12 @@
-# Modeling contracts and delivery ledger
+# Modeling contracts and migration evidence
+
+This document preserves technical contracts and historical evidence. Counts and
+test results below are tied to the cited source revisions, not current task status;
+current remaining work and dependencies are tracked in Beads.
 
 ## Scope and baseline
 
-Agent C started from `0b84454d8e5d22abb23bcf52999c506894ebf5bf`.
+Historical source baseline: `0b84454d8e5d22abb23bcf52999c506894ebf5bf`.
 The original archive was downloaded separately; its Git object database supplies
 `a26222ff617b0e9597b2a91b50474bdca8d0a0ce` and extraction history.
 No archive metadata, worktrees, generated files or keychain are source changes.
@@ -11,29 +15,10 @@ The first delivery extracts input policies for sketch, entity query, spring,
 thread, seal and cam into `packages/core/src/application/modeling`. Existing
 `src/*.js` entrypoints delegate to the staged compiled implementation. Core
 validation takes `unknown`, narrows nested values and performs no SDK or host I/O.
-Public signatures and catalog registration remain unchanged; E owns registration.
+Public signatures and catalog registration remain unchanged.
 
-This delivery does **not** complete C1–C4. Metadata-only wrappers, policy extraction,
-generated programs and native modeling must not be counted as equivalent evidence.
-
-## Inventory at package claim (superseded by the delivery records below)
-
-| Family | Existing implementation and boundary | Remaining work |
-| --- | --- | --- |
-| Sketch | Typed input policy; Python `geometry_sketch`, `geometry_sketch_plan`, `sketch_geometry_proof`; compatibility loaders contain no handlers | Complete operation admission matrix, SDK false/null returns, dimension/regeneration model contract with B |
-| Entity and measurement | Typed entity-query policy; Python entity/measure and ownership helpers; prior unavailable-volume fix retained | All generated query/measure operations; independent zero/unavailable readback, foreign tokens and proxies |
-| Spring, thread, seal, cam | Typed input policies and unchanged descriptors; existing Python domain/adapter separation | Full admission and numerical contract matrix; native recipes remain unqualified |
-| Curves | `src/curve.js` combines unit conversion, file adaptation and pure sample planning | Split source/hash/CSV adapter from sample policy; preserve provenance, winding, endpoint snap, source rows and synchronous preparation |
-| Datum | `src/datum.js` combines catalog extensions and rigid-frame validation; Python geometry_datum split | Typed policy and catalog seam; nested occurrence frames, matrix units and identity regression matrix |
-| Surface/model/shape | `src/surface.js` validation plus Python geometry_surface/model/shapes/feature | Typed surface policy; prepare-before-mutate and native failure/readback coverage |
-| Fastener and feature rework | `src/fastener.js`, `src/feature-rework.js`; measured-fastener and geometry_feature Python modules | Typed nested contracts, structural parameter ownership, operation-change counts, timeline restoration |
-| Selection rules | Typed artifact persistence already exists; `src/selection-rules.js` still composes owner checks and native calls | Typed orchestration with ports; preserve missing-vs-unverified distinction and request/file/creation identity |
-| BRep baselines | Typed core service and persistence already exist; `src/brep-baseline.js` remains composition | Typed composition; exact artifact lineage and no repeated capture on uncertain response |
-| Assembly, appearance, motion and other engineering families | Existing Python domain/application/adapter modules and catalog tables | Audit each existing public route, characterize effects and native obligations; do not infer completeness from module placement |
-
-Document/file/import/reference/externalization/drawing remain D-owned;
-execution/admission/identity remain A-owned; simulator and live scenarios remain
-B-owned; common build/CI and retirement remain G-owned.
+Policy extraction, generated programs and native modeling require separate
+behavioral evidence; wrappers alone are not equivalent evidence.
 
 ## Paired historical evidence
 
@@ -52,48 +37,17 @@ acceptance/errors and input immutability. It also compares descriptor bytes.
 - Public wrappers point to the staged compiled policies; no second maintained
   JavaScript implementation remains for these six input-policy families.
 
-## Contract handoff to B
+## Shared scenario contract requirements
 
 | Operation group | Required effects and independent evidence |
 | --- | --- |
 | Sketch create/build/geometry | Preserve explicit expressions and selected component ownership; reject malformed nested geometry before submission. Read sketch/entity/profile counts independently. Native curve/solver validity remains native-only. |
 | Dimension plan/apply | Planning is read-only; applying is mutating. Accepted proposal IDs must be unique and tied to the original document/sketch/fingerprint. Do not turn failed readback into success or replay an uncertain apply. |
-| Coordinate/profile proofs | Preserve existing coordinate frames, cm and cm² outputs and tolerances; zero profile counts are valid, invalid negative counts fail. B owns supported frame capabilities. |
+| Coordinate/profile proofs | Preserve existing coordinate frames, cm and cm² outputs and tolerances; zero profile counts are valid, invalid negative counts fail. Unsupported frame capabilities remain explicit. |
 | Entity query/fillet/chamfer | Require one explicit edges/query source; modeling queries need edge kind and expected count/uniqueness. Preserve scope, occurrence context and foreign-token guards. Read the protected document separately. |
 | Spring/thread/seal/cam | Pure numerical results are analytic evidence only. Preserve explicit length/angle/material units, declared counts, hand/lead, pressure/curvature and limitations. Native body creation/solver acceptance needs separate qualification. |
 
-All shared scenarios must retain one body of steps/assertions for model and Fusion.
-C does not modify simulator or live-scenario ownership. No new routes are requested
-from E by this delivery.
-
-## Integration request for G
-
-Add the new strict tests to compiler-only runtime tests and the regression job:
-
-- `tests/modeling-policy-migration.test.ts` (107 paired/policy tests)
-- `tests/modeling-admission.test.ts` (six representative generated public programs)
-
-Also register retained `gm06-sketch`, `sketch-geometry-proof-bundle`, `entity-query`,
-`spring`, `thread`, `seal` and `cam` JavaScript suites where not already selected.
-The shared build/CI files are intentionally left to G. Do not merge this delivery
-until the exact-head full matrix and these additional runtime gates are green.
-The admission set is representative, not the full C3 operation inventory.
-
-## Local evidence
-
-- Pinned `npm run build` passed; definitions snapshot
-  `83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179`.
-- `npm run typecheck:tests` and targeted ESLint passed.
-- Historical policy suite: 107 passed.
-- Retained sketch/engineering suites: 25 passed; entity suite: 8 passed.
-- `sketch.build` passes the production checker with document/file pins and pinned
-  definitions. An initial diagnostic probe omitted `definitionsRoot`, which
-  produced a tool error; it is not a production regression or passing evidence.
-- Full Python discovery on this restricted host: 1517 run, 3 failures, 39 errors,
-  66 skipped. Missing image libraries and absent Linux `/proc` block host tests;
-  one inventory check overlapped staging and is rerun after the build. These
-  results are not a full-suite pass. Linux CI remains required.
-- Native Fusion, solver, topology and physical-property qualification not run.
+Shared scenarios retain one body of steps and assertions for model and Fusion.
 
 ## Fixture-order defect
 
@@ -107,11 +61,11 @@ with `patch.dict` while loading the canonical runtime. No handler or assertion
 changed. The identical combined selection passes all 109 tests after the repair.
 The separate document-runtime inventory rerun passed after staging completed.
 
-## Second delivery: fastener and feature rework
+## Fastener and feature-rework policies
 
-The next stacked delivery moves `fastener` and `feature-rework` policy into the
-same strict core boundary. Catalog registration remains unchanged; feature
-configuration keeps the existing one-time replacement behavior. This includes
+`fastener` and `feature-rework` policy use the same strict core boundary. Catalog
+registration remains unchanged; feature configuration keeps the existing one-time
+replacement behavior. This includes
 measured-fastener nested references and tool-access structures, legacy declared
 stacks, feature parameter entries, extent mode exclusivity, operation changes
 and native-edit exclusivity.
@@ -130,16 +84,12 @@ that directory is absent. It now owns a temporary directory and cleans it in
 assertion are unchanged. This is an inherited fixture assumption, not a change
 to production execution or native qualification.
 
-G should also register `tests/fastener.test.js`, `tests/feature-rework.test.js` and
-`tests/measured-fasteners-bundle.test.js`. Full exact-head CI is still mandatory.
-The remaining curve/datum/surface and selection/BRep composition work, exhaustive
-Python admission inventory and native obligations remain open.
 
-## Third delivery: curve preparation, datums and surfaces
+## Curve preparation, datums and surfaces
 
 Curve preparation now runs through pure typed sample policy and an injected,
 synchronous Node source adapter. The existing CSV parser is supplied as a port;
-its D-owned implementation is not copied. Full prepared outputs (including source
+its implementation is not duplicated. Full prepared outputs (including source
 hash, file path, row/index provenance, units, winding and endpoint snapping) and
 negative outcomes are compared against both historical sources. Source preflight
 still completes before any native submission. No retry or background file read
@@ -150,13 +100,12 @@ The existing frame dialect, matrix tolerance, reflection/shear refusal, snapshot
 requirements, trim plan/apply distinction, protected-zone guards and native-only
 representation remain unchanged. These validators do not prove solver validity.
 
-Evidence: 218 historical/policy tests; 18 retained curve/datum/surface JavaScript
-tests; 43 Python tests. The representative admission test list now also includes
-curve.fit, datum.transform, surface.patch, fastener.measured-check and feature.edit;
-their run result is recorded in the PR after completion. G should register existing
-`tests/datum.test.js` and `tests/surface.test.js`; curve.test.js is already selected.
+Historical evidence records 218 policy/history tests, 18 retained
+curve/datum/surface JavaScript tests and 43 Python tests. Representative admission
+cases include `curve.fit`, `datum.transform`, `surface.patch`,
+`fastener.measured-check` and `feature.edit`.
 
-## Fourth delivery: selection and BRep orchestration
+## Selection and BRep orchestration
 
 Selection orchestration now lives in typed core policy with artifact/native ports;
 its Node adapter owns path resolution, artifact clients and request identity.
@@ -173,49 +122,40 @@ The retained real-store/service suites pass 10 of 15 cases locally; five fail on
 this host's unavailable `/proc` identity verification. Those guards and assertions
 are unchanged and must pass in Linux CI. No native BRep roundtrip is claimed.
 
-G: register `tests/modeling-artifact-history.test.js`, `tests/brep-baseline.test.js`
-and `tests/brep-baseline-service.test.js`; selection store/e2e already run in the
-regression gate. New service declarations use the existing persistence staging
-rewrite and require no new package export. B should retain foreign-owner/hash,
-missing-artifact, uncertain outcome and exactly-one-native-turn assertions.
 
-Fourth-delivery checks: pinned full build and strict test compilation pass;
+Historical selection/BRep checks: pinned full build and strict test compilation pass;
 24 historical orchestration cases pass. Running the identical real-store suites
 with the previous wrappers produces the same 10 passes / 5 `/proc` failures.
-Targeted TypeScript lint passes. The five additional admission cases from the third
-delivery passed (393.5 seconds total); all eleven representative cases are green.
+Targeted TypeScript lint passed. Five additional admission cases from the earlier
+curve/datum/surface work passed (393.5 seconds total); all eleven representative
+cases were green.
 
 ## Complete public modeling inventory and admission obligations
 
 `tests/fixtures/modeling-operation-contracts.json` inventories 266 public descriptors
 in the assigned modeling/engineering families at the baseline. Each record includes
 its public operation, requested read-only classification, route and native program.
-The runtime test refuses additions/removals outside that inventory. The five shared
-routes are explicitly assigned: D externalization and sketch file adaptation;
-A/E definition host inspection/expansion/instantiation. C retains native recipe and
-regeneration behavior. A host coordinator is not counted as a generic Python call.
+The runtime test refuses additions/removals outside that inventory. The shared
+routes include file externalization and sketch-file adaptation, plus definition
+host inspection, expansion and instantiation. Native recipe and regeneration
+behavior remain separate from generic Python calls; a host coordinator is not
+counted as a generic Python call.
 
-There are 254 direct C Python operations, six selection/BRep coordinator-generated
-internal programs, and one C offline baseline-inspection service. The six internal
+There are 254 direct modeling Python operations, six selection/BRep
+coordinator-generated internal programs, and one offline baseline-inspection
+service. The six internal
 fixtures invoke the actual typed core coordinator and authorization boundary before
 preparing its program. Fixture artifact ports supply evidence inputs; they do not
 claim durable storage, native serialization or geometry success. Existing real-store
 regression tests independently cover those boundaries.
 
-`modeling-admission.test.ts` now defaults to all 260 generated programs. G should run
-8 disjoint jobs with `FMCAD_MODELING_ADMISSION_SHARD=0/8` through `7/8` after the pinned
-build; every job uses the production checker without cache/limit exceptions. Each
-report must pass and identify the prepared artifact hash and pinned definitions.
-Do not also run the unsharded suite in the ordinary regression job. Merely preparing
-all examples or starting the matrix is not a full admission pass.
 
 `modeling-installed.test.js` installs the packed package with npm `--offline` outside
 the checkout. Its public API validates every inventory example without mutation,
 backend startup or checkout reads. It checks strict declarations for the migrated
-core policies, persistence composition and curve source adapter. G should register
-this test in the existing installed-consumer/regression job with offline cache setup.
+core policies, persistence composition and curve source adapter.
 
-## Python boundary audit and B scenario handoff
+## Python boundary contracts
 
 Existing geometry, assembly and document-I/O-family extraction tests already verify
 handler registration, retained function bodies, SDK-free domain imports and historical
@@ -224,7 +164,7 @@ The audit ran 154 geometry/assembly/appearance/measurement tests and 218 further
 runtime/boundary tests successfully. The latter includes sketch, curve, datum, surface,
 feature rework, entity, selection, regional geometry and measured fasteners.
 
-| Family | Independent state/effect contract for B | Existing behavioral evidence |
+| Family | Shared-scenario state/effect contract | Existing behavioral evidence |
 | --- | --- | --- |
 | Sketches/dimensions | Dimension plan is read-only; apply validates document/sketch/fingerprint and accepted IDs. Read actual dimension expressions, driving flags, geometry and profiles after mutation. Preserve original solver errors if readback also fails. A denied/invalid plan must add no dimension. | `gm06_sketch_test.py`, `sketch_geometry_proof_test.py`, `typesgeometry/python_types_geometry_sketch_test.py` |
 | Curves/datums | Preserve source rows/hashes and explicit frames; transformed occurrences must retain the root/component frame distinction. Compare endpoint/axis/frame readback rather than only response count. Do not infer spline or surface validity from samples. | `gm07_curve_test.py`, `datum_test.py`, `modeling-policy-migration.test.ts` |
@@ -235,11 +175,12 @@ feature rework, entity, selection, regional geometry and measured fasteners.
 | Appearance/material/attributes | Appearance and physical material are separate; inspect the concrete face/body override. Missing density/coating is not invented. Preserve deterministic ambiguity reporting and source IDs. | `appearance_test.py` (including attributes/texture), document-I/O-family runtime replay |
 | Engineering/motion/model state | Preserve explicit dimensional units, hand/lead, material assumptions and reference ownership. Analytic predictions and stored states are not solver or physical qualification. Native MotionLink, joints, sheet metal and native regeneration retain their explicit capability/refusal contracts. | `python_assembly_parity_test.py`, `measured_fasteners_test.py`, engineering family suites and original native assertion ledger |
 
-B owns new simulator implementations and shared scenario files. This table and the
-operation inventory specify handoff requirements, not a claim that B's model covers
-all listed methods. G must reconcile each retained live assertion with B's ledger.
+The table and operation inventory specify independent behavior/effect requirements;
+they do not claim that every listed method is covered by a model scenario.
 
 ## Measurement policy boundary
+
+This section describes a historical migration, not current task status.
 
 The existing unit conversion table/function move from the Fusion measurement adapter
 to its domain module. Both the original `a26222f` and pre-delivery `0b84454` versions
@@ -249,36 +190,21 @@ unit factor changes. A unique math import prevents a flattened-program duplicate
 the initial duplicate-import diagnostic was fixed, not suppressed. The real checker
 passes the corrected program and 69 retained measurement tests pass.
 
-D coordination is required for the existing cross-family AST parity test's alias map:
-`_measurement_rules_math` must normalize to `math`, exactly like the other existing
-pure-domain aliases. The shared file is left to D/G. This is a structural name change;
-all behavioral comparisons remain required. Package C is still in progress pending
-full exhaustive admission, shared gates, exact-head CI/merges and B/G reconciliation.
-
-Fifth-delivery local checks: pinned full build, strict test types, targeted TypeScript
-lint and the installed 266-example/strict-declaration consumer pass. Six authorized
-internal-program preparations pass. The existing cross-family AST parity test now
-fails only at the proposed measurement import-alias normalization; D/G's one-line
-integration remains an explicit dependency, not a suppressed failure. The complete
-260-program matrix is ready to run in shared CI; results remain pending.
 
 ## Canonical Python compatibility paths and discovered entity regression
 
-Nineteen remaining C-owned `assets/cad` implementations are now thin compatibility
+Nineteen remaining modeling `assets/cad` implementations are now thin compatibility
 loaders for the already-typed runtime: animation/animation2, appearance/attributes,
 cam/seal, checking/containment/dfm/interference, entity/measure, explode/fpc_pcb,
-marking/optics/presentation, simulation and texture. D/A assets are untouched.
-The installed assets no longer carry a second maintained handler implementation.
+marking/optics/presentation, simulation and texture. The installed assets no longer carry a second maintained handler implementation.
 Loaders support an explicit `_FMCAD_RUNTIME_ROOT` from a foreign cwd and become no-ops
 when canonical handlers are already present. Prepared native bundles still use the
 manifest-declared runtime units directly and do not execute filesystem loaders.
 
 Original bytes are retained under `tests/fixtures/modeling-python-history` with
-revision/path/SHA-256 metadata. The C loader suite reuses the existing full function
+revision/path/SHA-256 metadata. The modeling loader suite reuses the existing full function
 body/count and registry-ownership oracles with those frozen inputs; a new loader can
-never serve as its own historical reference. The D-owned comparator is not edited
-by this delivery beyond the separately proposed math-alias integration.
-
+never serve as its own historical reference.
 Switching retained tests to the real canonical entity adapter exposed a production
 regression from the earlier typing migration. `_entity_describe` emits a geometry
 `frame` object (kind plus owned reference), and `_EntityGeometry.frame` declares
@@ -297,73 +223,35 @@ pass, including appearance/texture, measurements, query/model integration and nu
 engineering contracts. The three loader/history tests pass with the proposed shared
 math-alias normalization. Updated real admission and integrated CI remain mandatory.
 
-A separate audit of the retained full `cad.test.js` reproduces the same three failures
-with old and new C wrappers: two assume WSL path translation, and the CLI-preview case
-uses a newline-containing display name without an immutable document pin. A trial using the existing fake-WSL fixture and explicit creation/file IDs exposed
-an additional shared catalog.import preview contract: success=true/status=unknown
-with exit code 1 for an unresolved source. The trial was reverted and handed to E/D;
-no production outcome or retained assertion was changed by C.
+An audit of the retained full `cad.test.js` reproduced three failures with both old
+and migrated wrappers: two assume WSL path translation, and the CLI-preview case
+uses a newline-containing display name without an immutable document pin. A trial
+using the existing fake-WSL fixture and explicit creation/file IDs exposed an
+additional shared `catalog.import` preview contract: `success=true/status=unknown`
+with exit code 1 for an unresolved source. The trial was reverted; no production
+outcome or retained assertion changed.
 
-The installed consumer independently passes all 261 C CLI previews and all 261 C MCP
-previews outside the checkout, with no backend construction or native execution.
+The installed consumer independently passes all 261 modeling CLI previews and all
+261 modeling MCP previews outside the checkout, with no backend construction or
+native execution.
 Snapshot capture uses its example scope identity and rejects foreign document pins.
 All 266 public example schemas and strict consumer declarations also pass. These
 checks cover installed host contracts, not native geometry or solver qualification.
 
 
-## Current integration evidence
-
-The integration proposal also includes main `9daedef4f763bd9b229cc88dc376967a488b55e3`
-(E's MCP helper, review/screenshot and catalog boundaries). The combined tree passes
-the pinned build, strict test types, lint, formatting and all 252 modeling
-policy/history/installed tests with zero skips. This includes 263 CLI and 263 MCP
-previews outside the checkout. No C runtime or modeling program changed in that
-merge. PR #57 head `1c94657b` and #61 head `255dd866` now each have 22/22 successful
-CI jobs (runs `42529553914` and `42530208843`). Shared gate integration and the
-complete 262-program admission matrix remain required; the partial local shard
-logs and queued integration CI are not successful full-matrix evidence.
-
-The C stack is #37 → #47 → #57 → #61 → #65; #66 is the isolated shared-gate
-proposal. Runtime head `c61a2515` is integrated with fetched main `5d5a793` in
-#66 at `39103d1e`. The package-script conflict was resolved by retaining every
-main entry and appending the C entries; no test was removed. Runtime Python,
-CAD assets and modeling/checker implementations are unchanged by that merge.
-
-A fresh geometry/assembly audit runs the retained statement/registration oracles,
-historical SDK effect transcripts and modeling fixtures together: 274 tests,
-273 pass and one existing installed-Fusion-SDK test skipped. The selection includes
-geometry and assembly parity, model, datum, surface, feature rework, sketch/proof,
-shapes and curves. An initial command used three nonexistent module names; that
-harness error was corrected to the actual suite names without editing assertions.
-
-B's `refactor/b-rectangle-dimensions` supplies bounded rectangle regeneration and
-saved-reopen scenarios with independent dimensions and volume readback, plus
-foreign/driven/duplicate/unsupported dimension negatives. This is reviewed source,
-not a C execution result or general sketch-solver claim. Dimension plan/apply and
-advanced geometry obligations in the handoff table remain separately accountable.
-
-On the integrated tree, the pinned full build, test types, lint and formatting
-pass. All 306 C JavaScript/TypeScript historical, retained and installed-consumer
-tests pass, and all 129 currently integrated shared scenario unit tests pass.
-
-Full current-head CI, all 260 admission cases on both supported Node lines, shared
-gate integration and B/G assertion reconciliation remain open. Native Fusion solver,
-topology, joints and physical-property qualification remain stage 3.
-
-
-## Sixth delivery: remaining specialist and private-turn policies
+## Specialist and private-turn policies
 
 The final JavaScript inventory found six additional modeling validators under
 `src/catalog`: native-drive, regional geometry, section/witness, semantic model
 state, selection-rule definitions/artifacts and BRep baseline input. Their pure
 logic now lives in strict core policies. Two private selection/BRep catalogs also
 use one typed core implementation, including their exact-object WeakMap/WeakSet
-capabilities. JavaScript files are compatibility facades. E's registry composition,
+capabilities. JavaScript files are compatibility facades. Public registry composition,
 public names, private declaration metadata and configuration order are unchanged.
 
 All eight original sources are retained byte-for-byte with `0b84454` SHA-256
 provenance under `tests/fixtures/modeling-specialist-history`. None of these source
-files exists at `a26222f`; this delivery therefore uses the actual pre-delivery
+files exists at `a26222f`; this comparison therefore uses the actual pre-delivery
 implementation rather than claiming an unavailable earlier comparison.
 
 The existing policy entrypoint now includes 2,651 paired public input scenarios
@@ -384,12 +272,6 @@ storage prerequisite: the large native-drive MCP result reaches
 The exact historical source reproduces it. Required CI must run that assertion;
 no owner guard or externalization-success assertion is weakened.
 
-G should add native-drive-integration, native-drive-bundle, regional-geometry,
-section-witness-bundle, semantic-model-state and semantic-model-state-e2e to the
-existing regression selection. No new test entrypoint is needed for the additional
-historical scenarios or installed declarations. The proposal remains separate from
-G's main integration. Full current-head CI and exhaustive admission are pending;
-native solver/geometry qualification remains stage 3.
 
 
 ## Reverse-registry admission audit
@@ -398,13 +280,13 @@ A second inventory pass starts with the executed Python handler registry rather
 than public operation-name prefixes. It exposed two omitted C operations:
 `deliver` belongs to checking, and `visibility.finalize` belongs to presentation.
 The anti-omission test reproduces exactly those two missing rows with the old
-inventory and passes after correction. It records 38 C Python families and requires
+inventory and passes after correction. It records 38 modeling Python families and requires
 every handler they register to have an admission entry or explicit shared owner.
 
-The current inventory supersedes earlier counts: **272 public descriptors, 263 C
-and 9 shared; 262 C native programs (256 direct plus six coordinator turns), and
-one offline baseline inspection**. The four other visibility operations are D's
-I/O state/restore handlers and are explicit shared rows. No production handler,
+The audit snapshot recorded the following inventory: **272 public descriptors, 263
+modeling and 9 shared; 262 native programs (256 direct plus six coordinator turns),
+and one offline baseline inspection**. The four other visibility operations belong to
+file I/O state/restore handlers and are explicit shared rows. No production handler,
 mutation count, ownership guard or readback changed in this audit.
 
 All four canonical-loader/registry/history tests pass on the integrated alias
@@ -422,185 +304,5 @@ the other uses the typed modules. No production checker is mocked or relaxed.
 The combined policy/history/installed selection now passes 252 tests. Both added
 registry-audit operations (`deliver`, `visibility.finalize`) also pass real pinned
 admission. Long local shard processes lost their runner sessions without a final
-result; their partial logs are not recorded as completed shards. Full CI remains
-the authoritative complete-matrix gate.
-
-
-## Retained test migration and continuation evidence
-
-The host wrappers for curve preparation, selection execution and BRep execution
-are now `src/composition/library-{curve,selection-rules,brep-baseline}.ts`.
-Compatibility generation retains the existing CommonJS/public paths. The
-44 retained C test sources use strict interfaces for real modules and bounded
-injected fixtures; no parallel test framework was added. Catalog negatives
-still assert their original validation messages and now also call the actual
-`executeCad` boundary with zero SDK dispatch. Selection/BRep retain exact-owner,
-artifact hash, receipt, result and uncertain-mutation no-replay assertions.
-
-The artifact-history comparison retains all 24 frozen source hashes and effect
-transcripts. Cross-realm historical errors are compared by a checked string
-`message`, preserving the predecessor's exact text. A Node `instanceof Error`
-check cannot recognize the VM realm and must not prepend `Error:` to that text.
-The installed-package consumer additionally compiles the three composition
-module declarations; its execution remains pending the stable integrated build.
-
-Local executed tests: 27 core catalogs, 47 secondary catalogs, 32
-artifact-history/selection, 51 specialists and nine parameter dispatch cases,
-all with zero skipped cases after two focused fixture reruns. Python contract,
-entity, shape and loader selections pass 61 tests; the larger 22-family selection
-passes 413 tests. These are selection counts, not a claim of unique coverage or
-native acceptance. The migrated files pass ESLint; the integrated compiler's
-remaining diagnostics at this checkpoint belong to concurrent broker work.
-
-Two fixture repairs preserve expected behavior: Python geometry uses its own
-temporary directory, and style-motion installs/restores the established fake-WSL
-adapter. The unchanged `dce47c5` style-motion source reproduces the same unsupported
-platform failure on Linux before repair. Manual source references, including the
-surface/datum canonical policies, now identify the actual strict test sources.
-The BRep lifecycle must be rerun after staging stabilizes: a concurrent build
-contract change invalidated its earlier attempt. Final installed consumers,
-complete pinned admission and full CI for the exact integrated commit remain
-open; simulator evidence does not qualify Fusion's native solver or geometry.
-
-
-### Linux CI preparation for retained real checker tests
-
-The completed CI logs show all nine fixed-import checker cases and the unsaved
-isolated-document admission case failing in receipt path mapping before invoking
-the checker. Both source files are unchanged from `dce47c5`; the predecessor
-requires a detected WSL environment while these offline fixtures run on Linux.
-Each real-checker test now installs and restores the existing fake-WSL fixture.
-The final wrapped program, actual basedpyright check, certificate byte fence,
-expected document binding and absent receipt assertions remain unchanged.
-The fixed-import source passes strict compilation and lint. The eight isolated
-Python document-guard cases pass with zero skips. The ten real-checker cases
-remain pending a stable build and the coordinated checker execution slot.
-
-
-### Individual retained live assertions
-
-The modeling supplement accounts for all 962 frozen sites from live-cad,
-live-extended, live-sketch-operations and live-thicken-slot-pattern, preserving
-three existing camera mappings and adding 959 individually identified rows.
-There are 46 additional shared invariant mappings, 45 actual installed sketch
-preflight mappings (execution pending the stable build), and 868 precise retained
-native-context obligations marked not-run. Source hashes, unique IDs and literal
-evidence were checked. See [the native obligation register](C_NATIVE_ASSERTION_OBLIGATIONS.md)
-for exact readbacks, capability requirements and unresolved legacy runner
-migration prerequisites. This accounting does not claim those runners are ready
-for concurrent Fusion execution or that native acceptance has passed.
-
-
-The follow-up feature/hierarchy supplement accounts for another 266 frozen sites
-(161 feature-mode, 105 hierarchy): ten exact shared lifecycle invariants and
-256 native-context obligations. The hard-coded addin/concatenated-handler fixture
-and mutable hierarchy suite globals remain explicitly listed migration
-prerequisites, not native-ready runners. Across both C supplements, all 1,228
-assigned sites are identified without modifying their frozen sources.
-
-### Retained coordinators and inspection consumers
-
-Eleven further handwritten suites now compile strictly: inspection, definition-mode,
-definitions-scoped, cad-application, batch-atomic, batch-local, batch, capabilities,
-contract-model, outcome and preview-dispatch. All 111 original case titles and
-assertion methods remain, and embedded program literal content is unchanged.
-The fixtures use canonical module/port types and checked unknown-result access;
-invalid input mutations still reach the real runtime validators. Atomic fault
-injection now restores the caller's prior environment value after each test.
-
-One historical coverage defect is corrected: the final four capabilities cases
-called `catalog.validateCad`, although `catalog` is a declaration record. They
-could pass on a missing-method TypeError. They now invoke the registry's real
-`validateCad` export with the same four inputs and require the matching query,
-limit, offset or unknown-input diagnostic. Expected product behavior is unchanged.
-
-Strict compilation and ESLint pass. The six pure coordinator/contract families
-execute 39 cases with zero failures/skips; the focused capabilities validation
-case also passes. These runs use emitted CommonJS against the actual staged
-runtime. The first emitted attempt exposed import initialization order and was
-corrected before the passing run. The other 71 cases, including Python-backed
-inspection/atomic outcomes, remain pending the coordinated stable-build run;
-they are not qualified by registration or compilation. This checkpoint does
-not close the installed, checker, browser or native Fusion gates.
-
-### Delegated persistence/build regression migrations
-
-The retained execution-store, execution-store-integration and
-build-preflight-rejection suites now compile strictly. Existing fault locations,
-owner/scope/hash checks, symlink races, accepted-source provenance, no-retry
-assertions and child-process program literal content remain intact. Filesystem
-faults wrap the actual methods with typed proxies; no filesystem-wide type cast
-or replacement implementation was introduced. Both existing fake-WSL fixtures
-are preserved. Unused backend methods fail explicitly if unexpectedly reached.
-
-Strict compilation and ESLint pass. The execution-store suite executes all 15
-cases, including the restarted reader/large stdio response and foreign-reference
-rejection; the two pure persisted-state integration cases also pass. All 17 have
-zero skips. The remaining real broker restart case and two build/admission cases
-await the coordinated stable-build run. These results do not qualify those
-three pending cases or native Fusion execution.
-
-### Native lifecycle source ports (execution pending)
-
-All six C native source families now have typed ScenarioSession ports: CAD,
-extended geometry/camera, sketch operations, thicken/slot pattern, feature modes
-and component hierarchy. The frozen sources and all 1,228 assertion identifiers
-remain intact. Strict compilation and lint pass, and the recorded source comparison
-preserves the original group/helper readback calls. The 38 shared-model capability,
-metadata uncertainty, owner mismatch, recovery and cleanup tests are prepared but
-have not run; real Fusion remains NOTRUN. Exact legacy CLI `active`/`doc list`
-output parsing is retained through the shared queue; actual safety execution and
-final native-profile checks remain open before runner readiness.
-The lifecycle has one SDK queue and no new simulator geometry. Details and
-justified stronger coordinate/output-intent assertions are recorded in
-`C_NATIVE_ASSERTION_OBLIGATIONS.md`. Existing installed/checker/browser and the
-remaining retained regression runtime gates also remain pending.
-
-
-### Actual native-runner safety gate
-
-After central build4, 43 C/style safety and preview tests passed with no skips or
-cancellations. All ten owners of each factory are exercised independently for
-capability refusal; two separate barrier tests record subsequent owners as
-not-run without claiming their execution. Existing complete cleanup, recursive
-unknown detection, document/file identity, foreign inventory and no-replay checks
-remain exact. The full offline document_save_test.py module passed 21 tests.
-The six C typed factories and their CLI/profile registrations are ready for the
-owned handoff; semantic ledger rows remain native qualification not-run. The
-final integrated CI/native-plan gate and real Fusion readbacks remain pending.
-The earlier execution-pending entry is superseded by this runtime evidence.
-
-### Retained stage-owner, journal and isolated-document tests
-
-The remaining three handwritten suites now use strict TypeScript and actual
-runtime module contracts. All 29 source test declarations (45 expanded cases),
-167 original assertion sites and 25 child/Python template fragments are retained.
-Persisted JSON is treated as unknown and checked before access. Deliberately
-incomplete requests and the original complete authenticated dependency object
-still cross the real runtime validation boundary, without whole-module casts.
-The fake-WSL admission fixtures and exact final-byte fence remain in place.
-
-Strict compilation and ESLint passed. An actual run selected the 43 non-checker
-cases: 42 passed, while the public Fmcad stage case hit a generated staging-layout
-error after a narrow TypeScript emit replaced a compatibility shim. Its assertions
-remain unchanged and its rerun requires the next complete central stage. The two
-production-checker cases are not run by that selection and remain explicit gates.
-No timing claim is made from the concurrently loaded host. The retained process
-crash/restart, unknown-outcome and Python identity guards actually executed.
-
-### Remaining recovery fixtures migrated for package A
-
-`instance-loss-recovery`, `isolated-epoch`, `recovery-isolation` and
-`queue-atomic-control` now use strict TypeScript with the actual adapter contracts.
-All 31 source test declarations, 119 original assertions and six embedded programs
-are retained. A checked dynamic boundary preserves the intentionally incomplete
-CLI dependency fixture; it still proves rejection before credentials/configuration
-or IO. Historical/current observer comparison validates the callable historical
-entrypoint and compares original error codes/messages without normalizing them.
-Remote JSON and queue identifiers are checked before access, and filesystem fault
-injection remains limited to its original concrete method.
-
-Strict compilation, lint and source/template parity passed. Runtime execution of
-these four suites is NOTRUN pending complete central staging; the process-loss
-admission case requires the coordinated real-checker gate. No narrow emit is used
-as installed-package evidence.
+result; their partial logs are not completed-shard evidence. Current complete-matrix
+status is tracked in Beads rather than this historical evidence record.

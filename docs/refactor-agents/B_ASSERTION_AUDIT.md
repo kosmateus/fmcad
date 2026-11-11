@@ -1,4 +1,8 @@
-# Agent B assertion audit and required profiles
+# Retained assertion audit and required profiles
+
+This document records a historical source/test snapshot. Its counts and local
+results are not current task status; remaining work and dependencies are tracked
+in Beads.
 
 Source baseline: main `0b84454`; original archive commit
 `a26222ff617b0e9597b2a91b50474bdca8d0a0ce`. The archive's Git objects were
@@ -10,7 +14,7 @@ expression digest and occurrence, expression and kind. It preserves duplicate
 assertions, parameterized helper calls and embedded Python fragments. The latter
 retain complete fragments because multiline assertions and template substitutions
 cannot safely be treated as individual JavaScript calls. Static sites are not
-runtime assertion counts. Dynamically constructed code still needs semantic review.
+runtime assertion counts. Dynamically constructed code requires separate semantic review.
 
 The 20 source files present at the historical baseline contain 1,334 detected sites.
 1,333 remain unchanged. The sole changed historical site is the MCP stdio server
@@ -18,35 +22,37 @@ name (`autodesk-fusion-mcp` to `fmcad`); current source additionally asserts hel
 exit status, help usage and the `fmcad_execute` tool. Invocation assertions remain.
 The ledger retains the changed expression rather than silently dropping it.
 
-The scenario-unit gate compares the current AST inventory and whole-source hashes
-to this ledger. Changes require reviewing individual additions/removals; refreshing
+The scenario-unit gate compares the AST inventory and whole-source hashes to this
+snapshot. Changes require reviewing individual additions/removals; refreshing
 hashes alone is not evidence of equivalent behavior. Later live files are present
-in full but their immediate-predecessor semantic comparisons remain outstanding.
+in full but require semantic, not merely textual, comparison.
 
 ## Required profile manifest
 
 `tests/live-required-profiles.json` separates eighteen registered shared model families,
 required retained native obligations and diagnostic helpers/external fixtures.
 `node tests/run-live.js --list-profiles` lists it without contacting Fusion.
-Native commands are qualification entrypoints, not authorization to run unconverted
-fixtures: their lifecycle prerequisites and pending migration state are explicit.
-G must keep pending, unsupported, blocked and not-run required cases failing final
-qualification. A helper or a fixed external diagnostic cannot replace a required case.
+Native commands are qualification entrypoints with explicit lifecycle and
+fixture prerequisites. Targeted local checks may run against the matching build
+and configured shared broker. Never adopt user fixtures or count a blocked,
+unsupported, or not-run required case as a pass. A helper or fixed external
+diagnostic cannot replace a required case.
 
 Legacy registered suites now execute behind exclusive barriers. A failed exclusive
 suite blocks later work with failing `not-run` records because restoration is not
-established. This is conservative scheduling within one coordinator, not an
-interprocess Fusion lock or proof that historical UI cleanup is complete. Run only
-one coordinator per Fusion instance. Shared model/Fusion scenario concurrency
-continues to default to at most two/ten respectively.
+established. These barriers sequence exclusive cases within one runner; they are not
+interprocess locks. Independent runners share the broker, which serializes physical
+SDK turns and must preserve owner/document isolation. Do not impose a manual
+Fusion reservation. Global-state safety still requires broker-level support and
+actual live validation. Shared model/Fusion scenario concurrency continues to
+default to at most two/ten respectively.
 
 ## Remaining semantic work
 
-This audit is an anti-omission gate, not completion of B1 or B4. Every assertion
-still needs an explicit shared case/capability mapping or justified native-only
-obligation. Transactional/file migration, shared reopen identity handoff, broader
-analytical geometry, and global-state setup/restoration remain open. Existing native
-assertions are intact; no unsupported operation was relabeled as passing.
+This inventory is an anti-omission aid, not runtime coverage. Each assertion needs
+an explicit shared-case/capability mapping or a justified native-only obligation;
+machine-readable dispositions live with the test manifests. Existing native
+assertions are intact, and no unsupported operation is relabeled as passing.
 
 Validation: 19 inventory/scheduling/live-broker tests passed before adding the
 manifest registration check. The entire scenario unit gate and full CI are required
@@ -113,35 +119,37 @@ Reviewed non-port changes:
   ordering prerequisite or prove native state restoration.
 - GM07 changes fixed build equality to installed-package self-consistency and an
   optional expected candidate. This is a changed qualification prerequisite;
-  final native registration still needs an explicit offline-qualified build pin.
+  native registration requires an explicit offline-qualified build pin.
 - MCP changes the advertised server name and adds help/tool checks, as previously
   recorded. Multidocument adds SDK interval/count checks and fixes null-to-None
   rendering for active-document restoration; previous numeric assertions remain.
 
 These findings do not increase the 79 shared semantic mappings or close B1.
 No old source, expected geometry, ownership guard or runtime failure was removed
-by this audit. Native execution and complete per-assertion disposition remain open.
+by this audit. No native execution or complete per-assertion disposition is
+established by this snapshot.
 
 
-## Current disposition checkpoint — local styles
+## Historical style-disposition snapshot
 
-The ledger now has 157 reviewed mappings: 138 current shared assertion sites,
+This snapshot recorded 157 reviewed mappings: 138 shared assertion sites,
 18 explicitly blocked native-solid sites and one removed predecessor assertion.
 Twelve appearance metadata and thirteen explicit body-assignment checks preserve
 individual historical expressions. The 3,551 remaining current static sites still
 need semantic disposition; wrapper sites overlap and these are not runtime coverage
 percentages. Required-model registration contains 18 families, with transactions
 still blocked by the production settlement contract. Texture, inherited styles,
-physical mass and complete style-suite wrapper/cleanup equivalence remain open.
+physical mass and complete style-suite wrapper/cleanup equivalence are not
+established by this snapshot.
 
-## Syntax-only review of the JavaScript-to-TypeScript ports
+## Historical syntax-only review of the JavaScript-to-TypeScript ports
 
 `tests/live-assertion-port-review.json` partitions all 396 removed static sites in
 the three ports. One-to-one pairs must match the parsed expression after only
 formatting/quote spelling, literal property-access spelling, parentheses and erased
 TypeScript assertions are normalized. Regex bytes/flags, raw templates, values,
 operators, optional access, comma operators and array holes remain significant.
-Ambiguous matches stay open; replacement IDs cannot be reused. Source/predecessor
+Ambiguous matches remain unpaired; replacement IDs cannot be reused. Source/predecessor
 commits and both frozen source hashes remain attached to each partition.
 
 | Source | Syntax-only pairs | Still open |
@@ -154,8 +162,9 @@ commits and both frozen source hashes remain attached to each partition.
 This is evidence about individual expression syntax only. It does not prove helper
 implementations, call order, asynchronous transport behavior, fixture ownership or
 native execution equivalent, and adds no shared/native migration dispositions.
-The remaining 258 port sites, other historical changes and intermediate revisions
-still need semantic review. Eight focused inventory/history/disposition tests pass.
+The 258 unpaired port sites, other historical changes and intermediate revisions
+were not semantically qualified by this syntax-only review. Eight focused
+inventory/history/disposition tests passed for that snapshot.
 
 Reproduce without consulting live Fusion:
 
@@ -163,18 +172,19 @@ Reproduce without consulting live Fusion:
 node dist/tests/scenarios/assertion-port-review.js /absolute/output.json
 ```
 
-## Attribute transition review (coordinator continuation)
+## Attribute transition assertions
 
 Thirteen historical `live-entity-attributes.js` checks now point individually to
 literal assertions in `attribute-cases.ts`: first-write changed/null predecessor,
 body owner kind/token, update changed/previous/current value, same-value no-op,
 and exact/group count/name/value. The owner suffix on first/second values makes
 cross-document leakage observable; it does not change the transition contract.
-The same scenario executes in both backends. Native qualification is still due.
+The same scenario body is used for both backends; this review is not native
+qualification.
 The original unsaved-file guard, legacy CLI envelope and invocation-count helpers
 are deliberately not represented by these mappings: saved owned fixtures and the
 public transport need their own explicit disposition, not a claim of identity.
-The ledger regression now rejects disappearance of each new assertion anchor.
+The inventory test rejects disappearance of each assertion anchor.
 
 Runtime compilation and all ten focused tests pass, including MCP/addin at
 concurrency 1/2/10, assertion cleanup, foreign-token rejection/readback, and the
@@ -203,5 +213,5 @@ queries against baseline and current handlers on owned documents.
 Nine custom-profile and pair-fit assertions retain their original input quantities,
 expected results and 1e-9 tolerances. These are analytic recipe calculations, not
 native cosmetic-thread features or helical geometry. They now have individual
-source-ID mappings and literal shared assertion evidence. Native thread feature,
-selection, BRep and runtime invocation obligations remain open.
+source-ID mappings and literal shared assertion evidence. These recipes do not
+qualify native thread features, selection, BRep or runtime invocation behavior.

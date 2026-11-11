@@ -1,9 +1,8 @@
-# Offline qualification harness source migration
+# Offline qualification harness tests
 
-The integration coordinator assigned the two remaining qualification harness test
-sources to D after the file workflow delivery. Both now compile under the existing
-strict runtime-test configuration, with explicit receipt, owner, execution,
-cleanup and fake-port contracts. The qualification runtime itself is unchanged.
+The qualification harness tests compile under the strict runtime-test
+configuration, with explicit receipt, owner, execution, cleanup and fake-port
+contracts. The qualification runtime itself is unchanged.
 
 A source-AST comparison against `dce47c5` preserves all 305 original assertion
 expressions: 88 in integrated qualification and 217 in first smoke. The latter
@@ -17,6 +16,8 @@ predecessor evidence, exact owner/receipt binding, unknown outcomes without repl
 SDK-zero continuation, delayed same-job recovery, typed unsupported adapters and
 cleanup refusal. Fake API/port execution is offline harness evidence only.
 
-Combined exact-commit CI and the supported Node-version matrix remain the release
-gates. Real Fusion qualification remains **NOTRUN** and starts only after offline
-refactor acceptance.
+The reported run is offline harness evidence only. Combined exact-commit CI and
+the supported Node-version matrix remain release gates. Targeted local Fusion
+checks may run during development against the matching installed build and shared
+broker; final Fusion qualification is separate and remains **NOTRUN** here until
+it is actually executed after offline acceptance.

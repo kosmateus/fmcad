@@ -54,7 +54,10 @@ The runner does not start or upgrade a live broker. Fusion defaults to 10
 concurrent scenarios; `--concurrency N` overrides this. The model defaults to
 at most two scenarios based on CPU availability. Each slot covers setup, steps
 and cleanup. `--owners N` sets the number of parameter scenarios, in addition
-to one lifecycle scenario. Run one coordinator per Fusion instance.
+to one lifecycle scenario. Independent runners use the same configured broker;
+the broker owns the shared SDK operation queue and each runner keeps its own
+request, document, file/version and report identities. Do not start a competing
+broker or reserve the Fusion instance manually.
 
 `--suite all` is the default and runs foundation, saved, parameter, document, cloud,
 box, body-attribute and rectangle-sketch scenarios. Use
@@ -65,8 +68,10 @@ volume and rollback. `--suite attributes` covers body attributes and token
 isolation; `--suite sketches` covers owned rectangles and root-XY coordinate
 checks. The model supplies a dedicated fixture
 folder. Native saved scenarios require exact project/folder IDs; the runner never
-chooses a live folder by name or creates one implicitly. Native runs are deferred
-until the refactor is complete.
+chooses a live folder by name or creates one implicitly. Targeted local Fusion
+checks can run against the matching installed build and configured broker while
+offline work continues. A simulator pass is not native qualification; do not
+report a native result unless that scenario actually ran against Fusion.
 
 Each scenario receives its own document, creation ID, request IDs and export
 file. Guarded operations activate the exact owned document in the same SDK
@@ -138,8 +143,10 @@ settled failures retain bounded concurrency and do not masquerade as success.
 Cleanup recovery resolves original requests only. It does not launch blocked
 scenarios or certify restoration of camera, workspace, material or motion state.
 The exclusive scenario must assert its own restoration before returning. This
-is a coordinator barrier, not an interprocess lock: use one coordinator per
-Fusion instance. Native global-state qualification remains deferred.
+is a runner-level barrier, not an interprocess lock. The broker must preserve
+the shared SDK queue and owner isolation across independent runners; do not replace
+that contract with a manual instance reservation. Global-state native results
+remain unqualified until the actual run and restoration are verified.
 
 `--suite camera` is an exclusive shared saved-fixture family for explicit camera
 pose/lens, independent readback, invalid/foreign-state rejection and verified
@@ -171,10 +178,12 @@ joint motion. Those remain explicit native obligations.
 lifecycle and unchanged rib/web/sector/arc-strip/torus requests and measurements.
 It is outside supported model `all`. Both model transports refuse its capability
 before any SDK call; that refusal fails qualification. The annular-sector Y bound
-has a documented historical analytical conflict, so native qualification remains
-blocked even though the sequence is registered. See
-`docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md`. Do not run native Fusion until
-the offline refactor is complete.
+has a documented historical analytical conflict; the retained request and
+0.001 mm tolerance remain explicit in the native obligation. See
+`docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md`. Model capability refusal
+does not resolve native geometry. Targeted Fusion checks may run against the
+matching installed build and configured broker, but report this obligation as
+unqualified until it actually executes and its owned-fixture cleanup is verified.
 
 `--suite materials` runs the historical material-library selection, local copy,
 rename, collision rejection and list readback on saved fixtures, then independently

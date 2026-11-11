@@ -204,7 +204,7 @@ const manuals: Record<string, CommandManual> = Object.fromEntries(
           "tests/engineering-fluid.test.ts",
           "tests/engineering-hydraulic.test.ts",
           "tests/engineering-fit.test.ts",
-          "tests/batch-local.test.js",
+          "tests/batch-local.test.ts",
         ],
         gaps: [],
         bugs: [
