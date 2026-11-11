@@ -119,6 +119,7 @@
     "tests/integration/gm21-fit-stack.test.ts",
     "tests/integration/gm33-thermal.test.ts",
     "tests/mcp-stdio-queue-lifecycle.test.ts",
+    "tests/mcp-stdio.test.ts",
     "tests/externalization.test.ts",
     "tests/cad.test.ts",
     "tests/integration/gm22-mass.test.ts",

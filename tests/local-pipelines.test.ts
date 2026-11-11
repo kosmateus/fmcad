@@ -377,7 +377,7 @@ test(
     const adapter = createLocalWorker({
       spawn: (executable, args, options) => {
         starts++;
-        assert.equal(options.stdio, "pipe");
+        assert.deepEqual(options.stdio, ["pipe", "pipe", "pipe"]);
         return spawn(executable, args, { ...options, stdio: "pipe" });
       },
       resolveWorker: (name) => {
