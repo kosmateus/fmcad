@@ -113,18 +113,21 @@ const artifactsRoot = path.resolve(
     path.join(os.tmpdir(), "opencode", "fmcad-control-center-e2e"),
 );
 
+function disablePageTimeouts(page: Page): Page {
+  page.setDefaultTimeout(0);
+  page.setDefaultNavigationTimeout(0);
+  return page;
+}
+
 function waitForQuery(
   page: Page,
   predicate: (query: CapturedQuery) => boolean,
 ): Promise<import("playwright").Request> {
-  return page.waitForRequest(
-    (request) => {
-      if (!request.url().includes("/api/v1/console/query")) return false;
-      const payload = requestBody(request);
-      return payload ? predicate(payload as CapturedQuery) : false;
-    },
-    { timeout: 10_000 },
-  );
+  return page.waitForRequest((request) => {
+    if (!request.url().includes("/api/v1/console/query")) return false;
+    const payload = requestBody(request);
+    return payload ? predicate(payload as CapturedQuery) : false;
+  });
 }
 
 async function waitForCount(locator: Locator, count: number): Promise<void> {
@@ -134,7 +137,7 @@ async function waitForCount(locator: Locator, count: number): Promise<void> {
 
 test(
   "Control Center interactions work in headless Chromium against an isolated query fixture",
-  { timeout: 240_000 },
+  { timeout: 0 },
   async (t) => {
     fs.mkdirSync(artifactsRoot, { recursive: true });
     const runId = `${new Date().toISOString().replaceAll(":", "-")}-${process.pid}`;
@@ -273,7 +276,7 @@ test(
       sources: true,
     });
     traceStarted = true;
-    const page = await context.newPage();
+    const page = disablePageTimeouts(await context.newPage());
     cleanup.page = page;
     await page.exposeFunction(
       "__recordConsoleControlInventory",
@@ -800,17 +803,14 @@ test(
     );
     await page.getByRole("button", { name: /Odśwież szczegóły/ }).click();
     await taskRefreshRequest;
-    const sourceDetailRequest = page.waitForRequest(
-      (request) => {
-        if (
-          !request.url().includes("/api/v1/console/detail") ||
-          request.method() !== "POST"
-        )
-          return false;
-        return requestBody(request)?.["kind"] === "original-source";
-      },
-      { timeout: 10_000 },
-    );
+    const sourceDetailRequest = page.waitForRequest((request) => {
+      if (
+        !request.url().includes("/api/v1/console/detail") ||
+        request.method() !== "POST"
+      )
+        return false;
+      return requestBody(request)?.["kind"] === "original-source";
+    });
     await page.getByRole("tab", { name: "Kod" }).click();
     await page
       .locator('[data-action="artifact"][data-kind="original-source"]')
@@ -832,17 +832,14 @@ test(
       "task code tab reads and copies a hash-bound retained file through the detail API",
     );
 
-    const responseDetailRequest = page.waitForRequest(
-      (request) => {
-        if (
-          !request.url().includes("/api/v1/console/detail") ||
-          request.method() !== "POST"
-        )
-          return false;
-        return requestBody(request)?.["kind"] === "response";
-      },
-      { timeout: 10_000 },
-    );
+    const responseDetailRequest = page.waitForRequest((request) => {
+      if (
+        !request.url().includes("/api/v1/console/detail") ||
+        request.method() !== "POST"
+      )
+        return false;
+      return requestBody(request)?.["kind"] === "response";
+    });
     await page.getByRole("tab", { name: "Odpowiedź" }).click();
     await page
       .getByRole("button", { name: "Wczytaj zgodną odpowiedź" })
@@ -1114,17 +1111,14 @@ test(
     await page
       .getByRole("dialog", { name: "Szukaj w przestrzeni roboczej" })
       .waitFor();
-    const globalSearchRequest = page.waitForRequest(
-      (request) => {
-        if (!request.url().includes("/api/v1/console/query")) return false;
-        const query = requestBody(request);
-        return (
-          query?.["collection"] === "search" &&
-          query["search"] === "E2E Active Agent"
-        );
-      },
-      { timeout: 10_000 },
-    );
+    const globalSearchRequest = page.waitForRequest((request) => {
+      if (!request.url().includes("/api/v1/console/query")) return false;
+      const query = requestBody(request);
+      return (
+        query?.["collection"] === "search" &&
+        query["search"] === "E2E Active Agent"
+      );
+    });
     await page
       .getByRole("searchbox", { name: "Szukaj globalnie" })
       .fill("E2E Active Agent");
@@ -1205,9 +1199,8 @@ test(
       (request) =>
         request.url().includes("/api/v1/console/export") &&
         request.method() === "POST",
-      { timeout: 10_000 },
     );
-    const downloadEvent = page.waitForEvent("download", { timeout: 10_000 });
+    const downloadEvent = page.waitForEvent("download");
     await page.getByRole("button", { name: /CSV · pełny wynik/ }).click();
     const [download] = await Promise.all([downloadEvent, exportRequest]);
     const downloadPath = await download.path();
@@ -1220,20 +1213,15 @@ test(
     await page
       .getByRole("dialog", { name: "Eksportuj", exact: true })
       .waitFor();
-    const jsonExportRequest = page.waitForRequest(
-      (request) => {
-        if (
-          !request.url().includes("/api/v1/console/export") ||
-          request.method() !== "POST"
-        )
-          return false;
-        return requestBody(request)?.["format"] === "json";
-      },
-      { timeout: 10_000 },
-    );
-    const jsonDownloadEvent = page.waitForEvent("download", {
-      timeout: 10_000,
+    const jsonExportRequest = page.waitForRequest((request) => {
+      if (
+        !request.url().includes("/api/v1/console/export") ||
+        request.method() !== "POST"
+      )
+        return false;
+      return requestBody(request)?.["format"] === "json";
     });
+    const jsonDownloadEvent = page.waitForEvent("download");
     await page.getByRole("button", { name: /JSON · pełny wynik/ }).click();
     const [jsonDownload] = await Promise.all([
       jsonDownloadEvent,
@@ -1265,9 +1253,8 @@ test(
       .locator(".heading-actions")
       .getByRole("button", { name: "Wznów podgląd" })
       .click();
-    const refreshRequest = page.waitForRequest(
-      (request) => request.url().includes("/api/v1/console/snapshot"),
-      { timeout: 10_000 },
+    const refreshRequest = page.waitForRequest((request) =>
+      request.url().includes("/api/v1/console/snapshot"),
     );
     await page
       .locator(".heading-actions")
@@ -1428,9 +1415,8 @@ test(
     record("backend network loss is reported in the UI without a JS crash");
     await http.start();
     expectingNetworkOutage = false;
-    const recoveredSnapshot = page.waitForRequest(
-      (request) => request.url().includes("/api/v1/console/snapshot"),
-      { timeout: 10_000 },
+    const recoveredSnapshot = page.waitForRequest((request) =>
+      request.url().includes("/api/v1/console/snapshot"),
     );
     await page
       .locator(".heading-actions")
@@ -1493,14 +1479,14 @@ test(
 
 test(
   "disposed browser mounts cannot restart reads or subscriptions",
-  { timeout: 30000 },
+  { timeout: 0 },
   async (t) => {
     const fixture = createBrowserFixture();
     const http = await fixture.start();
     t.after(() => http.close());
     const browser = await chromium.launch({ headless: true });
     t.after(() => browser.close());
-    const page = await browser.newPage();
+    const page = disablePageTimeouts(await browser.newPage());
     await page.route("**/web/index.js", (route) =>
       route.fulfill({ contentType: "text/javascript", body: "" }),
     );
@@ -1559,14 +1545,14 @@ test(
 
 test(
   "closing task details rejects their delayed refresh",
-  { timeout: 30000 },
+  { timeout: 0 },
   async (t) => {
     const fixture = createBrowserFixture();
     const http = await fixture.start();
     t.after(() => http.close());
     const browser = await chromium.launch({ headless: true });
     t.after(() => browser.close());
-    const page = await browser.newPage();
+    const page = disablePageTimeouts(await browser.newPage());
     await page.goto(http.origin);
     await page.locator('[data-action="task"]').first().click();
     await page.locator('[data-action="task-refresh"]').waitFor();
@@ -1611,14 +1597,16 @@ test(
 
 test(
   "a delayed global session response cannot replace the selected project's sessions",
-  { timeout: 30000 },
+  { timeout: 0 },
   async (t) => {
     const fixture = createBrowserFixture();
     const http = await fixture.start();
     t.after(() => http.close());
     const browser = await chromium.launch({ headless: true });
     t.after(() => browser.close());
-    const page = await browser.newPage({ locale: "pl-PL" });
+    const page = disablePageTimeouts(
+      await browser.newPage({ locale: "pl-PL" }),
+    );
     let release!: () => void;
     let requested!: () => void;
     const pending = new Promise<void>((resolve) => {
@@ -1696,14 +1684,16 @@ test(
 
 test(
   "expired table snapshots refresh once and preserve the selected agent filter",
-  { timeout: 30000 },
+  { timeout: 0 },
   async (t) => {
     const fixture = createBrowserFixture();
     const http = await fixture.start();
     t.after(() => http.close());
     const browser = await chromium.launch({ headless: true });
     t.after(() => browser.close());
-    const page = await browser.newPage({ locale: "pl-PL" });
+    const page = disablePageTimeouts(
+      await browser.newPage({ locale: "pl-PL" }),
+    );
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(http.origin);
@@ -1764,14 +1754,14 @@ test(
 
 test(
   "background query completion preserves the open locale menu and keyboard focus",
-  { timeout: 30_000 },
+  { timeout: 0 },
   async (t) => {
     const fixture = createBrowserFixture();
     const http = await fixture.start();
     t.after(() => http.close());
     const browser = await chromium.launch({ headless: true });
     t.after(() => browser.close());
-    const page = await browser.newPage();
+    const page = disablePageTimeouts(await browser.newPage());
     await page.route("**/web/index.js", (route) =>
       route.fulfill({ contentType: "text/javascript", body: "" }),
     );

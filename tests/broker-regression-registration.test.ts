@@ -78,6 +78,7 @@ test("CI executes every required modeled profile with at least ten owned fixture
     fs.readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8"),
   );
   const job = record(record(record(workflow)["jobs"])["scenario-broker"]);
+  assert.equal(job["timeout-minutes"], "${{ matrix.suite.jobMinutes }}");
   const matrix = record(record(job["strategy"])["matrix"]);
   assert.deepEqual(matrix["protocol"], ["mcp", "addin"]);
   assert.deepEqual(matrix["concurrency"], [1, 2, 10]);
@@ -113,9 +114,8 @@ test("CI executes every required modeled profile with at least ten owned fixture
     const suite = suites.find((item) => item["id"] === row["id"]);
     assert.ok(suite);
     assert.equal(suite["owners"], copies);
-    assert.ok(
-      positive(suite["jobMinutes"]) >= positive(suite["timeoutMinutes"]) + 4,
-    );
+    assert.ok(positive(suite["jobMinutes"]));
+    assert.equal(suite["timeoutMinutes"], undefined, text(row["id"]));
   }
   const steps = list(job["steps"]).map(record);
   const step = steps.find(
@@ -125,6 +125,7 @@ test("CI executes every required modeled profile with at least ten owned fixture
   );
   assert.ok(step);
   const command = text(step["run"]);
+  assert.doesNotMatch(command, /^timeout\s/);
   assert.match(command, /--suite \$\{\{ matrix\.suite\.id \}\}/);
   assert.match(command, /--concurrency \$\{\{ matrix\.concurrency \}\}/);
   assert.match(command, /--owners \$\{\{ matrix\.suite\.owners \}\}/);
@@ -134,4 +135,23 @@ test("CI executes every required modeled profile with at least ten owned fixture
     record(artifact["with"])["name"],
     "scenario-broker-${{ matrix.protocol }}-${{ matrix.suite.id }}-c${{ matrix.concurrency }}",
   );
+});
+
+test("long CI commands rely on their job timeout instead of shell wrappers", () => {
+  const workflow: unknown = YAML.parse(
+    fs.readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8"),
+  );
+  const jobs = record(record(workflow)["jobs"]);
+  for (const [name, command] of [
+    ["contracts", "npm run test:contracts"],
+    ["public-consumers", "npm run test:public-consumers"],
+  ] as const) {
+    const job = record(jobs[name]);
+    assert.ok(positive(job["timeout-minutes"]), name);
+    const steps = list(job["steps"]).map(record);
+    assert.ok(
+      steps.some((step) => step["run"] === command),
+      name,
+    );
+  }
 });

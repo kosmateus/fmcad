@@ -61,7 +61,7 @@ jobs:
       - run: npm run test:scenarios:component -- --protocol addin --owners 2 --suite foundation
       - run: npm run test:prepare-offline
       - run: mkdir -p /tmp/opencode
-      - run: timeout --signal=TERM --kill-after=15s 15m npm run test:contracts
+      - run: npm run test:contracts
 
   scenario-model:
     runs-on: ubuntu-24.04
@@ -147,93 +147,38 @@ jobs:
         protocol: [mcp, addin]
         concurrency: [1, 2, 10]
         suite:
-          - { id: foundation, owners: 10, timeoutMinutes: 12, jobMinutes: 18 }
-          - { id: saved, owners: 10, timeoutMinutes: 25, jobMinutes: 31 }
-          - { id: parameters, owners: 3, timeoutMinutes: 30, jobMinutes: 36 }
-          - { id: documents, owners: 4, timeoutMinutes: 35, jobMinutes: 41 }
-          - { id: cloud, owners: 10, timeoutMinutes: 18, jobMinutes: 24 }
-          - { id: boxes, owners: 5, timeoutMinutes: 18, jobMinutes: 24 }
-          - { id: attributes, owners: 10, timeoutMinutes: 65, jobMinutes: 71 }
-          - { id: sketches, owners: 10, timeoutMinutes: 60, jobMinutes: 66 }
-          - { id: reopen, owners: 10, timeoutMinutes: 34, jobMinutes: 40 }
-          - { id: revisions, owners: 10, timeoutMinutes: 40, jobMinutes: 46 }
-          - { id: rectangles, owners: 10, timeoutMinutes: 58, jobMinutes: 64 }
-          - { id: transactions, owners: 10, timeoutMinutes: 40, jobMinutes: 46 }
-          - { id: camera, owners: 10, timeoutMinutes: 25, jobMinutes: 31 }
-          - { id: poses, owners: 10, timeoutMinutes: 30, jobMinutes: 36 }
-          - { id: animation, owners: 10, timeoutMinutes: 35, jobMinutes: 41 }
-          - { id: materials, owners: 10, timeoutMinutes: 25, jobMinutes: 31 }
-          - { id: appearances, owners: 10, timeoutMinutes: 25, jobMinutes: 31 }
-          - {
-              id: style-assignments,
-              owners: 10,
-              timeoutMinutes: 45,
-              jobMinutes: 51,
-            }
-          - {
-              id: thread-recipes,
-              owners: 10,
-              timeoutMinutes: 65,
-              jobMinutes: 71,
-            }
-          - { id: gear-pair, owners: 10, timeoutMinutes: 45, jobMinutes: 51 }
-          - {
-              id: engineering-declarations,
-              owners: 10,
-              timeoutMinutes: 30,
-              jobMinutes: 36,
-            }
-          - {
-              id: mechanical-declarations,
-              owners: 10,
-              timeoutMinutes: 35,
-              jobMinutes: 41,
-            }
-          - {
-              id: retained-thread,
-              owners: 2,
-              timeoutMinutes: 45,
-              jobMinutes: 51,
-            }
-          - { id: retained-seal, owners: 2, timeoutMinutes: 45, jobMinutes: 51 }
-          - {
-              id: retained-fasteners,
-              owners: 1,
-              timeoutMinutes: 45,
-              jobMinutes: 51,
-            }
-          - {
-              id: retained-mechanism,
-              owners: 2,
-              timeoutMinutes: 45,
-              jobMinutes: 51,
-            }
-          - { id: retained-pose, owners: 2, timeoutMinutes: 45, jobMinutes: 51 }
-          - {
-              id: retained-interference,
-              owners: 2,
-              timeoutMinutes: 45,
-              jobMinutes: 51,
-            }
-          - {
-              id: retained-containment,
-              owners: 2,
-              timeoutMinutes: 45,
-              jobMinutes: 51,
-            }
-          - {
-              id: retained-gm-contracts,
-              owners: 1,
-              timeoutMinutes: 180,
-              jobMinutes: 186,
-            }
-          - {
-              id: retained-engineering,
-              owners: 1,
-              timeoutMinutes: 45,
-              jobMinutes: 51,
-            }
-          - { id: child-cli, owners: 10, timeoutMinutes: 25, jobMinutes: 31 }
+          - { id: foundation, owners: 10, jobMinutes: 18 }
+          - { id: saved, owners: 10, jobMinutes: 31 }
+          - { id: parameters, owners: 3, jobMinutes: 36 }
+          - { id: documents, owners: 4, jobMinutes: 41 }
+          - { id: cloud, owners: 10, jobMinutes: 24 }
+          - { id: boxes, owners: 5, jobMinutes: 24 }
+          - { id: attributes, owners: 10, jobMinutes: 71 }
+          - { id: sketches, owners: 10, jobMinutes: 66 }
+          - { id: reopen, owners: 10, jobMinutes: 40 }
+          - { id: revisions, owners: 10, jobMinutes: 46 }
+          - { id: rectangles, owners: 10, jobMinutes: 64 }
+          - { id: transactions, owners: 10, jobMinutes: 46 }
+          - { id: camera, owners: 10, jobMinutes: 31 }
+          - { id: poses, owners: 10, jobMinutes: 36 }
+          - { id: animation, owners: 10, jobMinutes: 41 }
+          - { id: materials, owners: 10, jobMinutes: 31 }
+          - { id: appearances, owners: 10, jobMinutes: 31 }
+          - { id: style-assignments, owners: 10, jobMinutes: 51 }
+          - { id: thread-recipes, owners: 10, jobMinutes: 71 }
+          - { id: gear-pair, owners: 10, jobMinutes: 51 }
+          - { id: engineering-declarations, owners: 10, jobMinutes: 36 }
+          - { id: mechanical-declarations, owners: 10, jobMinutes: 41 }
+          - { id: retained-thread, owners: 2, jobMinutes: 51 }
+          - { id: retained-seal, owners: 2, jobMinutes: 51 }
+          - { id: retained-fasteners, owners: 1, jobMinutes: 51 }
+          - { id: retained-mechanism, owners: 2, jobMinutes: 51 }
+          - { id: retained-pose, owners: 2, jobMinutes: 51 }
+          - { id: retained-interference, owners: 2, jobMinutes: 51 }
+          - { id: retained-containment, owners: 2, jobMinutes: 51 }
+          - { id: retained-gm-contracts, owners: 1, jobMinutes: 186 }
+          - { id: retained-engineering, owners: 1, jobMinutes: 51 }
+          - { id: child-cli, owners: 10, jobMinutes: 31 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -245,7 +190,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
       # Keep the complete MCP/addin × 1/2/10 grid for every family.
-      - run: timeout --signal=TERM --kill-after=15s ${{ matrix.suite.timeoutMinutes }}m npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite.id }} --concurrency ${{ matrix.concurrency }} --owners ${{ matrix.suite.owners }}
+      - run: npm run test:scenarios:broker -- --protocol ${{ matrix.protocol }} --suite ${{ matrix.suite.id }} --concurrency ${{ matrix.concurrency }} --owners ${{ matrix.suite.owners }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -334,7 +279,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
       - run: npm run test:prepare-offline
-      - run: timeout --signal=TERM --kill-after=15s 18m npm run test:public-consumers
+      - run: npm run test:public-consumers
         env:
           FMCAD_REFERENCE_PYTHON: python3
           TERM: xterm

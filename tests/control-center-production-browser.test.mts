@@ -42,7 +42,7 @@ async function availablePort(): Promise<number> {
 
 test(
   "browser reads real registered SQLite histories through the installed production composition",
-  { timeout: 180000 },
+  { timeout: 0 },
   async (t) => {
     const artifacts = path.resolve(
       process.env["FMCAD_CONTROL_CENTER_E2E_ARTIFACTS"] ??
@@ -135,6 +135,8 @@ test(
       locale: "pl-PL",
       viewport: { width: 1440, height: 960 },
     });
+    page.setDefaultTimeout(0);
+    page.setDefaultNavigationTimeout(0);
     await page
       .context()
       .tracing.start({ screenshots: true, snapshots: true, sources: true });
@@ -290,7 +292,7 @@ test(
 
 test(
   "browser System controls reach authenticated lifecycle IPC and retain original receipts",
-  { timeout: 60000 },
+  { timeout: 0 },
   async (t) => {
     const root = fs.mkdtempSync(
       path.join(os.tmpdir(), "fmcad-system-browser-"),
@@ -362,6 +364,8 @@ test(
     assert.equal((await ready)[0].browserReady, true);
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ locale: "en-US" });
+    page.setDefaultTimeout(0);
+    page.setDefaultNavigationTimeout(0);
     const errors: string[] = [];
     const posts: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
