@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 import { createRequire } from "node:module";
 const load = createRequire(path.resolve("tests/live-broker.test.js"));
 interface Rpc {
@@ -91,6 +93,13 @@ const { context, commandFlags, createBackend, rpcResponse } = load(
 const { run, suites, scopedSuites, parseOptions, runBatch, testSourceHash } =
   load("./run-live") as RunPort;
 const multiProcess = load("./live-normal-multidocument-processes") as {
+  capture(
+    queue: unknown,
+    cfg: unknown,
+    directory: string,
+    requestId: string,
+    fingerprint: string,
+  ): Promise<unknown>;
   parseOptions(argv: string[]): {
     protocol?: string;
     processes: number;
@@ -161,6 +170,54 @@ const multiProcess = load("./live-normal-multidocument-processes") as {
     requestId: string,
   ): Promise<Record<string, unknown>>;
 };
+
+test("independent runner inventory uses the typed run entrypoint and one original read-only request", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-capture-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const job = {
+    id: "capture-job",
+    requestId: "capture-request",
+    clientId: "capture-owner",
+    state: "succeeded",
+  };
+  const snapshot = { active: null, documents: [] };
+  let submitted = 0,
+    waited = 0;
+  const queue = {
+    auth: { clientId: job.clientId },
+    async submit(input: Record<string, unknown>) {
+      submitted++;
+      assert.equal(input["requestId"], job.requestId);
+      assert.equal(input["buildHash"], "capture-build");
+      const argv = input["argv"];
+      assert.ok(Array.isArray(argv));
+      assert.equal(argv[0], "run");
+      assert.equal(argv[2], "--readonly");
+      const source = fs.readFileSync(String(argv[1]), "utf8");
+      assert.match(source, /^def run\(context: str\):$/m);
+      assert.match(source, /^    a=adsk\.core\.Application\.get\(\)$/m);
+      return job;
+    },
+    async wait(id: string) {
+      waited++;
+      assert.equal(id, job.id);
+      return {
+        job,
+        execution: { sdkSettled: true },
+        stdout: "FMCAD_RESULT " + JSON.stringify(snapshot),
+      };
+    },
+  };
+  await multiProcess.capture(
+    queue,
+    { backend: "addin" },
+    directory,
+    job.requestId,
+    "capture-build",
+  );
+  assert.equal(submitted, 1);
+  assert.equal(waited, 1);
+});
 
 test("live SDK tests fail closed outside a broker suite and reject direct mode", () => {
   assert.throws(() => context({}), /no direct fallback/);

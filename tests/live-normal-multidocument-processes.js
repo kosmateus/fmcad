@@ -215,8 +215,9 @@ async function capture(queue, cfg, directory, requestId, fingerprint) {
   fs.writeFileSync(
     filename,
     "import adsk.core, json\n" +
-      "a=adsk.core.Application.get()\n" +
-      "print('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None, documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d['id']))))\n",
+      "def run(context: str):\n" +
+      "    a=adsk.core.Application.get()\n" +
+      "    print('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None, documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d['id']))))\n",
     { flag: "wx", mode: 0o600 },
   );
   const argv = ["run", filename, "--readonly"];
@@ -860,6 +861,7 @@ if (require.main === module)
     });
 
 module.exports = {
+  capture,
   exactState,
   globalConcurrency,
   groupManifest,
