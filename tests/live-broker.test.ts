@@ -93,6 +93,10 @@ const { context, commandFlags, createBackend, rpcResponse } = load(
 const { run, suites, scopedSuites, parseOptions, runBatch, testSourceHash } =
   load("./run-live") as RunPort;
 const multiProcess = load("./live-normal-multidocument-processes") as {
+  verifyFinalQueue(
+    queue: { call(action: string): Promise<unknown> },
+    historicalUnknownJobCount: number,
+  ): Promise<unknown>;
   waitForGroupReadJobs(
     children: unknown[],
     readOriginal: (receipt: Record<string, unknown>) => Promise<unknown>,
@@ -272,6 +276,39 @@ test("independent runner readiness observes original job state instead of stale 
     },
   ]);
   assert.equal(job.state, "preparing");
+});
+
+test("final independent-runner verification reads queue-summary and rejects missing or unresolved evidence", async () => {
+  const status = {
+    blocked: null,
+    held: null,
+    nonterminalJobCount: 0,
+    historicalUnknownJobCount: 2,
+  };
+  const queue = {
+    async call(action: string) {
+      assert.equal(action, "queue-summary");
+      return status;
+    },
+  };
+  assert.deepEqual(await multiProcess.verifyFinalQueue(queue, 2), status);
+  for (const invalid of [
+    {},
+    { ...status, nonterminalJobCount: 1 },
+    { ...status, blocked: "unknown" },
+    { ...status, held: "unresolved" },
+    { ...status, historicalUnknownJobCount: 1 },
+  ])
+    await assert.rejects(
+      multiProcess.verifyFinalQueue(
+        {
+          async call() {
+            return invalid;
+          },
+        },
+        2,
+      ),
+    );
 });
 
 test("live SDK tests fail closed outside a broker suite and reject direct mode", () => {

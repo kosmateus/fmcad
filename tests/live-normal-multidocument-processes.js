@@ -219,6 +219,23 @@ function readMarker(stdout) {
   return state(JSON.parse(markers[0].slice("FMCAD_RESULT ".length)));
 }
 
+async function verifyFinalQueue(queue, historicalUnknownJobCount) {
+  const finalStatus = object(await queue.call("queue-summary"));
+  assert.equal(finalStatus.blocked ?? null, null, "Broker left blocked work");
+  assert.equal(
+    finalStatus.held ?? null,
+    null,
+    "Broker retained unresolved work",
+  );
+  assert.equal(finalStatus.nonterminalJobCount, 0);
+  assert.equal(
+    finalStatus.historicalUnknownJobCount,
+    historicalUnknownJobCount,
+    "The multi-runner test must not alter quarantined historical outcomes",
+  );
+  return finalStatus;
+}
+
 async function capture(queue, cfg, directory, requestId, fingerprint) {
   const filename = path.join(directory, requestId + ".py");
   fs.writeFileSync(
@@ -842,19 +859,7 @@ async function main(argv = process.argv.slice(2)) {
     summary.after = afterCapture.state;
     summary.afterReceipt = afterCapture.receipt;
     exactState(summary.baseline, afterCapture.state);
-    const finalStatus = object(await queue.call("status"));
-    assert.equal(finalStatus.blocked ?? null, null, "Broker left blocked work");
-    assert.equal(
-      finalStatus.held ?? null,
-      null,
-      "Broker retained unresolved work",
-    );
-    assert.equal(finalStatus.nonterminalJobCount, 0);
-    assert.equal(
-      finalStatus.historicalUnknownJobCount,
-      summary.historicalUnknownJobCount,
-      "The multi-runner test must not alter quarantined historical outcomes",
-    );
+    await verifyFinalQueue(queue, summary.historicalUnknownJobCount);
     summary.status = "passed";
     save();
     console.log("MULTIDOCUMENT_PROCESS_REPORT " + summaryFile);
@@ -893,6 +898,7 @@ if (require.main === module)
     });
 
 module.exports = {
+  verifyFinalQueue,
   waitForGroupReadJobs,
   capture,
   exactState,
