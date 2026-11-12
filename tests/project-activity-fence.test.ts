@@ -269,7 +269,35 @@ test("the production broker refuses new archived-project jobs and preserves orig
       timeoutMs: 1000,
       payload: { jsonrpc: "2.0", id: 1, method: "ping" },
     };
-    const first = await ipc.request(queue, { action: "submit", auth, request });
+    const registryLock = f.registry.readonlyPath + ".lock";
+    fs.writeFileSync(
+      registryLock,
+      JSON.stringify({ pid: process.pid, startedAtMs: Date.now() }),
+      { flag: "wx", mode: 0o600 },
+    );
+    const admitting = ipc
+      .request(queue, { action: "submit", auth, request })
+      .then(
+        (value) => ({ value, error: undefined }),
+        (error) => ({ value: undefined, error: error as unknown }),
+      );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await ipc.request(queue, { action: "control-status", auth });
+    assert.equal(
+      calls,
+      0,
+      "A contended pre-admission fence must not dispatch SDK work",
+    );
+    assert.equal(
+      fs.existsSync(registryLock),
+      true,
+      "The broker must not reclaim the writer lock",
+    );
+    fs.unlinkSync(registryLock);
+    const admission = await admitting;
+    if (admission.error) throw admission.error;
+    const first = admission.value;
+    assert.ok(first);
     let settled = false;
     for (let index = 0; index < 200; index++) {
       const result = await ipc.request(queue, {

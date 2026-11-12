@@ -28,7 +28,7 @@ const historyAdapters = load(
   ),
 ) as typeof import("../packages/node-adapters/dist/persistence/project-history/index.js");
 
-test("project registry retains an unreconciled lock after bounded contention waiting", (t) => {
+test("project registry activity fence retains an unreconciled lock without blocking", (t) => {
   const fixture = setupProjects(t, []),
     lock = fixture.registry.readonlyPath + ".lock";
   fs.mkdirSync(path.dirname(lock), { recursive: true });
@@ -36,6 +36,7 @@ test("project registry retains an unreconciled lock after bounded contention wai
   fs.writeFileSync(lock, bytes, { flag: "wx", mode: 0o600 });
   assert.ok(fixture.registry.withRegistrationFence);
   let calls = 0;
+  const started = performance.now();
   assert.throws(
     () =>
       fixture.registry.withRegistrationFence!(() => {
@@ -44,12 +45,16 @@ test("project registry retains an unreconciled lock after bounded contention wai
     { code: "REGISTRY_BUSY" },
   );
   assert.equal(calls, 0);
+  assert.ok(
+    performance.now() - started < 1000,
+    "The synchronous activity fence must not wait on another process",
+  );
   assert.equal(fs.readFileSync(lock, "utf8"), bytes);
   assert.equal(fs.existsSync(fixture.registry.readonlyPath), false);
 });
 
 test("project registry waits for an independent writer to release its original lock", async (t) => {
-  const fixture = setupProjects(t, []);
+  const fixture = setupProjects(t, ["project-a"]);
   const lock = fixture.registry.readonlyPath + ".lock";
   fs.mkdirSync(path.dirname(lock), { recursive: true });
   const child = spawn(
@@ -81,13 +86,12 @@ test("project registry waits for an independent writer to release its original l
     );
     child.stdout.once("data", () => resolve());
   });
-  assert.ok(fixture.registry.withRegistrationFence);
-  let calls = 0;
-  fixture.registry.withRegistrationFence(() => {
-    calls++;
-    assert.equal(fs.existsSync(lock), true);
+  const snapshot = fixture.registry.setLifecycle("project-a", {
+    monitoring: true,
+    archivedAtMs: null,
+    nowMs: FIXTURE_NOW,
   });
-  assert.equal(calls, 1);
+  assert.equal(snapshot.projects.length, 1);
   assert.equal(await exited, 0);
   assert.equal(fs.existsSync(lock), false);
 });

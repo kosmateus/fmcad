@@ -343,7 +343,7 @@ export function openProjectRegistry(
   const lockFile = `${file}.lock`;
   const now = options.now ?? Date.now;
 
-  function withWriteLock<T>(operation: () => T): T {
+  function withWriteLock<T>(operation: () => T, waitForWriter = true): T {
     ensureDirectoryChain(directory);
     let lockFd: number;
     const deadline = performance.now() + 2000;
@@ -356,7 +356,7 @@ export function openProjectRegistry(
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
         // Independent processes release their own short synchronous writes.
         // Never reclaim or remove an existing lock, including an orphaned one.
-        if (performance.now() < deadline) {
+        if (waitForWriter && performance.now() < deadline) {
           Atomics.wait(wait, 0, 0, 10);
           continue;
         }
@@ -434,7 +434,7 @@ export function openProjectRegistry(
             "Registration fence operations must remain synchronous",
           );
         return result;
-      });
+      }, false);
     },
 
     lookup(projectId: string): ProjectRegistryEntry | null {

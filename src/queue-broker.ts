@@ -4903,24 +4903,28 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           }
           // Offline raw preparation can outlive a stop/reset/build transition.
           // Recheck ownership before publishing an accepted job, not just at SDK send.
-          if (stopping || closed || closing)
-            throw Object.assign(
-              new Error("Broker is stopping; request was not accepted"),
-              { code: "BROKER_STOPPING", notStarted: true },
-            );
-          if (readJson<P.Owner>(lock).nonce !== marker.nonce)
-            throw Object.assign(
-              new Error("Broker ownership changed before acceptance"),
-              { code: "LOCK_CHANGED", notStarted: true },
-            );
-          if (buildHash() !== codeHash)
-            throw Object.assign(
-              new Error("Executable changed before acceptance"),
-              { code: "BUILD_CHANGED", notStarted: true },
-            );
-          resetFence();
-          if (state.epoch) epochAdmission(state, request, clients);
+          const verifyAcceptance = () => {
+            if (stopping || closed || closing)
+              throw Object.assign(
+                new Error("Broker is stopping; request was not accepted"),
+                { code: "BROKER_STOPPING", notStarted: true },
+              );
+            if (readJson<P.Owner>(lock).nonce !== marker.nonce)
+              throw Object.assign(
+                new Error("Broker ownership changed before acceptance"),
+                { code: "LOCK_CHANGED", notStarted: true },
+              );
+            if (buildHash() !== codeHash)
+              throw Object.assign(
+                new Error("Executable changed before acceptance"),
+                { code: "BUILD_CHANGED", notStarted: true },
+              );
+            resetFence();
+            if (state.epoch) epochAdmission(state, request, clients);
+          };
+          verifyAcceptance();
           const accept = () => {
+            verifyAcceptance();
             if (!existing)
               load(
                 "./dist/node-adapters/persistence/accepted-inputs",
@@ -4943,9 +4947,34 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           // Original request lookup remains available after archival and never
           // creates a second job. New durable acceptance shares the project's
           // lifecycle fence with archive and presence writers.
-          return existing
-            ? accept()
-            : projectActivity.withProjectActivityFence(request.cwd, accept);
+          if (existing) return accept();
+          const registrationDeadline = performance.now() + 2000;
+          for (;;) {
+            let accepting = false;
+            try {
+              return projectActivity.withProjectActivityFence(
+                request.cwd,
+                () => {
+                  accepting = true;
+                  return accept();
+                },
+              );
+            } catch (error) {
+              // The callback has not run: no input retention, job acceptance or
+              // worker launch occurred. Yield IPC while another writer settles.
+              if (
+                accepting ||
+                !error ||
+                typeof error !== "object" ||
+                !("code" in error) ||
+                error.code !== "REGISTRY_BUSY" ||
+                performance.now() >= registrationDeadline
+              )
+                throw error;
+              await new Promise((resolve) => setTimeout(resolve, 10));
+              verifyAcceptance();
+            }
+          }
         } finally {
           if (preparedId) rawPreparations--;
           if (stopping) setImmediate(drain);
