@@ -153,9 +153,17 @@ function verifyRunnerReports(manifest, reports, identities) {
     "Runner PIDs must be distinct",
   );
   assert.equal(
-    new Set(identities.map((identity) => identity.birth)).size,
+    new Set(identities.map((identity) => identity.pid + ":" + identity.birth))
+      .size,
     identities.length,
-    "Runner process births must be distinct",
+    "Runner PID/birth identities must be distinct",
+  );
+  assert.ok(
+    identities.every(
+      (identity) =>
+        typeof identity.birth === "string" && identity.birth.length > 0,
+    ),
+    "Runner births must be recorded, but clock ticks need not be unique across PIDs",
   );
   for (let index = 0; index < reports.length; index++) {
     const report = object(reports[index], "Missing runner report");

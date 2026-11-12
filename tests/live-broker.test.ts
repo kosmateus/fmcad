@@ -728,6 +728,20 @@ test("multi-runner evidence requires distinct processes, clients, receipts and c
   assert.doesNotThrow(() =>
     multiProcess.verifyRunnerReports(manifest, reports, identities),
   );
+  const sameTick = identities.map((identity) => ({
+    ...identity,
+    birth: "same-boot:same-start-tick",
+  }));
+  assert.doesNotThrow(() =>
+    multiProcess.verifyRunnerReports(
+      manifest,
+      reports.map((report, index) => ({
+        ...report,
+        processIdentity: sameTick[index],
+      })),
+      sameTick,
+    ),
+  );
   assert.throws(() =>
     multiProcess.verifyRunnerReports(manifest, reports, [
       identities[0]!,
