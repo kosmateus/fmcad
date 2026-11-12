@@ -29,13 +29,15 @@ for (const size of [2, 37]) {
 body = design.rootComponent.bRepBodies.item(0)
 assert body.faces.count == 6
 assert body.edges.count == 12
-for boundary in (body.faces, body.edges):
-    try:
-        boundary.item(0)
-    except NotImplementedError:
-        pass
-    else:
-        raise AssertionError('Unmodeled topology must not be synthesized')
+face = body.faces.item(0)
+assert face.body is body and face.entityToken.startswith('model-face:')
+assert not hasattr(face, 'geometry')
+try:
+    body.edges.item(0)
+except NotImplementedError:
+    pass
+else:
+    raise AssertionError('Unmodeled edge geometry and identity must not be synthesized')
 ${emit("dict(creationId=doc.creationId, faces=body.faces.count, edges=body.edges.count)")}`),
             );
             assert.equal(result["faces"], 6);

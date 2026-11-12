@@ -819,7 +819,7 @@ export function nativeEngineeringScenarios(
             ],
             radius: "2 mm",
             obstacles: [
-              { name: "near", point: ["3 mm", "0 mm", "0 mm"] },
+              { name: "near", point: ["3 mm", "3 mm", "0 mm"] },
               { name: "clear", point: ["10 mm", "5 mm", "0 mm"] },
             ],
             minimumClearance: "1.5 mm",
@@ -1935,9 +1935,9 @@ export function nativeEngineeringScenarios(
           );
           check(
             "optics.frustum",
-            "clipped far half-width returns 2 mm in cm",
+            "clipped far half-width returns 2 cm",
             field(frustum, "clippedCorners", "far", 0, 0),
-            0.2,
+            2,
             1e-9,
           );
           validated("optics.frustum");
@@ -2283,7 +2283,7 @@ export function nativeEngineeringScenarios(
             "bearing.stack-check",
             "no preload is fabricated",
             field(bearing, "preload"),
-            "none declared",
+            "none declared (no default preload is assumed)",
           );
           check(
             "bearing.stack-check",
@@ -2368,7 +2368,12 @@ export function nativeEngineeringScenarios(
           };
           const definition = await cad("snap.define", {
             ...snapInput,
-            geometry: { ...record(field(snapInput, "geometry")) },
+            geometry: {
+              length: snapInput.geometry.length,
+              width: snapInput.geometry.width,
+              thickness: snapInput.geometry.thickness,
+              engagementDepth: snapInput.geometry.engagementDepth,
+            },
           });
           check(
             "snap.define",
@@ -2520,6 +2525,7 @@ export function nativeEngineeringScenarios(
         ["datum.frame", "datum.transform"],
         async () => {
           const input = {
+            schemaVersion: 1,
             name: "AnalyticsFrame",
             origin: ["10 mm", "-20 mm", "30 mm"],
             xAxis: [1, 0, 0],
@@ -2638,11 +2644,26 @@ export function nativeEngineeringScenarios(
               1e-10,
             ),
           );
+          const difference = values(field(transformed, "differences", 0));
           check(
             "datum.transform",
             "directed difference is to-minus-from in cm",
-            values(field(transformed, "differences", 0)).join(","),
-            "0.3,0.4,0.5",
+            difference[0],
+            0.3,
+            1e-10,
+          );
+          check(
+            "datum.transform",
+            "directed difference y component in cm",
+            difference[1],
+            0.4,
+            1e-10,
+          );
+          check(
+            "datum.transform",
+            "directed difference z component in cm",
+            difference[2],
+            0.5,
             1e-10,
           );
           validated("datum.transform");

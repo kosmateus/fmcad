@@ -39,11 +39,13 @@ syntax remain unsupported. Shared scenarios and historical comparisons are in
 `tests/scenarios/parameter-cases.ts` and `parameters.test.ts`.
 
 Simple construction planes support explicit offsets, parallel midplanes and angles
-around origin axes. Components support identity placement and nested occurrence
-trees. Display units and empty/end timeline markers are implemented. Component
-identities stay stable within the process, and conservative content revisions let
-the real broker detect modeled edits without activating the document. Revision
-strings are model state hashes, not simulated Autodesk revision identifiers.
+around origin axes. Components support identity placement, direct root occurrence
+enumeration, and translation-only root occurrence transforms for deterministic
+explode planning and rendering. Nested occurrence-context enumeration and rotations
+remain unsupported. Display units and empty/end timeline markers are implemented.
+Component identities stay stable within the process, and conservative content
+revisions let the real broker detect modeled edits without activating the document.
+Revision strings are model state hashes, not simulated Autodesk revision identifiers.
 
 Nonparallel midplanes, parameter-driven plane regeneration, referenced-plane
 cascading deletion, nonidentity component transforms and general feature rollback are
@@ -223,9 +225,9 @@ independent getters retain these references across supported saved revisions.
 The initial null getters mean no modeled assignment, not a claim that native
 Fusion has no default physical material. No density/mass or inherited visual state
 is supplied. Foreign/library resource setters, closed or rolled-back targets,
-nonroot bodies and override clearing are refused. Empty allOccurrences is valid
-only for an actually empty assembly; nonempty context enumeration is unsupported.
-The pinned BaseComponent accessor supplies the inherited API shape. Actual native
+nonroot bodies and override clearing are refused. `allOccurrences` enumerates direct
+root occurrences only when they have no nested children; nested context enumeration
+is unsupported. The pinned BaseComponent accessor supplies the inherited API shape. Actual native
 resource/getter/persistence behavior is still a qualification assumption.
 
 ## Analytic thread recipes
@@ -253,7 +255,8 @@ That comparison is not a claim of native full-topology or timeline-health fideli
 The audit's face/edge cardinalities are derived from the eight corners of a
 nondegenerate axis-aligned rectangular prism: coplanar groups of four corners form
 its six faces, and vertex pairs differing along exactly one axis form its twelve
-edges. This extends the existing rectangular extrusion model only. Collection
-indexing/enumeration deliberately refuses unsupported native face/edge objects;
-there are no synthetic topology identities, general BRep or surface algorithms.
-The pinned API check includes the two BRepBody collection getter shapes.
+edges. This extends the existing rectangular extrusion model only. Six synthetic
+face identities support appearance-state readback; they expose no geometry and are
+not native topology tokens. Edge indexing/enumeration, general BRep, and surface
+algorithms remain unsupported. The pinned API check includes the two BRepBody
+collection getter shapes.

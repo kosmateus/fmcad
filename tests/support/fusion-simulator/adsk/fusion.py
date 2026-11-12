@@ -393,12 +393,38 @@ class ConstructionPlanes(core.Collection[ConstructionPlane]):
 
 
 class Occurrence(core.Base):
+    objectType: ClassVar[str] = "adsk::fusion::Occurrence"
+
     def __init__(self, component: Component) -> None:
         self.component: Component = component
+        self.model_transform: core.Matrix3D = core.Matrix3D.create()
 
     @property
     def name(self) -> str:
         return self.component.name + ":1"
+
+    @property
+    def fullPathName(self) -> str:
+        return self.name
+
+    @property
+    def transform2(self) -> core.Matrix3D:
+        if not self.component.model_design.model_doc.isValid:
+            raise ValueError("Occurrence document is closed")
+        return self.model_transform.copy()
+
+    @transform2.setter
+    def transform2(self, value: core.Matrix3D) -> None:
+        if not self.component.model_design.model_doc.isValid:
+            raise ValueError("Occurrence document is closed")
+        cells = value.asArray()
+        if any(cells[index] != expected for index, expected in {
+            0: 1., 1: 0., 2: 0., 4: 0., 5: 1., 6: 0.,
+            8: 0., 9: 0., 10: 1., 12: 0., 13: 0., 14: 0., 15: 1.
+        }.items()):
+            raise NotImplementedError("Occurrence rotations and nonrigid transforms are not modeled")
+        self.model_transform = value.copy()
+        self.component.model_design.model_doc.isModified = True
 
 
 class Occurrences(core.Collection[Occurrence]):
@@ -410,11 +436,10 @@ class Occurrences(core.Collection[Occurrence]):
         timeline = self.model_component.model_design.timeline
         if timeline.markerPosition != timeline.count:
             raise NotImplementedError("Editing a rolled-back timeline is not modeled")
-        if transform.asArray() != core.Matrix3D.create().asArray():
-            raise NotImplementedError("Only identity component placement is modeled")
         design = self.model_component.model_design
         component = Component(design, "Component" + str(design.allComponents.count))
         occurrence = Occurrence(component)
+        occurrence.transform2 = transform
         self.values.append(occurrence)
         design.allComponents.values.append(component)
         design.timeline.values.append(TimelineObject(occurrence))
@@ -457,8 +482,13 @@ class Component(core.Base):
 
     @property
     def allOccurrences(self) -> core.Collection[Occurrence]:
+        if self is self.model_design.rootComponent:
+            occurrences = list(self.occurrences)
+            if any(occurrence.component.occurrences.count for occurrence in occurrences):
+                raise NotImplementedError("Nested assembly-context occurrence enumeration is not modeled")
+            return core.Collection(occurrences)
         if self.occurrences.count:
-            raise NotImplementedError("Assembly-context occurrence enumeration is not modeled")
+            raise NotImplementedError("Nested assembly-context occurrence enumeration is not modeled")
         return core.Collection()
 
     @property
@@ -476,7 +506,8 @@ class Component(core.Base):
             units=self.model_design.unitsManager.defaultLengthUnits,
             planes=[dict(name=p.name, origin=p.geometry.origin.asArray(),
                          normal=p.geometry.normal.asArray()) for p in self.constructionPlanes],
-            occurrences=[dict(id=o.component.id, name=o.component.name) for o in self.occurrences],
+            occurrences=[dict(id=o.component.id, name=o.component.name,
+                              transform=o.transform2.asArray()) for o in self.occurrences],
             sketches=[dict(name=s.name, profiles=[dict(first=p.model_first.asArray(),
                 second=p.model_second.asArray()) for p in s.profiles]) for s in self.sketches],
             bodies=[dict(name=b.name, revision=b.revisionId) for b in self.bRepBodies])

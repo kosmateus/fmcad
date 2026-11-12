@@ -196,7 +196,7 @@ export const cases: readonly DeclarationCase[] = [
             pitchDiameter: "9 mm",
             pitch: "1.5 mm",
           }),
-        /minorDiameter or pitchDiameter/,
+        /(?:minorDiameter or pitchDiameter, not both|supplies both minorDiameter and pitchDiameter; choose one)/,
       );
       // Equal lead but mismatched starts fails (lead equality alone is not enough).
       await assert.rejects(

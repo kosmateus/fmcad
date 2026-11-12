@@ -436,7 +436,9 @@ class _PrismFaces:
         return len(self.model_boundaries)
 
     def item(self, index: int) -> _PrismFace:
-        raise NotImplementedError("Indexed face topology is not modeled")
+        if index < 0 or index >= self.count:
+            raise IndexError("Rectangular-prism face index out of range")
+        return _PrismFace(self.model_body, index)
 
     def __iter__(self) -> Iterator[_PrismFace]:
         return (_PrismFace(self.model_body, index) for index in range(self.count))

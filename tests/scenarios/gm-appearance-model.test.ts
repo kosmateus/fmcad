@@ -4,7 +4,8 @@ import { fixture, remaining } from "./test-support";
 
 test("synthetic appearance descriptors are immutable metadata bound to the copied resource", async (t) => {
   const { model } = await fixture(t);
-  const result = await model.execute(`
+  const result = await model.execute(
+    `
 import adsk.core, adsk.fusion
 app = adsk.core.Application.get()
 first = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
@@ -33,12 +34,16 @@ try:
         assert face.body is body and face.parentComponent is root and face.isValid
         assert face.appearance is None and face.appearanceSourceType is None
         assert not hasattr(face, 'geometry')
+    indexed = body.faces.item(0)
+    assert indexed.entityToken == faces[0].entityToken
+    assert indexed.body is body and indexed.parentComponent is root and indexed.isValid
+    assert not hasattr(indexed, 'geometry')
     try:
-        body.faces.item(0)
-    except NotImplementedError:
+        body.faces.item(6)
+    except IndexError:
         pass
     else:
-        raise AssertionError('Synthetic face identity exposed indexed topology')
+        raise AssertionError('Out-of-range prism face index accepted')
     source = app.materialLibraries.item(0).appearances.item(0)
     one = a.appearances.addByCopy(source, 'First descriptor copy')
     two = b.appearances.addByCopy(one, 'Second descriptor copy')
@@ -75,7 +80,9 @@ try:
 finally:
     if first.isValid: first.close(False)
     if second.isValid: second.close(False)
-`, false);
+`,
+    false,
+  );
   assert.equal(result.success, true, result.error);
   assert.deepEqual(await remaining(model), { active: null, documents: [] });
 });

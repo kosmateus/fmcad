@@ -375,13 +375,54 @@ class Plane(Base):
 
 
 class Matrix3D(Base):
+    objectType: ClassVar[str] = "adsk::core::Matrix3D"
+
+    def __init__(self) -> None:
+        self.model_cells: list[float] = [
+            1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.
+        ]
+
     @staticmethod
     def create() -> Matrix3D:
         return Matrix3D()
 
     def asArray(self) -> list[float]:
-        # Only the identity placement used by comp_add is implemented.
-        return [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.]
+        return list(self.model_cells)
+
+    @property
+    def translation(self) -> Vector3D:
+        return Vector3D(self.model_cells[3], self.model_cells[7], self.model_cells[11])
+
+    @translation.setter
+    def translation(self, value: Vector3D) -> None:
+        self.model_cells[3] = value.x
+        self.model_cells[7] = value.y
+        self.model_cells[11] = value.z
+
+    def setWithArray(self, values: list[float]) -> bool:
+        if len(values) != 16 or any(not math.isfinite(value) for value in values):
+            raise ValueError("A transform matrix requires 16 finite values")
+        self.model_cells = list(values)
+        return True
+
+    def setWithCoordinateSystem(
+        self,
+        origin: Point3D,
+        xAxis: Vector3D,
+        yAxis: Vector3D,
+        zAxis: Vector3D,
+    ) -> bool:
+        return self.setWithArray([
+            xAxis.x, yAxis.x, zAxis.x, origin.x,
+            xAxis.y, yAxis.y, zAxis.y, origin.y,
+            xAxis.z, yAxis.z, zAxis.z, origin.z,
+            0., 0., 0., 1.,
+        ])
+
+    def copy(self) -> Matrix3D:
+        result = Matrix3D.create()
+        result.model_cells = self.asArray()
+        return result
 
 
 class UnitsManager(Base):
