@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { test } from "node:test";
@@ -26,6 +27,70 @@ const historyAdapters = load(
     "packages/node-adapters/dist/persistence/project-history/index.js",
   ),
 ) as typeof import("../packages/node-adapters/dist/persistence/project-history/index.js");
+
+test("project registry retains an unreconciled lock after bounded contention waiting", (t) => {
+  const fixture = setupProjects(t, []),
+    lock = fixture.registry.readonlyPath + ".lock";
+  fs.mkdirSync(path.dirname(lock), { recursive: true });
+  const bytes = JSON.stringify({ pid: 2147483644, startedAtMs: 1 });
+  fs.writeFileSync(lock, bytes, { flag: "wx", mode: 0o600 });
+  assert.ok(fixture.registry.withRegistrationFence);
+  let calls = 0;
+  assert.throws(
+    () =>
+      fixture.registry.withRegistrationFence!(() => {
+        calls++;
+      }),
+    { code: "REGISTRY_BUSY" },
+  );
+  assert.equal(calls, 0);
+  assert.equal(fs.readFileSync(lock, "utf8"), bytes);
+  assert.equal(fs.existsSync(fixture.registry.readonlyPath), false);
+});
+
+test("project registry waits for an independent writer to release its original lock", async (t) => {
+  const fixture = setupProjects(t, []);
+  const lock = fixture.registry.readonlyPath + ".lock";
+  fs.mkdirSync(path.dirname(lock), { recursive: true });
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      `
+    const fs=require('node:fs');
+    const file=process.argv[1];
+    fs.writeFileSync(file,JSON.stringify({pid:process.pid,startedAtMs:Date.now()}),{flag:'wx',mode:0o600});
+    process.stdout.write('LOCKED');
+    setTimeout(()=>fs.unlinkSync(file),300);
+  `,
+      lock,
+    ],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+  const exited = new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", resolve);
+  });
+  t.after(() => {
+    if (child.exitCode === null) child.kill();
+  });
+  await new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) =>
+      reject(new Error("Writer exited before ready: " + code)),
+    );
+    child.stdout.once("data", () => resolve());
+  });
+  assert.ok(fixture.registry.withRegistrationFence);
+  let calls = 0;
+  fixture.registry.withRegistrationFence(() => {
+    calls++;
+    assert.equal(fs.existsSync(lock), true);
+  });
+  assert.equal(calls, 1);
+  assert.equal(await exited, 0);
+  assert.equal(fs.existsSync(lock), false);
+});
 
 function lifecycle(
   monitoring: boolean,

@@ -346,16 +346,26 @@ export function openProjectRegistry(
   function withWriteLock<T>(operation: () => T): T {
     ensureDirectoryChain(directory);
     let lockFd: number;
-    try {
-      lockFd = openSync(lockFile, "wx", 0o600);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST")
+    const deadline = performance.now() + 2000;
+    const wait = new Int32Array(new SharedArrayBuffer(4));
+    for (;;) {
+      try {
+        lockFd = openSync(lockFile, "wx", 0o600);
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        // Independent processes release their own short synchronous writes.
+        // Never reclaim or remove an existing lock, including an orphaned one.
+        if (performance.now() < deadline) {
+          Atomics.wait(wait, 0, 0, 10);
+          continue;
+        }
         fail(
           "REGISTRY_BUSY",
           "Project registry has another writer or an unreconciled lock; it was not overwritten",
           error,
         );
-      throw error;
+      }
     }
     try {
       writeFileSync(
