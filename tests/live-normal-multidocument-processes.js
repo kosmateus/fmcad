@@ -15,7 +15,8 @@ const runtime = path.resolve(
 const runtimeRequire = createRequire(path.join(runtime, "src/queue-client.js"));
 const clientModule = runtimeRequire("./queue-client");
 const { loadConfig } = runtimeRequire("./config");
-const { buildHash, processBirth } = runtimeRequire("./queue-instance");
+const { buildHash, processBirth, fusionPath } =
+  runtimeRequire("./queue-instance");
 const { QueueClient, inputFiles } = clientModule;
 const sourceRoot = path.resolve(__dirname, "..");
 const runnerScript = path.join(
@@ -272,9 +273,10 @@ function readReport(file) {
   }
 }
 
-async function waitForGroupReadJobs(children) {
+async function waitForGroupReadJobs(children, readOriginal) {
   for (;;) {
     let ready = true;
+    const observations = [];
     for (const entry of children) {
       if (entry.child.exitCode !== null)
         throw new Error("A runner exited before submitting its baseline read");
@@ -282,11 +284,11 @@ async function waitForGroupReadJobs(children) {
       const receipt = report?.receipts?.find(
         (row) => row.phase === "group-before",
       );
-      const job = receipt?.job;
-      if (!job) {
+      if (!receipt?.job) {
         ready = false;
         continue;
       }
+      const job = await readOriginal(receipt);
       const rpcCount = Number(job.dispatch?.rpcCount || 0);
       if (
         ["preparing", "processing"].includes(String(job.state)) &&
@@ -303,8 +305,17 @@ async function waitForGroupReadJobs(children) {
       assert.equal(job.clientId, receipt.clientId);
       assert.equal(job.requestId, receipt.requestId);
       assert.equal(rpcCount, 0);
+      observations.push({
+        runnerId: entry.runner.id,
+        pid: entry.child.pid,
+        clientId: receipt.clientId,
+        requestId: receipt.requestId,
+        jobId: job.id,
+        state: job.state,
+        sdkRequestsSent: rpcCount,
+      });
     }
-    if (ready) return;
+    if (ready) return observations;
     await delay(25);
   }
 }
@@ -424,13 +435,24 @@ async function runFaultProbe({
   };
   save();
   let runnersReleased = false;
+  const readers = new Map();
+  const holdRelease = path.join(directory, "fault-hold-release.json");
+  const releaseHold = () => {
+    if (!fs.existsSync(holdRelease))
+      persist(holdRelease, { groupId, state: "released" });
+  };
   try {
     const holdJob = await submitReadOnly(
       holdQueue,
       cfg,
       directory,
       ids.hold,
-      'time.sleep(10)\nprint("FMCAD_MULTI_PROCESS_HOLD_SETTLED")',
+      `import os
+deadline=time.monotonic()+150
+while not os.path.exists(${JSON.stringify(fusionPath(holdRelease))}):
+    if time.monotonic()>deadline: raise RuntimeError('Original hold was not released before its bounded deadline')
+    time.sleep(0.05)
+print("FMCAD_MULTI_PROCESS_HOLD_SETTLED")`,
       fingerprint,
     );
     summary.faultProbe.holdJob = holdJob;
@@ -445,22 +467,21 @@ async function runFaultProbe({
     summary.faultProbe.holdStarted = started.job;
     releaseRunners();
     runnersReleased = true;
-    await waitForGroupReadJobs(processes);
-    summary.faultProbe.queuedRunnerProcesses = processes.map((entry) => {
-      const report = readReport(path.join(entry.directory, "report.json"));
-      const receipt = report.receipts.find(
-        (row) => row.phase === "group-before",
-      );
-      return {
-        runnerId: entry.runner.id,
-        pid: entry.child.pid,
-        clientId: receipt.clientId,
-        requestId: receipt.requestId,
-        jobId: receipt.job.id,
-        state: receipt.job.state,
-        sdkRequestsSent: receipt.job.dispatch?.rpcCount || 0,
-      };
-    });
+    summary.faultProbe.queuedRunnerProcesses = await waitForGroupReadJobs(
+      processes,
+      async (receipt) => {
+        let reader = readers.get(receipt.clientId);
+        if (!reader) {
+          reader = new QueueClient(receipt.clientId, {
+            cfg: { ...cfg, queue: { ...cfg.queue, autoStart: false } },
+            existingCredentialsOnly: true,
+          });
+          readers.set(receipt.clientId, reader);
+        }
+        const current = await reader.call("result", { jobId: receipt.job.id });
+        return current.job;
+      },
+    );
 
     await assert.rejects(
       cancelQueue.call("cancel", { jobId: holdJob.id }),
@@ -565,6 +586,7 @@ async function runFaultProbe({
       'print("FMCAD_SECOND_OWNER_CONTINUED")',
       fingerprint,
     );
+    releaseHold();
     const [holdResult, lostResult, followerResult, cancelledResult] =
       await Promise.all([
         holdQueue.wait(holdJob.id),
@@ -602,6 +624,8 @@ async function runFaultProbe({
     save();
     throw error;
   } finally {
+    releaseHold();
+    readers.forEach((reader) => reader.dispose());
     clients.forEach((client) => client.dispose());
   }
 }
@@ -861,6 +885,7 @@ if (require.main === module)
     });
 
 module.exports = {
+  waitForGroupReadJobs,
   capture,
   exactState,
   globalConcurrency,

@@ -538,6 +538,7 @@ print('FMCAD_RESULT '+json.dumps(dict(creationId=d.creationId,count=design.userP
     assert.equal(concurrent, 0);
     report.maxOwnScriptConcurrency = maximum;
     // Cleanup is serial and exact. No uncertain mutation is retried or closed.
+    assert.ok(report.before);
     report.cleanup = [];
     for (let index = 0; index < ownerCount; index++) {
       const document = report.documents[index];
@@ -546,7 +547,9 @@ print('FMCAD_RESULT '+json.dumps(dict(creationId=d.creationId,count=design.userP
         await script(
           index,
           "close",
-          `${guard(document)}
+          group
+            ? `${guard(document)}\n${ownedCleanupSource(document, report.before.active, "FMCAD_RESULT ")}`
+            : `${guard(document)}
 assert d.close(False)
 print('FMCAD_RESULT '+json.dumps(dict(closed=True,creationId=${JSON.stringify(document.creationId)})))`,
           document,

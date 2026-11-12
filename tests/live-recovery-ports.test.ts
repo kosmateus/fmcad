@@ -121,3 +121,41 @@ test("owned cleanup Python is exact-ID/name/unsaved guarded and handles null res
     assert.doesNotMatch(code, /==null|\.deleteMe\(|\.save\(/);
   }
 });
+
+test("owned close restores the original active document in its own SDK turn and receipt", () => {
+  const code = ownedCleanupSource(
+    { name: "Owned", creationId: "owned" },
+    "original",
+    "FMCAD_RESULT ",
+  );
+  const fake = `import json,types
+class Doc:
+    def __init__(self,id,name): self.creationId=id; self.name=name; self.isSaved=False
+    def close(self,save):
+        assert not save
+        app.documents.remove(self)
+        app.activeDocument=peer
+        return True
+    def activate(self):
+        app.activeDocument=self
+        return True
+owned_doc=Doc('owned','Owned')
+original=Doc('original','Original')
+peer=Doc('peer','Peer')
+app=types.SimpleNamespace(documents=[owned_doc,original,peer],activeDocument=owned_doc)
+adsk=types.SimpleNamespace(core=types.SimpleNamespace(Application=types.SimpleNamespace(get=lambda:app)))
+`;
+  const result = spawnSync("python3", ["-c", fake + code], {
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(
+    JSON.parse(result.stdout.trim().slice("FMCAD_RESULT ".length)),
+    {
+      closed: true,
+      creationId: "owned",
+      alreadyAbsent: false,
+      active: "original",
+    },
+  );
+});

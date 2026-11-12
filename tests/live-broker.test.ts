@@ -93,6 +93,10 @@ const { context, commandFlags, createBackend, rpcResponse } = load(
 const { run, suites, scopedSuites, parseOptions, runBatch, testSourceHash } =
   load("./run-live") as RunPort;
 const multiProcess = load("./live-normal-multidocument-processes") as {
+  waitForGroupReadJobs(
+    children: unknown[],
+    readOriginal: (receipt: Record<string, unknown>) => Promise<unknown>,
+  ): Promise<unknown>;
   capture(
     queue: unknown,
     cfg: unknown,
@@ -217,6 +221,57 @@ test("independent runner inventory uses the typed run entrypoint and one origina
   );
   assert.equal(submitted, 1);
   assert.equal(waited, 1);
+});
+
+test("independent runner readiness observes original job state instead of stale admission receipts", async (t) => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "fmcad-runner-state-"),
+  );
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const job = {
+    id: "original-job",
+    clientId: "owner",
+    requestId: "baseline",
+    state: "preparing",
+  };
+  const receipt = {
+    phase: "group-before",
+    clientId: "owner",
+    requestId: "baseline",
+    job,
+  };
+  fs.writeFileSync(
+    path.join(directory, "report.json"),
+    JSON.stringify({ receipts: [receipt] }),
+  );
+  let observations = 0;
+  const result = await multiProcess.waitForGroupReadJobs(
+    [
+      {
+        directory,
+        child: { exitCode: null, pid: 123 },
+        runner: { id: "runner" },
+      },
+    ],
+    async (original) => {
+      observations++;
+      assert.deepEqual(original, receipt);
+      return { ...job, state: "queued", dispatch: { rpcCount: 0 } };
+    },
+  );
+  assert.equal(observations, 1);
+  assert.deepEqual(result, [
+    {
+      runnerId: "runner",
+      pid: 123,
+      clientId: "owner",
+      requestId: "baseline",
+      jobId: "original-job",
+      state: "queued",
+      sdkRequestsSent: 0,
+    },
+  ]);
+  assert.equal(job.state, "preparing");
 });
 
 test("live SDK tests fail closed outside a broker suite and reject direct mode", () => {
