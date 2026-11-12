@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { record, text } from "./contracts";
 const root = path.resolve(__dirname, "../../..");
 test("reviewed assertion mappings name retained individual assertions and real evidence", () => {
@@ -101,6 +102,16 @@ test("reviewed assertion mappings name retained individual assertions and real e
     }
     const evidencePath = path.join(root, text(row["evidence"]));
     assert.ok(fs.existsSync(evidencePath));
+    if (row["currentSourceSha256"] !== undefined) {
+      assert.equal(
+        createHash("sha256")
+          .update(fs.readFileSync(evidencePath))
+          .digest("hex"),
+        text(row["currentSourceSha256"]),
+        "Reviewed current evidence bytes changed: " + key,
+      );
+      assert.ok(text(row["reviewedBinding"]).length > 40, key);
+    }
     if (row["evidenceAssertion"] !== undefined) {
       if (!contents.has(evidencePath))
         contents.set(evidencePath, fs.readFileSync(evidencePath, "utf8"));
