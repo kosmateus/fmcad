@@ -4920,11 +4920,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 { code: "BUILD_CHANGED", notStarted: true },
               );
             resetFence();
-            if (state.epoch) epochAdmission(state, request, clients);
           };
           verifyAcceptance();
           const accept = () => {
             verifyAcceptance();
+            if (state.epoch) epochAdmission(state, request, clients);
             if (!existing)
               load(
                 "./dist/node-adapters/persistence/accepted-inputs",

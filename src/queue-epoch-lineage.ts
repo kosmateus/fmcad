@@ -177,6 +177,44 @@ function verified(entry: Reference | undefined, expectedPath: string): unknown {
     fail("Retired epoch evidence changed or escaped its namespace");
   return JSON.parse(bytes.toString("utf8")) as unknown;
 }
+// Private to one synchronous traversal: never retain authenticated records across
+// requests or accept a caller-supplied cache as authority. Recheck namespace and
+// inode metadata on reuse; changed files still require the original byte proof.
+function traversalReader(): typeof verified {
+  const records = new Map<string, { stamp: string; value: unknown }>();
+  const stamp = (file: string) => {
+    const s = fs.lstatSync(file, { bigint: true });
+    return [
+      s.dev,
+      s.ino,
+      s.mode,
+      s.uid,
+      s.gid,
+      s.nlink,
+      s.size,
+      s.mtimeNs,
+      s.ctimeNs,
+    ].join(":");
+  };
+  return (entry, expectedPath) => {
+    if (
+      !entry ||
+      entry.path !== expectedPath ||
+      fs.realpathSync(entry.path) !== entry.path
+    )
+      return verified(entry, expectedPath);
+    directory(path.dirname(entry.path));
+    const key = entry.path + ":" + entry.sha256;
+    const before = stamp(entry.path);
+    const previous = records.get(key);
+    if (previous?.stamp === before) return previous.value;
+    const value = verified(entry, expectedPath);
+    if (stamp(entry.path) !== before)
+      fail("Retired epoch evidence changed during traversal");
+    records.set(key, { stamp: before, value });
+    return value;
+  };
+}
 function grantReferences(root: string): Reference[] {
   return fs
     .readdirSync(root)
@@ -235,6 +273,13 @@ export function predecessorSnapshot(
   };
 }
 export function successionAuthority(root: string, entry: Reference) {
+  return readSuccessionAuthority(root, entry, verified);
+}
+function readSuccessionAuthority(
+  root: string,
+  entry: Reference,
+  read: typeof verified,
+) {
   if (!entry || !path.isAbsolute(entry.path || ""))
     fail("Missing credential-bound succession authority");
   if (
@@ -247,7 +292,7 @@ export function successionAuthority(root: string, entry: Reference) {
     fail("Succession authority escaped its owner journal");
   // Derive the owner journal from the authenticated record, not an earlier,
   // unverified read which can name a different request during replacement.
-  const authority = authorityRecord(verified(entry, entry.path));
+  const authority = authorityRecord(read(entry, entry.path));
   const audit = path.join(
     root,
     "epoch-successions",
@@ -275,11 +320,11 @@ export function successionAuthority(root: string, entry: Reference) {
   if (!snapshot || !/^[a-f0-9-]{36}$/.test(snapshot.epochId || ""))
     fail("Missing exact predecessor");
   const pointer = pointerRecord(
-    verified(snapshot.pointer, path.join(audit, "predecessor-pointer.json")),
+    read(snapshot.pointer, path.join(audit, "predecessor-pointer.json")),
   );
   const epochRoot = path.join(root, "admission-epochs", snapshot.epochId);
   const identity = record(
-    verified(snapshot.identity, path.join(epochRoot, "instance.json")),
+    read(snapshot.identity, path.join(epochRoot, "instance.json")),
   );
   if (
     pointer.root !== epochRoot ||
@@ -290,12 +335,9 @@ export function successionAuthority(root: string, entry: Reference) {
     authority.previousBuildHash !== identity["buildHash"]
   )
     fail("Succession authority differs from the original owner or epoch");
-  const state = verified(
-    snapshot.state,
-    path.join(epochRoot, "queue-state.json"),
-  );
-  verified(snapshot.rootState, path.join(root, "queue-state.json"));
-  verified(snapshot.rootIdentity, path.join(root, "instance.json"));
+  const state = read(snapshot.state, path.join(epochRoot, "queue-state.json"));
+  read(snapshot.rootState, path.join(root, "queue-state.json"));
+  read(snapshot.rootIdentity, path.join(root, "instance.json"));
   if (
     snapshot.rootState.sha256 !== pointer.historicalSnapshotHash ||
     snapshot.rootIdentity.sha256 !== pointer.historicalIdentityHash ||
@@ -304,7 +346,7 @@ export function successionAuthority(root: string, entry: Reference) {
       digest([pointer.qualificationReceipt, ...pointer.qualificationEvidence])
   )
     fail("Predecessor history, grants or qualification changed");
-  for (const proof of snapshot.qualification) verified(proof, proof.path);
+  for (const proof of snapshot.qualification) read(proof, proof.path);
   if (closedSuccessor) {
     (
       load("./queue-closed-epoch-proof") as {
@@ -324,7 +366,7 @@ export function successionAuthority(root: string, entry: Reference) {
       );
   }
   const qualified = record(
-    verified(
+    read(
       authority.qualification,
       path.join(audit, "installed-qualification.json"),
     ),
@@ -345,12 +387,13 @@ export function successionAuthority(root: string, entry: Reference) {
   return { authority, audit, pointer, state, identity };
 }
 export function epochLineage(root: string, pointer: EpochPointer) {
+  const read = traversalReader();
   const result: ReturnType<typeof successionAuthority>[] = [],
     seen = new Set([pointer.epochId]);
   let current = pointer;
   while (current.succession !== undefined) {
     if (result.length >= 32) fail("Epoch lineage bound exceeded");
-    const previous = successionAuthority(root, current.succession);
+    const previous = readSuccessionAuthority(root, current.succession, read);
     if (
       seen.has(previous.pointer.epochId) ||
       current.ownerClientId !== previous.authority.clientId ||
