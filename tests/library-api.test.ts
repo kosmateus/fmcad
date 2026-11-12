@@ -651,13 +651,18 @@ function relocateHistoricalTestEvidence(value: unknown): unknown {
   // the unchanged, hash-verified historical source.
   const relocated = new Map(
     [
+      "backend-cli",
+      "backend-config",
       "registry",
       "legacy",
       "manual-legacy",
+      "curl-transport",
       "console-pause",
       "console-offline",
       "console-services",
+      "mcp-stdio",
       "queue-scheduling",
+      "queue-probe-recovery",
       "batch-local",
       "shot",
       "reference",
@@ -678,19 +683,25 @@ function relocateHistoricalTestEvidence(value: unknown): unknown {
     ]),
   );
   const relocate = (value: unknown): unknown => {
-    if (typeof value === "string" && relocated.has(value)) {
-      const target = present(relocated.get(value));
-      assert.equal(
-        fs.existsSync(path.join(root, value)),
-        false,
-        "old evidence was retired: " + value,
-      );
-      assert.equal(
-        fs.existsSync(path.join(root, target)),
-        true,
-        "typed evidence exists: " + target,
-      );
-      return target;
+    if (typeof value === "string") {
+      let result = value;
+      for (const [sourcePath, targetPath] of relocated) {
+        if (!result.includes(sourcePath)) continue;
+        const source = present(sourcePath),
+          destination = present(targetPath);
+        assert.equal(
+          fs.existsSync(path.join(root, source)),
+          false,
+          "old evidence was retired: " + source,
+        );
+        assert.equal(
+          fs.existsSync(path.join(root, destination)),
+          true,
+          "typed evidence exists: " + destination,
+        );
+        result = result.replaceAll(source, destination);
+      }
+      return result;
     }
     if (Array.isArray(value)) return value.map(relocate);
     if (value && typeof value === "object")
@@ -1383,16 +1394,21 @@ test("typed help preserves every registered English and Polish page and text lay
   try {
     for (const language of ["en_US.UTF-8", "pl_PL.UTF-8"]) {
       process.env["LC_ALL"] = language;
-      assert.equal(help.globalHelp(), oldHelp.globalHelp());
+      assert.equal(
+        help.globalHelp(),
+        relocateHistoricalTestEvidence(oldHelp.globalHelp()),
+      );
       for (const entry of commands)
         assert.equal(
           help.detail(...(entry.key.split(" ") as [string, string?])),
-          oldHelp.detail(...(entry.key.split(" ") as [string, string?])),
+          relocateHistoricalTestEvidence(
+            oldHelp.detail(...(entry.key.split(" ") as [string, string?])),
+          ),
           entry.key,
         );
       assert.equal(
         help.detail("missing", "route"),
-        oldHelp.detail("missing", "route"),
+        relocateHistoricalTestEvidence(oldHelp.detail("missing", "route")),
       );
     }
     for (const entry of commands) {
@@ -1408,19 +1424,23 @@ test("typed help preserves every registered English and Polish page and text lay
       } else {
         assert.equal(
           polish.description(entry),
-          oldPolish.description(entry),
+          relocateHistoricalTestEvidence(oldPolish.description(entry)),
           entry.key,
         );
-        assert.equal(polish.detail(entry), oldPolish.detail(entry), entry.key);
+        assert.equal(
+          polish.detail(entry),
+          relocateHistoricalTestEvidence(oldPolish.detail(entry)),
+          entry.key,
+        );
       }
       assert.equal(
         details.contextualHelp(entry),
-        oldDetails.contextualHelp(entry),
+        relocateHistoricalTestEvidence(oldDetails.contextualHelp(entry)),
         entry.key,
       );
       assert.equal(
         manual.manualHelp(entry),
-        oldManual.manualHelp(entry),
+        relocateHistoricalTestEvidence(oldManual.manualHelp(entry)),
         entry.key,
       );
     }
@@ -1454,6 +1474,7 @@ test("typed help preserves every registered English and Polish page and text lay
           `${width}: ${JSON.stringify(text)}`,
         );
     const guide = historicalPublicBoundary("help-guide");
+    relocateHistoricalTestEvidence(guide);
     guide.sections = guide.sections.map((section) => ({
       ...section,
       text: section.text.replace(
@@ -2449,8 +2470,8 @@ test("remaining host registrations preserve public descriptors and manuals", () 
   ] as const) {
     const historical = record(
       relocateHistoricalTestEvidence(historicalPublicBoundary(name)),
-    ),
-      current = record(runtimeRequire("../src/" + name));
+    );
+    const current = record(runtimeRequire("../src/" + name));
     for (const key of [
       "descriptor",
       "manual",
