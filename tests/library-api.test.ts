@@ -652,6 +652,7 @@ function relocateHistoricalTestEvidence(value: unknown): unknown {
   const relocated = new Map(
     [
       "registry",
+      "legacy",
       "manual-legacy",
       "console-pause",
       "console-offline",
@@ -691,11 +692,7 @@ function relocateHistoricalTestEvidence(value: unknown): unknown {
       );
       return target;
     }
-    if (Array.isArray(value)) {
-      for (let index = 0; index < value.length; index++)
-        value[index] = relocate(value[index]);
-      return value;
-    }
+    if (Array.isArray(value)) return value.map(relocate);
     if (value && typeof value === "object")
       for (const key of Object.keys(value))
         record(value)[key] = relocate(record(value)[key]);
@@ -2450,9 +2447,10 @@ test("remaining host registrations preserve public descriptors and manuals", () 
     "reference",
     "review",
   ] as const) {
-    const historical = record(historicalPublicBoundary(name)),
+    const historical = record(
+      relocateHistoricalTestEvidence(historicalPublicBoundary(name)),
+    ),
       current = record(runtimeRequire("../src/" + name));
-    relocateHistoricalTestEvidence(historical);
     for (const key of [
       "descriptor",
       "manual",

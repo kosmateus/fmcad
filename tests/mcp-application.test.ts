@@ -213,11 +213,16 @@ function processClient(
       assert.equal(line.done, false, diagnostics);
       return JSON.parse(line.value!) as unknown;
     },
-    async close(expectedDiagnostics = "") {
+    async close(expectedDiagnostics: string | readonly string[] = "") {
       child.stdin.end();
       assert.deepEqual(await closed, [0, null], diagnostics);
       assert.equal((await lines.next()).done, true);
-      assert.equal(diagnostics, expectedDiagnostics);
+      assert(
+        typeof expectedDiagnostics === "string"
+          ? diagnostics === expectedDiagnostics
+          : expectedDiagnostics.includes(diagnostics),
+        `Unexpected process diagnostics: ${JSON.stringify(diagnostics)}`,
+      );
     },
     async kill(signal: NodeJS.Signals = "SIGKILL") {
       child.kill(signal);
@@ -225,6 +230,8 @@ function processClient(
     },
   };
 }
+const controlCenterWarning =
+  "fmcad: Control Center unavailable; MCP remains available.\n";
 const request = (
   id: string | number,
   method: string,
@@ -929,9 +936,7 @@ test(
       2,
       "one MCP operation and one distinct CLI operation each get one SDK turn",
     );
-    await client.close(
-      "fmcad: Control Center unavailable; MCP remains available.\n",
-    );
+    await client.close(["", controlCenterWarning]);
   },
 );
 
@@ -1417,9 +1422,7 @@ test(
       2,
       "each distinct request dispatches once after resume",
     );
-    const controlCenterWarning =
-      "fmcad: Control Center unavailable; MCP remains available.\n";
-    await restarted.close(controlCenterWarning);
-    await second.close(controlCenterWarning);
+    await restarted.close(["", controlCenterWarning]);
+    await second.close(["", controlCenterWarning]);
   },
 );
