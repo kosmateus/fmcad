@@ -327,6 +327,7 @@
     "tests/closed-epoch-proof.test.ts",
     "tests/curl-transport.test.ts",
     "tests/dead-epoch-successor-bootstrap.test.ts",
+    "tests/successor-startup-abort.test.ts",
     "tests/dead-epoch-successor-control.test.ts",
     "tests/dead-epoch-successor.test.ts",
     "tests/epoch-dead-process.test.ts",

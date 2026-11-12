@@ -8,8 +8,6 @@ import os from "node:os";
 import { createRequire } from "node:module";
 import type { TestContext } from "node:test";
 import type { DeadEpochFixture } from "./fixtures/epoch-fixture-types";
-// The registered cold-start suite also executes its terminal startup recovery checks.
-import "./successor-startup-abort.test";
 const repository = process.cwd();
 const load = createRequire(
   path.join(repository, "tests", "dead-epoch-successor-bootstrap.test.js"),
