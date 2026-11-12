@@ -8,6 +8,8 @@ import os from "node:os";
 import { createRequire } from "node:module";
 import type { TestContext } from "node:test";
 import type { DeadEpochFixture } from "./fixtures/epoch-fixture-types";
+// The registered cold-start suite also executes its terminal startup recovery checks.
+import "./successor-startup-abort.test";
 const repository = process.cwd();
 const load = createRequire(
   path.join(repository, "tests", "dead-epoch-successor-bootstrap.test.js"),
@@ -173,6 +175,40 @@ test("FAKE host/process metadata: a released normal epoch keeps authenticated de
     "receipt" in lifecycle && fs.existsSync(String(lifecycle.receipt)),
     false,
   );
+});
+
+test("FAKE metadata: an aborted startup cannot recreate guards or launch another worker", async (t) => {
+  const f = fixture(t);
+  api.durable(
+    path.join(f.audit, "intent.json"),
+    {
+      version: 1,
+      requestId: f.requestId,
+      clientId: f.clientId,
+      ownerTokenHash: api.hash(f.token),
+      nonce: f.nonce,
+      approval: reference(f.approvalFile),
+      previousOwner: f.previousOwner,
+    },
+    true,
+  );
+  fs.mkdirSync(path.join(f.audit, "abort-unstarted"));
+  api.durable(
+    path.join(f.audit, "abort-unstarted", "intent.json"),
+    { synthetic: true },
+    true,
+  );
+  await assert.rejects(
+    bootstrapSuccessor(f.client, f.cfg, {
+      approval: f.approvalFile,
+      requestId: f.requestId,
+      confirmOwnership: true,
+    }),
+    { code: "EPOCH_SUCCESSOR_ABORTED" },
+  );
+  for (const name of ["recovery.lock", "atomic-migration.lock"])
+    assert.equal(fs.existsSync(path.join(f.dir, name)), false);
+  assert.equal(fs.existsSync(path.join(f.audit, "launch-intent.json")), false);
 });
 
 test(

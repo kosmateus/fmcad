@@ -368,6 +368,11 @@ export async function bootstrapSuccessor(
         "NOT_OWNER",
         "The original existing successor credentials and approval are required",
       );
+    if (fs.existsSync(path.join(audit, "abort-unstarted", "intent.json")))
+      fail(
+        "EPOCH_SUCCESSOR_ABORTED",
+        "This startup was aborted or its metadata abort is pending; inspect the original abort journal",
+      );
     const complete = exists<Complete>(path.join(audit, "complete.json"));
     if (complete) {
       assertCurrentPredecessor(root, complete.authority, {
