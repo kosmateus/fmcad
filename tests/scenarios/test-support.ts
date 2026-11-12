@@ -44,6 +44,7 @@ export async function fixture(t: TestContext, protocol: Protocol = "mcp") {
             };
           },
           protocol,
+          (file) => file,
         );
         retained.set(request.owner.clientId + "/" + request.requestId, result);
         return result;

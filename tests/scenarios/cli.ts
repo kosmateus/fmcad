@@ -81,6 +81,10 @@ import {
 import { nativeCadScenarios, nativeCadCapability } from "./native-cad-cases";
 import { childCliScenarios } from "./child-cli-cases";
 import {
+  isolateScenarioConfiguration,
+  writeChildScenarioConfig,
+} from "./child-cli-config";
+import {
   nativeThickenSlotPatternScenarios,
   nativeThickenSlotPatternCapability,
 } from "./native-thicken-slot-pattern-cases";
@@ -719,19 +723,28 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       })) {
         originalEnvironment.set(key, process.env[key]);
         process.env[key] = value;
-        fs.mkdirSync(value, { recursive: true });
+        fs.mkdirSync(value, { recursive: true, mode: 0o700 });
       }
+      for (const [key, value] of isolateScenarioConfiguration(process.env))
+        originalEnvironment.set(key, value);
       model = new PythonSimulator(root);
       endpoint = await simulatorEndpoint(model);
-      const cfg = {
+      const configFile = writeChildScenarioConfig(state + "-config", {
         backend: options.protocol,
         routing: "queue",
-        transport: "http",
-        tool: "fusion_mcp_execute",
-        url: endpoint.url,
-        timeoutMs: 180000,
         queue: { autoStart: false },
-      };
+        backends: {
+          [options.protocol]: { url: endpoint.url, timeoutMs: 60000 },
+        },
+      });
+      process.env["FMCAD_CONFIG"] = configFile;
+      const { cfg } = (
+        load("./src/config") as {
+          loadConfig(): {
+            cfg: Record<string, unknown> & { url: string };
+          };
+        }
+      ).loadConfig();
       const transport = load("./src/dist/fusion-transport/broker") as {
         createBrokerTransport: typeof createBrokerTransport;
       };

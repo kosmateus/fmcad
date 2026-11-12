@@ -33,7 +33,7 @@ export function commandResult(
         (target) =>
           context["doc"] === target.name &&
           context["docId"] === target.creationId &&
-          context["docFileId"] === target.file?.fileId,
+          context["docFileId"] === (target.file?.fileId ?? null),
       )
     )
       throw new Error(

@@ -38,33 +38,37 @@ interface PathFields extends CadData {
 }
 
 /** Map a cloned payload only; validation and file reads stay at their existing boundaries. */
-export function mapCadPaths(operation: string, data: CadData): CadData {
+export function mapCadPaths(
+  operation: string,
+  data: CadData,
+  pathMapper: (value: unknown) => string = fusionPath,
+): CadData {
   const out = structuredClone(data) as PathFields;
   if (
     operation.startsWith("export.") ||
     operation.startsWith("checkpoint.") ||
     operation === "import.file"
   ) {
-    if (out["path"]) out["path"] = fusionPath(out["path"]);
-    if (out["directory"]) out["directory"] = fusionPath(out["directory"]);
+    if (out["path"]) out["path"] = pathMapper(out["path"]);
+    if (out["directory"]) out["directory"] = pathMapper(out["directory"]);
     if (out.parts)
-      for (const part of out.parts) part.path = fusionPath(part.path);
+      for (const part of out.parts) part.path = pathMapper(part.path);
   }
   if (operation === "shot.pack")
-    for (const shot of out.shots!) shot.path = fusionPath(shot.path);
+    for (const shot of out.shots!) shot.path = pathMapper(shot.path);
   if (operation === "view.compare")
-    for (const field of ["left", "right"]) out[field] = fusionPath(out[field]);
+    for (const field of ["left", "right"]) out[field] = pathMapper(out[field]);
   if (operation === "texture.heightmap" && out["path"])
-    out["path"] = fusionPath(out["path"]);
+    out["path"] = pathMapper(out["path"]);
   if (
     ["motion.sample", "animation.joints", "explode.render"].includes(operation)
   ) {
-    if (out["directory"]) out["directory"] = fusionPath(out["directory"]);
-    if (out.frameFiles) out.frameFiles = out.frameFiles.map(fusionPath);
+    if (out["directory"]) out["directory"] = pathMapper(out["directory"]);
+    if (out.frameFiles) out.frameFiles = out.frameFiles.map(pathMapper);
   }
   if (operation === "animation.export") {
-    if (out.frames) out.frames = out.frames.map(fusionPath);
-    if (out["output"]) out["output"] = fusionPath(out["output"]);
+    if (out.frames) out.frames = out.frames.map(pathMapper);
+    if (out["output"]) out["output"] = pathMapper(out["output"]);
   }
   return out;
 }
@@ -74,6 +78,7 @@ export function createCadScriptAdapter(ports: CadPreparationPorts) {
     operation: string,
     data: CadData,
     context: CadContext,
+    pathMapper: (value: unknown) => string = fusionPath,
   ) {
     const entry = ports.validate(operation, data);
     if (operation === "inspect.pack") data = ports.inspection(data);
@@ -86,12 +91,12 @@ export function createCadScriptAdapter(ports: CadPreparationPorts) {
           : (imported.result.items ?? [])
               .map((row) => row.model)
               .filter((model): model is ImportModel => Boolean(model));
-      for (const model of models) model.fusionPath = fusionPath(model.path);
+      for (const model of models) model.fusionPath = pathMapper(model.path);
       data = imported;
     }
     const plan = planCadScript(
       operation,
-      mapCadPaths(operation, data),
+      mapCadPaths(operation, data, pathMapper),
       context,
       entry,
       pythonLiteral,

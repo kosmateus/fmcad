@@ -9,6 +9,7 @@ export async function componentCommand(
   request: ScriptRequest,
   callTool: CadClient["callTool"],
   protocol: Protocol,
+  pathMapper: (file: string) => string,
 ): Promise<Execution> {
   if (!request.command || !request.target)
     throw new Error("Owned CAD command required");
@@ -56,6 +57,13 @@ export async function componentCommand(
           ? { docFileId: request.target.file.fileId }
           : {}),
         component: request.command.component ?? "root",
+      },
+      {
+        fusionPath: (value) => {
+          if (typeof value !== "string")
+            throw new Error("File path must be a string");
+          return pathMapper(value);
+        },
       },
     );
     return {

@@ -276,6 +276,7 @@ export class CheckedSimulatorBackend implements ScenarioBackend {
             };
           },
           this.protocol,
+          (file) => this.fusionPath(file),
         ),
       );
     }

@@ -123,3 +123,23 @@ test("only command control fields determine settlement, never literal input data
     ),
   );
 });
+
+test("unsaved command context accepts a null file pin but rejects another file", () => {
+  const target = { name: "Owned", creationId: "owned-id" };
+  const result = {
+    success: true,
+    context: { doc: "Owned", docId: "owned-id", docFileId: null },
+  };
+  assert.doesNotThrow(() => commandResult(JSON.stringify(result), [target]));
+  assert.throws(
+    () =>
+      commandResult(
+        JSON.stringify({
+          ...result,
+          context: { ...result.context, docFileId: "foreign-file" },
+        }),
+        [target],
+      ),
+    /Foreign CAD context/u,
+  );
+});
