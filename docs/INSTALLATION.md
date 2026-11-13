@@ -59,6 +59,44 @@ The package installs `fmcad` and `fmcad-mcp` executable bins. It uses the
 package's installed resources, not the current directory or a source checkout.
 No plugin is required for either executable or for `fmcad/api`.
 
+## Changing the physical Fusion backend
+
+Ordinary `queue serve --backend ...` is not reconfiguration. It rejects a
+configuration different from the durable identity before reserving Fusion.
+For a released `normal-multidocument` epoch, the existing epoch owner can
+explicitly switch the physical add-in/MCP endpoint on **the same live Fusion**:
+
+1. Verify no current active, queued, preparing, leased, blocked or unknown work
+   remains. Coordinate with other clients, then use the existing authenticated
+   idle `queue stop`; do not delete locks or edit `instance.json`.
+2. Create a private JSON approval (mode `0600`) with a fresh alphanumeric,
+   underscore or hyphen `requestId`, the epoch owner's existing `clientId` and
+   `clientToken`, and exact `previousConfig` and `nextConfig` objects. These are
+   the fully loaded broker configurations (`routing: "queue"`, `queue: {}`),
+   not partial CLI overrides. Only `backend` (`addin` ↔ `mcp`) and `url` may
+   differ. Keep credentials out of shell arguments and logs.
+3. Run `fmcad queue transition-backend --backend mcp --backend-approval
+/absolute/private-approval.json --confirm-ownership true` using the matching
+   runtime/config. This starts the **same user-global broker/SDK queue**. The
+   target endpoint must itself be the physical MCP listener, not an add-in
+   proxy. A read-only probe must prove the exact original PID, birth and Fusion
+   version, an idle UI and unmodified current documents.
+
+Foreign credentials, changed evidence/configuration and unfinished current
+work fail before any physical client or SDK request. Quarantined historical
+unknown work remains unknown and is never replayed or accepted by a transition.
+Transport uncertainty retains broker ownership and original startup receipts;
+inspect those receipts before recovery, never blindly repeat a transition.
+
+The transition writes a separate immutable identity and predecessor evidence
+under `physical-backend-transitions/REQUEST_ID`, with an explicit
+`physical-backend-head.json`. It does not rewrite root/epoch identities,
+receipts or the historical configuration hash. A normal reopen uses that exact
+head/runtime; damaged evidence fails closed. To restore the add-in, idle-stop
+and repeat the explicit lifecycle with a **new** request ID and reversed exact
+configurations. Do not restart Fusion, create a second queue directory, remove
+locks, or manually rewrite the head to change backends.
+
 ## One standalone MCP server
 
 Add one stdio MCP server named **`fmcad`** to the MCP client you use. This is

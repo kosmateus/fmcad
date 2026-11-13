@@ -36,7 +36,7 @@
     "test:live:motion": "node tests/run-live.js motion-animation --run",
     "test:live:stdio": "node tests/run-live.js mcp-stdio",
     "test:live:gm12-spring": "node tests/run-live.js gm12-spring --run",
-    "test:response-recovery": "node --test dist/tests/queue-client-response-recovery.test.js dist/tests/normal-epoch-broker.test.js dist/tests/normal-epoch-admission.test.js dist/tests/queue-runtime-stage.test.js dist/tests/queue-cli-recovery-parity.test.js dist/tests/live-recovery-ports.test.js",
+    "test:response-recovery": "node --test dist/tests/queue-client-response-recovery.test.js dist/tests/normal-epoch-broker.test.js dist/tests/normal-epoch-admission.test.js dist/tests/queue-runtime-stage.test.js dist/tests/queue-cli-recovery-parity.test.js dist/tests/live-recovery-ports.test.js dist/tests/queue-backend-transition.test.js",
     "test:native:multidocument": "node dist/tests/live-normal-multidocument.js --run",
     "test:native:response-recovery": "node dist/tests/live-response-recovery.js --run",
     "test:import-contracts": "node --test dist/tests/live-import-receipt.test.js dist/tests/fixed-native-program-source.test.js dist/tests/fixed-import-checker.test.js",

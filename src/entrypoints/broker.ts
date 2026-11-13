@@ -4,6 +4,7 @@ import type { FmcadConfiguration } from "../api";
 const runtimeRequire = createRequire(__filename);
 
 export interface BrokerCompositionOptions {
+  readonly backendTransition?: import("../queue-backend-transition").BackendTransitionApproval;
   readonly confirmOwnership: boolean;
   readonly confirmVersionTransition?: boolean;
   readonly stateOptions?: {

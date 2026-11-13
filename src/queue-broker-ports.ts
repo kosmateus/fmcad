@@ -332,6 +332,7 @@ export interface Config {
   [key: string]: unknown;
 }
 export interface Options {
+  backendTransition?: import("./queue-backend-transition").BackendTransitionApproval;
   confirmOwnership?: boolean;
   confirmVersionTransition?: boolean;
   dir?: string;

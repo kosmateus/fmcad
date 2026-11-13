@@ -245,6 +245,7 @@
     "tests/docops-composition.test.ts",
     "tests/queue-domain.test.ts",
     "tests/queue-config-identity.test.ts",
+    "tests/queue-backend-transition.test.ts",
     "tests/queue-document.test.ts",
     "tests/queue-summary.test.ts",
     "tests/queue-local-fence-outcome.test.ts",

@@ -9,6 +9,7 @@
   },
   "include": [
     "src/queue-broker.ts",
+    "src/queue-backend-transition.ts",
     "src/queue-broker-ports.ts",
     "src/queue-broker-modules.ts",
     "src/queue-client.ts",

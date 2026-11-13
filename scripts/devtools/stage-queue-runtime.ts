@@ -31,6 +31,7 @@ export const queueRuntimeModules = [
   "queue-epoch-runtime-upgrade",
 
   "queue-broker",
+  "queue-backend-transition",
   "queue-client",
   "queue-closed-epoch-proof",
   "queue-isolated-epoch",

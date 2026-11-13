@@ -15,6 +15,10 @@ import type {
   AuditSnapshot,
 } from "./queue-broker-modules";
 import type { BrokerControlFence } from "../packages/core/src/application/broker-control";
+import {
+  backendHead,
+  prepareBackendTransition,
+} from "./queue-backend-transition";
 const runtimeRequire = createRequire(__filename);
 const load = <K extends keyof BrokerModules>(name: K): BrokerModules[K] =>
   runtimeRequire(name) as BrokerModules[K];
@@ -551,17 +555,42 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     (pinned["queue"] as {preparationConcurrency?:unknown}|undefined)?.preparationConcurrency,
   );
   const configHash = brokerConfigHash(pinned);
+  const effectiveBackend = backendHead(dir);
   let identityFile = path.join(dir, "instance.json");
   let oldIdentity = fs.existsSync(identityFile)
     ? readJson<P.Identity>(identityFile)
     : null;
   // A known local configuration rejection must not reserve Fusion or leave a
   // dead marker that prevents the correctly configured backend from starting.
-  if (oldIdentity && oldIdentity.configHash !== configHash)
+  if (
+    !options.backendTransition &&
+    (effectiveBackend?.identity || oldIdentity)?.configHash !== configHash &&
+    oldIdentity
+  )
     fail(
       "CONFIG_CHANGED",
       "Pinned backend configuration differs from the durable broker identity",
     );
+  if (options.backendTransition)
+    prepareBackendTransition(
+      dir,
+      openIsolatedEpoch(dir, { recover: false }),
+      pinned,
+      options.backendTransition,
+    );
+  function assertBackendHeadOwner(current: P.State) {
+    if (!same(backendHead(dir)?.head, effectiveBackend?.head))
+      fail("BACKEND_TRANSITION_CHANGED", "Physical backend head changed before startup");
+    if (effectiveBackend && (!current.epoch ||
+        current.epoch.epochId !== effectiveBackend.head.epochId ||
+        current.epoch.ownerClientId !== effectiveBackend.head.ownerClientId ||
+        current.epoch.ownerTokenHash !== effectiveBackend.head.ownerTokenHash))
+      fail("BACKEND_TRANSITION_CHANGED", "Backend transition no longer belongs to the exact active epoch owner");
+    if (effectiveBackend && !options.backendTransition && effectiveBackend.identity.buildHash !== codeHash)
+      fail("BUILD_CHANGED", "Restore the exact physical backend transition runtime before reopening");
+  }
+  if (effectiveBackend)
+    assertBackendHeadOwner(openIsolatedEpoch(dir, { recover: false }));
   const marker = {
     pid: process.pid,
     birth: processBirth(),
@@ -623,6 +652,15 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   );
   phaseTimings.queueCommitted(state.data, state.epoch?.root ?? dir);
   if (state.epoch) identityFile = path.join(state.epoch.root, "instance.json");
+  assertBackendHeadOwner(state);
+  if (effectiveBackend) {
+    identityFile = effectiveBackend.identityFile;
+  }
+  // Metadata-only preflight happens before constructing a physical client. A
+  // foreign owner, altered config or unfinished current job sends zero SDK work.
+  const backendTransition = options.backendTransition
+    ? prepareBackendTransition(dir, state, pinned, options.backendTransition)
+    : null;
   if (options.startPaused === true)
     state.pause(true, "startup:" + marker.nonce);
   const gate = new QueueGate(state, marker.nonce);
@@ -1156,6 +1194,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     ownerBirth: marker.birth,
     buildHash: codeHash,
     stage: "startup",
+    ...(backendTransition ? { auditExpectedInstance: {
+      pid: backendTransition.identity.instance.pid,
+      birth: backendTransition.identity.instance.birth,
+      version: backendTransition.identity.instance.version,
+    } } : {}),
   };
   const lifecycle = {
     owner: marker,
@@ -1170,16 +1213,21 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     oldIdentity = fs.existsSync(identityFile)
       ? readJson<P.Identity>(identityFile)
       : null;
-    if (oldIdentity && oldIdentity.configHash !== configHash)
+    if (
+      !backendTransition &&
+      oldIdentity &&
+      oldIdentity.configHash !== configHash
+    )
       fail(
         "CONFIG_CHANGED",
         "Pinned backend configuration differs from the durable broker identity",
       );
     if (
-      successorRuntime ||
-      load(
-        "./dist/node-adapters/broker-ipc/normal-admission",
-      ).epochStartupPinned(state, oldIdentity?.buildHash, codeHash)
+      !backendTransition &&
+      (successorRuntime ||
+        load(
+          "./dist/node-adapters/broker-ipc/normal-admission",
+        ).epochStartupPinned(state, oldIdentity?.buildHash, codeHash))
     ) {
       // Reopening a broker never adopts another active document or replays the
       // creation operation. The immutable epoch remains tied to its live process.
@@ -1269,7 +1317,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           ),
         }),
       );
-      if (oldIdentity && !sameInstance(instance, oldIdentity.instance)) {
+      if (
+        !backendTransition &&
+        oldIdentity &&
+        !sameInstance(instance, oldIdentity.instance)
+      ) {
         const previousAlive = priorProcessAlive(oldIdentity.instance);
         const versionChanged =
           oldIdentity.instance.version !== instance.version;
@@ -1324,7 +1376,30 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           queueTransition,
         });
       }
-      durable(identityFile, { configHash, buildHash: codeHash, instance });
+      if (backendTransition) {
+        const diagnosticPath = path.join(dir, `broker-startup-${marker.nonce}.result.json`);
+        const observationFiles = [diagnosticPath];
+        if (!options.createBackend) {
+          const receipt = readJson<Record<string, unknown>>(startupReceipt);
+          if (receipt["terminal"] !== true || receipt["outcome"] !== "succeeded" ||
+              !sameInstance(receipt["instance"] as P.Instance, instance) ||
+              Object.entries(startupBinding).some(([key, value]) => !same(receipt[key], value)))
+            fail("BACKEND_TRANSITION_UNPROVEN", "Exact target startup receipt is required; ownership is retained without replay");
+          observationFiles.push(startupReceipt);
+        }
+        identityFile = backendTransition.commit(instance, codeHash, observationFiles);
+      } else if (effectiveBackend) {
+        // A reopen must not rewrite the immutable transition or predecessor.
+        if (
+          oldIdentity?.buildHash !== codeHash ||
+          !sameInstance(oldIdentity.instance, instance)
+        )
+          fail(
+            "BUILD_CHANGED",
+            "Restore the exact physical backend transition runtime before reopening",
+          );
+      } else
+        durable(identityFile, { configHash, buildHash: codeHash, instance });
     }
   } catch (cause) {
     const error = errorInfo(cause);
