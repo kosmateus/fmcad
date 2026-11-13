@@ -317,15 +317,8 @@ async function main() {
     };
     persist();
     const result = await queue.wait(job.id);
-    if (
-      result.job.id !== job.id ||
-      result.job.requestId !== requestId ||
-      result.job.clientId !== queue.auth.clientId ||
-      result.execution.sdkSettled !== true
-    )
-      throw new Error(
-        "Original multidocument request identity or settlement differs; retain both fixtures",
-      );
+    // Retain the original response even when recovery deliberately omits an
+    // execution settlement envelope. Missing evidence never permits cleanup.
     report.receipts[receiptIndex] = {
       requestId,
       phase,
@@ -334,6 +327,15 @@ async function main() {
       result,
     };
     persist();
+    if (
+      result.job?.id !== job.id ||
+      result.job.requestId !== requestId ||
+      result.job.clientId !== queue.auth.clientId ||
+      !knownSettlement([result])
+    )
+      throw new Error(
+        "Original multidocument request identity or settlement differs; retain both fixtures",
+      );
     assert.equal(result.job.state, "succeeded", JSON.stringify(result));
     const marker = result.stdout
       .split(/\r?\n/)

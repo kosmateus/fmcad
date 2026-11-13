@@ -96,6 +96,34 @@ test("cleanup evidence rejects missing, nonterminal and unsettled work", () => {
   for (const state of ["preparing", "running", "needs_reconciliation"])
     assert.equal(knownSettlement([evidence(state, true)]), false);
   assert.equal(knownSettlement([evidence("succeeded", false)]), false);
+  const unknownOriginal = {
+    job: {
+      id: "original",
+      requestId: "stable",
+      clientId: "owner",
+      state: "needs_reconciliation",
+    },
+    stdout: "",
+    stderr: "SDK outcome requires reconciliation",
+  };
+  assert.equal(knownSettlement([unknownOriginal]), false);
+  assert.equal(
+    knownSettlement([
+      {
+        ...unknownOriginal,
+        job: { ...unknownOriginal.job, state: "succeeded" },
+      },
+    ]),
+    false,
+  );
+  for (const malformed of [
+    null,
+    false,
+    {},
+    { job: null },
+    { job: { state: "succeeded" }, execution: null },
+  ])
+    assert.equal(knownSettlement([malformed]), false);
   assert.equal(
     knownSettlement([evidence("failed", true), evidence("succeeded", true)]),
     true,
