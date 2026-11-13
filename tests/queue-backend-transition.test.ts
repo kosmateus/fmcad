@@ -35,7 +35,14 @@ function setup() {
   const f = fixture(root, runtimeRoot, "normal-multidocument");
   fs.unlinkSync(path.join(f.dir, "broker.lock")); // This test's synthetic owner only.
   if (f.state.data.paused) f.state.pause(false, "synthetic-transition-test");
-  const next = { ...f.cfg, backend: "mcp", url: "http://127.0.0.1:27182/mcp" };
+  const next = {
+    ...f.cfg,
+    backend: "mcp",
+    url: "http://127.0.0.1:27182/mcp",
+    headers: { "X-Synthetic-Endpoint": "mcp" },
+    tool: "fusion_mcp_execute",
+    protocolVersion: "2024-11-05",
+  };
   const approval: BackendTransitionApproval = {
     requestId: "to-mcp",
     clientId: f.clientId,
@@ -137,6 +144,17 @@ test("foreign/config/active/unknown refusals precede physical client constructio
         backendTransition: {
           ...f.approval,
           nextConfig: { ...f.next, tool: "tampered" },
+        },
+      }),
+      { code: "CONFIG_CHANGED" },
+    );
+    const changedTimeout = { ...f.next, timeoutMs: 1234 };
+    await assert.rejects(
+      serve(changedTimeout, {
+        ...options,
+        backendTransition: {
+          ...f.approval,
+          nextConfig: changedTimeout,
         },
       }),
       { code: "CONFIG_CHANGED" },

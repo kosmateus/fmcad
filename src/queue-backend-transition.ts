@@ -177,8 +177,8 @@ export function prepareBackendTransition(
   const previous = approval.previousConfig;
   const stripEndpoint = (config: P.Config) => {
     const rest = { ...config };
-    delete rest.backend;
-    delete rest["url"];
+    for (const key of ["backend", "url", "headers", "tool", "protocolVersion"])
+      delete rest[key];
     return rest;
   };
   if (
@@ -190,7 +190,7 @@ export function prepareBackendTransition(
   )
     fail(
       "CONFIG_CHANGED",
-      "Transition may change only the explicitly approved physical backend and URL",
+      "Transition may change only the explicitly approved physical backend, endpoint, headers, tool and protocol version",
     );
   const prior = backendHead(dir);
   const identityFile =

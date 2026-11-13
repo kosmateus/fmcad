@@ -73,8 +73,10 @@ explicitly switch the physical add-in/MCP endpoint on **the same live Fusion**:
    underscore or hyphen `requestId`, the epoch owner's existing `clientId` and
    `clientToken`, and exact `previousConfig` and `nextConfig` objects. These are
    the fully loaded broker configurations (`routing: "queue"`, `queue: {}`),
-   not partial CLI overrides. Only `backend` (`addin` ↔ `mcp`) and `url` may
-   differ. Keep credentials out of shell arguments and logs.
+   not partial CLI overrides. Only physical endpoint fields `backend` (`addin`
+   ↔ `mcp`), `url`, `headers`, `tool` and `protocolVersion` may differ; connection
+   timeouts, transport and local queue/settings must remain exact. Keep
+   credentials out of shell arguments and logs.
 3. Run `fmcad queue transition-backend --backend mcp --backend-approval
 /absolute/private-approval.json --confirm-ownership true` using the matching
    runtime/config. This starts the **same user-global broker/SDK queue**. The
