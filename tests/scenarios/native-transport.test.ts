@@ -46,7 +46,9 @@ test("all native diagnostic factories are pure and reject unsupported ten-owner 
   ]) {
     const scenarios = factory();
     assert.equal(scenarios.length, 10);
-    const reports = await runScenarios(backend, scenarios, directory, 10);
+    const reports = [];
+    for (const scenario of scenarios)
+      reports.push(...(await runScenarios(backend, [scenario], directory, 10)));
     for (const report of reports) {
       assert.equal(report.status, "unsupported");
       assert.equal(report.cleanup, "not-created");

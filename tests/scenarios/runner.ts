@@ -93,6 +93,12 @@ function creationProof(
     );
   return Object.freeze({ name, creationId: text(value["creationId"]) });
 }
+function commandOperation(
+  intent?: Record<string, unknown>,
+): string | undefined {
+  const command = intent?.["command"];
+  return command === undefined ? undefined : text(record(command)["operation"]);
+}
 function readCreation(directory: string): Record<string, unknown> {
   const file = path.join(directory, "creation.json");
   const stat = fs.lstatSync(file);
@@ -840,7 +846,11 @@ export class ScenarioSession {
     if (command?.expectRejected && execution.state === "failed") {
       try {
         if (execution.stdout.trim())
-          commandResult(execution.stdout, target ? [target] : undefined);
+          commandResult(
+            execution.stdout,
+            target ? [target] : undefined,
+            command.operation,
+          );
       } catch (error) {
         this.#uncertain = true;
         this.persist();
@@ -851,7 +861,11 @@ export class ScenarioSession {
     if (command && execution.stdout.trim()) {
       if (!target) throw new Error("CAD command has no owned target");
       try {
-        const output = commandResult(execution.stdout, [target]);
+        const output = commandResult(
+          execution.stdout,
+          [target],
+          command.operation,
+        );
         if (
           output["context"] === undefined &&
           output["success"] === true &&
@@ -1599,7 +1613,7 @@ export async function resumeCleanup(
           entry.requestId,
       );
     if (entry.phase.startsWith("cad-") && result.stdout.trim())
-      commandResult(result.stdout);
+      commandResult(result.stdout, undefined, commandOperation(entry.intent));
     recovered.push({ ...entry, result });
   }
   const creation = recovered.filter((entry) => entry.phase === "create");
@@ -1678,9 +1692,6 @@ export async function resumeCleanup(
     JSON.parse(text(lines[0]).slice(programs.marker.length)) as unknown,
   );
   let document = creationProof(created, owner, creation[0].requestId);
-  for (const entry of recovered)
-    if (entry.phase.startsWith("cad-") && entry.result?.stdout.trim())
-      commandResult(entry.result.stdout, [document]);
   if (fs.existsSync(path.join(directory, "creation.json"))) {
     const durable = creationProof(
       readCreation(directory),
@@ -1691,6 +1702,20 @@ export async function resumeCleanup(
       throw new Error("Original and durable creation identities differ");
   }
   const folder = saveIntent(directory, document, owner, recovered);
+  for (const [index, entry] of recovered.entries())
+    if (entry.phase.startsWith("cad-") && entry.result?.stdout.trim()) {
+      const saved = folder
+        ? recoveredFile(document, folder, recovered.slice(0, index))
+        : undefined;
+      const target = saved
+        ? Object.freeze({ ...document, file: saved })
+        : document;
+      commandResult(
+        entry.result.stdout,
+        [target],
+        commandOperation(entry.intent),
+      );
+    }
   if (folder) {
     const saved = recoveredFile(document, folder, recovered);
     if (saved) document = Object.freeze({ ...document, file: saved });
@@ -1727,10 +1752,11 @@ export async function resumeCleanup(
   try {
     for (const entry of recovered)
       if (entry.phase.startsWith("cad-") && entry.result?.stdout.trim())
-        commandResult(entry.result.stdout, [
-          originalDocument,
-          session.document,
-        ]);
+        commandResult(
+          entry.result.stdout,
+          [originalDocument, session.document],
+          commandOperation(entry.intent),
+        );
   } catch (error) {
     report.cleanup = "deferred";
     report.cleanupError = errorText(error);

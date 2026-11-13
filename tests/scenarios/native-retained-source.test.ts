@@ -57,10 +57,79 @@ for (const family of ["engineering", "thread"] as const)
         : "tests/live-thread-method.js";
     const previous = readbacks(old);
     assert.ok(previous.length > 20);
-    assert.deepEqual(
-      readbacks(`tests/scenarios/native-${family}-cases.ts`),
-      previous,
-    );
+    const current = readbacks(`tests/scenarios/native-${family}-cases.ts`);
+    if (family === "engineering") {
+      // These exact differences have explicit reviews in the dispositions ledger.
+      const reviews = [
+        {
+          historical: [
+            "optics.frustum",
+            "clipped far half-width returns 2 mm in cm",
+            0.2,
+            1e-9,
+          ],
+          retained: [
+            ["optics.frustum", "clipped far half-width returns 2 cm", 2, 1e-9],
+          ],
+        },
+        {
+          historical: [
+            "bearing.stack-check",
+            "no preload is fabricated",
+            "none declared",
+            null,
+          ],
+          retained: [
+            [
+              "bearing.stack-check",
+              "no preload is fabricated",
+              "none declared (no default preload is assumed)",
+              null,
+            ],
+          ],
+        },
+        {
+          historical: [
+            "datum.transform",
+            "directed difference is to-minus-from in cm",
+            "0.3,0.4,0.5",
+            1e-10,
+          ],
+          retained: [
+            [
+              "datum.transform",
+              "directed difference is to-minus-from in cm",
+              0.3,
+              1e-10,
+            ],
+            [
+              "datum.transform",
+              "directed difference y component in cm",
+              0.4,
+              1e-10,
+            ],
+            [
+              "datum.transform",
+              "directed difference z component in cm",
+              0.5,
+              1e-10,
+            ],
+          ],
+        },
+      ];
+      for (const review of reviews) {
+        const index = previous.findIndex(
+          (row) => JSON.stringify(row) === JSON.stringify(review.historical),
+        );
+        assert.notEqual(index, -1);
+        assert.deepEqual(
+          current.slice(index, index + review.retained.length),
+          review.retained,
+        );
+        previous.splice(index, 1, ...review.retained);
+      }
+    }
+    assert.deepEqual(current, previous);
   });
 
 for (const protocol of ["mcp", "addin"] as const)

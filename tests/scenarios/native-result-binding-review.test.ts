@@ -7,7 +7,9 @@ import { digest } from "./assertion-inventory";
 test("result retention review preserves the six predecessor obligations without qualifying native work", () => {
   const root = path.resolve(__dirname, "../../..");
   const source = "tests/live-normal-multidocument.ts";
-  const contents = fs.readFileSync(path.join(root, source), "utf8");
+  const contents = fs
+    .readFileSync(path.join(root, source), "utf8")
+    .replace(/\r\n/gu, "\n");
   const dispositions = JSON.parse(
     fs.readFileSync(
       path.join(root, "tests/scenarios/assertion-dispositions-recovery.json"),

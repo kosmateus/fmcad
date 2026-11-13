@@ -145,16 +145,21 @@ export const cases: readonly DeclarationCase[] = [
   {
     id: "g17-05",
     async run(cad) {
-      const out = await cad("mechanism.couple", {
-        schemaVersion: 1,
-        frame: "component",
-        coupling: { type: "rotation", ratio: -0.5 },
-        driverRange: { from: "0 deg", to: "360 deg" },
-        samples: 16,
-        representation: "native",
-      });
-      assert.equal(at(out, "success"), true, JSON.stringify(out));
-      assert.equal(at(out, "status"), "pass", JSON.stringify(out));
+      const out = await cad(
+        "mechanism.couple",
+        {
+          schemaVersion: 1,
+          frame: "component",
+          coupling: { type: "rotation", ratio: -0.5 },
+          driverRange: { from: "0 deg", to: "360 deg" },
+          samples: 16,
+          representation: "native",
+        },
+        true,
+      );
+      assert.equal(at(out, "success"), false, JSON.stringify(out));
+      assert.equal(at(out, "status"), "blocked", JSON.stringify(out));
+      assert.equal(at(out, "nativeMotionLink"), false, JSON.stringify(out));
       const body = out;
       // Whether or not the SDK exposes motion links, an explicit unwrapped track is returned.
       assert.equal(

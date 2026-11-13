@@ -60,6 +60,9 @@ test("reviewed assertion mappings name retained individual assertions and real e
       return file["mappings"];
     });
   const contents = new Map<string, string>();
+  // Match Git-normalized text independent of checkout line endings.
+  const sourceText = (filename: string) =>
+    fs.readFileSync(filename, "utf8").replace(/\r\n/gu, "\n");
   const mapped = new Set<string>();
   for (const value of mappings) {
     const row = record(value),
@@ -104,17 +107,15 @@ test("reviewed assertion mappings name retained individual assertions and real e
     assert.ok(fs.existsSync(evidencePath));
     if (row["currentSourceSha256"] !== undefined) {
       assert.equal(
-        createHash("sha256")
-          .update(fs.readFileSync(evidencePath))
-          .digest("hex"),
+        createHash("sha256").update(sourceText(evidencePath)).digest("hex"),
         text(row["currentSourceSha256"]),
-        "Reviewed current evidence bytes changed: " + key,
+        "Reviewed current evidence source changed: " + key,
       );
       assert.ok(text(row["reviewedBinding"]).length > 40, key);
     }
     if (row["evidenceAssertion"] !== undefined) {
       if (!contents.has(evidencePath))
-        contents.set(evidencePath, fs.readFileSync(evidencePath, "utf8"));
+        contents.set(evidencePath, sourceText(evidencePath));
       assert.ok(
         contents.get(evidencePath)!.includes(text(row["evidenceAssertion"])),
         "Reviewed assertion evidence disappeared: " + key,

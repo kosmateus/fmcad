@@ -122,6 +122,65 @@ test("only command control fields determine settlement, never literal input data
       }),
     ),
   );
+  for (const operation of [
+    "check.set",
+    "evidence.package",
+    "evidence.check",
+    "deliver",
+  ])
+    assert.doesNotThrow(() =>
+      commandResult(
+        JSON.stringify({
+          success: false,
+          status: "unknown",
+          operation,
+          result: { success: true },
+        }),
+        undefined,
+        operation,
+      ),
+    );
+  for (const operation of ["definition.instantiate", "batch.run"])
+    assert.throws(
+      () =>
+        commandResult(
+          JSON.stringify({
+            success: false,
+            status: "unknown",
+            operation,
+          }),
+          undefined,
+          operation,
+        ),
+      /unsettled/u,
+    );
+  assert.throws(
+    () =>
+      commandResult(
+        JSON.stringify({
+          success: false,
+          status: "unknown",
+          operation: "check.set",
+        }),
+        undefined,
+        "batch.run",
+      ),
+    /does not match its request/u,
+  );
+  assert.throws(
+    () =>
+      commandResult(
+        JSON.stringify({
+          success: false,
+          status: "unknown",
+          executionOutcome: "unknown",
+          operation: "check.set",
+        }),
+        undefined,
+        "check.set",
+      ),
+    /unsettled/u,
+  );
 });
 
 test("unsaved command context accepts a null file pin but rejects another file", () => {
@@ -131,6 +190,15 @@ test("unsaved command context accepts a null file pin but rejects another file",
     context: { doc: "Owned", docId: "owned-id", docFileId: null },
   };
   assert.doesNotThrow(() => commandResult(JSON.stringify(result), [target]));
+  assert.doesNotThrow(() =>
+    commandResult(
+      JSON.stringify({
+        ...result,
+        context: { doc: "Owned", docId: "owned-id" },
+      }),
+      [target],
+    ),
+  );
   assert.throws(
     () =>
       commandResult(

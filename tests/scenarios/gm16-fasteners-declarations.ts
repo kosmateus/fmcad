@@ -95,11 +95,15 @@ export const cases: readonly DeclarationCase[] = [
         [],
         JSON.stringify(complete),
       );
-      const incomplete = await cad("fastener.schedule", {
-        schemaVersion: 1,
-        frame: "component",
-        fasteners: [{ id: "B", torque: "0.5 N*m" }],
-      });
+      const incomplete = await cad(
+        "fastener.schedule",
+        {
+          schemaVersion: 1,
+          frame: "component",
+          fasteners: [{ id: "B", torque: "0.5 N*m" }],
+        },
+        true,
+      );
       assert.equal(
         at(incomplete, "status"),
         "unknown",

@@ -16,12 +16,9 @@ for (const protocol of ["mcp", "addin"] as const) {
   test(`native exports reject all ten unsupported owners before SDK dispatch via ${protocol}`, async (t) => {
     const { backend, model, directory } = await fixture(t, protocol);
     const before = model.executions;
-    const reports = await runScenarios(
-      backend,
-      nativeFileExportScenarios(),
-      directory,
-      10,
-    );
+    const reports = [];
+    for (const scenario of nativeFileExportScenarios())
+      reports.push(...(await runScenarios(backend, [scenario], directory, 10)));
     assert.equal(reports.length, 10);
     assert.equal(model.executions, before);
     for (const report of reports) {

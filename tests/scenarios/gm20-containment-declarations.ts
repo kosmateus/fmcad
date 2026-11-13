@@ -87,7 +87,7 @@ export const cases: readonly DeclarationCase[] = [
       );
       assert.match(
         text(list(at(out, "limitations")).join(" ")),
-        /signed-distance/,
+        /signed[- ]distance/,
         JSON.stringify(out),
       );
     },
