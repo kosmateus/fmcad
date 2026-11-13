@@ -16,6 +16,7 @@ export interface BackendTransitionApproval {
   clientToken: string;
   previousConfig: P.Config;
   nextConfig: P.Config;
+  stopRequestId?: string;
 }
 interface Reference {
   path: string;
@@ -106,7 +107,10 @@ export function backendHead(
   return { head, identityFile: head.identity.path, identity };
 }
 
-export function assertTransitionIdle(state: P.State): void {
+export function assertTransitionIdle(
+  state: P.State,
+  allowPaused = false,
+): void {
   const data = state.data;
   if (!state.epoch || state.admissionMode !== "normal-multidocument")
     fail(
@@ -115,7 +119,7 @@ export function assertTransitionIdle(state: P.State): void {
     );
   state.assertEpoch(true);
   if (
-    data.paused ||
+    (data.paused && !allowPaused) ||
     data.active ||
     data.blocked ||
     data.lease ||
@@ -128,7 +132,7 @@ export function assertTransitionIdle(state: P.State): void {
   )
     fail(
       "EPOCH_BUSY",
-      "Backend transition requires an unpaused settled current queue; unknown work cannot be replayed",
+      "Backend transition requires settled current work and an unpaused or exactly stop-proven gate; unknown work cannot be replayed",
     );
 }
 
@@ -146,7 +150,7 @@ export function prepareBackendTransition(
     observationFiles?: string[],
   ): string;
 } {
-  assertTransitionIdle(state);
+  assertTransitionIdle(state, true);
   const epoch = state.epoch!;
   const clients = readJson<Record<string, string>>(
     path.join(dir, "clients.json"),
@@ -161,6 +165,66 @@ export function prepareBackendTransition(
       "NOT_OWNER",
       "Exact existing epoch owner credentials are required for physical backend transition",
     );
+  const stopEvidence: Reference[] = [];
+  let stopBuildHash: string | undefined;
+  const paused = state.data.paused;
+  const generation = state.data.controlGeneration;
+  if (paused) {
+    const requestId = approval.stopRequestId;
+    if (
+      typeof requestId !== "string" ||
+      requestId.length === 0 ||
+      requestId.length > 256
+    )
+      fail(
+        "EPOCH_BUSY",
+        "A paused backend transition requires the exact completed owner stop request",
+      );
+    const digest = hash(requestId);
+    const adminFile = path.join(dir, `console-admin-${digest}.json`);
+    const releaseFile = path.join(dir, `console-release-${digest}.json`);
+    const admin = readJson<{
+      action: string;
+      clientId: string;
+      requestId: string;
+      instanceId: string;
+      expectedGeneration: number;
+      status: string;
+      buildHash: string;
+      result: { releaseFile: string };
+    }>(adminFile);
+    const release = readJson<{
+      terminal: boolean;
+      outcome: string;
+      requestId: string;
+      instanceId: string;
+      buildHash: string;
+    }>(releaseFile);
+    const pause = state.data.controlRequests?.[requestId];
+    if (
+      admin.action !== "console-stop" ||
+      admin.clientId !== epoch.ownerClientId ||
+      admin.requestId !== requestId ||
+      admin.status !== "accepted" ||
+      admin.result?.releaseFile !== releaseFile ||
+      release.terminal !== true ||
+      release.outcome !== "released" ||
+      release.requestId !== requestId ||
+      release.instanceId !== admin.instanceId ||
+      release.buildHash !== admin.buildHash ||
+      !pause ||
+      pause.paused !== true ||
+      pause.generation !== generation ||
+      (admin.expectedGeneration !== generation &&
+        admin.expectedGeneration + 1 !== generation)
+    )
+      fail(
+        "BACKEND_TRANSITION_UNPROVEN",
+        "Exact owner stop/release and unchanged durable pause are required",
+      );
+    stopEvidence.push(reference(adminFile), reference(releaseFile));
+    stopBuildHash = admin.buildHash;
+  }
   if (
     typeof approval.requestId !== "string" ||
     !/^[a-zA-Z0-9_-]{1,128}$/.test(approval.requestId)
@@ -197,6 +261,17 @@ export function prepareBackendTransition(
     prior?.identityFile || path.join(epoch.root, "instance.json");
   const identity = readJson<P.Identity>(identityFile);
   if (
+    stopEvidence.length &&
+    (stopBuildHash !== identity.buildHash ||
+      prior?.head.predecessor.some((ref) =>
+        stopEvidence.some((stop) => stop.path === ref.path),
+      ))
+  )
+    fail(
+      "BACKEND_TRANSITION_UNPROVEN",
+      "The original completed stop must match the predecessor runtime and may authorize only one transition",
+    );
+  if (
     brokerConfigHash(previous) !== identity.configHash ||
     (!prior &&
       readJson<P.Identity>(path.join(dir, "instance.json")).configHash !==
@@ -222,11 +297,20 @@ export function prepareBackendTransition(
     path.join(dir, "isolated-admission-epoch.json"),
     ...(prior ? [headFile(dir), identityFile] : []),
   ].map(reference);
+  predecessor.push(...stopEvidence);
   // The mutable head is escrowed under this transition before replacing it.
   const stable = predecessor.filter((ref) => ref.path !== headFile(dir));
   const ownerProof = reference(path.join(dir, "clients.json"));
   function assertEvidence() {
-    assertTransitionIdle(state);
+    assertTransitionIdle(state, paused);
+    if (
+      state.data.paused !== paused ||
+      state.data.controlGeneration !== generation
+    )
+      fail(
+        "BACKEND_TRANSITION_CHANGED",
+        "The approved stop pause changed during transition",
+      );
     for (const ref of predecessor) verify(ref);
     verify(ownerProof);
   }

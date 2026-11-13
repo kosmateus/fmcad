@@ -71,7 +71,8 @@ explicitly switch the physical add-in/MCP endpoint on **the same live Fusion**:
    idle `queue stop`; do not delete locks or edit `instance.json`.
 2. Create a private JSON approval (mode `0600`) with a fresh alphanumeric,
    underscore or hyphen `requestId`, the epoch owner's existing `clientId` and
-   `clientToken`, and exact `previousConfig` and `nextConfig` objects. These are
+   `clientToken`, the completed `queue stop` request's `stopRequestId`, and exact
+   `previousConfig` and `nextConfig` objects. These are
    the fully loaded broker configurations (`routing: "queue"`, `queue: {}`),
    not partial CLI overrides. Only physical endpoint fields `backend` (`addin`
    ↔ `mcp`), `url`, `headers`, `tool` and `protocolVersion` may differ; connection
@@ -83,6 +84,14 @@ explicitly switch the physical add-in/MCP endpoint on **the same live Fusion**:
    target endpoint must itself be the physical MCP listener, not an add-in
    proxy. A read-only probe must prove the exact original PID, birth and Fusion
    version, an idle UI and unmodified current documents.
+4. The supported stop's durable pause is **preserved**, not silently cleared.
+   After checking the listening receipt, the same owner explicitly runs
+   `queue resume --request-id NEW_RESUME_ID` before submitting new work.
+
+A paused transition requires the exact accepted owner stop, its terminal
+`released` receipt, unchanged control generation and the matching predecessor
+runtime. That stop proof is single-use for backend transition. A generic pause,
+foreign receipt or unresolved release does not authorize it.
 
 Foreign credentials, changed evidence/configuration and unfinished current
 work fail before any physical client or SDK request. Quarantined historical

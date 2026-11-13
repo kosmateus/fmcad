@@ -433,3 +433,138 @@ test("CLI requires an explicit transition verb and a private bounded approval fi
     fs.rmSync(f.root, { recursive: true, force: true });
   }
 });
+
+test("supported owner stop authorizes one paused transition without implicitly resuming", async () => {
+  const f = setup();
+  let handle: Awaited<ReturnType<typeof serve>> | undefined;
+  let probes = 0;
+  const { request } = load("./queue-connection") as {
+    request(
+      dir: string,
+      message: Record<string, unknown>,
+    ): Promise<Record<string, unknown>>;
+  };
+  const { openIsolatedEpoch } = load("./queue-isolated-epoch") as {
+    openIsolatedEpoch(dir: string, options: { recover: false }): P.State;
+  };
+  const options: P.Options = {
+    dir: f.dir,
+    confirmOwnership: true,
+    autoReconcile: false,
+    nativePath: (file) => file,
+    createBackend: () => ({
+      server: { timeoutMs: 1000 },
+      _parse: (raw: string) => JSON.parse(raw) as P.Reply,
+      _openSession: () => {
+        throw new Error("Unexpected session");
+      },
+      listTools: () => {
+        throw new Error("Unexpected catalog");
+      },
+      executeUiGuardedScript: () => {
+        throw new Error("Unexpected script");
+      },
+      _post: () => {
+        throw new Error("Replay forbidden");
+      },
+      callTool: async () => {
+        probes++;
+        return {
+          failed: false,
+          text:
+            "FMCAD_QUEUE_INSTANCE " +
+            JSON.stringify({
+              ...f.epoch.currentInstance,
+              activeCommand: "SelectCommand",
+              documents: [],
+            }),
+        };
+      },
+    }),
+  };
+  try {
+    handle = await serve(f.cfg, options);
+    const auth = { clientId: f.clientId, clientToken: f.token };
+    const control = await request(f.dir, { action: "control-status", auth });
+    const stopped = await request(f.dir, {
+      action: "console-stop",
+      auth,
+      control: {
+        requestId: "actual-owner-stop",
+        instanceId: control["instanceId"],
+        expectedGeneration: control["generation"],
+      },
+    });
+    await handle.close();
+    handle = undefined;
+    const releaseFile = String(stopped["releaseFile"]);
+    await new Promise<void>((resolve, reject) => {
+      const watcher = fs.watch(f.dir, inspect);
+      watcher.once("error", reject);
+      function inspect() {
+        if (fs.existsSync(releaseFile)) {
+          watcher.close();
+          resolve();
+        }
+      }
+      inspect();
+    });
+    assert.equal(
+      openIsolatedEpoch(f.dir, { recover: false }).data.paused,
+      true,
+    );
+    await assert.rejects(
+      serve(f.next, { ...options, backendTransition: f.approval }),
+      { code: "EPOCH_BUSY" },
+    );
+    assert.equal(probes, 0);
+    const release = fs.readFileSync(releaseFile);
+    fs.writeFileSync(
+      releaseFile,
+      JSON.stringify({ terminal: true, outcome: "retained" }),
+    );
+    await assert.rejects(
+      serve(f.next, {
+        ...options,
+        backendTransition: {
+          ...f.approval,
+          stopRequestId: "actual-owner-stop",
+        },
+      }),
+      { code: "BACKEND_TRANSITION_UNPROVEN" },
+    );
+    fs.writeFileSync(releaseFile, release);
+    handle = await serve(f.next, {
+      ...options,
+      backendTransition: { ...f.approval, stopRequestId: "actual-owner-stop" },
+    });
+    assert.equal(probes, 1);
+    assert.equal(
+      handle.status().paused,
+      true,
+      "Backend transition must preserve the owner stop pause",
+    );
+    await handle.close();
+    handle = undefined;
+    await assert.rejects(
+      serve(f.cfg, {
+        ...options,
+        backendTransition: {
+          ...f.approval,
+          requestId: "cannot-reuse-stop",
+          previousConfig: f.next,
+          nextConfig: f.cfg,
+          stopRequestId: "actual-owner-stop",
+        },
+      }),
+      { code: "BACKEND_TRANSITION_UNPROVEN" },
+    );
+    assert.equal(probes, 1);
+    handle = await serve(f.next, options);
+    assert.equal(handle.status().paused, true);
+    assert.equal(probes, 1);
+  } finally {
+    if (handle) await handle.close();
+    fs.rmSync(f.root, { recursive: true, force: true });
+  }
+});
