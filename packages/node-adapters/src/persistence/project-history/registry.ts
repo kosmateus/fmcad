@@ -87,7 +87,18 @@ function ensureDirectoryChain(directory: string): void {
         );
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      mkdirSync(current, { mode: 0o700 });
+      try {
+        mkdirSync(current, { mode: 0o700 });
+      } catch (mkdirError) {
+        if ((mkdirError as NodeJS.ErrnoException).code !== "EEXIST")
+          throw mkdirError;
+      }
+      const created = lstatSync(current);
+      if (created.isSymbolicLink() || !created.isDirectory())
+        fail(
+          "REGISTRY_PATH_INVALID",
+          `Registry directory must not be a symlink: ${current}`,
+        );
     }
   }
 }

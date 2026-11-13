@@ -129,6 +129,47 @@ test("project registry waits for an independent writer to release its original l
   assert.equal(fs.existsSync(lock), false);
 });
 
+for (const replacement of ["directory", "symlink"] as const)
+  test(`registry directory creation revalidates a competing ${replacement}`, (t) => {
+    const fixture = setupProjects(t, []),
+      parent = path.join(fixture.root, "racing-parent"),
+      target = path.join(fixture.root, "other-parent");
+    fs.mkdirSync(target);
+    const nodeFs = load("node:fs") as typeof fs,
+      original = nodeFs.mkdirSync;
+    t.mock.method(
+      nodeFs,
+      "mkdirSync",
+      (
+        file: fs.PathLike,
+        options?: fs.MakeDirectoryOptions | fs.Mode | null,
+      ) => {
+        if (file === parent) {
+          if (replacement === "directory") original(parent, { mode: 0o700 });
+          else fs.symlinkSync(target, parent, "dir");
+        }
+        return original(file, options);
+      },
+    );
+    const { openProjectRegistry } = load(
+      path.join(
+        repositoryRoot,
+        "packages/node-adapters/dist/persistence/project-history/registry.js",
+      ),
+    ) as typeof import("../packages/node-adapters/src/persistence/project-history/registry");
+    const registry = openProjectRegistry({
+      filePath: path.join(parent, "projects.json"),
+    });
+    assert.ok(registry.withRegistrationFence);
+    if (replacement === "directory")
+      assert.doesNotThrow(() => registry.withRegistrationFence!(() => null));
+    else
+      assert.throws(() => registry.withRegistrationFence!(() => null), {
+        code: "REGISTRY_PATH_INVALID",
+      });
+    assert.equal(fs.existsSync(path.join(target, "projects.json.lock")), false);
+  });
+
 test("independent registry writers preserve every enrollment without a manual slot", async (t) => {
   const fixture = setupProjects(t, []),
     gate = path.join(fixture.root, "writers-start");
