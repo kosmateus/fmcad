@@ -2341,6 +2341,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       prepared.record.pythonCheck = prepared.pythonCertificate.report;
     prepared.record.dispatchClass = prepared.pythonCertificate.kind;
     // Test observer may suspend local preparation, never replace checking.
+    await options.testCheckPrepared?.(prepared);
     prepared.pythonCertificate.fence(prepared.outgoing);
     verifyPreparedJob(job, prepared.contextEpoch);
     return prepared;

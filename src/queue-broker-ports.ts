@@ -347,6 +347,7 @@ export interface Options {
   deadEpochSuccessorNonce?: string;
   testAtomicWorkflowScope?: AtomicScopeConfig;
   testFusionProcessAlive?: (instance: Instance) => boolean;
+  testCheckPrepared?: (prepared: Prepared) => void | Promise<void>;
   spawnWorker?: typeof spawn;
   pollMs?: number;
 }
