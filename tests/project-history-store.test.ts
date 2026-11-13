@@ -129,6 +129,75 @@ test("project registry waits for an independent writer to release its original l
   assert.equal(fs.existsSync(lock), false);
 });
 
+test("independent registry writers preserve every enrollment without a manual slot", async (t) => {
+  const fixture = setupProjects(t, []),
+    gate = path.join(fixture.root, "writers-start");
+  const registryModule = path.join(
+    repositoryRoot,
+    "packages/node-adapters/dist/persistence/project-history/registry.js",
+  );
+  const writers = [0, 1].map((owner) => {
+    const child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `
+      const fs=require('node:fs'),path=require('node:path');
+      const [module,file,root,gate,owner]=process.argv.slice(1);
+      const registry=require(module).openProjectRegistry({filePath:file});
+      process.stdout.write('READY');
+      while(!fs.existsSync(gate))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);
+      for(let i=0;i<10;i++){
+        const id='writer-'+owner+'-'+i,projectPath=path.join(root,id);
+        fs.mkdirSync(projectPath);
+        registry.register({projectId:id,projectPath,databaseId:id,monitoring:true,archivedAtMs:null,nowMs:1});
+      }
+    `,
+        registryModule,
+        fixture.registry.readonlyPath,
+        fixture.root,
+        gate,
+        String(owner),
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    const exited = new Promise<void>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code) =>
+        code === 0
+          ? resolve()
+          : reject(new Error(stderr || "Writer exited " + code)),
+      );
+    });
+    const ready = new Promise<void>((resolve, reject) => {
+      child.once("error", reject);
+      child.stdout.once("data", () => resolve());
+      child.once("exit", (code) =>
+        reject(new Error("Writer exited before gate: " + code)),
+      );
+    });
+    t.after(() => {
+      if (child.exitCode === null) child.kill();
+    });
+    return { ready, exited };
+  });
+  await Promise.all(writers.map((writer) => writer.ready));
+  fs.writeFileSync(gate, "start", { flag: "wx" });
+  await Promise.all(writers.map((writer) => writer.exited));
+  const current = fixture.registry.read();
+  assert.equal(current.projects.length, 20);
+  assert.equal(current.revision, 20);
+  assert.equal(
+    new Set(current.projects.map((project) => project.projectId)).size,
+    20,
+  );
+  assert.equal(fs.existsSync(fixture.registry.readonlyPath + ".lock"), false);
+});
+
 function lifecycle(
   monitoring: boolean,
   archivedAtMs: number | null,
