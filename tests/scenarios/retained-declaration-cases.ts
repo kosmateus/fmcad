@@ -57,9 +57,10 @@ export function retainedDeclarationScenarios(
               throw new Error(String(output["error"]));
             const result = record(output["result"]);
             assert.equal(result["operation"], operation);
-            if (
+            if (expectedFailure)
+              assert.equal(result["success"], false, JSON.stringify(result));
+            else if (
               result["success"] === false &&
-              !expectedFailure &&
               !(
                 operation === "clearance.grid" && result["status"] === "unknown"
               )

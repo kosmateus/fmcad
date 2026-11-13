@@ -144,18 +144,22 @@ export const cases: readonly DeclarationCase[] = [
   {
     id: "g19-11",
     async run(cad) {
-      const out = await cad("motion.envelope", {
-        schemaVersion: 1,
-        frame: "component",
-        motion: {
-          type: "translation",
-          axis: [1, 0, 0],
-          from: "0 mm",
-          to: "20 mm",
+      const out = await cad(
+        "motion.envelope",
+        {
+          schemaVersion: 1,
+          frame: "component",
+          motion: {
+            type: "translation",
+            axis: [1, 0, 0],
+            from: "0 mm",
+            to: "20 mm",
+          },
+          bounds: { min: [0, 0, 0], max: [10, 10, 10] },
+          representation: "certified",
         },
-        bounds: { min: [0, 0, 0], max: [10, 10, 10] },
-        representation: "certified",
-      });
+        true,
+      );
       assert.equal(at(out, "status"), "unknown", JSON.stringify(out));
       assert.equal(at(out, "continuousVerified"), false, JSON.stringify(out));
       assert.equal(at(out, "certified"), false, JSON.stringify(out));
