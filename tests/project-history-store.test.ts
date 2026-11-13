@@ -119,9 +119,14 @@ test("project registry waits for an independent writer to release its original l
     );
     child.stdout.once("data", () => resolve());
   });
-  const snapshot = fixture.registry.setLifecycle("project-a", {
-    monitoring: true,
-    archivedAtMs: null,
+  const entry = fixture.registry.lookup("project-a");
+  assert.ok(entry);
+  const snapshot = fixture.registry.register({
+    projectId: entry.projectId,
+    projectPath: entry.path,
+    databaseId: entry.databaseId,
+    monitoring: entry.monitoring,
+    archivedAtMs: entry.archivedAtMs,
     nowMs: FIXTURE_NOW,
   });
   assert.equal(snapshot.projects.length, 1);

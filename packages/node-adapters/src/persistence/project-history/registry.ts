@@ -458,6 +458,9 @@ export function openProjectRegistry(
       snapshot: ProjectRegistrySnapshot;
       changed: boolean;
     },
+    // Lifecycle/move/reset callers can already own SQLite's writer fence.
+    // Waiting here would invert registry -> SQLite admission lock ordering.
+    waitForWriter = false,
   ): ProjectRegistrySnapshot {
     return withWriteLock(() => {
       const current = readRegistryFile(file);
@@ -475,7 +478,7 @@ export function openProjectRegistry(
       });
       atomicWrite(file, snapshot);
       return snapshot;
-    });
+    }, waitForWriter);
   }
 
   return {
@@ -585,7 +588,7 @@ export function openProjectRegistry(
           },
           changed: true,
         };
-      });
+      }, true); // Enrollment owns no SQLite writer transaction while waiting.
     },
 
     setLifecycle(
