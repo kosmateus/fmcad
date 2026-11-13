@@ -1360,9 +1360,7 @@ test("typed help preserves every registered English and Polish page and text lay
   const expectedTransitionManual = record(
     expectedManuals["queue transition-backend"],
   );
-  const expectedTransitionSections = list(
-    expectedTransitionManual["sections"],
-  );
+  const expectedTransitionSections = list(expectedTransitionManual["sections"]);
   const transitionReturnContract = {
     title: "Return Contract",
     text: "Starts the sole shared broker on an explicitly approved physical addin/MCP endpoint after owner-authenticated idle stop. Exact existing epoch credentials, old/new configs and a read-only receipt for the same live Fusion PID/birth/version are required. Returns listening metadata with buildHash, not model or physical validation. Historical identity/receipts/unknown work remain immutable; uncertainty retains ownership without replay.",
