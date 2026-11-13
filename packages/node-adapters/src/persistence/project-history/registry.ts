@@ -343,10 +343,51 @@ export function openProjectRegistry(
   const lockFile = `${file}.lock`;
   const now = options.now ?? Date.now;
 
+  // Liveness permits waiting only, never stealing or deleting another lock.
+  // An empty file may be the short exclusive-create/write publication window.
+  function writerCanFinish(allowSameProcess: boolean): boolean {
+    let fd: number;
+    try {
+      fd = openSync(lockFile, constants.O_RDONLY | constants.O_NOFOLLOW);
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "ENOENT";
+    }
+    try {
+      const stat = fstatSync(fd);
+      if (!stat.isFile() || stat.size > 4096) return false;
+      if (stat.size === 0) return true;
+      const bytes = Buffer.alloc(stat.size);
+      if (readSync(fd, bytes, 0, bytes.length, 0) !== stat.size) return true;
+      let owner: unknown;
+      try {
+        owner = JSON.parse(bytes.toString("utf8")) as unknown;
+      } catch {
+        return false;
+      }
+      if (
+        !owner ||
+        typeof owner !== "object" ||
+        !("pid" in owner) ||
+        typeof owner.pid !== "number" ||
+        !Number.isSafeInteger(owner.pid) ||
+        owner.pid <= 0 ||
+        (!allowSameProcess && owner.pid === process.pid)
+      )
+        return false;
+      try {
+        process.kill(owner.pid, 0);
+        return true;
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code === "EPERM";
+      }
+    } finally {
+      closeSync(fd);
+    }
+  }
+
   function withWriteLock<T>(operation: () => T, waitForWriter = true): T {
     ensureDirectoryChain(directory);
     let lockFd: number;
-    const deadline = performance.now() + 2000;
     const wait = new Int32Array(new SharedArrayBuffer(4));
     for (;;) {
       try {
@@ -356,17 +397,22 @@ export function openProjectRegistry(
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
         // Independent processes release their own short synchronous writes.
         // Never reclaim or remove an existing lock, including an orphaned one.
-        if (waitForWriter && performance.now() < deadline) {
+        const retryable = writerCanFinish(!waitForWriter);
+        if (waitForWriter && retryable) {
           Atomics.wait(wait, 0, 0, 10);
           continue;
         }
-        fail(
-          "REGISTRY_BUSY",
-          "Project registry has another writer or an unreconciled lock; it was not overwritten",
-          error,
+        throw Object.assign(
+          new ProjectRegistryError(
+            "REGISTRY_BUSY",
+            "Project registry has another writer or an unreconciled lock; it was not overwritten",
+            { cause: error },
+          ),
+          { retryable },
         );
       }
     }
+    const ownedLock = fstatSync(lockFd);
     try {
       writeFileSync(
         lockFd,
@@ -378,7 +424,12 @@ export function openProjectRegistry(
       closeSync(lockFd);
       try {
         const lockStat = lstatSync(lockFile);
-        if (lockStat.isSymbolicLink() || !lockStat.isFile())
+        if (
+          lockStat.isSymbolicLink() ||
+          !lockStat.isFile() ||
+          lockStat.dev !== ownedLock.dev ||
+          lockStat.ino !== ownedLock.ino
+        )
           fail(
             "REGISTRY_PATH_INVALID",
             "Project registry lock changed unexpectedly",

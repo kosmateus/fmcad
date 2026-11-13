@@ -4948,7 +4948,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           // creates a second job. New durable acceptance shares the project's
           // lifecycle fence with archive and presence writers.
           if (existing) return accept();
-          const registrationDeadline = performance.now() + 2000;
           for (;;) {
             let accepting = false;
             try {
@@ -4968,7 +4967,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 typeof error !== "object" ||
                 !("code" in error) ||
                 error.code !== "REGISTRY_BUSY" ||
-                performance.now() >= registrationDeadline
+                ("retryable" in error && error.retryable === false)
               )
                 throw error;
               await new Promise((resolve) => setTimeout(resolve, 10));

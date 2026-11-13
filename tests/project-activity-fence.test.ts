@@ -281,7 +281,7 @@ test("the production broker refuses new archived-project jobs and preserves orig
         (value) => ({ value, error: undefined }),
         (error) => ({ value: undefined, error: error as unknown }),
       );
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 2500));
     await ipc.request(queue, { action: "control-status", auth });
     assert.equal(
       calls,

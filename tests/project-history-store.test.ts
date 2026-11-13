@@ -53,6 +53,39 @@ test("project registry activity fence retains an unreconciled lock without block
   assert.equal(fs.existsSync(fixture.registry.readonlyPath), false);
 });
 
+test("project registry does not remove a replacement owner's lock", (t) => {
+  const fixture = setupProjects(t, []),
+    file = fixture.registry.readonlyPath + ".lock";
+  assert.ok(fixture.registry.withRegistrationFence);
+  const replacement = JSON.stringify({ pid: process.pid, startedAtMs: 123 });
+  assert.throws(
+    () =>
+      fixture.registry.withRegistrationFence!(() => {
+        fs.renameSync(file, file + ".original");
+        fs.writeFileSync(file, replacement, { flag: "wx", mode: 0o600 });
+      }),
+    { code: "REGISTRY_PATH_INVALID" },
+  );
+  assert.equal(fs.readFileSync(file, "utf8"), replacement);
+});
+
+test("project registry refuses an abandoned writer without reclaiming its lock", (t) => {
+  const fixture = setupProjects(t, ["project-a"]),
+    file = fixture.registry.readonlyPath + ".lock";
+  const bytes = JSON.stringify({ pid: 2147483643, startedAtMs: 1 });
+  fs.writeFileSync(file, bytes, { flag: "wx", mode: 0o600 });
+  assert.throws(
+    () =>
+      fixture.registry.setLifecycle("project-a", {
+        monitoring: true,
+        archivedAtMs: null,
+        nowMs: FIXTURE_NOW,
+      }),
+    { code: "REGISTRY_BUSY", retryable: false },
+  );
+  assert.equal(fs.readFileSync(file, "utf8"), bytes);
+});
+
 test("project registry waits for an independent writer to release its original lock", async (t) => {
   const fixture = setupProjects(t, ["project-a"]);
   const lock = fixture.registry.readonlyPath + ".lock";
@@ -66,7 +99,7 @@ test("project registry waits for an independent writer to release its original l
     const file=process.argv[1];
     fs.writeFileSync(file,JSON.stringify({pid:process.pid,startedAtMs:Date.now()}),{flag:'wx',mode:0o600});
     process.stdout.write('LOCKED');
-    setTimeout(()=>fs.unlinkSync(file),300);
+    setTimeout(()=>fs.unlinkSync(file),2500);
   `,
       lock,
     ],
