@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import path from "node:path";
 
-const modules = [
+export const queueRuntimeModules = [
   "atomic-runtime-abi",
   "queue-settled-epoch-evidence",
   "queue-audit-facts-capture",
@@ -46,7 +46,7 @@ export function stageQueueRuntime(root: string): void {
   const source = path.join(root, "dist/library-build/src");
   const outputs = [path.join(root, "src"), path.join(root, "dist/src")];
   // Validate all inputs first so a missing compile does not partially stage.
-  const artifacts = modules.flatMap((name) =>
+  const artifacts = queueRuntimeModules.flatMap((name) =>
     [".js", ".d.ts"].map((extension) => {
       const filename = name + extension;
       const file = path.join(source, filename);

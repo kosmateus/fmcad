@@ -7,29 +7,20 @@ import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 
 const runtimeRequire = createRequire(__filename);
-const { stageQueueRuntime, stageQueueTestFixtures } = runtimeRequire(
-  "../scripts/devtools/stage-queue-runtime.js",
-) as {
-  stageQueueRuntime(root: string): void;
-  stageQueueTestFixtures(root: string): void;
-};
+const { stageQueueRuntime, stageQueueTestFixtures, queueRuntimeModules } =
+  runtimeRequire("../scripts/devtools/stage-queue-runtime.js") as {
+    stageQueueRuntime(root: string): void;
+    stageQueueTestFixtures(root: string): void;
+    queueRuntimeModules: readonly string[];
+  };
 
 test("queue staging publishes exact compiler bytes and preserves unrelated files", (t) => {
   const root = fs.mkdtempSync(path.join(tmpdir(), "queue-emission-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const compiled = path.join(root, "dist/library-build/src");
   fs.mkdirSync(compiled, { recursive: true });
-  const names = [
-    "queue-broker",
-    "queue-client",
-    "queue-closed-epoch-proof",
-    "queue-isolated-epoch",
-    "queue-scratch-control",
-    "queue-admission",
-    "queue-fixed-fixture-admission",
-    "queue-instance-liveness",
-    "queue-epoch-lineage",
-  ];
+  const names = queueRuntimeModules;
+  assert.ok(names.includes("atomic-runtime-abi"));
   for (const name of names)
     for (const extension of [".js", ".d.ts"]) {
       fs.writeFileSync(
