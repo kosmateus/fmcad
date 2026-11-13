@@ -1352,10 +1352,32 @@ test("typed help preserves every registered English and Polish page and text lay
     runtimeRequire("../src/legacy-manual"),
     relocateHistoricalTestEvidence(historicalPublicBoundary("legacy-manual")),
   );
-  assert.deepEqual(
-    runtimeRequire("../src/broker-manual"),
+  const currentBrokerManual = record(runtimeRequire("../src/broker-manual"));
+  const expectedBrokerManual = record(
     relocateHistoricalTestEvidence(historicalPublicBoundary("broker-manual")),
   );
+  const expectedManuals = record(expectedBrokerManual["manuals"]);
+  const expectedTransitionManual = record(
+    expectedManuals["queue transition-backend"],
+  );
+  const expectedTransitionSections = list(expectedTransitionManual["sections"]);
+  const transitionReturnContract = {
+    title: "Return Contract",
+    text: "Starts the sole shared broker on an explicitly approved physical addin/MCP endpoint after owner-authenticated idle stop. Exact existing epoch credentials, old/new configs and a read-only receipt for the same live Fusion PID/birth/version are required. Returns listening metadata with buildHash, not model or physical validation. Historical identity/receipts/unknown work remain immutable; uncertainty retains ownership without replay.",
+  };
+  assert.deepEqual(currentBrokerManual, {
+    ...expectedBrokerManual,
+    manuals: {
+      ...expectedManuals,
+      "queue transition-backend": {
+        ...expectedTransitionManual,
+        sections: [
+          transitionReturnContract,
+          ...expectedTransitionSections.slice(1),
+        ],
+      },
+    },
+  });
   const oldHelp = historicalPublicBoundary("help"),
     help = runtimeRequire(
       "../src/help",
