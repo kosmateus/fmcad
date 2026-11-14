@@ -11,6 +11,10 @@ type Pointer = Parameters<typeof syntheticClosedScratch>[1] & {
   quarantinedJobIds: string[];
 };
 interface State {
+  readonly epoch: unknown;
+  readonly data: Parameters<
+    typeof import("../packages/node-adapters/src/broker-ipc/normal-admission").epochStartupPinned
+  >[0]["data"];
   readonly admissionMode: string;
   assertEpoch(): void;
   summary(): { admissionScope: string };
@@ -28,6 +32,9 @@ interface State {
 const sourceRoot = path.resolve(__dirname, "../..");
 const repo = path.resolve(process.env["FMCAD_TEST_RUNTIME"] || sourceRoot);
 const runtimeRequire = createRequire(__filename);
+const { epochStartupPinned } = runtimeRequire(
+  path.join(repo, "src/dist/node-adapters/broker-ipc/normal-admission"),
+) as typeof import("../packages/node-adapters/src/broker-ipc/normal-admission");
 const isolated = runtimeRequire(
   path.join(repo, "src/queue-isolated-epoch"),
 ) as {
@@ -127,4 +134,44 @@ test("current unknown blocks admission even after known owner release", (t) => {
   assert.throws(() => isolated.epochAdmission(f.state, request, {}), {
     code: "EPOCH_RECONCILIATION_REQUIRED",
   });
+});
+
+test("FAKE recovery: cold startup retains unresolved work and never treats worker exit as SDK settlement", (t) => {
+  const f = fixture(t);
+  syntheticClosedScratch(f.dir, f.pointer, repo, "normal-multidocument");
+  f.state.pause(false);
+  // Retired unknown history alone does not prevent an ordinary runtime update.
+  assert.equal(epochStartupPinned(f.state, "old-build", "new-build"), false);
+  const job = f.state.submit(f.request("new", "unresolved-sdk-turn"));
+  f.state.next();
+  f.state.markDispatch(job.id, { rpcCount: 1, completedCount: 0 });
+  f.state.block(job.id, { code: "UNKNOWN_RPC" });
+  const directory = path.join(f.dir, "jobs", job.id);
+  fs.mkdirSync(directory, { recursive: true });
+  f.durable(path.join(directory, "worker-result.json"), {
+    jobId: job.id,
+    code: 1,
+    terminal: true,
+  });
+  const reopened = isolated.openIsolatedEpoch(f.dir, { recover: false });
+  const before = JSON.stringify(reopened.data);
+  const epoch = JSON.stringify(reopened.epoch);
+  // Pinned startup is metadata recovery, not permission to probe or replay.
+  assert.equal(epochStartupPinned(reopened, "old-build", "old-build"), true);
+  assert.throws(() => epochStartupPinned(reopened, "old-build", "new-build"), {
+    code: "EPOCH_BUSY",
+  });
+  assert.throws(
+    () => isolated.epochAdmission(reopened, f.request("new", "next"), {}),
+    {
+      code: "EPOCH_RECONCILIATION_REQUIRED",
+    },
+  );
+  assert.equal(reopened.status(job.id).state, "needs_reconciliation");
+  assert.equal(JSON.stringify(reopened.data), before);
+  assert.equal(JSON.stringify(reopened.epoch), epoch);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.dir, "queue-state.json")),
+    f.history,
+  );
 });
