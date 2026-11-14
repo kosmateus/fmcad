@@ -91,6 +91,7 @@ export function abortUnstartedSuccessor(
       complete["clientId"] !== client.auth.clientId ||
       !same(complete["approval"], approved) ||
       !same(complete["facts"], original["facts"]) ||
+      complete["reason"] !== original["reason"] ||
       complete["sdkRequestsSent"] !== 0 ||
       complete["historicalOutcome"] !== "unknown"
     )
@@ -160,6 +161,234 @@ export function abortUnstartedSuccessor(
     fail("Exact previous authority and original launch required");
   const workerFile = path.join(audit, "worker-claim.json"),
     worker = read(workerFile);
+  // A ready metadata worker is NOT an unstarted/rejected startup. Its one
+  // terminal local observation rejection needs a separate, explicit proof.
+  if (fs.existsSync(path.join(audit, "worker-ready.json"))) {
+    const reason = "metadata-ready-observation-rejected-before-sdk";
+    const readyFile = path.join(audit, "worker-ready.json"),
+      ready = read(readyFile);
+    const metadataFile = path.join(audit, "complete.json"),
+      metadata = read(metadataFile);
+    const owner = object(ready["owner"]);
+    const workerAlive = api.priorProcessAlive(worker);
+    if (
+      worker["nonce"] !== intent["nonce"] ||
+      ready["nonce"] !== intent["nonce"] ||
+      owner["pid"] !== worker["pid"] ||
+      owner["birth"] !== worker["birth"] ||
+      owner["protocol"] !== 2 ||
+      ready["buildHash"] !== authority["buildHash"] ||
+      ready["sdkRequestsSent"] !== 0 ||
+      workerAlive === null ||
+      metadata["kind"] !== "dead-epoch-successor-metadata-ready" ||
+      metadata["requestId"] !== requestId ||
+      !same(metadata["authority"], entry) ||
+      !same(metadata["owner"], owner) ||
+      metadata["sdkRequestsSent"] !== 0 ||
+      metadata["buildHash"] !== authority["buildHash"] ||
+      metadata["sourceCommit"] !== authority["sourceCommit"] ||
+      metadata["historicalOutcome"] !== "unknown" ||
+      metadata["modelingAdmission"] !==
+        "blocked-until-current-facts-and-proven-new-scratch"
+    )
+      fail("Exact SDK0 metadata-ready worker and original completion required");
+    const allowed = new Set([
+      "authority.json",
+      "intent.json",
+      "launch-intent.json",
+      "predecessor-pointer.json",
+      "previous-active-succession.json",
+      "retired-owner.json",
+      "installed-qualification.json",
+      "worker-claim.json",
+      "worker-ready.json",
+      "complete.json",
+      "worker.stdout.log",
+      "worker.stderr.log",
+      "dead-epoch-current-observation",
+      "released-recovery.lock.json",
+      "released-atomic-migration.lock.json",
+      "abort-unstarted",
+    ]);
+    if (fs.readdirSync(audit).some((name) => !allowed.has(name)))
+      fail(
+        "Unexpected SDK, scratch, pending or startup evidence forbids metadata-ready retirement",
+      );
+    const observation = path.join(audit, "dead-epoch-current-observation");
+    files.directory(observation);
+    if (
+      !same(fs.readdirSync(observation).sort(), ["intent.json", "result.json"])
+    )
+      fail("Only an observation intent and terminal local rejection may exist");
+    const observationIntentFile = path.join(observation, "intent.json"),
+      observationIntent = read(observationIntentFile);
+    const resultFile = path.join(observation, "result.json"),
+      result = read(resultFile);
+    const jobs = pointer["quarantinedJobIds"];
+    if (!Array.isArray(jobs) || jobs.length < 2)
+      fail("Original holder and observer required");
+    const key = {
+      jobId: jobs[0],
+      observationJobId: jobs[1],
+      requestId: requestId + ":observe",
+      clientId: client.auth.clientId,
+    };
+    if (
+      observationIntent["version"] !== 1 ||
+      !same(observationIntent["key"], key) ||
+      !same(observationIntent["binding"], {
+        purpose: "atomic-recovery-audit-v1",
+        clientId: client.auth.clientId,
+        expectedProcess: authority["expectedProcess"],
+        successorAuthorityHash: entry.sha256,
+      }) ||
+      !/^[a-f0-9]{64}$/.test(String(observationIntent["sourceSha256"])) ||
+      !/^[a-f0-9]{64}$/.test(String(observationIntent["sourceArtifactHash"])) ||
+      !same(result, {
+        kind: "dead-epoch-current-observation",
+        ...key,
+        status: "failed",
+        code: "AUDIT_REQUEST_INVALID",
+        sdkRequestsSent: 0,
+        nativeOutcome: "unknown",
+        modelValidation: "not_performed",
+        rollbackVerification: "not_performed",
+      })
+    )
+      fail(
+        "Exact original terminal AUDIT_REQUEST_INVALID observation with SDK0 required",
+      );
+    const lifecycleFile = path.join(
+      root,
+      "broker-lifecycle-" + text(owner["nonce"]) + ".json",
+    );
+    const lifecycle = read(lifecycleFile);
+    if (
+      !same(lifecycle["owner"], owner) ||
+      lifecycle["stage"] !== "ready" ||
+      lifecycle["buildHash"] !== authority["buildHash"] ||
+      lifecycle["configHash"] !== authority["configHash"] ||
+      fs
+        .readdirSync(root)
+        .some((name) =>
+          name.startsWith("broker-startup-" + text(owner["nonce"])),
+        ) ||
+      [root, text(pointer["root"])].some((dir) =>
+        fs.existsSync(path.join(dir, "queue-state.pending.json")),
+      )
+    )
+      fail(
+        "Metadata-only lifecycle without any startup SDK or pending state required",
+      );
+    const released: string[] = [];
+    for (const name of ["recovery.lock", "atomic-migration.lock"]) {
+      const releasedFile = path.join(audit, "released-" + name + ".json");
+      if (
+        fs.existsSync(path.join(root, name)) ||
+        !same(read(releasedFile), guard)
+      )
+        fail(
+          "Exact already-released successor guards and no live guards required",
+        );
+      released.push(releasedFile);
+    }
+    const retiredFile = path.join(audit, "retired-owner.json"),
+      retired = read(retiredFile);
+    if (
+      !same(retired, intent["previousOwner"]) ||
+      !same(retired, authority["previousOwner"]) ||
+      api.priorProcessAlive(retired) !== false
+    )
+      fail("Exact escrowed dead predecessor marker required");
+    const continuing = fs.existsSync(path.join(abortDir, "intent.json"));
+    const activeFile = path.join(root, "active-epoch-succession.json");
+    const active = fs.existsSync(activeFile) ? read(activeFile) : null;
+    if (
+      !same(active, { version: 1, authority: entry }) &&
+      !(continuing && same(active, previous))
+    )
+      fail("Active authority changed before metadata-ready retirement");
+    const markerFile = path.join(root, "broker.lock"),
+      marker = fs.existsSync(markerFile) ? read(markerFile) : null;
+    if (
+      workerAlive
+        ? !same(marker, owner)
+        : marker !== null && !(continuing && same(marker, retired))
+    )
+      fail(
+        "Exact live worker marker or proven graceful marker release required",
+      );
+    const facts = [
+      intentFile,
+      authorityFile,
+      workerFile,
+      readyFile,
+      metadataFile,
+      lifecycleFile,
+      observationIntentFile,
+      resultFile,
+      retiredFile,
+      ...released,
+      ...(previous ? [previousFile] : []),
+    ].map(ref);
+    if (!apply)
+      return {
+        ready: true,
+        requestId,
+        reason,
+        sdkRequestsSent: 0,
+        requiresWorkerRetirement: workerAlive,
+        retirementPerformed: false,
+        applyReady: !workerAlive,
+        worker: owner,
+        facts,
+      };
+    if (workerAlive !== false)
+      fail(
+        "Exact metadata worker must be proven dead through a separately authorized retirement before apply",
+      );
+    const abortIntent = {
+      version: 1,
+      kind: "abort-sdk-not-started-dead-successor",
+      reason,
+      clientId: client.auth.clientId,
+      approval: approved,
+      facts,
+      guard,
+    };
+    fs.mkdirSync(abortDir, { recursive: true, mode: 0o700 });
+    files.directory(abortDir);
+    files.exclusive(path.join(abortDir, "intent.json"), abortIntent);
+    files.exclusive(path.join(abortDir, "active-before.json"), {
+      version: 1,
+      authority: entry,
+    });
+    if (previous) api.durable(activeFile, previous);
+    else if (fs.existsSync(activeFile)) fs.unlinkSync(activeFile);
+    if (!fs.existsSync(markerFile)) api.durable(markerFile, retired, true);
+    else if (!same(read(markerFile), retired)) fail("Restored marker changed");
+    const fd = fs.openSync(root, "r");
+    try {
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const complete = {
+      version: 1,
+      kind: "dead-epoch-successor-aborted-before-sdk",
+      reason,
+      status: "aborted",
+      requestId,
+      clientId: client.auth.clientId,
+      approval: approved,
+      facts,
+      sdkRequestsSent: 0,
+      historicalOutcome: "unknown",
+      modelValidation: "not_performed",
+    };
+    files.exclusive(completeFile, complete);
+    return complete;
+  }
   const errorFile = path.join(audit, "worker-error.json");
   if (
     worker["nonce"] !== intent["nonce"] ||

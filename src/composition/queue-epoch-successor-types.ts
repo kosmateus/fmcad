@@ -22,6 +22,7 @@ export interface Pointer extends EpochPointer {
   quarantinedJobIds: [string, string, ...string[]];
 }
 export interface Authority extends SuccessionAuthority {
+  priorAbortedSuccessor?: Reference;
   previousOwner: Owner;
   expectedProcess: Process;
   nonce: string;
@@ -54,6 +55,7 @@ export interface Approval {
   expectedProcess: Process;
   qualification: Reference;
   physicalBackendHead?: Reference;
+  priorAbortedSuccessor?: Reference;
 }
 export interface Qualification {
   passed?: boolean;

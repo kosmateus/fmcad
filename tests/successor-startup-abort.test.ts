@@ -14,6 +14,9 @@ const load = createRequire(
 const { abortUnstartedSuccessor } = load(
   "../scripts/abort-unstarted-successor.cjs",
 ) as typeof import("../scripts/abort-unstarted-successor.cjs");
+const { inspectSuccessor } = load(
+  "../src/queue-epoch-successor",
+) as typeof import("../src/composition/queue-epoch-successor");
 const api = load("../src/queue-instance") as {
   hash(value: string | Uint8Array): string;
   durable(file: string, value: unknown, exclusive?: boolean): void;
@@ -115,6 +118,251 @@ function fixture(t: TestContext) {
     worker,
     guard,
   };
+}
+
+function readyFixture(t: TestContext) {
+  const f = fixture(t);
+  fs.unlinkSync(path.join(f.audit, "worker-error.json"));
+  const owner = f.lifecycle.owner;
+  api.durable(f.lifecycleFile, {
+    owner,
+    stage: "ready",
+    buildHash: f.authority.buildHash,
+    configHash: f.authority.configHash,
+  });
+  api.durable(path.join(f.audit, "worker-ready.json"), {
+    nonce: f.nonce,
+    owner,
+    buildHash: f.authority.buildHash,
+    sdkRequestsSent: 0,
+  });
+  api.durable(path.join(f.audit, "complete.json"), {
+    version: 1,
+    kind: "dead-epoch-successor-metadata-ready",
+    requestId: f.requestId,
+    authority: f.authorityEntry,
+    owner,
+    buildHash: f.authority.buildHash,
+    sourceCommit: f.authority.sourceCommit,
+    sdkRequestsSent: 0,
+    historicalOutcome: "unknown",
+    modelingAdmission: "blocked-until-current-facts-and-proven-new-scratch",
+  });
+  for (const name of ["recovery.lock", "atomic-migration.lock"]) {
+    fs.renameSync(
+      path.join(f.dir, name),
+      path.join(f.audit, "released-" + name + ".json"),
+    );
+  }
+  const observation = path.join(f.audit, "dead-epoch-current-observation");
+  fs.mkdirSync(observation);
+  const key = {
+    jobId: f.inspection.pointer.quarantinedJobIds[0],
+    observationJobId: f.inspection.pointer.quarantinedJobIds[1],
+    requestId: f.requestId + ":observe",
+    clientId: f.clientId,
+  };
+  api.durable(path.join(observation, "intent.json"), {
+    version: 1,
+    key,
+    binding: {
+      purpose: "atomic-recovery-audit-v1",
+      clientId: f.clientId,
+      expectedProcess: f.authority.expectedProcess,
+      successorAuthorityHash: f.authorityEntry.sha256,
+    },
+    sourceSha256: "a".repeat(64),
+    sourceArtifactHash: "b".repeat(64),
+  });
+  api.durable(path.join(observation, "result.json"), {
+    kind: "dead-epoch-current-observation",
+    ...key,
+    status: "failed",
+    code: "AUDIT_REQUEST_INVALID",
+    sdkRequestsSent: 0,
+    nativeOutcome: "unknown",
+    modelValidation: "not_performed",
+    rollbackVerification: "not_performed",
+  });
+  return { ...f, owner, observation };
+}
+
+test("FAKE metadata-ready: terminal observation rejection SDK0 permits explicit retirement without rewriting ready/history", (t) => {
+  const f = readyFixture(t);
+  const names = [
+    "authority.json",
+    "worker-ready.json",
+    "complete.json",
+    "dead-epoch-current-observation/intent.json",
+    "dead-epoch-current-observation/result.json",
+  ];
+  const before = names.map((name) => fs.readFileSync(path.join(f.audit, name)));
+  const preview = abortUnstartedSuccessor(f.client, f.approvalFile, false);
+  assert.ok("reason" in preview);
+  assert.equal(
+    preview["reason"],
+    "metadata-ready-observation-rejected-before-sdk",
+  );
+  const result = abortUnstartedSuccessor(f.client, f.approvalFile, true);
+  assert.equal(result["status"], "aborted");
+  assert.ok("reason" in result);
+  assert.equal(
+    result["reason"],
+    "metadata-ready-observation-rejected-before-sdk",
+  );
+  for (const [i, name] of names.entries())
+    assert.deepEqual(fs.readFileSync(path.join(f.audit, name)), before[i]);
+  assert.deepEqual(
+    abortUnstartedSuccessor(f.client, f.approvalFile, true),
+    result,
+  );
+});
+
+test("FAKE metadata-ready: preview identifies the live exact owner but apply cannot signal or retire it", (t) => {
+  const f = readyFixture(t),
+    original = api.priorProcessAlive;
+  t.mock.method(api, "priorProcessAlive", (value: unknown) =>
+    JSON.stringify(value) === JSON.stringify(f.worker) ? true : original(value),
+  );
+  api.durable(path.join(f.dir, "broker.lock"), f.owner);
+  const preview = abortUnstartedSuccessor(f.client, f.approvalFile, false);
+  assert.ok("requiresWorkerRetirement" in preview);
+  assert.equal(preview["requiresWorkerRetirement"], true);
+  assert.ok("applyReady" in preview);
+  assert.equal(preview["applyReady"], false);
+  assert.throws(
+    () => abortUnstartedSuccessor(f.client, f.approvalFile, true),
+    /proven dead/,
+  );
+  assert.equal(fs.existsSync(path.join(f.audit, "abort-unstarted")), false);
+});
+
+test("FAKE metadata-ready: a new owner-approved successor must link the exact retired attempt and retain its result", (t) => {
+  t.after((load("./fixtures/fake-wsl-platform.cjs") as () => () => void)());
+  const f = readyFixture(t);
+  abortUnstartedSuccessor(f.client, f.approvalFile, true);
+  api.durable(
+    path.join(f.dir, "broker-lifecycle-" + f.previousOwner.nonce + ".json"),
+    f.inspection.previousLifecycle,
+  );
+  const requestId = "new-qualified-attempt-" + randomUUID();
+  const approvalFile = path.join(f.base, "new-approval.json");
+  const approval = {
+    ...f.approval,
+    requestId,
+    priorAbortedSuccessor: reference(
+      path.join(f.audit, "abort-unstarted", "complete.json"),
+    ),
+  };
+  const before = fs.readFileSync(path.join(f.observation, "result.json"));
+  api.durable(approvalFile, approval);
+  assert.equal(
+    inspectSuccessor(f.client, f.cfg, approvalFile, requestId).requestId,
+    requestId,
+  );
+  const missing = { ...approval };
+  delete (missing as Partial<typeof approval>).priorAbortedSuccessor;
+  api.durable(approvalFile, missing);
+  assert.throws(
+    () => inspectSuccessor(f.client, f.cfg, approvalFile, requestId),
+    { code: "EPOCH_SUCCESSOR_ABORT_REQUIRED" },
+  );
+  api.durable(approvalFile, {
+    ...approval,
+    priorAbortedSuccessor: {
+      ...approval.priorAbortedSuccessor,
+      sha256: "0".repeat(64),
+    },
+  });
+  assert.throws(
+    () => inspectSuccessor(f.client, f.cfg, approvalFile, requestId),
+    { code: "EPOCH_SUCCESSOR_ABORT_INVALID" },
+  );
+  api.durable(approvalFile, approval);
+  fs.appendFileSync(path.join(f.observation, "result.json"), " ");
+  assert.throws(
+    () => inspectSuccessor(f.client, f.cfg, approvalFile, requestId),
+    { code: "EPOCH_SUCCESSOR_ABORT_INVALID" },
+  );
+  assert.deepEqual(
+    fs
+      .readFileSync(path.join(f.observation, "result.json"))
+      .subarray(0, before.length),
+    before,
+  );
+});
+
+for (const reason of [
+  "sdk-sent",
+  "missing-result",
+  "unknown-result",
+  "start",
+  "wire",
+  "remote",
+  "facts",
+  "scratch",
+  "pending",
+  "guard",
+  "marker",
+  "owner",
+  "ready-build",
+  "complete-source",
+  "binding",
+  "released-guard",
+]) {
+  test("FAKE metadata-ready: retirement refuses " + reason, (t) => {
+    const f = readyFixture(t);
+    const resultFile = path.join(f.observation, "result.json");
+    const result = JSON.parse(fs.readFileSync(resultFile, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    if (reason === "sdk-sent")
+      api.durable(resultFile, { ...result, sdkRequestsSent: 1 });
+    if (reason === "missing-result") fs.unlinkSync(resultFile);
+    if (reason === "unknown-result")
+      api.durable(resultFile, { ...result, status: "unknown" });
+    if (["start", "wire", "remote"].includes(reason))
+      api.durable(path.join(f.observation, reason + ".json"), {});
+    if (reason === "facts")
+      api.durable(path.join(f.audit, "observed-current.json"), {});
+    if (reason === "scratch")
+      fs.mkdirSync(path.join(f.audit, "isolated-scratch-qualification"));
+    if (reason === "pending")
+      api.durable(path.join(f.dir, "queue-state.pending.json"), {});
+    if (reason === "guard")
+      api.durable(path.join(f.dir, "recovery.lock"), f.guard);
+    if (reason === "marker")
+      api.durable(path.join(f.dir, "broker.lock"), f.owner);
+    if (reason === "owner") f.client.auth.clientToken = "foreign";
+    if (reason === "ready-build")
+      api.durable(path.join(f.audit, "worker-ready.json"), {
+        nonce: f.nonce,
+        owner: f.owner,
+        buildHash: "foreign",
+        sdkRequestsSent: 0,
+      });
+    if (reason === "complete-source") {
+      const file = path.join(f.audit, "complete.json");
+      api.durable(file, {
+        ...JSON.parse(fs.readFileSync(file, "utf8")),
+        sourceCommit: "foreign",
+      });
+    }
+    if (reason === "binding") {
+      const file = path.join(f.observation, "intent.json");
+      api.durable(file, {
+        ...JSON.parse(fs.readFileSync(file, "utf8")),
+        binding: {},
+      });
+    }
+    if (reason === "released-guard")
+      api.durable(path.join(f.audit, "released-recovery.lock.json"), {});
+    assert.throws(() =>
+      abortUnstartedSuccessor(f.client, f.approvalFile, true),
+    );
+    assert.equal(fs.existsSync(path.join(f.audit, "abort-unstarted")), false);
+  });
 }
 
 test("FAKE metadata: preflight and owner SDK0 abort preserve predecessor/unknown and retain the rejected attempt", (t) => {

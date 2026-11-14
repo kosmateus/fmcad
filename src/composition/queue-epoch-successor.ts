@@ -69,6 +69,117 @@ function fail(code: string, message: string): never {
 const read = <T>(file: string): T => readJson(file, 256 * 1024 * 1024) as T;
 const exists = <T>(file: string): T | null =>
   fs.existsSync(file) ? read<T>(file) : null;
+/** Retirement permits a NEW owner approval, never hot replacement of a request. */
+function assertPriorAbortedSuccessor(
+  root: string,
+  pointerHash: string,
+  owner: Owner,
+  clientId: string,
+  tokenHash: string,
+  link?: Reference,
+): void {
+  const journal = path.join(root, "epoch-successions");
+  const candidates = new Map<string, { entry: Reference; prior?: Reference }>();
+  for (const name of fs.readdirSync(journal)) {
+    if (!/^[a-f0-9]{64}$/.test(name)) continue;
+    const audit = path.join(journal, name),
+      file = path.join(audit, "abort-unstarted", "complete.json");
+    if (!fs.existsSync(file)) {
+      if (
+        fs.existsSync(path.join(audit, "worker-ready.json")) &&
+        fs.existsSync(path.dirname(file))
+      )
+        fail(
+          "EPOCH_SUCCESSOR_ABORT_INVALID",
+          "Prior metadata retirement is incomplete",
+        );
+      continue;
+    }
+    const receipt = read<{
+      kind: string;
+      reason?: string;
+      status: string;
+      requestId: string;
+      clientId: string;
+      sdkRequestsSent: number;
+      historicalOutcome: string;
+      facts: Reference[];
+      approval: Reference;
+    }>(file);
+    if (!fs.existsSync(path.join(audit, "worker-ready.json"))) continue;
+    if (
+      receipt.reason !== "metadata-ready-observation-rejected-before-sdk" ||
+      receipt.kind !== "dead-epoch-successor-aborted-before-sdk" ||
+      receipt.status !== "aborted" ||
+      receipt.sdkRequestsSent !== 0 ||
+      receipt.historicalOutcome !== "unknown" ||
+      hash(receipt.requestId) !== name ||
+      !Array.isArray(receipt.facts) ||
+      receipt.facts.some((ref) => !same(reference(ref.path), ref))
+    )
+      fail(
+        "EPOCH_SUCCESSOR_ABORT_INVALID",
+        "Prior metadata retirement evidence changed",
+      );
+    const authorityFile = path.join(audit, "authority.json");
+    if (!receipt.facts.some((ref) => ref.path === authorityFile))
+      fail(
+        "EPOCH_SUCCESSOR_ABORT_INVALID",
+        "Prior retirement omits its original authority",
+      );
+    const authority = read<Checked["authority"]>(authorityFile);
+    if (authority.predecessor.pointer.sha256 !== pointerHash) continue;
+    if (
+      receipt.clientId !== clientId ||
+      authority.clientId !== clientId ||
+      authority.ownerTokenHash !== tokenHash ||
+      !same(authority.previousOwner, owner) ||
+      !same(reference(receipt.approval.path), receipt.approval)
+    )
+      fail(
+        "EPOCH_SUCCESSOR_ABORT_INVALID",
+        "Prior retirement does not bind this predecessor owner",
+      );
+    const intent = read<{ approval: Reference; facts: Reference[] }>(
+      path.join(audit, "abort-unstarted", "intent.json"),
+    );
+    if (
+      !same(intent.approval, receipt.approval) ||
+      !same(intent.facts, receipt.facts)
+    )
+      fail(
+        "EPOCH_SUCCESSOR_ABORT_INVALID",
+        "Original retirement intent and receipt differ",
+      );
+    candidates.set(file, {
+      entry: reference(file),
+      ...(authority.priorAbortedSuccessor
+        ? { prior: authority.priorAbortedSuccessor }
+        : {}),
+    });
+  }
+  const seen = new Set<string>();
+  for (let current = link; current;) {
+    const candidate = candidates.get(current.path);
+    if (
+      seen.size >= 32 ||
+      seen.has(current.path) ||
+      !candidate ||
+      !same(candidate.entry, current)
+    )
+      fail(
+        "EPOCH_SUCCESSOR_ABORT_INVALID",
+        "Exact acyclic owner-approved retirement reference required",
+      );
+    seen.add(current.path);
+    current = candidate.prior;
+  }
+  if (seen.size !== candidates.size)
+    fail(
+      "EPOCH_SUCCESSOR_ABORT_REQUIRED",
+      "A new successor approval must explicitly link the prior terminal SDK0 retirement",
+    );
+}
 export function assertSuccessorApproval(value: Inspection, approval: Approval) {
   let effectiveIdentity = value.identity;
   if (value.backendTransition) {
@@ -204,6 +315,14 @@ export function inspectSuccessor(
       "An unconsumed successor authority already owns this predecessor; unknown creation must not be bypassed by a new request",
     );
   const previousOwner = read<Owner>(path.join(root, "broker.lock"));
+  assertPriorAbortedSuccessor(
+    root,
+    approval.pointerHash,
+    previousOwner,
+    client.auth.clientId,
+    hash(client.auth.clientToken),
+    approval.priorAbortedSuccessor,
+  );
   const qualification = approval.qualification;
   if (
     !qualification ||
@@ -303,6 +422,14 @@ export function assertCurrentPredecessor(
 ) {
   const value = successionAuthority(root, authorityEntry),
     a = value.authority;
+  assertPriorAbortedSuccessor(
+    root,
+    a.predecessor.pointer.sha256,
+    a.previousOwner,
+    a.clientId,
+    a.ownerTokenHash,
+    a.priorAbortedSuccessor,
+  );
   const selected = read<Pointer>(
     path.join(root, "isolated-admission-epoch.json"),
   );
@@ -560,6 +687,9 @@ export async function bootstrapSuccessor(
       qualification,
       permission: "one-proven-new-document-only",
       historicalOutcome: "unknown",
+      ...(value.approval.priorAbortedSuccessor
+        ? { priorAbortedSuccessor: value.approval.priorAbortedSuccessor }
+        : {}),
       ...(value.backendTransition
         ? { backendTransition: value.backendTransition }
         : {}),
