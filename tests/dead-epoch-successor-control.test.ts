@@ -30,6 +30,7 @@ type FixtureControlPorts = Omit<
 };
 
 import type { DeadEpochFixture } from "./fixtures/epoch-fixture-types";
+import type { PythonArtifactManifest } from "../packages/core/src/domain/python-artifact";
 const repository = process.cwd();
 const load = createRequire(
   path.join(repository, "tests", "dead-epoch-successor-control.test.js"),
@@ -55,7 +56,56 @@ const { createSuccessorControl } = load(
   ): ReturnType<ProductionControl>;
 };
 
-function fixture(t: TestContext, mode = "success") {
+const { BrokerMcpClient } = load(
+  "../src/dist/fusion-transport/mcp",
+) as typeof import("../packages/node-adapters/src/fusion-transport/mcp");
+type ScriptClient = InstanceType<typeof BrokerMcpClient> & {
+  executeBrokerScript(
+    script: string,
+    origin: PythonArtifactManifest,
+  ): Promise<unknown>;
+};
+
+function mcpClient(post: AuditScope["post"]) {
+  const client = new BrokerMcpClient(
+    { url: "http://127.0.0.1:1/never-used", backend: "mcp", timeoutMs: 1000 },
+    {
+      version: "offline-fixture",
+      requestTimeout: () => 1000,
+      bridgeSource: () => "",
+    },
+  ) as ScriptClient;
+  let discoveryPosts = 0;
+  // Only the physical adapter is fake. Session admission, manifest binding,
+  // prepared calls and tool framing remain the real BrokerMcpClient methods.
+  client._post = async (payload, sessionId) => {
+    if (payload["method"] === "initialize") {
+      discoveryPosts++;
+      return {
+        status: 200,
+        sessionId: "offline-session",
+        raw: JSON.stringify({
+          jsonrpc: "2.0",
+          id: payload["id"],
+          result: { protocolVersion: "2024-11-05" },
+        }),
+      };
+    }
+    if (payload["method"] === "notifications/initialized") {
+      discoveryPosts++;
+      return { status: 202, raw: "" };
+    }
+    const method = payload["method"];
+    assert.equal(typeof method, "string");
+    return (await post({ ...payload, method: String(method) }, sessionId)) as {
+      status: number;
+      raw: string;
+    };
+  };
+  return { client, discoveryPosts: () => discoveryPosts };
+}
+
+function fixture(t: TestContext, mode = "success", transport = "synthetic") {
   t.after((load("./fixtures/fake-wsl-platform.cjs") as () => () => void)());
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "successor-control-"));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
@@ -86,8 +136,18 @@ function fixture(t: TestContext, mode = "success") {
     requestId: f.requestId + suffix,
     control: { fixture: true },
   });
-  const sendScript = (scope: AuditScope) =>
-    scope.post(
+  const sendScript = (scope: AuditScope, script: string) => {
+    if (transport !== "synthetic") {
+      const { client } = mcpClient(scope.post);
+      return transport === "legacy-mcp"
+        ? client.callTool(
+            { featureType: "script", object: { script, readOnly: true } },
+            "fusion_mcp_execute",
+            scope.origin,
+          )
+        : client.executeBrokerScript(script, scope.origin);
+    }
+    return scope.post(
       {
         jsonrpc: "2.0",
         id: 2,
@@ -99,6 +159,7 @@ function fixture(t: TestContext, mode = "success") {
       },
       "synthetic-session",
     );
+  };
   const control = createSuccessorControl({
     dir: f.dir,
     state,
@@ -239,6 +300,145 @@ function fixture(t: TestContext, mode = "success") {
     activations: () => activations,
   };
 }
+
+test("real MCP client: legacy addin audit shape is refused before physical dispatch", async (t) => {
+  const f = fixture(t, "success", "legacy-mcp");
+  const observed = await settled(f, "observe", f.message(":observe"));
+  assert.equal(observed.status, "failed");
+  assert.equal(observed.sdkRequestsSent, 0);
+  const result = api.readJson(
+    path.join(f.audit, "dead-epoch-current-observation/result.json"),
+  ) as { code: string };
+  assert.equal(result.code, "AUDIT_REQUEST_INVALID");
+  assert.equal(f.sdk(), 0);
+});
+
+test("real MCP client: fixed audit and scratch creation keep original manifests and exact code", async (t) => {
+  const f = fixture(t, "success", "mcp");
+  await assert.rejects(f.control.observe(f.message(":observe"), "foreign"), {
+    code: "NOT_OWNER",
+  });
+  assert.equal(f.sdk(), 0);
+  const observed = await settled(f, "observe", f.message(":observe"));
+  assert.equal(observed.status, "complete", JSON.stringify(observed));
+  const created = await settled(f, "create", f.message(":create"));
+  assert.equal(created.status, "complete", JSON.stringify(created));
+  assert.equal(f.sdk(), 2);
+  await settled(f, "observe", f.message(":observe"));
+  await settled(f, "create", f.message(":create"));
+  assert.equal(
+    f.sdk(),
+    2,
+    "Reading original receipts must not replay fixed scripts",
+  );
+});
+
+for (const field of ["buildHash", "sourceCommit", "expectedProcess"] as const)
+  test(
+    "real MCP client: changed authority " + field + " sends no SDK request",
+    async (t) => {
+      const f = fixture(t, "success", "mcp");
+      const authority = api.readJson(f.authorityEntry.path) as Record<
+        string,
+        unknown
+      >;
+      api.durable(f.authorityEntry.path, {
+        ...authority,
+        [field]:
+          field === "expectedProcess"
+            ? { pid: 1, birth: "foreign" }
+            : "changed",
+      });
+      await assert.rejects(settled(f, "observe", f.message(":observe")));
+      assert.equal(f.sdk(), 0);
+    },
+  );
+
+test("broker script execution is absent from the discovery client", async () => {
+  const { McpDiscoveryClient } = load(
+    "../src/dist/fusion-transport/mcp",
+  ) as typeof import("../packages/node-adapters/src/fusion-transport/mcp");
+  const client = new McpDiscoveryClient(
+    { url: "http://127.0.0.1:1/never-used" },
+    { version: "offline", requestTimeout: () => 1000, bridgeSource: () => "" },
+  );
+  assert.equal("executeBrokerScript" in client, false);
+  await assert.rejects(
+    client.callTool({ code: "never sent" }, "execute_python"),
+    { code: "QUEUE_REQUIRED" },
+  );
+});
+
+test("real MCP client: fixed scratch close preserves origin and refuses changed source before discovery", async (t) => {
+  t.after((load("./fixtures/fake-wsl-platform.cjs") as () => () => void)());
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-fixed-close-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { prepareScratchQualification } = load(
+    "../src/queue-scratch-qualification",
+  ) as typeof import("../src/queue-scratch-qualification");
+  const { pythonArtifactManifest } = load(
+    "../src/dist/python/context-binding",
+  ) as typeof import("../packages/node-adapters/src/python/context-binding");
+  const prepared = prepareScratchQualification(
+    repository,
+    {},
+    {
+      purpose: "isolated-scratch-close-v1",
+      epochId: "offline-owned-epoch",
+      sdkProofPath: path.join(directory, "sdk-closed.json"),
+      document: {
+        name: "FMCAD_ISOLATED_offline-owned-epoch",
+        creationId: "offline-owned-creation",
+        fileId: null,
+      },
+      restoreActiveCreationId: "offline-original-active",
+    },
+    { directory },
+  );
+  const origin = pythonArtifactManifest(prepared.artifact);
+  let sends = 0;
+  const { client, discoveryPosts } = mcpClient(async (payload) => {
+    sends++;
+    assert.equal(payload.params?.name, "execute_python");
+    assert.deepEqual(payload.params?.arguments, {
+      code: prepared.artifact.script + '\n\nrun("")\n',
+      persistent: false,
+    });
+    return {
+      status: 200,
+      raw: JSON.stringify({
+        jsonrpc: "2.0",
+        id: payload.id,
+        result: { content: [{ type: "text", text: "offline-close" }] },
+      }),
+    };
+  });
+  await assert.rejects(
+    async () =>
+      client.executeBrokerScript(
+        prepared.artifact.script + "\n# changed source",
+        origin,
+      ),
+    { code: "PYTHON_CONTEXT_CHANGED" },
+  );
+  await assert.rejects(
+    client.executeBrokerScript(prepared.artifact.script, {
+      ...origin,
+      sha256: "0".repeat(64),
+    }),
+    { code: "PYTHON_CONTEXT_CHANGED" },
+  );
+  await assert.rejects(async () =>
+    Reflect.apply(client.executeBrokerScript, client, [
+      prepared.artifact.script,
+    ]),
+  );
+  assert.equal(discoveryPosts(), 0);
+  assert.equal(sends, 0);
+  await client.executeBrokerScript(prepared.artifact.script, origin);
+  assert.equal(discoveryPosts(), 2);
+  assert.equal(sends, 1);
+});
 
 async function settled(
   f: ReturnType<typeof fixture>,
