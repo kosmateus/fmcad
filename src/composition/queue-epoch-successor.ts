@@ -55,7 +55,9 @@ const { openIsolatedEpoch } = load("./queue-isolated-epoch") as {
   openIsolatedEpoch(
     root: string,
     options: { recover: false },
-  ): { epoch: Pointer | null };
+  ): ReturnType<typeof import("../queue-isolated-epoch").openIsolatedEpoch> & {
+    epoch: Pointer | null;
+  };
 };
 const { resolveRuntimePaths } = load(
   "./dist/config-platform",
@@ -249,7 +251,7 @@ export function inspectSuccessor(
     load(
       "./queue-backend-transition",
     ) as typeof import("../queue-backend-transition")
-  ).backendHead(root);
+  ).resolveBackendHead(root, () => state).current;
   if (effectiveBackend) {
     value.backendTransition = {
       head: reference(
