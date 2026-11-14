@@ -192,6 +192,19 @@ function sdkSubmittedUnknownFixture(t: TestContext) {
   const f = readyFixture(t),
     expectedProcess = { pid: 3332, birth: "134391194634692184" },
     authorityFile = path.join(f.audit, "authority.json");
+  // This is a fake Windows process, not the developer's live Windows host.
+  // Plain Linux CI has no PowerShell observer and must not silently supply one.
+  const observe = api.priorProcessAlive;
+  t.mock.method(api, "priorProcessAlive", (value: unknown) =>
+    value &&
+    typeof value === "object" &&
+    "pid" in value &&
+    "birth" in value &&
+    value.pid === expectedProcess.pid &&
+    value.birth === expectedProcess.birth
+      ? false
+      : observe(value),
+  );
   f.authority = { ...f.authority, expectedProcess };
   api.durable(authorityFile, f.authority);
   f.authorityEntry = reference(authorityFile);
@@ -247,6 +260,7 @@ function sdkSubmittedUnknownFixture(t: TestContext) {
     observationStartFile = path.join(f.observation, "start.json"),
     observationWireFile = path.join(f.observation, "wire.json"),
     observationResultFile = path.join(f.observation, "result.json");
+  const syntheticScript = "synthetic bound read-only script";
   const start = {
     binding: {
       jobId: observationIntent.key.jobId,
@@ -269,8 +283,7 @@ function sdkSubmittedUnknownFixture(t: TestContext) {
       provenance: {
         artifactHash:
           "15a3ac72466849a0331026935ffccaffd88bacd42eb8552cdef907f2b9814b3b",
-        wireHash:
-          "bf6bf59c37727d95d354fe0b237a587100adf7ca2806a89f60da57a00e968aa1",
+        wireHash: api.hash(syntheticScript),
       },
     },
     originArtifactHash: observationIntent.sourceArtifactHash,
@@ -285,7 +298,7 @@ function sdkSubmittedUnknownFixture(t: TestContext) {
         arguments: {
           featureType: "script",
           object: {
-            script: "synthetic bound read-only script",
+            script: syntheticScript,
             readOnly: true,
           },
         },
@@ -471,6 +484,179 @@ function retirementFixture(t: TestContext) {
     },
   };
 }
+
+function refreshSdkDeathBindings(
+  f: ReturnType<typeof sdkSubmittedUnknownFixture>,
+) {
+  const proof = JSON.parse(fs.readFileSync(f.proofFile, "utf8"));
+  proof.bindings.observationWire = reference(
+    path.join(f.observation, "wire.json"),
+  );
+  api.durable(f.proofFile, proof);
+}
+
+test("historical SDK1 Python wire is preserved by the new withdrawal evaluator", (t) => {
+  const f = sdkSubmittedUnknownFixture(t);
+  const wire = {
+    ...f.wire,
+    outgoing: {
+      ...f.wire.outgoing,
+      params: {
+        name: "execute_python",
+        arguments: {
+          code: "synthetic bound read-only script",
+          persistent: false,
+        },
+      },
+    },
+  };
+  api.durable(path.join(f.observation, "wire.json"), wire);
+  refreshSdkDeathBindings(f);
+  const original = fs.readFileSync(path.join(f.observation, "wire.json"));
+  const result = abortUnstartedSuccessor(f.client, f.approvalFile, true, {
+    withdrawUnknown: true,
+    processDeathProofFile: f.proofFile,
+  }) as Record<string, unknown>;
+  assert.equal(result["sdkRequestsSent"], 1);
+  assert.equal(result["nativeOutcome"], "unknown");
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.observation, "wire.json")),
+    original,
+  );
+});
+
+test("FAKE dead SDK proof: an unavailable Windows observer still refuses withdrawal", (t) => {
+  const f = sdkSubmittedUnknownFixture(t),
+    observe = api.priorProcessAlive;
+  t.mock.method(api, "priorProcessAlive", (value: unknown) =>
+    value &&
+    typeof value === "object" &&
+    "pid" in value &&
+    "birth" in value &&
+    value.pid === 3332 &&
+    value.birth === "134391194634692184"
+      ? null
+      : observe(value),
+  );
+  assert.throws(
+    () =>
+      abortUnstartedSuccessor(f.client, f.approvalFile, true, {
+        withdrawUnknown: true,
+        processDeathProofFile: f.proofFile,
+      }),
+    /Unchanged predecessor and original dead-process authority required/,
+  );
+  assert.equal(fs.existsSync(path.join(f.audit, "abort-unstarted")), false);
+});
+
+for (const invalid of [
+  "persistent",
+  "extra-argument",
+  "unknown-tool",
+  "missing-code",
+  "changed-source",
+]) {
+  test(
+    "historical SDK1 wire refuses " +
+      invalid +
+      " even with repinned death-proof refs",
+    (t) => {
+      const f = sdkSubmittedUnknownFixture(t);
+      const args: Record<string, unknown> = {
+        code: "synthetic bound read-only script",
+        persistent: false,
+      };
+      if (invalid === "persistent") args["persistent"] = true;
+      if (invalid === "extra-argument") args["unsafe"] = true;
+      if (invalid === "missing-code") delete args["code"];
+      if (invalid === "changed-source")
+        args["code"] = "changed source without its original artifact";
+      const wire = {
+        ...f.wire,
+        outgoing: {
+          ...f.wire.outgoing,
+          params: {
+            name:
+              invalid === "unknown-tool"
+                ? "another_python_tool"
+                : "execute_python",
+            arguments: args,
+          },
+        },
+      };
+      api.durable(path.join(f.observation, "wire.json"), wire);
+      refreshSdkDeathBindings(f);
+      assert.throws(() =>
+        abortUnstartedSuccessor(f.client, f.approvalFile, true, {
+          withdrawUnknown: true,
+          processDeathProofFile: f.proofFile,
+        }),
+      );
+      assert.equal(fs.existsSync(path.join(f.audit, "abort-unstarted")), false);
+    },
+  );
+}
+
+test("new withdrawal evaluator does not import its verifier from the historical runtime", (t) => {
+  const f = sdkSubmittedUnknownFixture(t);
+  const target = path.join(f.base, "old-runtime");
+  fs.mkdirSync(path.join(target, "src"), { recursive: true });
+  for (const name of [
+    "queue-instance",
+    "queue-atomic-migration-files",
+    "queue-epoch-lineage",
+  ])
+    fs.writeFileSync(
+      path.join(target, "src", name + ".js"),
+      "module.exports = require(" +
+        JSON.stringify(path.join(repo, "src", name + ".js")) +
+        ");\n",
+    );
+  fs.writeFileSync(
+    path.join(target, "src", "queue-epoch-successor.js"),
+    "throw new Error('Historical runtime has no death-proof verifier');\n",
+  );
+  const approval = JSON.parse(fs.readFileSync(f.approvalFile, "utf8"));
+  approval.candidateRoot = target;
+  api.durable(f.approvalFile, approval);
+  const intentFile = path.join(f.audit, "intent.json");
+  const intent = JSON.parse(fs.readFileSync(intentFile, "utf8"));
+  intent.approval = reference(f.approvalFile);
+  api.durable(intentFile, intent);
+  const authority = JSON.parse(fs.readFileSync(f.authorityEntry.path, "utf8"));
+  authority.candidateRoot = target;
+  api.durable(f.authorityEntry.path, authority);
+  const authorityRef = reference(f.authorityEntry.path);
+  api.durable(path.join(f.dir, "active-epoch-succession.json"), {
+    version: 1,
+    authority: authorityRef,
+  });
+  for (const name of ["complete.json", "launch-intent.json"]) {
+    const file = path.join(f.audit, name);
+    const value = JSON.parse(fs.readFileSync(file, "utf8"));
+    value.authority = authorityRef;
+    api.durable(file, value);
+  }
+  const observationIntentFile = path.join(f.observation, "intent.json");
+  const observationIntent = JSON.parse(
+    fs.readFileSync(observationIntentFile, "utf8"),
+  );
+  observationIntent.binding.successorAuthorityHash = authorityRef.sha256;
+  api.durable(observationIntentFile, observationIntent);
+  const proof = JSON.parse(fs.readFileSync(f.proofFile, "utf8"));
+  proof.bindings.authority = authorityRef;
+  proof.bindings.observationIntent = reference(observationIntentFile);
+  api.durable(f.proofFile, proof);
+  const before = fs.readFileSync(f.approvalFile);
+  const preview = abortUnstartedSuccessor(f.client, f.approvalFile, false, {
+    withdrawUnknown: true,
+    processDeathProofFile: f.proofFile,
+  });
+  assert.equal(preview["sdkRequestsSent"], 1);
+  assert.ok("operation" in preview);
+  assert.equal(preview["operation"], "withdraw-after-sdk-unknown");
+  assert.deepEqual(fs.readFileSync(f.approvalFile), before);
+});
 
 test("FAKE retirement protocol: preview has no effect, explicit effect appends before/after, restoration retains original unknown", async (t) => {
   const f = retirementFixture(t);

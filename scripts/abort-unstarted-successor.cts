@@ -224,7 +224,15 @@ export function abortUnstartedSuccessor(
     reference(file: string): { path: string; sha256: string };
     successionAuthority(root: string, entry: unknown): { pointer: Data };
   };
-  const successor = load("./queue-epoch-successor") as SuccessorProofVerifier;
+  // The immutable predecessor runtime supplies historical readers, not new
+  // recovery policy. Evaluate that policy from this operator's own package.
+  const operatorLoad = createRequire(__filename);
+  const successor = operatorLoad(
+    "../dist/src/queue-epoch-successor.js",
+  ) as SuccessorProofVerifier;
+  const { classifyPythonRpc } = operatorLoad(
+    "../dist/src/dist/python/admission.js",
+  ) as typeof import("../packages/node-adapters/src/python/admission");
   const root = fs.realpathSync(client.dir);
   files.directory(root);
   const requestId = text(approval["requestId"]);
@@ -292,9 +300,26 @@ export function abortUnstartedSuccessor(
       outgoing = object(wire["outgoing"]),
       params = object(outgoing["params"]),
       args = object(params["arguments"]),
-      script = object(args["object"]),
       artifact = object(wire["artifact"]),
       result = read(observationResultFile);
+    const python = classifyPythonRpc(outgoing);
+    // Both registered historical encodings are exact, closed shapes. In
+    // particular the failed old Python wire is evidence, not native success.
+    const script = args["object"];
+    const exactWire =
+      python.kind === "python" &&
+      (python.official
+        ? params["name"] === "fusion_mcp_execute" &&
+          args["featureType"] === "script" &&
+          !!script &&
+          typeof script === "object" &&
+          !Array.isArray(script) &&
+          object(script)["readOnly"] === true &&
+          same(Object.keys(args).sort(), ["featureType", "object"]) &&
+          same(Object.keys(script).sort(), ["readOnly", "script"])
+        : params["name"] === "execute_python" &&
+          args["persistent"] === false &&
+          same(Object.keys(args).sort(), ["code", "persistent"]));
     if (
       observationIntent["version"] !== 1 ||
       !same(observationIntent["key"], key) ||
@@ -330,9 +355,9 @@ export function abortUnstartedSuccessor(
       outgoing["jsonrpc"] !== "2.0" ||
       outgoing["id"] !== "fmcad:" + String(startBinding["rpcId"]) ||
       outgoing["method"] !== "tools/call" ||
-      params["name"] !== "fusion_mcp_execute" ||
-      args["featureType"] !== "script" ||
-      script["readOnly"] !== true ||
+      !exactWire ||
+      python.kind !== "python" ||
+      api.hash(python.source) !== artifact["sha256"] ||
       artifact["artifactHash"] !== provenance["artifactHash"] ||
       artifact["sha256"] !== provenance["wireHash"] ||
       !same(result["kind"], "dead-epoch-current-observation") ||
