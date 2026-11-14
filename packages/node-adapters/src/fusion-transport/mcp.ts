@@ -289,6 +289,21 @@ export class BrokerMcpClient extends McpDiscoveryClient {
   ): Promise<ToolResult> {
     return (await this.prepareCallTool(argumentsObj, toolName, origin))();
   }
+  /** Broker-owned fixed runtime scripts only. Authenticate the original inventory
+   * before applying the same entrypoint transformation as the add-in adapter.
+   * The broker still fences and checks the exact final wire bytes. */
+  async executeBrokerScript(
+    script: string,
+    origin: PythonArtifactManifest,
+  ): Promise<ToolResult> {
+    const bound = bindPythonArtifactManifest(script, origin);
+    const send = await this.prepareWireCall(
+      { code: script + '\n\nrun("")\n', persistent: false },
+      "execute_python",
+      bound,
+    );
+    return send();
+  }
   async prepareCallTool(
     argumentsObj: ObjectValue,
     toolName?: string,
