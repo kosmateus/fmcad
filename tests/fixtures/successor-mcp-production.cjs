@@ -6,13 +6,47 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const http = require("node:http");
+const { spawnSync } = require("node:child_process");
 const repo = path.resolve(__dirname, "../..");
 const root = process.argv[2];
 const restorePlatform = require("./fake-wsl-platform.cjs")();
 const api = require(repo + "/src/queue-instance");
 const lineage = require(repo + "/src/queue-epoch-lineage");
 const hash = require(repo + "/src/dist/core/application/cad/json").hash;
-const { BrokerMcpClient } = require(repo + "/src/dist/fusion-transport/mcp");
+const { BrokerMcpClient, McpDiscoveryClient } = require(
+  repo + "/src/dist/fusion-transport/mcp",
+);
+
+// Script-route projection of the actual 2026-11-14 tools/list capture,
+// SHA256 fbd8947a100ce26abfc798fa10b6ea783653820d1d139415b1062af36c7b20a7.
+// Descriptions and unrelated execution routes are not operational instructions.
+const nativeExecute = {
+  name: "fusion_mcp_execute",
+  inputSchema: {
+    type: "object",
+    required: ["featureType", "object"],
+    properties: {
+      featureType: {
+        type: "string",
+        enum: [
+          "script",
+          "document",
+          "purchase",
+          "editImage",
+          "generatePowerpoint",
+          "previewImage",
+        ],
+      },
+      object: {
+        type: "object",
+        properties: {
+          script: { type: "string" },
+          readOnly: { type: "boolean" },
+        },
+      },
+    },
+  },
+};
 
 async function main() {
   const f = require("./backend-successor.cjs")(root, repo);
@@ -89,27 +123,67 @@ async function main() {
       try {
         const payload = JSON.parse(Buffer.concat(chunks).toString());
         calls.push(payload.method);
-        const answer = (result) => {
+        const reply = (value) => {
           res.writeHead(200, {
             "Content-Type": "application/json",
             "Mcp-Session-Id": "offline-session",
+            "X-Offline-Secret": "synthetic-header-not-for-receipts",
           });
-          res.end(JSON.stringify({ jsonrpc: "2.0", id: payload.id, result }));
+          res.end(JSON.stringify({ jsonrpc: "2.0", id: payload.id, ...value }));
         };
+        const answer = (result) => reply({ result });
         if (payload.method === "initialize")
-          return answer({ protocolVersion: "2024-11-05" });
+          return answer({
+            protocolVersion: "2024-11-05",
+            serverInfo: { name: "MCP Server Adapter", version: "1.0.0" },
+          });
         if (payload.method === "notifications/initialized") {
           res.writeHead(202);
           res.end();
           return;
         }
+        if (payload.method === "tools/list")
+          return answer({ tools: [nativeExecute] });
         assert.equal(payload.method, "tools/call");
-        assert.equal(payload.params.name, "execute_python");
+        if (payload.params.name !== nativeExecute.name)
+          return reply({
+            error: {
+              code: -32601,
+              message: "Tool is not advertised by the native catalog",
+            },
+          });
         assert.deepEqual(Object.keys(payload.params.arguments).sort(), [
-          "code",
-          "persistent",
+          "featureType",
+          "object",
         ]);
-        assert.equal(payload.params.arguments.persistent, false);
+        assert.equal(payload.params.arguments.featureType, "script");
+        const script = payload.params.arguments.object.script;
+        assert.deepEqual(Object.keys(payload.params.arguments.object).sort(), [
+          "readOnly",
+          "script",
+        ]);
+        assert.equal(typeof script, "string");
+        assert.equal(
+          typeof payload.params.arguments.object.readOnly,
+          "boolean",
+        );
+        // Parse only: the synthetic native peer never executes the SDK program.
+        const parsed = spawnSync(
+          "python3",
+          [
+            "-I",
+            "-S",
+            "-c",
+            "import ast,sys,json\nt=ast.parse(sys.stdin.read())\nprint(json.dumps(dict(topLevelRunCalls=sum(isinstance(n,ast.Expr) and isinstance(n.value,ast.Call) and isinstance(n.value.func,ast.Name) and n.value.func.id=='run' for n in t.body))))",
+          ],
+          { input: script, encoding: "utf8" },
+        );
+        assert.equal(parsed.status, 0, parsed.stderr);
+        assert.equal(
+          JSON.parse(parsed.stdout).topLevelRunCalls,
+          0,
+          "Native server invokes run; no client-side top-level invocation",
+        );
         assert.match(payload.id, /^fmcad:[a-f0-9-]{36}$/);
         const directory = [
           "dead-epoch-current-observation",
@@ -135,9 +209,19 @@ async function main() {
         assert.equal(start.pythonCheck.status, "passed");
         assert.equal(start.pythonCheck.provenance.checker, "basedpyright");
         const wire = api.readJson(path.join(directory, "wire.json"));
-        assert.equal(api.hash(payload.params.arguments.code), wire.artifact.sha256);
-        assert.equal(wire.artifact.sha256, start.pythonCheck.provenance.wireHash);
-        assert.equal(wire.artifact.artifactHash, start.pythonCheck.provenance.artifactHash);
+        assert.equal(
+          payload.params.arguments.object.readOnly,
+          path.basename(directory) === "dead-epoch-current-observation",
+        );
+        assert.equal(api.hash(script), wire.artifact.sha256);
+        assert.equal(
+          wire.artifact.sha256,
+          start.pythonCheck.provenance.wireHash,
+        );
+        assert.equal(
+          wire.artifact.artifactHash,
+          start.pythonCheck.provenance.artifactHash,
+        );
         assert.deepEqual(wire.outgoing, payload);
         checks.push({
           kind: path.basename(directory),
@@ -146,6 +230,10 @@ async function main() {
           wireId: payload.id,
         });
         persist();
+        if (process.argv[3] === "server-error")
+          return reply({
+            error: { code: -32602, message: "Synthetic native input refusal" },
+          });
         const common = {
           historicalOutcome: "unknown",
           originalModelValidation: "not_performed",
@@ -205,11 +293,20 @@ async function main() {
           };
           api.durable(prior.binding.sdkProofPath, summary, true);
         }
-        api.durable(
-          start.receipt,
-          { ...start.binding, terminal: true, outcome: "succeeded", instance },
-          true,
-        );
+        if (process.argv[3] !== "missing-receipt")
+          api.durable(
+            start.receipt,
+            {
+              ...start.binding,
+              ...(process.argv[3] === "wrong-receipt"
+                ? { buildHash: "0".repeat(64) }
+                : {}),
+              terminal: true,
+              outcome: "succeeded",
+              instance,
+            },
+            true,
+          );
         answer({
           content: [
             { type: "text", text: "FMCAD_RESULT " + JSON.stringify(summary) },
@@ -224,6 +321,33 @@ async function main() {
   });
   await new Promise((resolve) => endpoint.listen(0, "127.0.0.1", resolve));
   const endpointUrl = `http://127.0.0.1:${endpoint.address().port}/mcp`;
+  if (process.argv[3] !== "process-refusal") {
+    const discovery = new McpDiscoveryClient(
+      { url: endpointUrl, transport: "http" },
+      {
+        version: "fixture",
+        requestTimeout: () => 1000,
+        bridgeSource: () => "",
+      },
+    );
+    assert.deepEqual(await discovery.listTools(), [nativeExecute]);
+    const unsupported = new BrokerMcpClient(
+      { url: endpointUrl, transport: "http" },
+      {
+        version: "fixture",
+        requestTimeout: () => 1000,
+        bridgeSource: () => "",
+      },
+    );
+    await assert.rejects(
+      unsupported.callTool(
+        { code: 'raise RuntimeError("must never execute")', persistent: false },
+        "execute_python",
+      ),
+      { code: "MCP_ERROR" },
+    );
+    calls.length = 0;
+  }
   let factories = 0;
   const options = {
     dir: f.dir,
@@ -294,6 +418,12 @@ async function main() {
     }
     results.push({ action, requestId: message.requestId, value });
     persist();
+    if (
+      process.argv[3] === "server-error" ||
+      process.argv[3] === "missing-receipt" ||
+      process.argv[3] === "wrong-receipt"
+    )
+      return value;
     assert.equal(value.status, "complete", JSON.stringify(value));
     return value;
   }
@@ -330,6 +460,62 @@ async function main() {
     );
     assert.equal(calls.length, 0);
     const observed = await operation("observe-successor", ":observe");
+    if (
+      ["server-error", "missing-receipt", "wrong-receipt"].includes(
+        process.argv[3],
+      )
+    ) {
+      assert.equal(observed.status, "failed");
+      assert.equal(observed.sdkRequestsSent, 1);
+      assert.equal(observed.nativeOutcome, "unknown");
+      const directory = path.join(f.audit, "dead-epoch-current-observation");
+      const receivedFile = path.join(directory, "received-response.json");
+      assert.ok(
+        fs.existsSync(receivedFile),
+        "Received native response must survive receipt validation failure",
+      );
+      const received = api.readJson(receivedFile);
+      const receivedHash = api.hash(fs.readFileSync(receivedFile));
+      assert.equal(fs.statSync(receivedFile).mode & 0o077, 0);
+      assert.deepEqual(Object.keys(received).sort(), [
+        "binding",
+        "callerId",
+        "raw",
+        "status",
+        "version",
+        "wireId",
+      ]);
+      assert.equal(received.version, 1);
+      assert.equal(received.status, 200);
+      assert.equal(received.callerId, 2);
+      assert.equal(received.wireId, checks[0].wireId);
+      assert.deepEqual(received.binding, checks[0].binding);
+      const decoded = JSON.parse(received.raw);
+      assert.ok(
+        !JSON.stringify(received).includes("synthetic-header-not-for-receipts"),
+      );
+      if (process.argv[3] === "server-error")
+        assert.equal(decoded.error.code, -32602);
+      else assert.ok(decoded.result);
+      await operation("observe-successor", ":observe");
+      assert.equal(api.hash(fs.readFileSync(receivedFile)), receivedHash);
+      assert.equal(
+        calls.filter((method) => method === "tools/call").length,
+        1,
+        "Original failed request must not be replayed",
+      );
+      console.log(
+        "FULL_MCP_RESPONSE_FAILURE " +
+          JSON.stringify({
+            mode: process.argv[3],
+            preserved: true,
+            sdkRequestsSent: 1,
+            nativeOutcome: "unknown",
+            realSdkRequests: 0,
+          }),
+      );
+      return;
+    }
     const created = await operation("create-isolated-scratch", ":create");
     const closed = await operation("close-isolated-scratch", ":close", {
       admissionMode: "normal-multidocument",
@@ -344,7 +530,9 @@ async function main() {
       ],
     );
     for (const check of checks) {
-      const response = api.readJson(path.join(f.audit, check.kind, "response.json"));
+      const response = api.readJson(
+        path.join(f.audit, check.kind, "response.json"),
+      );
       assert.equal(response.callerId, 2);
       assert.equal(response.wireId, check.wireId);
       assert.equal(response.reply.id, check.wireId);

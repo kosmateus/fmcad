@@ -121,6 +121,43 @@ test("full broker refuses a changed selected process before constructing the phy
   }
 });
 
+for (const mode of ["server-error", "missing-receipt", "wrong-receipt"])
+  test(
+    "native MCP full broker preserves " +
+      mode +
+      " response without settlement or replay",
+    () => {
+      const root = fs.mkdtempSync("/tmp/opencode/native-mcp-response-");
+      try {
+        const output = spawnSync(
+          process.execPath,
+          [
+            path.join(
+              repository,
+              "tests/fixtures/successor-mcp-production.cjs",
+            ),
+            root,
+            mode,
+          ],
+          {
+            cwd: repository,
+            encoding: "utf8",
+            timeout: 90000,
+            env: { ...process.env, NODE_TEST_CONTEXT: undefined },
+            maxBuffer: 4 * 1024 * 1024,
+          },
+        );
+        assert.equal(output.status, 0, output.stderr || String(output.error));
+        assert.match(
+          output.stdout,
+          /FULL_MCP_RESPONSE_FAILURE .*"preserved":true,"sdkRequestsSent":1,"nativeOutcome":"unknown","realSdkRequests":0/,
+        );
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+
 const { BrokerMcpClient } = load(
   "../src/dist/fusion-transport/mcp",
 ) as typeof import("../packages/node-adapters/src/fusion-transport/mcp");
@@ -128,6 +165,7 @@ type ScriptClient = InstanceType<typeof BrokerMcpClient> & {
   executeBrokerScript(
     script: string,
     origin: PythonArtifactManifest,
+    readOnly?: boolean,
   ): Promise<unknown>;
 };
 
@@ -201,7 +239,7 @@ function fixture(t: TestContext, mode = "success", transport = "synthetic") {
     requestId: f.requestId + suffix,
     control: { fixture: true },
   });
-  const sendScript = (scope: AuditScope, script: string) => {
+  const sendScript = (scope: AuditScope, script: string, readOnly = true) => {
     if (transport !== "synthetic") {
       const { client } = mcpClient(scope.post);
       return transport === "legacy-mcp"
@@ -210,7 +248,7 @@ function fixture(t: TestContext, mode = "success", transport = "synthetic") {
             "fusion_mcp_execute",
             scope.origin,
           )
-        : client.executeBrokerScript(script, scope.origin);
+        : client.executeBrokerScript(script, scope.origin, readOnly);
     }
     return scope.post(
       {
@@ -238,12 +276,13 @@ function fixture(t: TestContext, mode = "success", transport = "synthetic") {
     fenceRuntime(inFlight) {
       assert.equal(physicalActive, inFlight ? 1 : 0);
     },
-    sendAuditScript: sendScript,
-    sendScratchScript: sendScript,
+    sendAuditScript: (scope, script) => sendScript(scope, script, true),
+    sendScratchScript: (scope, script) => sendScript(scope, script, false),
     activate() {
       activations++;
     },
     ports: {
+      ...(transport === "mcp" ? { scriptFormat: "fusion-mcp" as const } : {}),
       installation: repository,
       buildHash: f.authority.buildHash,
       begin() {
@@ -366,7 +405,7 @@ function fixture(t: TestContext, mode = "success", transport = "synthetic") {
   };
 }
 
-test("real MCP client: legacy addin audit shape is refused before physical dispatch", async (t) => {
+test("legacy Python guard refuses official payload without the explicit native script format", async (t) => {
   const f = fixture(t, "success", "legacy-mcp");
   const observed = await settled(f, "observe", f.message(":observe"));
   assert.equal(observed.status, "failed");
@@ -464,10 +503,10 @@ test("real MCP client: fixed scratch close preserves origin and refuses changed 
   let sends = 0;
   const { client, discoveryPosts } = mcpClient(async (payload) => {
     sends++;
-    assert.equal(payload.params?.name, "execute_python");
+    assert.equal(payload.params?.name, "fusion_mcp_execute");
     assert.deepEqual(payload.params?.arguments, {
-      code: prepared.artifact.script + '\n\nrun("")\n',
-      persistent: false,
+      featureType: "script",
+      object: { script: prepared.artifact.script, readOnly: false },
     });
     return {
       status: 200,
