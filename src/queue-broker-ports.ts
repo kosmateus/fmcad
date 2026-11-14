@@ -309,6 +309,7 @@ export interface Client {
   ): Promise<ToolResult>;
   listTools(): Promise<Array<{ name: string }>>;
   executeUiGuardedScript(script: string, origin?: Origin): Promise<ToolResult>;
+  executeBrokerScript?(script: string, origin: Origin): Promise<ToolResult>;
   prepareCallTool?: (...args: unknown[]) => Promise<Send>;
   prepareUiGuardedScript?: (...args: unknown[]) => Promise<Send>;
   prepareListTools?: (...args: unknown[]) => Promise<Send>;
