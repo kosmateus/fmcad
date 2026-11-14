@@ -17,6 +17,8 @@ import type {
   Complete,
   Ready,
   Reference,
+  SdkProcessDeathBindings,
+  SdkProcessDeathProof,
   BootstrapOptions,
   ObserverClient,
   ObservationInput,
@@ -69,6 +71,82 @@ function fail(code: string, message: string): never {
 const read = <T>(file: string): T => readJson(file, 256 * 1024 * 1024) as T;
 const exists = <T>(file: string): T | null =>
   fs.existsSync(file) ? read<T>(file) : null;
+const sdkProcessAbsentErrorId =
+  "NoProcessFoundForGivenId,Microsoft.PowerShell.Commands.GetProcessCommand";
+function priorRetirementLink(value: {
+  priorAbortedSuccessor?: Reference;
+  priorRetiredSuccessor?: Reference;
+}) {
+  if (value.priorAbortedSuccessor && value.priorRetiredSuccessor)
+    fail(
+      "EPOCH_SUCCESSOR_ABORT_INVALID",
+      "An approval cannot select two prior retirement chains",
+    );
+  return value.priorRetiredSuccessor || value.priorAbortedSuccessor;
+}
+
+export function verifySdkProcessDeathProof(
+  file: string,
+  expectedProcess: Process,
+  bindings: SdkProcessDeathBindings,
+): Reference {
+  if (
+    !path.isAbsolute(file) ||
+    fs.realpathSync(file) !== file ||
+    !fs.lstatSync(file).isFile()
+  )
+    fail(
+      "EPOCH_SUCCESSOR_ABORT_INVALID",
+      "Canonical SDK process-death proof file required",
+    );
+  for (const entry of Object.values(bindings))
+    if (
+      !path.isAbsolute(entry.path) ||
+      fs.realpathSync(entry.path) !== entry.path ||
+      !fs.lstatSync(entry.path).isFile() ||
+      !same(reference(entry.path), entry)
+    )
+      fail(
+        "EPOCH_SUCCESSOR_ABORT_INVALID",
+        "SDK process-death proof binding changed",
+      );
+  const proof = read<SdkProcessDeathProof>(file),
+    beforeAt = Date.parse(proof.before?.observedAtUtc || ""),
+    exitAt = Date.parse(proof.handleBoundExit?.observedAtUtc || ""),
+    afterAt = Date.parse(proof.after?.observedAtUtc || "");
+  if (
+    proof.version !== 1 ||
+    proof.kind !== "sdk-process-death-proof-v1" ||
+    !same(proof.expectedProcess, expectedProcess) ||
+    !same(proof.bindings, bindings) ||
+    proof.before?.state !== "present" ||
+    proof.before.pid !== expectedProcess.pid ||
+    proof.before.birth !== expectedProcess.birth ||
+    typeof proof.before.version !== "string" ||
+    !proof.before.version ||
+    !path.win32.isAbsolute(proof.before.exe) ||
+    path.win32.basename(proof.before.exe).toLowerCase() !== "fusion360.exe" ||
+    !/^[1-9]\d*$/.test(proof.before.windowHandle) ||
+    !Number.isFinite(beforeAt) ||
+    proof.handleBoundExit?.pid !== expectedProcess.pid ||
+    proof.handleBoundExit.birth !== expectedProcess.birth ||
+    proof.handleBoundExit.hasExited !== true ||
+    !Number.isFinite(exitAt) ||
+    exitAt < beforeAt ||
+    proof.after?.state !== "absent" ||
+    proof.after.pid !== expectedProcess.pid ||
+    proof.after.errorId !== sdkProcessAbsentErrorId ||
+    !Number.isFinite(afterAt) ||
+    afterAt < exitAt ||
+    afterAt > Date.now()
+  )
+    fail(
+      "EPOCH_SUCCESSOR_ABORT_INVALID",
+      "Only exact historical SDK birth, handle-bound exit, and fresh absent-PID proof permit withdrawal",
+    );
+  return reference(file);
+}
+
 /** Retirement permits a NEW owner approval, never hot replacement of a request. */
 function assertPriorAbortedSuccessor(
   root: string,
@@ -77,9 +155,13 @@ function assertPriorAbortedSuccessor(
   clientId: string,
   tokenHash: string,
   link?: Reference,
+  nextProcess?: Process,
 ): void {
   const journal = path.join(root, "epoch-successions");
-  const candidates = new Map<string, { entry: Reference; prior?: Reference }>();
+  const candidates = new Map<
+    string,
+    { entry: Reference; prior?: Reference; retiredProcess?: Process }
+  >();
   for (const name of fs.readdirSync(journal)) {
     if (!/^[a-f0-9]{64}$/.test(name)) continue;
     const audit = path.join(journal, name),
@@ -103,15 +185,38 @@ function assertPriorAbortedSuccessor(
       clientId: string;
       sdkRequestsSent: number;
       historicalOutcome: string;
+      nativeOutcome?: string;
       facts: Reference[];
       approval: Reference;
+      processDeathProof?: Reference;
+      authority?: Reference;
+      owner?: Owner;
+      buildHash?: string;
+      configHash?: string;
+      sourceCommit?: string;
+      expectedProcess?: Process;
     }>(file);
     if (!fs.existsSync(path.join(audit, "worker-ready.json"))) continue;
+    const sdkZeroAbort =
+        receipt.kind === "dead-epoch-successor-aborted-before-sdk" &&
+        receipt.reason === "metadata-ready-observation-rejected-before-sdk" &&
+        receipt.status === "aborted" &&
+        receipt.sdkRequestsSent === 0,
+      sdkUnknownWithdrawal =
+        receipt.kind === "dead-epoch-successor-withdrawn-after-sdk-unknown" &&
+        receipt.reason === "sdk-process-exited-after-unknown-transport" &&
+        receipt.status === "withdrawn" &&
+        receipt.sdkRequestsSent === 1 &&
+        receipt.nativeOutcome === "unknown" &&
+        !!receipt.processDeathProof &&
+        !!receipt.authority &&
+        !!receipt.owner &&
+        !!receipt.buildHash &&
+        !!receipt.configHash &&
+        !!receipt.sourceCommit &&
+        !!receipt.expectedProcess;
     if (
-      receipt.reason !== "metadata-ready-observation-rejected-before-sdk" ||
-      receipt.kind !== "dead-epoch-successor-aborted-before-sdk" ||
-      receipt.status !== "aborted" ||
-      receipt.sdkRequestsSent !== 0 ||
+      (!sdkZeroAbort && !sdkUnknownWithdrawal) ||
       receipt.historicalOutcome !== "unknown" ||
       hash(receipt.requestId) !== name ||
       !Array.isArray(receipt.facts) ||
@@ -140,9 +245,23 @@ function assertPriorAbortedSuccessor(
         "EPOCH_SUCCESSOR_ABORT_INVALID",
         "Prior retirement does not bind this predecessor owner",
       );
-    const intent = read<{ approval: Reference; facts: Reference[] }>(
-      path.join(audit, "abort-unstarted", "intent.json"),
-    );
+    const intent = read<{
+      approval: Reference;
+      facts: Reference[];
+      kind?: string;
+      reason?: string;
+      clientId?: string;
+      authority?: Reference;
+      owner?: Owner;
+      buildHash?: string;
+      configHash?: string;
+      sourceCommit?: string;
+      expectedProcess?: Process;
+      processDeathProof?: Reference;
+      sdkRequestsSent?: number;
+      nativeOutcome?: string;
+      historicalOutcome?: string;
+    }>(path.join(audit, "abort-unstarted", "intent.json"));
     if (
       !same(intent.approval, receipt.approval) ||
       !same(intent.facts, receipt.facts)
@@ -151,11 +270,69 @@ function assertPriorAbortedSuccessor(
         "EPOCH_SUCCESSOR_ABORT_INVALID",
         "Original retirement intent and receipt differ",
       );
+    let retiredProcess: Process | undefined;
+    if (sdkUnknownWithdrawal) {
+      const authorityEntry = reference(authorityFile),
+        ready = read<Ready>(path.join(audit, "worker-ready.json")),
+        metadata = read<Complete>(path.join(audit, "complete.json")),
+        observation = path.join(audit, "dead-epoch-current-observation"),
+        processDeathProof = receipt.processDeathProof!;
+      if (
+        !same(receipt.authority, authorityEntry) ||
+        !same(receipt.owner, ready.owner) ||
+        !same(metadata.authority, authorityEntry) ||
+        !same(metadata.owner, ready.owner) ||
+        metadata.sdkRequestsSent !== 0 ||
+        metadata.historicalOutcome !== "unknown" ||
+        receipt.buildHash !== authority.buildHash ||
+        receipt.configHash !== authority.configHash ||
+        receipt.sourceCommit !== authority.sourceCommit ||
+        !same(receipt.expectedProcess, authority.expectedProcess) ||
+        intent.kind !== "withdraw-sdk-unknown-dead-successor" ||
+        intent.reason !== "sdk-process-exited-after-unknown-transport" ||
+        intent.clientId !== clientId ||
+        !same(intent.authority, authorityEntry) ||
+        !same(intent.owner, ready.owner) ||
+        intent.buildHash !== authority.buildHash ||
+        intent.configHash !== authority.configHash ||
+        intent.sourceCommit !== authority.sourceCommit ||
+        !same(intent.expectedProcess, authority.expectedProcess) ||
+        intent.sdkRequestsSent !== 1 ||
+        intent.nativeOutcome !== "unknown" ||
+        intent.historicalOutcome !== "unknown" ||
+        !same(intent.processDeathProof, processDeathProof)
+      )
+        fail(
+          "EPOCH_SUCCESSOR_ABORT_INVALID",
+          "SDK1 withdrawal receipt must retain the original owner, build, config and process lineage",
+        );
+      const proof = verifySdkProcessDeathProof(
+        processDeathProof.path,
+        authority.expectedProcess,
+        {
+          authority: reference(authorityFile),
+          observationIntent: reference(path.join(observation, "intent.json")),
+          observationStart: reference(path.join(observation, "start.json")),
+          observationWire: reference(path.join(observation, "wire.json")),
+          observationResult: reference(path.join(observation, "result.json")),
+        },
+      );
+      if (
+        !same(proof, processDeathProof) ||
+        !receipt.facts.some((ref) => same(ref, processDeathProof))
+      )
+        fail(
+          "EPOCH_SUCCESSOR_ABORT_INVALID",
+          "SDK1 withdrawal must retain its exact process-death proof",
+        );
+      retiredProcess = authority.expectedProcess;
+    }
     candidates.set(file, {
       entry: reference(file),
-      ...(authority.priorAbortedSuccessor
-        ? { prior: authority.priorAbortedSuccessor }
+      ...(priorRetirementLink(authority)
+        ? { prior: priorRetirementLink(authority) }
         : {}),
+      ...(retiredProcess ? { retiredProcess } : {}),
     });
   }
   const seen = new Set<string>();
@@ -171,13 +348,23 @@ function assertPriorAbortedSuccessor(
         "EPOCH_SUCCESSOR_ABORT_INVALID",
         "Exact acyclic owner-approved retirement reference required",
       );
+    if (
+      candidate.retiredProcess &&
+      nextProcess &&
+      (candidate.retiredProcess.pid === nextProcess.pid ||
+        candidate.retiredProcess.birth === nextProcess.birth)
+    )
+      fail(
+        "EPOCH_SUCCESSOR_ABORT_INVALID",
+        "A new successor cannot reuse a retired SDK PID or birth identity",
+      );
     seen.add(current.path);
     current = candidate.prior;
   }
   if (seen.size !== candidates.size)
     fail(
       "EPOCH_SUCCESSOR_ABORT_REQUIRED",
-      "A new successor approval must explicitly link the prior terminal SDK0 retirement",
+      "A new successor approval must explicitly link every prior terminal retirement",
     );
 }
 export function assertSuccessorApproval(value: Inspection, approval: Approval) {
@@ -321,7 +508,8 @@ export function inspectSuccessor(
     previousOwner,
     client.auth.clientId,
     hash(client.auth.clientToken),
-    approval.priorAbortedSuccessor,
+    priorRetirementLink(approval),
+    approval.expectedProcess,
   );
   const qualification = approval.qualification;
   if (
@@ -428,7 +616,8 @@ export function assertCurrentPredecessor(
     a.previousOwner,
     a.clientId,
     a.ownerTokenHash,
-    a.priorAbortedSuccessor,
+    priorRetirementLink(a),
+    a.expectedProcess,
   );
   const selected = read<Pointer>(
     path.join(root, "isolated-admission-epoch.json"),
@@ -687,9 +876,11 @@ export async function bootstrapSuccessor(
       qualification,
       permission: "one-proven-new-document-only",
       historicalOutcome: "unknown",
-      ...(value.approval.priorAbortedSuccessor
-        ? { priorAbortedSuccessor: value.approval.priorAbortedSuccessor }
-        : {}),
+      ...(value.approval.priorRetiredSuccessor
+        ? { priorRetiredSuccessor: value.approval.priorRetiredSuccessor }
+        : value.approval.priorAbortedSuccessor
+          ? { priorAbortedSuccessor: value.approval.priorAbortedSuccessor }
+          : {}),
       ...(value.backendTransition
         ? { backendTransition: value.backendTransition }
         : {}),

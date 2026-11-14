@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import type { TestContext } from "node:test";
@@ -185,6 +186,167 @@ function readyFixture(t: TestContext) {
     rollbackVerification: "not_performed",
   });
   return { ...f, owner, observation };
+}
+
+function sdkSubmittedUnknownFixture(t: TestContext) {
+  const f = readyFixture(t),
+    expectedProcess = { pid: 3332, birth: "134391194634692184" },
+    authorityFile = path.join(f.audit, "authority.json");
+  f.authority = { ...f.authority, expectedProcess };
+  api.durable(authorityFile, f.authority);
+  f.authorityEntry = reference(authorityFile);
+  f.approval = { ...f.approval, expectedProcess };
+  api.durable(f.approvalFile, f.approval);
+  const intentFile = path.join(f.audit, "intent.json"),
+    intent = JSON.parse(fs.readFileSync(intentFile, "utf8")) as Record<
+      string,
+      unknown
+    >;
+  api.durable(intentFile, {
+    ...intent,
+    approval: reference(f.approvalFile),
+  });
+  api.durable(path.join(f.dir, "active-epoch-succession.json"), {
+    version: 1,
+    authority: f.authorityEntry,
+  });
+  api.durable(path.join(f.audit, "launch-intent.json"), {
+    nonce: f.nonce,
+    authority: f.authorityEntry,
+  });
+  const completeFile = path.join(f.audit, "complete.json"),
+    complete = JSON.parse(fs.readFileSync(completeFile, "utf8")) as Record<
+      string,
+      unknown
+    >;
+  api.durable(completeFile, { ...complete, authority: f.authorityEntry });
+
+  const observationIntentFile = path.join(f.observation, "intent.json"),
+    observationIntent = {
+      version: 1,
+      key: {
+        jobId: f.inspection.pointer.quarantinedJobIds[0],
+        observationJobId: f.inspection.pointer.quarantinedJobIds[1],
+        requestId: f.requestId + ":observe",
+        clientId: f.clientId,
+      },
+      binding: {
+        purpose: "atomic-recovery-audit-v1",
+        clientId: f.clientId,
+        expectedProcess,
+        successorAuthorityHash: f.authorityEntry.sha256,
+      },
+      identity: f.auditIdentity,
+      sourceSha256:
+        "171882e43aa81c12411cd54d5d7ef1071502d25f17f143054aa3ca3bb7ef83f7",
+      sourceArtifactHash:
+        "66adcde52ab1f17e811c563c3e1fe7c8fa091c42f6b4c00eaaa6116056036efb",
+    };
+  api.durable(observationIntentFile, observationIntent);
+  const rpcId = "d73dcc0f-adae-44f1-9927-016b068cfe7b",
+    observationStartFile = path.join(f.observation, "start.json"),
+    observationWireFile = path.join(f.observation, "wire.json"),
+    observationResultFile = path.join(f.observation, "result.json");
+  const start = {
+    binding: {
+      jobId: observationIntent.key.jobId,
+      rpcId,
+      requestHash:
+        "1f77dbd713f341e12621c37cabe53657bfa5006b9e5369c3f7c88014d13a88d9",
+      buildHash: f.authority.buildHash,
+      sourceHash:
+        "5f6b41a561bd239155b64d76a6afa5c2674c45130eff5ac0ba3c364eabed4a0c",
+      purpose: "atomic-recovery-audit-v1",
+      auditBindingHash:
+        "bb559da1ec0b16782cef7d12b31659cc6b9392281e477b56a51349e995653ee2",
+      pythonOriginHash: observationIntent.sourceArtifactHash,
+      auditExpectedProcess: expectedProcess,
+    },
+    instance: expectedProcess,
+    receipt: path.join(f.observation, "remote-" + rpcId + ".json"),
+    pythonCheck: {
+      status: "passed",
+      provenance: {
+        artifactHash:
+          "15a3ac72466849a0331026935ffccaffd88bacd42eb8552cdef907f2b9814b3b",
+        wireHash:
+          "bf6bf59c37727d95d354fe0b237a587100adf7ca2806a89f60da57a00e968aa1",
+      },
+    },
+    originArtifactHash: observationIntent.sourceArtifactHash,
+  };
+  const wire = {
+    outgoing: {
+      jsonrpc: "2.0",
+      id: "fmcad:" + rpcId,
+      method: "tools/call",
+      params: {
+        name: "fusion_mcp_execute",
+        arguments: {
+          featureType: "script",
+          object: {
+            script: "synthetic bound read-only script",
+            readOnly: true,
+          },
+        },
+      },
+    },
+    artifact: {
+      artifactHash: start.pythonCheck.provenance.artifactHash,
+      sha256: start.pythonCheck.provenance.wireHash,
+    },
+  };
+  api.durable(observationStartFile, start);
+  api.durable(observationWireFile, wire);
+  api.durable(observationResultFile, {
+    kind: "dead-epoch-current-observation",
+    ...observationIntent.key,
+    status: "failed",
+    code: "ENOENT",
+    sdkRequestsSent: 1,
+    nativeOutcome: "unknown",
+    modelValidation: "not_performed",
+    rollbackVerification: "not_performed",
+  });
+  const proofFile = path.join(f.base, "sdk-process-death-proof.json"),
+    observedAt = {
+      before: "2026-11-14T18:05:10.9856823Z",
+      exited: "2026-11-14T18:05:18.3129443Z",
+      after: "2026-11-14T18:05:18.3285949Z",
+    };
+  api.durable(proofFile, {
+    version: 1,
+    kind: "sdk-process-death-proof-v1",
+    expectedProcess,
+    before: {
+      state: "present",
+      ...expectedProcess,
+      version: "2706.1.17",
+      exe: "C:\\Users\\kamil\\AppData\\Local\\Autodesk\\webdeploy\\production\\39e8a3d5e919c70b05ef3ebfe9c6bfc8d9ee001e\\Fusion360.exe",
+      windowHandle: "395154",
+      observedAtUtc: observedAt.before,
+    },
+    handleBoundExit: {
+      ...expectedProcess,
+      hasExited: true,
+      observedAtUtc: observedAt.exited,
+    },
+    after: {
+      state: "absent",
+      pid: expectedProcess.pid,
+      observedAtUtc: observedAt.after,
+      errorId:
+        "NoProcessFoundForGivenId,Microsoft.PowerShell.Commands.GetProcessCommand",
+    },
+    bindings: {
+      authority: f.authorityEntry,
+      observationIntent: reference(observationIntentFile),
+      observationStart: reference(observationStartFile),
+      observationWire: reference(observationWireFile),
+      observationResult: reference(observationResultFile),
+    },
+  });
+  return { ...f, proofFile, observationIntent, start, wire };
 }
 
 function retirementFixture(t: TestContext) {
@@ -473,6 +635,178 @@ test("FAKE metadata-ready: terminal observation rejection SDK0 permits explicit 
   );
 });
 
+test("FAKE dead SDK proof: explicit SDK1 withdrawal preserves unknown and original evidence", (t) => {
+  const f = sdkSubmittedUnknownFixture(t),
+    options = {
+      withdrawUnknown: true,
+      processDeathProofFile: f.proofFile,
+    },
+    originalFiles = [
+      path.join(f.audit, "authority.json"),
+      path.join(f.audit, "complete.json"),
+      path.join(f.observation, "intent.json"),
+      path.join(f.observation, "start.json"),
+      path.join(f.observation, "wire.json"),
+      path.join(f.observation, "result.json"),
+    ],
+    before = originalFiles.map((file) => fs.readFileSync(file));
+  const preview = abortUnstartedSuccessor(
+    f.client,
+    f.approvalFile,
+    false,
+    options,
+  );
+  assert.ok("operation" in preview);
+  assert.equal(preview["operation"], "withdraw-after-sdk-unknown");
+  assert.equal(preview["sdkRequestsSent"], 1);
+  assert.equal(preview["historicalOutcome"], "unknown");
+  assert.equal(preview["applyReady"], true);
+  const result = abortUnstartedSuccessor(
+    f.client,
+    f.approvalFile,
+    true,
+    options,
+  ) as Record<string, unknown>;
+  assert.equal(
+    result["kind"],
+    "dead-epoch-successor-withdrawn-after-sdk-unknown",
+  );
+  assert.equal(result["status"], "withdrawn");
+  assert.equal(result["sdkRequestsSent"], 1);
+  assert.equal(result["nativeOutcome"], "unknown");
+  assert.equal(result["historicalOutcome"], "unknown");
+  assert.deepEqual(result["processDeathProof"], reference(f.proofFile));
+  for (const [i, file] of originalFiles.entries())
+    assert.deepEqual(fs.readFileSync(file), before[i]);
+  assert.deepEqual(
+    abortUnstartedSuccessor(f.client, f.approvalFile, true, options),
+    result,
+  );
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(path.join(f.dir, "broker.lock"), "utf8")),
+    f.previousOwner,
+  );
+  assert.equal(
+    fs.existsSync(path.join(f.dir, "active-epoch-succession.json")),
+    false,
+  );
+});
+
+test("SDK1 CLI withdrawal requires its dedicated confirmation and exact proof argument", (t) => {
+  const f = sdkSubmittedUnknownFixture(t),
+    cli = path.join(repo, "scripts/abort-unstarted-successor.cjs"),
+    missingApproval = path.join(f.base, "missing-approval.json"),
+    missingProof = spawnSync(
+      process.execPath,
+      [
+        cli,
+        "--approval",
+        missingApproval,
+        "--confirm-withdraw-unknown",
+        "true",
+      ],
+      { encoding: "utf8" },
+    ),
+    explicitProof = spawnSync(
+      process.execPath,
+      [
+        cli,
+        "--approval",
+        missingApproval,
+        "--sdk-process-death-proof",
+        f.proofFile,
+        "--confirm-withdraw-unknown",
+        "true",
+      ],
+      { encoding: "utf8" },
+    );
+  assert.notEqual(missingProof.status, 0);
+  assert.match(missingProof.stderr, /Use --approval FILE/);
+  assert.notEqual(explicitProof.status, 0);
+  assert.match(explicitProof.stderr, /ENOENT/);
+  assert.doesNotMatch(explicitProof.stderr, /Use --approval FILE/);
+});
+
+for (const reason of [
+  "missing-proof",
+  "tampered-proof",
+  "wrong-pid",
+  "wrong-birth",
+  "future-absence",
+  "nonfinal-result",
+  "response-receipt",
+  "foreign-owner",
+  "active-worker",
+  "implicit-withdrawal",
+]) {
+  test("FAKE dead SDK proof: SDK1 withdrawal refuses " + reason, (t) => {
+    const f = sdkSubmittedUnknownFixture(t),
+      original = api.priorProcessAlive,
+      options = {
+        withdrawUnknown: true,
+        processDeathProofFile: f.proofFile,
+      };
+    if (
+      reason === "tampered-proof" ||
+      reason === "wrong-pid" ||
+      reason === "wrong-birth" ||
+      reason === "future-absence"
+    ) {
+      const proof = JSON.parse(fs.readFileSync(f.proofFile, "utf8")) as {
+        bindings: { observationWire: { sha256: string } };
+        before: { pid: number };
+        handleBoundExit: { birth: string };
+        after: { observedAtUtc: string };
+      };
+      if (reason === "tampered-proof")
+        proof["bindings"]["observationWire"]["sha256"] = "0".repeat(64);
+      if (reason === "wrong-pid") proof["before"]["pid"] += 1;
+      if (reason === "wrong-birth")
+        proof["handleBoundExit"]["birth"] = "reused-birth";
+      if (reason === "future-absence")
+        proof["after"]["observedAtUtc"] = new Date(
+          Date.now() + 60_000,
+        ).toISOString();
+      api.durable(f.proofFile, proof);
+    }
+    if (reason === "nonfinal-result") {
+      const file = path.join(f.observation, "result.json"),
+        result = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+          string,
+          unknown
+        >;
+      api.durable(file, { ...result, status: "pending" });
+    }
+    if (reason === "response-receipt")
+      api.durable(f.start.receipt, { received: true });
+    if (reason === "foreign-owner") f.client.auth.clientToken = "foreign";
+    if (reason === "active-worker") {
+      t.mock.method(api, "priorProcessAlive", (value: unknown) =>
+        JSON.stringify(value) === JSON.stringify(f.worker)
+          ? true
+          : original(value),
+      );
+    }
+    assert.throws(() =>
+      abortUnstartedSuccessor(
+        f.client,
+        f.approvalFile,
+        true,
+        reason === "implicit-withdrawal"
+          ? undefined
+          : reason === "missing-proof"
+            ? { withdrawUnknown: true }
+            : options,
+      ),
+    );
+    assert.equal(fs.existsSync(path.join(f.audit, "abort-unstarted")), false);
+    assert.equal(
+      fs.existsSync(path.join(f.dir, "active-epoch-succession.json")),
+      true,
+    );
+  });
+}
+
 test("FAKE metadata-ready: preview identifies the live exact owner but apply cannot signal or retire it", (t) => {
   const f = readyFixture(t),
     original = api.priorProcessAlive;
@@ -544,6 +878,91 @@ test("FAKE metadata-ready: a new owner-approved successor must link the exact re
       .readFileSync(path.join(f.observation, "result.json"))
       .subarray(0, before.length),
     before,
+  );
+});
+
+test("FAKE dead SDK proof: a new owner-approved successor links the SDK1 withdrawal without reusing its process identity", (t) => {
+  t.after((load("./fixtures/fake-wsl-platform.cjs") as () => () => void)());
+  const f = sdkSubmittedUnknownFixture(t),
+    options = {
+      withdrawUnknown: true,
+      processDeathProofFile: f.proofFile,
+    };
+  abortUnstartedSuccessor(f.client, f.approvalFile, true, options);
+  api.durable(
+    path.join(f.dir, "broker-lifecycle-" + f.previousOwner.nonce + ".json"),
+    f.inspection.previousLifecycle,
+  );
+  const requestId = "new-qualified-attempt-" + randomUUID(),
+    approvalFile = path.join(f.base, "new-approval.json"),
+    nextProcess = { pid: process.pid, birth: api.processBirth() },
+    approval = {
+      ...f.approval,
+      requestId,
+      expectedProcess: nextProcess,
+      priorRetiredSuccessor: reference(
+        path.join(f.audit, "abort-unstarted", "complete.json"),
+      ),
+    };
+  api.durable(approvalFile, approval);
+  assert.equal(
+    inspectSuccessor(f.client, f.cfg, approvalFile, requestId).requestId,
+    requestId,
+  );
+
+  const missing = { ...approval };
+  delete (missing as Partial<typeof approval>).priorRetiredSuccessor;
+  api.durable(approvalFile, missing);
+  assert.throws(
+    () => inspectSuccessor(f.client, f.cfg, approvalFile, requestId),
+    { code: "EPOCH_SUCCESSOR_ABORT_REQUIRED" },
+  );
+
+  api.durable(approvalFile, {
+    ...approval,
+    priorRetiredSuccessor: {
+      ...approval.priorRetiredSuccessor,
+      sha256: "0".repeat(64),
+    },
+  });
+  assert.throws(
+    () => inspectSuccessor(f.client, f.cfg, approvalFile, requestId),
+    { code: "EPOCH_SUCCESSOR_ABORT_INVALID" },
+  );
+
+  const original = api.priorProcessAlive;
+  t.mock.method(api, "priorProcessAlive", (value: unknown) => {
+    if (
+      value &&
+      typeof value === "object" &&
+      "pid" in value &&
+      (value.pid === f.authority.expectedProcess.pid ||
+        ("birth" in value && value.birth === f.authority.expectedProcess.birth))
+    )
+      return true;
+    return original(value);
+  });
+  api.durable(approvalFile, {
+    ...approval,
+    expectedProcess: {
+      pid: f.authority.expectedProcess.pid,
+      birth: "different-birth",
+    },
+  });
+  assert.throws(
+    () => inspectSuccessor(f.client, f.cfg, approvalFile, requestId),
+    { code: "EPOCH_SUCCESSOR_ABORT_INVALID" },
+  );
+  api.durable(approvalFile, {
+    ...approval,
+    expectedProcess: {
+      pid: f.authority.expectedProcess.pid + 1,
+      birth: f.authority.expectedProcess.birth,
+    },
+  });
+  assert.throws(
+    () => inspectSuccessor(f.client, f.cfg, approvalFile, requestId),
+    { code: "EPOCH_SUCCESSOR_ABORT_INVALID" },
   );
 });
 

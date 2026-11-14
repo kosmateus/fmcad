@@ -11,6 +11,40 @@ export interface Process {
   birth: string;
   version?: string;
 }
+export interface SdkProcessDeathBindings {
+  authority: Reference;
+  observationIntent: Reference;
+  observationStart: Reference;
+  observationWire: Reference;
+  observationResult: Reference;
+}
+export interface SdkProcessDeathProof {
+  version: 1;
+  kind: "sdk-process-death-proof-v1";
+  expectedProcess: Process;
+  before: {
+    state: "present";
+    pid: number;
+    birth: string;
+    version: string;
+    exe: string;
+    windowHandle: string;
+    observedAtUtc: string;
+  };
+  handleBoundExit: {
+    pid: number;
+    birth: string;
+    hasExited: true;
+    observedAtUtc: string;
+  };
+  after: {
+    state: "absent";
+    pid: number;
+    observedAtUtc: string;
+    errorId: string;
+  };
+  bindings: SdkProcessDeathBindings;
+}
 export interface Owner extends Process {
   nonce: string;
   protocol: number;
@@ -23,6 +57,7 @@ export interface Pointer extends EpochPointer {
 }
 export interface Authority extends SuccessionAuthority {
   priorAbortedSuccessor?: Reference;
+  priorRetiredSuccessor?: Reference;
   previousOwner: Owner;
   expectedProcess: Process;
   nonce: string;
@@ -56,6 +91,7 @@ export interface Approval {
   qualification: Reference;
   physicalBackendHead?: Reference;
   priorAbortedSuccessor?: Reference;
+  priorRetiredSuccessor?: Reference;
 }
 export interface Qualification {
   passed?: boolean;

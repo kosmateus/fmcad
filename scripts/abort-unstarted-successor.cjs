@@ -137,7 +137,7 @@ function text(value) {
     return value;
 }
 /** Owner-only metadata recovery; never launches a worker or calls Fusion. */
-function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspection = false } = {}) {
+function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspection = false, processDeathProofFile, withdrawUnknown = false, } = {}) {
     const approval = object(JSON.parse(node_fs_1.default.readFileSync(approvalFile, "utf8")));
     const runtime = text(approval["candidateRoot"]);
     if (!node_path_1.default.isAbsolute(runtime) || node_fs_1.default.realpathSync(runtime) !== runtime)
@@ -146,6 +146,7 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
     const api = load("./queue-instance");
     const files = load("./queue-atomic-migration-files");
     const lineage = load("./queue-epoch-lineage");
+    const successor = load("./queue-epoch-successor");
     const root = node_fs_1.default.realpathSync(client.dir);
     files.directory(root);
     const requestId = text(approval["requestId"]);
@@ -156,6 +157,94 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
     files.directory(audit);
     const read = (file) => object(api.readJson(file));
     const ref = (file) => lineage.reference(file);
+    const observationDir = node_path_1.default.join(audit, "dead-epoch-current-observation");
+    const deathBindings = (authorityEntry) => ({
+        authority: authorityEntry,
+        observationIntent: ref(node_path_1.default.join(observationDir, "intent.json")),
+        observationStart: ref(node_path_1.default.join(observationDir, "start.json")),
+        observationWire: ref(node_path_1.default.join(observationDir, "wire.json")),
+        observationResult: ref(node_path_1.default.join(observationDir, "result.json")),
+    });
+    const verifyDeathProof = (file, authorityEntry, expectedProcess) => successor.verifySdkProcessDeathProof(file, expectedProcess, deathBindings(authorityEntry));
+    const verifySdkUnknownAttempt = (authorityEntry, expectedProcess, expectedBuildHash, jobIds, proofFile, requireProof) => {
+        const jobs = jobIds;
+        if (!Array.isArray(jobs) || jobs.length < 2)
+            fail("Original holder and observer required");
+        const key = {
+            jobId: jobs[0],
+            observationJobId: jobs[1],
+            requestId: text(approval["requestId"]) + ":observe",
+            clientId: client.auth.clientId,
+        };
+        if (!node_fs_1.default.existsSync(observationDir))
+            fail("Exact SDK1 observation journal required");
+        const names = node_fs_1.default.readdirSync(observationDir).sort();
+        if (!(0, node_util_1.isDeepStrictEqual)(names, ["intent.json", "result.json", "start.json", "wire.json"]))
+            fail("SDK1 withdrawal requires a terminal lost-observation journal with no response receipt or pending dispatch");
+        const observationIntentFile = node_path_1.default.join(observationDir, "intent.json"), observationStartFile = node_path_1.default.join(observationDir, "start.json"), observationWireFile = node_path_1.default.join(observationDir, "wire.json"), observationResultFile = node_path_1.default.join(observationDir, "result.json"), observationIntent = read(observationIntentFile), start = read(observationStartFile), startBinding = object(start["binding"]), pythonCheck = object(start["pythonCheck"]), provenance = object(pythonCheck["provenance"]), wire = read(observationWireFile), outgoing = object(wire["outgoing"]), params = object(outgoing["params"]), args = object(params["arguments"]), script = object(args["object"]), artifact = object(wire["artifact"]), result = read(observationResultFile);
+        if (observationIntent["version"] !== 1 ||
+            !(0, node_util_1.isDeepStrictEqual)(observationIntent["key"], key) ||
+            !(0, node_util_1.isDeepStrictEqual)(observationIntent["binding"], {
+                purpose: "atomic-recovery-audit-v1",
+                clientId: client.auth.clientId,
+                expectedProcess,
+                successorAuthorityHash: authorityEntry.sha256,
+            }) ||
+            !/^[a-f0-9]{64}$/.test(String(observationIntent["sourceSha256"])) ||
+            !/^[a-f0-9]{64}$/.test(String(observationIntent["sourceArtifactHash"])) ||
+            startBinding["jobId"] !== key.jobId ||
+            typeof startBinding["rpcId"] !== "string" ||
+            !startBinding["rpcId"] ||
+            !/^[a-f0-9]{64}$/.test(String(startBinding["requestHash"])) ||
+            startBinding["buildHash"] !== expectedBuildHash ||
+            !/^[a-f0-9]{64}$/.test(String(startBinding["sourceHash"])) ||
+            startBinding["purpose"] !== "atomic-recovery-audit-v1" ||
+            !/^[a-f0-9]{64}$/.test(String(startBinding["auditBindingHash"])) ||
+            startBinding["pythonOriginHash"] !==
+                observationIntent["sourceArtifactHash"] ||
+            !(0, node_util_1.isDeepStrictEqual)(startBinding["auditExpectedProcess"], expectedProcess) ||
+            !(0, node_util_1.isDeepStrictEqual)(start["instance"], expectedProcess) ||
+            start["receipt"] !==
+                node_path_1.default.join(observationDir, "remote-" + String(startBinding["rpcId"]) + ".json") ||
+            pythonCheck["status"] !== "passed" ||
+            !/^[a-f0-9]{64}$/.test(String(provenance["artifactHash"])) ||
+            !/^[a-f0-9]{64}$/.test(String(provenance["wireHash"])) ||
+            start["originArtifactHash"] !== observationIntent["sourceArtifactHash"] ||
+            outgoing["jsonrpc"] !== "2.0" ||
+            outgoing["id"] !== "fmcad:" + String(startBinding["rpcId"]) ||
+            outgoing["method"] !== "tools/call" ||
+            params["name"] !== "fusion_mcp_execute" ||
+            args["featureType"] !== "script" ||
+            script["readOnly"] !== true ||
+            artifact["artifactHash"] !== provenance["artifactHash"] ||
+            artifact["sha256"] !== provenance["wireHash"] ||
+            !(0, node_util_1.isDeepStrictEqual)(result["kind"], "dead-epoch-current-observation") ||
+            !(0, node_util_1.isDeepStrictEqual)(result["jobId"], key.jobId) ||
+            !(0, node_util_1.isDeepStrictEqual)(result["observationJobId"], key.observationJobId) ||
+            result["requestId"] !== key.requestId ||
+            result["clientId"] !== key.clientId ||
+            result["status"] !== "failed" ||
+            typeof result["code"] !== "string" ||
+            !result["code"] ||
+            result["sdkRequestsSent"] !== 1 ||
+            result["nativeOutcome"] !== "unknown" ||
+            result["modelValidation"] !== "not_performed" ||
+            result["rollbackVerification"] !== "not_performed")
+            fail("Exact terminal SDK1 unknown observation, request, owner, build, wire and process lineage required");
+        const processDeathProof = proofFile
+            ? verifyDeathProof(proofFile, authorityEntry, expectedProcess)
+            : undefined;
+        if (requireProof && !processDeathProof)
+            fail("Exact SDK process-death proof required for SDK1 withdrawal");
+        return {
+            key,
+            observationIntentFile,
+            observationStartFile,
+            observationWireFile,
+            observationResultFile,
+            processDeathProof,
+        };
+    };
     const intentFile = node_path_1.default.join(audit, "intent.json"), intent = read(intentFile);
     const approved = object(intent["approval"]), tokenHash = api.hash(client.auth.clientToken);
     // Relocated recovery copies are accepted only when the approved bytes are identical.
@@ -168,6 +257,49 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
     const abortDir = node_path_1.default.join(audit, "abort-unstarted"), completeFile = node_path_1.default.join(abortDir, "complete.json");
     if (node_fs_1.default.existsSync(completeFile)) {
         const complete = read(completeFile), original = read(node_path_1.default.join(abortDir, "intent.json"));
+        if (complete["kind"] === "dead-epoch-successor-withdrawn-after-sdk-unknown") {
+            const authorityFile = node_path_1.default.join(audit, "authority.json"), authorityEntry = ref(authorityFile), authority = read(authorityFile), pointer = lineage.successionAuthority(root, authorityEntry).pointer, processDeathProof = object(complete["processDeathProof"]), sdkUnknown = verifySdkUnknownAttempt(authorityEntry, object(authority["expectedProcess"]), text(authority["buildHash"]), pointer["quarantinedJobIds"], processDeathProofFile || text(processDeathProof["path"]), true);
+            if (complete["status"] !== "withdrawn" ||
+                complete["requestId"] !== requestId ||
+                complete["clientId"] !== client.auth.clientId ||
+                complete["sdkRequestsSent"] !== 1 ||
+                complete["nativeOutcome"] !== "unknown" ||
+                complete["historicalOutcome"] !== "unknown" ||
+                !(0, node_util_1.isDeepStrictEqual)(complete["approval"], approved) ||
+                !(0, node_util_1.isDeepStrictEqual)(complete["authority"], authorityEntry) ||
+                !(0, node_util_1.isDeepStrictEqual)(complete["owner"], read(node_path_1.default.join(audit, "worker-ready.json"))["owner"]) ||
+                complete["buildHash"] !== authority["buildHash"] ||
+                complete["configHash"] !== authority["configHash"] ||
+                complete["sourceCommit"] !== authority["sourceCommit"] ||
+                !(0, node_util_1.isDeepStrictEqual)(complete["expectedProcess"], authority["expectedProcess"]) ||
+                !(0, node_util_1.isDeepStrictEqual)(complete["processDeathProof"], sdkUnknown.processDeathProof) ||
+                original["kind"] !== "withdraw-sdk-unknown-dead-successor" ||
+                original["reason"] !== "sdk-process-exited-after-unknown-transport" ||
+                original["clientId"] !== client.auth.clientId ||
+                !(0, node_util_1.isDeepStrictEqual)(original["approval"], approved) ||
+                !(0, node_util_1.isDeepStrictEqual)(original["authority"], authorityEntry) ||
+                !(0, node_util_1.isDeepStrictEqual)(original["owner"], complete["owner"]) ||
+                original["buildHash"] !== authority["buildHash"] ||
+                original["configHash"] !== authority["configHash"] ||
+                original["sourceCommit"] !== authority["sourceCommit"] ||
+                !(0, node_util_1.isDeepStrictEqual)(original["expectedProcess"], authority["expectedProcess"]) ||
+                original["sdkRequestsSent"] !== 1 ||
+                original["nativeOutcome"] !== "unknown" ||
+                original["historicalOutcome"] !== "unknown" ||
+                !(0, node_util_1.isDeepStrictEqual)(original["facts"], complete["facts"]) ||
+                !(0, node_util_1.isDeepStrictEqual)(original["processDeathProof"], complete["processDeathProof"]) ||
+                !Array.isArray(complete["facts"]) ||
+                !complete["facts"].some((entry) => (0, node_util_1.isDeepStrictEqual)(entry, sdkUnknown.processDeathProof)) ||
+                (processDeathProofFile &&
+                    !(0, node_util_1.isDeepStrictEqual)(ref(processDeathProofFile), complete["processDeathProof"])))
+                fail("Original SDK1 withdrawal receipt changed");
+            for (const entry of complete["facts"]) {
+                const proof = object(entry);
+                if (files.fileHash(text(proof["path"])).sha256 !== proof["sha256"])
+                    fail("SDK1 withdrawal evidence changed");
+            }
+            return complete;
+        }
         if (complete["kind"] !== "dead-epoch-successor-aborted-before-sdk" ||
             complete["status"] !== "aborted" ||
             complete["requestId"] !== requestId ||
@@ -234,10 +366,10 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
         }))
         fail("Exact previous authority and original launch required");
     const workerFile = node_path_1.default.join(audit, "worker-claim.json"), worker = read(workerFile);
-    // A ready metadata worker is NOT an unstarted/rejected startup. Its one
-    // terminal local observation rejection needs a separate, explicit proof.
+    // A ready metadata worker is not an unstarted startup. SDK0 rejection and
+    // SDK1 unknown withdrawal have separate terminal evidence and receipts.
     if (node_fs_1.default.existsSync(node_path_1.default.join(audit, "worker-ready.json"))) {
-        const reason = "metadata-ready-observation-rejected-before-sdk";
+        const sdk0Reason = "metadata-ready-observation-rejected-before-sdk", sdk1Reason = "sdk-process-exited-after-unknown-transport";
         const readyFile = node_path_1.default.join(audit, "worker-ready.json"), ready = read(readyFile);
         const metadataFile = node_path_1.default.join(audit, "complete.json"), metadata = read(metadataFile);
         const owner = object(ready["owner"]);
@@ -260,7 +392,7 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
             metadata["historicalOutcome"] !== "unknown" ||
             metadata["modelingAdmission"] !==
                 "blocked-until-current-facts-and-proven-new-scratch")
-            fail("Exact SDK0 metadata-ready worker and original completion required");
+            fail("Exact metadata-ready worker and original completion required");
         const allowed = new Set([
             "authority.json",
             "intent.json",
@@ -281,12 +413,10 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
         ]);
         if (node_fs_1.default.readdirSync(audit).some((name) => !allowed.has(name)))
             fail("Unexpected SDK, scratch, pending or startup evidence forbids metadata-ready retirement");
-        const observation = node_path_1.default.join(audit, "dead-epoch-current-observation");
-        files.directory(observation);
-        if (!(0, node_util_1.isDeepStrictEqual)(node_fs_1.default.readdirSync(observation).sort(), ["intent.json", "result.json"]))
-            fail("Only an observation intent and terminal local rejection may exist");
-        const observationIntentFile = node_path_1.default.join(observation, "intent.json"), observationIntent = read(observationIntentFile);
-        const resultFile = node_path_1.default.join(observation, "result.json"), result = read(resultFile);
+        const observation = observationDir;
+        if (!node_fs_1.default.existsSync(observation))
+            fail("Original successor observation journal required");
+        const observationIntentFile = node_path_1.default.join(observation, "intent.json"), resultFile = node_path_1.default.join(observation, "result.json"), observationIntent = read(observationIntentFile), result = read(resultFile), sdkUnknown = result["sdkRequestsSent"] === 1, reason = sdkUnknown ? sdk1Reason : sdk0Reason;
         const jobs = pointer["quarantinedJobIds"];
         if (!Array.isArray(jobs) || jobs.length < 2)
             fail("Original holder and observer required");
@@ -296,27 +426,45 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
             requestId: requestId + ":observe",
             clientId: client.auth.clientId,
         };
-        if (observationIntent["version"] !== 1 ||
-            !(0, node_util_1.isDeepStrictEqual)(observationIntent["key"], key) ||
-            !(0, node_util_1.isDeepStrictEqual)(observationIntent["binding"], {
-                purpose: "atomic-recovery-audit-v1",
-                clientId: client.auth.clientId,
-                expectedProcess: authority["expectedProcess"],
-                successorAuthorityHash: entry.sha256,
-            }) ||
-            !/^[a-f0-9]{64}$/.test(String(observationIntent["sourceSha256"])) ||
-            !/^[a-f0-9]{64}$/.test(String(observationIntent["sourceArtifactHash"])) ||
-            !(0, node_util_1.isDeepStrictEqual)(result, {
-                kind: "dead-epoch-current-observation",
-                ...key,
-                status: "failed",
-                code: "AUDIT_REQUEST_INVALID",
-                sdkRequestsSent: 0,
-                nativeOutcome: "unknown",
-                modelValidation: "not_performed",
-                rollbackVerification: "not_performed",
-            }))
-            fail("Exact original terminal AUDIT_REQUEST_INVALID observation with SDK0 required");
+        let sdkUnknownProof;
+        if (sdkUnknown) {
+            if (!withdrawUnknown)
+                fail("SDK1 unknown transport requires the explicit withdrawal confirmation path");
+            const evidence = verifySdkUnknownAttempt(entry, object(authority["expectedProcess"]), text(authority["buildHash"]), jobs, processDeathProofFile, apply);
+            if (!(0, node_util_1.isDeepStrictEqual)(evidence.key, key))
+                fail("SDK1 observation key changed");
+            sdkUnknownProof = evidence.processDeathProof;
+        }
+        else {
+            if (withdrawUnknown)
+                fail("Explicit SDK1 withdrawal cannot be used for an SDK0 attempt");
+            if (result["sdkRequestsSent"] !== 0 ||
+                !(0, node_util_1.isDeepStrictEqual)(node_fs_1.default.readdirSync(observation).sort(), [
+                    "intent.json",
+                    "result.json",
+                ]) ||
+                observationIntent["version"] !== 1 ||
+                !(0, node_util_1.isDeepStrictEqual)(observationIntent["key"], key) ||
+                !(0, node_util_1.isDeepStrictEqual)(observationIntent["binding"], {
+                    purpose: "atomic-recovery-audit-v1",
+                    clientId: client.auth.clientId,
+                    expectedProcess: authority["expectedProcess"],
+                    successorAuthorityHash: entry.sha256,
+                }) ||
+                !/^[a-f0-9]{64}$/.test(String(observationIntent["sourceSha256"])) ||
+                !/^[a-f0-9]{64}$/.test(String(observationIntent["sourceArtifactHash"])) ||
+                !(0, node_util_1.isDeepStrictEqual)(result, {
+                    kind: "dead-epoch-current-observation",
+                    ...key,
+                    status: "failed",
+                    code: "AUDIT_REQUEST_INVALID",
+                    sdkRequestsSent: 0,
+                    nativeOutcome: "unknown",
+                    modelValidation: "not_performed",
+                    rollbackVerification: "not_performed",
+                }))
+                fail("Exact original terminal AUDIT_REQUEST_INVALID observation with SDK0 required");
+        }
         const lifecycleFile = node_path_1.default.join(root, "broker-lifecycle-" + text(owner["nonce"]) + ".json");
         const lifecycle = read(lifecycleFile);
         if (!(0, node_util_1.isDeepStrictEqual)(lifecycle["owner"], owner) ||
@@ -327,7 +475,7 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
                 .readdirSync(root)
                 .some((name) => name.startsWith("broker-startup-" + text(owner["nonce"]))) ||
             [root, text(pointer["root"])].some((dir) => node_fs_1.default.existsSync(node_path_1.default.join(dir, "queue-state.pending.json"))))
-            fail("Metadata-only lifecycle without any startup SDK or pending state required");
+            fail("Metadata-only lifecycle without pending state required");
         const released = [];
         for (const name of ["recovery.lock", "atomic-migration.lock"]) {
             const releasedFile = node_path_1.default.join(audit, "released-" + name + ".json");
@@ -383,24 +531,47 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
             metadataFile,
             lifecycleFile,
             observationIntentFile,
+            ...(sdkUnknown
+                ? [
+                    node_path_1.default.join(observation, "start.json"),
+                    node_path_1.default.join(observation, "wire.json"),
+                ]
+                : []),
             resultFile,
             retiredFile,
             ...released,
             ...(previous ? [previousFile] : []),
             ...retirementFacts,
+            ...(sdkUnknownProof ? [sdkUnknownProof.path] : []),
         ].map(ref);
         if (!apply)
-            return {
-                ready: true,
-                requestId,
-                reason,
-                sdkRequestsSent: 0,
-                requiresWorkerRetirement: workerAlive,
-                retirementPerformed: false,
-                applyReady: !workerAlive,
-                worker: owner,
-                facts,
-            };
+            return sdkUnknown
+                ? {
+                    ready: true,
+                    operation: "withdraw-after-sdk-unknown",
+                    requestId,
+                    reason,
+                    sdkRequestsSent: 1,
+                    nativeOutcome: "unknown",
+                    historicalOutcome: "unknown",
+                    requiresWorkerRetirement: workerAlive,
+                    processDeathProofRequired: !sdkUnknownProof,
+                    retirementPerformed: false,
+                    applyReady: !workerAlive && !!sdkUnknownProof,
+                    worker: owner,
+                    facts,
+                }
+                : {
+                    ready: true,
+                    requestId,
+                    reason,
+                    sdkRequestsSent: 0,
+                    requiresWorkerRetirement: workerAlive,
+                    retirementPerformed: false,
+                    applyReady: !workerAlive,
+                    worker: owner,
+                    facts,
+                };
         if (workerAlive !== false)
             fail("Exact metadata worker must be proven dead through a separately authorized retirement before apply");
         if (retiredMetadataMarker) {
@@ -412,20 +583,47 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
         }
         const abortIntent = {
             version: 1,
-            kind: "abort-sdk-not-started-dead-successor",
+            kind: sdkUnknown
+                ? "withdraw-sdk-unknown-dead-successor"
+                : "abort-sdk-not-started-dead-successor",
             reason,
             clientId: client.auth.clientId,
             approval: approved,
+            ...(sdkUnknown
+                ? {
+                    authority: entry,
+                    owner,
+                    buildHash: authority["buildHash"],
+                    configHash: authority["configHash"],
+                    sourceCommit: authority["sourceCommit"],
+                    expectedProcess: authority["expectedProcess"],
+                    processDeathProof: sdkUnknownProof,
+                    sdkRequestsSent: 1,
+                    nativeOutcome: "unknown",
+                    historicalOutcome: "unknown",
+                }
+                : {}),
             facts,
             guard,
         };
         node_fs_1.default.mkdirSync(abortDir, { recursive: true, mode: 0o700 });
         files.directory(abortDir);
-        files.exclusive(node_path_1.default.join(abortDir, "intent.json"), abortIntent);
-        files.exclusive(node_path_1.default.join(abortDir, "active-before.json"), {
+        const abortIntentFile = node_path_1.default.join(abortDir, "intent.json"), activeBeforeFile = node_path_1.default.join(abortDir, "active-before.json"), activeBefore = {
             version: 1,
             authority: entry,
-        });
+        };
+        if (sdkUnknown && node_fs_1.default.existsSync(abortIntentFile)) {
+            if (!(0, node_util_1.isDeepStrictEqual)(read(abortIntentFile), abortIntent))
+                fail("Original SDK1 withdrawal intent changed");
+        }
+        else
+            files.exclusive(abortIntentFile, abortIntent);
+        if (sdkUnknown && node_fs_1.default.existsSync(activeBeforeFile)) {
+            if (!(0, node_util_1.isDeepStrictEqual)(read(activeBeforeFile), activeBefore))
+                fail("Original SDK1 active-authority checkpoint changed");
+        }
+        else
+            files.exclusive(activeBeforeFile, activeBefore);
         if (previous)
             api.durable(activeFile, previous);
         else if (node_fs_1.default.existsSync(activeFile))
@@ -443,14 +641,29 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
         }
         const complete = {
             version: 1,
-            kind: "dead-epoch-successor-aborted-before-sdk",
+            kind: sdkUnknown
+                ? "dead-epoch-successor-withdrawn-after-sdk-unknown"
+                : "dead-epoch-successor-aborted-before-sdk",
             reason,
-            status: "aborted",
+            status: sdkUnknown ? "withdrawn" : "aborted",
             requestId,
             clientId: client.auth.clientId,
             approval: approved,
+            ...(sdkUnknown
+                ? {
+                    authority: entry,
+                    owner,
+                    buildHash: authority["buildHash"],
+                    configHash: authority["configHash"],
+                    sourceCommit: authority["sourceCommit"],
+                    expectedProcess: authority["expectedProcess"],
+                    processDeathProof: sdkUnknownProof,
+                    sdkRequestsSent: 1,
+                    nativeOutcome: "unknown",
+                }
+                : {}),
             facts,
-            sdkRequestsSent: 0,
+            sdkRequestsSent: sdkUnknown ? 1 : 0,
             historicalOutcome: "unknown",
             modelValidation: "not_performed",
         };
@@ -830,12 +1043,17 @@ if (require.main === module) {
                 args[2] === "--retirement-proof" &&
                 ["--preflight-retirement", "--confirm-retire-metadata-worker"].includes(args[4]) &&
                 args[5] === "true";
+            const withdrawal = args.length === 6 &&
+                args[2] === "--sdk-process-death-proof" &&
+                ["--preflight-withdraw-unknown", "--confirm-withdraw-unknown"].includes(args[4]) &&
+                args[5] === "true";
             if (args[0] !== "--approval" ||
                 !(retirement ||
+                    withdrawal ||
                     (args.length === 4 &&
                         ["--confirm-abort", "--preflight"].includes(args[2]) &&
                         args[3] === "true")))
-                fail("Use --approval FILE with --preflight true / --confirm-abort true, or --retirement-proof FILE --preflight-retirement true / --confirm-retire-metadata-worker true; no client/root overrides");
+                fail("Use --approval FILE with --preflight true / --confirm-abort true, --sdk-process-death-proof FILE --preflight-withdraw-unknown true / --confirm-withdraw-unknown true, or --retirement-proof FILE --preflight-retirement true / --confirm-retire-metadata-worker true; no client/root overrides");
             const file = node_fs_1.default.realpathSync(args[1]), approval = object(JSON.parse(node_fs_1.default.readFileSync(file, "utf8")));
             const load = (0, node_module_1.createRequire)(node_path_1.default.join(text(approval["candidateRoot"]), "src/queue-client.js"));
             const { QueueClient } = load("./queue-client");
@@ -845,7 +1063,12 @@ if (require.main === module) {
             try {
                 console.log(JSON.stringify(retirement
                     ? await retireMetadataWorker(client, file, node_fs_1.default.realpathSync(args[3]), args[4] === "--confirm-retire-metadata-worker")
-                    : abortUnstartedSuccessor(client, file, args[2] === "--confirm-abort"), null, 2));
+                    : withdrawal
+                        ? abortUnstartedSuccessor(client, file, args[4] === "--confirm-withdraw-unknown", {
+                            withdrawUnknown: true,
+                            processDeathProofFile: node_fs_1.default.realpathSync(args[3]),
+                        })
+                        : abortUnstartedSuccessor(client, file, args[2] === "--confirm-abort"), null, 2));
             }
             finally {
                 client.dispose();
