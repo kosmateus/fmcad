@@ -5,6 +5,7 @@ import type { PreparedPythonArtifact } from "@fmcad/core";
 import { hash as canonicalHash } from "../../../core/src/application/cad/json";
 import { record } from "../../../core/src/application/cad/contracts";
 import { preparePythonArtifact } from "../python/artifact";
+import { classifyPythonRpc } from "../python/admission";
 import {
   pythonArtifactManifest,
   retainPythonOrigin,
@@ -110,12 +111,13 @@ export function prepareRecoveryAuditWire(
   }: RecoveryWireInput,
 ): AuditWire {
   const origin = pythonArtifactManifest(reader.artifact);
-  const code = payload.params?.arguments?.code;
-  if (typeof code !== "string")
+  const python = classifyPythonRpc(payload);
+  if (python.kind !== "python")
     return fail(
       "AUDIT_REQUEST_INVALID",
       "Audit wire requires exact Python source",
     );
+  const code = python.source;
   const binding = {
     jobId,
     rpcId,
@@ -140,14 +142,23 @@ export function prepareRecoveryAuditWire(
     ...(auditBinding["firstSave"] === true ? { auditFirstSave: true } : {}),
   };
   const artifact = retainPythonOrigin(
-    prepareReceiptScript(code, false, receipt, binding),
+    prepareReceiptScript(code, python.official, receipt, binding),
     origin,
   );
   const outgoing = structuredClone(payload);
+  const objectArguments = outgoing.params?.arguments?.["object"];
   outgoing.id = "fmcad:" + rpcId;
   outgoing.params = {
     ...outgoing.params,
-    arguments: { ...outgoing.params?.arguments, code: artifact.script },
+    arguments: python.official
+      ? {
+          ...outgoing.params?.arguments,
+          object: {
+            ...(record(objectArguments) ? objectArguments : {}),
+            script: artifact.script,
+          },
+        }
+      : { ...outgoing.params?.arguments, code: artifact.script },
   };
   return {
     outgoing,

@@ -67,6 +67,7 @@ export interface AuditScope {
   post(payload: AuditRpc, sessionId?: string): Promise<AuditResponse>;
 }
 export interface RecoveryAuditPorts {
+  scriptFormat?: "fusion-mcp";
   kind?: string;
   extraKeys?: string[];
   priorObservationRequired?: boolean;
@@ -285,7 +286,9 @@ export function createRecoveryAudit(
     const scope: AuditScope = {
       post: async () =>
         fail("AUDIT_REQUEST_INVALID", "Audit scope is not initialized"),
-      expectedCode: reader.artifact.script + '\n\nrun("")\n',
+      expectedCode:
+        reader.artifact.script +
+        (p.scriptFormat === "fusion-mcp" ? "" : '\n\nrun("")\n'),
       origin: pythonArtifactManifest(reader.artifact),
       sent: false,
       summary: null,
@@ -296,16 +299,24 @@ export function createRecoveryAudit(
           p.fence(prepared, true);
           return p.post(payload, sessionId);
         });
-      if (
-        scope.sent ||
-        payload?.method !== "tools/call" ||
-        payload.params?.name !== "execute_python" ||
-        payload.params.arguments?.code !== scope.expectedCode ||
-        payload.params.arguments.persistent !== false ||
-        Object.keys(payload.params.arguments).some(
-          (k) => !["code", "persistent"].includes(k),
-        )
-      )
+      const args = payload.params?.arguments;
+      const official = p.scriptFormat === "fusion-mcp";
+      const body = args && record(args["object"]) ? args["object"] : null;
+      const exactScript = official
+        ? payload.params?.name === "fusion_mcp_execute" &&
+          args?.["featureType"] === "script" &&
+          body !== null &&
+          body["script"] === scope.expectedCode &&
+          typeof body["readOnly"] === "boolean" &&
+          Object.keys(args).every((k) =>
+            ["featureType", "object"].includes(k),
+          ) &&
+          Object.keys(body).every((k) => ["script", "readOnly"].includes(k))
+        : payload.params?.name === "execute_python" &&
+          args?.code === scope.expectedCode &&
+          args.persistent === false &&
+          Object.keys(args).every((k) => ["code", "persistent"].includes(k));
+      if (scope.sent || payload?.method !== "tools/call" || !exactScript)
         fail(
           "AUDIT_REQUEST_INVALID",
           "Only the exact broker-derived administrative script may use this grant",
@@ -359,6 +370,20 @@ export function createRecoveryAudit(
         },
         send: (value) => p.post(value.outgoing, sessionId),
         settle(value, response) {
+          // Observed transport bytes are evidence, not a terminal SDK receipt.
+          // Keep them even when matching/remote validation subsequently fails.
+          durable(
+            path.join(directory, "received-response.json"),
+            {
+              version: 1,
+              binding: value.record.binding,
+              wireId: value.outgoing.id,
+              callerId: payload.id,
+              status: response["status"] ?? null,
+              raw: response["raw"] ?? null,
+            },
+            true,
+          );
           const reply = p.match(response, value.outgoing),
             receipt = p.remoteReceipt(value.record);
           if (

@@ -3113,6 +3113,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     });
   }
   const recoveryAuditPorts: AuditPorts = {
+    ...(pinned.backend === "mcp" ? { scriptFormat: "fusion-mcp" as const } : {}),
     installation: resolveRuntimePaths({ anchor: __filename }).installation,
     buildHash: codeHash,
     jobDirectory: (id) => privateDirectory(jobDir(id)),
@@ -3344,7 +3345,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     sendScript: (scope, script) =>
       atomicRecoveryAuditScope.run(scope, () =>
         pinned.backend === "mcp" && client.executeBrokerScript
-          ? client.executeBrokerScript(script, required(scope.origin))
+          ? client.executeBrokerScript(script, required(scope.origin), true)
           : client.callTool(
               {
                 featureType: "script",
@@ -3407,7 +3408,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       // broker-private guarded-script port; do NOT lie that mutation is read-only,
       // or accept an arbitrary caller prefix/random guard as the authorized body.
       if (pinned.backend === "mcp" && client.executeBrokerScript)
-        return client.executeBrokerScript(script, required(scope.origin));
+        return client.executeBrokerScript(script, required(scope.origin), false);
       if (typeof client.executeUiGuardedScript === "function")
         return client.executeUiGuardedScript(script, scope.origin);
       if (options.createBackend)
