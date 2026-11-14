@@ -658,6 +658,150 @@ test("new withdrawal evaluator does not import its verifier from the historical 
   assert.deepEqual(fs.readFileSync(f.approvalFile), before);
 });
 
+function sdk1RetirementReceiptFixture(t: TestContext) {
+  const f = sdkSubmittedUnknownFixture(t);
+  api.durable(path.join(f.dir, "broker.lock"), f.owner);
+  const journal = path.join(f.audit, "sdk1-worker-retirement");
+  fs.mkdirSync(journal);
+  const beforeFile = path.join(journal, "before.json");
+  api.durable(beforeFile, {
+    synthetic: true,
+    owner: f.owner,
+    sdkRequestsSent: 1,
+    nativeOutcome: "unknown",
+  });
+  const startFile = path.join(journal, "effect-start.json");
+  api.durable(startFile, { before: reference(beforeFile), owner: f.owner });
+  const afterFile = path.join(journal, "after.json");
+  api.durable(afterFile, {
+    kind: "sdk1-metadata-worker-retirement-complete",
+    status: "retired",
+    requestId: f.requestId,
+    clientId: f.clientId,
+    owner: f.owner,
+    before: reference(beforeFile),
+    effectStart: reference(startFile),
+    processDeathProof: reference(f.proofFile),
+    protectedBytesUnchanged: true,
+    sdkRequestsSent: 1,
+    nativeOutcome: "unknown",
+    historicalOutcome: "unknown",
+  });
+  return { ...f, afterFile, beforeFile, startFile };
+}
+
+test("SDK1 withdrawal restores only the exact dead metadata marker after its separate retirement receipt", (t) => {
+  const f = sdk1RetirementReceiptFixture(t);
+  const retained = fs.readFileSync(f.afterFile);
+  const result = abortUnstartedSuccessor(f.client, f.approvalFile, true, {
+    withdrawUnknown: true,
+    processDeathProofFile: f.proofFile,
+  });
+  assert.equal(result["sdkRequestsSent"], 1);
+  assert.equal(result["historicalOutcome"], "unknown");
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(path.join(f.dir, "broker.lock"), "utf8")),
+    f.previousOwner,
+  );
+  assert.deepEqual(
+    JSON.parse(
+      fs.readFileSync(
+        path.join(f.audit, "abort-unstarted", "retired-metadata-owner.json"),
+        "utf8",
+      ),
+    ),
+    f.owner,
+  );
+  assert.deepEqual(fs.readFileSync(f.afterFile), retained);
+});
+
+for (const changed of [
+  "sdk0-claim",
+  "foreign-owner",
+  "wrong-death-proof",
+  "changed-before",
+  "pending-after",
+  "live-worker",
+]) {
+  test(
+    "SDK1 marker restoration refuses " +
+      changed +
+      " without changing the marker",
+    (t) => {
+      const f = sdk1RetirementReceiptFixture(t);
+      const after = JSON.parse(fs.readFileSync(f.afterFile, "utf8"));
+      if (changed === "sdk0-claim") after.sdkRequestsSent = 0;
+      if (changed === "foreign-owner")
+        after.owner = { ...f.owner, nonce: "foreign-owner" };
+      if (changed === "wrong-death-proof")
+        after.processDeathProof.sha256 = "0".repeat(64);
+      if (changed === "changed-before")
+        api.durable(f.beforeFile, { changed: true });
+      if (changed === "live-worker") {
+        const observe = api.priorProcessAlive;
+        t.mock.method(api, "priorProcessAlive", (value: unknown) =>
+          JSON.stringify(value) === JSON.stringify(f.worker)
+            ? true
+            : observe(value),
+        );
+      }
+      api.durable(f.afterFile, after);
+      if (changed === "pending-after") fs.unlinkSync(f.afterFile);
+      const marker = fs.readFileSync(path.join(f.dir, "broker.lock"));
+      assert.throws(() =>
+        abortUnstartedSuccessor(f.client, f.approvalFile, true, {
+          withdrawUnknown: true,
+          processDeathProofFile: f.proofFile,
+        }),
+      );
+      assert.deepEqual(
+        fs.readFileSync(path.join(f.dir, "broker.lock")),
+        marker,
+      );
+      assert.equal(fs.existsSync(path.join(f.audit, "abort-unstarted")), false);
+    },
+  );
+}
+
+test("SDK1 worker retirement CLI requires separate flags and has no caller ports seam", () => {
+  const script = path.join(repo, "scripts/abort-unstarted-successor.cjs");
+  for (const flag of [
+    "--preflight-retire-sdk1",
+    "--confirm-retire-sdk1-metadata-worker",
+  ]) {
+    const args = [
+      script,
+      "--approval",
+      "/missing-sdk1-original-approval",
+      "--sdk-process-death-proof",
+      "/missing-sdk1-process-proof",
+      flag,
+      "true",
+    ];
+    const accepted = spawnSync(process.execPath, args, { encoding: "utf8" });
+    assert.notEqual(accepted.status, 0);
+    assert.match(accepted.stderr, /ENOENT/);
+    assert.doesNotMatch(accepted.stderr, /Use --approval FILE/);
+    const injected = spawnSync(
+      process.execPath,
+      [...args, "--ports", "unsafe"],
+      { encoding: "utf8" },
+    );
+    assert.notEqual(injected.status, 0);
+    assert.match(injected.stderr, /Use --approval FILE/);
+  }
+});
+
+test("SDK0 restoration cannot borrow an SDK1 retirement journal", (t) => {
+  const f = readyFixture(t);
+  fs.mkdirSync(path.join(f.audit, "sdk1-worker-retirement"));
+  assert.throws(
+    () => abortUnstartedSuccessor(f.client, f.approvalFile, true),
+    /SDK1 retirement journal cannot qualify an SDK0 attempt/,
+  );
+  assert.equal(fs.existsSync(path.join(f.audit, "abort-unstarted")), false);
+});
+
 test("FAKE retirement protocol: preview has no effect, explicit effect appends before/after, restoration retains original unknown", async (t) => {
   const f = retirementFixture(t);
   const before = fs.readFileSync(f.authority.predecessor.rootState.path);

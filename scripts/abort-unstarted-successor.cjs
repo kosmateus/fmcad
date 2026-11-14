@@ -428,12 +428,16 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
             "worker.stdout.log",
             "worker.stderr.log",
             "dead-epoch-current-observation",
+            "sdk1-worker-retirement",
             "released-recovery.lock.json",
             "released-atomic-migration.lock.json",
             "abort-unstarted",
         ]);
         if (node_fs_1.default.readdirSync(audit).some((name) => !allowed.has(name)))
             fail("Unexpected SDK, scratch, pending or startup evidence forbids metadata-ready retirement");
+        if (node_fs_1.default.existsSync(node_path_1.default.join(audit, "sdk1-worker-retirement")) &&
+            read(node_path_1.default.join(observationDir, "result.json"))["sdkRequestsSent"] !== 1)
+            fail("SDK1 retirement journal cannot qualify an SDK0 attempt");
         const observation = observationDir;
         if (!node_fs_1.default.existsSync(observation))
             fail("Original successor observation journal required");
@@ -517,19 +521,33 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
             !(continuing && (0, node_util_1.isDeepStrictEqual)(active, previous)))
             fail("Active authority changed before metadata-ready retirement");
         const markerFile = node_path_1.default.join(root, "broker.lock"), marker = node_fs_1.default.existsSync(markerFile) ? read(markerFile) : null;
-        const retirementFile = node_path_1.default.join(abortDir, "retirement-after.json");
+        const retirementDirectory = sdkUnknown
+            ? node_path_1.default.join(audit, "sdk1-worker-retirement")
+            : abortDir;
+        const retirementFile = node_path_1.default.join(retirementDirectory, sdkUnknown ? "after.json" : "retirement-after.json");
+        if (sdkUnknown &&
+            node_fs_1.default.existsSync(retirementDirectory) &&
+            !node_fs_1.default.existsSync(retirementFile))
+            fail("SDK1 worker retirement outcome is pending; no withdrawal or signal replay");
         const retiredMetadataMarker = workerAlive === false &&
             (0, node_util_1.isDeepStrictEqual)(marker, owner) &&
             node_fs_1.default.existsSync(retirementFile);
         const retirementFacts = [];
         if (node_fs_1.default.existsSync(retirementFile)) {
-            const after = read(retirementFile), beforeFile = node_path_1.default.join(abortDir, "retirement-before.json"), startFile = node_path_1.default.join(abortDir, "retirement-effect-start.json");
-            if (after["kind"] !== "metadata-worker-retirement-complete" ||
+            const after = read(retirementFile), beforeFile = node_path_1.default.join(retirementDirectory, sdkUnknown ? "before.json" : "retirement-before.json"), startFile = node_path_1.default.join(retirementDirectory, sdkUnknown ? "effect-start.json" : "retirement-effect-start.json");
+            const exactRetirement = sdkUnknown
+                ? after["kind"] === "sdk1-metadata-worker-retirement-complete" &&
+                    after["status"] === "retired" &&
+                    after["sdkRequestsSent"] === 1 &&
+                    after["nativeOutcome"] === "unknown" &&
+                    (0, node_util_1.isDeepStrictEqual)(after["processDeathProof"], sdkUnknownProof)
+                : after["kind"] === "metadata-worker-retirement-complete" &&
+                    after["retired"] === true &&
+                    after["sdkRequestsSent"] === 0;
+            if (!exactRetirement ||
                 after["requestId"] !== requestId ||
                 after["clientId"] !== client.auth.clientId ||
                 !(0, node_util_1.isDeepStrictEqual)(after["owner"], owner) ||
-                after["retired"] !== true ||
-                after["sdkRequestsSent"] !== 0 ||
                 after["protectedBytesUnchanged"] !== true ||
                 after["historicalOutcome"] !== "unknown" ||
                 !(0, node_util_1.isDeepStrictEqual)(after["before"], ref(beforeFile)) ||
@@ -596,6 +614,8 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
         if (workerAlive !== false)
             fail("Exact metadata worker must be proven dead through a separately authorized retirement before apply");
         if (retiredMetadataMarker) {
+            node_fs_1.default.mkdirSync(abortDir, { recursive: true, mode: 0o700 });
+            files.directory(abortDir);
             files.exclusive(node_path_1.default.join(abortDir, "retired-metadata-owner.json"), owner);
             if (!(0, node_util_1.isDeepStrictEqual)(read(markerFile), owner) ||
                 api.priorProcessAlive(worker) !== false)
@@ -1068,13 +1088,21 @@ if (require.main === module) {
                 args[2] === "--sdk-process-death-proof" &&
                 ["--preflight-withdraw-unknown", "--confirm-withdraw-unknown"].includes(args[4]) &&
                 args[5] === "true";
+            const sdk1Retirement = args.length === 6 &&
+                args[2] === "--sdk-process-death-proof" &&
+                [
+                    "--preflight-retire-sdk1",
+                    "--confirm-retire-sdk1-metadata-worker",
+                ].includes(args[4]) &&
+                args[5] === "true";
             if (args[0] !== "--approval" ||
                 !(retirement ||
                     withdrawal ||
+                    sdk1Retirement ||
                     (args.length === 4 &&
                         ["--confirm-abort", "--preflight"].includes(args[2]) &&
                         args[3] === "true")))
-                fail("Use --approval FILE with --preflight true / --confirm-abort true, --sdk-process-death-proof FILE --preflight-withdraw-unknown true / --confirm-withdraw-unknown true, or --retirement-proof FILE --preflight-retirement true / --confirm-retire-metadata-worker true; no client/root overrides");
+                fail("Use --approval FILE with --preflight true / --confirm-abort true, --sdk-process-death-proof FILE --preflight-withdraw-unknown true / --confirm-withdraw-unknown true / --preflight-retire-sdk1 true / --confirm-retire-sdk1-metadata-worker true, or --retirement-proof FILE --preflight-retirement true / --confirm-retire-metadata-worker true; no client/root overrides");
             const file = node_fs_1.default.realpathSync(args[1]), approval = object(JSON.parse(node_fs_1.default.readFileSync(file, "utf8")));
             const load = (0, node_module_1.createRequire)(node_path_1.default.join(text(approval["candidateRoot"]), "src/queue-client.js"));
             const { QueueClient } = load("./queue-client");
@@ -1082,14 +1110,21 @@ if (require.main === module) {
                 existingCredentialsOnly: true,
             });
             try {
-                console.log(JSON.stringify(retirement
-                    ? await retireMetadataWorker(client, file, node_fs_1.default.realpathSync(args[3]), args[4] === "--confirm-retire-metadata-worker")
-                    : withdrawal
-                        ? abortUnstartedSuccessor(client, file, args[4] === "--confirm-withdraw-unknown", {
-                            withdrawUnknown: true,
-                            processDeathProofFile: node_fs_1.default.realpathSync(args[3]),
-                        })
-                        : abortUnstartedSuccessor(client, file, args[2] === "--confirm-abort"), null, 2));
+                // New recovery policy is always the qualified operator's own module,
+                // never an export retrofitted into the immutable predecessor runtime.
+                const sdk1 = sdk1Retirement
+                    ? (0, node_module_1.createRequire)(__filename)("../dist/src/dist/composition/queue-epoch-successor-retirement.js")
+                    : undefined;
+                console.log(JSON.stringify(sdk1
+                    ? await sdk1.retireSdk1MetadataWorker(client, file, node_fs_1.default.realpathSync(args[3]), args[4] === "--confirm-retire-sdk1-metadata-worker")
+                    : retirement
+                        ? await retireMetadataWorker(client, file, node_fs_1.default.realpathSync(args[3]), args[4] === "--confirm-retire-metadata-worker")
+                        : withdrawal
+                            ? abortUnstartedSuccessor(client, file, args[4] === "--confirm-withdraw-unknown", {
+                                withdrawUnknown: true,
+                                processDeathProofFile: node_fs_1.default.realpathSync(args[3]),
+                            })
+                            : abortUnstartedSuccessor(client, file, args[2] === "--confirm-abort"), null, 2));
             }
             finally {
                 client.dispose();
