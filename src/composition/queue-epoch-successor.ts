@@ -41,9 +41,12 @@ const {
 const { directory, fileHash, exclusive } = load(
   "./queue-atomic-migration-files",
 ) as typeof import("../../packages/node-adapters/src/persistence/migration-files");
-const { predecessorSnapshot, reference, epochLineage } = load(
-  "./queue-epoch-lineage",
-) as typeof import("../queue-epoch-lineage");
+const {
+  predecessorSnapshot,
+  reference,
+  epochLineage,
+  successorBackendIdentity,
+} = load("./queue-epoch-lineage") as typeof import("../queue-epoch-lineage");
 const { successionAuthority } = load("./queue-epoch-lineage") as {
   successionAuthority(root: string, entry: Reference): Checked;
 };
@@ -64,6 +67,40 @@ const read = <T>(file: string): T => readJson(file, 256 * 1024 * 1024) as T;
 const exists = <T>(file: string): T | null =>
   fs.existsSync(file) ? read<T>(file) : null;
 export function assertSuccessorApproval(value: Inspection, approval: Approval) {
+  let effectiveIdentity = value.identity;
+  if (value.backendTransition) {
+    if (
+      !approval.physicalBackendHead ||
+      approval.physicalBackendHead.path !==
+        path.join(value.root, "physical-backend-head.json") ||
+      approval.physicalBackendHead.sha256 !==
+        value.backendTransition.head.sha256 ||
+      !same(
+        reference(approval.physicalBackendHead.path),
+        approval.physicalBackendHead,
+      )
+    )
+      fail(
+        "EPOCH_SUCCESSOR_FENCE_CHANGED",
+        "Exact owner-approved physical backend head required",
+      );
+    effectiveIdentity = successorBackendIdentity(
+      value.root,
+      value.pointer,
+      value.snapshot,
+      value.backendTransition,
+      value.previousOwner,
+      value.configHash,
+    );
+  } else if (
+    approval.physicalBackendHead ||
+    value.rootIdentity.configHash !== value.configHash
+  ) {
+    fail(
+      "EPOCH_SUCCESSOR_FENCE_CHANGED",
+      "Original root configuration or explicit backend transition proof required",
+    );
+  }
   if (
     approval.version !== 1 ||
     approval.purpose !== "dead-isolated-epoch-successor-v1" ||
@@ -77,7 +114,7 @@ export function assertSuccessorApproval(value: Inspection, approval: Approval) {
     approval.pointerHash !== value.snapshot.pointer.sha256 ||
     !same(approval.previousOwner, value.previousOwner) ||
     !same(value.previousLifecycle?.owner, value.previousOwner) ||
-    value.previousLifecycle.buildHash !== value.identity.buildHash ||
+    value.previousLifecycle.buildHash !== effectiveIdentity.buildHash ||
     value.previousLifecycle.configHash !== value.configHash ||
     !["ready", "recovery"].includes(value.previousLifecycle.stage) ||
     approval.stateHash !== value.snapshot.state.sha256 ||
@@ -92,8 +129,7 @@ export function assertSuccessorApproval(value: Inspection, approval: Approval) {
     approval.expectedProcess.pid <= 0 ||
     typeof approval.expectedProcess.birth !== "string" ||
     !approval.expectedProcess.birth ||
-    value.identity.configHash !== value.configHash ||
-    value.rootIdentity.configHash !== value.configHash ||
+    effectiveIdentity.configHash !== value.configHash ||
     value.previousBrokerAlive !== false ||
     value.previousProcessAlive !== false ||
     value.originalProcessAlive !== false ||
@@ -205,6 +241,26 @@ export function inspectSuccessor(
       path.join(pointer.root, "queue-state.pending.json"),
     ].some(fs.existsSync),
   };
+  const effectiveBackend = (
+    load(
+      "./queue-backend-transition",
+    ) as typeof import("../queue-backend-transition")
+  ).backendHead(root);
+  if (effectiveBackend) {
+    value.backendTransition = {
+      head: reference(
+        path.join(
+          root,
+          "physical-backend-transitions",
+          effectiveBackend.head.requestId,
+          "transition.json",
+        ),
+      ),
+      lifecycle: reference(
+        path.join(root, "broker-lifecycle-" + previousOwner.nonce + ".json"),
+      ),
+    };
+  }
   assertSuccessorApproval(value, approval);
   epochLineage(root, pointer);
   for (const name of ["fusion-reset.lock", "autostart.lock"])
@@ -498,6 +554,9 @@ export async function bootstrapSuccessor(
       qualification,
       permission: "one-proven-new-document-only",
       historicalOutcome: "unknown",
+      ...(value.backendTransition
+        ? { backendTransition: value.backendTransition }
+        : {}),
     });
   }
   const authorityEntry = reference(authorityFile);

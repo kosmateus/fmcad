@@ -23,6 +23,15 @@ export interface Reference {
   path: string;
   sha256: string;
 }
+export interface BackendTransitionProof {
+  head: Reference;
+  lifecycle: Reference;
+}
+export interface EffectivePredecessorIdentity {
+  buildHash: string;
+  configHash: string;
+  instance: { pid: number; birth: string; version: string };
+}
 export interface EpochPointer {
   root: string;
   epochId: string;
@@ -64,6 +73,7 @@ export interface SuccessionAuthority {
   qualification: Reference;
   closedEpochProof?: Reference;
   expectedProcess?: { pid: number; birth: string };
+  backendTransition?: BackendTransitionProof;
   [key: string]: unknown;
 }
 function object(value: unknown): value is Record<string, unknown> {
@@ -275,6 +285,218 @@ export function predecessorSnapshot(
 export function successionAuthority(root: string, entry: Reference) {
   return readSuccessionAuthority(root, entry, verified);
 }
+
+/** Verify the preserved physical transition, never substitute scalar identity
+ * fields. Historical pointer references resolve to the authenticated archive,
+ * so publication of a new epoch cannot retarget an old SDK request. */
+export function successorBackendIdentity(
+  root: string,
+  pointer: EpochPointer,
+  snapshot: SuccessionAuthority["predecessor"],
+  proof: BackendTransitionProof,
+  previousOwner: unknown,
+  configHash: string,
+  read: typeof verified = verified,
+): EffectivePredecessorIdentity {
+  const identity = record(
+    read(snapshot.identity, path.join(pointer.root, "instance.json")),
+  );
+  const rootIdentity = record(
+    read(snapshot.rootIdentity, path.join(root, "instance.json")),
+  );
+  const livePointer = path.join(root, "isolated-admission-epoch.json");
+  const pointerRef = fs.existsSync(snapshot.pointer.path)
+    ? snapshot.pointer
+    : { path: livePointer, sha256: snapshot.pointer.sha256 };
+  const anchors = [
+    snapshot.identity,
+    snapshot.rootIdentity,
+    { path: livePointer, sha256: snapshot.pointer.sha256 },
+  ];
+  const config = (value: unknown) => {
+    const result = { ...record(value) };
+    for (const key of ["backend", "url", "headers", "tool", "protocolVersion"])
+      delete result[key];
+    return digest(result);
+  };
+  const { brokerConfigHash } = load("./queue-instance") as {
+    brokerConfigHash(value: unknown): string;
+  };
+  const sameProcess = (value: unknown) => {
+    const process = record(value);
+    return ["pid", "birth", "version"].every(
+      (key) => process[key] === record(pointer.currentInstance)[key],
+    );
+  };
+  const visit = (
+    entry: Reference,
+    depth: number,
+  ): EffectivePredecessorIdentity => {
+    if (depth >= 32) fail("Physical backend lineage bound exceeded");
+    const head = record(read(entry, entry.path));
+    const requestId = head["requestId"];
+    if (
+      typeof requestId !== "string" ||
+      !/^[a-zA-Z0-9_-]{1,128}$/.test(requestId)
+    )
+      fail("Invalid predecessor backend request");
+    const destination = path.join(
+      root,
+      "physical-backend-transitions",
+      requestId,
+    );
+    if (
+      entry.path !== path.join(destination, "transition.json") ||
+      head["version"] !== 1 ||
+      head["kind"] !== "owner-bound-physical-backend-transition" ||
+      head["epochId"] !== pointer.epochId ||
+      head["ownerClientId"] !== pointer.ownerClientId ||
+      head["ownerTokenHash"] !== pointer.ownerTokenHash ||
+      !references(head["predecessor"]) ||
+      !references(head["observation"]) ||
+      !referenceValue(head["identity"])
+    )
+      fail("Physical backend owner, epoch or namespace changed");
+    const refs = head["predecessor"];
+    for (const anchor of anchors)
+      if (
+        !refs.some(
+          (ref) => ref.path === anchor.path && ref.sha256 === anchor.sha256,
+        )
+      )
+        fail("Physical backend lineage omits an immutable root/epoch anchor");
+    for (const ref of [...refs, ...head["observation"]]) {
+      if (!ref.path.startsWith(root + path.sep))
+        fail("Physical backend evidence escaped its queue");
+      if (ref.path === livePointer) {
+        if (ref.sha256 !== pointerRef.sha256)
+          fail("Physical backend pointer changed");
+        read(pointerRef, pointerRef.path);
+      } else read(ref, ref.path);
+    }
+    const effective = record(
+      read(head["identity"], path.join(destination, "instance.json")),
+    );
+    const previousConfig = record(head["previousConfig"]),
+      nextConfig = record(head["nextConfig"]);
+    if (
+      brokerConfigHash(previousConfig) !== head["previousConfigHash"] ||
+      brokerConfigHash(nextConfig) !== head["nextConfigHash"] ||
+      effective["configHash"] !== head["nextConfigHash"] ||
+      !/^[a-f0-9]{64}$/.test(String(effective["buildHash"])) ||
+      !sameProcess(effective["instance"]) ||
+      !["addin", "mcp"].includes(String(previousConfig["backend"])) ||
+      !["addin", "mcp"].includes(String(nextConfig["backend"])) ||
+      previousConfig["backend"] === nextConfig["backend"] ||
+      config(previousConfig) !== config(nextConfig)
+    )
+      fail("Physical backend configuration, build or SDK identity changed");
+    const escrow = refs.find(
+      (ref) => ref.path === path.join(destination, "predecessor-head.json"),
+    );
+    if (escrow) {
+      const priorHead = record(read(escrow, escrow.path));
+      const prior = visit(
+        {
+          path: path.join(
+            root,
+            "physical-backend-transitions",
+            String(priorHead["requestId"]),
+            "transition.json",
+          ),
+          sha256: escrow.sha256,
+        },
+        depth + 1,
+      );
+      if (
+        head["previousConfigHash"] !== prior.configHash ||
+        !refs.some(
+          (ref) =>
+            ref.path === record(priorHead["identity"])["path"] &&
+            ref.sha256 === record(priorHead["identity"])["sha256"],
+        )
+      )
+        fail("Physical backend predecessor identity/configuration changed");
+    } else if (
+      head["previousConfigHash"] !== identity["configHash"] ||
+      identity["configHash"] !== rootIdentity["configHash"]
+    )
+      fail(
+        "Physical backend genesis differs from immutable root/epoch identity",
+      );
+    if (
+      !head["observation"].some((ref) => {
+        if (!/^broker-startup-.*\.receipt\.json$/.test(path.basename(ref.path)))
+          return false;
+        const receipt = record(read(ref, ref.path));
+        return (
+          receipt["terminal"] === true &&
+          receipt["outcome"] === "succeeded" &&
+          receipt["stage"] === "startup" &&
+          receipt["buildHash"] === effective["buildHash"] &&
+          ref.path ===
+            path.join(
+              root,
+              `broker-startup-${String(receipt["brokerNonce"])}.receipt.json`,
+            ) &&
+          sameProcess(receipt["instance"]) &&
+          sameProcess(receipt["auditExpectedInstance"])
+        );
+      })
+    )
+      fail("Physical backend lacks its original terminal startup observation");
+    const instance = record(effective["instance"]);
+    if (
+      typeof effective["buildHash"] !== "string" ||
+      typeof effective["configHash"] !== "string" ||
+      typeof instance["pid"] !== "number" ||
+      typeof instance["birth"] !== "string" ||
+      typeof instance["version"] !== "string"
+    )
+      fail("Physical backend has no complete SDK process identity");
+    return {
+      buildHash: effective["buildHash"],
+      configHash: effective["configHash"],
+      instance: {
+        pid: instance["pid"],
+        birth: instance["birth"],
+        version: instance["version"],
+      },
+    };
+  };
+  const effective = visit(proof.head, 0);
+  const owner = record(previousOwner);
+  const lifecycle = record(
+    read(
+      proof.lifecycle,
+      path.join(root, `broker-lifecycle-${String(owner["nonce"])}.json`),
+    ),
+  );
+  const head = record(read(proof.head, proof.head.path));
+  const receiptPath = path.join(
+    root,
+    `broker-startup-${String(owner["nonce"])}.receipt.json`,
+  );
+  const receiptRef = (head["observation"] as Reference[]).find(
+    (ref) => ref.path === receiptPath,
+  );
+  const receipt = receiptRef && record(read(receiptRef, receiptPath));
+  if (
+    digest(lifecycle["owner"]) !== digest(previousOwner) ||
+    lifecycle["buildHash"] !== effective.buildHash ||
+    lifecycle["configHash"] !== effective.configHash ||
+    !["ready", "recovery"].includes(String(lifecycle["stage"])) ||
+    effective.configHash !== configHash ||
+    !receipt ||
+    receipt["brokerNonce"] !== owner["nonce"] ||
+    receipt["ownerPid"] !== owner["pid"] ||
+    receipt["ownerBirth"] !== owner["birth"]
+  )
+    fail(
+      "Physical backend lifecycle differs from the original broker owner/config/build",
+    );
+  return effective;
+}
 function readSuccessionAuthority(
   root: string,
   entry: Reference,
@@ -347,6 +569,34 @@ function readSuccessionAuthority(
   )
     fail("Predecessor history, grants or qualification changed");
   for (const proof of snapshot.qualification) read(proof, proof.path);
+  let effectiveIdentity: EffectivePredecessorIdentity | undefined;
+  if (authority.backendTransition) {
+    effectiveIdentity = successorBackendIdentity(
+      root,
+      pointer,
+      snapshot,
+      authority.backendTransition,
+      authority["previousOwner"],
+      String(authority["configHash"]),
+      read,
+    );
+  } else if (!closedSuccessor) {
+    const headFile = path.join(root, "physical-backend-head.json");
+    const head = fs.existsSync(headFile)
+      ? record(
+          JSON.parse(
+            readBytes(headFile, limit, fs, headFile).toString("utf8"),
+          ) as unknown,
+        )
+      : null;
+    if (
+      authority["configHash"] !== identity["configHash"] ||
+      head?.["epochId"] === pointer.epochId
+    )
+      fail(
+        "Changed predecessor backend requires immutable transition evidence",
+      );
+  }
   if (closedSuccessor) {
     (
       load("./queue-closed-epoch-proof") as {
@@ -384,7 +634,14 @@ function readSuccessionAuthority(
     fail(
       "Successor runtime has no pinned installed production-checker qualification",
     );
-  return { authority, audit, pointer, state, identity };
+  return {
+    authority,
+    audit,
+    pointer,
+    state,
+    identity,
+    ...(effectiveIdentity ? { effectiveIdentity } : {}),
+  };
 }
 export function epochLineage(root: string, pointer: EpochPointer) {
   const read = traversalReader();

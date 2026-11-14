@@ -23,6 +23,333 @@ const { openIsolatedEpoch, isolatedEpochDirectory } = load(
 const { assertSuccessorApproval, assertCurrentPredecessor } = load(
   "../src/queue-epoch-successor",
 ) as typeof import("../src/composition/queue-epoch-successor");
+const { inspectSuccessor } = load(
+  "../src/queue-epoch-successor",
+) as typeof import("../src/composition/queue-epoch-successor");
+
+function backendFixture(t: TestContext) {
+  t.after((load("./fixtures/fake-wsl-platform.cjs") as () => () => void)());
+  const base = fs.mkdtempSync("/tmp/opencode/backend-successor-");
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  return (
+    load("./fixtures/backend-successor.cjs") as (
+      base: string,
+      repo: string,
+    ) => DeadEpochFixture & {
+      client: Parameters<typeof inspectSuccessor>[0];
+      approvalFile: string;
+      headFile: string;
+      transition: string;
+      receiptFile: string;
+      lifecycleFile: string;
+      effectiveIdentity: { buildHash: string; configHash: string };
+      inverse(): {
+        cfg: DeadEpochFixture["cfg"];
+        identity: { buildHash: string; configHash: string };
+      };
+      publish(): {
+        pointer: DeadEpochFixture["pointer"];
+        entry: DeadEpochFixture["authorityEntry"];
+        identity: DeadEpochFixture["identity"];
+        authority: DeadEpochFixture["authority"];
+      };
+    }
+  )(base, repository);
+}
+
+function changeBackendHead(
+  f: ReturnType<typeof backendFixture>,
+  change: (head: Record<string, unknown>) => void,
+) {
+  const head: unknown = api.readJson(f.headFile);
+  assert.ok(head && typeof head === "object" && !Array.isArray(head));
+  change(head as Record<string, unknown>);
+  api.durable(f.headFile, head);
+  api.durable(path.join(f.transition, "transition.json"), head);
+  api.durable(f.approvalFile, {
+    ...f.approval,
+    physicalBackendHead: lineage.reference(f.headFile),
+  });
+}
+
+test("FAKE backend succession: verified effective head permits cold inspection while original unknown/history stay immutable", (t) => {
+  const f = backendFixture(t);
+  const files = [
+    path.join(f.dir, "queue-state.json"),
+    path.join(f.inspection.pointer.root, "queue-state.json"),
+    path.join(f.dir, "instance.json"),
+    path.join(f.inspection.pointer.root, "instance.json"),
+    path.join(f.dir, "isolated-admission-epoch.json"),
+    f.headFile,
+  ];
+  const before = files.map((file) => fs.readFileSync(file));
+  const inspection = inspectSuccessor(
+    f.client,
+    f.cfg,
+    f.approvalFile,
+    f.requestId,
+  );
+  assert.equal(inspection.identity.buildHash, f.inspection.identity.buildHash);
+  assert.equal(
+    inspection.previousLifecycle.buildHash,
+    f.effectiveIdentity.buildHash,
+  );
+  assert.equal(inspection.previousProcessAlive, false);
+  for (const [index, file] of files.entries())
+    assert.deepEqual(fs.readFileSync(file), before[index]);
+  assert.equal(
+    openIsolatedEpoch(f.dir, { recover: false }).lookup(f.priorJob.id)!.state,
+    "running",
+  );
+});
+
+test("FAKE backend succession: published lineage reopens against archived pointer and preserves old SDK/history", (t) => {
+  const f = backendFixture(t);
+  const protectedFiles = [
+    path.join(f.inspection.pointer.root, "instance.json"),
+    path.join(f.inspection.pointer.root, "queue-state.json"),
+    path.join(f.dir, "instance.json"),
+    path.join(f.dir, "queue-state.json"),
+    f.headFile,
+    f.lifecycleFile,
+    f.receiptFile,
+  ];
+  const before = protectedFiles.map((file) => fs.readFileSync(file));
+  const published = f.publish();
+  const ancestry = lineage.epochLineage(f.dir, { ...published.pointer });
+  assert.equal(
+    ancestry[0]!.effectiveIdentity!.buildHash,
+    f.effectiveIdentity.buildHash,
+  );
+  assert.equal(
+    ancestry[0]!.effectiveIdentity!.configHash,
+    f.effectiveIdentity.configHash,
+  );
+  assert.deepEqual(ancestry[0]!.effectiveIdentity!.instance, {
+    pid: f.inspection.pointer.currentInstance.pid,
+    birth: f.inspection.pointer.currentInstance.birth,
+    version: f.inspection.pointer.currentInstance.version,
+  });
+  assert.equal(ancestry[0]!.authority.historicalOutcome, "unknown");
+  assert.equal(
+    ancestry[0]!.identity["buildHash"],
+    f.inspection.identity.buildHash,
+  );
+  const reopened = openIsolatedEpoch(f.dir, { recover: false });
+  assert.equal(reopened.status(f.priorJob.id)["quarantined"], true);
+  assert.equal(reopened.status(f.priorJob.id)["state"], "running");
+  assert.throws(() => reopened.submit(f.priorJob.request), {
+    code: "HISTORICAL_REQUEST_QUARANTINED",
+  });
+  assert.throws(() => reopened.resolve(f.priorJob.id, { state: "succeeded" }), {
+    code: "INSTANCE_HISTORY_QUARANTINED",
+  });
+  for (const [index, file] of protectedFiles.entries())
+    assert.deepEqual(fs.readFileSync(file), before[index]);
+  const checked = assertCurrentPredecessor(f.dir, published.entry, {
+    allowPublished: true,
+  });
+  assert.deepEqual(checked.effectiveIdentity, ancestry[0]!.effectiveIdentity);
+  fs.appendFileSync(f.lifecycleFile, " ");
+  assert.throws(() => lineage.epochLineage(f.dir, { ...published.pointer }), {
+    code: "EPOCH_LINEAGE_INVALID",
+  });
+});
+
+for (const [name, mutate] of [
+  [
+    "missing explicit approval pin",
+    (f) => {
+      const approval = { ...f.approval };
+      delete approval.physicalBackendHead;
+      api.durable(f.approvalFile, approval);
+    },
+  ],
+  [
+    "foreign owner",
+    (f) => {
+      f.client.auth.clientId = "foreign";
+    },
+  ],
+  [
+    "changed head",
+    (f) => {
+      fs.appendFileSync(f.headFile, " ");
+    },
+  ],
+  [
+    "changed startup receipt",
+    (f) => {
+      fs.appendFileSync(f.receiptFile, " ");
+    },
+  ],
+  [
+    "changed lifecycle",
+    (f) => {
+      const value = api.readJson(f.lifecycleFile);
+      assert.ok(value && typeof value === "object");
+      api.durable(f.lifecycleFile, { ...value, buildHash: "a".repeat(64) });
+    },
+  ],
+  [
+    "wrong selected process birth",
+    (f) => {
+      api.durable(f.approvalFile, {
+        ...f.approval,
+        expectedProcess: { pid: process.pid, birth: "wrong" },
+      });
+    },
+  ],
+  [
+    "wrong candidate build",
+    (f) => {
+      api.durable(f.approvalFile, { ...f.approval, buildHash: "a".repeat(64) });
+    },
+  ],
+  [
+    "wrong approved head reference",
+    (f) => {
+      api.durable(f.approvalFile, {
+        ...f.approval,
+        physicalBackendHead: lineage.reference(f.lifecycleFile),
+      });
+    },
+  ],
+  [
+    "self-consistent foreign head owner",
+    (f) => {
+      changeBackendHead(f, (head) => {
+        head["ownerClientId"] = "foreign";
+      });
+    },
+  ],
+  [
+    "self-consistent foreign head epoch",
+    (f) => {
+      changeBackendHead(f, (head) => {
+        head["epochId"] = "foreign-epoch";
+      });
+    },
+  ],
+  [
+    "self-consistent omitted root anchor",
+    (f) => {
+      changeBackendHead(f, (head) => {
+        head["predecessor"] = (
+          head["predecessor"] as Array<{ path: string }>
+        ).filter((ref) => ref.path !== path.join(f.dir, "instance.json"));
+      });
+    },
+  ],
+  [
+    "self-consistent wrong genesis config",
+    (f) => {
+      changeBackendHead(f, (head) => {
+        const previous = { ...f.cfg, backend: "addin", timeoutMs: 34567 };
+        head["previousConfig"] = previous;
+        head["previousConfigHash"] = api.brokerConfigHash(previous);
+      });
+    },
+  ],
+  [
+    "self-consistent missing observation",
+    (f) => {
+      changeBackendHead(f, (head) => {
+        head["observation"] = [];
+      });
+    },
+  ],
+  [
+    "self-consistent foreign SDK birth",
+    (f) => {
+      const file = path.join(f.transition, "instance.json");
+      const identity = {
+        ...f.effectiveIdentity,
+        instance: {
+          ...f.inspection.pointer.currentInstance,
+          birth: "foreign-sdk",
+        },
+      };
+      api.durable(file, identity);
+      changeBackendHead(f, (head) => {
+        head["identity"] = lineage.reference(file);
+      });
+    },
+  ],
+] satisfies ReadonlyArray<
+  readonly [string, (f: ReturnType<typeof backendFixture>) => void]
+>)
+  test(
+    "FAKE backend succession refuses " + name + " without any SDK authority",
+    (t) => {
+      const f = backendFixture(t);
+      mutate(f);
+      assert.throws(() =>
+        inspectSuccessor(f.client, f.cfg, f.approvalFile, f.requestId),
+      );
+    },
+  );
+
+for (const observation of [true, null] as const)
+  test(
+    "FAKE backend succession: unresolved SDK process proof " +
+      observation +
+      " cannot authorize preserved unknown",
+    (t) => {
+      const f = backendFixture(t);
+      const inspection = inspectSuccessor(
+        f.client,
+        f.cfg,
+        f.approvalFile,
+        f.requestId,
+      );
+      inspection.previousProcessAlive = observation;
+      assert.throws(() => assertSuccessorApproval(inspection, f.approval), {
+        code: "EPOCH_SUCCESSOR_FENCE_CHANGED",
+      });
+      inspection.previousProcessAlive = false;
+      inspection.originalProcessAlive = observation;
+      assert.throws(() => assertSuccessorApproval(inspection, f.approval), {
+        code: "EPOCH_SUCCESSOR_FENCE_CHANGED",
+      });
+    },
+  );
+
+test("FAKE backend succession: removing persisted transition proof cannot turn effective backend into legacy", (t) => {
+  const f = backendFixture(t),
+    published = f.publish();
+  const authority = { ...published.authority };
+  delete authority.backendTransition;
+  api.durable(published.entry.path, authority);
+  assert.throws(
+    () =>
+      lineage.successionAuthority(
+        f.dir,
+        lineage.reference(published.entry.path),
+      ),
+    { code: "EPOCH_LINEAGE_INVALID" },
+  );
+});
+
+test("FAKE backend succession: inverse transition verifies its entire escrowed predecessor chain", (t) => {
+  const f = backendFixture(t),
+    inverse = f.inverse();
+  const inspection = inspectSuccessor(
+    f.client,
+    inverse.cfg,
+    f.approvalFile,
+    f.requestId,
+  );
+  assert.equal(
+    inspection.previousLifecycle.buildHash,
+    inverse.identity.buildHash,
+  );
+  assert.equal(inspection.configHash, f.inspection.identity.configHash);
+  fs.appendFileSync(path.join(f.transition, "transition.json"), " ");
+  assert.throws(() =>
+    inspectSuccessor(f.client, inverse.cfg, f.approvalFile, f.requestId),
+  );
+});
 
 function fixture(
   t: TestContext,

@@ -2,6 +2,8 @@ import type {
   EpochPointer,
   SuccessionAuthority,
   Reference,
+  BackendTransitionProof,
+  EffectivePredecessorIdentity,
 } from "../queue-epoch-lineage";
 export type { Reference };
 export interface Process {
@@ -32,6 +34,7 @@ export interface Checked {
   pointer: Pointer;
   state: unknown;
   identity: Record<string, unknown>;
+  effectiveIdentity?: EffectivePredecessorIdentity;
 }
 export interface Approval {
   version: number;
@@ -50,6 +53,7 @@ export interface Approval {
   sourceCommit: string;
   expectedProcess: Process;
   qualification: Reference;
+  physicalBackendHead?: Reference;
 }
 export interface Qualification {
   passed?: boolean;
@@ -90,6 +94,7 @@ export interface Inspection {
     stage: string;
   };
   pending: boolean;
+  backendTransition?: BackendTransitionProof;
 }
 export interface Client {
   dir: string;
