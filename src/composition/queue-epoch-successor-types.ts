@@ -158,6 +158,7 @@ export interface Sdk1SdkProcessObservation {
   birth?: string;
 }
 export interface Sdk1MetadataWorkerProcessResult {
+  frozen?: boolean;
   process: NonNullable<Sdk1MetadataWorkerProcess["processProof"]>;
   retired: boolean;
   interpreter?: { path: string; sha256: string; version: string };

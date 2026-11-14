@@ -26,7 +26,7 @@ const exactSdkProcessAbsentErrorId =
 const sdk1SourceCommit = "9bec03576d0464f403c2ab4101a94df92706f3f2";
 const sdk1BuildHash =
   "93045c4085916e9f76d540b307d78c0cb6b2baa4d27e8b481bb919e0fb14bb33";
-const metadataWorkerRetirementPidfdProgram = `import os,sys,json,hashlib,signal,select
+const metadataWorkerRetirementPidfdProgram = `import os,sys,json,hashlib,signal,select,time
 def require(condition,message='metadata retirement proof refused'):
  if not condition: raise RuntimeError(message)
 p=json.load(sys.stdin); owner=p['owner']; pid=owner['pid']; base='/proc/'+str(pid)
@@ -35,15 +35,20 @@ require(hasattr(os,'pidfd_open') and hasattr(signal,'pidfd_send_signal'))
 fd=os.pidfd_open(pid)
 def digest(file):
  with open(file,'rb') as f: return hashlib.sha256(f.read()).hexdigest()
-def verify():
+def verify(stopped=False):
  stat=open(base+'/stat').read(); tail=stat[stat.rfind(')')+2:].split()
  birth=open('/proc/sys/kernel/random/boot_id').read().strip()+':'+tail[19]
  require(birth==owner['birth'] and tail[0]!='Z')
+ if p.get('freeze',False) and not stopped: require(tail[0] not in ['T','t'],'previous freeze outcome must be inspected')
+ if stopped: require(tail[0]=='T')
  exe=os.path.realpath(base+'/exe'); cmd=open(base+'/cmdline','rb').read().split(b'\\0')
  require(cmd[-1]==b''); cmd=[v.decode() for v in cmd[:-1]]
  require(cmd==[exe,p['runtime']+'/src/queue-epoch-successor-worker.js'])
  children={task:open(base+'/task/'+task+'/children').read().split() for task in os.listdir(base+'/task')}
  require(not any(children.values()))
+ if stopped:
+  for task in children:
+   row=open(base+'/task/'+task+'/stat').read(); require(row[row.rfind(')')+2:].split()[0]=='T')
  sockets={}; stdin=None
  for name in os.listdir(base+'/fd'):
   link=os.readlink(base+'/fd/'+name)
@@ -61,9 +66,22 @@ def verify():
    rows.append(line)
  require(len(rows)==len(sockets))
  for ref in p['refs']: require(digest(ref['path'])==ref['sha256'])
+ for directory in p.get('inventory',[]): require(sorted(os.listdir(directory['path']))==directory['entries'])
  return {'pid':pid,'birth':birth,'exe':exe,'exeSha256':digest(exe),'cmdline':cmd,'childrenByTask':children,'socketRows':rows}
-before=verify()
-if p['apply']:
+before=verify(p.get('stopped',False))
+if p.get('freeze',False):
+ require(before==p['expectedProcess'])
+ signal.pidfd_send_signal(fd,signal.SIGSTOP)
+ deadline=time.monotonic()+5
+ while True:
+  stopped=True
+  for task in os.listdir(base+'/task'):
+   stat=open(base+'/task/'+task+'/stat').read(); stopped=stopped and stat[stat.rfind(')')+2:].split()[0]=='T'
+  if stopped: break
+  require(time.monotonic()<deadline,'freeze outcome pending'); time.sleep(.01)
+ frozen=verify(True)
+ print(json.dumps({'process':frozen,'retired':False,'frozen':True,'mechanism':'pidfd_send_signal:SIGSTOP'}))
+elif p['apply']:
  require(before==p['expectedProcess'])
  signal.pidfd_send_signal(fd,signal.SIGKILL)
  poll=select.poll(); poll.register(fd,select.POLLIN); require(poll.poll(30000),'retirement outcome pending')
@@ -182,12 +200,14 @@ function defaultCertify(
   if (api.buildHash(runtime) !== sdk1BuildHash)
     fail("Pinned SDK1 runtime bytes changed");
 }
-function defaultProcess(
+export function inspectMetadataWorkerProcess(
   owner: Sdk1MetadataWorkerProcess,
   runtime: string,
   refs: Reference[],
   apply: boolean,
   root: string,
+  inventory: Array<{ path: string; entries: string[] }> = [],
+  phase: "inspect" | "freeze" | "retire-frozen" = "inspect",
 ): Sdk1MetadataWorkerProcessResult {
   const input: Data = {
     owner,
@@ -195,7 +215,12 @@ function defaultProcess(
     refs,
     apply,
     root,
-    ...(apply ? { expectedProcess: owner.processProof } : {}),
+    inventory,
+    freeze: phase === "freeze",
+    stopped: phase === "retire-frozen",
+    ...(apply || phase === "freeze"
+      ? { expectedProcess: owner.processProof }
+      : {}),
   };
   const interpreterPath = fs.realpathSync("/usr/bin/python3"),
     version = spawnSync(interpreterPath, ["-I", "--version"], {
@@ -211,7 +236,10 @@ function defaultProcess(
       .digest("hex"),
     version: (version.stdout || version.stderr).trim(),
   };
-  if (apply && !same(owner.interpreterProof, interpreter))
+  if (
+    (apply || phase === "freeze") &&
+    !same(owner.interpreterProof, interpreter)
+  )
     fail("Retirement interpreter changed before pidfd effect");
   input["refs"] = [
     ...refs,
@@ -234,13 +262,14 @@ function defaultProcess(
   const output = object(JSON.parse(result.stdout)) as unknown as {
     process: NonNullable<Sdk1MetadataWorkerProcess["processProof"]>;
     retired: boolean;
+    frozen?: boolean;
   };
   return { ...output, interpreter };
 }
 const defaultPorts: Sdk1MetadataWorkerRetirementPorts = {
   certify: defaultCertify,
   deathQuery: defaultDeathQuery,
-  process: defaultProcess,
+  process: inspectMetadataWorkerProcess,
 };
 
 interface CheckedAttempt {
