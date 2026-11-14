@@ -14,6 +14,9 @@ const { hash, fusionPath } = load("./queue-instance") as {
 const { hash: canonicalHash } = load(
   "./dist/core/application/cad/json",
 ) as typeof import("../packages/core/src/application/cad/json");
+const { auditOutputText } = load(
+  "./dist/core/application/cad/recovery-audit",
+) as typeof import("../packages/core/src/application/cad/recovery-audit");
 function fail(message: string): never {
   throw Object.assign(new Error(message), {
     code: "SCRATCH_QUALIFICATION_INVALID",
@@ -124,21 +127,7 @@ def run(_context: str) -> None:
 }
 
 function resultValue(reply: unknown): Record<string, unknown> {
-  const content = object(object(reply)["result"])["content"];
-  let text: unknown = Array.isArray(content)
-    ? content.find((row: unknown) => object(row)["type"] === "text")
-    : undefined;
-  text = object(text)["text"];
-  if (typeof text !== "string" || Buffer.byteLength(text) > 32768)
-    fail("No bounded scratch result");
-  try {
-    const wrapped: unknown = JSON.parse(text);
-    if (typeof object(wrapped)["stdout"] === "string")
-      text = object(wrapped)["stdout"];
-  } catch {
-    /* Plain line. */
-  }
-  if (typeof text !== "string") fail("No bounded scratch result");
+  const text = auditOutputText(reply);
   try {
     const line = text
       .split(/\r?\n/)

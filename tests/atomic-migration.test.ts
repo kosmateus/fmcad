@@ -1629,7 +1629,13 @@ for (const mode of [
   "complete",
   "creation-unknown",
   "creation-forged-id",
+  "creation-native-false",
+  "creation-native-nested",
+  "creation-native-foreign-marker",
+  "creation-binding-mismatch",
   "close-unknown",
+  "close-native-malformed",
+  "close-native-duplicate",
 ])
   test(
     "real broker isolated scratch preserves history and forbids replay: " +
@@ -1688,12 +1694,19 @@ for (const mode of [
             {version:1,purpose:'isolated-scratch-epoch-v1',epochId:binding.epochId,bindingHash:canonicalHash(binding),document,
             independent:true,empty:true,unsaved:true,activeCommand:'SelectCommand',beforeIdsHash:'a'.repeat(64),historicalOutcome:'unknown',
             originalModelValidation:'not_performed',originalRollbackVerification:'not_performed'};
+          const responseSummary=mode==='creation-native-foreign-marker'&&!closing?{...summary,purpose:'atomic-recovery-audit-v1'}:
+            mode==='creation-binding-mismatch'&&!closing?{...summary,bindingHash:'f'.repeat(64)}:summary;
+          const message='FMCAD_RESULT '+JSON.stringify(responseSummary);
+          const text=mode==='creation-native-false'&&!closing?JSON.stringify({success:false,message}):
+            mode==='close-native-malformed'&&closing?'{"success":true,"message":':
+            mode==='creation-native-nested'&&!closing?JSON.stringify({success:true,message:JSON.stringify({success:true,message})}):
+            mode==='close-native-duplicate'&&closing?message+'\\n'+message:JSON.stringify({success:true,message});
           durable(binding.sdkProofPath,summary,true);
           durable(start.receipt,{...start.binding,terminal:true,outcome:'succeeded',instance:expected},true);
           if(closing)close++;else creation++;
           if((mode==='creation-unknown'&&!closing)||(mode==='close-unknown'&&closing))
             throw Object.assign(new Error('fixture lost reply after SDK effect'),{code:'ECONNRESET'});
-          return {status:200,raw:JSON.stringify({jsonrpc:'2.0',id:payload.id,result:{content:[{type:'text',text:'FMCAD_RESULT '+JSON.stringify(summary)}]}})};
+          return {status:200,raw:JSON.stringify({jsonrpc:'2.0',id:payload.id,result:{content:[{type:'text',text}]}})};
         },
         async callTool(input){
           assert.equal(input.object.readOnly,false);
@@ -1719,9 +1732,12 @@ for (const mode of [
       await assert.rejects(request(dir,{...message,auth:foreign}),{code:'NOT_OWNER'});assert.equal(calls,0);
       let value=await request(dir,message);
       for(let i=0;i<3000&&value.status==='pending';i++){await new Promise(r=>setTimeout(r,10));value=await request(dir,message);}
-      assert.equal(creation,1);
-      if(mode==='creation-unknown'||mode==='creation-forged-id'){
+      assert.equal(creation,1,JSON.stringify(value));
+      if(mode==='creation-unknown'||mode==='creation-forged-id'||mode==='creation-native-false'||
+        mode==='creation-native-nested'||mode==='creation-native-foreign-marker'||mode==='creation-binding-mismatch'){
         assert.equal(value.status,'failed',JSON.stringify(value));assert.equal(value.sdkRequestsSent,1);
+        if(mode==='creation-native-false'||mode==='creation-native-nested')assert.equal(value.code,'AUDIT_OUTPUT_INVALID');
+        if(mode==='creation-native-foreign-marker'||mode==='creation-binding-mismatch')assert.equal(value.code,'SCRATCH_QUALIFICATION_INVALID');
         assert.equal(fs.existsSync(path.join(dir,'isolated-admission-epoch.json')),false);
         await request(dir,message);assert.equal(calls,1);
         await assert.rejects(request(dir,{...message,requestId:'do-not-replay'}),{code:'AUDIT_ALREADY_REQUESTED'});
@@ -1731,6 +1747,18 @@ for (const mode of [
       assert.equal(value.status,'complete',JSON.stringify(value));
       const pointer=JSON.parse(fs.readFileSync(path.join(dir,'isolated-admission-epoch.json')));
       assert.equal(pointer.document.creationId,'actually-new-fixture-id');
+      const createQualificationDir=path.join(dir,'isolated-scratch-qualification'),createStart=JSON.parse(fs.readFileSync(path.join(createQualificationDir,'start.json'))),
+        createWire=JSON.parse(fs.readFileSync(path.join(createQualificationDir,'wire.json'))),
+        createResponse=JSON.parse(fs.readFileSync(path.join(createQualificationDir,'response.json'))),
+        createRemote=JSON.parse(fs.readFileSync(createStart.receipt));
+      assert.equal(createWire.outgoing.id,'fmcad:'+createStart.binding.rpcId);
+      assert.equal(createResponse.wireId,createWire.outgoing.id);
+      assert.equal(createResponse.callerId,'caller');
+      assert.equal(createResponse.reply.id,createWire.outgoing.id);
+      assert.equal(createRemote.rpcId,createStart.binding.rpcId);
+      assert.equal(createRemote.requestHash,createStart.binding.requestHash);
+      assert.equal(createRemote.terminal,true);assert.equal(createRemote.outcome,'succeeded');
+      assert.deepEqual(createRemote.instance,expected);
       const library=require(${JSON.stringify(root + "/src/dist/composition/library-queue")});
       const native=library.createQueueSession(${JSON.stringify(config)},'native-mcp',${JSON.stringify(f.scope.projectDirectory)},'native-fixture');
       await native.start();
@@ -1752,17 +1780,33 @@ for (const mode of [
       const closeMessage={...message,action:'close-isolated-scratch',requestId:'one-close',control:await control()};
       value=await request(dir,closeMessage);
       for(let i=0;i<3000&&value.status==='pending';i++){await new Promise(r=>setTimeout(r,10));value=await request(dir,closeMessage);}
-      assert.equal(value.status,mode==='close-unknown'?'failed':'complete',JSON.stringify(value));assert.equal(close,1);assert.equal(calls,2);
+      const closeInvalid=mode==='close-native-malformed'||mode==='close-native-duplicate';
+      assert.equal(value.status,mode==='close-unknown'||closeInvalid?'failed':'complete',JSON.stringify(value));assert.equal(close,1);assert.equal(calls,2);
+      if(closeInvalid)assert.equal(value.code,'AUDIT_OUTPUT_INVALID');
+      if(mode==='complete'){
+        const closeQualificationDir=path.join(dir,'isolated-scratch-close'),closeStart=JSON.parse(fs.readFileSync(path.join(closeQualificationDir,'start.json'))),
+          closeWire=JSON.parse(fs.readFileSync(path.join(closeQualificationDir,'wire.json'))),
+          closeResponse=JSON.parse(fs.readFileSync(path.join(closeQualificationDir,'response.json'))),
+          closeRemote=JSON.parse(fs.readFileSync(closeStart.receipt));
+        assert.equal(closeWire.outgoing.id,'fmcad:'+closeStart.binding.rpcId);
+        assert.equal(closeResponse.wireId,closeWire.outgoing.id);
+        assert.equal(closeResponse.callerId,'caller');
+        assert.equal(closeResponse.reply.id,closeWire.outgoing.id);
+        assert.equal(closeRemote.rpcId,closeStart.binding.rpcId);
+        assert.equal(closeRemote.requestHash,closeStart.binding.requestHash);
+        assert.equal(closeRemote.terminal,true);assert.equal(closeRemote.outcome,'succeeded');
+        assert.deepEqual(closeRemote.instance,expected);
+      }
       await request(dir,closeMessage);assert.equal(calls,2);
       assert.deepEqual(fs.readFileSync(stateFile),before);assert.deepEqual(fs.readFileSync(path.join(dir,'instance.json')),oldIdentity);
       const status=await request(dir,{action:'queue-summary',auth});
-      assert.equal(status.isolatedScratchScope.admission,mode==='close-unknown'?'cleanup-pending-or-unknown':'closed');
+      assert.equal(status.isolatedScratchScope.admission,mode==='close-unknown'||closeInvalid?'cleanup-pending-or-unknown':'closed');
       assert.equal((await native.status()).blocked,true);
       typed.payload.invocation.docId=pointer.document.creationId;
       typed.argv=require(${JSON.stringify(root + "/src/cad-service")}).policyArguments(typed.payload);
       await assert.rejects(request(dir,{action:'submit',auth:foreign,request:{kind:'command',requestId:'after-cleanup',timeoutMs:12000,
         cwd:${JSON.stringify(f.scope.projectDirectory)},buildHash:broker.buildHash,backend:'addin',...typed}}),
-        {code:mode==='close-unknown'?'EPOCH_CLEANUP_PENDING':'EPOCH_CLOSED'});
+        {code:mode==='close-unknown'||closeInvalid?'EPOCH_CLEANUP_PENDING':'EPOCH_CLOSED'});
       await request(dir,message);assert.equal(calls,2);
       process.stdout.write(JSON.stringify({creation,close,calls,historicalOutcome:'unknown'}));process.exit(0);
     })().catch(e=>{console.error(e);process.exit(1)});

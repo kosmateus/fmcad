@@ -150,6 +150,8 @@ test("scratch parsers preserve identity, historical unknown outcome and independ
       { ...qualified, previousActiveCreationId: "new" },
       { ...qualified, historicalOutcome: "committed" },
       { ...qualified, independent: false },
+      { ...qualified, purpose: "foreign-scratch-purpose" },
+      { ...qualified, bindingHash: "0".repeat(64) },
       { ...qualified, extra: true },
     ])
       assert.throws(
@@ -181,15 +183,15 @@ test("scratch parsers preserve identity, historical unknown outcome and independ
         api.parseScratchClose(reply(closed), {}, closeBinding),
         closed,
       );
-      assert.throws(
-        () =>
-          api.parseScratchClose(
-            reply({ ...closed, restoredActiveCreationId: "foreign" }),
-            {},
-            closeBinding,
-          ),
-        { code: "SCRATCH_QUALIFICATION_INVALID" },
-      );
+      for (const changed of [
+        { ...closed, purpose: "foreign-scratch-purpose" },
+        { ...closed, bindingHash: "0".repeat(64) },
+        { ...closed, restoredActiveCreationId: "foreign" },
+      ])
+        assert.throws(
+          () => api.parseScratchClose(reply(changed), {}, closeBinding),
+          { code: "SCRATCH_QUALIFICATION_INVALID" },
+        );
     }
   }
 });
