@@ -37,6 +37,23 @@ test("the offline broker retains dispatch errors without replay or foreign acces
   assert.match(child.stdout, /# skipped 0\b/);
 });
 
+test("worker snapshot fences attest only durable authenticated state", () => {
+  const child = spawnSync(
+    process.execPath,
+    [
+      "--test",
+      "--test-reporter=tap",
+      nodePath.join(process.cwd(), "tests/fixtures/worker-snapshot-fence.cjs"),
+    ],
+    { encoding: "utf8", env: { ...process.env, NODE_TEST_CONTEXT: undefined } },
+  );
+  assert.equal(child.error, undefined);
+  assert.equal(child.status, 0, child.stdout + child.stderr);
+  assert.match(child.stdout, /# tests 1\b/);
+  assert.match(child.stdout, /# pass 1\b/);
+  assert.match(child.stdout, /# skipped 0\b/);
+});
+
 const {
   dispatchPrepared,
   completeSdkTurn,

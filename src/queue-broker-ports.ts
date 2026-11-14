@@ -546,6 +546,7 @@ export interface ScriptScope {
 }
 export interface Message extends Partial<WorkerMessage> {
   action: string;
+  snapshotFence?: boolean;
   auth?: { clientId: string; clientToken: string } | undefined;
   clientId?: string;
   clientToken?: string;

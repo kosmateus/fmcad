@@ -4490,6 +4490,35 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     return result;
   }
 
+  function workerSnapshotHash(): string {
+    if (state._writing || state._fault)
+      fail(
+        "STORAGE_UNAVAILABLE",
+        "Queue snapshot has unresolved durability evidence",
+      );
+    try {
+      fs.lstatSync(
+        path.join(state.epoch?.root ?? dir, "queue-state.pending.json"),
+      );
+    } catch (error) {
+      if (
+        !error ||
+        typeof error !== "object" ||
+        !("code" in error) ||
+        error.code !== "ENOENT"
+      )
+        fail(
+          "STORAGE_UNAVAILABLE",
+          "Queue snapshot durability cannot be inspected",
+        );
+      return hash(JSON.stringify(state.data));
+    }
+    fail(
+      "STORAGE_UNAVAILABLE",
+      "Queue snapshot has unresolved durability evidence",
+    );
+  }
+
   async function dispatch(input: unknown): Promise<unknown> {
     const envelope = decodeEnvelope(input);
     const successorAction =
@@ -4548,6 +4577,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           jobId: required(message.jobId),
           workerToken: required(message.workerToken),
         });
+        const snapshotHash =
+          message.snapshotFence === true ? workerSnapshotHash() : undefined;
         const job = state.status(required(message.jobId));
         // The admitted worker also waits here during preflight/postflight, when
         // the physical probe is owned by the broker rather than active.context.
@@ -4563,14 +4594,18 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         return {
           remainingMs: job.sdkRemainingMs ?? job.timeoutMs,
           phase: job.state,
+          ...(snapshotHash === undefined ? {} : { snapshotHash }),
           control: gate.snapshot(),
         };
       }
       if (active.unknown || state.summary().blocked)
         fail("RECONCILIATION_REQUIRED", "SDK outcome remains unresolved");
+      const snapshotHash =
+        message.snapshotFence === true ? workerSnapshotHash() : undefined;
       return {
         remainingMs: required(active.budget).remaining(),
         waitingForPause: !!active.waitingForPause,
+        ...(snapshotHash === undefined ? {} : { snapshotHash }),
         control: gate.snapshot(),
       };
     }
