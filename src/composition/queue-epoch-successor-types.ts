@@ -138,6 +138,83 @@ export interface Client {
   dir: string;
   auth: { clientId: string; clientToken: string };
 }
+export interface Sdk1MetadataWorkerProcess extends Owner {
+  processProof?: {
+    pid: number;
+    birth: string;
+    exe: string;
+    exeSha256: string;
+    cmdline: string[];
+    childrenByTask: Record<string, string[]>;
+    socketRows: string[];
+  };
+  interpreterProof?: { path: string; sha256: string; version: string };
+}
+export interface Sdk1SdkProcessObservation {
+  state: "absent" | "present";
+  pid: number;
+  observedAtUtc: string;
+  errorId?: string;
+  birth?: string;
+}
+export interface Sdk1MetadataWorkerProcessResult {
+  process: NonNullable<Sdk1MetadataWorkerProcess["processProof"]>;
+  retired: boolean;
+  interpreter?: { path: string; sha256: string; version: string };
+}
+export interface Sdk1MetadataWorkerRetirementPorts {
+  certify(runtime: string, sourceCommit: string, buildHash: string): void;
+  deathQuery(expectedProcess: Process): Sdk1SdkProcessObservation;
+  process(
+    owner: Sdk1MetadataWorkerProcess,
+    runtime: string,
+    refs: Reference[],
+    apply: boolean,
+    root: string,
+  ): Sdk1MetadataWorkerProcessResult;
+}
+export interface Sdk1MetadataWorkerRetirementPreview {
+  ready: true;
+  requestId: string;
+  retirementPerformed: false;
+  mechanism: "pidfd_send_signal:SIGKILL";
+  gracefulClose: false;
+  owner: Owner;
+  sdkRequestsSent: 1;
+  nativeOutcome: "unknown";
+  historicalOutcome: "unknown";
+}
+export interface Sdk1MetadataWorkerRetirementPending {
+  ready: false;
+  retirementPending: true;
+  noSignalReplay: true;
+  requestId: string;
+  sdkRequestsSent: 1;
+  nativeOutcome: "unknown";
+  historicalOutcome: "unknown";
+}
+export interface Sdk1MetadataWorkerRetirementComplete {
+  version: 1;
+  kind: "sdk1-metadata-worker-retirement-complete";
+  status: "retired";
+  requestId: string;
+  clientId: string;
+  owner: Owner;
+  sdkRequestsSent: 1;
+  nativeOutcome: "unknown";
+  historicalOutcome: "unknown";
+  protectedBytesUnchanged: true;
+  before: Reference;
+  effectStart: Reference;
+  processDeathProof: Reference;
+  sdkProcessAfter: Sdk1SdkProcessObservation;
+  mechanism: "pidfd_send_signal:SIGKILL";
+  gracefulClose: false;
+}
+export type Sdk1MetadataWorkerRetirementResult =
+  | Sdk1MetadataWorkerRetirementPreview
+  | Sdk1MetadataWorkerRetirementPending
+  | Sdk1MetadataWorkerRetirementComplete;
 export interface Guard {
   kind: string;
   nonce: string;
