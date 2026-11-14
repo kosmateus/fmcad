@@ -12,6 +12,7 @@ const node_path_1 = __importDefault(require("node:path"));
 const node_module_1 = require("node:module");
 const node_util_1 = require("node:util");
 const node_child_process_1 = require("node:child_process");
+const node_crypto_1 = require("node:crypto");
 // This fixed program has no shell, PID-only signal, SIGTERM fallback or Fusion
 // access. The pidfd is opened BEFORE /proc identity checks and held to exit.
 exports.metadataRetirementPidfdProgram = `import os,sys,json,hashlib,signal,select
@@ -81,7 +82,27 @@ const linuxRetirementPorts = {
             root,
             ...(apply ? { expectedProcess: owner["processProof"] } : {}),
         };
-        const result = (0, node_child_process_1.spawnSync)("python3", ["-c", exports.metadataRetirementPidfdProgram], {
+        const interpreterPath = node_fs_1.default.realpathSync("/usr/bin/python3");
+        const version = (0, node_child_process_1.spawnSync)(interpreterPath, ["-I", "--version"], {
+            encoding: "utf8",
+            timeout: 5000,
+        });
+        if (version.error || version.status !== 0)
+            fail("Canonical Python interpreter is unavailable");
+        const interpreter = {
+            path: interpreterPath,
+            sha256: (0, node_crypto_1.createHash)("sha256")
+                .update(node_fs_1.default.readFileSync(interpreterPath))
+                .digest("hex"),
+            version: version.stdout.trim(),
+        };
+        if (apply && !(0, node_util_1.isDeepStrictEqual)(owner["interpreterProof"], interpreter))
+            fail("Python interpreter changed before retirement");
+        input.refs = [
+            ...refs,
+            { path: interpreter.path, sha256: interpreter.sha256 },
+        ];
+        const result = (0, node_child_process_1.spawnSync)(interpreterPath, ["-I", "-c", exports.metadataRetirementPidfdProgram], {
             input: JSON.stringify(input),
             encoding: "utf8",
             timeout: 35000,
@@ -89,7 +110,7 @@ const linuxRetirementPorts = {
         });
         if (result.error || result.status !== 0)
             fail("Linux pidfd identity/quiescence or retirement is unproven; never retry a signal blindly");
-        return object(JSON.parse(result.stdout));
+        return { ...object(JSON.parse(result.stdout)), interpreter };
     },
     fusion(expected) {
         const pid = expected["pid"];
@@ -725,12 +746,21 @@ async function retireMetadataWorker(client, approvalFile, proofFile, apply, port
             features["auditFactsCapture"] !== false ||
             features["atomicRecoveryProcessLossAudit"] !== false)
             fail("Certified metadata-only dispatch closure or current quiescence changed");
-        const process = object(ports.process(owner, runtime, references, false, root)["process"]);
+        const processResult = ports.process(owner, runtime, references, false, root);
+        const process = object(processResult["process"]);
         if (!(0, node_util_1.isDeepStrictEqual)(processIdentity(process), processIdentity(expectedOS)))
             fail("Independent executable/birth/command-line proof differs from the current process");
         const liveFusion = fusionRead();
         verifyRefs();
-        return { status, control, process, fusion: liveFusion };
+        return {
+            status,
+            control,
+            process,
+            ...(processResult["interpreter"]
+                ? { interpreter: processResult["interpreter"] }
+                : {}),
+            fusion: liveFusion,
+        };
     };
     const first = await snapshot();
     if (!apply)
@@ -770,7 +800,8 @@ async function retireMetadataWorker(client, approvalFile, proofFile, apply, port
     const second = await snapshot();
     if (!(0, node_util_1.isDeepStrictEqual)(first.status, second.status) ||
         !(0, node_util_1.isDeepStrictEqual)(first.control, second.control) ||
-        !(0, node_util_1.isDeepStrictEqual)(first.process, second.process))
+        !(0, node_util_1.isDeepStrictEqual)(first.process, second.process) ||
+        !(0, node_util_1.isDeepStrictEqual)(first.interpreter, second.interpreter))
         fail("Process, status or quiescence changed during retirement preparation");
     const effectStart = {
         version: 1,
@@ -784,7 +815,11 @@ async function retireMetadataWorker(client, approvalFile, proofFile, apply, port
     };
     files.exclusive(startFile, effectStart); // From here any interrupted outcome is UNKNOWN, not a retry license.
     verifyRefs();
-    ports.process({ ...owner, processProof: second.process }, runtime, [...references, ref(beforeFile), ref(startFile)], true, root);
+    ports.process({
+        ...owner,
+        processProof: second.process,
+        interpreterProof: second.interpreter,
+    }, runtime, [...references, ref(beforeFile), ref(startFile)], true, root);
     return completeAfter();
 }
 if (require.main === module) {

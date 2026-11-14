@@ -4,6 +4,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { isDeepStrictEqual as same } from "node:util";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 type Data = Record<string, unknown>;
 interface Client {
@@ -111,9 +112,29 @@ const linuxRetirementPorts: RetirementPorts = {
       root,
       ...(apply ? { expectedProcess: owner["processProof"] } : {}),
     };
+    const interpreterPath = fs.realpathSync("/usr/bin/python3");
+    const version = spawnSync(interpreterPath, ["-I", "--version"], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    if (version.error || version.status !== 0)
+      fail("Canonical Python interpreter is unavailable");
+    const interpreter = {
+      path: interpreterPath,
+      sha256: createHash("sha256")
+        .update(fs.readFileSync(interpreterPath))
+        .digest("hex"),
+      version: version.stdout.trim(),
+    };
+    if (apply && !same(owner["interpreterProof"], interpreter))
+      fail("Python interpreter changed before retirement");
+    input.refs = [
+      ...refs,
+      { path: interpreter.path, sha256: interpreter.sha256 },
+    ];
     const result = spawnSync(
-      "python3",
-      ["-c", metadataRetirementPidfdProgram],
+      interpreterPath,
+      ["-I", "-c", metadataRetirementPidfdProgram],
       {
         input: JSON.stringify(input),
         encoding: "utf8",
@@ -125,7 +146,7 @@ const linuxRetirementPorts: RetirementPorts = {
       fail(
         "Linux pidfd identity/quiescence or retirement is unproven; never retry a signal blindly",
       );
-    return object(JSON.parse(result.stdout) as unknown);
+    return { ...object(JSON.parse(result.stdout) as unknown), interpreter };
   },
   fusion(expected) {
     const pid = expected["pid"];
@@ -913,16 +934,29 @@ export async function retireMetadataWorker(
       fail(
         "Certified metadata-only dispatch closure or current quiescence changed",
       );
-    const process = object(
-      ports.process(owner, runtime, references, false, root)["process"],
+    const processResult = ports.process(
+      owner,
+      runtime,
+      references,
+      false,
+      root,
     );
+    const process = object(processResult["process"]);
     if (!same(processIdentity(process), processIdentity(expectedOS)))
       fail(
         "Independent executable/birth/command-line proof differs from the current process",
       );
     const liveFusion = fusionRead();
     verifyRefs();
-    return { status, control, process, fusion: liveFusion };
+    return {
+      status,
+      control,
+      process,
+      ...(processResult["interpreter"]
+        ? { interpreter: processResult["interpreter"] }
+        : {}),
+      fusion: liveFusion,
+    };
   };
   const first = await snapshot();
   if (!apply)
@@ -963,7 +997,8 @@ export async function retireMetadataWorker(
   if (
     !same(first.status, second.status) ||
     !same(first.control, second.control) ||
-    !same(first.process, second.process)
+    !same(first.process, second.process) ||
+    !same(first.interpreter, second.interpreter)
   )
     fail("Process, status or quiescence changed during retirement preparation");
   const effectStart = {
@@ -979,7 +1014,11 @@ export async function retireMetadataWorker(
   files.exclusive(startFile, effectStart); // From here any interrupted outcome is UNKNOWN, not a retry license.
   verifyRefs();
   ports.process(
-    { ...owner, processProof: second.process },
+    {
+      ...owner,
+      processProof: second.process,
+      interpreterProof: second.interpreter,
+    },
     runtime,
     [...references, ref(beforeFile), ref(startFile)],
     true,
