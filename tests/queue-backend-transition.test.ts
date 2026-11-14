@@ -217,6 +217,81 @@ test("foreign/config/active/unknown refusals precede physical client constructio
   }
 });
 
+test("FAKE recovery: local worker exit cannot authorize a backend transition over an unresolved SDK turn", async () => {
+  const f = setup();
+  try {
+    const job = f.state.submit({
+      kind: "rpc",
+      requestId: "owned-unresolved-write",
+      clientId: f.clientId,
+      timeoutMs: 1000,
+      payload: { jsonrpc: "2.0", id: "synthetic-write", method: "tools/call" },
+    });
+    const jobId = job["id"];
+    assert.ok(typeof jobId === "string");
+    f.state.next();
+    f.state.markDispatch(jobId, { rpcCount: 1, completedCount: 0 });
+    f.state.block(jobId, { code: "UNKNOWN_RPC" });
+    const directory = path.join(f.dir, "jobs", jobId);
+    fs.mkdirSync(directory, { recursive: true });
+    const workerFile = path.join(directory, "worker-result.json");
+    const rpcFile = path.join(directory, "rpc-synthetic-unresolved.json");
+    const remoteReceipt = path.join(
+      directory,
+      "remote-synthetic-unresolved.json",
+    );
+    fs.writeFileSync(
+      workerFile,
+      JSON.stringify({ jobId, code: 1, terminal: true }),
+    );
+    fs.writeFileSync(
+      rpcFile,
+      JSON.stringify({
+        binding: { jobId, rpcId: "synthetic-unresolved" },
+        instance: f.epoch.currentInstance,
+        receipt: remoteReceipt,
+        terminal: false,
+      }),
+    );
+    const protectedFiles = [
+      path.join(f.dir, "queue-state.json"),
+      path.join(f.dir, "instance.json"),
+      path.join(f.epoch.root, "queue-state.json"),
+      path.join(f.epoch.root, "instance.json"),
+      path.join(f.dir, "isolated-admission-epoch.json"),
+      workerFile,
+      rpcFile,
+    ].map((file) => ({ file, bytes: fs.readFileSync(file) }));
+    let physicalClients = 0;
+    await assert.rejects(
+      serve(f.next, {
+        dir: f.dir,
+        confirmOwnership: true,
+        backendTransition: f.approval,
+        createBackend() {
+          physicalClients++;
+          throw new Error(
+            "An unresolved SDK turn must not construct a transport",
+          );
+        },
+      }),
+      { code: "EPOCH_BUSY" },
+    );
+    assert.equal(physicalClients, 0);
+    assert.equal(fs.existsSync(remoteReceipt), false);
+    assert.equal(fs.existsSync(path.join(f.dir, "broker.lock")), false);
+    assert.equal(
+      fs.existsSync(path.join(f.dir, "physical-backend-head.json")),
+      false,
+    );
+    assert.equal(f.state.status(jobId)["state"], "needs_reconciliation");
+    for (const { file, bytes } of protectedFiles)
+      assert.deepEqual(fs.readFileSync(file), bytes);
+  } finally {
+    fs.rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
 test("changed Fusion or predecessor bytes cannot commit and original request is never replayed", () => {
   const f = setup();
   try {
