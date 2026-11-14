@@ -49,6 +49,10 @@ function backendFixture(t: TestContext) {
       receiptFile: string;
       lifecycleFile: string;
       effectiveIdentity: { buildHash: string; configHash: string };
+      qualifiedCreationUpgrade(
+        published: PublishedBackend,
+        buildHash?: string,
+      ): PublishedBackend;
       inverse(): {
         cfg: DeadEpochFixture["cfg"];
         identity: { buildHash: string; configHash: string };
@@ -521,6 +525,127 @@ test("FAKE backend succession: another cold scope without a current transition v
   assert.throws(
     () =>
       lineage.successorEpochIdentity(f.dir, { ...published.pointer }, snapshot),
+    { code: "EPOCH_LINEAGE_INVALID" },
+  );
+});
+
+test("FAKE historical runtime upgrade: authenticated creation build and later identity build are distinct without changing SDK/history", (t) => {
+  const f = backendFixture(t),
+    published = f.qualifiedCreationUpgrade(f.publish());
+  assert.notEqual(published.identity.buildHash, published.authority.buildHash);
+  const restored = f.restoreAfterPublish(published);
+  const before = fs.readFileSync(restored.snapshot.state.path);
+  const identity = lineage.successorBackendIdentity(
+    f.dir,
+    { ...published.pointer },
+    restored.snapshot,
+    restored.proof,
+    restored.owner,
+    restored.identity.configHash,
+  );
+  assert.equal(identity.buildHash, published.identity.buildHash);
+  assert.deepEqual(fs.readFileSync(restored.snapshot.state.path), before);
+  assert.equal(published.authority.historicalOutcome, "unknown");
+});
+
+for (const [name, change, recordName] of [
+  [
+    "creation build",
+    (v) => {
+      const binding = v["binding"];
+      assert.ok(binding && typeof binding === "object");
+      Object.assign(binding, { buildHash: "f".repeat(64) });
+    },
+    "start.json",
+  ],
+  [
+    "source checker",
+    (v) => {
+      v["pythonCheck"] = { status: "failed" };
+    },
+    "start.json",
+  ],
+  [
+    "physical failure",
+    (v) => {
+      v["outcome"] = "failed";
+    },
+    "remote",
+  ],
+  [
+    "foreign SDK",
+    (v) => {
+      const instance = v["instance"];
+      assert.ok(instance && typeof instance === "object");
+      Object.assign(instance, { birth: "foreign" });
+    },
+    "remote",
+  ],
+] satisfies ReadonlyArray<
+  readonly [string, (value: Record<string, unknown>) => void, string]
+>) {
+  test(
+    "FAKE historical runtime upgrade refuses altered " +
+      name +
+      " even with repinned synthetic files",
+    (t) => {
+      const f = backendFixture(t),
+        published = f.qualifiedCreationUpgrade(f.publish());
+      const dir = path.dirname(published.pointer.qualificationReceipt.path);
+      const file =
+        recordName === "remote"
+          ? published.pointer.qualificationEvidence.find((ref) =>
+              /^remote-/.test(path.basename(ref.path)),
+            )!.path
+          : path.join(dir, recordName);
+      const value: unknown = api.readJson(file);
+      assert.ok(value && typeof value === "object" && !Array.isArray(value));
+      change(value as Record<string, unknown>);
+      api.durable(file, value);
+      published.pointer.qualificationEvidence =
+        published.pointer.qualificationEvidence.map((ref) =>
+          lineage.reference(ref.path),
+        );
+      api.durable(
+        path.join(f.dir, "isolated-admission-epoch.json"),
+        published.pointer,
+      );
+      const restored = f.restoreAfterPublish(published);
+      assert.throws(
+        () =>
+          lineage.successorBackendIdentity(
+            f.dir,
+            { ...published.pointer },
+            restored.snapshot,
+            restored.proof,
+            restored.owner,
+            restored.identity.configHash,
+          ),
+        { code: "EPOCH_LINEAGE_INVALID" },
+      );
+    },
+  );
+}
+
+test("FAKE historical runtime upgrade cannot infer qualified origin from a changed build scalar alone", (t) => {
+  const f = backendFixture(t),
+    published = f.publish();
+  published.identity.buildHash = "e".repeat(64);
+  api.durable(
+    path.join(published.pointer.root, "instance.json"),
+    published.identity,
+  );
+  const restored = f.restoreAfterPublish(published);
+  assert.throws(
+    () =>
+      lineage.successorBackendIdentity(
+        f.dir,
+        { ...published.pointer },
+        restored.snapshot,
+        restored.proof,
+        restored.owner,
+        restored.identity.configHash,
+      ),
     { code: "EPOCH_LINEAGE_INVALID" },
   );
 });

@@ -36,6 +36,41 @@ module.exports = function fixture(base, repo) {
   api.durable(approvalFile, approval);
   return { ...f, cfg, approval, approvalFile, head, headFile, transition, receiptFile, lifecycleFile,
     effectiveIdentity: identity, client: { dir: f.dir, auth: { clientId: f.clientId, clientToken: f.token } },
+    qualifiedCreationUpgrade(published, buildHash = 'e'.repeat(64)) {
+      const digest = require(repo + '/src/dist/core/application/cad/json').hash;
+      const dir = path.dirname(published.pointer.qualificationReceipt.path);
+      const remote = published.pointer.qualificationEvidence.find(ref => /^remote-/.test(path.basename(ref.path))).path;
+      const binding = { purpose: 'isolated-scratch-epoch-v1', epochId: published.pointer.epochId,
+        clientId: f.clientId, control: { buildHash: published.authority.buildHash },
+        targetJobId: published.pointer.quarantinedJobIds[0], observationJobId: published.pointer.quarantinedJobIds[1],
+        currentInstance: published.pointer.currentInstance, successorAuthorityHash: published.entry.sha256,
+        sdkProofPath: path.join(dir, 'sdk-qualified.json') };
+      const sdk = { version: 1, purpose: binding.purpose, epochId: binding.epochId,
+        bindingHash: digest(binding), document: published.pointer.document,
+        independent: true, empty: true, unsaved: true, historicalOutcome: 'unknown',
+        previousActiveCreationId: published.pointer.restoreActiveCreationId };
+      const physical = { jobId: published.pointer.quarantinedJobIds[0], rpcId: path.basename(remote).slice(7, -5),
+        requestHash: api.hash('synthetic-create'), buildHash: published.authority.buildHash,
+        sourceHash: 'a'.repeat(64),
+        purpose: binding.purpose, auditBindingHash: digest(binding), pythonOriginHash: 'b'.repeat(64),
+        auditExpectedInstance: published.pointer.currentInstance };
+      api.durable(path.join(dir, 'intent.json'), { binding, sourceArtifactHash: physical.pythonOriginHash });
+      api.durable(path.join(dir, 'start.json'), { binding: physical, receipt: remote,
+        instance: published.pointer.currentInstance, pythonCheck: { status: 'passed' } });
+      api.durable(path.join(dir, 'sdk-qualified.json'), sdk);
+      api.durable(remote, { ...physical, terminal: true, outcome: 'succeeded', instance: published.pointer.currentInstance });
+      api.durable(published.pointer.qualificationReceipt.path, { kind: 'isolated-scratch-qualification', status: 'complete',
+        sdkRequestsSent: 1, endpointVerified: true, clientId: f.clientId,
+        currentInstance: published.pointer.currentInstance, summary: sdk });
+      published.pointer.qualificationEvidence = published.pointer.qualificationEvidence.map(ref => lineage.reference(ref.path));
+      published.pointer.qualificationReceipt = lineage.reference(published.pointer.qualificationReceipt.path);
+      api.durable(path.join(f.dir, 'isolated-admission-epoch.json'), published.pointer);
+      // Existing normal-mode runtime refresh changes active identity, not the
+      // immutable creation authority/physical receipt or SDK identity.
+      published.identity.buildHash = buildHash;
+      api.durable(path.join(published.pointer.root, 'instance.json'), published.identity);
+      return published;
+    },
     inverse() {
       const next = path.join(f.dir, 'physical-backend-transitions', 'synthetic-inverse');
       fs.mkdirSync(next);

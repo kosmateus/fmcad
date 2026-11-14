@@ -333,6 +333,97 @@ function checkedIdentity(value: unknown): EffectivePredecessorIdentity {
     },
   };
 }
+/** The bootstrap build is the scratch CREATION build, not necessarily its
+ * later runtime identity. A refresh never rewrites this physical qualification. */
+function verifyCreationBuild(
+  pointer: EpochPointer,
+  authority: SuccessionAuthority,
+  read: typeof verified,
+): void {
+  const dir = path.dirname(pointer.qualificationReceipt.path);
+  const evidence = pointer.qualificationEvidence;
+  const load = (name: string) => {
+    const file = path.join(dir, name),
+      entry = evidence.find((ref) => ref.path === file);
+    if (!entry)
+      fail("Runtime origin lacks original scratch qualification evidence");
+    return record(read(entry, file));
+  };
+  if (
+    evidence.length !== 5 ||
+    new Set(evidence.map((ref) => ref.path)).size !== 5 ||
+    evidence.some((ref) => path.dirname(ref.path) !== dir)
+  )
+    fail("Runtime origin qualification namespace changed");
+  for (const ref of evidence) read(ref, ref.path);
+  const result = record(
+    read(pointer.qualificationReceipt, path.join(dir, "result.json")),
+  );
+  const intent = load("intent.json"),
+    start = load("start.json"),
+    sdk = load("sdk-qualified.json");
+  load("wire.json");
+  const binding = record(intent["binding"]),
+    physical = record(start["binding"]);
+  const jobs = pointer["quarantinedJobIds"];
+  const instance = (value: unknown) => {
+    const p = record(value),
+      expected = record(pointer.currentInstance);
+    return ["pid", "birth", "version"].every((key) => p[key] === expected[key]);
+  };
+  const receiptPath = path.join(
+    dir,
+    `remote-${String(physical["rpcId"])}.json`,
+  );
+  const receipt = load(path.basename(receiptPath));
+  if (
+    result["kind"] !== "isolated-scratch-qualification" ||
+    result["status"] !== "complete" ||
+    result["sdkRequestsSent"] !== 1 ||
+    result["endpointVerified"] !== true ||
+    result["clientId"] !== pointer.ownerClientId ||
+    !instance(result["currentInstance"]) ||
+    !object(result["summary"]) ||
+    digest(result["summary"]) !== digest(sdk) ||
+    binding["purpose"] !== "isolated-scratch-epoch-v1" ||
+    binding["epochId"] !== pointer.epochId ||
+    binding["clientId"] !== pointer.ownerClientId ||
+    !instance(binding["currentInstance"]) ||
+    !Array.isArray(jobs) ||
+    binding["targetJobId"] !== jobs[0] ||
+    binding["observationJobId"] !== jobs[1] ||
+    physical["jobId"] !== binding["targetJobId"] ||
+    binding["sdkProofPath"] !== path.join(dir, "sdk-qualified.json") ||
+    binding["successorAuthorityHash"] !== pointer.succession?.sha256 ||
+    record(binding["control"])["buildHash"] !== authority.buildHash ||
+    physical["buildHash"] !== authority.buildHash ||
+    physical["purpose"] !== binding["purpose"] ||
+    physical["auditBindingHash"] !== digest(binding) ||
+    physical["pythonOriginHash"] !== intent["sourceArtifactHash"] ||
+    !instance(physical["auditExpectedInstance"]) ||
+    !instance(start["instance"]) ||
+    record(start["pythonCheck"])["status"] !== "passed" ||
+    start["receipt"] !== receiptPath ||
+    receipt["terminal"] !== true ||
+    receipt["outcome"] !== "succeeded" ||
+    !instance(receipt["instance"]) ||
+    Object.keys(physical).some(
+      (key) =>
+        !Object.hasOwn(receipt, key) ||
+        digest(receipt[key]) !== digest(physical[key]),
+    ) ||
+    sdk["purpose"] !== binding["purpose"] ||
+    sdk["epochId"] !== pointer.epochId ||
+    sdk["bindingHash"] !== digest(binding) ||
+    digest(sdk["document"]) !== digest(pointer.document) ||
+    sdk["independent"] !== true ||
+    sdk["empty"] !== true ||
+    sdk["unsaved"] !== true
+  )
+    fail(
+      "Runtime identity has no matching qualified creation-build provenance",
+    );
+}
 function readEpochOrigin(
   root: string,
   pointer: EpochPointer,
@@ -372,7 +463,6 @@ function readEpochOrigin(
   const expected = predecessor.authority.expectedProcess;
   if (
     identity.configHash !== originConfig ||
-    identity.buildHash !== predecessor.authority.buildHash ||
     !expected ||
     identity.instance.pid !== expected.pid ||
     identity.instance.birth !== expected.birth
@@ -380,6 +470,8 @@ function readEpochOrigin(
     fail(
       "Inherited backend differs from its qualified epoch/process authority",
     );
+  if (identity.buildHash !== predecessor.authority.buildHash)
+    verifyCreationBuild(pointer, predecessor.authority, read);
   return { identity, predecessor };
 }
 /** A different root configuration needs authenticated qualification ancestry,
@@ -669,7 +761,10 @@ function readSuccessionAuthority(
     fail("Succession authority differs from the original owner or epoch");
   const state = read(snapshot.state, path.join(epochRoot, "queue-state.json"));
   read(snapshot.rootState, path.join(root, "queue-state.json"));
-  read(snapshot.rootIdentity, path.join(root, "instance.json"));
+  const rootIdentity = read(
+    snapshot.rootIdentity,
+    path.join(root, "instance.json"),
+  );
   if (
     snapshot.rootState.sha256 !== pointer.historicalSnapshotHash ||
     snapshot.rootIdentity.sha256 !== pointer.historicalIdentityHash ||
@@ -692,7 +787,18 @@ function readSuccessionAuthority(
       ancestryDepth,
     );
   } else if (!closedSuccessor) {
-    successorEpochIdentity(root, pointer, snapshot, read, ancestryDepth);
+    // Old history records authenticate identity bytes, but do not claim a new
+    // runtime/configuration origin. Preserve that read contract; only a changed
+    // declared configuration needs the stronger inherited-origin certificate.
+    const config = authority["configHash"];
+    if (config !== undefined || identity["configHash"] !== undefined) {
+      if (typeof config !== "string" || config !== identity["configHash"])
+        fail(
+          "Changed predecessor backend requires immutable transition evidence",
+        );
+      if (config !== record(rootIdentity)["configHash"])
+        successorEpochIdentity(root, pointer, snapshot, read, ancestryDepth);
+    }
     const headFile = path.join(root, "physical-backend-head.json");
     const head = fs.existsSync(headFile)
       ? record(
@@ -701,10 +807,7 @@ function readSuccessionAuthority(
           ) as unknown,
         )
       : null;
-    if (
-      authority["configHash"] !== identity["configHash"] ||
-      head?.["epochId"] === pointer.epochId
-    )
+    if (head?.["epochId"] === pointer.epochId)
       fail(
         "Changed predecessor backend requires immutable transition evidence",
       );
