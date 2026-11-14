@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import type { TestContext } from "node:test";
 import type { AuditScope } from "../packages/node-adapters/src/execution/recovery-audit";
@@ -55,6 +56,70 @@ const { createSuccessorControl } = load(
     ports: FixtureControlPorts,
   ): ReturnType<ProductionControl>;
 };
+
+test("full broker MCP callsites use the real pinned production checker before synthetic observe/create/close", () => {
+  const root = fs.mkdtempSync("/tmp/opencode/successor-mcp-production-");
+  try {
+    const output = spawnSync(
+      process.execPath,
+      [
+        path.join(repository, "tests/fixtures/successor-mcp-production.cjs"),
+        root,
+      ],
+      {
+        cwd: repository,
+        encoding: "utf8",
+        timeout: 180000,
+        env: { ...process.env, NODE_TEST_CONTEXT: undefined },
+        maxBuffer: 4 * 1024 * 1024,
+      },
+    );
+    assert.equal(output.status, 0, output.stderr || String(output.error));
+    const marker = output.stdout
+      .split(/\r?\n/)
+      .find((line) => line.startsWith("FULL_MCP_PRODUCTION_CHECKER_RESULT "));
+    assert.ok(marker, output.stdout);
+    const result = JSON.parse(
+      marker.slice("FULL_MCP_PRODUCTION_CHECKER_RESULT ".length),
+    ) as {
+      passed: boolean;
+      realSdkRequests: number;
+      syntheticToolCalls: number;
+    };
+    assert.equal(result.passed, true);
+    assert.equal(result.realSdkRequests, 0);
+    assert.equal(result.syntheticToolCalls, 3);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("full broker refuses a changed selected process before constructing the physical MCP client", () => {
+  const root = fs.mkdtempSync("/tmp/opencode/successor-mcp-process-refusal-");
+  try {
+    const output = spawnSync(
+      process.execPath,
+      [
+        path.join(repository, "tests/fixtures/successor-mcp-production.cjs"),
+        root,
+        "process-refusal",
+      ],
+      {
+        cwd: repository,
+        encoding: "utf8",
+        timeout: 30000,
+        env: { ...process.env, NODE_TEST_CONTEXT: undefined },
+      },
+    );
+    assert.equal(output.status, 0, output.stderr || String(output.error));
+    assert.match(
+      output.stdout,
+      /FULL_MCP_PROCESS_REFUSAL .*"factories":0,"requests":0/,
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 const { BrokerMcpClient } = load(
   "../src/dist/fusion-transport/mcp",
