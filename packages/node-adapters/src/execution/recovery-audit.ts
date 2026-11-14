@@ -14,7 +14,11 @@ import { hash as canonicalHash } from "../../../core/src/application/cad/json";
 import { record } from "../../../core/src/application/cad/contracts";
 import { durable, readJson } from "../persistence/records";
 import { directory as assertDirectory } from "../persistence/migration-files";
-import { pythonArtifactManifest } from "../python/context-binding";
+import {
+  pythonArtifactManifest,
+  bindPythonArtifactManifest,
+} from "../python/context-binding";
+import { isDeepStrictEqual as same } from "node:util";
 import { verifyPythonArtifact } from "../python/artifact";
 import { classifyPythonRpc } from "../python/admission";
 
@@ -127,6 +131,175 @@ function readRecord(file: string): Record<string, unknown> {
   if (!record(value))
     fail("AUDIT_RESULT_CHANGED", "Stored audit evidence must be an object");
   return value;
+}
+
+export interface RetainedAuditInput {
+  directory: string;
+  key: Record<string, string>;
+  identity: unknown;
+  binding: AuditBinding;
+  instance: { pid: number; birth: string };
+  buildHash: string;
+}
+
+/** Evidence verification only: no dispatch, publication, freshness or admission
+ * authority. The owner composition must additionally freeze the whole scope. */
+export function verifyRetainedAuditResponse(input: RetainedAuditInput) {
+  const { directory, key, identity, binding, instance, buildHash } = input;
+  assertDirectory(directory);
+  const refs: Record<string, { path: string; sha256: string }> = {};
+  const read = (name: string) => {
+    const file = path.join(directory, name);
+    if (fs.realpathSync(file) !== file || !fs.lstatSync(file).isFile())
+      fail(
+        "AUDIT_RETAINED_RESPONSE_INVALID",
+        "Canonical regular retained evidence required",
+      );
+    const bytes = fs.readFileSync(file);
+    if (bytes.length > 4 * 1024 * 1024)
+      fail(
+        "AUDIT_RETAINED_RESPONSE_INVALID",
+        "Retained evidence exceeds its bound",
+      );
+    refs[name] = { path: file, sha256: hash(bytes) };
+    return readRecord(file);
+  };
+  if (fs.existsSync(path.join(directory, "response.json")))
+    fail(
+      "AUDIT_RETAINED_RESPONSE_INVALID",
+      "Conflicting parsed response already exists",
+    );
+  const intent = read("intent.json"),
+    start = read("start.json"),
+    wire = read("wire.json"),
+    received = read("received-response.json"),
+    originalResult = read("result.json");
+  const physical = start["binding"],
+    outgoing = wire["outgoing"],
+    checked = start["pythonCheck"];
+  if (
+    !record(physical) ||
+    !record(outgoing) ||
+    !record(checked) ||
+    !record(checked["provenance"]) ||
+    !same(intent["key"], key) ||
+    !same(intent["identity"], identity) ||
+    !same(intent["binding"], binding) ||
+    intent["version"] !== 1 ||
+    !same(start["instance"], instance) ||
+    physical["buildHash"] !== buildHash ||
+    physical["jobId"] !== key["jobId"] ||
+    physical["purpose"] !== binding["purpose"] ||
+    physical["auditBindingHash"] !== canonicalHash(binding) ||
+    physical["pythonOriginHash"] !== intent["sourceArtifactHash"] ||
+    start["originArtifactHash"] !== intent["sourceArtifactHash"] ||
+    !same(physical["auditExpectedProcess"], instance) ||
+    checked["status"] !== "passed" ||
+    !same(received["binding"], physical) ||
+    received["version"] !== 1 ||
+    received["status"] !== 200 ||
+    typeof received["raw"] !== "string" ||
+    received["wireId"] !== outgoing["id"] ||
+    outgoing["id"] !== "fmcad:" + physical["rpcId"] ||
+    outgoing["jsonrpc"] !== "2.0" ||
+    outgoing["method"] !== "tools/call" ||
+    originalResult["kind"] !== "dead-epoch-current-observation" ||
+    originalResult["status"] !== "failed" ||
+    originalResult["code"] !== "AUDIT_OUTPUT_INVALID" ||
+    originalResult["sdkRequestsSent"] !== 1 ||
+    originalResult["nativeOutcome"] !== "unknown" ||
+    originalResult["modelValidation"] !== "not_performed" ||
+    originalResult["rollbackVerification"] !== "not_performed" ||
+    Object.entries(key).some(([k, v]) => originalResult[k] !== v)
+  )
+    fail(
+      "AUDIT_RETAINED_RESPONSE_INVALID",
+      "Original owner/request/source/checker evidence differs",
+    );
+  const receiptName = "remote-" + String(physical["rpcId"]) + ".json";
+  if (
+    start["receipt"] !== path.join(directory, receiptName) ||
+    !/^[A-Za-z0-9-]{1,100}$/.test(String(physical["rpcId"]))
+  )
+    fail(
+      "AUDIT_RETAINED_RESPONSE_INVALID",
+      "Original remote receipt namespace differs",
+    );
+  const remote = read(receiptName),
+    current = remote["instance"];
+  if (
+    remote["terminal"] !== true ||
+    remote["outcome"] !== "succeeded" ||
+    !record(current) ||
+    current["pid"] !== instance.pid ||
+    current["birth"] !== instance.birth ||
+    typeof current["version"] !== "string" ||
+    Object.entries(physical).some(([k, v]) => !same(remote[k], v))
+  )
+    fail(
+      "AUDIT_RETAINED_RESPONSE_INVALID",
+      "Matching terminal receipt from the exact process required",
+    );
+  const rpc = classifyPythonRpc(outgoing);
+  const artifact = wire["artifact"];
+  const params = outgoing["params"],
+    argumentsValue = record(params) ? params["arguments"] : null,
+    nativeObject = record(argumentsValue) ? argumentsValue["object"] : null;
+  if (
+    rpc.kind !== "python" ||
+    !rpc.official ||
+    !record(nativeObject) ||
+    nativeObject["readOnly"] !== true ||
+    !record(artifact) ||
+    !same(artifact["request"], physical) ||
+    artifact["artifactHash"] !== checked["provenance"]["artifactHash"] ||
+    artifact["sha256"] !== checked["provenance"]["wireHash"]
+  )
+    fail(
+      "AUDIT_RETAINED_RESPONSE_INVALID",
+      "Exact checked native script manifest required",
+    );
+  bindPythonArtifactManifest(rpc.source, artifact);
+  const origin = record(artifact["context"])
+    ? artifact["context"]["origin"]
+    : null;
+  if (
+    !record(origin) ||
+    origin["artifactHash"] !== intent["sourceArtifactHash"]
+  )
+    fail(
+      "AUDIT_RETAINED_RESPONSE_INVALID",
+      "Original source artifact identity differs",
+    );
+  let reply: unknown;
+  try {
+    reply = JSON.parse(received["raw"]);
+  } catch {
+    fail(
+      "AUDIT_RETAINED_RESPONSE_INVALID",
+      "Malformed retained JSON-RPC response",
+    );
+  }
+  if (
+    !record(reply) ||
+    reply["id"] !== outgoing["id"] ||
+    reply["jsonrpc"] !== "2.0" ||
+    reply["error"] !== undefined ||
+    !record(reply["result"]) ||
+    reply["result"]["isError"] === true
+  )
+    fail(
+      "AUDIT_RETAINED_RESPONSE_INVALID",
+      "Retained reply is not an exact successful JSON-RPC response",
+    );
+  const summary = auditSummary(reply, identity);
+  return {
+    summary,
+    files: refs,
+    currentInstance: current as { pid: number; birth: string; version: string },
+    start,
+    intent,
+  };
 }
 
 // Composition ports are private broker objects, never caller-supplied options.
