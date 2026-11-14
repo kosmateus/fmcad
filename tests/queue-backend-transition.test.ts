@@ -6,6 +6,11 @@ import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import type * as P from "../src/queue-broker-ports";
 import type { BackendTransitionApproval } from "../src/queue-backend-transition";
+import type { TestContext } from "node:test";
+import type {
+  DeadEpochFixture,
+  FixturePointer,
+} from "./fixtures/epoch-fixture-types";
 
 const runtimeRoot = process.env["FMCAD_TEST_RUNTIME"] || process.cwd();
 const load = createRequire(path.join(runtimeRoot, "src/queue-broker.js"));
@@ -52,6 +57,160 @@ function setup() {
   };
   return { ...f, root, next, approval };
 }
+
+function publishedSetup(t: TestContext) {
+  const fixtureLoad = createRequire(
+    path.join(process.cwd(), "tests/queue-backend-transition.test.js"),
+  );
+  t.after(
+    (fixtureLoad("./fixtures/fake-wsl-platform.cjs") as () => () => void)(),
+  );
+  const root = fs.mkdtempSync(path.join(tmpdir(), "fmcad-retired-backend-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = (
+    fixtureLoad("./fixtures/backend-successor.cjs") as (
+      base: string,
+      repo: string,
+    ) => DeadEpochFixture & {
+      headFile: string;
+      transition: string;
+      publish(): {
+        pointer: FixturePointer;
+        identity: DeadEpochFixture["identity"];
+        entry: { path: string; sha256: string };
+        authority: DeadEpochFixture["authority"];
+      };
+    }
+  )(root, runtimeRoot);
+  const published = f.publish();
+  const { openIsolatedEpoch } = load(
+    "./queue-isolated-epoch",
+  ) as { openIsolatedEpoch(dir: string, options: { recover: false }): P.State };
+  return {
+    ...f,
+    root,
+    published,
+    readState: () => openIsolatedEpoch(f.dir, { recover: false }),
+  };
+}
+
+test("a published successor resolves only the exact authenticated historical backend head", (t) => {
+  const f = publishedSetup(t);
+  const original = fs.readFileSync(f.headFile);
+  assert.throws(() => lifecycle.backendHead(f.dir), {
+    code: "BACKEND_TRANSITION_CHANGED",
+  });
+  const resolved = lifecycle.resolveBackendHead(f.dir, f.readState);
+  assert.equal(resolved.current, null);
+  assert.ok(resolved.retired);
+  assert.equal(
+    resolved.retired.identityFile,
+    path.join(f.published.pointer.root, "instance.json"),
+  );
+  assert.deepEqual(resolved.retired.authority, f.published.entry);
+  assert.deepEqual(
+    resolved.retired.transition,
+    f.published.authority.backendTransition?.head,
+  );
+  assert.deepEqual(fs.readFileSync(f.headFile), original);
+  const missing = f.headFile + ".test-backup";
+  fs.renameSync(f.headFile, missing);
+  try {
+    assert.throws(() => lifecycle.resolveBackendHead(f.dir, f.readState), {
+      code: "BACKEND_TRANSITION_CHANGED",
+    });
+    fs.symlinkSync(missing, f.headFile);
+    try {
+      assert.throws(() => lifecycle.resolveBackendHead(f.dir, f.readState), {
+        code: "BACKEND_TRANSITION_CHANGED",
+      });
+    } finally {
+      fs.unlinkSync(f.headFile);
+    }
+  } finally {
+    fs.renameSync(missing, f.headFile);
+  }
+  const changed = JSON.parse(original.toString("utf8")) as {
+    requestId: string;
+  };
+  changed.requestId = "foreign-head";
+  fs.writeFileSync(f.headFile, JSON.stringify(changed));
+  try {
+    assert.throws(() => lifecycle.resolveBackendHead(f.dir, f.readState), {
+      code: "BACKEND_TRANSITION_CHANGED",
+    });
+  } finally {
+    fs.writeFileSync(f.headFile, original);
+  }
+});
+
+test("a backend restore after succession starts a new epoch chain without old-SDK escrow", (t) => {
+  const f = publishedSetup(t);
+  const priorHead = path.join(f.transition, "transition.json");
+  const protectedFiles = [
+    priorHead,
+    f.published.entry.path,
+    path.join(f.inspection.pointer.root, "queue-state.json"),
+  ];
+  const original = protectedFiles.map((file) => fs.readFileSync(file));
+  const closed = createRequire(
+    path.join(process.cwd(), "tests/queue-backend-transition.test.js"),
+  )(
+    "./fixtures/closed-scratch-artifacts.cjs",
+  ) as typeof import("./fixtures/closed-scratch-artifacts.cjs");
+  closed(f.dir, f.published.pointer, runtimeRoot, "normal-multidocument");
+  const state = f.readState();
+  const next = {
+    ...f.cfg,
+    backend: "addin",
+    url: "http://127.0.0.1:1/never-called-addin",
+  };
+  const prepared = lifecycle.prepareBackendTransition(f.dir, state, next, {
+    requestId: "restored-after-successor",
+    clientId: f.clientId,
+    clientToken: f.token,
+    previousConfig: f.cfg,
+    nextConfig: next,
+  });
+  prepared.commit(
+    {
+      ...f.published.identity.instance,
+      activeCommand: "SelectCommand",
+      documents: [],
+    },
+    f.published.identity.buildHash,
+  );
+  const result = lifecycle.resolveBackendHead(f.dir, f.readState);
+  assert.equal(result.retired, null);
+  assert.ok(result.current);
+  assert.equal(
+    result.current.identity.configHash,
+    load("./queue-instance").brokerConfigHash(next),
+  );
+  assert.ok(
+    result.current.head.predecessor.some(
+      (ref) =>
+        ref.path === f.published.entry.path &&
+        ref.sha256 === f.published.entry.sha256,
+    ),
+  );
+  assert.ok(
+    result.current.head.predecessor.some(
+      (ref) => ref.path === f.published.authority.backendTransition?.head.path,
+    ),
+  );
+  assert.equal(
+    fs.existsSync(
+      path.join(
+        f.dir,
+        "physical-backend-transitions/restored-after-successor/predecessor-head.json",
+      ),
+    ),
+    false,
+  );
+  for (const [index, file] of protectedFiles.entries())
+    assert.deepEqual(fs.readFileSync(file), original[index]);
+});
 
 test("owner transition preserves predecessor identity/history; inverse transition keeps the chain", () => {
   const f = setup();

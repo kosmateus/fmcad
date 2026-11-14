@@ -95,6 +95,8 @@ interface ControllerPorts {
   [key: string]: unknown;
 }
 interface SuccessorRuntime {
+  /** Returned only after immutable predecessor/epoch evidence is verified. */
+  effectiveIdentity?: Pick<P.Identity, "buildHash" | "configHash" | "instance">;
   authority: {
     previousBuildHash: string;
     sourceCommit: string;

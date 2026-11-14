@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { isDeepStrictEqual } from "node:util";
 import type * as P from "./queue-broker-ports";
 import type { BrokerModules } from "./queue-broker-modules";
+import { epochLineage, type EpochPointer } from "./queue-epoch-lineage";
 
 const load = createRequire(__filename);
 const { readJson, durable, hash, brokerConfigHash, sameInstance, idle } = load(
@@ -105,6 +106,101 @@ export function backendHead(
       "Transition identity/config binding changed",
     );
   return { head, identityFile: head.identity.path, identity };
+}
+
+/** A head from another epoch is history only when the authenticated lineage
+ * contains these exact bytes. Never validate its stale live-pointer refs as if
+ * they described the current epoch, or silently fall back on a damaged head. */
+export function resolveBackendHead(
+  dir: string,
+  readState: () => Pick<P.State, "epoch">,
+) {
+  const file = headFile(dir);
+  const currentEpoch = () => {
+    // openIsolatedEpoch(recover:false) validates qualification/lineage without
+    // granting live admission. assertEpoch() would incorrectly reject a dead
+    // predecessor here before the successor's stricter dead-process proof.
+    const epoch = readState().epoch;
+    if (!epoch) return null;
+    const pointer = readJson<EpochPointer>(
+      path.join(dir, "isolated-admission-epoch.json"),
+    );
+    if (!isDeepStrictEqual(pointer, epoch))
+      fail(
+        "BACKEND_TRANSITION_CHANGED",
+        "Admission epoch changed during backend resolution",
+      );
+    return pointer;
+  };
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      // An authenticated successor which inherited a transition cannot silently
+      // lose its mutable head and fall back to the original root configuration.
+      try {
+        fs.lstatSync(path.join(dir, "isolated-admission-epoch.json"));
+      } catch (pointerError) {
+        if ((pointerError as NodeJS.ErrnoException).code === "ENOENT")
+          return { current: null, retired: null };
+        throw pointerError;
+      }
+      const epoch = currentEpoch();
+      if (epoch) {
+        if (
+          epochLineage(dir, epoch).some(
+            (value) => value.authority.backendTransition,
+          )
+        )
+          fail(
+            "BACKEND_TRANSITION_CHANGED",
+            "Authenticated backend predecessor head is missing",
+          );
+      }
+      return { current: null, retired: null };
+    }
+    throw error;
+  }
+  if (!stat.isFile() || stat.isSymbolicLink())
+    fail(
+      "BACKEND_TRANSITION_CHANGED",
+      "Physical backend head must be a regular file",
+    );
+  const head = readJson<Head>(file);
+  const epoch = currentEpoch();
+  if (!epoch || head.epochId === epoch.epochId)
+    return { current: backendHead(dir), retired: null };
+  const entry = reference(file);
+  const previous = epochLineage(dir, epoch).find(
+    (value) =>
+      value.effectiveIdentity &&
+      value.pointer.epochId === head.epochId &&
+      value.authority.backendTransition?.head.sha256 === entry.sha256,
+  );
+  if (
+    !epoch.succession ||
+    !previous?.authority.backendTransition ||
+    head.ownerClientId !== epoch.ownerClientId ||
+    head.ownerTokenHash !== epoch.ownerTokenHash
+  )
+    fail(
+      "BACKEND_TRANSITION_CHANGED",
+      "Backend head is not an authenticated predecessor of this epoch",
+    );
+  return {
+    current: null,
+    retired: {
+      head,
+      reference: entry,
+      authority: epoch.succession,
+      transition: previous.authority.backendTransition.head,
+      identityFile: path.join(epoch.root, "instance.json"),
+      epochId: epoch.epochId,
+      ownerClientId: epoch.ownerClientId,
+      ownerTokenHash: epoch.ownerTokenHash,
+    },
+  };
 }
 
 export function assertTransitionIdle(
@@ -256,7 +352,8 @@ export function prepareBackendTransition(
       "CONFIG_CHANGED",
       "Transition may change only the explicitly approved physical backend, endpoint, headers, tool and protocol version",
     );
-  const prior = backendHead(dir);
+  const resolved = resolveBackendHead(dir, () => state);
+  const prior = resolved.current;
   const identityFile =
     prior?.identityFile || path.join(epoch.root, "instance.json");
   const identity = readJson<P.Identity>(identityFile);
@@ -274,6 +371,7 @@ export function prepareBackendTransition(
   if (
     brokerConfigHash(previous) !== identity.configHash ||
     (!prior &&
+      !resolved.retired &&
       readJson<P.Identity>(path.join(dir, "instance.json")).configHash !==
         identity.configHash)
   )
@@ -296,6 +394,13 @@ export function prepareBackendTransition(
     path.join(epoch.root, "instance.json"),
     path.join(dir, "isolated-admission-epoch.json"),
     ...(prior ? [headFile(dir), identityFile] : []),
+    ...(resolved.retired
+      ? [
+          headFile(dir),
+          resolved.retired.authority.path,
+          resolved.retired.transition.path,
+        ]
+      : []),
   ].map(reference);
   predecessor.push(...stopEvidence);
   // The mutable head is escrowed under this transition before replacing it.

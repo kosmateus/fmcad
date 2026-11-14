@@ -17,7 +17,7 @@ import type {
 import type { BrokerControlFence } from "../packages/core/src/application/broker-control";
 import type { DispatchFailure } from "../packages/core/src/application/execution";
 import {
-  backendHead,
+  resolveBackendHead,
   prepareBackendTransition,
 } from "./queue-backend-transition";
 const runtimeRequire = createRequire(__filename);
@@ -556,8 +556,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     (pinned["queue"] as {preparationConcurrency?:unknown}|undefined)?.preparationConcurrency,
   );
   const configHash = brokerConfigHash(pinned);
-  const effectiveBackend = backendHead(dir);
-  let identityFile = path.join(dir, "instance.json");
+  const backendScope = resolveBackendHead(dir, () =>
+    openIsolatedEpoch(dir, { recover: false }),
+  );
+  const effectiveBackend = backendScope.current;
+  let identityFile =
+    backendScope.retired?.identityFile || path.join(dir, "instance.json");
   let oldIdentity = fs.existsSync(identityFile)
     ? readJson<P.Identity>(identityFile)
     : null;
@@ -579,19 +583,42 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       pinned,
       options.backendTransition,
     );
-  function assertBackendHeadOwner(current: P.State) {
-    if (!same(backendHead(dir)?.head, effectiveBackend?.head))
-      fail("BACKEND_TRANSITION_CHANGED", "Physical backend head changed before startup");
+  function assertBackendHeadOwner(
+    current: P.State,
+    permittedBuildHash = codeHash,
+  ) {
+    const currentScope = resolveBackendHead(dir, () => current);
+    if (
+      !same(currentScope.current?.head, effectiveBackend?.head) ||
+      !same(currentScope.retired, backendScope.retired)
+    )
+      fail(
+        "BACKEND_TRANSITION_CHANGED",
+        "Physical backend head changed before startup",
+      );
     if (effectiveBackend && (!current.epoch ||
         current.epoch.epochId !== effectiveBackend.head.epochId ||
         current.epoch.ownerClientId !== effectiveBackend.head.ownerClientId ||
         current.epoch.ownerTokenHash !== effectiveBackend.head.ownerTokenHash))
       fail("BACKEND_TRANSITION_CHANGED", "Backend transition no longer belongs to the exact active epoch owner");
-    if (effectiveBackend && !options.backendTransition && effectiveBackend.identity.buildHash !== codeHash)
-      fail("BUILD_CHANGED", "Restore the exact physical backend transition runtime before reopening");
+    if (
+      effectiveBackend && !options.backendTransition &&
+      effectiveBackend.identity.buildHash !== permittedBuildHash
+    )
+      fail(
+        "BUILD_CHANGED",
+        "Restore the exact physical backend transition runtime before reopening",
+      );
   }
   if (effectiveBackend)
-    assertBackendHeadOwner(openIsolatedEpoch(dir, { recover: false }));
+    // Only the following authenticated claim can grant the successor runtime.
+    // An untrusted nonce gets no physical client or executable capability here.
+    assertBackendHeadOwner(
+      openIsolatedEpoch(dir, { recover: false }),
+      options.deadEpochSuccessorNonce
+        ? effectiveBackend.identity.buildHash
+        : codeHash,
+    );
   const marker = {
     pid: process.pid,
     birth: processBirth(),
@@ -653,7 +680,26 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   );
   phaseTimings.queueCommitted(state.data, state.epoch?.root ?? dir);
   if (state.epoch) identityFile = path.join(state.epoch.root, "instance.json");
-  assertBackendHeadOwner(state);
+  if (successorRuntime?.effectiveIdentity) {
+    const expectedIdentity =
+      effectiveBackend?.identity || readJson<P.Identity>(identityFile);
+    if (
+      successorRuntime.effectiveIdentity.buildHash !== expectedIdentity.buildHash ||
+      successorRuntime.effectiveIdentity.configHash !== expectedIdentity.configHash ||
+      !sameInstance(
+        successorRuntime.effectiveIdentity.instance,
+        expectedIdentity.instance,
+      )
+    )
+      fail(
+        "BACKEND_TRANSITION_CHANGED",
+        "Successor claim differs from the verified predecessor identity",
+      );
+  }
+  assertBackendHeadOwner(
+    state,
+    successorRuntime?.effectiveIdentity?.buildHash ?? codeHash,
+  );
   if (effectiveBackend) {
     identityFile = effectiveBackend.identityFile;
   }
@@ -1247,6 +1293,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         }
       }
       const expectedBuild =
+        successorRuntime?.effectiveIdentity?.buildHash ||
         successorRuntime?.authority.previousBuildHash || codeHash;
       if (
         !oldIdentity ||

@@ -43,7 +43,7 @@ const { bootstrapSuccessor, inspectSuccessor } = load(
   "../src/queue-epoch-successor",
 ) as typeof import("../src/composition/queue-epoch-successor");
 
-function fixture(t: TestContext) {
+function fixture(t: TestContext, backendTransition = false) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "successor-bootstrap-"));
   const keys = [
     "HOME",
@@ -82,7 +82,11 @@ function fixture(t: TestContext) {
   const stateRoot = path.join(process.env["XDG_STATE_HOME"]!, "fmcad");
   fs.mkdirSync(stateRoot, { recursive: true });
   const f = (
-    load("./fixtures/dead-epoch-successor.cjs") as (
+    load(
+      backendTransition
+        ? "./fixtures/backend-successor.cjs"
+        : "./fixtures/dead-epoch-successor.cjs",
+    ) as (
       base: string,
       root: string,
       options?: { oldProcessAlive?: boolean; inFlight?: boolean },
@@ -93,11 +97,12 @@ function fixture(t: TestContext) {
     force: true,
   }); // Prospective synthetic proof only.
   fs.unlinkSync(f.authorityEntry.path); // Bootstrap must itself authenticate and publish authority.
-  api.durable(
-    path.join(f.dir, "broker-lifecycle-" + f.previousOwner.nonce + ".json"),
-    f.inspection.previousLifecycle,
-    true,
-  );
+  if (!backendTransition)
+    api.durable(
+      path.join(f.dir, "broker-lifecycle-" + f.previousOwner.nonce + ".json"),
+      f.inspection.previousLifecycle,
+      true,
+    );
   const approvalFile = path.join(base, "approval.json");
   api.durable(approvalFile, f.approval, true);
   const client = {
@@ -114,6 +119,119 @@ function fixture(t: TestContext) {
     },
   };
 }
+
+test("FAKE backend transition: verified dead-successor startup stays metadata-only across distinct builds", async (t) => {
+  const f = fixture(t, true);
+  const head = path.join(f.dir, "physical-backend-head.json");
+  const before = fs.readFileSync(head);
+  const previousFile = path.join(f.inspection.pointer.root, "queue-state.json");
+  const previousBytes = fs.readFileSync(previousFile);
+  const complete = await bootstrapSuccessor(f.client, f.cfg, {
+    approval: f.approvalFile,
+    requestId: f.requestId,
+    confirmOwnership: true,
+  });
+  assert.ok("owner" in complete);
+  f.setWorker(complete.owner);
+  assert.equal(complete.kind, "dead-epoch-successor-metadata-ready");
+  assert.equal(complete.sdkRequestsSent, 0);
+  assert.deepEqual(fs.readFileSync(head), before);
+  assert.deepEqual(fs.readFileSync(previousFile), previousBytes);
+});
+
+test("FAKE backend transition: a nonce alone grants no successor runtime or physical client", async (t) => {
+  const f = fixture(t, true);
+  const { serve } = load(
+    "../src/queue-broker",
+  ) as typeof import("../src/queue-broker");
+  const guard = path.join(f.dir, "recovery.lock");
+  api.durable(
+    guard,
+    { kind: "dead-epoch-successor", nonce: "expected-fixture-nonce" },
+    true,
+  );
+  const before = fs.readFileSync(guard);
+  let factories = 0;
+  await assert.rejects(
+    serve(f.cfg, {
+      dir: f.dir,
+      confirmOwnership: true,
+      deadEpochSuccessorNonce: "foreign-fixture-nonce",
+      createBackend: () => {
+        factories++;
+        throw new Error("Physical client forbidden");
+      },
+    }),
+    { code: "EPOCH_SUCCESSOR_GUARD_CHANGED" },
+  );
+  assert.equal(factories, 0);
+  assert.deepEqual(fs.readFileSync(guard), before);
+});
+
+test("FAKE published successor: reopening uses its identity without replaying the archived backend", async (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "successor-reopen-"));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const f = (
+    load("./fixtures/backend-successor.cjs") as (
+      base: string,
+      repo: string,
+    ) => DeadEpochFixture & {
+      headFile: string;
+      publish(): { pointer: DeadEpochFixture["pointer"] };
+    }
+  )(base, repository);
+  const headBytes = fs.readFileSync(f.headFile);
+  const previousFile = path.join(f.inspection.pointer.root, "queue-state.json");
+  const previousBytes = fs.readFileSync(previousFile);
+  const published = f.publish();
+  // Only retire the synthetic fixture supervisor; no real process exists here.
+  fs.renameSync(
+    path.join(f.dir, "broker.lock"),
+    path.join(f.dir, "synthetic-retired-owner.json"),
+  );
+  const { serve } = load(
+    "../src/queue-broker",
+  ) as typeof import("../src/queue-broker");
+  let physicalClients = 0;
+  let sdkCalls = 0;
+  const forbiddenSdk = () => {
+    sdkCalls++;
+    throw new Error("SDK forbidden during metadata reopen");
+  };
+  const broker = await serve(f.cfg, {
+    dir: f.dir,
+    confirmOwnership: true,
+    autoReconcile: false,
+    createBackend: () => {
+      physicalClients++;
+      return {
+        server: { timeoutMs: 1000 },
+        _parse: JSON.parse,
+        _post: forbiddenSdk,
+        _openSession: forbiddenSdk,
+        listTools: forbiddenSdk,
+        executeUiGuardedScript: forbiddenSdk,
+        callTool: forbiddenSdk,
+      };
+    },
+  });
+  try {
+    assert.equal(physicalClients, 1);
+    assert.equal(sdkCalls, 0);
+    const pointer = JSON.parse(
+      fs.readFileSync(
+        path.join(f.dir, "isolated-admission-epoch.json"),
+        "utf8",
+      ),
+    ) as { epochId: string };
+    assert.equal(pointer.epochId, published.pointer.epochId);
+    assert.equal(broker.status().active, null);
+    assert.deepEqual(fs.readFileSync(f.headFile), headBytes);
+    assert.deepEqual(fs.readFileSync(previousFile), previousBytes);
+  } finally {
+    await broker.close();
+  }
+});
 
 test("FAKE host/process metadata: a released normal epoch keeps authenticated dead-successor startup metadata-only", async (t) => {
   const f = fixture(t);
