@@ -75,6 +75,56 @@ const epoch = () =>
   loadHost("queue-isolated-epoch.js") as {
     isolatedEpochDirectory(directory: string): string;
   };
+const queueConnection = loadHost("queue-connection.js") as {
+  request(
+    directory: string,
+    message: Record<string, unknown>,
+    options?: { timeoutMs?: number },
+  ): Promise<unknown>;
+};
+
+async function readCommittedQueueSnapshot(
+  queueFile: string,
+  brokerDirectory: string,
+  jobId: string,
+): Promise<{ jobs?: Record<string, StageOwnerJob> }> {
+  const workerToken = process.env["FMCAD_QUEUE_WORKER_TOKEN"];
+  if (!workerToken)
+    throw Object.assign(
+      new Error(
+        "Authenticated worker capability is unavailable for queue-state reads",
+      ),
+      { code: "INVALID_WORKER" },
+    );
+  let previousFenceHash: string | undefined;
+  for (;;) {
+    const bytes = readBytes(queueFile, 128 * 1024 * 1024, fs, queueFile);
+    const snapshot = JSON.parse(bytes.toString("utf8")) as {
+      jobs?: Record<string, StageOwnerJob>;
+    };
+    const fence = (await queueConnection.request(
+      brokerDirectory,
+      { action: "worker-status", jobId, workerToken, snapshotFence: true },
+      { timeoutMs: 0 },
+    )) as { snapshotHash?: unknown };
+    const fenceHash = fence?.snapshotHash;
+    if (typeof fenceHash !== "string" || !/^[a-f0-9]{64}$/.test(fenceHash))
+      throw Object.assign(
+        new Error("Broker did not attest a committed queue snapshot"),
+        { code: "STORAGE_UNAVAILABLE" },
+      );
+    const snapshotHash = createHash("sha256")
+      .update(JSON.stringify(snapshot))
+      .digest("hex");
+    if (snapshotHash === fenceHash) return snapshot;
+    if (previousFenceHash === fenceHash)
+      throw Object.assign(
+        new Error("Queue snapshot differs from the broker's durable state"),
+        { code: "STORAGE_UNAVAILABLE" },
+      );
+    previousFenceHash = fenceHash;
+  }
+}
 
 type Accepted = AuthenticatedStageOwner["accepted"];
 type ReceiptInput = Parameters<StageOwnerPorts["readOriginalReceipt"]>[0];
@@ -717,12 +767,12 @@ export async function createAuthenticatedStageDependencies(
     return null;
   const brokerDirectory = fs.realpathSync(verifiedWorkerInputs.brokerDirectory);
   const admissionDirectory = epoch().isolatedEpochDirectory(brokerDirectory);
-  if (fs.existsSync(path.join(admissionDirectory, "queue-state.pending.json")))
-    throw new Error("Queue state has an unresolved durability marker");
   const queueFile = path.join(admissionDirectory, "queue-state.json");
-  const queue = JSON.parse(
-    readBytes(queueFile, 128 * 1024 * 1024, fs, queueFile).toString("utf8"),
-  ) as { jobs?: Record<string, StageOwnerJob> };
+  const queue = await readCommittedQueueSnapshot(
+    queueFile,
+    brokerDirectory,
+    verifiedWorkerInputs.jobId,
+  );
   const job = queue.jobs?.[verifiedWorkerInputs.jobId];
   if (!job || job.id !== verifiedWorkerInputs.jobId)
     throw new Error("Authenticated queue job is unavailable");

@@ -30,6 +30,59 @@ const { retainAdmission } = loadModule(
 const { durable, readJson } = loadModule(
   "../src/dist/node-adapters/persistence/records",
 ) as typeof import("../packages/node-adapters/src/persistence/records");
+type QueueRequest = (
+  directory: string,
+  message: Record<string, unknown>,
+  options?: { timeoutMs?: number },
+) => Promise<unknown>;
+const queueConnection = loadModule("../src/queue-connection") as {
+  request: QueueRequest;
+};
+const workerToken = "stage-owner-test-worker-token";
+process.env["FMCAD_QUEUE_WORKER_TOKEN"] = workerToken;
+let snapshotFenceRequest: QueueRequest = async (
+  directory,
+  message,
+  options,
+) => {
+  assert.equal(message["action"], "worker-status");
+  assert.equal(message["snapshotFence"], true);
+  assert.equal(typeof message["jobId"], "string");
+  assert.equal(message["workerToken"], workerToken);
+  assert.equal(options?.timeoutMs, 0);
+  const pointerFile = path.join(directory, "isolated-admission-epoch.json");
+  const snapshotDirectory = fs.existsSync(pointerFile)
+    ? string(field(readJson(pointerFile), "root"))
+    : directory;
+  const snapshot = readJson(path.join(snapshotDirectory, "queue-state.json"));
+  return { snapshotHash: sha(JSON.stringify(snapshot)) };
+};
+queueConnection.request = (directory, message, options) =>
+  snapshotFenceRequest(directory, message, options);
+function overrideSnapshotFenceRequest(request: QueueRequest): () => void {
+  const previous = snapshotFenceRequest;
+  snapshotFenceRequest = request;
+  return () => {
+    snapshotFenceRequest = previous;
+  };
+}
+const snapshotFenceChildPrelude = `
+process.env.FMCAD_QUEUE_WORKER_TOKEN = ${JSON.stringify(workerToken)};
+const snapshotFenceConnection = require(${JSON.stringify(loadModule.resolve("../src/queue-connection"))});
+snapshotFenceConnection.request = async (directory, message, options) => {
+  if (message.action !== "worker-status" || message.snapshotFence !== true || options?.timeoutMs !== 0)
+    throw new Error("Unexpected test snapshot fence request");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const crypto = require("node:crypto");
+  const pointerFile = path.join(directory, "isolated-admission-epoch.json");
+  const snapshotDirectory = fs.existsSync(pointerFile)
+    ? JSON.parse(fs.readFileSync(pointerFile, "utf8")).root
+    : directory;
+  const snapshot = JSON.parse(fs.readFileSync(path.join(snapshotDirectory, "queue-state.json"), "utf8"));
+  return { snapshotHash: crypto.createHash("sha256").update(JSON.stringify(snapshot)).digest("hex") };
+};
+`;
 const { createAuthenticatedStageOwner } = loadModule(
   "../src/dist/node-adapters/persistence/stage-owner",
 ) as typeof import("../packages/node-adapters/src/persistence/stage-owner");
@@ -112,6 +165,115 @@ test("stage owner refuses a pending admission snapshot even when root history is
       }),
     /durability marker/,
   );
+});
+
+test("stage snapshot reader waits for the authenticated fence across an in-flight commit", async (t) => {
+  const f = fixture(t, { seedStage: false });
+  const queueFile = path.join(f.broker, "queue-state.json");
+  const pendingFile = path.join(f.broker, "queue-state.pending.json");
+  fs.writeFileSync(pendingFile, "in-flight");
+  const committed = {
+    ...object(readJson(queueFile)),
+    fenceTestCommit: "committed-after-reader-opened-snapshot",
+  };
+  let requests = 0;
+  const restoreFence = overrideSnapshotFenceRequest(
+    async (directory, message, options) => {
+      requests++;
+      assert.equal(directory, f.broker);
+      assert.equal(message["action"], "worker-status");
+      assert.equal(message["jobId"], f.job.id);
+      assert.equal(message["workerToken"], workerToken);
+      assert.equal(message["snapshotFence"], true);
+      assert.equal(options?.timeoutMs, 0);
+      if (requests === 1) {
+        durable(queueFile, committed);
+        fs.unlinkSync(pendingFile);
+      }
+      return { snapshotHash: sha(JSON.stringify(committed)) };
+    },
+  );
+  t.after(restoreFence);
+
+  const dependencies = await createAuthenticatedStageDependencies({
+    brokerDirectory: f.broker,
+    jobId: f.job.id,
+    clientId: f.job.clientId,
+    projectDirectory: f.project,
+  });
+
+  assert.ok(dependencies);
+  assert.equal(requests, 2);
+  assert.deepEqual(readJson(queueFile), committed);
+  assert.equal(fs.existsSync(pendingFile), false);
+});
+
+test("stage snapshot reader fails closed on an orphan marker without changing it", async (t) => {
+  const f = fixture(t, { seedStage: false });
+  const queueFile = path.join(f.broker, "queue-state.json");
+  const pendingFile = path.join(f.broker, "queue-state.pending.json");
+  const marker = Buffer.from("orphan durability evidence");
+  const snapshot = fs.readFileSync(queueFile);
+  fs.writeFileSync(pendingFile, marker);
+  let requests = 0;
+  const restoreFence = overrideSnapshotFenceRequest(async () => {
+    requests++;
+    throw Object.assign(new Error("Queue durability is unresolved"), {
+      code: "STORAGE_UNAVAILABLE",
+    });
+  });
+  t.after(restoreFence);
+
+  await assert.rejects(
+    createAuthenticatedStageDependencies({
+      brokerDirectory: f.broker,
+      jobId: f.job.id,
+    }),
+    { code: "STORAGE_UNAVAILABLE" },
+  );
+
+  assert.equal(requests, 1);
+  assert.deepEqual(fs.readFileSync(queueFile), snapshot);
+  assert.deepEqual(fs.readFileSync(pendingFile), marker);
+});
+
+test("stage snapshot reader rejects missing attestations and stable mismatches", async (t) => {
+  const f = fixture(t, { seedStage: false });
+  let requests = 0;
+  const restoreMismatchFence = overrideSnapshotFenceRequest(async () => {
+    requests++;
+    return { snapshotHash: "f".repeat(64) };
+  });
+  try {
+    await assert.rejects(
+      createAuthenticatedStageDependencies({
+        brokerDirectory: f.broker,
+        jobId: f.job.id,
+      }),
+      { code: "STORAGE_UNAVAILABLE" },
+    );
+    assert.equal(requests, 2);
+  } finally {
+    restoreMismatchFence();
+  }
+
+  requests = 0;
+  const restoreMissingFence = overrideSnapshotFenceRequest(async () => {
+    requests++;
+    return {};
+  });
+  try {
+    await assert.rejects(
+      createAuthenticatedStageDependencies({
+        brokerDirectory: f.broker,
+        jobId: f.job.id,
+      }),
+      { code: "STORAGE_UNAVAILABLE" },
+    );
+    assert.equal(requests, 1);
+  } finally {
+    restoreMissingFence();
+  }
 });
 
 test("helper stages bind an unsaved document only with a complete matching physical preflight", async (t) => {
@@ -897,6 +1059,7 @@ test("real document-publication stage preserves accepted bytes and survives an a
   assert.equal(pending.nextStage, null);
 
   const childScript = `
+    ${snapshotFenceChildPrelude}
     (async () => {
       const d = await require(${JSON.stringify(loadModule.resolve("../src/composition/stage-dependencies"))})
         .createAuthenticatedStageDependencies({ brokerDirectory: ${JSON.stringify(f.broker)}, jobId: ${JSON.stringify(f.job.id)}, clientId: ${JSON.stringify(f.job.clientId)}, projectDirectory: ${JSON.stringify(f.project)} });
@@ -1129,6 +1292,7 @@ test("real non-atomic batch service journals a step intent and inspects its numb
   assert.equal(field(batchStarted, "event", "stage"), "batch.run");
   assert.equal(field(plan, "head"), field(batchStarted, "sha256"));
   const childScript = `
+    ${snapshotFenceChildPrelude}
     (async () => {
       const d = await require(${JSON.stringify(loadModule.resolve("../src/composition/stage-dependencies"))})
         .createAuthenticatedStageDependencies({ brokerDirectory: ${JSON.stringify(root)}, jobId: ${JSON.stringify(job.id)}, clientId: "client-owner", projectDirectory: ${JSON.stringify(project)} });
@@ -1604,8 +1768,11 @@ test("Public Fmcad stage/journalInspect/resumePlan bind only the authenticated c
   };
   const load = Module._load;
   Module._load = function (name, parent, ...args) {
-    if (name.endsWith("/queue-connection"))
-      return { queueDirectory: () => f.broker };
+    if (/\/queue-connection(?:\.js)?$/.test(name))
+      return {
+        queueDirectory: () => f.broker,
+        request: queueConnection.request,
+      };
     if (/\/queue-instance(?:\.js)?$/.test(name))
       return {
         buildHash: () => f.build,

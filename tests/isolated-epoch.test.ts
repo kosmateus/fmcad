@@ -459,16 +459,51 @@ test("ordinary typed worker stage lookup selects the epoch store, never the hist
   const f = fixture(t);
   f.install();
   const job = f.state.submit(f.typed());
-  const stage = await (
-    loadModule(
-      "../src/composition/stage-dependencies",
-    ) as typeof import("../src/composition/stage-dependencies")
-  ).createAuthenticatedStageDependencies({
-    brokerDirectory: f.root,
-    jobId: string(job["id"]),
-    clientId: "owner",
-    projectDirectory: f.root,
-  });
+  const queueConnection = loadModule("../src/queue-connection") as {
+    request(
+      directory: string,
+      message: Record<string, unknown>,
+      options?: { timeoutMs?: number },
+    ): Promise<unknown>;
+  };
+  const originalRequest = queueConnection.request;
+  const previousToken = process.env["FMCAD_QUEUE_WORKER_TOKEN"];
+  process.env["FMCAD_QUEUE_WORKER_TOKEN"] = "isolated-epoch-test-worker-token";
+  queueConnection.request = async (directory, message, options) => {
+    assert.equal(message["action"], "worker-status");
+    assert.equal(message["snapshotFence"], true);
+    assert.equal(message["jobId"], job["id"]);
+    assert.equal(message["workerToken"], "isolated-epoch-test-worker-token");
+    assert.equal(options?.timeoutMs, 0);
+    const pointer = JSON.parse(
+      fs.readFileSync(
+        path.join(directory, "isolated-admission-epoch.json"),
+        "utf8",
+      ),
+    ) as { root: string };
+    const snapshot = JSON.parse(
+      fs.readFileSync(path.join(pointer.root, "queue-state.json"), "utf8"),
+    );
+    return { snapshotHash: hash(JSON.stringify(snapshot)) };
+  };
+  let stage: unknown;
+  try {
+    stage = await (
+      loadModule(
+        "../src/composition/stage-dependencies",
+      ) as typeof import("../src/composition/stage-dependencies")
+    ).createAuthenticatedStageDependencies({
+      brokerDirectory: f.root,
+      jobId: string(job["id"]),
+      clientId: "owner",
+      projectDirectory: f.root,
+    });
+  } finally {
+    queueConnection.request = originalRequest;
+    if (previousToken === undefined)
+      delete process.env["FMCAD_QUEUE_WORKER_TOKEN"];
+    else process.env["FMCAD_QUEUE_WORKER_TOKEN"] = previousToken;
+  }
   assert.equal(
     stage,
     null,

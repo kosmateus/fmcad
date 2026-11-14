@@ -23,7 +23,9 @@ const worker = load(
 ) as typeof import("../src/composition/execution-worker");
 
 test("ordinary worker commands do not read a concurrently changing stage-owner snapshot", async (t) => {
-  const blocked = new Error("Queue state has an unresolved durability marker");
+  const blocked = new Error(
+    "Broker refused the queue snapshot durability fence",
+  );
   const stageRead = t.mock.method(
     stages,
     "createAuthenticatedStageDependencies",
@@ -77,7 +79,7 @@ test("ordinary worker commands do not read a concurrently changing stage-owner s
   assert.equal(stageRead.mock.callCount(), 0);
   assert.equal(execute.mock.callCount(), ordinary.length);
 
-  // Stage consumers still fail before execution; a pending snapshot is never ignored.
+  // Stage consumers fail before execution when the broker refuses its snapshot fence.
   for (const payload of [
     { kind: "run", request: { helperVersion: "cad-v1" } },
     ...["document.save.once", "batch.run", "definition.instantiate"].flatMap(
