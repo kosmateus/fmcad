@@ -16,6 +16,7 @@ import { durable, readJson } from "../persistence/records";
 import { directory as assertDirectory } from "../persistence/migration-files";
 import { pythonArtifactManifest } from "../python/context-binding";
 import { verifyPythonArtifact } from "../python/artifact";
+import { classifyPythonRpc } from "../python/admission";
 
 export interface AuditMessage extends Record<string, unknown> {
   jobId?: unknown;
@@ -344,7 +345,12 @@ export function createRecoveryAudit(
           if (hash(fs.readFileSync(reader.sourceFile)) !== reader.sourceSha256)
             fail("BUILD_CHANGED", "Audit source changed after checking");
           verifyPythonArtifact(value.artifact);
-          if (value.outgoing.params?.arguments?.code !== value.artifact.script)
+          const finalPython = classifyPythonRpc(value.outgoing);
+          if (
+            finalPython.kind !== "python" ||
+            finalPython.official !== (p.scriptFormat === "fusion-mcp") ||
+            finalPython.source !== value.artifact.script
+          )
             fail("AUDIT_BYTES_CHANGED", "Audit wire changed after checking");
           value.certificate!.fence(value.outgoing);
           if (scope.sent || fs.existsSync(path.join(directory, "start.json")))
