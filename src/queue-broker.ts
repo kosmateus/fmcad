@@ -15,6 +15,7 @@ import type {
   AuditSnapshot,
 } from "./queue-broker-modules";
 import type { BrokerControlFence } from "../packages/core/src/application/broker-control";
+import type { DispatchFailure } from "../packages/core/src/application/execution";
 import {
   backendHead,
   prepareBackendTransition,
@@ -2422,6 +2423,118 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     return prepared;
   }
 
+  function retainDispatchFailure(
+    context: P.Context,
+    error: unknown,
+    failure: DispatchFailure<P.Prepared>,
+  ) {
+    // Error messages, causes and child output may contain script/headers/tokens.
+    // Read only own data fields and retain a closed vocabulary, never getters.
+    const field = (key: string): unknown =>
+      error && typeof error === "object"
+        ? Object.getOwnPropertyDescriptor(error, key)?.value
+        : undefined;
+    const codes = new Set([
+      "ENOENT",
+      "EACCES",
+      "EPERM",
+      "EINVAL",
+      "EMFILE",
+      "ENFILE",
+      "EAGAIN",
+      "ENOMEM",
+      "ENOSYS",
+      "ENOEXEC",
+      "EPIPE",
+      "ECONNRESET",
+      "ETIMEDOUT",
+      "ABORT_ERR",
+      "EINTR",
+      "ENOBUFS",
+      "EIO",
+      "ESRCH",
+      "ECHILD",
+      "EPROTO",
+      "UNKNOWN_RPC",
+      "MALFORMED_BACKEND_RESULT",
+      "PYTHON_CHECK_REJECTED",
+      "BUILD_CHANGED",
+      "INPUT_CHANGED",
+      "DOCUMENT_CHANGED",
+      "RUN_TIMEOUT",
+      "PREPARED_RPC_UNAVAILABLE",
+      "OUTPUT_PUBLICATION_FAILED",
+      "unsupported_queue_route",
+      "INVALID_SCRIPT",
+      "INVALID_REQUEST",
+    ]);
+    try {
+      const code = field("code"),
+        causeCode = field("causeCode");
+      const transportPhase = field("transportPhase");
+      const prepared = failure.prepared;
+      const binding = prepared?.record.binding;
+      const rpcIdentityMatches =
+        !!binding &&
+        binding.jobId === context.job.id &&
+        binding.buildHash === codeHash &&
+        binding.rpcId === prepared?.rpcId;
+      durable(
+        path.join(
+          jobDir(context.job.id),
+          `dispatch-failure-${randomUUID()}.json`,
+        ),
+        {
+          version: 1,
+          at: Date.now(),
+          jobId: context.job.id,
+          requestId: context.job.requestId,
+          clientId: context.job.clientId,
+          buildHash: codeHash,
+          phase: failure.phase,
+          // This is the local send boundary, not proof of remote SDK entry.
+          submitted: failure.submitted,
+          code: typeof code === "string" && codes.has(code) ? code : null,
+          causeCode:
+            typeof causeCode === "string" && codes.has(causeCode)
+              ? causeCode
+              : null,
+          transportPhase:
+            typeof transportPhase === "string" &&
+            [
+              "spawn",
+              "process",
+              "stdin",
+              "output",
+              "response",
+              "observation",
+            ].includes(transportPhase)
+              ? transportPhase
+              : null,
+          rpcIdentityMatches,
+          rpc: rpcIdentityMatches
+            ? {
+                jobId: binding!.jobId,
+                rpcId: binding!.rpcId,
+                requestHash: binding!.requestHash,
+                buildHash: binding!.buildHash,
+              }
+            : null,
+          worker: {
+            pid: context.child?.pid ?? null,
+            identity: "worker-identity.json",
+            start: "worker-start.json",
+            result: "worker-result.json",
+          },
+        },
+        true,
+      );
+    } catch {
+      // Diagnostics must never prevent unknown classification or permit replay.
+      diagnostics();
+    }
+  }
+
   // All adapter calls eventually cross this one physical dispatch boundary.
   const physicalPost = async function (
     payload: P.Rpc,
@@ -2597,15 +2710,17 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         });
         return returned;
       },
-      unknown() {
+      unknown(error, failure) {
         context.unknown = true;
         hold(
           context.job,
           "Physical RPC outcome is unknown; observe the durable receipt without replay",
         );
+        retainDispatchFailure(context, error, failure);
       },
-      notSubmitted(error) {
+      notSubmitted(error, failure) {
         required(context.localDispatchErrors).add(error);
+        retainDispatchFailure(context, error, failure);
       },
     });
   };

@@ -8,6 +8,7 @@ import type {
   WorkerRequest,
 } from "../packages/core/src";
 import nodePath from "node:path";
+import { spawnSync } from "node:child_process";
 const sourceDirectory = nodePath.join(process.cwd(), "tests");
 const load = createRequire(
   nodePath.join(sourceDirectory, "execution-pipeline.test.js"),
@@ -16,6 +17,25 @@ function required<T>(value: T | null | undefined): T {
   assert.ok(value !== undefined && value !== null);
   return value;
 }
+
+test("the offline broker retains dispatch errors without replay or foreign access", () => {
+  const child = spawnSync(
+    process.execPath,
+    [
+      "--test",
+      "--test-force-exit",
+      "--test-reporter=tap",
+      nodePath.join(process.cwd(), "tests/fixtures/dispatch-failure.cjs"),
+    ],
+    { encoding: "utf8", env: { ...process.env, NODE_TEST_CONTEXT: undefined } },
+  );
+  assert.equal(child.error, undefined);
+  assert.equal(child.status, 0, child.stdout + child.stderr);
+  assert.match(child.stdout, /# tests 6\b/);
+  assert.match(child.stdout, /# pass 6\b/);
+  assert.match(child.stdout, /# fail 0\b/);
+  assert.match(child.stdout, /# skipped 0\b/);
+});
 
 const {
   dispatchPrepared,

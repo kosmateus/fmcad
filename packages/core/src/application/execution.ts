@@ -10,28 +10,44 @@ export interface DispatchPorts<Prepared, Reply, Result> {
   fence(prepared: Prepared): void;
   send(prepared: Prepared): Promise<Reply>;
   settle(prepared: Prepared, reply: Reply): Result | Promise<Result>;
-  unknown(error: unknown): void;
+  unknown(error: unknown, failure: DispatchFailure<Prepared>): void;
   /** A local refusal before this RPC's physical send, not a rollback claim. */
-  notSubmitted?(error: unknown): void;
+  notSubmitted?(error: unknown, failure: DispatchFailure<Prepared>): void;
+}
+
+/** Local boundary evidence only: submitted never proves remote SDK entry. */
+export interface DispatchFailure<Prepared> {
+  phase: "prepare" | "check" | "admit" | "fence" | "send" | "settle";
+  submitted: boolean;
+  prepared: Prepared | undefined;
 }
 
 export async function dispatchPrepared<Prepared, Reply, Result>(
   ports: DispatchPorts<Prepared, Reply, Result>,
 ): Promise<Result> {
   let submitted = false;
+  let phase: DispatchFailure<Prepared>["phase"] = "prepare";
+  let prepared: Prepared | undefined;
   try {
-    const prepared = await ports.prepare();
+    prepared = await ports.prepare();
+    const ready = prepared;
+    phase = "check";
     await ports.check(prepared);
+    phase = "admit";
     const reply = await ports.admit(() => {
-      ports.fence(prepared);
+      phase = "fence";
+      ports.fence(ready);
       // No await between the final fence/grant and invoking the physical port.
       submitted = true;
-      return ports.send(prepared);
+      phase = "send";
+      return ports.send(ready);
     });
+    phase = "settle";
     return await ports.settle(prepared, reply);
   } catch (error) {
-    if (submitted) ports.unknown(error);
-    else ports.notSubmitted?.(error);
+    const failure = { phase, submitted, prepared };
+    if (submitted) ports.unknown(error, failure);
+    else ports.notSubmitted?.(error, failure);
     throw error;
   }
 }
