@@ -11,7 +11,7 @@ const repo = process.cwd();
 const load = createRequire(
   path.join(repo, "tests/successor-startup-abort.test.js"),
 );
-const { abortUnstartedSuccessor } = load(
+const { abortUnstartedSuccessor, retireMetadataWorker } = load(
   "../scripts/abort-unstarted-successor.cjs",
 ) as typeof import("../scripts/abort-unstarted-successor.cjs");
 const { inspectSuccessor } = load(
@@ -186,6 +186,261 @@ function readyFixture(t: TestContext) {
   });
   return { ...f, owner, observation };
 }
+
+function retirementFixture(t: TestContext) {
+  const f = readyFixture(t);
+  let alive = true,
+    signals = 0,
+    fusionReads = 0;
+  const original = api.priorProcessAlive;
+  t.mock.method(api, "priorProcessAlive", (value: unknown) => {
+    if (
+      value &&
+      typeof value === "object" &&
+      "pid" in value &&
+      "birth" in value &&
+      value.pid === f.worker.pid &&
+      value.birth === f.worker.birth
+    )
+      return alive;
+    return original(value);
+  });
+  api.durable(path.join(f.dir, "broker.lock"), f.owner);
+  const exe = path.join(f.base, "synthetic-node-executable");
+  fs.writeFileSync(exe, "fake process port ONLY; never executed");
+  const process = {
+    pid: f.owner.pid,
+    birth: f.owner.birth,
+    exe,
+    exeSha256: reference(exe).sha256,
+    cmdline: [
+      exe,
+      f.approval.candidateRoot + "/src/queue-epoch-successor-worker.js",
+    ],
+    childrenByTask: {},
+    socketRows: [],
+  };
+  const osFile = path.join(f.base, "os-after.json");
+  api.durable(osFile, process);
+  const fusion = {
+    ...f.authority.expectedProcess,
+    version: "synthetic-version",
+  };
+  const proof = {
+    kind: "metadata-worker-retirement-proof-v1",
+    qualified: true,
+    proofGaps: [],
+    sourceCommit: f.authority.sourceCommit,
+    buildHash: f.authority.buildHash,
+    runtimeRoot: f.approval.candidateRoot,
+    worker: f.owner,
+    workerClaimNonce: f.nonce,
+    requestId: f.requestId,
+    epochId: f.approval.predecessorEpochId,
+    fusion,
+    protectedFiles: [
+      reference(path.join(f.dir, "broker.lock")),
+      reference(path.join(f.observation, "result.json")),
+      reference(f.authority.predecessor.rootState.path),
+    ],
+    sourceFiles: [reference(exe)],
+    evidenceFiles: [reference(osFile)],
+  };
+  const proofFile = path.join(f.base, "independent-proof.json");
+  api.durable(proofFile, proof);
+  const control = {
+    instanceId: f.owner.nonce,
+    buildHash: proof.buildHash,
+    activeOperations: 0,
+    activeIds: [],
+    unresolved: true,
+    phase: "RECOVERY_BLOCKED",
+  };
+  const status = {
+    buildHash: proof.buildHash,
+    sourceCommit: proof.sourceCommit,
+    admissionEpoch: proof.epochId,
+    held: "Qualified isolated scratch process is unavailable; metadata only, no SDK or replacement authority",
+    stopping: false,
+    deadEpochSuccessor: {
+      requestId: f.requestId,
+      currentFactsAvailable: false,
+      expectedProcess: f.authority.expectedProcess,
+    },
+    features: {
+      auditFactsCapture: false,
+      atomicRecoveryProcessLossAudit: false,
+    },
+  };
+  const client = {
+    ...f.client,
+    async call(action: string) {
+      return structuredClone(action === "queue-summary" ? status : control);
+    },
+  };
+  const ports: NonNullable<Parameters<typeof retireMetadataWorker>[4]> = {
+    certify() {
+      /* Fake source certification for protocol tests, not a production qualification. */
+    },
+    process(_owner, _runtime, _refs, apply) {
+      if (apply) {
+        signals++;
+        alive = false;
+      }
+      return { process, retired: apply };
+    },
+    fusion() {
+      fusionReads++;
+      return { ...fusion, hasExited: false, responding: true };
+    },
+  };
+  return {
+    ...f,
+    client,
+    proof,
+    proofFile,
+    ports,
+    process,
+    status,
+    control,
+    counts: () => ({ signals, fusionReads }),
+    setAlive(value: boolean) {
+      alive = value;
+    },
+  };
+}
+
+test("FAKE retirement protocol: preview has no effect, explicit effect appends before/after, restoration retains original unknown", async (t) => {
+  const f = retirementFixture(t);
+  const before = fs.readFileSync(f.authority.predecessor.rootState.path);
+  const preview = await retireMetadataWorker(
+    f.client,
+    f.approvalFile,
+    f.proofFile,
+    false,
+    f.ports,
+  );
+  assert.ok("retirementPerformed" in preview);
+  assert.equal(preview["retirementPerformed"], false);
+  assert.equal(f.counts().signals, 0);
+  const result = await retireMetadataWorker(
+    f.client,
+    f.approvalFile,
+    f.proofFile,
+    true,
+    f.ports,
+  );
+  assert.equal(result["retired"], true);
+  assert.equal(result["gracefulClose"], false);
+  assert.equal(f.counts().signals, 1);
+  assert.ok(f.counts().fusionReads >= 4);
+  assert.deepEqual(
+    await retireMetadataWorker(
+      f.client,
+      f.approvalFile,
+      f.proofFile,
+      true,
+      f.ports,
+    ),
+    result,
+  );
+  assert.equal(f.counts().signals, 1);
+  const aborted = abortUnstartedSuccessor(f.client, f.approvalFile, true);
+  assert.equal(aborted["status"], "aborted");
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(path.join(f.dir, "broker.lock"), "utf8")),
+    f.previousOwner,
+  );
+  assert.deepEqual(
+    fs.readFileSync(f.authority.predecessor.rootState.path),
+    before,
+  );
+});
+
+for (const reason of [
+  "proof-gap",
+  "source-certification",
+  "pid-birth",
+  "active-operation",
+  "current-facts",
+  "fusion-before",
+  "source-drift",
+  "late-status",
+]) {
+  test(
+    "FAKE retirement protocol refuses " + reason + " before any signal",
+    async (t) => {
+      const f = retirementFixture(t);
+      if (reason === "proof-gap")
+        api.durable(f.proofFile, { ...f.proof, proofGaps: ["unproven port"] });
+      if (reason === "source-certification")
+        f.ports.certify = () => {
+          throw new Error("Unknown runtime closure");
+        };
+      if (reason === "pid-birth") f.process.birth = "different";
+      if (reason === "active-operation") f.control.activeOperations = 1;
+      if (reason === "current-facts")
+        f.status.deadEpochSuccessor.currentFactsAvailable = true;
+      if (reason === "fusion-before")
+        f.ports.fusion = () => ({ ...f.proof.fusion, birth: "different" });
+      if (reason === "source-drift")
+        fs.appendFileSync(f.process.exe, "changed");
+      if (reason === "late-status") {
+        const call = f.client.call;
+        let count = 0;
+        f.client.call = async (action) => {
+          if (++count > 2) f.control.activeOperations = 1;
+          return call(action);
+        };
+      }
+      await assert.rejects(
+        retireMetadataWorker(
+          f.client,
+          f.approvalFile,
+          f.proofFile,
+          true,
+          f.ports,
+        ),
+      );
+      assert.equal(f.counts().signals, 0);
+    },
+  );
+}
+
+test("FAKE retirement protocol: an interrupted signal is never replayed and failed Fusion post-proof remains pending", async (t) => {
+  const f = retirementFixture(t),
+    process = f.ports.process;
+  f.ports.process = (...args) => {
+    const result = process(...args);
+    if (args[3]) throw new Error("Unknown signal response after effect");
+    return result;
+  };
+  await assert.rejects(
+    retireMetadataWorker(f.client, f.approvalFile, f.proofFile, true, f.ports),
+    /Unknown signal/,
+  );
+  assert.equal(f.counts().signals, 1);
+  f.ports.fusion = () => {
+    throw new Error("Fresh Fusion OS unavailable");
+  };
+  await assert.rejects(
+    retireMetadataWorker(f.client, f.approvalFile, f.proofFile, true, f.ports),
+    /Fusion OS unavailable/,
+  );
+  assert.equal(
+    fs.existsSync(
+      path.join(f.audit, "abort-unstarted", "retirement-after.json"),
+    ),
+    false,
+  );
+  assert.equal(f.counts().signals, 1);
+  f.setAlive(true);
+  await assert.rejects(
+    retireMetadataWorker(f.client, f.approvalFile, f.proofFile, true, f.ports),
+    /never repeat a signal/,
+  );
+  assert.equal(f.counts().signals, 1);
+});
 
 test("FAKE metadata-ready: terminal observation rejection SDK0 permits explicit retirement without rewriting ready/history", (t) => {
   const f = readyFixture(t);
