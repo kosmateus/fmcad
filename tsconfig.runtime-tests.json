@@ -328,6 +328,7 @@
     "tests/closed-epoch-proof.test.ts",
     "tests/curl-transport.test.ts",
     "tests/dead-epoch-successor-bootstrap.test.ts",
+    "tests/retained-worker-freeze.test.ts",
     "tests/sdk1-metadata-worker-retirement.test.ts",
     "tests/successor-startup-abort.test.ts",
     "tests/dead-epoch-successor-control.test.ts",
