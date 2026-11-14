@@ -362,6 +362,162 @@ test("exit failures, malformed responses, spawn and stdin errors are uncertain a
   );
 });
 
+test("curl retains safe failure codes and local phases without claiming remote settlement", async () => {
+  for (const [causeCode, phase] of [
+    ["ENOENT", "spawn"],
+    ["EACCES", "process"],
+    ["EPIPE", "stdin"],
+    ["EIO", "output"],
+  ] as const) {
+    const native = Object.assign(new Error("synthetic-secret-message"), {
+      code: causeCode,
+    });
+    const fake = fakeCurl((child) => {
+      if (phase === "process") child.emit("error", native);
+      if (phase === "stdin") child.stdin.emit("error", native);
+      if (phase === "output") child.stdout.emit("error", native);
+    });
+    let attempts = 0;
+    await assert.rejects(
+      postWithCurl(server, {}, null, (...args) => {
+        attempts++;
+        if (phase === "spawn") throw native;
+        return fake.implementation(...args);
+      }),
+      (error) => {
+        assert.equal(at(error, "causeCode"), causeCode);
+        assert.equal(at(error, "transportPhase"), phase);
+        assert.equal(
+          at(error, "code"),
+          phase === "spawn" || phase === "process" ? "ECHILD" : causeCode,
+        );
+        assert.match(text(at(error, "message")), warning);
+        assert.doesNotMatch(JSON.stringify(error), /synthetic-secret-message/);
+        assert.equal(at(error, "notStarted"), undefined);
+        return true;
+      },
+    );
+    assert.equal(attempts, 1);
+    assert.equal(fake.calls.length, phase === "spawn" ? 0 : 1);
+  }
+});
+
+test("curl never reads native code getters or retains unrecognized secret-like codes", async () => {
+  let getterCalls = 0;
+  const getter = Object.defineProperty(new Error("secret"), "code", {
+    get() {
+      getterCalls++;
+      throw new Error("must not read native getter");
+    },
+  });
+  for (const native of [getter, { code: "Bearer synthetic-secret-code" }]) {
+    await assert.rejects(
+      postWithCurl(server, {}, null, () => {
+        throw native;
+      }),
+      (error) => {
+        assert.equal(at(error, "transportPhase"), "spawn");
+        assert.equal(at(error, "causeCode"), undefined);
+        assert.doesNotMatch(JSON.stringify(error), /secret|Bearer/);
+        return true;
+      },
+    );
+  }
+  assert.equal(getterCalls, 0);
+});
+
+test("fake MCP response loss remains unknown after one submission; preflight sends nothing", async () => {
+  const fake = fakeCurl("HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{}");
+  await assert.rejects(
+    postWithCurl(
+      server,
+      { jsonrpc: "2.0", id: "sol-mcp-rpc-fault", method: "tools/call" },
+      null,
+      fake.implementation,
+    ),
+    (error) => {
+      assert.equal(at(error, "code"), "EPROTO");
+      assert.equal(at(error, "transportPhase"), "response");
+      assert.match(text(at(error, "message")), warning);
+      assert.equal(at(error, "notStarted"), undefined);
+      return true;
+    },
+  );
+  assert.equal(fake.calls.length, 1);
+  assert.match(present(fake.calls[0]?.input).toString(), /sol-mcp-rpc-fault/);
+  const preflight = fakeCurl();
+  await assert.rejects(
+    postWithCurl(
+      { ...server, headers: { "bad:name": "invalid" } },
+      {},
+      null,
+      preflight.implementation,
+    ),
+  );
+  assert.equal(preflight.calls.length, 0);
+});
+
+test("fake MCP distinguishes initialization failure from response loss after tools/call without replay", async () => {
+  for (const failAt of ["initialize", "tools/call"]) {
+    const methods: unknown[] = [];
+    const fake = fakeCurl((child) => {
+      const config = present(fake.calls.at(-1)?.input).toString();
+      const data = present(
+        config.split("\n").find((line) => line.startsWith("data-binary = ")),
+      );
+      const payload: unknown = JSON.parse(
+        JSON.parse(data.slice("data-binary = ".length)),
+      );
+      const method = at(payload, "method");
+      methods.push(method);
+      if (method === failAt) {
+        child.stdout.write("HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{}");
+      } else {
+        const raw =
+          method === "initialize"
+            ? JSON.stringify({
+                jsonrpc: "2.0",
+                id: 1,
+                result: { protocolVersion: "2024-11-05" },
+              })
+            : "";
+        child.stdout.write(
+          `HTTP/1.1 200 OK\r\nContent-Length: ${Buffer.byteLength(raw)}\r\n\r\n${raw}`,
+        );
+      }
+      child.emit("close", 0);
+    });
+    const client = new BrokerMcpClient(
+      { ...server, transport: "windows-curl" },
+      {
+        version: "sol-mcp-rpc-fake",
+        requestTimeout: () => 1000,
+        bridgeSource: () => "",
+        spawn: fake.implementation as typeof spawn,
+      },
+    );
+    const prepared = await client.prepareCallTool(
+      { requestId: "sol-mcp-rpc-owned-fault" },
+      "fake-owned-tool",
+    );
+    assert.equal(fake.calls.length, 0);
+    await assert.rejects(prepared(), (error) => {
+      assert.equal(at(error, "transportPhase"), "response");
+      assert.equal(at(error, "code"), "EPROTO");
+      assert.match(text(at(error, "message")), warning);
+      return true;
+    });
+    assert.deepEqual(
+      methods,
+      failAt === "initialize"
+        ? ["initialize"]
+        : ["initialize", "notifications/initialized", "tools/call"],
+    );
+    await assert.rejects(prepared(), /already consumed/);
+    assert.equal(fake.calls.length, failAt === "initialize" ? 1 : 3);
+  }
+});
+
 test("process deadline kills a real hung subprocess without requiring Windows", async () => {
   let child: ReturnType<typeof spawn> | undefined;
   let calls = 0;
