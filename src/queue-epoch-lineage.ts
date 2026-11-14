@@ -283,7 +283,115 @@ export function predecessorSnapshot(
   };
 }
 export function successionAuthority(root: string, entry: Reference) {
-  return readSuccessionAuthority(root, entry, verified);
+  return readSuccessionAuthority(root, entry, traversalReader());
+}
+interface CheckedSuccession {
+  authority: SuccessionAuthority;
+  audit: string;
+  pointer: EpochPointer;
+  state: unknown;
+  identity: Record<string, unknown>;
+  effectiveIdentity?: EffectivePredecessorIdentity;
+}
+function assertEpochLink(
+  current: EpochPointer,
+  previous: CheckedSuccession,
+): void {
+  if (
+    current.ownerClientId !== previous.authority.clientId ||
+    current.ownerTokenHash !== previous.authority.ownerTokenHash ||
+    current.historicalSnapshotHash !==
+      previous.pointer.historicalSnapshotHash ||
+    current.historicalIdentityHash !==
+      previous.pointer.historicalIdentityHash ||
+    current.qualificationReceipt?.path !==
+      path.join(previous.audit, "isolated-scratch-qualification", "result.json")
+  )
+    fail(
+      "Epoch lineage does not bind the owner, original history or new qualification",
+    );
+}
+
+function checkedIdentity(value: unknown): EffectivePredecessorIdentity {
+  const identity = record(value),
+    instance = record(identity["instance"]);
+  if (
+    typeof identity["buildHash"] !== "string" ||
+    typeof identity["configHash"] !== "string" ||
+    typeof instance["pid"] !== "number" ||
+    typeof instance["birth"] !== "string" ||
+    typeof instance["version"] !== "string"
+  )
+    fail("Physical backend has no complete SDK process identity");
+  return {
+    buildHash: identity["buildHash"],
+    configHash: identity["configHash"],
+    instance: {
+      pid: instance["pid"],
+      birth: instance["birth"],
+      version: instance["version"],
+    },
+  };
+}
+function readEpochOrigin(
+  root: string,
+  pointer: EpochPointer,
+  snapshot: SuccessionAuthority["predecessor"],
+  read: typeof verified,
+  ancestryDepth: number,
+): { identity: EffectivePredecessorIdentity; predecessor?: CheckedSuccession } {
+  if (ancestryDepth >= 32) fail("Inherited backend lineage bound exceeded");
+  const identity = checkedIdentity(
+    read(snapshot.identity, path.join(pointer.root, "instance.json")),
+  );
+  if (
+    identity.instance.pid !== pointer.currentInstance.pid ||
+    identity.instance.birth !== pointer.currentInstance.birth ||
+    identity.instance.version !== record(pointer.currentInstance)["version"]
+  )
+    fail("Epoch identity differs from its qualified SDK process");
+  const rootIdentity = record(
+    read(snapshot.rootIdentity, path.join(root, "instance.json")),
+  );
+  if (!pointer.succession) {
+    if (identity.configHash !== rootIdentity["configHash"])
+      fail(
+        "Physical backend genesis differs from immutable root configuration",
+      );
+    return { identity };
+  }
+  const predecessor = readSuccessionAuthority(
+    root,
+    pointer.succession,
+    read,
+    ancestryDepth + 1,
+  );
+  assertEpochLink(pointer, predecessor);
+  const originConfig =
+    predecessor.authority["configHash"] ?? predecessor.identity["configHash"];
+  const expected = predecessor.authority.expectedProcess;
+  if (
+    identity.configHash !== originConfig ||
+    identity.buildHash !== predecessor.authority.buildHash ||
+    !expected ||
+    identity.instance.pid !== expected.pid ||
+    identity.instance.birth !== expected.birth
+  )
+    fail(
+      "Inherited backend differs from its qualified epoch/process authority",
+    );
+  return { identity, predecessor };
+}
+/** A different root configuration needs authenticated qualification ancestry,
+ * even when this epoch has not itself transitioned physical backends. */
+export function successorEpochIdentity(
+  root: string,
+  pointer: EpochPointer,
+  snapshot: SuccessionAuthority["predecessor"],
+  read: typeof verified = traversalReader(),
+  ancestryDepth = 0,
+): EffectivePredecessorIdentity {
+  return readEpochOrigin(root, pointer, snapshot, read, ancestryDepth).identity;
 }
 
 /** Verify the preserved physical transition, never substitute scalar identity
@@ -296,13 +404,12 @@ export function successorBackendIdentity(
   proof: BackendTransitionProof,
   previousOwner: unknown,
   configHash: string,
-  read: typeof verified = verified,
+  read: typeof verified = traversalReader(),
+  ancestryDepth = 0,
 ): EffectivePredecessorIdentity {
+  if (ancestryDepth >= 32) fail("Inherited backend lineage bound exceeded");
   const identity = record(
     read(snapshot.identity, path.join(pointer.root, "instance.json")),
-  );
-  const rootIdentity = record(
-    read(snapshot.rootIdentity, path.join(root, "instance.json")),
   );
   const livePointer = path.join(root, "isolated-admission-epoch.json");
   const pointerRef = fs.existsSync(snapshot.pointer.path)
@@ -417,13 +524,31 @@ export function successorBackendIdentity(
         )
       )
         fail("Physical backend predecessor identity/configuration changed");
-    } else if (
-      head["previousConfigHash"] !== identity["configHash"] ||
-      identity["configHash"] !== rootIdentity["configHash"]
-    )
-      fail(
-        "Physical backend genesis differs from immutable root/epoch identity",
+    } else {
+      if (head["previousConfigHash"] !== identity["configHash"])
+        fail("Physical backend genesis differs from immutable epoch identity");
+      const origin = readEpochOrigin(
+        root,
+        pointer,
+        snapshot,
+        read,
+        ancestryDepth,
       );
+      const inheritedHead =
+        origin.predecessor?.authority.backendTransition?.head;
+      if (
+        inheritedHead &&
+        pointer.succession &&
+        ![pointer.succession, inheritedHead].every((anchor) =>
+          refs.some(
+            (ref) => ref.path === anchor.path && ref.sha256 === anchor.sha256,
+          ),
+        )
+      )
+        fail(
+          "Inherited backend omits its authenticated predecessor authority/head",
+        );
+    }
     if (
       !head["observation"].some((ref) => {
         if (!/^broker-startup-.*\.receipt\.json$/.test(path.basename(ref.path)))
@@ -445,24 +570,7 @@ export function successorBackendIdentity(
       })
     )
       fail("Physical backend lacks its original terminal startup observation");
-    const instance = record(effective["instance"]);
-    if (
-      typeof effective["buildHash"] !== "string" ||
-      typeof effective["configHash"] !== "string" ||
-      typeof instance["pid"] !== "number" ||
-      typeof instance["birth"] !== "string" ||
-      typeof instance["version"] !== "string"
-    )
-      fail("Physical backend has no complete SDK process identity");
-    return {
-      buildHash: effective["buildHash"],
-      configHash: effective["configHash"],
-      instance: {
-        pid: instance["pid"],
-        birth: instance["birth"],
-        version: instance["version"],
-      },
-    };
+    return checkedIdentity(effective);
   };
   const effective = visit(proof.head, 0);
   const owner = record(previousOwner);
@@ -501,7 +609,9 @@ function readSuccessionAuthority(
   root: string,
   entry: Reference,
   read: typeof verified,
-) {
+  ancestryDepth = 0,
+): CheckedSuccession {
+  if (ancestryDepth >= 32) fail("Inherited backend lineage bound exceeded");
   if (!entry || !path.isAbsolute(entry.path || ""))
     fail("Missing credential-bound succession authority");
   if (
@@ -579,8 +689,10 @@ function readSuccessionAuthority(
       authority["previousOwner"],
       String(authority["configHash"]),
       read,
+      ancestryDepth,
     );
   } else if (!closedSuccessor) {
+    successorEpochIdentity(root, pointer, snapshot, read, ancestryDepth);
     const headFile = path.join(root, "physical-backend-head.json");
     const head = fs.existsSync(headFile)
       ? record(
@@ -651,22 +763,9 @@ export function epochLineage(root: string, pointer: EpochPointer) {
   while (current.succession !== undefined) {
     if (result.length >= 32) fail("Epoch lineage bound exceeded");
     const previous = readSuccessionAuthority(root, current.succession, read);
-    if (
-      seen.has(previous.pointer.epochId) ||
-      current.ownerClientId !== previous.authority.clientId ||
-      current.ownerTokenHash !== previous.authority.ownerTokenHash ||
-      current.historicalSnapshotHash !==
-        previous.pointer.historicalSnapshotHash ||
-      current.historicalIdentityHash !==
-        previous.pointer.historicalIdentityHash ||
-      current.qualificationReceipt?.path !==
-        path.join(
-          previous.audit,
-          "isolated-scratch-qualification",
-          "result.json",
-        )
-    )
+    if (seen.has(previous.pointer.epochId))
       fail("Epoch lineage is cyclic or does not bind the new qualification");
+    assertEpochLink(current, previous);
     seen.add(previous.pointer.epochId);
     result.push(previous);
     current = previous.pointer;

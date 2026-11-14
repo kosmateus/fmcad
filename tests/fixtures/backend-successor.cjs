@@ -59,6 +59,33 @@ module.exports = function fixture(base, repo) {
       api.durable(approvalFile, { ...approval, previousOwner: owner, physicalBackendHead: lineage.reference(headFile) });
       return { cfg: f.cfg, identity: nextIdentity };
     },
+    restoreAfterPublish(published) {
+      const next = path.join(f.dir, 'physical-backend-transitions', 'synthetic-next-epoch-restore');
+      fs.mkdirSync(next);
+      const owner = { ...f.previousOwner, nonce: 'synthetic-next-epoch-owner' };
+      const nextIdentity = { ...published.identity, configHash: api.brokerConfigHash(f.cfg) };
+      api.durable(path.join(next, 'instance.json'), nextIdentity);
+      const nextReceipt = path.join(f.dir, `broker-startup-${owner.nonce}.receipt.json`);
+      api.durable(nextReceipt, { brokerNonce: owner.nonce, ownerPid: owner.pid, ownerBirth: owner.birth,
+        buildHash: nextIdentity.buildHash, stage: 'startup', auditExpectedInstance: published.pointer.currentInstance,
+        instance: published.pointer.currentInstance, terminal: true, outcome: 'succeeded' });
+      const restored = { ...head, requestId: 'synthetic-next-epoch-restore', epochId: published.pointer.epochId,
+        previousConfig: cfg, nextConfig: f.cfg, previousConfigHash: identity.configHash, nextConfigHash: nextIdentity.configHash,
+        predecessor: [path.join(f.dir, 'instance.json'), path.join(published.pointer.root, 'instance.json'),
+          path.join(f.dir, 'isolated-admission-epoch.json')].map(lineage.reference).concat(published.entry,
+            published.authority.backendTransition.head),
+        observation: [lineage.reference(nextReceipt)], identity: lineage.reference(path.join(next, 'instance.json')) };
+      api.durable(path.join(next, 'transition.json'), restored);
+      api.durable(headFile, restored);
+      const lifecycleFile = path.join(f.dir, `broker-lifecycle-${owner.nonce}.json`);
+      api.durable(lifecycleFile, { owner, buildHash: nextIdentity.buildHash, configHash: nextIdentity.configHash, stage: 'ready' });
+      const audit = path.join(f.dir, 'epoch-successions', api.hash('synthetic-future-cold'));
+      fs.mkdirSync(audit);
+      const snapshot = lineage.predecessorSnapshot(f.dir, audit, true);
+      return { cfg: f.cfg, identity: nextIdentity, owner, audit, snapshot,
+        proof: { head: lineage.reference(path.join(next, 'transition.json')), lifecycle: lineage.reference(lifecycleFile) },
+        head: restored, transition: next };
+    },
     publish() {
       const client = { dir: f.dir, auth: { clientId: f.clientId, clientToken: f.token } };
       const inspection = require(repo + '/src/queue-epoch-successor').inspectSuccessor(client, cfg, approvalFile, f.requestId);

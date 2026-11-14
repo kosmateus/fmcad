@@ -27,6 +27,12 @@ const { inspectSuccessor } = load(
   "../src/queue-epoch-successor",
 ) as typeof import("../src/composition/queue-epoch-successor");
 
+type PublishedBackend = {
+  pointer: DeadEpochFixture["pointer"];
+  entry: DeadEpochFixture["authorityEntry"];
+  identity: DeadEpochFixture["identity"];
+  authority: DeadEpochFixture["authority"];
+};
 function backendFixture(t: TestContext) {
   t.after((load("./fixtures/fake-wsl-platform.cjs") as () => () => void)());
   const base = fs.mkdtempSync("/tmp/opencode/backend-successor-");
@@ -46,6 +52,16 @@ function backendFixture(t: TestContext) {
       inverse(): {
         cfg: DeadEpochFixture["cfg"];
         identity: { buildHash: string; configHash: string };
+      };
+      restoreAfterPublish(published: PublishedBackend): {
+        cfg: DeadEpochFixture["cfg"];
+        identity: DeadEpochFixture["identity"];
+        owner: DeadEpochFixture["previousOwner"];
+        audit: string;
+        snapshot: DeadEpochFixture["authority"]["predecessor"];
+        proof: NonNullable<DeadEpochFixture["authority"]["backendTransition"]>;
+        head: Record<string, unknown>;
+        transition: string;
       };
       publish(): {
         pointer: DeadEpochFixture["pointer"];
@@ -348,6 +364,164 @@ test("FAKE backend succession: inverse transition verifies its entire escrowed p
   fs.appendFileSync(path.join(f.transition, "transition.json"), " ");
   assert.throws(() =>
     inspectSuccessor(f.client, inverse.cfg, f.approvalFile, f.requestId),
+  );
+});
+
+test("FAKE backend succession: publish/restore/future cold read inherits the complete authenticated backend ancestry", (t) => {
+  const f = backendFixture(t),
+    published = f.publish(),
+    restored = f.restoreAfterPublish(published);
+  const verify = () =>
+    lineage.successorBackendIdentity(
+      f.dir,
+      { ...published.pointer },
+      restored.snapshot,
+      restored.proof,
+      restored.owner,
+      restored.identity.configHash,
+    );
+  assert.equal(verify().configHash, f.inspection.identity.configHash);
+  assert.equal(verify().buildHash, published.authority.buildHash);
+  // New genesis does not treat the previous epoch's head/SDK as active escrow.
+  assert.equal(
+    fs.existsSync(path.join(restored.transition, "predecessor-head.json")),
+    false,
+  );
+  const qualificationFile = path.join(
+    restored.audit,
+    "installed-qualification.json",
+  );
+  fs.copyFileSync(published.authority.qualification.path, qualificationFile);
+  const authorityFile = path.join(restored.audit, "authority.json");
+  api.durable(authorityFile, {
+    ...published.authority,
+    requestId: "synthetic-future-cold",
+    predecessor: restored.snapshot,
+    previousOwner: restored.owner,
+    previousBuildHash: published.identity.buildHash,
+    configHash: restored.identity.configHash,
+    backendTransition: restored.proof,
+    qualification: lineage.reference(qualificationFile),
+    expectedProcess: { pid: 2147483644, birth: "synthetic-future-sdk" },
+  });
+  const authorityRef = lineage.reference(authorityFile);
+  const future = () => lineage.successionAuthority(f.dir, authorityRef);
+  assert.equal(
+    future().effectiveIdentity!.configHash,
+    restored.identity.configHash,
+  );
+  assert.equal(future().authority.historicalOutcome, "unknown");
+  fs.appendFileSync(f.lifecycleFile, " ");
+  assert.throws(verify, { code: "EPOCH_LINEAGE_INVALID" });
+  assert.throws(future, { code: "EPOCH_LINEAGE_INVALID" });
+});
+
+test("FAKE backend succession: a self-consistent restore cannot omit its inherited authority anchor", (t) => {
+  const f = backendFixture(t),
+    published = f.publish(),
+    restored = f.restoreAfterPublish(published);
+  const head = {
+    ...restored.head,
+    predecessor: (
+      restored.head["predecessor"] as Array<{ path: string }>
+    ).filter((ref) => ref.path !== published.entry.path),
+  };
+  const file = path.join(restored.transition, "transition.json");
+  api.durable(file, head);
+  assert.throws(
+    () =>
+      lineage.successorBackendIdentity(
+        f.dir,
+        { ...published.pointer },
+        restored.snapshot,
+        { ...restored.proof, head: lineage.reference(file) },
+        restored.owner,
+        restored.identity.configHash,
+      ),
+    { code: "EPOCH_LINEAGE_INVALID" },
+  );
+});
+
+test("FAKE backend succession: another cold scope without a current transition verifies inherited configuration origin", (t) => {
+  const f = backendFixture(t),
+    published = f.publish();
+  const audit = path.join(
+    f.dir,
+    "epoch-successions",
+    api.hash("synthetic-no-transition-cold"),
+  );
+  fs.mkdirSync(audit);
+  const snapshot = lineage.predecessorSnapshot(f.dir, audit, true);
+  const identity = lineage.successorEpochIdentity(
+    f.dir,
+    { ...published.pointer },
+    snapshot,
+  );
+  assert.equal(identity.configHash, f.effectiveIdentity.configHash);
+  const approval = {
+    ...f.approval,
+    requestId: "synthetic-no-transition-cold",
+    predecessorEpochId: published.pointer.epochId,
+    previousBuildHash: identity.buildHash,
+    pointerHash: snapshot.pointer.sha256,
+    stateHash: snapshot.state.sha256,
+    expectedProcess: { pid: 2147483644, birth: "synthetic-future-sdk" },
+  };
+  delete approval.physicalBackendHead;
+  const inspection = {
+    ...f.inspection,
+    root: f.dir,
+    audit,
+    requestId: approval.requestId,
+    approval,
+    snapshot,
+    identity,
+    configHash: identity.configHash,
+    pointer: {
+      ...f.inspection.pointer,
+      ...published.pointer,
+      quarantinedJobIds: f.inspection.pointer.quarantinedJobIds,
+    },
+    previousLifecycle: {
+      ...f.inspection.previousLifecycle,
+      buildHash: identity.buildHash,
+      configHash: identity.configHash,
+    },
+    previousProcessAlive: false,
+    expectedProcessAlive: true,
+  };
+  assertSuccessorApproval(inspection, approval);
+  const qualificationFile = path.join(audit, "installed-qualification.json");
+  fs.copyFileSync(published.authority.qualification.path, qualificationFile);
+  const authority = {
+    ...published.authority,
+    requestId: approval.requestId,
+    predecessor: snapshot,
+    previousBuildHash: identity.buildHash,
+    configHash: identity.configHash,
+    expectedProcess: approval.expectedProcess,
+    qualification: lineage.reference(qualificationFile),
+  };
+  delete authority.backendTransition;
+  const authorityFile = path.join(audit, "authority.json");
+  api.durable(authorityFile, authority);
+  const futureRef = lineage.reference(authorityFile);
+  assert.equal(
+    lineage.successionAuthority(f.dir, futureRef).identity["configHash"],
+    identity.configHash,
+  );
+  inspection.previousProcessAlive = true;
+  assert.throws(() => assertSuccessorApproval(inspection, approval), {
+    code: "EPOCH_SUCCESSOR_FENCE_CHANGED",
+  });
+  fs.appendFileSync(f.receiptFile, " ");
+  assert.throws(() => lineage.successionAuthority(f.dir, futureRef), {
+    code: "EPOCH_LINEAGE_INVALID",
+  });
+  assert.throws(
+    () =>
+      lineage.successorEpochIdentity(f.dir, { ...published.pointer }, snapshot),
+    { code: "EPOCH_LINEAGE_INVALID" },
   );
 });
 

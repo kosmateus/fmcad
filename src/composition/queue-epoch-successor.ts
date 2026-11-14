@@ -46,6 +46,7 @@ const {
   reference,
   epochLineage,
   successorBackendIdentity,
+  successorEpochIdentity,
 } = load("./queue-epoch-lineage") as typeof import("../queue-epoch-lineage");
 const { successionAuthority } = load("./queue-epoch-lineage") as {
   successionAuthority(root: string, entry: Reference): Checked;
@@ -92,13 +93,16 @@ export function assertSuccessorApproval(value: Inspection, approval: Approval) {
       value.previousOwner,
       value.configHash,
     );
-  } else if (
-    approval.physicalBackendHead ||
-    value.rootIdentity.configHash !== value.configHash
-  ) {
+  } else if (approval.physicalBackendHead) {
     fail(
       "EPOCH_SUCCESSOR_FENCE_CHANGED",
       "Original root configuration or explicit backend transition proof required",
+    );
+  } else if (value.rootIdentity.configHash !== value.configHash) {
+    effectiveIdentity = successorEpochIdentity(
+      value.root,
+      value.pointer,
+      value.snapshot,
     );
   }
   if (
