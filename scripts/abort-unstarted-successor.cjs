@@ -146,7 +146,11 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
     const api = load("./queue-instance");
     const files = load("./queue-atomic-migration-files");
     const lineage = load("./queue-epoch-lineage");
-    const successor = load("./queue-epoch-successor");
+    // The immutable predecessor runtime supplies historical readers, not new
+    // recovery policy. Evaluate that policy from this operator's own package.
+    const operatorLoad = (0, node_module_1.createRequire)(__filename);
+    const successor = operatorLoad("../dist/src/queue-epoch-successor.js");
+    const { classifyPythonRpc } = operatorLoad("../dist/src/dist/python/admission.js");
     const root = node_fs_1.default.realpathSync(client.dir);
     files.directory(root);
     const requestId = text(approval["requestId"]);
@@ -181,7 +185,24 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
         const names = node_fs_1.default.readdirSync(observationDir).sort();
         if (!(0, node_util_1.isDeepStrictEqual)(names, ["intent.json", "result.json", "start.json", "wire.json"]))
             fail("SDK1 withdrawal requires a terminal lost-observation journal with no response receipt or pending dispatch");
-        const observationIntentFile = node_path_1.default.join(observationDir, "intent.json"), observationStartFile = node_path_1.default.join(observationDir, "start.json"), observationWireFile = node_path_1.default.join(observationDir, "wire.json"), observationResultFile = node_path_1.default.join(observationDir, "result.json"), observationIntent = read(observationIntentFile), start = read(observationStartFile), startBinding = object(start["binding"]), pythonCheck = object(start["pythonCheck"]), provenance = object(pythonCheck["provenance"]), wire = read(observationWireFile), outgoing = object(wire["outgoing"]), params = object(outgoing["params"]), args = object(params["arguments"]), script = object(args["object"]), artifact = object(wire["artifact"]), result = read(observationResultFile);
+        const observationIntentFile = node_path_1.default.join(observationDir, "intent.json"), observationStartFile = node_path_1.default.join(observationDir, "start.json"), observationWireFile = node_path_1.default.join(observationDir, "wire.json"), observationResultFile = node_path_1.default.join(observationDir, "result.json"), observationIntent = read(observationIntentFile), start = read(observationStartFile), startBinding = object(start["binding"]), pythonCheck = object(start["pythonCheck"]), provenance = object(pythonCheck["provenance"]), wire = read(observationWireFile), outgoing = object(wire["outgoing"]), params = object(outgoing["params"]), args = object(params["arguments"]), artifact = object(wire["artifact"]), result = read(observationResultFile);
+        const python = classifyPythonRpc(outgoing);
+        // Both registered historical encodings are exact, closed shapes. In
+        // particular the failed old Python wire is evidence, not native success.
+        const script = args["object"];
+        const exactWire = python.kind === "python" &&
+            (python.official
+                ? params["name"] === "fusion_mcp_execute" &&
+                    args["featureType"] === "script" &&
+                    !!script &&
+                    typeof script === "object" &&
+                    !Array.isArray(script) &&
+                    object(script)["readOnly"] === true &&
+                    (0, node_util_1.isDeepStrictEqual)(Object.keys(args).sort(), ["featureType", "object"]) &&
+                    (0, node_util_1.isDeepStrictEqual)(Object.keys(script).sort(), ["readOnly", "script"])
+                : params["name"] === "execute_python" &&
+                    args["persistent"] === false &&
+                    (0, node_util_1.isDeepStrictEqual)(Object.keys(args).sort(), ["code", "persistent"]));
         if (observationIntent["version"] !== 1 ||
             !(0, node_util_1.isDeepStrictEqual)(observationIntent["key"], key) ||
             !(0, node_util_1.isDeepStrictEqual)(observationIntent["binding"], {
@@ -213,9 +234,9 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
             outgoing["jsonrpc"] !== "2.0" ||
             outgoing["id"] !== "fmcad:" + String(startBinding["rpcId"]) ||
             outgoing["method"] !== "tools/call" ||
-            params["name"] !== "fusion_mcp_execute" ||
-            args["featureType"] !== "script" ||
-            script["readOnly"] !== true ||
+            !exactWire ||
+            python.kind !== "python" ||
+            api.hash(python.source) !== artifact["sha256"] ||
             artifact["artifactHash"] !== provenance["artifactHash"] ||
             artifact["sha256"] !== provenance["wireHash"] ||
             !(0, node_util_1.isDeepStrictEqual)(result["kind"], "dead-epoch-current-observation") ||
