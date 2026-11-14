@@ -3527,21 +3527,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       authority,
       ports: recoveryAuditPorts,
       sendAuditScript: recoveryAuditPorts.sendScript,
-      sendScratchScript: (scope, script) =>
-        atomicRecoveryAuditScope.run(scope, () => {
-          if (typeof client.executeUiGuardedScript === "function")
-            return client.executeUiGuardedScript(script, scope.origin);
-          if (options.createBackend)
-            return client.callTool(
-              { featureType: "script", object: { script, readOnly: false } },
-              "fusion_mcp_execute",
-              scope.origin,
-            );
-          fail(
-            "SCRATCH_TRANSPORT_UNSUPPORTED",
-            "Physical backend lacks the private fixed guarded-script route",
-          );
-        }),
+      sendScratchScript: sendOwnedFixtureScript,
       assertControl: assertScratchControl,
       epochSnapshot,
       fenceRuntime(inFlight) {
