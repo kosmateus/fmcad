@@ -108,6 +108,7 @@
     "docs/PYTHON_ADMISSION.md",
     "docs/ISOLATED_SCRATCH_EPOCH.md",
     "scripts/qualify-isolated-epoch.cjs",
+    "scripts/abort-unstarted-successor.cjs",
     "scripts/read-audit-response-proof.cjs",
     "scripts/upgrade-epoch-checker.cjs",
     "scripts/qualify-epoch-checker.cjs",
