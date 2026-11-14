@@ -315,7 +315,12 @@ function verifySdk1Attempt(
       authority["qualification"],
     ) as unknown as Reference,
     qualification = read(text(qualificationRef.path));
-  const predecessor = object(authority["predecessor"]);
+  const predecessor = object(authority["predecessor"]),
+    approvedQualificationRef = object(
+      approval["qualification"],
+    ) as unknown as Reference;
+  sameRef(text(approvedQualificationRef.path), approvedQualificationRef);
+  sameRef(text(qualificationRef.path), qualificationRef);
   if (
     !same(approval["expectedProcess"], expectedProcess) ||
     !same(approval["previousOwner"], authority["previousOwner"]) ||
@@ -329,7 +334,7 @@ function verifySdk1Attempt(
     approval["rootStateHash"] !== object(predecessor["rootState"])["sha256"] ||
     approval["rootIdentityHash"] !==
       object(predecessor["rootIdentity"])["sha256"] ||
-    !same(approval["qualification"], authority["qualification"]) ||
+    approvedQualificationRef.sha256 !== qualificationRef.sha256 ||
     authority["kind"] !== "owner-authenticated-dead-epoch-successor" ||
     authority["requestId"] !== requestId ||
     authority["clientId"] !== clientId ||
@@ -347,7 +352,11 @@ function verifySdk1Attempt(
     !same(intent["previousOwner"], authority["previousOwner"]) ||
     !same(intent["approval"], approvalRef) ||
     !same(active, { version: 1, authority: authorityRef }) ||
-    !same(pointer["succession"], authorityRef) ||
+    // A cold attempt has not published a new admission epoch. Its active
+    // authority is separate from the unchanged predecessor's creation lineage.
+    api.hash(fs.readFileSync(pointerFile)) !==
+      object(predecessor["pointer"])["sha256"] ||
+    pointer["epochId"] !== predecessor["epochId"] ||
     pointer["ownerClientId"] !== clientId ||
     pointer["ownerTokenHash"] !== tokenHash ||
     !same(launch, { nonce: intent["nonce"], authority: authorityRef }) ||
@@ -466,6 +475,46 @@ function verifySdk1Attempt(
       requestId: requestId + ":observe",
       clientId,
     };
+  const userUnits = Array.isArray(artifact["units"])
+      ? artifact["units"]
+          .map(object)
+          .filter(
+            (unit) =>
+              unit["role"] === "user" &&
+              unit["sha256"] === startBinding["sourceHash"],
+          )
+      : [],
+    originSegments = Array.isArray(artifactOrigin["segments"])
+      ? artifactOrigin["segments"]
+          .map(object)
+          .filter((segment) => segment["sha256"] === startBinding["sourceHash"])
+      : [];
+  const originSegmentBound =
+    userUnits.length === 1 &&
+    originSegments.length === 1 &&
+    (() => {
+      const unit = userUnits[0]!,
+        segment = originSegments[0]!,
+        startLine = segment["startLine"],
+        endLine = segment["endLine"];
+      if (
+        typeof unit["source"] !== "string" ||
+        !Number.isSafeInteger(startLine) ||
+        !Number.isSafeInteger(endLine) ||
+        typeof startLine !== "number" ||
+        typeof endLine !== "number" ||
+        startLine < 1 ||
+        endLine < startLine
+      )
+        return false;
+      const lines = unit["source"].split("\n");
+      return (
+        endLine <= lines.length &&
+        api.hash(unit["source"]) === startBinding["sourceHash"] &&
+        api.hash(lines.slice(startLine - 1, endLine).join("\n")) ===
+          artifactOrigin["sha256"]
+      );
+    })();
   if (
     observationIntent["version"] !== 1 ||
     !same(observationIntent["key"], key) ||
@@ -521,7 +570,7 @@ function verifySdk1Attempt(
     !Array.isArray(artifactContext["entrypoints"]) ||
     artifactOrigin["artifactHash"] !==
       observationIntent["sourceArtifactHash"] ||
-    artifactOrigin["sha256"] !== startBinding["sourceHash"] ||
+    !originSegmentBound ||
     !same(artifactOriginContext, {
       kind: "atomic-recovery-audit-v1",
       purpose: "atomic-recovery-audit-v1",
@@ -646,6 +695,7 @@ function verifySdk1Attempt(
       ref(path.join(audit, "released-recovery.lock.json")),
       ref(path.join(audit, "released-atomic-migration.lock.json")),
       ref(qualificationRef.path),
+      approvedQualificationRef,
       ref(workerClaimFile),
       ref(workerReadyFile),
       ref(metadataFile),

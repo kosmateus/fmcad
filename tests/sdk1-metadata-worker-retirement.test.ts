@@ -63,13 +63,18 @@ async function fixture(t: TestContext) {
       birth: "134391194634692184",
     },
     authorityFile = path.join(f.audit, "authority.json"),
-    authority = { ...f.authority, expectedProcess };
+    qualificationFile = path.join(f.audit, "installed-qualification.json");
+  fs.copyFileSync(f.approval.qualification.path, qualificationFile);
+  const authority = {
+    ...f.authority,
+    expectedProcess,
+    qualification: reference(qualificationFile),
+  };
   api.durable(authorityFile, authority);
   f.authority = authority;
   f.authorityEntry = reference(authorityFile);
-  f.pointer.succession = f.authorityEntry;
-  f.pointer.currentInstance = { ...expectedProcess, version: "synthetic" };
-  api.durable(path.join(f.dir, "isolated-admission-epoch.json"), f.pointer);
+  // Cold pending: only active-epoch-succession below receives this authority.
+  // The published admission pointer remains the immutable predecessor.
 
   const approvalFile = path.join(base, "approval.json"),
     approval = { ...f.approval, expectedProcess };
@@ -182,25 +187,26 @@ async function fixture(t: TestContext) {
     observationResultFile = path.join(observation, "result.json"),
     rpcId = randomUUID();
   api.durable(observationIntentFile, observationIntent);
+  const originalSource = "print('synthetic read-only observation')",
+    code = originalSource + "\n# synthetic observation wrapper";
   const binding = {
       jobId: key.jobId,
       rpcId,
       requestHash: "5".repeat(64),
       buildHash: f.authority.buildHash,
-      sourceHash: "6".repeat(64),
+      sourceHash: api.hash(code),
       purpose: "atomic-recovery-audit-v1",
       auditBindingHash: "7".repeat(64),
       pythonOriginHash: observationIntent.sourceArtifactHash,
       auditExpectedProcess: expectedProcess,
     },
-    code = "print('synthetic read-only observation')",
     prepared = preparePythonArtifact(
       [
         {
           id: "wire",
           filename: "<fmcad-wire>",
           source: code,
-          role: "wrapper",
+          role: "user",
         },
       ],
       {
@@ -208,7 +214,7 @@ async function fixture(t: TestContext) {
           entrypoints: [],
           origin: {
             artifactHash: observationIntent.sourceArtifactHash,
-            sha256: binding.sourceHash,
+            sha256: api.hash(originalSource),
             context: {
               kind: "atomic-recovery-audit-v1",
               purpose: "atomic-recovery-audit-v1",
@@ -218,7 +224,9 @@ async function fixture(t: TestContext) {
             },
             request: { identity: f.auditIdentity },
             sourceMap: [],
-            segments: [],
+            segments: [
+              { sha256: binding.sourceHash, startLine: 1, endLine: 1 },
+            ],
             units: [],
           },
         },
@@ -384,6 +392,8 @@ test("SDK1 retirement is append-only and targets only its exact quiescent metada
       path.join(f.audit, "authority.json"),
       ...f.observationFiles,
       f.deathProofFile,
+      f.approval.qualification.path,
+      f.authority.qualification.path,
       path.join(f.dir, "broker.lock"),
     ],
     before = preserved.map((file) => fs.readFileSync(file)),
@@ -434,7 +444,102 @@ test("SDK1 retirement is append-only and targets only its exact quiescent metada
     fs.readFileSync(path.join(f.dir, "broker.lock")),
     before.at(-1),
   );
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.dir, "isolated-admission-epoch.json")),
+    fs.readFileSync(f.authority.predecessor.pointer.path),
+  );
 });
+
+for (const changed of ["bytes", "epoch", "foreign-owner"]) {
+  test(
+    "SDK1 retirement refuses changed pending predecessor " + changed,
+    async (t) => {
+      const f = await fixture(t);
+      const pointerFile = path.join(f.dir, "isolated-admission-epoch.json");
+      const pointer = JSON.parse(fs.readFileSync(pointerFile, "utf8"));
+      if (changed === "bytes") fs.appendFileSync(pointerFile, "\n");
+      else {
+        if (changed === "epoch") pointer.epochId = randomUUID();
+        if (changed === "foreign-owner")
+          pointer.ownerClientId = "foreign-owner";
+        api.durable(pointerFile, pointer);
+      }
+      const retained = fs.readFileSync(pointerFile);
+      await assert.rejects(
+        retireSdk1MetadataWorker(
+          f.client,
+          f.approvalFile,
+          f.deathProofFile,
+          true,
+          absentSdkPorts(),
+        ),
+        /Exact original owner/,
+      );
+      assert.equal(api.priorProcessAlive(f.owner), true);
+      assert.deepEqual(fs.readFileSync(pointerFile), retained);
+      assert.equal(
+        fs.existsSync(path.join(f.audit, "sdk1-worker-retirement")),
+        false,
+      );
+    },
+  );
+}
+
+test("SDK1 retirement refuses an origin segment outside its bound user source", async (t) => {
+  const f = await fixture(t);
+  const file = path.join(
+    f.audit,
+    "dead-epoch-current-observation",
+    "wire.json",
+  );
+  const wire = JSON.parse(fs.readFileSync(file, "utf8"));
+  wire.artifact.context.origin.segments[0].endLine = 999999;
+  api.durable(file, wire);
+  await assert.rejects(
+    retireSdk1MetadataWorker(
+      f.client,
+      f.approvalFile,
+      f.deathProofFile,
+      true,
+      absentSdkPorts(),
+    ),
+    /Exact source\/request-bound/,
+  );
+  assert.equal(api.priorProcessAlive(f.owner), true);
+  assert.equal(
+    fs.existsSync(path.join(f.audit, "sdk1-worker-retirement")),
+    false,
+  );
+});
+
+for (const location of ["original", "escrow"]) {
+  test(
+    "SDK1 retirement refuses tampered qualification " + location,
+    async (t) => {
+      const f = await fixture(t);
+      const file =
+        location === "original"
+          ? f.approval.qualification.path
+          : f.authority.qualification.path;
+      fs.appendFileSync(file, "\n");
+      await assert.rejects(
+        retireSdk1MetadataWorker(
+          f.client,
+          f.approvalFile,
+          f.deathProofFile,
+          true,
+          absentSdkPorts(),
+        ),
+        /evidence binding changed/,
+      );
+      assert.equal(api.priorProcessAlive(f.owner), true);
+      assert.equal(
+        fs.existsSync(path.join(f.audit, "sdk1-worker-retirement")),
+        false,
+      );
+    },
+  );
+}
 
 test("SDK1 retirement refuses a live or reused old SDK PID", async (t) => {
   const f = await fixture(t);

@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import type { TestContext } from "node:test";
@@ -21,7 +22,7 @@ const { inspectSuccessor } = load(
 const api = load("../src/queue-instance") as {
   hash(value: string | Uint8Array): string;
   durable(file: string, value: unknown, exclusive?: boolean): void;
-  processBirth(): string;
+  processBirth(pid?: number): string;
   priorProcessAlive(value: unknown): boolean | null;
 };
 const reference = (file: string) => ({
@@ -523,6 +524,225 @@ test("historical SDK1 Python wire is preserved by the new withdrawal evaluator",
     fs.readFileSync(path.join(f.observation, "wire.json")),
     original,
   );
+});
+
+function fullHistoricalManifest(
+  f: ReturnType<typeof sdkSubmittedUnknownFixture>,
+  owner: { pid: number; birth: string; nonce: string; protocol: number },
+) {
+  for (const name of ["worker-ready.json", "complete.json"]) {
+    const file = path.join(f.audit, name);
+    const value = JSON.parse(fs.readFileSync(file, "utf8"));
+    value.owner = owner;
+    api.durable(file, value);
+  }
+  const oldLifecycle = JSON.parse(
+    fs.readFileSync(
+      path.join(f.dir, "broker-lifecycle-" + f.owner.nonce + ".json"),
+      "utf8",
+    ),
+  );
+  api.durable(path.join(f.dir, "broker-lifecycle-" + owner.nonce + ".json"), {
+    ...oldLifecycle,
+    owner,
+  });
+  const { preparePythonArtifact } = load(
+    "../src/dist/python/artifact",
+  ) as typeof import("../packages/node-adapters/src/python/artifact");
+  const { pythonArtifactManifest } = load(
+    "../src/dist/python/context-binding",
+  ) as typeof import("../packages/node-adapters/src/python/context-binding");
+  const originalSource = "def run(_context: str):\n    return None\n",
+    wrappedSource = originalSource + "\n# synthetic observation wrapper";
+  f.start.binding.sourceHash = api.hash(wrappedSource);
+  const artifact = preparePythonArtifact(
+    [
+      {
+        id: "historical-audit",
+        filename: "runtime/historical-audit.py",
+        source: wrappedSource,
+        role: "user",
+      },
+    ],
+    {
+      request: f.start.binding,
+      context: {
+        entrypoints: [],
+        origin: {
+          artifactHash: f.observationIntent.sourceArtifactHash,
+          sha256: api.hash(originalSource),
+          context: {
+            kind: "atomic-recovery-audit-v1",
+            ...f.observationIntent.binding,
+          },
+          request: { identity: f.auditIdentity },
+          units: [],
+          sourceMap: [],
+          segments: [
+            { sha256: f.start.binding.sourceHash, startLine: 1, endLine: 3 },
+          ],
+        },
+      },
+    },
+  );
+  const manifest = pythonArtifactManifest(artifact);
+  const wireFile = path.join(f.observation, "wire.json");
+  const startFile = path.join(f.observation, "start.json");
+  api.durable(wireFile, {
+    ...f.wire,
+    outgoing: {
+      ...f.wire.outgoing,
+      params: {
+        name: "execute_python",
+        arguments: { code: artifact.script, persistent: false },
+      },
+    },
+    artifact: manifest,
+  });
+  const start = structuredClone(f.start);
+  start.pythonCheck.provenance = {
+    artifactHash: manifest.artifactHash,
+    wireHash: manifest.sha256,
+  };
+  api.durable(startFile, start);
+  const proof = JSON.parse(fs.readFileSync(f.proofFile, "utf8"));
+  proof.bindings.observationStart = reference(startFile);
+  proof.bindings.observationWire = reference(wireFile);
+  api.durable(f.proofFile, proof);
+  return { wireFile, manifest };
+}
+
+test("withdrawal retains distinct broker/claim nonces and a complete historical artifact manifest", (t) => {
+  const f = sdkSubmittedUnknownFixture(t);
+  const owner = { ...f.owner, nonce: "broker-instance-" + randomUUID() };
+  const { wireFile, manifest } = fullHistoricalManifest(f, owner);
+  const originalWire = fs.readFileSync(wireFile);
+  const result = abortUnstartedSuccessor(f.client, f.approvalFile, true, {
+    withdrawUnknown: true,
+    processDeathProofFile: f.proofFile,
+  });
+  assert.equal(result["sdkRequestsSent"], 1);
+  assert.equal(result["historicalOutcome"], "unknown");
+  assert.deepEqual(fs.readFileSync(wireFile), originalWire);
+  assert.notEqual(owner.nonce, f.nonce);
+  assert.ok(Object.keys(manifest).length > 2);
+});
+
+test("real SDK1 helper receipt permits operator withdrawal of only its own retired synthetic worker", async (t) => {
+  const f = sdkSubmittedUnknownFixture(t);
+  const worker = spawn(
+    process.execPath,
+    [
+      path.join(
+        f.approval.candidateRoot,
+        "src/queue-epoch-successor-worker.js",
+      ),
+    ],
+    { stdio: ["pipe", "ignore", "ignore"] },
+  );
+  await once(worker, "spawn");
+  assert.ok(worker.pid);
+  t.after(async () => {
+    if (worker.exitCode === null && worker.signalCode === null) {
+      const exited = once(worker, "exit");
+      worker.stdin.end();
+      await exited;
+    }
+  });
+  const owner = {
+    pid: worker.pid,
+    birth: api.processBirth(worker.pid),
+    nonce: randomUUID(),
+    protocol: 2,
+  };
+  api.durable(path.join(f.audit, "worker-claim.json"), {
+    pid: owner.pid,
+    birth: owner.birth,
+    nonce: f.nonce,
+  });
+  api.durable(path.join(f.dir, "broker.lock"), owner);
+  fullHistoricalManifest(f, owner);
+  const { retireSdk1MetadataWorker } = load(
+    "../dist/src/dist/composition/queue-epoch-successor-retirement.js",
+  ) as typeof import("../src/composition/queue-epoch-successor-retirement");
+  const status = {
+    buildHash: f.authority.buildHash,
+    sourceCommit: f.authority.sourceCommit,
+    held: "Qualified isolated scratch process is unavailable; metadata only, no SDK or replacement authority",
+    stopping: false,
+    deadEpochSuccessor: {
+      requestId: f.requestId,
+      currentFactsAvailable: false,
+      expectedProcess: f.authority.expectedProcess,
+    },
+    features: {
+      auditFactsCapture: false,
+      atomicRecoveryProcessLossAudit: false,
+    },
+    control: {
+      instanceId: owner.nonce,
+      buildHash: f.authority.buildHash,
+      activeOperations: 0,
+      activeIds: [],
+      unresolved: true,
+      phase: "RECOVERY_BLOCKED",
+    },
+  };
+  const client = {
+    ...f.client,
+    async call(action: "queue-summary") {
+      assert.equal(action, "queue-summary");
+      return structuredClone(status);
+    },
+  };
+  const protectedFiles = [
+    f.approvalFile,
+    path.join(f.audit, "authority.json"),
+    ...["intent.json", "start.json", "wire.json", "result.json"].map((n) =>
+      path.join(f.observation, n),
+    ),
+  ];
+  const original = protectedFiles.map((file) => fs.readFileSync(file));
+  const exited = once(worker, "exit");
+  const retirement = await retireSdk1MetadataWorker(
+    client,
+    f.approvalFile,
+    f.proofFile,
+    true,
+    {
+      certify(runtime) {
+        assert.equal(runtime, f.approval.candidateRoot);
+      },
+      deathQuery(expected) {
+        return {
+          state: "absent",
+          pid: expected.pid,
+          observedAtUtc: new Date().toISOString(),
+          errorId:
+            "NoProcessFoundForGivenId,Microsoft.PowerShell.Commands.GetProcessCommand",
+        };
+      },
+    },
+  );
+  const [, signal] = await exited;
+  assert.equal(signal, "SIGKILL");
+  assert.ok("kind" in retirement);
+  assert.equal(retirement.kind, "sdk1-metadata-worker-retirement-complete");
+  assert.equal(retirement.sdkRequestsSent, 1);
+  assert.equal(retirement.nativeOutcome, "unknown");
+  const result = abortUnstartedSuccessor(f.client, f.approvalFile, true, {
+    withdrawUnknown: true,
+    processDeathProofFile: f.proofFile,
+  });
+  assert.equal(result["sdkRequestsSent"], 1);
+  assert.equal(result["status"], "withdrawn");
+  assert.equal(result["historicalOutcome"], "unknown");
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(path.join(f.dir, "broker.lock"), "utf8")),
+    f.previousOwner,
+  );
+  for (const [i, file] of protectedFiles.entries())
+    assert.deepEqual(fs.readFileSync(file), original[i]);
 });
 
 test("FAKE dead SDK proof: an unavailable Windows observer still refuses withdrawal", (t) => {
