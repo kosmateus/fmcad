@@ -12,6 +12,9 @@ const recovery = load(
   "../src/queue-atomic-recovery-audit",
 ) as typeof import("../src/queue-atomic-recovery-audit");
 const { createRecoveryAudit, auditAtomic, auditSummary } = recovery;
+const { auditOutputText } = load(
+  "../src/dist/core/application/cad/recovery-audit",
+) as typeof import("../packages/core/src/application/cad/recovery-audit");
 const { createProductionQueueAdmission } = load(
   "../src/queue-admission",
 ) as typeof import("../src/queue-admission");
@@ -631,6 +634,93 @@ test("typed recovery reader preserves predecessor facts and refuses ambiguous re
         { code: "AUDIT_OUTPUT_INVALID" },
       );
   }
+});
+
+test("native MCP success/message envelope preserves the typed audit and strict bindings", () => {
+  const envelope = JSON.parse(
+    fs.readFileSync(
+      path.join(repository, "tests/fixtures/native-mcp-audit-envelope.json"),
+      "utf8",
+    ),
+  ) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(envelope).sort(), ["message", "success"]);
+  assert.equal(envelope["success"], true);
+  assert.equal(typeof envelope["message"], "string");
+  const message = envelope["message"] as string;
+  const markers = message
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("FMCAD_RESULT "));
+  assert.equal(markers.length, 1);
+  const value = JSON.parse(markers[0]!.slice("FMCAD_RESULT ".length));
+  const identity = value.requestIdentity;
+  const reply = (text: string) => ({
+    result: { content: [{ type: "text", text }] },
+  });
+  const wrappedText = JSON.stringify(envelope);
+
+  assert.equal(auditOutputText(reply(wrappedText)), message);
+  assert.deepEqual(auditSummary(reply(wrappedText), identity), value);
+
+  const line = markers[0]!;
+  for (const text of [
+    line,
+    JSON.stringify({ stdout: line }),
+    JSON.stringify({ success: true, stdout: line }),
+    JSON.stringify({ success: true, stdout: line, stderr: "" }),
+  ]) {
+    assert.equal(auditOutputText(reply(text)), line);
+    assert.deepEqual(auditSummary(reply(text), identity), value);
+  }
+
+  const foreign = structuredClone(value);
+  foreign.requestIdentity.runId += "-foreign";
+  const invalidEnvelopes = [
+    { ...envelope, success: false },
+    { ...envelope, success: "true" },
+    { message },
+    { ...envelope, stdout: message },
+    { ...envelope, extra: true },
+    { ...envelope, message: "not an audit result" },
+    { ...envelope, message: '{"success":true,"message":"nested"}' },
+    { ...envelope, message: message + "\n" + message },
+    {
+      ...envelope,
+      message: JSON.stringify({ success: true, message }),
+    },
+    { ...envelope, message: "x".repeat(32769) },
+    { ...envelope, message: "FMCAD_RESULT " + JSON.stringify(foreign) },
+  ];
+  for (const invalid of invalidEnvelopes)
+    assert.throws(
+      () => auditSummary(reply(JSON.stringify(invalid)), identity),
+      {
+        code: "AUDIT_OUTPUT_INVALID",
+      },
+    );
+  for (const invalid of [
+    '{"success":true,"message":',
+    JSON.stringify({ success: false, stdout: line }),
+    JSON.stringify({ success: true, stdout: line, stderr: 1 }),
+    JSON.stringify({ success: true, stdout: line, extra: true }),
+  ])
+    assert.throws(() => auditOutputText(reply(invalid)), {
+      code: "AUDIT_OUTPUT_INVALID",
+    });
+  assert.throws(
+    () =>
+      auditSummary(
+        {
+          result: {
+            content: [
+              { type: "text", text: wrappedText },
+              { type: "text", text: wrappedText },
+            ],
+          },
+        },
+        identity,
+      ),
+    { code: "AUDIT_OUTPUT_INVALID" },
+  );
 });
 
 test("typed migration evidence adapter preserves immutable inventories, backups and refusals", (t) => {

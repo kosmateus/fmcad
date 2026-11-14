@@ -27,11 +27,8 @@ const errorType = (row: Record<string, unknown>) =>
   typeof row["errorType"] === "string" &&
   /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(row["errorType"]);
 
-/** Read-only recovery observations never settle a historical mutation. */
-export function auditSummary(
-  reply: unknown,
-  identity: unknown,
-): Record<string, unknown> {
+/** Extract one bounded audit result from the supported MCP response envelopes. */
+export function auditOutputText(reply: unknown): string {
   const result = record(reply) ? reply["result"] : undefined;
   const content = record(result) ? result["content"] : undefined;
   const texts = Array.isArray(content)
@@ -40,23 +37,70 @@ export function auditSummary(
           record(row) && row["type"] === "text",
       )
     : [];
-  // One response body, one terminal marker. Choosing the first lets a foreign
-  // or conflicting second result silently disappear from the evidence.
-  const candidate = texts.length === 1 ? texts[0]!["text"] : undefined;
+  if (texts.length !== 1) return fail("Expected exactly one audit text result");
+  const candidate = texts[0]!["text"];
   if (typeof candidate !== "string" || utf8Length(candidate) > 32768)
     return fail("Missing bounded audit output");
+
   let text = candidate;
+  let wrapped: unknown;
   try {
-    const wrapped: unknown = JSON.parse(text);
-    if (record(wrapped) && typeof wrapped["stdout"] === "string")
-      text = wrapped["stdout"];
+    wrapped = JSON.parse(candidate);
   } catch {
     /* Plain result line. */
   }
+  if (record(wrapped)) {
+    const keys = Object.keys(wrapped).sort();
+    if (
+      "message" in wrapped ||
+      ("success" in wrapped && !("stdout" in wrapped))
+    ) {
+      if (
+        keys.length !== 2 ||
+        keys[0] !== "message" ||
+        keys[1] !== "success" ||
+        wrapped["success"] !== true ||
+        typeof wrapped["message"] !== "string"
+      )
+        return fail("Invalid native MCP audit response envelope");
+      text = wrapped["message"];
+    } else if ("stdout" in wrapped) {
+      const legacyKeys =
+        keys.length === 1
+          ? keys[0] === "stdout"
+          : keys.length === 2
+            ? keys[0] === "stdout" && keys[1] === "success"
+            : keys.length === 3 &&
+              keys[0] === "stderr" &&
+              keys[1] === "stdout" &&
+              keys[2] === "success";
+      if (
+        !legacyKeys ||
+        typeof wrapped["stdout"] !== "string" ||
+        ("success" in wrapped && wrapped["success"] !== true) ||
+        ("stderr" in wrapped && typeof wrapped["stderr"] !== "string")
+      )
+        return fail("Invalid legacy audit stdout envelope");
+      text = wrapped["stdout"];
+    }
+  }
+  if (utf8Length(text) > 32768) return fail("Missing bounded audit output");
+  const markers = text
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("FMCAD_RESULT "));
+  if (markers.length !== 1) return fail("Expected exactly one audit result");
+  return text;
+}
+
+/** Read-only recovery observations never settle a historical mutation. */
+export function auditSummary(
+  reply: unknown,
+  identity: unknown,
+): Record<string, unknown> {
+  const text = auditOutputText(reply);
   const lines = text
     .split(/\r?\n/)
     .filter((row) => row.startsWith("FMCAD_RESULT "));
-  if (lines.length !== 1) return fail("Expected exactly one audit result");
   let parsed: unknown;
   try {
     parsed = JSON.parse(lines[0]!.slice(13));
