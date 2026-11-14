@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import type { DatabaseSync as SQLiteDatabaseSync } from "node:sqlite";
+import type {
+  DatabaseSync as SQLiteDatabaseSync,
+  StatementSync,
+} from "node:sqlite";
 import {
   closeSync,
   fsyncSync,
@@ -982,6 +985,8 @@ class SQLiteProjectHistoryStore<
   private closed = false;
   private writing = false;
   private transactionDepth = 0;
+  // Node 22.13 iterators do not retain their owning StatementSync (nodejs/node#57493).
+  private readonly activeReadStatements = new Set<StatementSync>();
 
   constructor(
     private readonly db: DatabaseSync,
@@ -2297,15 +2302,21 @@ class SQLiteProjectHistoryStore<
       let bytes = Buffer.byteLength(JSON.stringify(summary), "utf8");
       const appendRows = <T>(sql: string, map: (row: Row) => T): T[] => {
         const rows: T[] = [];
-        for (const row of this.db.prepare(sql).iterate() as Iterable<Row>) {
-          const value = map(row);
-          bytes += Buffer.byteLength(JSON.stringify(value), "utf8");
-          if (bytes > maxBytes)
-            throw errorWithCode(
-              "HISTORY_SNAPSHOT_TOO_LARGE",
-              "Project history exceeds the immutable query snapshot byte limit",
-            );
-          rows.push(value);
+        const statement = this.db.prepare(sql);
+        this.activeReadStatements.add(statement);
+        try {
+          for (const row of statement.iterate() as Iterable<Row>) {
+            const value = map(row);
+            bytes += Buffer.byteLength(JSON.stringify(value), "utf8");
+            if (bytes > maxBytes)
+              throw errorWithCode(
+                "HISTORY_SNAPSHOT_TOO_LARGE",
+                "Project history exceeds the immutable query snapshot byte limit",
+              );
+            rows.push(value);
+          }
+        } finally {
+          this.activeReadStatements.delete(statement);
         }
         return rows;
       };

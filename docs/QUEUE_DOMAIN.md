@@ -109,7 +109,7 @@ pass. Final integrated Node-suite results are recorded in the task notes.
 
 The completed full integrated Node run reports **1,929 pass, 90 fail, 4 skipped,
 zero cancellations** (440.07 seconds). Failures are located in
-`tests/legacy.test.js` (87), `tests/live-broker.test.js` (1), and the scheduling
+`tests/legacy.test.ts` (87), `tests/live-broker.test.js` (1), and the scheduling
 test imported twice (2). The scheduling fixture was fixed locally to pass an
 explicit isolated configuration instead of reading the user's obsolete config.
 After that fix, the integrated domain/scheduling/document/pause/phased/recovery/

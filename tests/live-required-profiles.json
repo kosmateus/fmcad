@@ -9,57 +9,269 @@
         {
           "id": "foundation",
           "scope": "owned-document",
-          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite foundation --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite foundation --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "saved",
           "scope": "owned-document",
-          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite saved --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite saved --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "parameters",
           "scope": "owned-document",
-          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite parameters --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite parameters --protocol PROTOCOL --concurrency CONCURRENCY --owners 3",
+          "ownerCopies": 3,
+          "minimumOwnerFixtures": 12
         },
         {
           "id": "documents",
           "scope": "owned-document",
-          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite documents --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite documents --protocol PROTOCOL --concurrency CONCURRENCY --owners 4",
+          "ownerCopies": 4,
+          "minimumOwnerFixtures": 12
         },
         {
           "id": "cloud",
           "scope": "owned-document",
-          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite cloud --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite cloud --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "boxes",
           "scope": "owned-document",
-          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite boxes --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite boxes --protocol PROTOCOL --concurrency CONCURRENCY --owners 5",
+          "ownerCopies": 5,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "attributes",
           "scope": "owned-document",
-          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite attributes --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite attributes --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 20,
+          "fixtureVariants": [
+            "owned-saved",
+            "owned-unsaved"
+          ]
         },
         {
           "id": "sketches",
           "scope": "owned-document",
-          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite sketches --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite sketches --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "reopen",
           "scope": "owned-document",
-          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite reopen --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite reopen --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "revisions",
           "scope": "owned-document",
-          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite revisions --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite revisions --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "rectangles",
           "scope": "owned-document",
-          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite rectangles --protocol PROTOCOL --concurrency CONCURRENCY --owners 10"
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite rectangles --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
+        },
+        {
+          "id": "transactions",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite transactions --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 20,
+          "fixtureVariants": [
+            "owned-saved",
+            "owned-unsaved"
+          ]
+        },
+        {
+          "id": "camera",
+          "scope": "exclusive-instance",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite camera --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
+        },
+        {
+          "id": "poses",
+          "scope": "exclusive-instance",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite poses --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
+        },
+        {
+          "id": "animation",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite animation --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
+        },
+        {
+          "id": "materials",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite materials --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
+        },
+        {
+          "id": "appearances",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite appearances --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
+        },
+        {
+          "id": "style-assignments",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite style-assignments --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
+        },
+        {
+          "id": "thread-recipes",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite thread-recipes --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
+        },
+        {
+          "id": "gear-pair",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite gear-pair --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
+        },
+        {
+          "id": "engineering-declarations",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite engineering-declarations --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
+        },
+        {
+          "id": "mechanical-declarations",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite mechanical-declarations --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "obligation": "GM12 helix/spring and GM14 cam declarations, original numeric tolerances and explicit native gaps",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
+        },
+        {
+          "id": "retained-thread",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite retained-thread --protocol PROTOCOL --concurrency CONCURRENCY --owners 2",
+          "ownerCopies": 2,
+          "minimumOwnerFixtures": 12,
+          "originalCaseCount": 6,
+          "handlerCallsPerCopy": 9,
+          "fixture": "owned-unsaved",
+          "obligation": "Original integration thread declarations; raw handler assertions retained, CLI exit statuses remain separately required."
+        },
+        {
+          "id": "retained-seal",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite retained-seal --protocol PROTOCOL --concurrency CONCURRENCY --owners 2",
+          "ownerCopies": 2,
+          "minimumOwnerFixtures": 14,
+          "originalCaseCount": 7,
+          "handlerCallsPerCopy": 7,
+          "fixture": "owned-unsaved",
+          "obligation": "Original integration seal declarations; raw handler assertions retained, CLI exit statuses remain separately required."
+        },
+        {
+          "id": "retained-fasteners",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite retained-fasteners --protocol PROTOCOL --concurrency CONCURRENCY --owners 1",
+          "ownerCopies": 1,
+          "minimumOwnerFixtures": 10,
+          "originalCaseCount": 10,
+          "handlerCallsPerCopy": 12,
+          "fixture": "owned-unsaved",
+          "obligation": "Original integration fasteners declarations; raw handler assertions retained, CLI exit statuses remain separately required."
+        },
+        {
+          "id": "retained-mechanism",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite retained-mechanism --protocol PROTOCOL --concurrency CONCURRENCY --owners 2",
+          "ownerCopies": 2,
+          "minimumOwnerFixtures": 12,
+          "originalCaseCount": 6,
+          "handlerCallsPerCopy": 8,
+          "fixture": "owned-unsaved",
+          "obligation": "Original integration mechanism declarations; raw handler assertions retained, CLI exit statuses remain separately required."
+        },
+        {
+          "id": "retained-pose",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite retained-pose --protocol PROTOCOL --concurrency CONCURRENCY --owners 2",
+          "ownerCopies": 2,
+          "minimumOwnerFixtures": 12,
+          "originalCaseCount": 6,
+          "handlerCallsPerCopy": 12,
+          "fixture": "owned-unsaved",
+          "obligation": "Original integration pose declarations; raw handler assertions retained, CLI exit statuses remain separately required."
+        },
+        {
+          "id": "retained-interference",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite retained-interference --protocol PROTOCOL --concurrency CONCURRENCY --owners 2",
+          "ownerCopies": 2,
+          "minimumOwnerFixtures": 12,
+          "originalCaseCount": 6,
+          "handlerCallsPerCopy": 6,
+          "fixture": "owned-unsaved",
+          "obligation": "Original integration interference declarations; raw handler assertions retained, CLI exit statuses remain separately required."
+        },
+        {
+          "id": "retained-containment",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite retained-containment --protocol PROTOCOL --concurrency CONCURRENCY --owners 2",
+          "ownerCopies": 2,
+          "minimumOwnerFixtures": 12,
+          "originalCaseCount": 6,
+          "handlerCallsPerCopy": 8,
+          "fixture": "owned-unsaved",
+          "obligation": "Original integration containment declarations; raw handler assertions retained, CLI exit statuses remain separately required."
+        },
+        {
+          "id": "retained-gm-contracts",
+          "scope": "mixed-owned-and-exclusive-instance",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite retained-gm-contracts --protocol PROTOCOL --concurrency CONCURRENCY --owners 1",
+          "ownerCopies": 1,
+          "minimumOwnerFixtures": 83,
+          "originalCaseCount": 83,
+          "fixture": "owned-saved",
+          "obligation": "GM25/26/27/28/29/30/31/32/34/36/37 preserved bounded declarations; exclusive-instance barriers for three global state cases."
+        },
+        {
+          "id": "child-cli",
+          "scope": "owned-document",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite child-cli --protocol PROTOCOL --concurrency CONCURRENCY --owners 10",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10,
+          "fixture": "owned-saved",
+          "obligation": "Real child CLI parsing, original request handoff, identity pins, pre-admission rejection, and settled cleanup."
+        },
+        {
+          "id": "retained-engineering",
+          "scope": "exclusive-instance",
+          "command": "node dist/tests/scenarios/cli.js --backend simulator --profile broker --suite retained-engineering --protocol PROTOCOL --concurrency CONCURRENCY --owners 1",
+          "ownerCopies": 1,
+          "minimumOwnerFixtures": 15,
+          "obligation": "Fifteen original declared analytic groups from engineering coverage; identical shared callbacks and tolerance assertions, no native BRep/kernel qualification."
         }
       ]
     },
@@ -73,216 +285,369 @@
           "source": "tests/live-animation-methods.js",
           "disposition": "native-only",
           "obligation": "Storyboard creation, animation actions and frame export",
-          "command": "node tests/live-animation-methods.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-animation --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and broker; exclusive owned unsaved fixture; exact-source safety gates and native evidence remain required.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-animation-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "backend-adapter",
           "source": "tests/live-backend-adapter.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Backend capabilities, progress, transport limits and read-only soak",
-          "command": "node tests/live-backend-adapter.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-backend-adapter --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and existing add-in broker; readonly instance barrier, durable original RPC/stdio identities, no created documents.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-backend-adapter-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10,
+          "protocols": [
+            "addin"
+          ],
+          "lifecycle": "read-only"
         },
         {
           "id": "batch-reference",
           "source": "tests/live-batch-reference.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Batch reference resolution, propagation and failure stop",
-          "command": "node tests/live-batch-reference.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-batch-reference --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and broker; exclusive owned unsaved fixture; an active Design is required for original user view restoration when requested; exact-source safety and native evidence remain required.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-batch-reference-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "cad",
           "source": "tests/live-cad.js",
           "disposition": "migration-pending",
           "obligation": "Dimension regeneration, bodies, holes, patterns, fillets and checkpoints",
-          "command": "node tests/live-cad.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-cad --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Offline refactor complete, matching installed build and broker; owned unsaved ScenarioSession fixture, exact original receipts, exclusive instance barrier and deferred uncertain cleanup. Actual native execution NOTRUN.",
+          "sharedScenario": "native-cad-*",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "variants": [
+            {
+              "id": "default",
+              "environment": {}
+            },
+            {
+              "id": "reimport",
+              "environment": {
+                "FMCAD_LIVE_REIMPORT": "1"
+              }
+            }
+          ]
         },
         {
           "id": "camera-probe",
           "source": "tests/live-camera-probe.js",
           "disposition": "native-only",
           "obligation": "Camera projection, orientation, capture and restoration",
-          "command": "node tests/live-camera-probe.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-camera-probe --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Offline refactor complete, matching installed build and broker; existing owned unsaved ScenarioSession lifecycle, exact creation identity, exclusive instance barrier and uncertainty-aware cleanup. Native geometry/rendering execution remains NOTRUN.",
+          "sharedScenario": "native-camera-probe-*",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run"
         },
         {
           "id": "component-hierarchy",
           "source": "tests/live-component-hierarchy.js",
           "disposition": "migration-pending",
           "obligation": "Nested occurrences, component lookup and transforms",
-          "command": "node tests/live-component-hierarchy.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-component-hierarchy --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Offline refactor complete, matching installed build and broker; owned unsaved ScenarioSession fixture, exact original receipts, exclusive instance barrier and deferred uncertain cleanup. Actual native execution NOTRUN.",
+          "sharedScenario": "native-component-hierarchy-*",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run"
         },
         {
           "id": "data-import",
           "source": "tests/live-data-import.ts",
           "disposition": "migration-pending",
           "obligation": "Versioned catalog import, replacement, lineage and native geometry",
-          "command": "node dist/tests/live-data-import.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-import --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Offline refactor complete; matching installed build/broker and required local FMCAD_LIVE_RUNTIME_ROOT; owned unsaved fixture, original receipts, exact child closure and exclusive-instance guard. Actual native execution NOTRUN.",
+          "sharedScenario": "native-import-*",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run"
         },
         {
           "id": "definitions",
           "source": "tests/live-definitions.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Literal definitions, idempotent run IDs and failed-check stop",
-          "command": "node tests/live-definitions.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-definitions --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and broker; shared exact-owned unsaved transaction fixture and original receipts. Same behavioral assertions also execute in the model suite, which does not qualify Fusion.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/transaction-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "design-styles",
           "source": "tests/live-design-styles.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Material/appearance editing, scope and retained design state",
-          "command": "node tests/live-design-styles.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-design-styles --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and broker; exclusive owned unsaved fixture; exact-source safety gates and native evidence remain required.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-design-styles-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "engineering-analytics",
           "source": "tests/live-engineering-analytics.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Engineering calculations with native geometry/measurement readback",
-          "command": "node tests/live-engineering-analytics.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-engineering --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and broker; exclusive owned unsaved fixture; exact-source safety gates and native evidence remain required.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-engineering-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "entity-attributes",
           "source": "tests/live-entity-attributes.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Entity identity, attributes and selection behavior",
-          "command": "node tests/live-entity-attributes.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-attributes --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and broker; existing shared owned unsaved attribute sequence, exact identity and original terminal receipts. The model executes identical assertions but native qualification remains NOTRUN.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/attribute-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10,
+          "sharedScenario": "attributes-unsaved-*"
         },
         {
           "id": "extended",
           "source": "tests/live-extended.js",
           "disposition": "migration-pending",
           "obligation": "Sweep, loft, shell, chamfer, combine, split, draft, joints and interference",
-          "command": "node tests/live-extended.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-extended --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Offline refactor complete; matching installed build/broker and required local FMCAD_LIVE_RUNTIME_ROOT; owned unsaved fixture, original receipts, exact child closure and exclusive-instance guard. Actual native execution NOTRUN.",
+          "sharedScenario": "native-extended-*",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run"
         },
         {
           "id": "feature-modes",
           "source": "tests/live-feature-modes.js",
           "disposition": "migration-pending",
           "obligation": "Extrusion, hole, sweep and loft variants; geometry and timeline health",
-          "command": "node tests/live-feature-modes.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-feature-modes --protocol addin --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Offline refactor complete, matching installed build and broker; owned unsaved ScenarioSession fixture, exact original receipts, exclusive instance barrier and deferred uncertain cleanup. Actual native execution NOTRUN.",
+          "sharedScenario": "native-feature-modes-*",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "protocols": [
+            "addin"
+          ]
         },
         {
           "id": "file-exports",
           "source": "tests/live-file-exports.js",
           "disposition": "migration-pending",
           "obligation": "Native export artifacts, paths and file checks",
-          "command": "node tests/live-file-exports.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-file-exports --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Offline refactor complete, matching installed build and broker; owned unsaved ScenarioSession fixture, exact original receipts, exclusive instance barrier and deferred uncertain cleanup. Actual native execution NOTRUN.",
+          "sharedScenario": "native-file-exports-*",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run"
         },
         {
           "id": "joint-limits-probe",
           "source": "tests/live-joint-limits-probe.js",
           "disposition": "native-only",
           "obligation": "Joint limit setup, readback and pose ordering",
-          "command": "node tests/live-joint-limits-probe.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-joint-limits --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and broker; exclusive owned unsaved fixture; an active Design is required for original user view restoration when requested; exact-source safety and native evidence remain required.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-joint-limits-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 20,
+          "protocols": [
+            "addin"
+          ]
         },
         {
           "id": "legacy",
           "source": "tests/live-legacy.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Document/parameter/plane/component CLI, units, box, rollback and exports",
-          "command": "node tests/live-legacy.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-legacy --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build, shared exclusive owned unsaved handoff, native CLI and geometry evidence pending.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-legacy-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "mcp-stdio",
           "source": "tests/live-mcp-stdio.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Installed stdio discovery and live Fusion tool invocation",
-          "command": "node tests/live-mcp-stdio.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-mcp-stdio --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and existing add-in broker; readonly instance barrier, durable original RPC/stdio identities, no created documents.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-mcp-stdio-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10,
+          "protocols": [
+            "addin"
+          ],
+          "lifecycle": "read-only"
         },
         {
           "id": "motion-animation",
           "source": "tests/live-motion-animation.js",
           "disposition": "native-only",
           "obligation": "Joint limits, five motion frames, storyboard and workspace restoration",
-          "command": "node tests/live-motion-animation.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-motion --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and broker; exclusive owned unsaved fixture; an active Design is required for original user view restoration when requested; exact-source safety and native evidence remain required.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-motion-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "normal-multidocument",
           "source": "tests/live-normal-multidocument.ts",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Normal document operations with interleaving and exact document ownership",
           "command": "node dist/tests/live-normal-multidocument.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "prerequisites": "Matching installed build and existing broker admissionScope normal-multidocument. Own fresh unsaved fixtures; original request identity and SDK settlement required before cleanup. The runner never restarts or replaces the shared broker.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "requiredEnvironment": [
+            "FMCAD_LIVE_RUNTIME"
+          ]
         },
         {
           "id": "pose-methods",
           "source": "tests/live-pose-methods.js",
           "disposition": "native-only",
           "obligation": "Pose creation/application, capture and restoration",
-          "command": "node tests/live-pose-methods.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-pose --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and broker; exclusive owned unsaved fixture; exact-source safety gates and native evidence remain required.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-pose-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         },
         {
           "id": "response-recovery",
           "source": "tests/live-response-recovery.ts",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Accepted response loss, original receipt recovery and no mutation replay",
           "command": "node dist/tests/live-response-recovery.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "prerequisites": "Matching installed build and existing broker admissionScope normal-multidocument. Own fresh unsaved fixtures; original request identity and SDK settlement required before cleanup. The runner never restarts or replaces the shared broker.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "requiredEnvironment": [
+            "FMCAD_LIVE_RUNTIME"
+          ]
         },
         {
           "id": "rpc-recovery",
           "source": "tests/live-rpc-recovery.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "RPC reply loss, broker settlement and original result recovery",
-          "command": "node tests/live-rpc-recovery.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-rpc-recovery --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Explicit absent broker.lock after operator drains/stops an idle broker; this profile owns the only broker it starts and retains unknown receipts. Two actual clients, no created documents.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-rpc-recovery-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10,
+          "protocols": [
+            "addin"
+          ],
+          "lifecycle": "read-only"
         },
         {
           "id": "shape-native-solids",
           "source": "tests/live-shape-native-solids.js",
           "disposition": "migration-pending",
           "obligation": "Native solid creation and geometric properties",
-          "command": "node tests/live-shape-native-solids.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-solids --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run --project-id PROJECT --folder-id FOLDER",
+          "prerequisites": "Offline refactor complete, matching installed build and broker, dedicated project/folder; ten saved plus ten unsaved owned fixture variants, original native readbacks and exact receipts/cleanup. Native NOTRUN.",
+          "sharedScenario": "native-solids-*",
+          "qualification": "not-run",
+          "runnerStatus": "owned-handoff-source-ready",
+          "expectationCorrection": "Annular-sector Y bounds20mm includes90degree interior arc extremum; historical endpoint-only17.320508mm corrected with identical0.001mm tolerance. See B_NATIVE_SOLIDS_ASSUMPTIONS.md."
         },
         {
           "id": "sketch-operations",
           "source": "tests/live-sketch-operations.ts",
           "disposition": "migration-pending",
           "obligation": "Sketch creation, curves, dimensions, constraints, edits and readback",
-          "command": "node dist/tests/live-sketch-operations.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-sketch-operations --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Offline refactor complete; matching installed build/broker and required local FMCAD_LIVE_RUNTIME_ROOT; owned unsaved fixture, original receipts, exact child closure and exclusive-instance guard. Actual native execution NOTRUN.",
+          "sharedScenario": "native-sketch-operations-*",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "requiredEnvironment": [
+            "FMCAD_LIVE_RUNTIME_ROOT"
+          ]
         },
         {
           "id": "style-save",
           "source": "tests/live-style-save.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Style precedence, mass, unsaved state and local archive roundtrip",
-          "command": "node tests/live-style-save.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-style-save --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and broker; active Design original view capture; exact-owned unsaved style fixture, same-request native child object receipts for F3D roundtrip, original camera/workspace restoration required.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-style-save-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10,
+          "protocols": [
+            "addin"
+          ]
         },
         {
           "id": "thicken-slot-pattern",
           "source": "tests/live-thicken-slot-pattern.js",
           "disposition": "migration-pending",
           "obligation": "Thicken, slots and pattern geometry with rejected inputs",
-          "command": "node tests/live-thicken-slot-pattern.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-thicken-slot-pattern --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Offline refactor complete, matching installed build and broker; existing owned unsaved ScenarioSession lifecycle, exact creation identity, exclusive instance barrier and uncertainty-aware cleanup. Native geometry/rendering execution remains NOTRUN.",
+          "sharedScenario": "native-thicken-slot-pattern-*",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run"
         },
         {
           "id": "thread-method",
           "source": "tests/live-thread-method.js",
-          "disposition": "migration-pending",
+          "disposition": "native-only",
           "obligation": "Thread selection, creation and native feature readback",
-          "command": "node tests/live-thread-method.js --run",
-          "prerequisites": "Matching installed build and broker, dedicated explicit project/folder, owned saved fixture; migrate lifecycle before qualification."
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-thread --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Matching installed build and broker; exclusive owned unsaved fixture; exact-source safety gates and native evidence remain required.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-thread-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10
         }
       ]
     },
@@ -351,6 +716,53 @@
           "kind": "helper",
           "prerequisites": "Caller-supplied owned request",
           "execution": "explicit-owned-scope-only"
+        }
+      ]
+    },
+    "native-fixtures": {
+      "required": true,
+      "qualification": "pending",
+      "cases": [
+        {
+          "id": "iw74-parameter-test",
+          "source": "tests/native/iw7.4_parameter_test.py",
+          "continuationSource": "tests/native/iw7.4_parameter_failures.py",
+          "disposition": "native-only",
+          "obligation": "Exact original parameter.test v2 width cases, independent temporary-body restoration, callback-error restoration and no-forward-work budget refusal",
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-parameter-test --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 10 --run",
+          "prerequisites": "Offline complete; exact installed build/broker/cad-v1, explicit dedicated project and folder permitting owned file create/delete. Existing ScenarioSession creates and receipts each owned saved scratch file; exact creation/name/file/version/project/folder pins and original request identities. No preexisting user file is accepted as fixture.",
+          "runnerStatus": "owned-handoff-source-ready",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-parameter-test-cases.ts",
+          "ownerCopies": 10,
+          "minimumOwnerFixtures": 10,
+          "protocols": [
+            "mcp",
+            "addin"
+          ],
+          "cleanup": "Parent exact owned close/delete and foreign inventory audit only after both original phases succeed. Any failed/malformed/unknown result retains fixture and original request evidence without replay; inspect native restore before manual resolution.",
+          "sourceSha256": "9f777a3a6235d75c9568650fa197d8704a9c6a3cc9e3ea8eb55c195a7a13b0f5",
+          "continuationSourceSha256": "9389aa6f1ba70ee39d21db21a0f4af2bbcfba6d6d803f5564b0eafe85f29d2de"
+        },
+        {
+          "id": "native-integration",
+          "source": "tests/scenarios/native-integration-cases.json",
+          "sourceSha256": "341f56c5c4745ad76d69736cc0022b5b3774eab7c6953b9f9b5504ffacd069a3",
+          "disposition": "native-only",
+          "obligation": "All 251 retained integration callbacks and original CLI assertions through the existing exact owned saved child handoff",
+          "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
+          "prerequisites": "Offline complete; exact installed build and broker, explicit dedicated project/folder and existing saved-file ownership receipts. Each reviewed source SHA and callback title must match the 251-case manifest before dispatch. No user document or file is adopted.",
+          "runnerStatus": "migration-required",
+          "qualification": "not-run",
+          "runtimeSource": "tests/scenarios/native-integration-cases.ts",
+          "ownerCopies": 1,
+          "minimumOwnerFixtures": 251,
+          "protocols": [
+            "mcp",
+            "addin"
+          ],
+          "cleanup": "Existing ScenarioSession exact close/delete and foreign document/cloud inventory audit; durable child lease and original request reconciliation before cleanup. Any unproved mutation or active child defers cleanup without replay.",
+          "migrationRequirement": "Atomic-isolation, GM36 and GM37 direct child dispatch is being migrated to the existing owned wrapper; per-command original settlement must fence every later admission. Native execution is blocked until these exact source and safety gates pass."
         }
       ]
     }

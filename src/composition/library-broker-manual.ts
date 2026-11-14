@@ -5,6 +5,8 @@ const { descriptors } = createRequire(__filename)("../../queue-cli") as {
   descriptors: Record<string, unknown>;
 };
 const returns: Record<string, string> = {
+  "transition-backend":
+    "Starts the sole shared broker on an explicitly approved physical addin/MCP endpoint after owner-authenticated idle stop. Exact existing epoch credentials, old/new configs and a read-only receipt for the same live Fusion PID/birth/version are required. Returns listening metadata with buildHash, not model or physical validation. Historical identity/receipts/unknown work remain immutable; uncertainty retains ownership without replay.",
   serve:
     "Runs until a controlled drain/stop. The broker reserves one Fusion instance; startup is not model validation. Existing active or unknown work prevents ownership release. It does not start or restart Fusion.",
   exec: "Stdout/stderr are the child command output. Durable request/job/result receipts use FMCAD_QUEUE_* lines on stderr. Exit zero means the job succeeded, not that geometry or physical manufacturing was validated. Inspect the domain outcome.",
@@ -93,10 +95,10 @@ export const manuals: Record<string, CommandManual> = Object.fromEntries(
           "src/queue-state.js",
         ],
         tests: [
-          "tests/queue-scheduling.test.js",
-          "tests/console-pause.test.js",
+          "tests/queue-scheduling.test.ts",
+          "tests/console-pause.test.ts",
           "tests/phased-queue.test.js",
-          "tests/queue-probe-recovery.test.js",
+          "tests/queue-probe-recovery.test.ts",
         ],
         verified: [
           "Offline parsing and typed broker records",
@@ -142,9 +144,9 @@ manuals["console"] = {
       "src/queue-gate.js",
     ],
     tests: [
-      "tests/console-pause.test.js",
-      "tests/console-offline.test.js",
-      "tests/console-services.test.js",
+      "tests/console-pause.test.ts",
+      "tests/console-offline.test.ts",
+      "tests/console-services.test.ts",
     ],
     verified: [
       "Offline startup/help contracts",

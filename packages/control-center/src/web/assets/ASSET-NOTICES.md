@@ -9,3 +9,8 @@
   license; see `vendor/highlight-LICENSE.txt`.
 
 The page uses local fonts and scripts; it has no CDN dependency.
+
+- **DejaVu Sans** regular and bold provide Greek and Cyrillic fallback glyphs.
+  Recovered from the original Control Center archive and converted from TTF to
+  WOFF2 without changing glyphs. See `fonts/DejaVu-LICENSE.txt` for the Bitstream
+  Vera license and DejaVu public-domain changes.

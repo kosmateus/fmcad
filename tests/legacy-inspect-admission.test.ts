@@ -1,16 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-
-import type { PreparedPythonArtifact } from "../packages/core/dist/index.js";
+import { createRequire } from "node:module";
 
 const root = path.resolve(__dirname, "../..");
-const { createPythonChecker } = require(
+const load = createRequire(path.join(root, "package.json"));
+const { createPythonChecker } = load(
   path.join(root, "packages/node-adapters/dist/python/checker.js"),
-) as typeof import("../packages/node-adapters/dist/python/checker.js");
-const { prepareOpScript } = require(path.join(root, "src/ops.js")) as {
-  prepareOpScript(operation: string, args: string[]): PreparedPythonArtifact;
-};
+) as typeof import("../packages/node-adapters/src/python/checker.js");
+const { prepareOpScript } = load(
+  path.join(root, "src/ops.js"),
+) as typeof import("../packages/node-adapters/src/python/legacy-operations.js");
 const typingRoot = path.join(root, "dist/runtime/python/typing");
 
 test(

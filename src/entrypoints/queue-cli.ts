@@ -284,6 +284,8 @@ const runtime = {
 } satisfies RuntimeModules;
 
 const summaries = {
+  "transition-backend":
+    "Explicit owner-bound physical addin/MCP transition on the same idle live Fusion and shared SDK queue; never rewrites historical identities or receipts.",
   serve:
     "Run one local multi-agent Fusion broker. Requires explicit ownership handoff and an idle Fusion. Does not start/restart Fusion.",
   exec: "Autostart/connect to the shared broker, submit one whole fmcad command and wait. Startup/queue waiting do not consume execution timeout.",
@@ -340,6 +342,7 @@ const summaries = {
 const optionsHelp = `
 Options: --client LABEL, --request-id ID, --timeout MS (active command execution), --queue-timeout MS (waiting only), --sequence-action begin|continue|end, --sequence-id ID, --sequence-mode automatic|exclusive, --expected-revision N.
 serve: --backend mcp|addin, --config PATH, --confirm-ownership true; optional --confirm-version-transition true, --idle-ms MS, --lease-ms MS, --max-queued N, --max-per-client N. Version transition additionally requires a dead prior Fusion process, an unpaused queue with no active, blocked, leased or nonterminal work, an idle UI and all current documents unmodified; it records the transition and does not restart Fusion.
+transition-backend: after an owner-authenticated idle stop, --backend mcp|addin --backend-approval PATH --confirm-ownership true. The private JSON approval pins requestId, existing epoch clientId/clientToken, previousConfig and nextConfig; a preserved stop pause additionally requires its exact completed stopRequestId. Only backend, URL, headers, tool and protocolVersion may change; all other settings remain exact. Same live Fusion, settled normal epoch and clean documents are required; immutable predecessor identities/receipts are retained. The stop pause remains closed until a separate explicit owner resume. This starts the sole shared broker, not a second SDK queue.
 status without --job returns bounded queue totals and broker control state; with --job it returns that job. result/cancel/reconcile require --job ID. Atomic owner acknowledgment: reconcile --job ID --accept-outcome committed|aborted, only after reviewing the exact scoped proof; this does not claim rollback or model validation. release: --sequence-id ID.
 Separate child fmcad argv with -- for exec/submit. CLI stdout remains child stdout; job/sequence receipts use FMCAD_QUEUE_RESULT on stderr.
 Default sequence mode is automatic: CLI preparation runs locally before SDK readiness, one SDK turn is exclusive, and the slot is yielded before local processing/publication. Further SDK turns of the same command rejoin the shared queue and compare the live pinned document/references with the previous turn. Local states are preparing/processing; neither occupies the Fusion slot. A continuation compares the live pinned document and its references, not the global queue counter. DOCUMENT_CHANGED returns refreshed state in the same turn without executing the stale operation. Existing --doc/--doc-id/--doc-file-id flags pin the target; unscoped/unreadable continuations fail closed. Explicit --expected-revision still requests a separate initial global revision fence. Queue waiting starts at SDK readiness; SDK and local processing have separate cumulative timeout budgets.
@@ -417,6 +420,7 @@ function parse(argv: string[]): { opts: QueueOptions; rest: string[] } {
     "confirm-current-facts",
     "facts-approval",
     "succession-approval",
+    "backend-approval",
   ]);
   const opts: QueueOptions = {};
   for (let index = 0; index < own.length; index++) {
@@ -443,6 +447,10 @@ export async function queueCommand(
   if (!Object.hasOwn(descriptors, name))
     throw new Error("Unknown queue command");
   const { opts, rest } = parse(argv.slice(1));
+  if (opts["backend-approval"] !== undefined && name !== "transition-backend")
+    throw new Error(
+      "--backend-approval requires transition-backend; ordinary serve never reconfigures",
+    );
   if (opts["admission-mode"] !== undefined && (name !== "close-isolated-scratch" ||
       opts["admission-mode"] !== "normal-multidocument" || opts["confirm-ownership"] !== "true"))
     throw new Error("--admission-mode normal-multidocument requires close-isolated-scratch and --confirm-ownership true");
@@ -716,8 +724,38 @@ export async function queueCommand(
     else write(runtime.queueAutostart().reclaimStart(directory));
     return 0;
   }
-  if (name === "serve") {
+  if (name === "serve" || name === "transition-backend") {
     const { cfg } = deps.loadConfig(opts);
+    let backendTransition:
+      | import("../queue-backend-transition").BackendTransitionApproval
+      | undefined;
+    if (name === "transition-backend") {
+      if (
+        !opts["backend-approval"] ||
+        opts["confirm-ownership"] !== "true" ||
+        rest.length ||
+        Object.keys(opts).some(
+          (key) =>
+            ![
+              "backend",
+              "config",
+              "backend-approval",
+              "confirm-ownership",
+            ].includes(key),
+        )
+      )
+        throw new Error(
+          "transition-backend requires an exact private --backend-approval and explicit ownership; no tuning overrides",
+        );
+      const fd = fs.openSync(opts["backend-approval"], fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      try {
+        const stat = fs.fstatSync(fd);
+        if (!stat.isFile() || stat.size > 1024 * 1024 || (stat.mode & 0o077) !== 0)
+          throw new Error("Backend approval must be a bounded private regular file (mode 0600)");
+        backendTransition = JSON.parse(fs.readFileSync(fd, "utf8")) as typeof backendTransition;
+      } finally { fs.closeSync(fd); }
+      if (!backendTransition) throw new Error("Invalid backend approval");
+    }
     const stateOptions: Record<string, number> = {};
     for (const [flag, field] of [
       ["idle-ms", "idleMs"],
@@ -737,6 +775,7 @@ export async function queueCommand(
       confirmVersionTransition: opts["confirm-version-transition"] === "true",
       stateOptions,
       autoReconcile: cfg.queue?.autoRecover !== false,
+      ...(backendTransition ? { backendTransition } : {}),
     });
     write({
       state: "listening",

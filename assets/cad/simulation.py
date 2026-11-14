@@ -1,40 +1,24 @@
-"""Metadata-only discovery; no preview objects are instantiated or invoked.
+"""Offline compatibility loader for the canonical modeling runtime.
 
-Reviewed installed September 2026 SDK sim.py: Simulations, SimulationModel,
-SimulationModels, Studies and Study are preview, not for distributed programs.
+Prepared bundles already contain these units and perform no checkout reads.
+Standalone callers outside the checkout may set _FMCAD_RUNTIME_ROOT explicitly.
 """
-import importlib
-
-
-def _simulation_capabilities(ctx, data):
-    _cad_fields(data)
-    module, error = None, None
-    try:
-        module = importlib.import_module('adsk.sim')
-    except Exception as exc:
-        error = type(exc).__name__ + ': ' + str(exc)
-    classes = []
-    for name in ('Simulations', 'SimulationModel', 'SimulationModels', 'Studies', 'Study'):
-        cls = getattr(module, name, None) if module is not None else None
-        doc = getattr(cls, '__doc__', '') or ''
-        runtime_preview = 'preview' in doc.lower()
-        classes.append({'name': name, 'available': cls is not None, 'preview': True,
-                        'runtimeDocMarksPreview': runtime_preview,
-                        'statusSource': 'runtime documentation' if runtime_preview else 'known SDK specification (September 2026)',
-                        'supported': False})
-    return {'profile': 'stable-distributed', 'module': 'adsk.sim',
-            'moduleAvailable': module is not None, 'importError': error, 'classes': classes,
-            'stableFEASolve': {'available': False, 'status': 'unavailable in supported profile'},
-            'entitlement': 'notChecked', 'productAccessed': False,
-            'limitations': ['Module presence is not solve support or entitlement evidence.',
-                            'All known Simulation/Study APIs are preview and not for distributed programs.',
-                            'No study creation, editing, meshing, solving, results access or workspace activation.',
-                            'Simulations.get is deliberately not called: it can create a product.',
-                            'Joint sampling is kinematic evidence, not FEA or dynamics.'],
-            'nativeExamples': [{'operation': 'simulation.capabilities', 'data': {}},
-                               {'operation': 'motion.sample', 'data': {'confirm': True, 'frameCount': 3,
-                                'tracks': [{'joint': {'token': 'joint-token'},
-                                            'rotation': {'from': '0 deg', 'to': '90 deg'}}]}}]}
-
-
-CAD_HANDLERS['simulation.capabilities'] = _simulation_capabilities
+if '_simulation_capabilities' not in globals():
+    from pathlib import Path as _modeling_compat_Path
+    _modeling_compat_root = None
+    for _modeling_compat_candidate in (globals().get('_FMCAD_RUNTIME_ROOT'),
+                                      globals().get('__file__'), _modeling_compat_Path.cwd()):
+        if _modeling_compat_candidate is None:
+            continue
+        _modeling_compat_candidate = _modeling_compat_Path(_modeling_compat_candidate).resolve()
+        for _modeling_compat_parent in (_modeling_compat_candidate, *_modeling_compat_candidate.parents):
+            if (_modeling_compat_parent / 'runtime/python/fmcad/adapters/fusion/simulation.py').is_file():
+                _modeling_compat_root = _modeling_compat_parent
+                break
+        if _modeling_compat_root is not None:
+            break
+    if _modeling_compat_root is None:
+        raise RuntimeError('Modeling compatibility source requires the runtime checkout or explicit bundled units')
+    for _modeling_compat_unit in ('runtime/python/fmcad/adapters/fusion/simulation.py',):
+        _modeling_compat_source = _modeling_compat_root / _modeling_compat_unit
+        exec(compile(_modeling_compat_source.read_text(encoding='utf8'), str(_modeling_compat_source), 'exec'), globals())

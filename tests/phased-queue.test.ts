@@ -73,9 +73,13 @@ type ClientStatus = BrokerStatus & {
 };
 type QueueBroker = { close(): Promise<void>; status(): BrokerStatus };
 type BrokerOptions = {
+  preparationConcurrency?: number;
   autoReconcile?: boolean;
   typedPort?: boolean;
-  checkPrepared?: (payload: unknown) => Promise<void>;
+  checkPrepared?: (
+    payload: unknown,
+    options?: { signal?: AbortSignal },
+  ) => Promise<void>;
 };
 type PhysicalRequest = {
   id: string | number | null;
@@ -145,6 +149,8 @@ const queueAdmission = runtimeRequire(
     admission: {
       check(
         payload: unknown,
+        artifact?: unknown,
+        options?: { signal?: AbortSignal },
       ): Promise<{ kind: string; fence(outgoing: unknown): void }>;
     };
     checkPrepared(prepared: unknown): Promise<unknown>;
@@ -152,15 +158,15 @@ const queueAdmission = runtimeRequire(
     checkerFingerprint(): unknown;
   };
 };
-let fakeAdmissionCheck: ((payload: unknown) => Promise<void>) | undefined;
+let fakeAdmissionCheck: BrokerOptions["checkPrepared"];
 queueAdmission.createProductionQueueAdmission = () => ({
   admission: {
-    async check(payload) {
+    async check(payload, _artifact, options) {
       const script = (
         payload as { params?: { arguments?: { object?: { script?: string } } } }
       ).params?.arguments?.object?.script;
       if (script && !script.includes("FMCAD_QUEUE_INSTANCE"))
-        await fakeAdmissionCheck?.(payload);
+        await fakeAdmissionCheck?.(payload, options);
       return { kind: "python", fence() {} };
     },
   },
@@ -493,11 +499,18 @@ const Module=require('node:module');const load=Module._load;Module._load=functio
     );
   fakeAdmissionCheck = brokerOptions.checkPrepared ?? (async () => {});
   const broker = await serve(
-    { backend: "mcp", timeoutMs: 5000 },
+    {
+      backend: "mcp",
+      timeoutMs: 5000,
+      queue: {
+        preparationConcurrency: brokerOptions.preparationConcurrency ?? 2,
+      },
+    },
     {
       dir,
       confirmOwnership: true,
       createBackend: () => physical,
+      nativePath: (file: string) => file,
       pollMs: 5,
       ...brokerOptions,
       spawnWorker(exe: string, args: string[], options: SpawnOptions) {
@@ -864,6 +877,67 @@ test("killing the observing worker does not release an active SDK call or replay
   assert.equal(f.maximum(), 1);
 });
 
+test("preparation capacity defaults to available CPU and rejects unbounded configuration", () => {
+  const { resolvePreparationConcurrency } = runtimeRequire(
+    path.join(projectRoot, "src/queue-phased.js"),
+  ) as typeof import("../src/queue-phased");
+  assert.equal(resolvePreparationConcurrency(undefined, 2), 1);
+  assert.equal(resolvePreparationConcurrency(undefined, 4), 1);
+  assert.equal(resolvePreparationConcurrency(undefined, 8), 2);
+  assert.equal(resolvePreparationConcurrency(undefined, 32), 4);
+  assert.equal(resolvePreparationConcurrency(10, 2), 10);
+  for (const value of [0, 11, 1.5, "2", null, NaN, Infinity])
+    assert.throws(() => resolvePreparationConcurrency(value, 4), {
+      code: "INVALID_PREPARATION_CONCURRENCY",
+    });
+});
+for (const concurrency of [1, 2])
+  test(
+    "configured preparation workers preserve the single SDK queue: " +
+      concurrency,
+    async (t) => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let checks = 0;
+      t.after(() => release());
+      const f = await fixture(t, {
+        preparationConcurrency: concurrency,
+        async checkPrepared() {
+          checks++;
+          await gate;
+        },
+      });
+      const first = await f.submit(f.a, "publish.py"),
+        second = await f.submit(f.b, "fast.py");
+      await until(
+        () => checks === concurrency,
+        "configured offline preparation slots",
+      );
+      assert.equal(
+        fs.existsSync(
+          path.join(f.dir, "jobs", second.id, "worker-identity.json"),
+        ),
+        concurrency === 2,
+        "A backlogged worker has no running process or local deadline until its configured slot opens",
+      );
+      assert.deepEqual(
+        f.trace,
+        [],
+        "Offline preparation has no physical SDK authority",
+      );
+      release();
+      await f.complete(f.a, first.id);
+      await f.complete(f.b, second.id);
+      assert.equal(
+        f.maximum(),
+        1,
+        "Both configured preparation levels retain one physical SDK lane",
+      );
+    },
+  );
+
 test("input bytes changed during the offline checker are refused at the actual physical boundary", async (t) => {
   let checked: () => void = () => {};
   let release: () => void = () => {};
@@ -893,6 +967,89 @@ test("input bytes changed during the offline checker are refused at the actual p
   assert.equal(result.execution.mayHaveMutated, false);
   assert.deepEqual(f.trace, []);
 });
+
+test(
+  "fallback admission is aborted with its local worker and never dispatches or replays",
+  {},
+  async (t) => {
+    let checked!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      checked = resolve;
+    });
+    let rejectPending: ((reason: Error) => void) | undefined;
+    let capturedSignal: AbortSignal | undefined;
+    let observedAbort = false,
+      checks = 0;
+    // Even the failing historical implementation can clean up its fake gate.
+    t.after(() => rejectPending?.(new Error("fixture cleanup")));
+    const f = await fixture(t, {
+      async checkPrepared(_payload, options) {
+        checks++;
+        capturedSignal = options?.signal;
+        checked();
+        await new Promise<void>((_resolve, reject) => {
+          rejectPending = reject;
+          capturedSignal?.addEventListener(
+            "abort",
+            () => {
+              observedAbort = true;
+              reject(
+                Object.assign(new Error("aborted fixture admission"), {
+                  code: "FIXTURE_ADMISSION_ABORTED",
+                }),
+              );
+            },
+            { once: true },
+          );
+        });
+      },
+    });
+    const requestId = "owned-aborted-preparation";
+    const submitted = await f.submit(f.a, "publish.py", [], { requestId });
+    await reached;
+    const identity = JSON.parse(
+      fs.readFileSync(
+        path.join(f.dir, "jobs", submitted.id, "worker-identity.json"),
+        "utf8",
+      ),
+    ) as { pid: number; birth: string };
+    const instance = runtimeRequire(
+      path.join(projectRoot, "src/queue-instance.js"),
+    ) as { processBirth(pid: number): string };
+    assert.equal(instance.processBirth(identity.pid), identity.birth);
+    assert.equal(
+      fs.realpathSync("/proc/" + identity.pid + "/cwd"),
+      fs.realpathSync(f.dir),
+    );
+    process.kill(identity.pid, "SIGKILL");
+    const result = await until(async () => {
+      const value = await f.result(f.a, submitted.id);
+      return value.job.state === "failed" && value;
+    }, "local worker exit without SDK");
+    assert.ok(
+      capturedSignal,
+      "Fallback admission must receive the owning local AbortSignal",
+    );
+    assert.equal(capturedSignal.aborted, true);
+    assert.equal(
+      observedAbort,
+      true,
+      "The checker wait is released by actual worker closure",
+    );
+    assert.equal(result.execution.sdkSettled, true);
+    assert.equal(result.execution.mayHaveMutated, false);
+    assert.equal(result.job.physicalTurns || 0, 0);
+    assert.deepEqual(f.trace, []);
+    const duplicate = await f.submit(f.a, "publish.py", [], { requestId });
+    assert.equal(duplicate.id, submitted.id);
+    assert.equal(
+      checks,
+      1,
+      "Receipt lookup does not repeat even the aborted preparation",
+    );
+    assert.deepEqual(f.trace, []);
+  },
+);
 
 test("pause between checker and grant invalidates the original context without SDK submission", async (t) => {
   let checked: () => void = () => {};

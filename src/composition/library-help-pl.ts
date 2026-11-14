@@ -185,7 +185,7 @@ const specials: Record<string, string> = {
   "capabilities probe":
     "Jawnie zleca pojedynczą próbę SDK przez broker dla wskazanej operacji katalogu. Wymaga przypiętej tożsamości dokumentu; pomoc, inspekcja i lista narzędzi nie wykonują próby.",
   console:
-    "Uruchamia terminalową konsolę monitorowania w trybie broker lub bezpośrednim. Nie uruchamia brokera i nie odpytuje Fusion. Bez --project wybiera najbliższy projekt nadrzędny; jawna ścieżka musi być poprawna. Zamknięcie panelu nie kończy usług i nie cofa pauzy.",
+    "Wypisuje adres gotowego Control Center bez wymagania terminala. Bez --project wybiera widok globalny, a jawna ścieżka wymaga dokładnie jednego zarejestrowanego projektu. diagnostic i --web pozostają aliasami zgodności. Zamknięcie polecenia nie kończy usług i nie cofa pauzy.",
   help: "Wyświetla pomoc ogólną lub pomoc wybranego polecenia bez uruchamiania usług.",
   init: "Tworzy konfigurację fmcad; --force pozwala zastąpić istniejący plik. --from-opencode importuje ustawienia połączenia MCP.",
   doctor:

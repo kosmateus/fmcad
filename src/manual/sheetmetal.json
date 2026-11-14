@@ -7,7 +7,7 @@
     "examples": [
       {"label": "Bend With K-Factor", "data": {"schemaVersion": 1, "thickness": "1 mm", "segments": [{"type": "flat", "length": "20 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y", "K": 0.5}, {"type": "flat", "length": "20 mm"}]}, "requires": "Open Design document; a 90-degree bend of radius 2 mm with K-factor 0.5 and thickness 1 mm.", "output": "result.bendTable[0].neutralRadius is 0.25 cm and developedLength is 0.25*pi/2 cm; result.bendCount is 1."}
     ],
-    "audit": {"sources": ["assets/cad/sheetmetal.py: _sheet_bends, _parse_segments, _bend_allowance"], "verified": ["neutral radius from K-factor or allowance", "no guessed allowance", "bend direction sign", "read-only envelope"], "tests": ["tests/sheetmetal_test.py", "tests/sheetmetal.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/sheetmetal.py: _sheet_bends, _parse_segments, _bend_allowance"], "verified": ["neutral radius from K-factor or allowance", "no guessed allowance", "bend direction sign", "read-only envelope"], "tests": ["tests/sheetmetal_test.py", "tests/sheetmetal.test.ts"], "gaps": [], "bugs": []}
   },
   "sheet.form": {
     "sections": [
@@ -17,7 +17,7 @@
     "examples": [
       {"label": "Form A Sheet Bracket", "data": {"schemaVersion": 1, "thickness": "1 mm", "segments": [{"type": "flat", "length": "20 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y", "K": 0.5}, {"type": "flat", "length": "20 mm"}], "representation": "external"}, "requires": "Open Design document; a flat-bend-flat bracket with an explicit K-factor.", "output": "result.formedCenterline ends at [0, 0.25, 2.25] cm in the bend plane and result.totalDevelopedLength equals result.bendTable total; result.nativeFlatPattern.available is false."}
     ],
-    "audit": {"sources": ["assets/cad/sheetmetal.py: _sheet_form, _formed_walk, _flat_walk, _sheet_representation"], "verified": ["neutral-axis folding", "developed equals formed neutral length", "native representation blocked not faked", "read-only envelope"], "tests": ["tests/sheetmetal_test.py", "tests/sheetmetal.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/sheetmetal.py: _sheet_form, _formed_walk, _flat_walk, _sheet_representation"], "verified": ["neutral-axis folding", "developed equals formed neutral length", "native representation blocked not faked", "read-only envelope"], "tests": ["tests/sheetmetal_test.py", "tests/sheetmetal.test.ts"], "gaps": [], "bugs": []}
   },
   "sheet.flat": {
     "sections": [
@@ -27,6 +27,6 @@
     "examples": [
       {"label": "Flatten With Explicit Allowance", "data": {"schemaVersion": 1, "thickness": "1 mm", "segments": [{"type": "flat", "length": "20 mm"}, {"type": "bend", "radius": "2 mm", "angle": "90 deg", "axis": "y", "allowance": "3.9269908169872414 mm"}]}, "requires": "Open Design document; a 90-degree bend with a declared allowance equal to radius 2.5 mm times pi/2.", "output": "result.totalDevelopedLength is 2 cm + 0.39269908169872414 cm and result.scaled is false."}
     ],
-    "audit": {"sources": ["assets/cad/sheetmetal.py: _sheet_flat, _flat_walk, _sheet_developed"], "verified": ["developed length from allowance", "no scaling", "read-only envelope"], "tests": ["tests/sheetmetal_test.py", "tests/sheetmetal.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/sheetmetal.py: _sheet_flat, _flat_walk, _sheet_developed"], "verified": ["developed length from allowance", "no scaling", "read-only envelope"], "tests": ["tests/sheetmetal_test.py", "tests/sheetmetal.test.ts"], "gaps": [], "bugs": []}
   }
 }

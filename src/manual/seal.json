@@ -7,7 +7,7 @@
     "examples": [
       {"label": "10 mm ID x 2 mm CS O-ring", "data": {"schemaVersion":1,"frame":"component","name":"ORing","id":"10 mm","cs":"2 mm"}, "requires": "Native component; ORing and ORing__section names unused.", "output": "result.volume equals 2*pi^2*6mm*(1mm)^2; result.torus is true."}
     ],
-    "audit": {"sources": ["assets/cad/seal.py:_seal_shape_o_ring,_o_ring_dimensions"], "verified": ["Free torus V = 2*pi^2*R*r^2", "Cross-section radius is a driving dimension"], "tests": ["tests/seal_test.py", "tests/seal.test.js"], "gaps": [], "bugs": ["Installed/compressed O-ring deformation is a separate body, not modeled here"]}
+    "audit": {"sources": ["assets/cad/seal.py:_seal_shape_o_ring,_o_ring_dimensions"], "verified": ["Free torus V = 2*pi^2*R*r^2", "Cross-section radius is a driving dimension"], "tests": ["tests/seal_test.py", "tests/seal.test.ts"], "gaps": [], "bugs": ["Installed/compressed O-ring deformation is a separate body, not modeled here"]}
   },
   "seal.gland": {
     "sections": [
@@ -17,7 +17,7 @@
     "examples": [
       {"label": "Radial piston gland at 15% squeeze", "data": {"schemaVersion":1,"frame":"component","type":"radial","oRing":{"id":"10 mm","cs":"2 mm"},"squeeze":0.15,"swell":0.03,"hardStop":{"clearance":"0.05 mm"}}, "requires": "Read-only; a selected component.", "output": "result.gland.depth is about installedCs*(1-0.15); result.squeeze.nominal is about 0.15 and result.checks report pass."}
     ],
-    "audit": {"sources": ["assets/cad/seal.py:_seal_gland,_o_ring_dimensions"], "verified": ["Squeeze/fill ranges from declared dimensions and tolerances", "Hard stop limits compression, does not set squeeze", "Swelling scales installed cross-section"], "tests": ["tests/seal_test.py", "tests/seal.test.js"], "gaps": [], "bugs": ["No material/sealing certification"]}
+    "audit": {"sources": ["assets/cad/seal.py:_seal_gland,_o_ring_dimensions"], "verified": ["Squeeze/fill ranges from declared dimensions and tolerances", "Hard stop limits compression, does not set squeeze", "Swelling scales installed cross-section"], "tests": ["tests/seal_test.py", "tests/seal.test.ts"], "gaps": [], "bugs": ["No material/sealing certification"]}
   },
   "seal.profile": {
     "sections": [
@@ -27,7 +27,7 @@
     "examples": [
       {"label": "Closed gasket profile", "data": {"schemaVersion":1,"frame":"component","crossSection":{"shape":"custom","points":[["0 mm","0 mm"],["2 mm","0 mm"],["2 mm","1.5 mm"],["0 mm","1.5 mm"],["0 mm","0 mm"]]},"layout":"gasket","path":{"closed":true,"length":"80 mm"}}, "requires": "Read-only; a selected component.", "output": "result.crossSection.isPlainORing is false and continuity.closed is true."}
     ],
-    "audit": {"sources": ["assets/cad/seal.py:_seal_profile"], "verified": ["Custom cross-section is not reclassified as an O-ring", "Closed custom profile continuity", "Gasket path vs face/poppet revolution envelope"], "tests": ["tests/seal_test.py", "tests/seal.test.js"], "gaps": [], "bugs": ["No self-intersection or leak-tightness proof"]}
+    "audit": {"sources": ["assets/cad/seal.py:_seal_profile"], "verified": ["Custom cross-section is not reclassified as an O-ring", "Closed custom profile continuity", "Gasket path vs face/poppet revolution envelope"], "tests": ["tests/seal_test.py", "tests/seal.test.ts"], "gaps": [], "bugs": ["No self-intersection or leak-tightness proof"]}
   },
   "seal.evaluate": {
     "sections": [
@@ -37,7 +37,7 @@
     "examples": [
       {"label": "Installed 10x2 seal in a 1.6x2.4 groove", "data": {"schemaVersion":1,"frame":"component","oRing":{"id":"10 mm","cs":"2 mm"},"gland":{"depth":"1.6 mm","width":"2.4 mm"},"type":"radial"}, "requires": "Read-only; a selected component.", "output": "result.squeeze is about (2-1.6)/2 = 0.2 and result.checks report pass."}
     ],
-    "audit": {"sources": ["assets/cad/seal.py:_seal_evaluate,_o_ring_dimensions"], "verified": ["Squeeze/fill/gland-volume checks", "Extrusion gap limit reported unknown without pressure and hardness", "Hard stop contact check"], "tests": ["tests/seal_test.py", "tests/seal.test.js"], "gaps": [], "bugs": ["No leak-tightness or contact-pressure certification"]}
+    "audit": {"sources": ["assets/cad/seal.py:_seal_evaluate,_o_ring_dimensions"], "verified": ["Squeeze/fill/gland-volume checks", "Extrusion gap limit reported unknown without pressure and hardness", "Hard stop contact check"], "tests": ["tests/seal_test.py", "tests/seal.test.ts"], "gaps": [], "bugs": ["No leak-tightness or contact-pressure certification"]}
   },
   "dock.sequence-check": {
     "sections": [
@@ -47,6 +47,6 @@
     "examples": [
       {"label": "Seal before both valves open", "data": {"schemaVersion":1,"frame":"component","connect":[{"event":"lead-in","at":"0 mm"},{"event":"locator-engage","at":"2 mm"},{"event":"seal-contact","at":"4 mm"},{"event":"valve-open","at":"4.6 mm"},{"event":"both-valve-open","at":"5 mm"}],"axialTolerance":"0.1 mm","minimumSealBeforeOpen":"0.5 mm"}, "requires": "Read-only; a selected component.", "output": "result.sealBeforeOpenMargin is 0.6 mm and worstCaseMargin 0.5 mm, so seal-before-open passes."}
     ],
-    "audit": {"sources": ["assets/cad/seal.py:_dock_sequence"], "verified": ["Event order both directions", "Worst-case seal-before-open margin >= 0.5 mm", "Both valves open and seal-after-close"], "tests": ["tests/seal_test.py", "tests/seal.test.js"], "gaps": [], "bugs": ["No sealing or valve-function certification"]}
+    "audit": {"sources": ["assets/cad/seal.py:_dock_sequence"], "verified": ["Event order both directions", "Worst-case seal-before-open margin >= 0.5 mm", "Both valves open and seal-after-close"], "tests": ["tests/seal_test.py", "tests/seal.test.ts"], "gaps": [], "bugs": ["No sealing or valve-function certification"]}
   }
 }

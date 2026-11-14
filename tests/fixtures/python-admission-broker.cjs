@@ -5,7 +5,6 @@ const {spawn} = require('node:child_process');
 const packageRoot=process.env.FMCAD_ADMISSION_CONSUMER_PACKAGE || path.resolve(__dirname,'../..');
 const load=name=>require(path.join(packageRoot,'dist/src',name));
 const {createBrokerTransport} = load('dist/fusion-transport/broker');
-const {createPythonChecker} = load('python');
 const {serve} = load('queue-broker');
 const {QueueClient} = load('queue-client');
 const {queueDirectory} = load('queue-connection');
@@ -22,7 +21,7 @@ module.exports = async function fixture(t, {typedService = false} = {}) {
   const cfg=resolveFmcadConfiguration({adapter:{backend:'mcp',url:'http://queue.invalid',timeoutMs:120000},
     environment:{},file:{},platformDefaults:{},acceptedService:null});
   const instance={pid:991,birth:'synthetic:991',version:'fixture',activeCommand:'SelectCommand',documents:[]};
-  const calls=[],checks=[],clients=[];
+  const calls=[],clients=[];
   let active=0,maximum=0,products=0,fingerprint='A-1',observe=async()=>{},observeProduct=async()=>{},observeProtocol=async()=>{};
   const physical=createBrokerTransport(cfg,{version:'test',requestTimeout:s=>s.timeoutMs,bridgeSource:()=>{throw Error('No add-in bridge');}});
   physical._post=async payload=>{
@@ -50,8 +49,6 @@ module.exports = async function fixture(t, {typedService = false} = {}) {
       return {status:200,raw:JSON.stringify({jsonrpc:'2.0',id:payload.id,result:{content:[{type:'text',text}]}})};
     } finally {active--;}
   };
-  const runtime=path.join(packageRoot,'dist/runtime/python');
-  const checker=createPythonChecker({typingRoot:path.join(runtime,'typing'),definitionsRoot:path.join(runtime,'typing'),pythonPlatform:'Windows'});
   const worker=path.join(home,'typed-service.cjs');
   if(typedService) fs.writeFileSync(worker,`
     const fs=require('node:fs');
@@ -73,11 +70,12 @@ module.exports = async function fixture(t, {typedService = false} = {}) {
     fs.rmSync(home,{recursive:true,force:true});
   });
   broker=await serve(cfg,{dir,confirmOwnership:true,pollMs:5,createBackend:()=>physical,
-    pythonChecker:{async check(request){checks.push(request.artifact.sha256);return checker.check(request);}},
-    checkPrepared:prepared=>observe(prepared),
+    // This physical fixture writes receipts locally without executing Fusion.
+    nativePath:value=>value,
+    testCheckPrepared:prepared=>observe(prepared),
     ...(typedService?{spawnWorker(executable,args,options){return spawn(executable,[worker,args[1]],options);}}:{}),
   });
-  return {home,dir,cfg,calls,checks,maximum:()=>maximum,products:()=>products,close:()=>broker.close(),
+  return {home,dir,cfg,calls,maximum:()=>maximum,products:()=>products,close:()=>broker.close(),
     fingerprint(value){fingerprint=value;},observe(value){observe=value;},
     observeProduct(value){observeProduct=value;},
     observeProtocol(value){observeProtocol=value;},

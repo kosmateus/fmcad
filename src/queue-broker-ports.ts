@@ -332,6 +332,7 @@ export interface Config {
   [key: string]: unknown;
 }
 export interface Options {
+  backendTransition?: import("./queue-backend-transition").BackendTransitionApproval;
   confirmOwnership?: boolean;
   confirmVersionTransition?: boolean;
   dir?: string;
@@ -347,6 +348,7 @@ export interface Options {
   deadEpochSuccessorNonce?: string;
   testAtomicWorkflowScope?: AtomicScopeConfig;
   testFusionProcessAlive?: (instance: Instance) => boolean;
+  testCheckPrepared?: (prepared: Prepared) => void | Promise<void>;
   spawnWorker?: typeof spawn;
   pollMs?: number;
 }
@@ -544,6 +546,7 @@ export interface ScriptScope {
 }
 export interface Message extends Partial<WorkerMessage> {
   action: string;
+  snapshotFence?: boolean;
   auth?: { clientId: string; clientToken: string } | undefined;
   clientId?: string;
   clientToken?: string;

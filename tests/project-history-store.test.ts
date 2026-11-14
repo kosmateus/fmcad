@@ -1,5 +1,7 @@
+import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { test } from "node:test";
@@ -17,13 +19,230 @@ import {
   setupProjects,
 } from "./control-center-test-support.js";
 
+const load = createRequire(__filename);
 const repositoryRoot = process.cwd();
-const historyAdapters = require(
+const historyAdapters = load(
   path.join(
     repositoryRoot,
     "packages/node-adapters/dist/persistence/project-history/index.js",
   ),
 ) as typeof import("../packages/node-adapters/dist/persistence/project-history/index.js");
+
+test("project registry activity fence retains an unreconciled lock without blocking", (t) => {
+  const fixture = setupProjects(t, []),
+    lock = fixture.registry.readonlyPath + ".lock";
+  fs.mkdirSync(path.dirname(lock), { recursive: true });
+  const bytes = JSON.stringify({ pid: 2147483644, startedAtMs: 1 });
+  fs.writeFileSync(lock, bytes, { flag: "wx", mode: 0o600 });
+  assert.ok(fixture.registry.withRegistrationFence);
+  let calls = 0;
+  const started = performance.now();
+  assert.throws(
+    () =>
+      fixture.registry.withRegistrationFence!(() => {
+        calls++;
+      }),
+    { code: "REGISTRY_BUSY" },
+  );
+  assert.equal(calls, 0);
+  assert.ok(
+    performance.now() - started < 1000,
+    "The synchronous activity fence must not wait on another process",
+  );
+  assert.equal(fs.readFileSync(lock, "utf8"), bytes);
+  assert.equal(fs.existsSync(fixture.registry.readonlyPath), false);
+});
+
+test("project registry does not remove a replacement owner's lock", (t) => {
+  const fixture = setupProjects(t, []),
+    file = fixture.registry.readonlyPath + ".lock";
+  assert.ok(fixture.registry.withRegistrationFence);
+  const replacement = JSON.stringify({ pid: process.pid, startedAtMs: 123 });
+  assert.throws(
+    () =>
+      fixture.registry.withRegistrationFence!(() => {
+        fs.renameSync(file, file + ".original");
+        fs.writeFileSync(file, replacement, { flag: "wx", mode: 0o600 });
+      }),
+    { code: "REGISTRY_PATH_INVALID" },
+  );
+  assert.equal(fs.readFileSync(file, "utf8"), replacement);
+});
+
+test("project registry refuses an abandoned writer without reclaiming its lock", (t) => {
+  const fixture = setupProjects(t, ["project-a"]),
+    file = fixture.registry.readonlyPath + ".lock";
+  const bytes = JSON.stringify({ pid: 2147483643, startedAtMs: 1 });
+  fs.writeFileSync(file, bytes, { flag: "wx", mode: 0o600 });
+  assert.throws(
+    () =>
+      fixture.registry.setLifecycle("project-a", {
+        monitoring: true,
+        archivedAtMs: null,
+        nowMs: FIXTURE_NOW,
+      }),
+    { code: "REGISTRY_BUSY", retryable: false },
+  );
+  assert.equal(fs.readFileSync(file, "utf8"), bytes);
+});
+
+test("project registry waits for an independent writer to release its original lock", async (t) => {
+  const fixture = setupProjects(t, ["project-a"]);
+  const lock = fixture.registry.readonlyPath + ".lock";
+  fs.mkdirSync(path.dirname(lock), { recursive: true });
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      `
+    const fs=require('node:fs');
+    const file=process.argv[1];
+    fs.writeFileSync(file,JSON.stringify({pid:process.pid,startedAtMs:Date.now()}),{flag:'wx',mode:0o600});
+    process.stdout.write('LOCKED');
+    setTimeout(()=>fs.unlinkSync(file),2500);
+  `,
+      lock,
+    ],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+  const exited = new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", resolve);
+  });
+  t.after(() => {
+    if (child.exitCode === null) child.kill();
+  });
+  await new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) =>
+      reject(new Error("Writer exited before ready: " + code)),
+    );
+    child.stdout.once("data", () => resolve());
+  });
+  const entry = fixture.registry.lookup("project-a");
+  assert.ok(entry);
+  const snapshot = fixture.registry.register({
+    projectId: entry.projectId,
+    projectPath: entry.path,
+    databaseId: entry.databaseId,
+    monitoring: entry.monitoring,
+    archivedAtMs: entry.archivedAtMs,
+    nowMs: FIXTURE_NOW,
+  });
+  assert.equal(snapshot.projects.length, 1);
+  assert.equal(await exited, 0);
+  assert.equal(fs.existsSync(lock), false);
+});
+
+for (const replacement of ["directory", "symlink"] as const)
+  test(`registry directory creation revalidates a competing ${replacement}`, (t) => {
+    const fixture = setupProjects(t, []),
+      parent = path.join(fixture.root, "racing-parent"),
+      target = path.join(fixture.root, "other-parent");
+    fs.mkdirSync(target);
+    const nodeFs = load("node:fs") as typeof fs,
+      original = nodeFs.mkdirSync;
+    t.mock.method(
+      nodeFs,
+      "mkdirSync",
+      (
+        file: fs.PathLike,
+        options?: fs.MakeDirectoryOptions | fs.Mode | null,
+      ) => {
+        if (file === parent) {
+          if (replacement === "directory") original(parent, { mode: 0o700 });
+          else fs.symlinkSync(target, parent, "dir");
+        }
+        return original(file, options);
+      },
+    );
+    const { openProjectRegistry } = load(
+      path.join(
+        repositoryRoot,
+        "packages/node-adapters/dist/persistence/project-history/registry.js",
+      ),
+    ) as typeof import("../packages/node-adapters/src/persistence/project-history/registry");
+    const registry = openProjectRegistry({
+      filePath: path.join(parent, "projects.json"),
+    });
+    assert.ok(registry.withRegistrationFence);
+    if (replacement === "directory")
+      assert.doesNotThrow(() => registry.withRegistrationFence!(() => null));
+    else
+      assert.throws(() => registry.withRegistrationFence!(() => null), {
+        code: "REGISTRY_PATH_INVALID",
+      });
+    assert.equal(fs.existsSync(path.join(target, "projects.json.lock")), false);
+  });
+
+test("independent registry writers preserve every enrollment without a manual slot", async (t) => {
+  const fixture = setupProjects(t, []),
+    gate = path.join(fixture.root, "writers-start");
+  const registryModule = path.join(
+    repositoryRoot,
+    "packages/node-adapters/dist/persistence/project-history/registry.js",
+  );
+  const writers = [0, 1].map((owner) => {
+    const child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `
+      const fs=require('node:fs'),path=require('node:path');
+      const [module,file,root,gate,owner]=process.argv.slice(1);
+      const registry=require(module).openProjectRegistry({filePath:file});
+      process.stdout.write('READY');
+      while(!fs.existsSync(gate))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);
+      for(let i=0;i<10;i++){
+        const id='writer-'+owner+'-'+i,projectPath=path.join(root,id);
+        fs.mkdirSync(projectPath);
+        registry.register({projectId:id,projectPath,databaseId:id,monitoring:true,archivedAtMs:null,nowMs:1});
+      }
+    `,
+        registryModule,
+        fixture.registry.readonlyPath,
+        fixture.root,
+        gate,
+        String(owner),
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    const exited = new Promise<void>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code) =>
+        code === 0
+          ? resolve()
+          : reject(new Error(stderr || "Writer exited " + code)),
+      );
+    });
+    const ready = new Promise<void>((resolve, reject) => {
+      child.once("error", reject);
+      child.stdout.once("data", () => resolve());
+      child.once("exit", (code) =>
+        reject(new Error("Writer exited before gate: " + code)),
+      );
+    });
+    t.after(() => {
+      if (child.exitCode === null) child.kill();
+    });
+    return { ready, exited };
+  });
+  await Promise.all(writers.map((writer) => writer.ready));
+  fs.writeFileSync(gate, "start", { flag: "wx" });
+  await Promise.all(writers.map((writer) => writer.exited));
+  const current = fixture.registry.read();
+  assert.equal(current.projects.length, 20);
+  assert.equal(current.revision, 20);
+  assert.equal(
+    new Set(current.projects.map((project) => project.projectId)).size,
+    20,
+  );
+  assert.equal(fs.existsSync(fixture.registry.readonlyPath + ".lock"), false);
+});
 
 function lifecycle(
   monitoring: boolean,
@@ -249,7 +468,7 @@ test("quota exhaustion preserves unresolved history, foreign projects and commit
   );
   t.after(() => foreign.close());
   const protectedForeign = foreign.readSnapshot();
-  const core = require(
+  const core = load(
     path.join(repositoryRoot, "packages/core/dist/index.js"),
   ) as typeof import("../packages/core/dist/index.js");
   let store = openHistory(fixture.registry, project);

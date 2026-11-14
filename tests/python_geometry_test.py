@@ -87,6 +87,19 @@ def statement_hashes(source):
         raise ValueError('Vector requires three finite unitless numbers')
     return list(value)
 """).body[0]
+            if node.name == '_shapes_primitive':
+                # The only behavioral addition is a known nonmutating input
+                # rejection. Pin its exact boundary and witness before undoing
+                # the wrapper for historical comparison. shapes_test covers
+                # no effects on rejection and propagation after native mutation.
+                for index, statement in enumerate(node.body):
+                    if isinstance(statement, ast.Try):
+                        digest = hashlib.sha256(ast.dump(
+                            statement, include_attributes=False).encode()).hexdigest()
+                        if digest != '68c4891820c152faa07cc297af18afcbb4a07e4178c46b9bb4b521ca1f90ede1':
+                            raise AssertionError('Primitive preflight rejection boundary changed')
+                        node.body[index:index + 1] = statement.body
+                        break
             node.returns = None
             node.decorator_list = [decorator for decorator in node.decorator_list
                                    if not (isinstance(decorator, ast.Name)
@@ -318,6 +331,20 @@ class GeometryExtractionTests(unittest.TestCase):
                 for layer in ('domain', 'adapters/fusion', 'application'):
                     actual.extend(statement_hashes((ROOT / f'runtime/python/fmcad/{layer}/geometry_{family}.py').read_text()))
                 self.assertEqual(sorted(actual), sorted(adjusted[family]))
+
+    def test_primitive_rejection_normalization_rejects_boundary_or_witness_drift(self):
+        source = (ROOT / 'runtime/python/fmcad/adapters/fusion/geometry_shapes.py').read_text()
+        mutations = (
+            source.replace("'mutationStatus': 'not_started'", "'mutationStatus': 'unknown'", 1),
+            source.replace('    except ValueError as exc:', '    except Exception as exc:', 1),
+            source.replace("        _model_fields(data, ('name',) + sizes, ('plane',))",
+                           "        ctx.call('model.extrude', {})\n"
+                           "        _model_fields(data, ('name',) + sizes, ('plane',))", 1),
+        )
+        for mutated in mutations:
+            self.assertNotEqual(mutated, source)
+            with self.assertRaisesRegex(AssertionError, 'Primitive preflight rejection boundary changed'):
+                statement_hashes(mutated)
 
     def test_domains_import_without_sdk_and_keep_native_entities_out(self):
         script = '''import builtins, importlib.util, sys

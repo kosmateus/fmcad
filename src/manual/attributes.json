@@ -8,7 +8,7 @@
     "examples": [
       {"label": "Tag a discovered body with source metadata", "data": {"ref": {"$ref": "bodies.result.entities.0"}, "group": "fmcad.metadata", "name": "source", "value": "STEP import"}, "requires": "Earlier bodies: entity.list {kind:body}; standalone substitute the actual ref.", "output": "result.changed=true on first write; result.resourceIdentity carries token/kind/name."}
     ],
-    "audit": {"sources": ["assets/cad/attributes.py:entity_attribute_set,_attr_entity,_attr_check", "assets/cad/core.py:_cad_fields,CadContext.resolve,ref"], "verified": ["set/update semantics and previous-value reporting", "resourceIdentity resolution", "string value validation"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/attributes.py:entity_attribute_set,_attr_entity,_attr_check", "assets/cad/core.py:_cad_fields,CadContext.resolve,ref"], "verified": ["set/update semantics and previous-value reporting", "resourceIdentity resolution", "string value validation"], "tests": ["tests/appearance_test.py", "tests/appearance.test.ts"], "gaps": [], "bugs": []}
   },
   "entity.attribute.get": {
     "sections": [
@@ -19,6 +19,6 @@
     "examples": [
       {"label": "Read the source metadata group", "data": {"ref": {"$ref": "bodies.result.entities.0"}, "group": "fmcad.metadata"}, "requires": "Earlier bodies: entity.list {kind:body}; standalone substitute the actual ref.", "output": "result.attributes lists every name/value in the group; result.count matches."}
     ],
-    "audit": {"sources": ["assets/cad/attributes.py:entity_attribute_get,_attr_entity", "assets/cad/core.py:_cad_fields,CadContext.resolve,ref"], "verified": ["single and whole-group read", "resourceIdentity resolution"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/attributes.py:entity_attribute_get,_attr_entity", "assets/cad/core.py:_cad_fields,CadContext.resolve,ref"], "verified": ["single and whole-group read", "resourceIdentity resolution"], "tests": ["tests/appearance_test.py", "tests/appearance.test.ts"], "gaps": [], "bugs": []}
   }
 }

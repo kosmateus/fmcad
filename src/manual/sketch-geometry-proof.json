@@ -41,7 +41,7 @@
       ],
       "tests": [
         "tests/sketch_geometry_proof_test.py",
-        "tests/sketch-geometry-proof-bundle.test.js",
+        "tests/sketch-geometry-proof-bundle.test.ts",
         "tests/typesgeometry/python_types_sketch_geometry_proof_test.py",
         "tests/typesgeometry/sketch_geometry_proof_check.cjs"
       ],
@@ -91,7 +91,7 @@
       ],
       "tests": [
         "tests/sketch_geometry_proof_test.py",
-        "tests/sketch-geometry-proof-bundle.test.js",
+        "tests/sketch-geometry-proof-bundle.test.ts",
         "tests/typesgeometry/python_types_sketch_geometry_proof_test.py",
         "tests/typesgeometry/sketch_geometry_proof_check.cjs"
       ],

@@ -61,6 +61,15 @@ export interface LiveReport {
   runId: string;
   buildHash: string;
   status: string;
+  processIdentity?: { pid: number; birth: string };
+  processGroup?: {
+    id: string;
+    runnerId: string;
+    ownerCount: number;
+    expectedDocumentNames: string[];
+    observedBefore?: NativeState;
+    groupAudit?: Record<string, unknown>;
+  };
   receipts: PhaseReceipt[];
   documents: OwnedDocument[];
   broker?: Broker;
@@ -85,17 +94,29 @@ export interface LiveReport {
 }
 
 /** Settlement is necessary, but callers still fence identity and shared state. */
-export function knownSettlement(
-  results: readonly (Result | undefined)[],
-): boolean {
+export function knownSettlement(results: readonly unknown[]): boolean {
   return (
     results.length > 0 &&
-    results.every(
-      (result) =>
-        result !== undefined &&
-        ["succeeded", "failed"].includes(result.job.state) &&
-        result.execution.sdkSettled === true,
-    )
+    results.every((result) => {
+      if (
+        !result ||
+        typeof result !== "object" ||
+        !("job" in result) ||
+        !("execution" in result)
+      )
+        return false;
+      const { job, execution } = result;
+      return (
+        !!job &&
+        typeof job === "object" &&
+        "state" in job &&
+        (job.state === "succeeded" || job.state === "failed") &&
+        !!execution &&
+        typeof execution === "object" &&
+        "sdkSettled" in execution &&
+        execution.sdkSettled === true
+      );
+    })
   );
 }
 
@@ -131,6 +152,7 @@ export const config = runtimeRequire("./config") as {
 };
 export const identity = runtimeRequire("./queue-instance") as {
   buildHash(): string;
+  processBirth(pid?: number): string;
 };
 export function object(value: unknown): Record<string, unknown> {
   assert.ok(

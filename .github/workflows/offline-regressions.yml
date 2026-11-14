@@ -1,0 +1,135 @@
+name: Offline regression closure
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  FMCAD_CI_PACKAGE_TARBALL: .test-artifacts/ci-build/fmcad-package.tgz
+
+jobs:
+  offline-regressions:
+    runs-on: ubuntu-24.04
+    # Ten explicitly reviewed offline sources per shard; keep the real checker
+    # and installed-consumer contracts. Initial budget awaits retained CI timing.
+    timeout-minutes: 35
+    env:
+      npm_config_cache: /tmp/fmcad-npm-cache
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.13.0", "24.x"]
+        shard:
+          [
+            "01",
+            "02",
+            "03",
+            "04",
+            "05",
+            "06",
+            "07",
+            "08",
+            "09",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+          ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.npm_config_cache }}
+          key: ci-prepared-npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: python -m pip install -r tests/python-requirements.txt
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+      - run: tar -xzf build-output.tar.gz
+      - run: node .github/scripts/ci-restore-build-artifact.cjs
+        env:
+          FMCAD_CI_SOURCE_SHA: ${{ github.sha }}
+      - run: mkdir -p /tmp/opencode .test-artifacts/offline-regressions
+      - if: matrix.shard == '01'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:01 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '02'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:02 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '03'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:03 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '04'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:04 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '05'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:05 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '06'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:06 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '07'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:07 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '08'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:08 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '09'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:09 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '10'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:10 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '11'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:11 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '12'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:12 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '13'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:13 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '14'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:14 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '15'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:15 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '16'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:16 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-regressions-${{ matrix.node }}-${{ matrix.shard }}
+          path: .test-artifacts/offline-regressions/
+          include-hidden-files: true
+          overwrite: true

@@ -1,8 +1,37 @@
 import * as fs from "node:fs";
 import path from "node:path";
 
-const modules = [
+export const queueRuntimeModules = [
+  "atomic-runtime-abi",
+  "queue-settled-epoch-evidence",
+  "queue-audit-facts-capture",
+  "fusion-reset",
+  "queue-document",
+  "queue-phased",
+  "queue-state",
+  "queue-audit-response-proof",
+  "queue-atomic-migration-stop",
+  "queue-atomic-audit-upgrade",
+  "queue-atomic-migration-worker",
+  "queue-epoch-runtime-worker",
+  "queue-epoch-successor-worker",
+
+  "queue-epoch-prerequisite",
+  "queue-atomic-control",
+  "queue-atomic-migration",
+  "queue-atomic-migration-files",
+  "queue-atomic-recovery-audit",
+  "queue-atomic-wire",
+  "queue-native-fixture-grant",
+  "queue-scratch-qualification",
+  "queue-console-admin",
+  "queue-response-migration",
+  "queue-closed-epoch-successor",
+  "atomic-observation-binding",
+  "queue-epoch-runtime-upgrade",
+
   "queue-broker",
+  "queue-backend-transition",
   "queue-client",
   "queue-closed-epoch-proof",
   "queue-isolated-epoch",
@@ -18,7 +47,7 @@ export function stageQueueRuntime(root: string): void {
   const source = path.join(root, "dist/library-build/src");
   const outputs = [path.join(root, "src"), path.join(root, "dist/src")];
   // Validate all inputs first so a missing compile does not partially stage.
-  const artifacts = modules.flatMap((name) =>
+  const artifacts = queueRuntimeModules.flatMap((name) =>
     [".js", ".d.ts"].map((extension) => {
       const filename = name + extension;
       const file = path.join(source, filename);
@@ -28,7 +57,7 @@ export function stageQueueRuntime(root: string): void {
       // Admission declarations must resolve inside an installed runtime, where
       // the source workspace packages are absent. Executable bytes stay exact.
       const bytes =
-        name === "queue-admission" && extension === ".d.ts"
+        extension === ".d.ts"
           ? Buffer.from(
               emitted
                 .toString("utf8")
@@ -36,6 +65,10 @@ export function stageQueueRuntime(root: string): void {
                 .replaceAll(
                   "../packages/node-adapters/src/python",
                   "./dist/python",
+                )
+                .replaceAll(
+                  "../packages/node-adapters/src",
+                  "./dist/node-adapters",
                 ),
             )
           : emitted;
@@ -55,6 +88,16 @@ export function stageQueueRuntime(root: string): void {
 }
 
 export function stageQueueTestFixtures(root: string): void {
+  const workspaceNames = [
+    "atomic-audit-upgrade.cjs",
+    "epoch-audit.cjs",
+    "fake-wsl-platform.cjs",
+    "fake-wsl-preload.cjs",
+  ];
+  const workspaceArtifacts = workspaceNames.map((filename) => ({
+    filename,
+    bytes: fs.readFileSync(path.join(root, "tests/fixtures", filename)),
+  }));
   const names = [
     "closed-scratch-artifacts.cjs",
     "closed-epoch-successor.cjs",
@@ -64,6 +107,13 @@ export function stageQueueTestFixtures(root: string): void {
     filename,
     bytes: fs.readFileSync(path.join(root, "dist/tests/fixtures", filename)),
   }));
+  const compiledTarget = path.join(root, "dist/tests/fixtures");
+  fs.mkdirSync(compiledTarget, { recursive: true });
+  for (const artifact of workspaceArtifacts)
+    fs.writeFileSync(
+      path.join(compiledTarget, artifact.filename),
+      artifact.bytes,
+    );
   const target = path.join(root, "tests/fixtures");
   fs.mkdirSync(target, { recursive: true });
   for (const artifact of artifacts)

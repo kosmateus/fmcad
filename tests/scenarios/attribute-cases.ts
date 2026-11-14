@@ -5,10 +5,104 @@ import { emit, guard, program } from "./programs";
 import { createBox } from "./box-cases";
 import { cadCommand, cadSequence } from "./cad-programs";
 
+/** Original unsaved set/update/idempotence/get/group-read sequence, with exact owner probes. */
+export function unsavedAttributeScenarios(owners = 10): Scenario[] {
+  return Array.from({ length: owners }, (_, index): Scenario => ({
+    id: "attributes-unsaved-" + index,
+    scope: "exclusive-instance",
+    requires: [
+      "documents",
+      "rectangular-extrusion",
+      "body-attributes",
+      "cad-commands",
+    ],
+    async run(session) {
+      let sequence = 0;
+      const cad = async (
+        operation: string,
+        data: Record<string, unknown>,
+        mutation = true,
+      ) => {
+        if (mutation)
+          await session.verifyOwnedUnsaved("observe-attribute-" + sequence++);
+        const output = await session.cad(
+          "cad-attribute-" + sequence++ + "-" + operation,
+          operation,
+          data,
+        );
+        assert.equal(output["success"], true);
+        assert.equal(output["operation"], operation);
+        assert.equal(output["document"], session.document.name);
+        const result = record(output["result"]);
+        assert.ok(
+          Object.keys(result).length,
+          operation + " returned an empty result object",
+        );
+        return result;
+      };
+      const made = await cad("shape.box", {
+        name: "AttributeBody",
+        width: "10 mm",
+        depth: "10 mm",
+        height: "10 mm",
+      });
+      assert.ok(Array.isArray(made["bodies"]));
+      assert.equal(made["bodies"].length, 1);
+      const body = record(made["bodies"][0]);
+      assert.ok(text(body["token"]));
+      const key = {
+        ref: body,
+        group: "FMCAD_COVERAGE_" + session.report.owner.scenarioId,
+        name: "source",
+      };
+      const first = await cad("entity.attribute.set", {
+        ...key,
+        value: "first",
+      });
+      assert.equal(first["changed"], true);
+      assert.equal(first["previousValue"], null);
+      assert.equal(record(first["resourceIdentity"])["kind"], "body");
+      const updated = await cad("entity.attribute.set", {
+        ...key,
+        value: "second",
+      });
+      assert.equal(updated["changed"], true);
+      assert.equal(updated["previousValue"], "first");
+      assert.equal(updated["value"], "second");
+      const unchanged = await cad("entity.attribute.set", {
+        ...key,
+        value: "second",
+      });
+      assert.equal(unchanged["changed"], false);
+      const exact = await cad("entity.attribute.get", key, false);
+      assert.equal(exact["count"], 1);
+      assert.ok(Array.isArray(exact["attributes"]));
+      assert.equal(record(exact["attributes"][0])["value"], "second");
+      assert.equal(record(exact["resourceIdentity"])["token"], body["token"]);
+      const group = await cad(
+        "entity.attribute.get",
+        { ref: body, group: key.group },
+        false,
+      );
+      assert.equal(group["count"], 1);
+      assert.ok(Array.isArray(group["attributes"]));
+      assert.equal(record(group["attributes"][0])["name"], "source");
+      assert.equal(record(group["attributes"][0])["value"], "second");
+      await session.verifyOwnedUnsaved("observe-attribute-before-cleanup");
+    },
+  }));
+}
+
 export async function attributeBody(
   session: ScenarioSession,
 ): Promise<Record<string, unknown>> {
   await session.execute("create-box", createBox(session.document, 10));
+  return attributeBodyRef(session);
+}
+
+async function attributeBodyRef(
+  session: ScenarioSession,
+): Promise<Record<string, unknown>> {
   const state = await session.execute(
     "body-ref",
     program(`${guard(session.document)}
@@ -61,6 +155,8 @@ export function attributeScenarios(
       "saved-fixtures",
       "rectangular-extrusion",
       "body-attributes",
+      "saved-revisions",
+      "saved-reopen",
     ],
     async run(session) {
       const ref = await attributeBody(session);
@@ -149,6 +245,35 @@ assert attribute is not None
 ${emit("dict(creationId=doc.creationId, value=attribute.value)")}`),
       );
       assert.equal(readback["value"], secondValue);
+      // Attribute persistence is tested through an actual owned save/reopen, not
+      // by reading the in-memory object that accepted the write.
+      await session.saveRevision();
+      const savedFile = session.document.file;
+      assert.ok(savedFile);
+      await attribute(session, "set", {
+        ...key,
+        value: "discarded unsaved value",
+      });
+      await session.reopen();
+      assert.deepEqual(session.document.file, savedFile);
+      // Entity tokens may change across reopening; reacquire the sole owned body.
+      const reopenedRef = await attributeBodyRef(session);
+      const persisted = await attribute(session, "get", {
+        ref: reopenedRef,
+        group: key.group,
+      });
+      assert.equal(persisted["count"], 1);
+      assert.deepEqual(persisted["attributes"], [
+        { name: "source", value: secondValue },
+      ]);
+      const namespace = await attribute(session, "get", {
+        ref: reopenedRef,
+        group: "OTHER_GROUP",
+      });
+      assert.equal(namespace["count"], 1);
+      assert.deepEqual(namespace["attributes"], [
+        { name: "source", value: "foreign namespace" },
+      ]);
     },
   }));
 }

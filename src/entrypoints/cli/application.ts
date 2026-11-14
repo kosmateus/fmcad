@@ -1,3 +1,8 @@
+import {
+  successfulReferenceComputation,
+  successfulImportComputation,
+  successfulDrawingComputation,
+} from "../../composition/library-local-outcome";
 import { randomUUID } from "node:crypto";
 import { createFmcad, createCatalogServices } from "../../api";
 import type {
@@ -62,6 +67,46 @@ export async function execute(
   ports: CliApplicationPorts = {},
 ): Promise<ExecutionReceipt> {
   assertBrokerRouting(options.config);
+  if (options.local) {
+    const invocation =
+      input.kind === "cad-command"
+        ? input.invocation
+        : input.kind === "cad"
+          ? input
+          : null;
+    if (!invocation)
+      throw new Error("Local execution requires a CAD invocation");
+    const { executeInvocation } =
+      require("../../composition/catalog-execution.js") as typeof import("../../composition/catalog-execution.js");
+    const result = await executeInvocation(
+      invocation,
+      null,
+      undefined,
+      options.context.projectDirectory === undefined
+        ? {}
+        : { projectDirectory: options.context.projectDirectory },
+    );
+    const { decodePublicResult } = require("../../core/domain/codec.js") as {
+      decodePublicResult(value: unknown): ExecutionReceipt["outcome"];
+    };
+    const { id } = require("../../core/domain/contracts.js") as {
+      id(kind: string, value: string): ExecutionReceipt["outcome"]["requestId"];
+    };
+    const requestId = options.requestId ?? randomUUID();
+    const receipt: ExecutionReceipt = {
+      version: 1,
+      requestId,
+      jobId: null,
+      state: "local",
+      outcome: {
+        ...decodePublicResult(result),
+        requestId: id("request", requestId),
+      },
+      result: structuredClone(result) as ExecutionReceipt["result"],
+    };
+    ports.progress?.(receipt);
+    return receipt;
+  }
   const services = (ports.createFmcad ?? createFmcad)({
     version: 1,
     config: options.config,
@@ -89,7 +134,11 @@ export async function execute(
     await services.dispose();
   }
 }
-export function receiptExitCode(receipt: ExecutionReceipt): number {
+export function receiptExitCode(
+  receipt: ExecutionReceipt,
+  operation?: string,
+  preview = false,
+): number {
   if (receipt.state !== "local") {
     if (
       receipt.state !== "succeeded" ||
@@ -102,11 +151,31 @@ export function receiptExitCode(receipt: ExecutionReceipt): number {
       return 1;
   }
   const result = receipt.result;
+  if (
+    receipt.state === "local" &&
+    (successfulReferenceComputation(operation, result) ||
+      successfulImportComputation(operation, result) ||
+      successfulDrawingComputation(operation, result))
+  )
+    return 0;
   if (result && typeof result === "object" && !Array.isArray(result)) {
     const record = result as Readonly<Record<string, JsonValue>>;
+    // A completed offline preview describes a plan, including unresolved data.
+    // Its exit status does not certify the plan or a native model outcome.
+    if (
+      preview &&
+      receipt.state === "local" &&
+      record["success"] === true &&
+      !["fail", "failed", "blocked"].includes(String(record["status"])) &&
+      record["outcome"] !== "unknown" &&
+      record["executionOutcome"] !== "unknown"
+    )
+      return 0;
     if (
       record["success"] === false ||
-      ["failed", "unknown"].includes(String(record["status"])) ||
+      ["fail", "failed", "blocked", "unknown"].includes(
+        String(record["status"]),
+      ) ||
       record["outcome"] === "unknown"
     )
       return 1;

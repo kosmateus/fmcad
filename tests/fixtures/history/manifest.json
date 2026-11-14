@@ -202,5 +202,263 @@
     "sourcePath": "src/queue-atomic-recovery-audit.js",
     "file": "queue-atomic-recovery-audit-510.js.txt",
     "sha256": "6735c34e918c70293fd26420dc80b43c300eaa04f405ff0d421e91d2afb68484"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-atomic-migration-files.js",
+    "file": "queue-atomic-migration-files-330849f.js.txt",
+    "sha256": "6db764bd5b642f83bc35c86734b8529ffd58ff131830a4549b28239c7272754a"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-atomic-migration.js",
+    "file": "queue-atomic-migration-330849f.js.txt",
+    "sha256": "882b35f43d466fb40759d100606b34d7386fa9a4eabe1a4276ec465adc76f437"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-saved-audit-path.js",
+    "file": "queue-saved-audit-path-330849f.js.txt",
+    "sha256": "5acc6cfb5a4ee3051a9214baf2b030db675f8cee378198959c900d4ef694cd97"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-saved-fixture-reader.js",
+    "file": "queue-saved-fixture-reader-330849f.js.txt",
+    "sha256": "1942c3b3ec6802d8d0639e15e7e9ab9ae5f5522dc28e576d22fb0095326b0a44"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-epoch-runtime-upgrade.js",
+    "file": "queue-epoch-runtime-upgrade-330849f.js.txt",
+    "sha256": "bddfaa4d9ea957a7d927dc6a0bfba95f443c5e8a0c5dad8603055d8911b0dd9a"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-atomic-wire.js",
+    "file": "queue-atomic-wire-330849f.js.txt",
+    "sha256": "76d16c46d3e8bf3faecf2bc7e31160e9e196f9e0bcf623503b9cc9f5411a2c37"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-atomic-control.js",
+    "file": "queue-atomic-control-330849f.js.txt",
+    "sha256": "8632b433752ee65763f47090d86b1ee759a453f71a55d153f8dd5d8a6c98644f"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-saved-admin-evidence.js",
+    "file": "queue-saved-admin-evidence-330849f.js.txt",
+    "sha256": "b874357e13be97fa5f3e77c496a368fc1ec6a7522fe391aec09f932c2d5b13c2"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-saved-destination-approval.js",
+    "file": "queue-saved-destination-approval-330849f.js.txt",
+    "sha256": "882fd6ea8f13c9e659c6faa819ce42f49e29899eb62c02b18023511ee9dd6856"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-saved-first-save.js",
+    "file": "queue-saved-first-save-330849f.js.txt",
+    "sha256": "371ba625e5b8955aedb05d2cc851c6786d42a5d425d9796fc3c79f9598f3bcbb"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-saved-first-save-evidence.js",
+    "file": "queue-saved-first-save-evidence-330849f.js.txt",
+    "sha256": "ccde89e525691d85ead6a7a54be8723069041dbffde3b42a0a9890c477e3709a"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-saved-fixture-control.js",
+    "file": "queue-saved-fixture-control-330849f.js.txt",
+    "sha256": "811189b08aa482783f91e47e1888d605b2e1fbb0d1753769d85ca0aa7a78f9fc"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-saved-native-destination.js",
+    "file": "queue-saved-native-destination-330849f.js.txt",
+    "sha256": "663b609cea78852189e81110c68822090cdf3e958d98e896d75e1baf640306ed"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-saved-readiness-evidence.js",
+    "file": "queue-saved-readiness-evidence-330849f.js.txt",
+    "sha256": "fdc1c63c616e2e179a56ac53333851bdf2edae2b38013fd8a2c5a916b9bc46cc"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-epoch-prerequisite.js",
+    "file": "queue-epoch-prerequisite-330849f.js.txt",
+    "sha256": "b9184ee8c7667cc6a9747be7fc862fcce909cc4358db6529f27eb4836f2d40cc"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-atomic-migration-runtime.js",
+    "file": "queue-atomic-migration-runtime-330849f.js.txt",
+    "sha256": "c8a3938a8fe71b0337de362ec2733194f4d0962a9e829638875440958293203d"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-atomic-migration-worker.js",
+    "file": "queue-atomic-migration-worker-330849f.js.txt",
+    "sha256": "89de39b9f9bc40221e901d8bcdc7d7bea16f0d2caa2eb4f3a393a7d2e6ddf364"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-epoch-runtime-worker.js",
+    "file": "queue-epoch-runtime-worker-330849f.js.txt",
+    "sha256": "655d77f1b1828f5d99cfc2bbead9575911a517b542ef1d859a00d9ff4c9b49cc"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-epoch-successor-worker.js",
+    "file": "queue-epoch-successor-worker-330849f.js.txt",
+    "sha256": "91a44fc3862547d4c2e0be344251aceb740724ec30f6bcb7984b8fde6b634ec1"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-atomic-audit-upgrade.js",
+    "file": "queue-atomic-audit-upgrade-330849f.js.txt",
+    "sha256": "a1b73d2da851c75aa6b48236858c41295aab507475d9409214117b606aaf9b00"
+  },
+  {
+    "revision": "330849f22302bcf0ee955cd1945ddb2040eff8c7",
+    "sourcePath": "src/queue-atomic-migration-stop.js",
+    "file": "queue-atomic-migration-stop-330849f.js.txt",
+    "sha256": "dc6ffa2b215ba40edb6cc6d80935d0c03338662e38e13109e16825e2a3778663"
+  },
+  {
+    "revision": "330849f",
+    "sourcePath": "src/queue-epoch-successor.js",
+    "file": "queue-epoch-successor-330849f.js.txt",
+    "sha256": "fcc7ff90aed913e88087d15404d359dc72365b4806633d68f2d1026245814355"
+  },
+  {
+    "revision": "330849f",
+    "sourcePath": "src/queue-epoch-successor-control.js",
+    "file": "queue-epoch-successor-control-330849f.js.txt",
+    "sha256": "1b1dc894519eb84f46118d148d7c33926c361dd746061b2f332034a85c0b06c5"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-native-fixture-grant.js",
+    "file": "queue-native-fixture-grant-dce47c5.js.txt",
+    "sha256": "7ffae9dc42884db224cd15f18e26d4301d9d33c9b07f27a696927dd9f432ad3d"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-scratch-qualification.js",
+    "file": "queue-scratch-qualification-dce47c5.js.txt",
+    "sha256": "85c0cb4ed25b8a13b073efdd0d014ae969f41685009cdd435f23ebd92258ed4c"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "scripts/upgrade-epoch-checker.cjs",
+    "file": "upgrade-epoch-checker-dce47c5.cjs.txt",
+    "sha256": "595d28cff3cce782a50fbb8b65d576320a6e0611dfe9ba5829ce056fe96db735"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-console-admin.js",
+    "file": "queue-console-admin-dce47c5.js.txt",
+    "sha256": "d48cc81f57e3c0ce72f88295cd724dee8b37ba7a724830a2f6c12cb997a29d20"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-response-migration.js",
+    "file": "queue-response-migration-dce47c5.js.txt",
+    "sha256": "fd9a2fa42d16d73585f47c412daec37f2c62210bd64d08963402cfebc663ec2a"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-closed-epoch-successor.js",
+    "file": "queue-closed-epoch-successor-dce47c5.js.txt",
+    "sha256": "35a078c7900c81dbdc57addfa5ad9905936155543c1565932b137296de65fa7f"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/direct-telemetry.js",
+    "file": "direct-telemetry-dce47c5.js.txt",
+    "sha256": "a862c6e82f78300b3d676db3f213a5c41c084e8202d342fdad5890dfded6380c"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/composition/legacy-worker.js",
+    "file": "legacy-worker-dce47c5.js.txt",
+    "sha256": "4cb1de917402b3500ff8b97c1e2cb18bd037dadd7e4e3535cce798868da03860"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-audit-response-proof.js",
+    "file": "queue-audit-response-proof-dce47c5.js.txt",
+    "sha256": "e6d5ccd29bec5a1c1d8d548fc34864b0e1a7ff95cc6e9253bc1f141d98981f60"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-audit-facts-capture.js",
+    "file": "queue-audit-facts-capture-dce47c5.js.txt",
+    "sha256": "4e1e433c83834da614e1148856062de51a4680629d2e54460906f0b90cadbc82"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-settled-epoch-evidence.js",
+    "file": "queue-settled-epoch-evidence-dce47c5.js.txt",
+    "sha256": "1af904398febc52720c0593603684d24088381b676cd1dc2c5cdcf4c78d06eb2"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/atomic-runtime-abi.js",
+    "file": "atomic-runtime-abi-dce47c5.js.txt",
+    "sha256": "78be7d85745369d2689669b94d884ae95d3880c255d1d0345d0da8f15770a8e8"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-state.js",
+    "file": "queue-state-dce47c5.js.txt",
+    "sha256": "4cd7e93cc402df3ccd9044a00737a7c4cf5643ef9c04ac04cb8d01bb78522b9e"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-phased.js",
+    "file": "queue-phased-dce47c5.js.txt",
+    "sha256": "354121e2a5921ca9e7b0407b47bbea8fd4913d406c9a00132d8287b22dbd5614"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/queue-document.js",
+    "file": "queue-document-dce47c5.js.txt",
+    "sha256": "23017158c7f6e754d8eb11bad257836242d70ab896960c8d340b4e0f909c48c6"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/fusion-reset.js",
+    "file": "fusion-reset-dce47c5.js.txt",
+    "sha256": "c4b72f4d5a2981ee1a99b69fac775886869fdec1973197c85718f961282bcee1"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "runtime/python/recovery/atomic_audit.py",
+    "file": "atomic-audit-843.py.txt",
+    "sha256": "171882e43aa81c12411cd54d5d7ef1071502d25f17f143054aa3ca3bb7ef83f7"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/control-center-system-controls.cjs",
+    "file": "control-center-system-controls-dce47c5.cjs.txt",
+    "sha256": "236123e09b9856b80fc58eaf9d4d7f5a746ff18e5b559fd9ba57cf3580b8ccc3"
+  },
+  {
+    "revision": "dce47c5e214b91b4ab68151e0b40510c4f7edfaf",
+    "sourcePath": "src/opencode/project-logger.cjs",
+    "file": "project-logger-dce47c5.cjs.txt",
+    "sha256": "3b5e157b822419b4b7e6429f289d797d117da562021afc578cbd43fdf0cb131f"
+  },
+  {
+    "revision": "5292078741b417d6e921d3252a8bf19b3f0cc15b",
+    "sourcePath": "packages/core/src/application/cad/prepare.ts",
+    "file": "cad-prepare-5292.ts.txt",
+    "sha256": "8c74fe0b4ee6f079cb0b572d2f4ec81cb4b8e8ea193dbfae37934acc5acf9931"
   }
 ]

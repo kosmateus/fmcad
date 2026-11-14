@@ -1,0 +1,2521 @@
+{
+  "schemaVersion": 1,
+  "status": "complete-retained-site-dispositions",
+  "meaning": "Across this ledger and the explicit supplemental assertion-dispositions files, every one of 3707 retained current sites and one historical site has an individual reviewed disposition. This is complete accounting, not execution qualification: pending offline checks and every native NOTRUN obligation retain their separate evidence requirements.",
+  "mappings": [
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "9ecf19e6113ce10a9e3b-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "75b7a2b1dc50f06e286e-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "23ab543c285561ad5ee3-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "b1fb42c54ec65d1bf69c-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "19eec74bfe74b4567dc2-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "f646fc375a7735b2f99e-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "c16a2560f30f96f9dbca-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "65ab0f29f06642ea85b8-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "4b25eb646b8dbe904ae8-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "13cd31e8328d3a9273da-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "dd477b9e8c9ac81ad873-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "628dd53ee2258a988bb3-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "d9b98cd6769a430156b5-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "a70c5b234736d6f5e9a8-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "47b1c3ad31e4780fc567-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "e91b39dc5e74c74ea7b9-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transactions.test.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "48ef7f4741d57871fe8f-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "b611390e6d08a45d3e16-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "0550b149eea85eb76d5a-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "ca38862997346eea2af3-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "63356a20dd24d5307d1d-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transactions.test.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "082bca5a5438fce85d20-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "9a6924f0d4537a98ec55-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "79a76158a4839b9b62c8-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "6d3184b192ae4054acf3-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "778c601834eaabc0b82f-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "147fb5751fdb9e197e43-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "9a8642282da56f2aef0f-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "ae15b48888e63673c182-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "082bca5a5438fce85d20-2",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "274257801b659207a170-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "63356a20dd24d5307d1d-2",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transactions.test.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "a17f10bcb62d4dd413aa-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "082bca5a5438fce85d20-3",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "6ff6db77566e396477b3-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "0475cb342588c0b562e1-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "6d3184b192ae4054acf3-2",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "reason": "The original reference, request/journal, numeric tolerance, replay, rejection or stop-after-failure assertion is retained on an owned saved fixture. SDK-call absence is measured separately for model transports; native execution remains deferred.",
+      "qualification": "blocked-command-settlement",
+      "blocker": "docs/refactor-agents/B_COMMAND_SETTLEMENT_BLOCKER.md"
+    },
+    {
+      "source": "tests/live-extended.js",
+      "assertionId": "64a4ae2d9e00c29d9819-1",
+      "disposition": "shared",
+      "scenario": "camera-state-*",
+      "capabilities": ["camera-state"],
+      "evidence": "tests/scenarios/camera-cases.ts",
+      "reason": "Retains the exact perspective projection, 40-degree angle, 80/60/50 mm eye and 0.00001 internal-unit tolerance from this assertion. This mapping excludes neighboring shot.pack, PNG and ViewCube assertions; native viewport behavior remains unqualified.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-extended.js",
+      "assertionId": "8c8916192fe0a670922a-1",
+      "disposition": "shared",
+      "scenario": "camera-state-*",
+      "capabilities": ["camera-state"],
+      "evidence": "tests/scenarios/camera-cases.ts",
+      "reason": "Retains the exact perspective projection, 40-degree angle, 80/60/50 mm eye and 0.00001 internal-unit tolerance from this assertion. This mapping excludes neighboring shot.pack, PNG and ViewCube assertions; native viewport behavior remains unqualified.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-extended.js",
+      "assertionId": "8188a68fc7baef64c140-1",
+      "disposition": "shared",
+      "scenario": "camera-state-*",
+      "capabilities": ["camera-state"],
+      "evidence": "tests/scenarios/camera-cases.ts",
+      "reason": "Retains the exact perspective projection, 40-degree angle, 80/60/50 mm eye and 0.00001 internal-unit tolerance from this assertion. This mapping excludes neighboring shot.pack, PNG and ViewCube assertions; native viewport behavior remains unqualified.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "21e3d01bac74bd5c3059-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "4e45596c6ae0454bc154-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "fd0ddf95de65bbe90d84-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "95c03ea368fd37dc4dc6-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "c760e25d1e93dc991bf4-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "767f4597da3649500c37-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "3e8880a4aa5c9bd26dce-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "1ab0b6092c5e0fe77bca-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "f3c165931f06bb664a8d-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "573be923607dccdf91fe-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "961b1270f79fcc4e410b-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "3b8d47396c0f374dbb93-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "e4b08a276302e97d6edf-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "a81b1fcbf23d3d649e9b-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "24723efc2bcff7b5fb9e-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "229789567b4aed4eecbf-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "c57ee60006aeeac54f4e-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "8c1322407b96689906f5-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "9e83f0dbf68d12b68ecb-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "5afdc0d356af14b5fc6c-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "07013f4eca44d5c54a5a-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "653732c010f16f852a62-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "641ac2b02aec90ad666d-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "00ed3eb8d54b48d9d65e-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "67c7baa59c3f6424cae7-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "bbd29e29418c45608d64-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "ecccb86fa334b7d0ec20-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-pose-methods.js",
+      "assertionId": "b14a203bf2eb4a196f75-1",
+      "disposition": "shared",
+      "scenario": "pose-visibility-*",
+      "capabilities": ["pose-visibility", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/pose-cases.ts",
+      "qualification": "offline-tested-native-pending",
+      "reason": "Preserves this exact manifest revision, declared-state, visibility, temporary evaluation/restoration or deletion expectation in the same order. Independent body readback uses the returned owned token rather than assuming the feature name also names its body; historical source remains intact. Native visibility qualification is deferred."
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "1e8d485d1a640ad46efd-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "d1ef480c29821cd813ed-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "58c9bf16ad9f56a634c0-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "85c3cdf89fc3c758d4aa-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "298570e6d2b56488ea3a-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "f7f958a93f35153ffc6c-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "01627023a8a6aba73db8-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "18d8974c26bbdabe2ee5-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "d12a399ffad6dbc2dbed-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "4130b77c1e10a7209f7f-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-animation-methods.js",
+      "assertionId": "08407e151efe2df8726f-1",
+      "disposition": "shared",
+      "scenario": "animation-plan-*",
+      "capabilities": ["animation-sequence"],
+      "evidence": "tests/scenarios/animation-cases.ts",
+      "reason": "The original camera-track input, frame count/order, interpolation values and 1e-9 tolerances are retained using the production sequence planner on an owned saved fixture. Native storyboard actions and rendering are not inferred from this manifest.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "ea6fd4e3c5865a6ecfaf-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "e5be004b51901e0d1c11-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "06d373ba11d0d839018d-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "27b5a4a6c0deb9280506-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "e58d53d34284b2efbd30-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "f0567ecbc0e208db68ab-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "1387afa4beddd1a9de95-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "3f16bac7ff1b67321300-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "55b9f8aec85036842855-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "9dea59bc13ffc5da3351-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "157a992a9af5f1ee4e3e-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "d59b9b06ddad4162561f-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "b40d5227c665008b2406-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "cbd824c23d9705053157-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "dc403e90f9833b137db8-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "dae1185705299cd277ed-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "1e4a42639505be2dc675-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-shape-native-solids.js",
+      "assertionId": "437f004fae09e14f4deb-1",
+      "disposition": "native-only",
+      "scenario": "native-solids-*",
+      "capabilities": ["native-profile-sector-torus"],
+      "evidence": "tests/scenarios/native-solids-cases.ts",
+      "reason": "The retained native profile, sector and torus sequence uses exact saved and unsaved owner identities. Original requests, independent BRep readbacks and tolerances remain; the annular Y span alone is corrected from endpoint-only17.320508mm to20mm after historical recipe and independent interior-extremum review. Model capability refusal never qualifies native geometry.",
+      "qualification": "not-run",
+      "blocker": "docs/refactor-agents/B_NATIVE_SOLIDS_ASSUMPTIONS.md",
+      "expectationReview": "annular-interior-extremum-corrected"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "historicalCommit": "5f438c678ec09179aca098ae6171a7250c358860",
+      "assertionId": "3f0599354f7eabef6e66-1",
+      "disposition": "shared",
+      "scenario": "document-lifecycle",
+      "capabilities": ["documents"],
+      "evidence": "tests/scenarios/creation-active.test.ts",
+      "reason": "Restores the removed historical creation-active assertion using the original successful creation observation before any guarded activation can mask it. Returned and durable observations must agree; known inactive creation cleans only its proven owned document, while contradictory observations defer cleanup.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "a6f121d3d61e3765a9e6-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "7f12ebeb81519ccb3a18-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "03cb1a77b8ca2ba3fc64-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "949e6d7ae957778a33fb-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "e654854f6ba4188e1e0b-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "113aae782a0bb68c8417-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "167f054892850c55342f-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "3918390340e8d2c201ca-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "5fc88123f91c8184e16f-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "7817cbecd848ba6fbdc1-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "54b4aae6acdb0d0c05e9-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "a8dcf03e37781dfedc49-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "7d410ccada59a9419244-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "c798c045f8785d2c9c78-1",
+      "disposition": "shared",
+      "scenario": "material-metadata-*",
+      "capabilities": ["material-metadata", "saved-reopen", "saved-revisions"],
+      "evidence": "tests/scenarios/material-cases.ts",
+      "reason": "The original material list/copy/rename/second-copy/collision/re-list sequence preserves actual design-local IDs and computed names. Independent metadata readback and saved reopen add persistence evidence; rendering, assignments and physical properties are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "b86c2967a08225d47a82-1",
+      "disposition": "shared",
+      "scenario": "parameter-crud",
+      "capabilities": ["parameter-crud"],
+      "evidence": "tests/scenarios/parameter-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "a93ca684e168c3a69e0b-1",
+      "disposition": "shared",
+      "scenario": "parameter-crud",
+      "capabilities": ["parameter-crud"],
+      "evidence": "tests/scenarios/parameter-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "b208f0c6c55543b411cf-1",
+      "disposition": "shared",
+      "scenario": "parameter-crud",
+      "capabilities": ["parameter-crud"],
+      "evidence": "tests/scenarios/parameter-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "088bd6851df17d4f0acf-1",
+      "disposition": "shared",
+      "scenario": "parameter-crud",
+      "capabilities": ["parameter-crud"],
+      "evidence": "tests/scenarios/parameter-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "6eee89b2dc760dcb97b2-1",
+      "disposition": "shared",
+      "scenario": "construction-planes",
+      "capabilities": ["construction-planes"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "b01fb177d2f0bce4f51d-1",
+      "disposition": "shared",
+      "scenario": "construction-planes",
+      "capabilities": ["construction-planes"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "70180ef3d385085f469c-1",
+      "disposition": "shared",
+      "scenario": "construction-planes",
+      "capabilities": ["construction-planes"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "5c51517976d7bf96283f-1",
+      "disposition": "shared",
+      "scenario": "construction-planes",
+      "capabilities": ["construction-planes"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "438677b9064237639ee9-1",
+      "disposition": "shared",
+      "scenario": "construction-planes",
+      "capabilities": ["construction-planes"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "5fcdf1069113f0239b39-1",
+      "disposition": "shared",
+      "scenario": "construction-planes",
+      "capabilities": ["construction-planes"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "8d2dfb10cd8028aeb180-1",
+      "disposition": "shared",
+      "scenario": "component-tree",
+      "capabilities": ["component-tree"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "4ff35c1a1baac61efb21-1",
+      "disposition": "shared",
+      "scenario": "document-units",
+      "capabilities": ["document-units"],
+      "evidence": "tests/scenarios/document-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "f423e5a0c7f04c544657-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "dc6e4c77730ce18e0fef-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "667950300b1f6a547fd9-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "1925bfcae89ac069ac52-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "2c799d1a64fd895a93a2-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "e02e01279df56116168b-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "0efd385a85535c43f40c-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-legacy.js",
+      "assertionId": "f6ab92257ad47359c65b-1",
+      "disposition": "shared",
+      "scenario": "box-10",
+      "capabilities": ["rectangular-extrusion"],
+      "evidence": "tests/scenarios/box-cases.ts",
+      "reason": "The exact historical names, command output expectations and numeric values are retained on an owned saved fixture. The parameter value uses strict equality to 2; list checks after rename/delete and independent model-state/rollback observations are preserved. This maps the individual assertion, not the entire legacy suite.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "581a3978028f74b1fe0f-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "5c3e06df44dd7f5adbb0-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "9df307b202557a30074f-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "bb1968b673591a8009b8-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "d2d56b1e947b6c4f62d2-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "6a270193649aa8ee1a2b-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "2d674eb2edca27c171b6-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "627853d627497c8864a4-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "aab0c7057ab6a6baaf1e-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "0310575908d43bcf18a1-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "61d9ec1c7a3454b898cb-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "73c19dd66a316b510022-1",
+      "disposition": "shared",
+      "scenario": "appearance-metadata-*",
+      "capabilities": [
+        "appearance-metadata",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/appearance-cases.ts",
+      "reason": "Preserves the original local/library list, actual copy ID, source ID, rename and nullable projection-read assertions. Independent readback and saved reopen add persistence checks. Textures, assignments and rendering are not claimed.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "e1bb308b091bedc9fa42-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "1caf9208869bfe43edcc-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "c9c392f5ca4ec67150a6-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "a02333227623f0a26534-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "7b3be97a35813f6c0be0-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "313ffe58c3ddc5a28f03-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "f38f8f997cc078130f45-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "93a36f0614814b0e3fd1-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "c8cde89f8aa819307fed-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "1d0f305f5fe05ee1a0a9-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "cf815603817003eaf35a-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "d9ad543b56bca477b556-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-design-styles.js",
+      "assertionId": "2046aec5754310af69b1-1",
+      "disposition": "shared",
+      "scenario": "body-style-assignment-*",
+      "capabilities": [
+        "body-style-assignment",
+        "saved-reopen",
+        "saved-revisions"
+      ],
+      "evidence": "tests/scenarios/style-assignment-cases.ts",
+      "reason": "Preserves the historical box body count, appearance/material assignment and map counts and exact IDs, then renamed appearance list readback. Independent getters and saved reopen add persistence evidence; texture, inheritance, mass and rendering are excluded.",
+      "qualification": "offline-tested-native-pending"
+    },
+    {
+      "source": "tests/live-entity-attributes.js",
+      "assertionId": "5dee34674583001ff251-1",
+      "disposition": "shared",
+      "scenario": "attributes-*",
+      "capabilities": ["body-attributes", "rectangular-extrusion"],
+      "evidence": "tests/scenarios/attribute-cases.ts",
+      "evidenceAssertion": "assert.equal(values[0]![\"changed\"], true);",
+      "reason": "Retains the historical first write changes the new attribute. Values first/second carry an owner suffix to expose cross-document writes, while the same transition, namespace, identity and readback expectations run on both backends. No native attribute behavior is inferred from geometry.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-entity-attributes.js",
+      "assertionId": "f3d53680f74b83f5f9e8-1",
+      "disposition": "shared",
+      "scenario": "attributes-*",
+      "capabilities": ["body-attributes", "rectangular-extrusion"],
+      "evidence": "tests/scenarios/attribute-cases.ts",
+      "evidenceAssertion": "assert.equal(values[0]![\"previousValue\"], null);",
+      "reason": "Retains the historical first write records no previous value. Values first/second carry an owner suffix to expose cross-document writes, while the same transition, namespace, identity and readback expectations run on both backends. No native attribute behavior is inferred from geometry.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-entity-attributes.js",
+      "assertionId": "fe08521281315a1e8579-1",
+      "disposition": "shared",
+      "scenario": "attributes-*",
+      "capabilities": ["body-attributes", "rectangular-extrusion"],
+      "evidence": "tests/scenarios/attribute-cases.ts",
+      "evidenceAssertion": "assert.equal(record(result[\"resourceIdentity\"])[\"kind\"], \"body\");",
+      "reason": "Retains the historical write result identifies the body owner. Values first/second carry an owner suffix to expose cross-document writes, while the same transition, namespace, identity and readback expectations run on both backends. No native attribute behavior is inferred from geometry.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-entity-attributes.js",
+      "assertionId": "cd674e91461f63d4367a-1",
+      "disposition": "shared",
+      "scenario": "attributes-*",
+      "capabilities": ["body-attributes", "rectangular-extrusion"],
+      "evidence": "tests/scenarios/attribute-cases.ts",
+      "evidenceAssertion": "assert.equal(values[1]![\"changed\"], true);",
+      "reason": "Retains the historical same namespaced key updates in place. Values first/second carry an owner suffix to expose cross-document writes, while the same transition, namespace, identity and readback expectations run on both backends. No native attribute behavior is inferred from geometry.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-entity-attributes.js",
+      "assertionId": "4176c2329f8b3b09444f-1",
+      "disposition": "shared",
+      "scenario": "attributes-*",
+      "capabilities": ["body-attributes", "rectangular-extrusion"],
+      "evidence": "tests/scenarios/attribute-cases.ts",
+      "evidenceAssertion": "assert.equal(values[1]![\"previousValue\"], firstValue);",
+      "reason": "Retains the historical update returns the old string value. Values first/second carry an owner suffix to expose cross-document writes, while the same transition, namespace, identity and readback expectations run on both backends. No native attribute behavior is inferred from geometry.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-entity-attributes.js",
+      "assertionId": "80a12e9248b0a5a046a2-1",
+      "disposition": "shared",
+      "scenario": "attributes-*",
+      "capabilities": ["body-attributes", "rectangular-extrusion"],
+      "evidence": "tests/scenarios/attribute-cases.ts",
+      "evidenceAssertion": "assert.equal(values[1]![\"value\"], secondValue);",
+      "reason": "Retains the historical updated string value returned. Values first/second carry an owner suffix to expose cross-document writes, while the same transition, namespace, identity and readback expectations run on both backends. No native attribute behavior is inferred from geometry.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-entity-attributes.js",
+      "assertionId": "05a3ea10ff70107a07f0-1",
+      "disposition": "shared",
+      "scenario": "attributes-*",
+      "capabilities": ["body-attributes", "rectangular-extrusion"],
+      "evidence": "tests/scenarios/attribute-cases.ts",
+      "evidenceAssertion": "assert.equal(values[2]![\"changed\"], false);",
+      "reason": "Retains the historical same-value write reports no change. Values first/second carry an owner suffix to expose cross-document writes, while the same transition, namespace, identity and readback expectations run on both backends. No native attribute behavior is inferred from geometry.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-entity-attributes.js",
+      "assertionId": "6222315e12a8446cd3ad-1",
+      "disposition": "shared",
+      "scenario": "attributes-*",
+      "capabilities": ["body-attributes", "rectangular-extrusion"],
+      "evidence": "tests/scenarios/attribute-cases.ts",
+      "evidenceAssertion": "assert.equal(values[i]![\"count\"], 1);",
+      "reason": "Retains the historical exact name lookup returns one attribute. Values first/second carry an owner suffix to expose cross-document writes, while the same transition, namespace, identity and readback expectations run on both backends. No native attribute behavior is inferred from geometry.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-entity-attributes.js",
+      "assertionId": "1337027159c8df3ad299-1",
+      "disposition": "shared",
+      "scenario": "attributes-*",
+      "capabilities": ["body-attributes", "rectangular-extrusion"],
+      "evidence": "tests/scenarios/attribute-cases.ts",
+      "evidenceAssertion": "{ name: \"source\", value: secondValue },",
+      "reason": "Retains the historical exact name lookup returns updated value. Values first/second carry an owner suffix to expose cross-document writes, while the same transition, namespace, identity and readback expectations run on both backends. No native attribute behavior is inferred from geometry.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-entity-attributes.js",
+      "assertionId": "9d49572a4144c1148c1a-1",
+      "disposition": "shared",
+      "scenario": "attributes-*",
+      "capabilities": ["body-attributes", "rectangular-extrusion"],
+      "evidence": "tests/scenarios/attribute-cases.ts",
+      "evidenceAssertion": "assert.equal(record(result[\"resourceIdentity\"])[\"token\"], ref[\"token\"]);",
+      "reason": "Retains the historical read result identifies the same body owner. Values first/second carry an owner suffix to expose cross-document writes, while the same transition, namespace, identity and readback expectations run on both backends. No native attribute behavior is inferred from geometry.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-entity-attributes.js",
+      "assertionId": "cdd8a45608086680d1b2-1",
+      "disposition": "shared",
+      "scenario": "attributes-*",
+      "capabilities": ["body-attributes", "rectangular-extrusion"],
+      "evidence": "tests/scenarios/attribute-cases.ts",
+      "evidenceAssertion": "assert.equal(values[i]![\"count\"], 1);",
+      "reason": "Retains the historical group read returns one attribute. Values first/second carry an owner suffix to expose cross-document writes, while the same transition, namespace, identity and readback expectations run on both backends. No native attribute behavior is inferred from geometry.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-entity-attributes.js",
+      "assertionId": "3c44d2829c392928eafb-1",
+      "disposition": "shared",
+      "scenario": "attributes-*",
+      "capabilities": ["body-attributes", "rectangular-extrusion"],
+      "evidence": "tests/scenarios/attribute-cases.ts",
+      "evidenceAssertion": "{ name: \"source\", value: secondValue },",
+      "reason": "Retains the historical group read returns the stored name. Values first/second carry an owner suffix to expose cross-document writes, while the same transition, namespace, identity and readback expectations run on both backends. No native attribute behavior is inferred from geometry.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-entity-attributes.js",
+      "assertionId": "03d5346cbb3afdbb3f58-1",
+      "disposition": "shared",
+      "scenario": "attributes-*",
+      "capabilities": ["body-attributes", "rectangular-extrusion"],
+      "evidence": "tests/scenarios/attribute-cases.ts",
+      "evidenceAssertion": "{ name: \"source\", value: secondValue },",
+      "reason": "Retains the historical group read returns the stored value. Values first/second carry an owner suffix to expose cross-document writes, while the same transition, namespace, identity and readback expectations run on both backends. No native attribute behavior is inferred from geometry.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-thread-method.js",
+      "assertionId": "a08865fe7dbf93fe827e-1",
+      "disposition": "shared",
+      "scenario": "thread-recipes-*",
+      "capabilities": ["thread-recipes"],
+      "evidence": "tests/scenarios/thread-recipe-cases.ts",
+      "evidenceAssertion": "assert.equal(custom[\"representation\"], \"recipe\");",
+      "reason": "Preserves this analytical custom-profile or pair-fit assertion with identical inputs, expected value and 1e-9 numerical tolerance. The isolated saved fixture verifies geometry is unchanged. Native thread creation and the historically unsupported catalog query are separate obligations.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-thread-method.js",
+      "assertionId": "a7de5c0dbae23a958952-1",
+      "disposition": "shared",
+      "scenario": "thread-recipes-*",
+      "capabilities": ["thread-recipes"],
+      "evidence": "tests/scenarios/thread-recipe-cases.ts",
+      "evidenceAssertion": "near(record(profile[\"lead\"])[\"value\"], 3);",
+      "reason": "Preserves this analytical custom-profile or pair-fit assertion with identical inputs, expected value and 1e-9 numerical tolerance. The isolated saved fixture verifies geometry is unchanged. Native thread creation and the historically unsupported catalog query are separate obligations.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-thread-method.js",
+      "assertionId": "a2c3a8af06ef109a0135-1",
+      "disposition": "shared",
+      "scenario": "thread-recipes-*",
+      "capabilities": ["thread-recipes"],
+      "evidence": "tests/scenarios/thread-recipe-cases.ts",
+      "evidenceAssertion": "near(record(profile[\"depth\"])[\"value\"], 0.92);",
+      "reason": "Preserves this analytical custom-profile or pair-fit assertion with identical inputs, expected value and 1e-9 numerical tolerance. The isolated saved fixture verifies geometry is unchanged. Native thread creation and the historically unsupported catalog query are separate obligations.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-thread-method.js",
+      "assertionId": "4ec081664f32f02f00fc-1",
+      "disposition": "shared",
+      "scenario": "thread-recipes-*",
+      "capabilities": ["thread-recipes"],
+      "evidence": "tests/scenarios/thread-recipe-cases.ts",
+      "evidenceAssertion": "profile[\"hand\"] + \"|\" + profile[\"rootShape\"]",
+      "reason": "Preserves this analytical custom-profile or pair-fit assertion with identical inputs, expected value and 1e-9 numerical tolerance. The isolated saved fixture verifies geometry is unchanged. Native thread creation and the historically unsupported catalog query are separate obligations.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-thread-method.js",
+      "assertionId": "925dd1021c269a1ff093-1",
+      "disposition": "shared",
+      "scenario": "thread-recipes-*",
+      "capabilities": ["thread-recipes"],
+      "evidence": "tests/scenarios/thread-recipe-cases.ts",
+      "evidenceAssertion": "near(record(profile[\"turnsPerLength\"])[\"value\"], 1 / 3);",
+      "reason": "Preserves this analytical custom-profile or pair-fit assertion with identical inputs, expected value and 1e-9 numerical tolerance. The isolated saved fixture verifies geometry is unchanged. Native thread creation and the historically unsupported catalog query are separate obligations.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-thread-method.js",
+      "assertionId": "db143ac759184789a946-1",
+      "disposition": "shared",
+      "scenario": "thread-recipes-*",
+      "capabilities": ["thread-recipes"],
+      "evidence": "tests/scenarios/thread-recipe-cases.ts",
+      "evidenceAssertion": "assert.equal(pair[\"pairFit\"], \"pass\");",
+      "reason": "Preserves this analytical custom-profile or pair-fit assertion with identical inputs, expected value and 1e-9 numerical tolerance. The isolated saved fixture verifies geometry is unchanged. Native thread creation and the historically unsupported catalog query are separate obligations.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-thread-method.js",
+      "assertionId": "849031c705097394fcb0-1",
+      "disposition": "shared",
+      "scenario": "thread-recipes-*",
+      "capabilities": ["thread-recipes"],
+      "evidence": "tests/scenarios/thread-recipe-cases.ts",
+      "evidenceAssertion": "pair[\"checks\"].every((item) => record(item)[\"status\"] === \"pass\")",
+      "reason": "Preserves this analytical custom-profile or pair-fit assertion with identical inputs, expected value and 1e-9 numerical tolerance. The isolated saved fixture verifies geometry is unchanged. Native thread creation and the historically unsupported catalog query are separate obligations.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-thread-method.js",
+      "assertionId": "90a8609cd33b71468273-1",
+      "disposition": "shared",
+      "scenario": "thread-recipes-*",
+      "capabilities": ["thread-recipes"],
+      "evidence": "tests/scenarios/thread-recipe-cases.ts",
+      "evidenceAssertion": "near(record(pair[\"engagementDepth\"])[\"value\"], 0.81);",
+      "reason": "Preserves this analytical custom-profile or pair-fit assertion with identical inputs, expected value and 1e-9 numerical tolerance. The isolated saved fixture verifies geometry is unchanged. Native thread creation and the historically unsupported catalog query are separate obligations.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-thread-method.js",
+      "assertionId": "4cf3ab17c8c8c7d22a71-1",
+      "disposition": "shared",
+      "scenario": "thread-recipes-*",
+      "capabilities": ["thread-recipes"],
+      "evidence": "tests/scenarios/thread-recipe-cases.ts",
+      "evidenceAssertion": "\"ISO-style 60-degree V\",",
+      "reason": "Preserves this analytical custom-profile or pair-fit assertion with identical inputs, expected value and 1e-9 numerical tolerance. The isolated saved fixture verifies geometry is unchanged. Native thread creation and the historically unsupported catalog query are separate obligations.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "a86c595d39d7e1b75abb-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(external[\"ratio\"], 2);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "0c29b384e10dde5baee8-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(external[\"nominalCenterDistance\"], 6);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "928ca2f706508db94ce7-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(external[\"workingAngle\"], (20 * Math.PI) / 180);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "5b480e23b5f40d8a2783-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(external[\"backlash\"], 0.01);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "c16e339101806666c365-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "assert.deepEqual(external[\"teeth\"], [20, 40]);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "099713cd58564ea0e163-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(internal[\"ratio\"], -0.5);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "8bdd37e70800d562d652-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(internal[\"nominalCenterDistance\"], 2);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "31c26b1819600ded2943-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(internal[\"centerDistance\"], 2);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "1ccb988f0dac66b5cead-1",
+      "disposition": "shared",
+      "scenario": "gear-pair-*",
+      "capabilities": ["gear-pair-analytics"],
+      "evidence": "tests/scenarios/gear-pair-cases.ts",
+      "evidenceAssertion": "near(internal[\"workingAngle\"], (20 * Math.PI) / 180);",
+      "reason": "Retains the declared external/internal involute calculation with identical input dimensions and expected values at 1e-9 tolerance. The tooth-count assertion additionally checks the numeric array rather than only its joined text. The saved owned fixture independently proves unchanged geometry; no native gear-tooth or contact solver behavior is claimed.",
+      "qualification": "offline-verified-native-deferred"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "b49f4ef1317d264dc389-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.equal(record(empty[\"counts\"])[\"bodyDefinitions\"], 0);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "d7e76f405d4d846bc4b6-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.equal(record(observed[\"counts\"])[\"bodyDefinitions\"], 1);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "d0b22e4ab1b25456b577-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.deepEqual(observed[\"issues\"], []);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "93c9f47d49e563cec69f-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.deepEqual(normalized(await audit()), beforeAudit);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "3285eba459b31c1e8c62-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.deepEqual(normalized(await audit()), beforeAudit);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "3285eba459b31c1e8c62-2",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.deepEqual(normalized(await audit()), beforeAudit);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "d0529802a1ab096f25a0-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.equal(record(numericObserved[\"counts\"])[\"bodyDefinitions\"], 2);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "d0b22e4ab1b25456b577-2",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.deepEqual(numericObserved[\"issues\"], []);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "3285eba459b31c1e8c62-3",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "assert.deepEqual(normalized(await audit()), beforeInvalidAudit);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "3b138996d7add23a166b-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "matching(session, initial, request);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "063836ac140724adc827-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "matching(session, replayed, request);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "9fa5f50d9f45dc4cb83e-1",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "matching(session, failed, negative);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-definitions.js",
+      "assertionId": "9fa5f50d9f45dc4cb83e-2",
+      "disposition": "shared",
+      "scenario": "definition-transaction-*",
+      "capabilities": ["cad-commands", "dimensioned-rectangle"],
+      "evidence": "tests/scenarios/transaction-cases.ts",
+      "evidenceAssertion": "matching(session, numeric, numericRequest);",
+      "reason": "The original production audit counts, empty issue list, normalized complete state or request/journal matching is retained at the same transaction boundary. Independent geometry readback remains additional evidence; native kernel and transport qualification is separate.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "642d19e11f9f792d3194-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(pitch.length, 2001);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "881d22330b23640e4477-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "near(array(pitch[0])[0], 15, 1e-8);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "7ad44511ed3d66138a67-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "near(record(profile[\"normalOffset\"])[\"value\"], 5, 1e-8);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "ab10ca041bdad9d0a914-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "record(item)[\"interval\"] === \"release\"",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "124abdc5a5792342b407-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "record(item)[\"status\"] === \"pass\"",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "1157837228e627191044-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "number(record(evaluated[\"maxPressureAngle\"])[\"value\"]) <= 89",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "5348f0ccdb8659e7b53b-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "number(record(evaluated[\"minPitchCurvatureRadius\"])[\"value\"]) >= 0.1",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "351e863e0dc8ed8848b9-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "\"rise,dwell,release\"",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "e6ccd6e0361ba3dd0d9d-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(cycle[\"cycleStatus\"], \"pass\");",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "ba020a329ae34aa2372c-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(array(cycle[\"unresolvedIntervals\"]).length, 0);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "d8fba67a0c50e2d72562-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "\"blocked (no proper definition or evidence)\"",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "4071bedece6157d7ed67-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "\"base,connector,shaft,housing\"",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "68145f457d72d3133338-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "\"housing,shaft,connector,base\"",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "989a3fd2a0d2478ac2c0-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(array(removal[\"removeBlockers\"]).join(\",\"), \"shaft\");",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "3a147c33601a082d036a-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(assembly[\"mediaRigidized\"], false);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "d5853d4d8cfee32bc072-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(array(removal[\"servicePrerequisites\"]).length, 1);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "d72a3ade02021da39c32-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(record(assembly[\"phaseAssignments\"])[\"base\"], \"foundation\");",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "59df636539e74c0249fc-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(withdrawal[\"feasible\"], true);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "496b8b22ba0a97023a9b-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(array(withdrawal[\"blockers\"]).length, 0);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "8d1c6808b2185ed05b0c-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "near(withdrawal[\"minClearance\"], 0.5, 1e-9);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "651733828f0e203653cb-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "near(array(record(withdrawal[\"sweptBounds\"])[\"max\"])[1], 5, 1e-9);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "950907e22c8e3feb82a1-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(envelope[\"representation\"], \"conservative\");",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "58b21446c8a5ab254364-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(envelope[\"sampleCount\"], 3);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "3657d7736ba4ce034fe3-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "near(maximum[0], 3, 1e-9);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "897f18e5e012053a3297-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(maximum[1] + \"|\" + maximum[2], \"2|3\");",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    },
+    {
+      "source": "tests/live-engineering-analytics.js",
+      "assertionId": "a1bf9b379ca3609b6385-1",
+      "disposition": "shared",
+      "scenario": "engineering-declarations-*",
+      "capabilities": ["engineering-declarations"],
+      "evidence": "tests/scenarios/engineering-declaration-cases.ts",
+      "evidenceAssertion": "assert.equal(envelope[\"continuousVerified\"], false);",
+      "reason": "The original declared cam, dependency/service, clearance or conservative envelope assertion retains its inputs, literal expectation and numerical tolerance. Production handlers run on an owned saved fixture with independent unchanged geometry readback; native cam contact, forces and continuous motion are not inferred.",
+      "qualification": "offline-pending-validation"
+    }
+  ]
+}

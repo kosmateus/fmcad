@@ -5,7 +5,7 @@ import type * as P from "./queue-broker-ports";
 import type {
   PhasedWorkerOptions,
   PhasedWorkers,
-} from "../packages/node-adapters/dist/execution/phased-workers";
+} from "../packages/node-adapters/src/execution/phased-workers";
 import type { QueueGate } from "../packages/node-adapters/dist/execution/gate";
 import type { BrokerControlFence } from "../packages/core/src/application/broker-control";
 import type { PreparedPythonArtifact } from "../packages/core/src/domain/python-artifact";
@@ -298,6 +298,7 @@ export interface BrokerModules {
   "../package.json": { version: string };
   "./request-timeout": { requestTimeout(config: P.Config): number };
   "./dist/node-adapters/broker-ipc/normal-admission": typeof import("../packages/node-adapters/dist/broker-ipc/normal-admission");
+  "./dist/node-adapters/telemetry/phase-timings": typeof import("../packages/node-adapters/src/telemetry/phase-timings");
   "./queue-phased": {
     PhasedWorkers: new (
       options: Omit<

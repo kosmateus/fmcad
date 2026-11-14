@@ -1,0 +1,3283 @@
+{
+  "schemaVersion": 1,
+  "reviewCommit": "015298e",
+  "retainedCommit": "dce47c5",
+  "scope": "Explicit import extraction review: all 482 retained sites remain unchanged obligations. The current complete source hashes and assertion lists separately guard every original caller, extracted contract and mapped lifecycle source. Counts are static sites, not runtime or native qualification.",
+  "retained": [
+    {
+      "source": "tests/live-data-import-fixed.ts",
+      "snapshot": "tests/fixtures/history/live-data-import-fixed-dce47c5.ts.txt",
+      "sha256": "e1f44f9769bdbd936b70c9daeec90d04ae8e639e0fc243dfa6cd4d74cd1c07c9"
+    },
+    {
+      "source": "tests/live-data-import.ts",
+      "snapshot": "tests/fixtures/history/live-data-import-dce47c5.ts.txt",
+      "sha256": "0336141bcd6eb5ed7201aa00a175fd48693085dde1e43ac574c0676e7a0145f1"
+    },
+    {
+      "source": "tests/live-import-receipts.ts",
+      "snapshot": "tests/fixtures/history/live-import-receipts-dce47c5.ts.txt",
+      "sha256": "cd0af29ef7eb1c29c3af5d00c4e56dc53bd8dd1048dbbf20e3c482a2c7e9cbc5"
+    }
+  ],
+  "current": [
+    {
+      "source": "tests/fixed-import-result-contracts.ts",
+      "sha256": "a77a9c6cccd32d796dcca64d508e098c7e0b2bfcd9e54de16b8854f991837ff4",
+      "assertions": [
+        {
+          "id": "0105feb8999edc8b9747-1",
+          "line": 115,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      typeof row[key],\n      \"string\",\n      `Native fixture contract ${key} must be a string`,\n    )"
+        },
+        {
+          "id": "73bb0a6535bf77b8412d-1",
+          "line": 132,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"fingerprint\"], \"string\")"
+        },
+        {
+          "id": "8bb2cf278b9e86e80bdc-1",
+          "line": 141,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"creationId\"], \"string\")"
+        },
+        {
+          "id": "b973b44b858d57cf9236-1",
+          "line": 142,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"name\"], \"string\")"
+        },
+        {
+          "id": "6625105e34308deefece-1",
+          "line": 143,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"saved\"], \"boolean\")"
+        },
+        {
+          "id": "311fd7e189a89d819e08-1",
+          "line": 144,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"modified\"], \"boolean\")"
+        },
+        {
+          "id": "ac03d42b3229c9f1c041-1",
+          "line": 145,
+          "kind": "assertion",
+          "expression": "assert.ok(row[\"fileId\"] === null || typeof row[\"fileId\"] === \"string\")"
+        },
+        {
+          "id": "bca5366c18a1b7972791-1",
+          "line": 157,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    typeof row[\"status\"],\n    \"string\",\n    `${label}.status must be a string`,\n  )"
+        },
+        {
+          "id": "683be2650a47421cc70d-1",
+          "line": 168,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof identityRow[\"creationId\"], \"string\")"
+        },
+        {
+          "id": "14ba7c9b83171c6df539-1",
+          "line": 176,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof item[\"id\"], \"string\")"
+        },
+        {
+          "id": "dad8a10f70f4b62142fc-1",
+          "line": 184,
+          "kind": "assertion",
+          "expression": "assert.ok(item[\"name\"] === undefined || typeof item[\"name\"] === \"string\")"
+        },
+        {
+          "id": "14ba7c9b83171c6df539-2",
+          "line": 209,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof item[\"id\"], \"string\")"
+        },
+        {
+          "id": "2e32b3833c9a44bcefc9-1",
+          "line": 210,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof item[\"field\"], \"string\")"
+        },
+        {
+          "id": "a6d28c85326ccc8d48eb-1",
+          "line": 211,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof item[\"status\"], \"string\")"
+        },
+        {
+          "id": "a6d28c85326ccc8d48eb-2",
+          "line": 224,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof item[\"status\"], \"string\")"
+        },
+        {
+          "id": "e7bf89a32c35f34c74c3-1",
+          "line": 234,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"version\"], \"number\")"
+        },
+        {
+          "id": "395577bac57dd7f7a969-1",
+          "line": 236,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof rawDocument[\"name\"], \"string\")"
+        },
+        {
+          "id": "f013240f7cc265b7a1a7-1",
+          "line": 237,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof rawDocument[\"creationId\"], \"string\")"
+        },
+        {
+          "id": "68c579c14f15684cfc56-1",
+          "line": 241,
+          "kind": "helper",
+          "expression": "parseDocumentStatus(\n      rawDocument[\"before\"],\n      \"Fixed-run before status\",\n    )"
+        },
+        {
+          "id": "f944b5cd2c48bbc70d2b-1",
+          "line": 245,
+          "kind": "helper",
+          "expression": "parseDocumentStatus(rawDocument[\"after\"], \"Fixed-run after status\")"
+        },
+        {
+          "id": "98065bff43bbdb0f334e-1",
+          "line": 247,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"fusionVersion\"], \"string\")"
+        },
+        {
+          "id": "a2c48d5ee40b35fb5aac-1",
+          "line": 248,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"fixturePrefix\"], \"string\")"
+        },
+        {
+          "id": "295ec71c7ddb5adfaf03-1",
+          "line": 249,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"modelChangedByFixture\"], \"boolean\")"
+        },
+        {
+          "id": "fe09b4325666e297fabb-1",
+          "line": 250,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"nativeGeometry\"], \"boolean\")"
+        },
+        {
+          "id": "5f919efe7175be933640-1",
+          "line": 257,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof call[\"operation\"], \"string\")"
+        },
+        {
+          "id": "5065bb5c1ca1cdac0564-1",
+          "line": 260,
+          "kind": "helper",
+          "expression": "parseMethodResult(\n        call[\"result\"],\n        `Fixed-run calls[${index}].result`,\n      )"
+        },
+        {
+          "id": "3c94490eb9b8ef020a7c-1",
+          "line": 271,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof item[\"name\"], \"string\")"
+        },
+        {
+          "id": "fa034fe94b6040348f2e-1",
+          "line": 272,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof item[\"expression\"], \"string\")"
+        },
+        {
+          "id": "7bed83c69ea1c8564a64-1",
+          "line": 273,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof item[\"value\"], \"number\")"
+        },
+        {
+          "id": "14ba7c9b83171c6df539-3",
+          "line": 285,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof item[\"id\"], \"string\")"
+        },
+        {
+          "id": "a6d28c85326ccc8d48eb-3",
+          "line": 297,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof item[\"status\"], \"string\")"
+        },
+        {
+          "id": "8149682bbfe832cc19d7-1",
+          "line": 302,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      actual.every(\n        (number) => typeof number === \"number\" && Number.isFinite(number),\n      ),\n    )"
+        },
+        {
+          "id": "d894875bcdb6bd05514c-1",
+          "line": 310,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof rawCots[\"materialStatus\"], \"string\")"
+        },
+        {
+          "id": "72671fd50afe36cd55dc-1",
+          "line": 311,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof rawCots[\"oldPath\"], \"string\")"
+        },
+        {
+          "id": "accb9312559b2a7bde3c-1",
+          "line": 312,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof rawCots[\"newPath\"], \"string\")"
+        },
+        {
+          "id": "b2b334be13232f21c942-1",
+          "line": 313,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof rawCots[\"sourceVolumeMm3\"], \"number\")"
+        },
+        {
+          "id": "7314ac7208be7e9164b2-1",
+          "line": 314,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof rawCots[\"replacementVolumeMm3\"], \"number\")"
+        },
+        {
+          "id": "a36eb7add6f5254ceae3-1",
+          "line": 322,
+          "kind": "assertion",
+          "expression": "assert.ok(Array.isArray(row[\"artifactPaths\"]))"
+        },
+        {
+          "id": "69df0c2abc17fcf6d247-1",
+          "line": 324,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      typeof file,\n      \"string\",\n      `Fixed-run artifactPaths[${index}] must be a string`,\n    )"
+        },
+        {
+          "id": "2cbf3538b5342c502395-1",
+          "line": 331,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"artifactDirectoryRemoved\"], \"boolean\")"
+        },
+        {
+          "id": "38ab95a764e51131faf6-1",
+          "line": 332,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"artifactDirectory\"], \"string\")"
+        },
+        {
+          "id": "8e31d66c5d099e52e173-1",
+          "line": 333,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"negativeCases\"], \"string\")"
+        },
+        {
+          "id": "8c179583469911376d69-1",
+          "line": 359,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"success\"], \"boolean\")"
+        },
+        {
+          "id": "5f919efe7175be933640-2",
+          "line": 365,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof call[\"operation\"], \"string\")"
+        },
+        {
+          "id": "786823af6f95b38ea91d-1",
+          "line": 366,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof call[\"status\"], \"string\")"
+        },
+        {
+          "id": "98e3e14ffd0fda9ad4be-1",
+          "line": 367,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof call[\"effects\"], \"string\")"
+        },
+        {
+          "id": "10285b4b671fa296b211-1",
+          "line": 376,
+          "kind": "helper",
+          "expression": "parseFixedPayload(row[\"result\"])"
+        },
+        {
+          "id": "da30a1deb1e09c9bbbb6-1",
+          "line": 386,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    matches.length,\n    1,\n    `Fixed source must invoke ${operation} exactly once.`,\n  )"
+        },
+        {
+          "id": "fecfb4dbeeb499d6e594-1",
+          "line": 392,
+          "kind": "assertion",
+          "expression": "assert.ok(match, `${operation} call is missing.`)"
+        },
+        {
+          "id": "8d439b5aaa230a2593b4-1",
+          "line": 393,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    match.result && typeof match.result === \"object\",\n    `${operation} returned no result record.`,\n  )"
+        }
+      ]
+    },
+    {
+      "source": "tests/import-result-contracts.ts",
+      "sha256": "d5f69e21101c33c9d0c5f0241f238989a9b67b0c91c2e82e1fb32ab4a4306fbf",
+      "assertions": [
+        {
+          "id": "0400e48c86417d998cbb-1",
+          "line": 166,
+          "kind": "assertion",
+          "expression": "assert.ok(value, `${label}[${index}] is missing`)"
+        },
+        {
+          "id": "7dc0c83bf4045ef43a0f-1",
+          "line": 172,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    typeof row[\"success\"],\n    \"boolean\",\n    `${label}.success must be boolean`,\n  )"
+        },
+        {
+          "id": "d0fc8c36e8d71bd2e817-1",
+          "line": 188,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      identityRow[\"creationId\"] === undefined ||\n        typeof identityRow[\"creationId\"] === \"string\",\n    )"
+        },
+        {
+          "id": "f5770b909cf18980819c-1",
+          "line": 221,
+          "kind": "assertion",
+          "expression": "assert.ok(Array.isArray(value), `${label} must be an array`)"
+        },
+        {
+          "id": "a824f1f906a0ccce1aff-1",
+          "line": 231,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      typeof result[\"error\"],\n      \"string\",\n      `${operation} failure must include its native error`,\n    )"
+        },
+        {
+          "id": "b1bdbe2af5d1686a5c63-1",
+          "line": 241,
+          "kind": "helper",
+          "expression": "requireArray(\n      result[\"parameters\"],\n      `${operation}.parameters`,\n    )"
+        },
+        {
+          "id": "b973b44b858d57cf9236-1",
+          "line": 246,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"name\"], \"string\")"
+        },
+        {
+          "id": "f0087bb87549f692944b-1",
+          "line": 247,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"expression\"], \"string\")"
+        },
+        {
+          "id": "6f5694fa6e18335ab7a2-1",
+          "line": 248,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"value\"], \"number\")"
+        },
+        {
+          "id": "625a090ec553603884a7-1",
+          "line": 251,
+          "kind": "helper",
+          "expression": "requireArray(\n      result[\"instances\"],\n      `${operation}.instances`,\n    )"
+        },
+        {
+          "id": "9878fe7203b03be028a8-1",
+          "line": 257,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"id\"], \"string\")"
+        },
+        {
+          "id": "6b6a6782bafc8c26d5f7-1",
+          "line": 267,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof entry[\"definition\"], \"string\")"
+        },
+        {
+          "id": "a7b95cf9845c5b263f2f-1",
+          "line": 269,
+          "kind": "helper",
+          "expression": "requireArray(result[\"differences\"], \"catalog.check.differences\")"
+        },
+        {
+          "id": "7e1e725505d41b83a10a-1",
+          "line": 274,
+          "kind": "helper",
+          "expression": "requireArray(\n      result[\"poses\"],\n      `${operation}.poses`,\n    )"
+        },
+        {
+          "id": "72cdfd512636daec4cf9-1",
+          "line": 279,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row[\"status\"], \"string\")"
+        },
+        {
+          "id": "651b386d457bba05777e-1",
+          "line": 280,
+          "kind": "helper",
+          "expression": "requireArray(\n        row[\"actual\"],\n        `${operation}.poses[${index}].actual`,\n      )"
+        },
+        {
+          "id": "dff6f03428c79031ec0d-1",
+          "line": 284,
+          "kind": "assertion",
+          "expression": "assert.ok(\n        actual.every(\n          (value) => typeof value === \"number\" && Number.isFinite(value),\n        ),\n        `${operation}.poses[${index}].actual must contain finite numbers`,\n      )"
+        },
+        {
+          "id": "aade4e7c938987ff2553-1",
+          "line": 292,
+          "kind": "helper",
+          "expression": "requireArray(\n      result[\"replacements\"],\n      \"cots.replace.replacements\",\n    )"
+        },
+        {
+          "id": "18430979d52cc1dda48b-1",
+          "line": 300,
+          "kind": "helper",
+          "expression": "requireArray(result[\"datumChecks\"], \"cots.replace.datumChecks\")"
+        },
+        {
+          "id": "2468ad3d10e939dd11d9-1",
+          "line": 301,
+          "kind": "helper",
+          "expression": "requireArray(result[\"unresolved\"], \"cots.replace.unresolved\")"
+        },
+        {
+          "id": "d3215f0e50b5d0ee4017-1",
+          "line": 303,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof result[\"kind\"], \"string\")"
+        },
+        {
+          "id": "454b19dd2d15700145aa-1",
+          "line": 304,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof result[\"occurrencePath\"], \"string\")"
+        },
+        {
+          "id": "2efd987af02ca77a9b3f-1",
+          "line": 310,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof component[\"name\"], \"string\")"
+        },
+        {
+          "id": "7bc57a8d3c3423e1437c-1",
+          "line": 311,
+          "kind": "helper",
+          "expression": "requireArray(result[\"bodies\"], \"component.inspect.bodies\")"
+        },
+        {
+          "id": "2efd987af02ca77a9b3f-2",
+          "line": 317,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof component[\"name\"], \"string\")"
+        },
+        {
+          "id": "509d992ba325c2af4fd4-1",
+          "line": 319,
+          "kind": "helper",
+          "expression": "requireArray(result[\"bodies\"], \"shape.box.bodies\")"
+        },
+        {
+          "id": "ea1d9481f488596b5c46-1",
+          "line": 322,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof value, \"number\")"
+        },
+        {
+          "id": "b7124d1cb7d164fb409f-1",
+          "line": 323,
+          "kind": "assertion",
+          "expression": "assert.ok(Number.isFinite(value))"
+        },
+        {
+          "id": "a115c4b82a32657600e8-1",
+          "line": 325,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof result[\"exists\"], \"boolean\")"
+        },
+        {
+          "id": "73e92fd67108316940e7-1",
+          "line": 326,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof result[\"bytes\"], \"number\")"
+        },
+        {
+          "id": "6840c75bcc7aab42765f-1",
+          "line": 328,
+          "kind": "helper",
+          "expression": "requireArray(\n      result[\"entities\"],\n      \"entity.list.entities\",\n    )"
+        },
+        {
+          "id": "79c1b701b80e85b7ddbb-1",
+          "line": 332,
+          "kind": "assertion",
+          "expression": "assert.equal(\n        typeof asRecord(value, `entity.list.entities[${index}]`)[\"path\"],\n        \"string\",\n      )"
+        },
+        {
+          "id": "83d357f941d84232e36e-1",
+          "line": 348,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof document[\"creationId\"], \"string\")"
+        },
+        {
+          "id": "b4eec16cded47b68b31f-1",
+          "line": 349,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof document[\"name\"], \"string\")"
+        },
+        {
+          "id": "ef99e487b1a738304a86-1",
+          "line": 350,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof document[\"saved\"], \"boolean\")"
+        },
+        {
+          "id": "7d6d7feb7577f546de91-1",
+          "line": 351,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof document[\"modified\"], \"boolean\")"
+        },
+        {
+          "id": "aeed969680dfdf4c40ef-1",
+          "line": 352,
+          "kind": "assertion",
+          "expression": "assert.ok(\n        document[\"fileId\"] === null || typeof document[\"fileId\"] === \"string\",\n      )"
+        },
+        {
+          "id": "9a99f8e9a3f728cc1e4b-1",
+          "line": 366,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      !identities.has(document.creationId),\n      `${label} contains duplicate creationId ${document.creationId}`,\n    )"
+        },
+        {
+          "id": "b12ef8716ad1f02c622a-1",
+          "line": 372,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    row[\"activeCreationId\"] === null ||\n      typeof row[\"activeCreationId\"] === \"string\",\n    `${label}.activeCreationId must be a creationId or null`,\n  )"
+        },
+        {
+          "id": "76a5cf4c57f1fe3b3241-1",
+          "line": 378,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      identities.has(row[\"activeCreationId\"]),\n      `${label}.activeCreationId does not identify an open document`,\n    )"
+        },
+        {
+          "id": "b634d578c5563c9346d9-1",
+          "line": 391,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof cfg[\"backend\"], \"string\")"
+        },
+        {
+          "id": "ae88d9d17db4953e94df-1",
+          "line": 392,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof cfg[\"transport\"], \"string\")"
+        },
+        {
+          "id": "5599a19f0267927e6d9a-1",
+          "line": 393,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof cfg[\"timeoutMs\"], \"number\")"
+        },
+        {
+          "id": "4f4617b19afecbc3d56d-1",
+          "line": 426,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      result.status,\n      0,\n      `${operation} local preflight failed: ${result.stderr || result.stdout}`,\n    )"
+        },
+        {
+          "id": "adbbffc710d241d81e36-1",
+          "line": 431,
+          "kind": "assertion",
+          "expression": "assert.equal(output.success, true)"
+        },
+        {
+          "id": "ac0a1e99166df32ad5c9-1",
+          "line": 432,
+          "kind": "assertion",
+          "expression": "assert.equal(status, \"pass\")"
+        },
+        {
+          "id": "aed6ea6e4ec7545e6aa1-1",
+          "line": 433,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      output.documentIdentity,\n      null,\n      \"Local preflight unexpectedly claimed a live document identity\",\n    )"
+        },
+        {
+          "id": "bafe40d4586a81023339-1",
+          "line": 438,
+          "kind": "assertion",
+          "expression": "assert.equal(output.method, \"CLI data preflight\")"
+        },
+        {
+          "id": "0d4e493501550f1a7e7f-1",
+          "line": 439,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      output.modelValidated,\n      false,\n      \"Local preflight claimed native model validation\",\n    )"
+        },
+        {
+          "id": "02a2c891fbd663189b31-1",
+          "line": 444,
+          "kind": "assertion",
+          "expression": "assert.equal(output.mutation, false)"
+        },
+        {
+          "id": "a2fea34e4447fa578f2e-1",
+          "line": 446,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      result.status,\n      0,\n      `${operation} completed local check retains unknown evidence without claiming native acceptance`,\n    )"
+        },
+        {
+          "id": "0146ae4a0d1a98455b27-1",
+          "line": 451,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      result.signal,\n      null,\n      `${operation} local check ended by signal`,\n    )"
+        },
+        {
+          "id": "36b63f08b6679644afa8-1",
+          "line": 456,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      output.success,\n      true,\n      `${operation} local result should not claim a native failure`,\n    )"
+        },
+        {
+          "id": "1051b4d0366165644e56-1",
+          "line": 461,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      status,\n      \"unknown\",\n      `${operation} without observations must remain unknown`,\n    )"
+        },
+        {
+          "id": "aed6ea6e4ec7545e6aa1-2",
+          "line": 466,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      output.documentIdentity,\n      null,\n      \"Local preflight unexpectedly claimed a live document identity\",\n    )"
+        },
+        {
+          "id": "bafe40d4586a81023339-2",
+          "line": 471,
+          "kind": "assertion",
+          "expression": "assert.equal(output.method, \"CLI data preflight\")"
+        },
+        {
+          "id": "0d4e493501550f1a7e7f-2",
+          "line": 472,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      output.modelValidated,\n      false,\n      \"Local preflight claimed native model validation\",\n    )"
+        },
+        {
+          "id": "02a2c891fbd663189b31-2",
+          "line": 477,
+          "kind": "assertion",
+          "expression": "assert.equal(output.mutation, false)"
+        }
+      ]
+    },
+    {
+      "source": "tests/live-data-import-fixed.ts",
+      "sha256": "9317a5f77539171ddfb2c859e40882053f64ba528262bcb6c8ef476db99f7fdd",
+      "assertions": [
+        {
+          "id": "d74afe4237c1ac6c123c-1",
+          "line": 252,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    typeof value === \"string\" && value.trim(),\n    `${name} must be supplied by the existing owner-scoped fixed-run handoff.`,\n  )"
+        },
+        {
+          "id": "9f565b7b18271e4b5742-1",
+          "line": 277,
+          "kind": "assertion",
+          "expression": "assert.equal(status, \"pass\", `${label} did not pass.`)"
+        },
+        {
+          "id": "3d195929085a2756d2d8-1",
+          "line": 278,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(\n    actual,\n    expected,\n    `${label}: actual=${JSON.stringify(actual)}, expected=${JSON.stringify(expected)}`,\n  )"
+        },
+        {
+          "id": "4790685acdd6a70dddc0-1",
+          "line": 290,
+          "kind": "helper",
+          "expression": "note(label, actual, expected)"
+        },
+        {
+          "id": "ad914413d3dd2f955ae3-1",
+          "line": 294,
+          "kind": "helper",
+          "expression": "requiredEnv(\"FMCAD_LIVE_RUNTIME_ROOT\")"
+        },
+        {
+          "id": "caa406aa492420365fa1-1",
+          "line": 322,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      fs.realpathSync(file),\n      file,\n      `Fixed runtime path is not canonical: ${file}`,\n    )"
+        },
+        {
+          "id": "1edccde2188f63d28b42-1",
+          "line": 347,
+          "kind": "helper",
+          "expression": "fixedNote(\"fixed fixture id\", fixture.fixtureId, fixtureId)"
+        },
+        {
+          "id": "e2a5e2fc1dea85cefb95-1",
+          "line": 348,
+          "kind": "helper",
+          "expression": "fixedNote(\"fixed-run kind\", fixture.kind, \"fixed-run-v1\")"
+        },
+        {
+          "id": "19c3f6ddd7fbf763ce52-1",
+          "line": 349,
+          "kind": "helper",
+          "expression": "fixedNote(\"fixed source path\", fixture.script, scriptPathFromRuntime)"
+        },
+        {
+          "id": "bcbe21c7bf4f513550aa-1",
+          "line": 350,
+          "kind": "helper",
+          "expression": "fixedNote(\"fixed helper version\", fixture.helperVersion, \"cad-v1\")"
+        },
+        {
+          "id": "e5f49c648564cc6d86bc-1",
+          "line": 351,
+          "kind": "helper",
+          "expression": "fixedNote(\n    \"installed source SHA256\",\n    sha256(scriptPath),\n    expectedScriptSha256,\n  )"
+        },
+        {
+          "id": "28abac411cc2823e1ba4-1",
+          "line": 356,
+          "kind": "helper",
+          "expression": "fixedNote(\n    \"installed manifest SHA256\",\n    sha256(manifestPath),\n    expectedManifestSha256,\n  )"
+        },
+        {
+          "id": "f83c72b49ac7e7f6d03d-1",
+          "line": 361,
+          "kind": "helper",
+          "expression": "fixedNote(\n    \"runtime registry source SHA256\",\n    fixture.scriptSha256,\n    expectedScriptSha256,\n  )"
+        },
+        {
+          "id": "923a46cd62e4200b6704-1",
+          "line": 366,
+          "kind": "helper",
+          "expression": "fixedNote(\n    \"runtime registry manifest SHA256\",\n    fixture.manifestSha256,\n    expectedManifestSha256,\n  )"
+        },
+        {
+          "id": "73386a2fa21ca988284f-1",
+          "line": 371,
+          "kind": "helper",
+          "expression": "fixedNote(\n    \"worktree canonical source SHA256\",\n    canonicalSourceSha256(localScript),\n    expectedScriptSha256,\n  )"
+        },
+        {
+          "id": "33321063c09ef03d50bf-1",
+          "line": 376,
+          "kind": "helper",
+          "expression": "fixedNote(\n    \"worktree canonical manifest SHA256\",\n    canonicalSourceSha256(localManifest),\n    expectedManifestSha256,\n  )"
+        },
+        {
+          "id": "d0930373dd230bd8c4e3-1",
+          "line": 381,
+          "kind": "helper",
+          "expression": "fixedNote(\"manifest argument contract\", manifest[\"argumentKeys\"], [\n    \"approved\",\n    \"creationId\",\n    \"expectedFusionVersion\",\n    \"fixturePrefix\",\n  ])"
+        },
+        {
+          "id": "2d885f19f6327355bdc2-1",
+          "line": 387,
+          "kind": "helper",
+          "expression": "fixedNote(\n    \"manifest caller cleanup contract\",\n    manifest[\"callerCleanupRequired\"],\n    true,\n  )"
+        },
+        {
+          "id": "36ce41f56fe998ef162d-1",
+          "line": 392,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof manifest[\"scope\"], \"string\")"
+        },
+        {
+          "id": "1ab7440de4d79326ef6a-1",
+          "line": 393,
+          "kind": "assertion",
+          "expression": "assert.match(\n    manifest[\"scope\"] as string,\n    /Do not issue expected-throw negative calls through cad-v1/,\n  )"
+        },
+        {
+          "id": "620f0959f8560e010dec-1",
+          "line": 397,
+          "kind": "helper",
+          "expression": "fixedNote(\"installed build fingerprint\", runtimeBuild.fingerprint, buildHash)"
+        },
+        {
+          "id": "ece67d61df677fc05934-1",
+          "line": 411,
+          "kind": "assertion",
+          "expression": "assert.ok(identity, \"Fixed run has no verified owner document identity\")"
+        },
+        {
+          "id": "78196a5ac489a95a3c4b-1",
+          "line": 422,
+          "kind": "helper",
+          "expression": "note(`${operation} native result status`, result.status, expectedStatus)"
+        },
+        {
+          "id": "7c84e7ca4a812868cd64-1",
+          "line": 424,
+          "kind": "helper",
+          "expression": "note(`${operation} result operation`, result.operation, operation)"
+        },
+        {
+          "id": "e2401643996744d36c2e-1",
+          "line": 425,
+          "kind": "helper",
+          "expression": "note(\n    `${operation} exact document identity`,\n    result.documentIdentity?.creationId,\n    creationId,\n  )"
+        },
+        {
+          "id": "5fa6e8e4a74fe4f86b7f-1",
+          "line": 444,
+          "kind": "helper",
+          "expression": "currentIdentity()"
+        },
+        {
+          "id": "ea0f015478af37e71bda-1",
+          "line": 446,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    payload && typeof payload === \"object\",\n    \"Fixed-run report payload is missing.\",\n  )"
+        },
+        {
+          "id": "7c54ab5b48bac69947c9-1",
+          "line": 450,
+          "kind": "helper",
+          "expression": "note(\"fixed-run payload version\", payload.version, 1)"
+        },
+        {
+          "id": "2d5555f5dc726c974af5-1",
+          "line": 451,
+          "kind": "helper",
+          "expression": "note(\"fixed-run document name\", payload.document.name, own.name)"
+        },
+        {
+          "id": "bf5d7ffe086cf82ce14c-1",
+          "line": 452,
+          "kind": "helper",
+          "expression": "note(\n    \"fixed-run document creationId\",\n    payload.document.creationId,\n    own.creationId,\n  )"
+        },
+        {
+          "id": "a813e00583e3e9a7de48-1",
+          "line": 457,
+          "kind": "helper",
+          "expression": "note(\"fixed-run Fusion version\", payload.fusionVersion, fusionVersion)"
+        },
+        {
+          "id": "9894be9baf5c279bde08-1",
+          "line": 458,
+          "kind": "helper",
+          "expression": "note(\n    \"fixed-run source ownership approval\",\n    payload.fixturePrefix,\n    fixturePrefix,\n  )"
+        },
+        {
+          "id": "c0b899a55d3114616579-1",
+          "line": 463,
+          "kind": "helper",
+          "expression": "note(\n    \"fixed run changed only its declared model\",\n    payload.modelChangedByFixture,\n    true,\n  )"
+        },
+        {
+          "id": "51ebe609339f94129ea6-1",
+          "line": 468,
+          "kind": "helper",
+          "expression": "note(\"fixed run created native geometry\", payload.nativeGeometry, true)"
+        },
+        {
+          "id": "fe185aa1313568cc8cf6-1",
+          "line": 472,
+          "kind": "assertion",
+          "expression": "assert.ok(before && after, \"Exact document status readbacks are required.\")"
+        },
+        {
+          "id": "4b2ad7d354863db2a271-1",
+          "line": 473,
+          "kind": "helper",
+          "expression": "note(\"initial document creationId\", before.creationId, own.creationId)"
+        },
+        {
+          "id": "1c2b4cdada7bd72252a3-1",
+          "line": 474,
+          "kind": "helper",
+          "expression": "note(\"initial document name\", before.name, own.name)"
+        },
+        {
+          "id": "fd9289c93bd847106a2e-1",
+          "line": 475,
+          "kind": "helper",
+          "expression": "note(\"initial document unsaved\", before.saved, false)"
+        },
+        {
+          "id": "2716f7687ffb6f85900f-1",
+          "line": 476,
+          "kind": "helper",
+          "expression": "note(\"initial document unmodified\", before.modified, false)"
+        },
+        {
+          "id": "53b01a675169d5c73b9e-1",
+          "line": 477,
+          "kind": "helper",
+          "expression": "note(\"initial document has no cloud file id\", before.fileId, null)"
+        },
+        {
+          "id": "a50133fb1d11ab9df3ed-1",
+          "line": 478,
+          "kind": "helper",
+          "expression": "note(\"final document creationId\", after.creationId, own.creationId)"
+        },
+        {
+          "id": "c6ad7f33ec4d1a30f58c-1",
+          "line": 479,
+          "kind": "helper",
+          "expression": "note(\"final document name\", after.name, own.name)"
+        },
+        {
+          "id": "24d3ccffcae871e128a4-1",
+          "line": 480,
+          "kind": "helper",
+          "expression": "note(\"final document remains unsaved\", after.saved, false)"
+        },
+        {
+          "id": "762bd2ec5a6753bbcef2-1",
+          "line": 481,
+          "kind": "helper",
+          "expression": "note(\"final document has no cloud file id\", after.fileId, null)"
+        },
+        {
+          "id": "81254634cc09ba124590-1",
+          "line": 489,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    designBefore && typeof designBefore === \"object\",\n    \"Empty-design baseline is missing.\",\n  )"
+        },
+        {
+          "id": "e44d61f0082355fe1ab0-1",
+          "line": 499,
+          "kind": "helper",
+          "expression": "note(`pristine scratch ${key}`, designBefore[key], 0)"
+        },
+        {
+          "id": "b7803b02542ec49d2321-1",
+          "line": 503,
+          "kind": "assertion",
+          "expression": "assert.ok(Array.isArray(calls), \"Native helper call readbacks are missing.\")"
+        },
+        {
+          "id": "5007349eb913c095969b-1",
+          "line": 505,
+          "kind": "helper",
+          "expression": "note(\n    \"fixed source helper-call sequence\",\n    operationsRead,\n    expectedHelperOperations,\n  )"
+        },
+        {
+          "id": "4d752b3172c8bec5d99f-1",
+          "line": 511,
+          "kind": "helper",
+          "expression": "assertMethodResult(\n    payload,\n    \"param.import\",\n    \"pass\",\n    own.creationId,\n  )"
+        },
+        {
+          "id": "1ab0511911884b048a88-1",
+          "line": 517,
+          "kind": "helper",
+          "expression": "assertMethodResult(\n    payload,\n    \"catalog.import\",\n    \"pass\",\n    own.creationId,\n  )"
+        },
+        {
+          "id": "567418acb7dd74a96220-1",
+          "line": 523,
+          "kind": "helper",
+          "expression": "assertMethodResult(\n    payload,\n    \"catalog.check\",\n    \"pass\",\n    own.creationId,\n  )"
+        },
+        {
+          "id": "4a84c380a6b9b7ce2684-1",
+          "line": 529,
+          "kind": "helper",
+          "expression": "assertMethodResult(\n    payload,\n    \"placement.import\",\n    \"pass\",\n    own.creationId,\n  )"
+        },
+        {
+          "id": "ab8f43bb01175657e9ff-1",
+          "line": 535,
+          "kind": "helper",
+          "expression": "assertMethodResult(\n    payload,\n    \"placement.check\",\n    \"pass\",\n    own.creationId,\n  )"
+        },
+        {
+          "id": "e9f0eef599b4c2766b69-1",
+          "line": 541,
+          "kind": "helper",
+          "expression": "assertMethodResult(\n    payload,\n    \"cots.replace\",\n    \"unknown\",\n    own.creationId,\n  )"
+        },
+        {
+          "id": "9a7532a19d900e8ce81c-1",
+          "line": 556,
+          "kind": "assertion",
+          "expression": "assert.equal(payload.paramReadback.length, expectedParameters.length)"
+        },
+        {
+          "id": "8cfce21ed86c7a7c291d-1",
+          "line": 559,
+          "kind": "assertion",
+          "expression": "assert.ok(row)"
+        },
+        {
+          "id": "1cddab50b76ef6ba61d7-1",
+          "line": 560,
+          "kind": "helper",
+          "expression": "note(`parameter ${index} exact name`, row.name, expected.name)"
+        },
+        {
+          "id": "d0b6f1aa386a809be773-1",
+          "line": 561,
+          "kind": "helper",
+          "expression": "note(\n      `parameter ${index} native expression`,\n      row.expression,\n      expected.expression,\n    )"
+        },
+        {
+          "id": "8c9273a718d02089e2cb-1",
+          "line": 566,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      Number.isFinite(row.value),\n      `Parameter ${row.name} value is not numeric.`,\n    )"
+        },
+        {
+          "id": "99f85f3c2622635b8638-1",
+          "line": 570,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      Math.abs(row.value - expected.value) <= 1e-9,\n      `Parameter ${row.name} value ${row.value} differs from ${expected.value} cm.`,\n    )"
+        },
+        {
+          "id": "f2efe8add2ad92a3371a-1",
+          "line": 583,
+          "kind": "helper",
+          "expression": "note(\"native catalog occurrence IDs\", actualInstanceIds, expectedInstanceIds)"
+        },
+        {
+          "id": "27b120cf28f7e801a0e0-1",
+          "line": 584,
+          "kind": "helper",
+          "expression": "note(\"native catalog checker differences\", payload.catalogDifferences, [])"
+        },
+        {
+          "id": "c876ea28349794f2e02a-1",
+          "line": 585,
+          "kind": "assertion",
+          "expression": "assert.equal(catalogImport.instances?.length, 3)"
+        },
+        {
+          "id": "63d1657aaec554b5b320-1",
+          "line": 586,
+          "kind": "assertion",
+          "expression": "assert.equal(catalogCheck.instances?.length, 3)"
+        },
+        {
+          "id": "749385472595b893473d-1",
+          "line": 593,
+          "kind": "assertion",
+          "expression": "assert.equal(placementRows.length, 1)"
+        },
+        {
+          "id": "49bed86daf81a2427a77-1",
+          "line": 595,
+          "kind": "assertion",
+          "expression": "assert.ok(placementRow)"
+        },
+        {
+          "id": "541224bf4b7c734aeb16-1",
+          "line": 597,
+          "kind": "assertion",
+          "expression": "assert.ok(typeof nativeX === \"number\" && Number.isFinite(nativeX))"
+        },
+        {
+          "id": "a6bbf3fc9ed10811bd19-1",
+          "line": 598,
+          "kind": "helper",
+          "expression": "note(\"native placement checker status\", placementRow.status, \"pass\")"
+        },
+        {
+          "id": "f984a0dd259577603e04-1",
+          "line": 599,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    Math.abs(nativeX - 2.5) <= 1e-9,\n    `Native assembly X translation ${nativeX} cm differs from 25 mm.`,\n  )"
+        },
+        {
+          "id": "5995feb8863a02212c6a-1",
+          "line": 606,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    unresolved.some(\n      (row) =>\n        row.id === \"synthetic-cots\" &&\n        row.field === \"replacement.material\" &&\n        row.status === \"unknown\",\n    ),\n    \"COTS replacement must retain the explicit unknown material limitation.\",\n  )"
+        },
+        {
+          "id": "b090f9d8ec7f521f38c8-1",
+          "line": 616,
+          "kind": "assertion",
+          "expression": "assert.equal(datumChecks?.length, 1)"
+        },
+        {
+          "id": "cac127636f6e389a3207-1",
+          "line": 618,
+          "kind": "assertion",
+          "expression": "assert.ok(datumCheck)"
+        },
+        {
+          "id": "837ea403119e85a2e6e1-1",
+          "line": 619,
+          "kind": "helper",
+          "expression": "note(\"COTS native datum preservation\", datumCheck.status, \"pass\")"
+        },
+        {
+          "id": "21e52f0ebce6e596d4fe-1",
+          "line": 621,
+          "kind": "assertion",
+          "expression": "assert.ok(cots && typeof cots === \"object\")"
+        },
+        {
+          "id": "fc4d6faed2d40397efd3-1",
+          "line": 622,
+          "kind": "helper",
+          "expression": "note(\"COTS material product status\", cots.materialStatus, \"unknown\")"
+        },
+        {
+          "id": "20767e243228aff28234-1",
+          "line": 623,
+          "kind": "assertion",
+          "expression": "assert.ok(typeof cots.oldPath === \"string\" && cots.oldPath)"
+        },
+        {
+          "id": "cc0d20b765cb711777d5-1",
+          "line": 624,
+          "kind": "assertion",
+          "expression": "assert.ok(typeof cots.newPath === \"string\" && cots.newPath)"
+        },
+        {
+          "id": "3bd4fae1ebf91cd89cd2-1",
+          "line": 625,
+          "kind": "assertion",
+          "expression": "assert.notEqual(cots.oldPath, cots.newPath)"
+        },
+        {
+          "id": "8e2a3e9e1acede9076f9-1",
+          "line": 626,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    Number.isFinite(cots.sourceVolumeMm3) &&\n      Number.isFinite(cots.replacementVolumeMm3),\n  )"
+        },
+        {
+          "id": "9fb23da0d0fc4825da5b-1",
+          "line": 630,
+          "kind": "assertion",
+          "expression": "assert.ok(Math.abs(cots.sourceVolumeMm3 - 385) <= 0.01)"
+        },
+        {
+          "id": "cabb0f1b6a0240f73a12-1",
+          "line": 631,
+          "kind": "assertion",
+          "expression": "assert.ok(Math.abs(cots.replacementVolumeMm3 - cots.sourceVolumeMm3) <= 0.05)"
+        },
+        {
+          "id": "0ff3ea26397c8c619ce9-1",
+          "line": 637,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    components.length,\n    5,\n    \"Catalog definitions, STEP source, and COTS replacement require native component readbacks.\",\n  )"
+        },
+        {
+          "id": "d291ac17fbd195d98ea2-1",
+          "line": 643,
+          "kind": "assertion",
+          "expression": "assert.ok(replacementComponent)"
+        },
+        {
+          "id": "f7b16ca469ed829676fc-1",
+          "line": 644,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    replacementComponent.result.component?.name,\n    `FMCAD_DI_${fixturePrefix}_Sensor [cots-r2]`,\n  )"
+        },
+        {
+          "id": "e5af4be04d2e1faab553-1",
+          "line": 648,
+          "kind": "assertion",
+          "expression": "assert.equal(replacementComponent.result.bodies?.length, 1)"
+        },
+        {
+          "id": "b7de7a318ecb833cea6d-1",
+          "line": 650,
+          "kind": "helper",
+          "expression": "note(\n    \"fixed source cleanup removed its exact STEP artifacts\",\n    payload.removedFiles,\n    payload.artifactPaths,\n  )"
+        },
+        {
+          "id": "73e7c9f82eb3fde7eb00-1",
+          "line": 655,
+          "kind": "helper",
+          "expression": "note(\n    \"fixed source cleanup removed its owned artifact directory\",\n    payload.artifactDirectoryRemoved,\n    true,\n  )"
+        },
+        {
+          "id": "ab9f320072a32361f562-1",
+          "line": 660,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    String(payload.artifactDirectory).includes(\n      fixturePrefix + \"_\" + own.creationId.replaceAll(\"-\", \"\"),\n    ),\n    \"Fixed temporary STEP directory is not bound to the exact document and fixture prefix.\",\n  )"
+        },
+        {
+          "id": "49bbe27b76444e41d968-1",
+          "line": 666,
+          "kind": "assertion",
+          "expression": "assert.equal(payload.artifactPaths.length, 1)"
+        },
+        {
+          "id": "4ce7c63f6a3bf82b4ed2-1",
+          "line": 667,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    payload.negativeCases,\n    expectedNegativeLimitation,\n    \"Expected-throw native cases must remain explicitly not-run through cad-v1.\",\n  )"
+        },
+        {
+          "id": "ab94342aebfa2f443610-1",
+          "line": 723,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    process.argv.includes(\"--run\"),\n    \"Explicit --run is required for the exact owner-scoped fixed program.\",\n  )"
+        },
+        {
+          "id": "e19b1648479996b8bc1b-1",
+          "line": 727,
+          "kind": "helper",
+          "expression": "note(\"live route\", process.env[\"FMCAD_LIVE_ROUTING\"], \"queue\")"
+        },
+        {
+          "id": "f4b412719063658b294b-1",
+          "line": 728,
+          "kind": "helper",
+          "expression": "requiredEnv(\"FMCAD_LIVE_CLIENT\")"
+        },
+        {
+          "id": "ad914413d3dd2f955ae3-2",
+          "line": 729,
+          "kind": "helper",
+          "expression": "requiredEnv(\"FMCAD_LIVE_RUNTIME_ROOT\")"
+        },
+        {
+          "id": "6cf0798d54166b9898c9-1",
+          "line": 731,
+          "kind": "helper",
+          "expression": "requiredEnv(\"FMCAD_LIVE_DOC_NAME\")"
+        },
+        {
+          "id": "d5bd92992c89c1bf6028-1",
+          "line": 732,
+          "kind": "helper",
+          "expression": "requiredEnv(\"FMCAD_LIVE_DOC_ID\")"
+        },
+        {
+          "id": "5fa6e8e4a74fe4f86b7f-2",
+          "line": 734,
+          "kind": "helper",
+          "expression": "currentIdentity()"
+        },
+        {
+          "id": "5d8bdb69cdcb1b383ec7-1",
+          "line": 735,
+          "kind": "helper",
+          "expression": "requiredEnv(\"FMCAD_LIVE_FUSION_VERSION\")"
+        },
+        {
+          "id": "12a37da06e58feb028ec-1",
+          "line": 736,
+          "kind": "assertion",
+          "expression": "assert.match(\n    own.creationId,\n    /^[0-9a-f-]{36}$/i,\n    \"An exact owner creationId is required.\",\n  )"
+        },
+        {
+          "id": "3d5ba744e96164e3f1ba-1",
+          "line": 742,
+          "kind": "helper",
+          "expression": "resolveFixedRuntime()"
+        },
+        {
+          "id": "b790c5bd6262106beb3b-1",
+          "line": 743,
+          "kind": "helper",
+          "expression": "fixedNote(\"fixed runtime root\", installed.runtimeRoot, runtimeRoot)"
+        },
+        {
+          "id": "95c26690a503d2ca0992-1",
+          "line": 856,
+          "kind": "assertion",
+          "expression": "assert.ok(terminalLine)"
+        },
+        {
+          "id": "5e7f32b2faa4b8b3d8f5-1",
+          "line": 876,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof accepted[\"jobId\"], \"string\")"
+        },
+        {
+          "id": "59d05f105fe71318029c-1",
+          "line": 915,
+          "kind": "assertion",
+          "expression": "assert.equal(queueResult.state, \"succeeded\", stderr || stdout)"
+        },
+        {
+          "id": "f3ad06301b450a277376-1",
+          "line": 928,
+          "kind": "assertion",
+          "expression": "assert.ok(marker)"
+        },
+        {
+          "id": "d8b953a4e068675aaf71-1",
+          "line": 938,
+          "kind": "assertion",
+          "expression": "assert.equal(result.status, 0, stderr || stdout)"
+        },
+        {
+          "id": "0bf0ec49435c311a141e-1",
+          "line": 939,
+          "kind": "assertion",
+          "expression": "assert.equal(envelope.success, true, stdout)"
+        },
+        {
+          "id": "78f4d2bb2d19e54f9a4f-1",
+          "line": 940,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(\n    envelope.helperCallsOnly.map((call: HelperCall) => call.operation),\n    expectedHelperOperations,\n  )"
+        },
+        {
+          "id": "d0979d985f49894741e3-1",
+          "line": 944,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    envelope.helperCallsOnly.every(\n      (call: HelperCall) =>\n        call.status === \"completed\" && call.effects === \"observed\",\n    ),\n    \"Every fixed helper call requires a settled native observation.\",\n  )"
+        },
+        {
+          "id": "d261c6ec82e2c5223f97-1",
+          "line": 955,
+          "kind": "helper",
+          "expression": "validateFixedResult(envelope, fusionVersion)"
+        },
+        {
+          "id": "b02f65d0c0ce59b0b121-1",
+          "line": 981,
+          "kind": "helper",
+          "expression": "runFixedProgram()"
+        },
+        {
+          "id": "2789c84e11e1313291ad-1",
+          "line": 1006,
+          "kind": "helper",
+          "expression": "main()"
+        }
+      ]
+    },
+    {
+      "source": "tests/live-data-import.ts",
+      "sha256": "ed4de6dc203fed99ff8fe5df106d0b5e86a29b9c605a718708f23083c5fb6e54",
+      "assertions": [
+        {
+          "id": "379df681fc72d7410a77-1",
+          "line": 182,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      typeof entry[\"readOnly\"],\n      \"boolean\",\n      `${operation}.readOnly must be boolean`,\n    )"
+        },
+        {
+          "id": "bd97efbaffd9ba93a82f-1",
+          "line": 187,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      entry[\"dataImport\"] === undefined ||\n        typeof entry[\"dataImport\"] === \"boolean\",\n      `${operation}.dataImport must be boolean when present`,\n    )"
+        },
+        {
+          "id": "4c3bd8f3c5bf42ad2b21-1",
+          "line": 206,
+          "kind": "assertion",
+          "expression": "assert.ok(\n  lease && lease.mode === \"owned-unsaved-script\",\n  \"Run this suite through the owned native-import ScenarioSession; raw creation is not admitted\",\n)"
+        },
+        {
+          "id": "232bb6fb30de984dbbc6-1",
+          "line": 211,
+          "kind": "helper",
+          "expression": "selectInstalledRuntime()"
+        },
+        {
+          "id": "f1f882306c21a25a2063-1",
+          "line": 280,
+          "kind": "assertion",
+          "expression": "assert.ok(identity, \"No verified owned document identity\")"
+        },
+        {
+          "id": "c294d2e08e65d11ebbcd-1",
+          "line": 285,
+          "kind": "assertion",
+          "expression": "assert.ok(baseline, \"Protected document baseline has not been captured\")"
+        },
+        {
+          "id": "7a95733e27d579b798f8-1",
+          "line": 297,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    output.workerEvidence,\n    \"Method result has no retained worker evidence\",\n  )"
+        },
+        {
+          "id": "55de4a5e654c2512b937-1",
+          "line": 305,
+          "kind": "assertion",
+          "expression": "assert.ok(importedCatalogInstances, \"Catalog import has not been read back\")"
+        },
+        {
+          "id": "791d0d09fd234b7e4777-1",
+          "line": 310,
+          "kind": "assertion",
+          "expression": "assert.ok(importedCatalogIdMap, \"Catalog import has not returned an id map\")"
+        },
+        {
+          "id": "47475c48581404a4f2d7-1",
+          "line": 349,
+          "kind": "assertion",
+          "expression": "assert.ok(typeof buildHash === \"string\")"
+        },
+        {
+          "id": "02f90c821affb2be17ae-1",
+          "line": 350,
+          "kind": "assertion",
+          "expression": "assert.match(buildHash, /^[a-f0-9]{64}$/)"
+        },
+        {
+          "id": "44e0add73ea65f7e923f-1",
+          "line": 352,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    fs.realpathSync(cliPath),\n    cliPath,\n    \"Installed CLI path must be canonical\",\n  )"
+        },
+        {
+          "id": "17ddf1dbe67d05b3095f-1",
+          "line": 378,
+          "kind": "helper",
+          "expression": "cli(\n      [\n        \"run\",\n        filename,\n        \"--doc\",\n        name,\n        \"--doc-id\",\n        lease!.document.creationId,\n        \"--timeout\",\n        \"60000\",\n      ],\n      \"owned observation\",\n    )"
+        },
+        {
+          "id": "5549d29160f6019424ce-1",
+          "line": 391,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      invocation.process.status,\n      0,\n      invocation.process.stderr || invocation.process.stdout,\n    )"
+        },
+        {
+          "id": "efff3b82cc235b67af6a-1",
+          "line": 396,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      invocation.call.workerReceipt?.state,\n      \"succeeded\",\n      \"Observation requires its exact original successful worker receipt\",\n    )"
+        },
+        {
+          "id": "b0d9cc5b60c38bdb0f73-1",
+          "line": 404,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      lines.length,\n      1,\n      \"Observation must return exactly one JSON record\",\n    )"
+        },
+        {
+          "id": "79debacd643991d23e05-1",
+          "line": 417,
+          "kind": "helper",
+          "expression": "script(`app = adsk.core.Application.get()\ndocuments = [dict(creationId=d.creationId, name=d.name, saved=d.isSaved, modified=d.isModified,\n                  fileId=d.dataFile.id if d.isSaved and d.dataFile else None)\n             for d in app.documents]\nprint(json.dumps(dict(documents=sorted(documents, key=lambda d: d['creationId']),\n                      activeCreationId=app.activeDocument.creationId if app.activeDocument else None)))`)"
+        },
+        {
+          "id": "32e7931b126112e7416a-1",
+          "line": 434,
+          "kind": "helper",
+          "expression": "ownedDocument()"
+        },
+        {
+          "id": "0b73e31c1044e9849249-1",
+          "line": 435,
+          "kind": "helper",
+          "expression": "state()"
+        },
+        {
+          "id": "56ba33b3b5647ed89bc9-1",
+          "line": 439,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    owned.length,\n    1,\n    \"Owned document disappeared or became ambiguous\",\n  )"
+        },
+        {
+          "id": "5cf70377c7b1cbd4bdf4-1",
+          "line": 445,
+          "kind": "assertion",
+          "expression": "assert.ok(found)"
+        },
+        {
+          "id": "a69efc38a5fd9fd3d24e-1",
+          "line": 446,
+          "kind": "assertion",
+          "expression": "assert.equal(found.name, name, \"Owned document name changed\")"
+        },
+        {
+          "id": "889faf349f74db764092-1",
+          "line": 447,
+          "kind": "assertion",
+          "expression": "assert.equal(found.saved, false, \"Owned document was unexpectedly saved\")"
+        },
+        {
+          "id": "1d55dac8d5ec1c490a1a-1",
+          "line": 448,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    found.fileId,\n    null,\n    \"Owned document unexpectedly acquired a cloud file identity\",\n  )"
+        },
+        {
+          "id": "750db3d11f72565b168b-1",
+          "line": 453,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    current.activeCreationId,\n    own.creationId,\n    \"The exact owned document is not active\",\n  )"
+        },
+        {
+          "id": "34b275837a03a0bd1764-1",
+          "line": 462,
+          "kind": "helper",
+          "expression": "ownedState()"
+        },
+        {
+          "id": "abfad1a1feac187d5475-1",
+          "line": 463,
+          "kind": "helper",
+          "expression": "assertProtectedBaselineDocuments(\n    originalDocuments(),\n    current,\n    \"During the owned fixture lifecycle\",\n  )"
+        },
+        {
+          "id": "5920641747d0dd6b1c82-1",
+          "line": 464,
+          "kind": "helper",
+          "expression": "originalDocuments()"
+        },
+        {
+          "id": "cbc3db090063664c9cfc-1",
+          "line": 519,
+          "kind": "assertion",
+          "expression": "assert.ok(acceptedLine && terminalLine)"
+        },
+        {
+          "id": "bc0b9e6a1345e6b13a6d-1",
+          "line": 524,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof acceptedValue[\"jobId\"], \"string\")"
+        },
+        {
+          "id": "5cf98b59d1fc595df79f-1",
+          "line": 525,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof acceptedValue[\"requestId\"], \"string\")"
+        },
+        {
+          "id": "fe35c47323ebe1eab8e3-1",
+          "line": 601,
+          "kind": "assertion",
+          "expression": "assert.ok(receiptClient)"
+        },
+        {
+          "id": "01ed50e8ae357b18e18b-1",
+          "line": 612,
+          "kind": "helper",
+          "expression": "workerText(\"stdout\")"
+        },
+        {
+          "id": "94b2ee22c1daa977e856-1",
+          "line": 613,
+          "kind": "helper",
+          "expression": "workerText(\"stderr\")"
+        },
+        {
+          "id": "125df00a3784626ebd6e-1",
+          "line": 617,
+          "kind": "assertion",
+          "expression": "assert.ok(workerOutput)"
+        },
+        {
+          "id": "785456949d5d328d7e91-1",
+          "line": 658,
+          "kind": "helper",
+          "expression": "guard()"
+        },
+        {
+          "id": "32e7931b126112e7416a-2",
+          "line": 659,
+          "kind": "helper",
+          "expression": "ownedDocument()"
+        },
+        {
+          "id": "739793cfb986ba2496d8-1",
+          "line": 673,
+          "kind": "helper",
+          "expression": "cli(args, operation, {\n    queue: options.native !== false,\n  })"
+        },
+        {
+          "id": "699686978388811b20aa-1",
+          "line": 695,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      result.status,\n      0,\n      `${operation}: ${result.stderr || result.stdout}`,\n    )"
+        },
+        {
+          "id": "c7fddfda27707cb2be8c-1",
+          "line": 700,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      output.success,\n      true,\n      `${operation} wrapper did not report success`,\n    )"
+        },
+        {
+          "id": "4774a2c6cf2455c2d88f-1",
+          "line": 705,
+          "kind": "assertion",
+          "expression": "assert.equal(status, \"pass\", `${operation} returned ${status}, not pass`)"
+        },
+        {
+          "id": "9a35e642805d48aba88b-1",
+          "line": 706,
+          "kind": "helper",
+          "expression": "assertWorkerState(invocation.call, \"succeeded\", \"succeeded\")"
+        },
+        {
+          "id": "0bc4655d418b0f106834-1",
+          "line": 708,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      result.status,\n      1,\n      `${operation} rejection must return a determinate CLI failure`,\n    )"
+        },
+        {
+          "id": "e052051e746c6a1f53e6-1",
+          "line": 713,
+          "kind": "assertion",
+          "expression": "assert.equal(result.signal, null, `${operation} rejection ended by signal`)"
+        },
+        {
+          "id": "ac7f0b135884b63a6e06-1",
+          "line": 714,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      output.success,\n      false,\n      `${operation} rejection was represented as success`,\n    )"
+        },
+        {
+          "id": "5ab9615acde6a6d08141-1",
+          "line": 719,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      status,\n      \"blocked\",\n      `${operation} expected a blocked result, got ${status}`,\n    )"
+        },
+        {
+          "id": "74df301faa7bf575e80e-1",
+          "line": 724,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      output.result[\"error\"],\n      `${operation} blocked result has no reason`,\n    )"
+        },
+        {
+          "id": "e54981ce465dce789ed6-1",
+          "line": 728,
+          "kind": "helper",
+          "expression": "assertExpectedFailedWorker(invocation.call, operation)"
+        },
+        {
+          "id": "5cf34aded809eecc5d33-1",
+          "line": 730,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      result.status,\n      1,\n      `${operation} unknown result must not exit as success`,\n    )"
+        },
+        {
+          "id": "b87c46f5ffd7a2ba2c3e-1",
+          "line": 735,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      result.signal,\n      null,\n      `${operation} unknown result ended by signal`,\n    )"
+        },
+        {
+          "id": "d50db4ff0533a9d21dee-1",
+          "line": 740,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      output.success,\n      false,\n      `${operation} unknown outcome was represented as success`,\n    )"
+        },
+        {
+          "id": "0610af6254bb3cf20c1c-1",
+          "line": 745,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      status,\n      \"unknown\",\n      `${operation} expected an explicit unknown result, got ${status}`,\n    )"
+        },
+        {
+          "id": "17262f5d17df7d803e32-1",
+          "line": 750,
+          "kind": "helper",
+          "expression": "assertWorkerTerminal(invocation.call)"
+        },
+        {
+          "id": "0190223c46f030e2db5f-1",
+          "line": 755,
+          "kind": "helper",
+          "expression": "assertLocalImportOutcome(operation, result, output, status, options.expect)"
+        },
+        {
+          "id": "699686978388811b20aa-2",
+          "line": 757,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      result.status,\n      0,\n      `${operation}: ${result.stderr || result.stdout}`,\n    )"
+        },
+        {
+          "id": "c7fddfda27707cb2be8c-2",
+          "line": 762,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      output.success,\n      true,\n      `${operation} wrapper did not report success`,\n    )"
+        },
+        {
+          "id": "9a35e642805d48aba88b-2",
+          "line": 768,
+          "kind": "helper",
+          "expression": "assertWorkerState(invocation.call, \"succeeded\", \"succeeded\")"
+        },
+        {
+          "id": "3f280544d81075f578c7-1",
+          "line": 771,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      output.document,\n      name,\n      `${operation} ran against the wrong document`,\n    )"
+        },
+        {
+          "id": "b8d843a4fae048c92294-1",
+          "line": 777,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      output.documentIdentity?.creationId,\n      own.creationId,\n      `${operation} returned evidence for the wrong document identity`,\n    )"
+        },
+        {
+          "id": "510a01331840d07f8b13-1",
+          "line": 784,
+          "kind": "assertion",
+          "expression": "assert.ok(invocation.call.workerOutput)"
+        },
+        {
+          "id": "81f2fe3038a23482849e-1",
+          "line": 795,
+          "kind": "assertion",
+          "expression": "assert.ok(receipt, `${call.label} has no retained original worker receipt`)"
+        },
+        {
+          "id": "ce561c145e92e749169e-1",
+          "line": 796,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    [\"succeeded\", \"failed\"].includes(receipt.state),\n    `${call.label} worker outcome is not terminal: ${receipt.state}`,\n  )"
+        },
+        {
+          "id": "ad570c7a149ef51b713b-1",
+          "line": 800,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    receipt.executionOutcome,\n    receipt.state,\n    `${call.label} worker execution outcome differs from its terminal state`,\n  )"
+        },
+        {
+          "id": "d08686039cfe5d84a913-1",
+          "line": 805,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    receipt.operationResult[\"executionOutcome\"],\n    receipt.state,\n    `${call.label} public operationResult does not identify the terminal worker outcome`,\n  )"
+        },
+        {
+          "id": "9c75be071f1feea4b53c-1",
+          "line": 810,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    receipt.operationResult[\"code\"],\n    receipt.code,\n    `${call.label} public operationResult code differs from the terminal worker DTO`,\n  )"
+        },
+        {
+          "id": "7468212befa5a5772397-1",
+          "line": 816,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    workerOutput?.stdout || workerOutput?.descriptors?.[\"stdout\"],\n    `${call.label} original broker-owned worker output was not retained`,\n  )"
+        },
+        {
+          "id": "fe07fb0084bf20cdce12-1",
+          "line": 828,
+          "kind": "helper",
+          "expression": "assertWorkerTerminal(call)"
+        },
+        {
+          "id": "17da86a91746aed4a0fa-1",
+          "line": 829,
+          "kind": "assertion",
+          "expression": "assert.equal(receipt.state, state, `${call.label} worker state`)"
+        },
+        {
+          "id": "17929006df59b98b1188-1",
+          "line": 830,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    receipt.executionOutcome,\n    executionOutcome,\n    `${call.label} worker execution outcome`,\n  )"
+        },
+        {
+          "id": "5b21f7bfbef73764eee6-1",
+          "line": 842,
+          "kind": "helper",
+          "expression": "assertWorkerState(call, \"failed\", \"failed\")"
+        },
+        {
+          "id": "571b6b8db5c5cbabd5bd-1",
+          "line": 843,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    receipt.code,\n    \"LOCAL_EXECUTION_FAILED\",\n    `${operation} negative must be the terminal operation failure, not an unrelated pipeline error`,\n  )"
+        },
+        {
+          "id": "1cc21a14cc77b0c0b595-1",
+          "line": 848,
+          "kind": "assertion",
+          "expression": "assert.ok(call.workerOutput)"
+        },
+        {
+          "id": "dfd786ccf08b75df3ae7-1",
+          "line": 854,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(\n    workerOutput,\n    call.methodOutput,\n    `${operation} wrapper result differs from the original broker-owned worker output`,\n  )"
+        },
+        {
+          "id": "bc886ffd1531e0a983c5-1",
+          "line": 875,
+          "kind": "assertion",
+          "expression": "assert.ok(negative, `Unregistered native negative case: ${id}`)"
+        },
+        {
+          "id": "63b6d7296d6fee1edf5c-1",
+          "line": 876,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    negative.status,\n    \"NOTRUN\",\n    `${id} was already recorded; do not replay it`,\n  )"
+        },
+        {
+          "id": "19f2db24a4a2441d2f4e-1",
+          "line": 881,
+          "kind": "assertion",
+          "expression": "assert.equal(failedResult.workerEvidence?.receipt?.state, \"failed\")"
+        },
+        {
+          "id": "8772af3ff1209904275d-1",
+          "line": 882,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    failedResult.workerEvidence?.receipt?.executionOutcome,\n    \"failed\",\n  )"
+        },
+        {
+          "id": "0891ad1bcb24607bdfc3-1",
+          "line": 886,
+          "kind": "assertion",
+          "expression": "assert.ok(failedResult.workerEvidence)"
+        },
+        {
+          "id": "449e8325dfe11cc5c905-1",
+          "line": 1006,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      brokerStatus[\"buildHash\"],\n      selectedRuntime.buildHash,\n      \"The selected installed runtime must match the active shared broker build\",\n    )"
+        },
+        {
+          "id": "c83aa3b5a2f1fba70a1b-1",
+          "line": 1025,
+          "kind": "assertion",
+          "expression": "assert.equal(coordinator[\"runId\"], lease!.owner.runId)"
+        },
+        {
+          "id": "eb1e2dc8d62b973e213c-1",
+          "line": 1026,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      asArray(coordinator[\"scenarioIds\"], \"Scenario inventory\").includes(\n        lease!.owner.scenarioId,\n      ),\n    )"
+        },
+        {
+          "id": "e3a51ffc2819c79428d7-1",
+          "line": 1037,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      !baseline.documents.some((doc) => doc.name === name),\n      \"Test document name already exists\",\n    )"
+        },
+        {
+          "id": "350c275ba56a6d75a941-1",
+          "line": 1050,
+          "kind": "assertion",
+          "expression": "assert.ok(creation, \"The original parent creation request is required\")"
+        },
+        {
+          "id": "2a3d519dda0a96f5367c-1",
+          "line": 1052,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      created[\"exitCode\"],\n      0,\n      String(created[\"stderr\"] || created[\"stdout\"] || created[\"error\"] || \"\"),\n    )"
+        },
+        {
+          "id": "c84f72f13e8944cd42a1-1",
+          "line": 1061,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      createdWorker.state,\n      \"succeeded\",\n      \"Owned document creation lacks a terminal worker receipt\",\n    )"
+        },
+        {
+          "id": "0a7f027e6e1d1ab0ea55-1",
+          "line": 1066,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      asRecord(createdWorker.operationResult, \"Creation operation result\")[\n        \"executionOutcome\"\n      ],\n      \"succeeded\",\n    )"
+        },
+        {
+          "id": "55bf5b98a29a4ecd84f1-1",
+          "line": 1072,
+          "kind": "assertion",
+          "expression": "assert.equal(createdWorker.requestId, creation.requestId)"
+        },
+        {
+          "id": "6a609c48d54f1acd0129-1",
+          "line": 1073,
+          "kind": "assertion",
+          "expression": "assert.equal(createdWorker.clientId, clientId)"
+        },
+        {
+          "id": "d3ee10035f6e06c83bbe-1",
+          "line": 1074,
+          "kind": "assertion",
+          "expression": "assert.equal(created[\"sdkSettled\"], true)"
+        },
+        {
+          "id": "0b73e31c1044e9849249-2",
+          "line": 1076,
+          "kind": "helper",
+          "expression": "state()"
+        },
+        {
+          "id": "5920641747d0dd6b1c82-2",
+          "line": 1081,
+          "kind": "helper",
+          "expression": "originalDocuments()"
+        },
+        {
+          "id": "4e813dd146b6ac2de0d5-1",
+          "line": 1085,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      added.length,\n      1,\n      \"Creating the owned fixture must add exactly one document\",\n    )"
+        },
+        {
+          "id": "e4cf441f7a41510a3fc4-1",
+          "line": 1091,
+          "kind": "assertion",
+          "expression": "assert.ok(createdDocument)"
+        },
+        {
+          "id": "e364aa44c2142d6071a4-1",
+          "line": 1093,
+          "kind": "assertion",
+          "expression": "assert.equal(identity.creationId, lease!.document.creationId)"
+        },
+        {
+          "id": "6a7017062d4f114b1373-1",
+          "line": 1094,
+          "kind": "assertion",
+          "expression": "assert.equal(identity.name, name)"
+        },
+        {
+          "id": "c99006fb1c4ad3bbc2cc-1",
+          "line": 1095,
+          "kind": "assertion",
+          "expression": "assert.equal(identity.saved, false, \"Test document must remain unsaved\")"
+        },
+        {
+          "id": "90c79d509fa826d8cdd2-1",
+          "line": 1096,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      identity.fileId,\n      null,\n      \"Test document must not be cloud-saved\",\n    )"
+        },
+        {
+          "id": "785456949d5d328d7e91-2",
+          "line": 1103,
+          "kind": "helper",
+          "expression": "guard()"
+        },
+        {
+          "id": "80e8ff3cb867cc53c5ab-1",
+          "line": 1109,
+          "kind": "helper",
+          "expression": "cad(\"catalog.check\", catalogFileData, {\n          expect: \"local-pass\",\n          native: false,\n        })"
+        },
+        {
+          "id": "8d18ce94170c61032af1-1",
+          "line": 1113,
+          "kind": "helper",
+          "expression": "cad(\n          \"placement.check\",\n          {\n            version: 1,\n            owner,\n            revision: \"placement-offline\",\n            records: [\n              {\n                id: \"offline-pose\",\n                occurrence: \"not-resolved-offline\",\n                placement: pose(\"root\", 1),\n                status: \"CONFIRMED\",\n                source,\n              },\n            ],\n          },\n          { expect: \"local-unknown\", native: false },\n        )"
+        },
+        {
+          "id": "23528d0c549427b6ecd9-1",
+          "line": 1150,
+          "kind": "helper",
+          "expression": "cad(\n        \"param.import\",\n        {\n          version: 1,\n          owner,\n          revision: \"parameters-r1\",\n          records: [\n            {\n              name: parameterA,\n              expression: \"5\",\n              unit: \"mm\",\n              comment: \"Synthetic live import\",\n              status: \"CONFIRMED\",\n              source,\n            },\n            {\n              name: parameterB,\n              expression: parameterA + \" * 2\",\n              unit: \"mm\",\n              status: \"CONFIRMED\",\n              source,\n            },\n          ],\n        },\n        { expect: \"pass\" },\n      )"
+        },
+        {
+          "id": "1cb39609803fb714ee4b-1",
+          "line": 1177,
+          "kind": "assertion",
+          "expression": "assert.equal(importedParameters.length, 2)"
+        },
+        {
+          "id": "f89117ce1412040d06c4-1",
+          "line": 1178,
+          "kind": "helper",
+          "expression": "cad(\"param.inspect\", {\n        names: [parameterA, parameterB],\n      })"
+        },
+        {
+          "id": "87d6a422e63a65d7fbf7-1",
+          "line": 1182,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(\n        rows.map((row) => row.name),\n        [parameterA, parameterB],\n      )"
+        },
+        {
+          "id": "5a86b37cea6b037ab68a-1",
+          "line": 1188,
+          "kind": "assertion",
+          "expression": "assert.equal(first.expression, \"5 mm\")"
+        },
+        {
+          "id": "ad495995c9724ca3b410-1",
+          "line": 1189,
+          "kind": "assertion",
+          "expression": "assert.equal(first.unit, \"mm\")"
+        },
+        {
+          "id": "54ac5cb5998d21bee199-1",
+          "line": 1190,
+          "kind": "assertion",
+          "expression": "assert.ok(\n        Math.abs(first.value - 0.5) < 1e-9,\n        `Native parameter value was ${first.value} cm`,\n      )"
+        },
+        {
+          "id": "47ece7b5c33e11833845-1",
+          "line": 1194,
+          "kind": "assertion",
+          "expression": "assert.equal(second.expression, parameterA + \" * 2\")"
+        },
+        {
+          "id": "a3595149f6bf5328f473-1",
+          "line": 1195,
+          "kind": "assertion",
+          "expression": "assert.ok(\n        Math.abs(second.value - 1) < 1e-9,\n        `Native dependent value was ${second.value} cm`,\n      )"
+        },
+        {
+          "id": "bd55f02c0234c0892be3-1",
+          "line": 1200,
+          "kind": "helper",
+          "expression": "cad(\"param.inspect\", {})"
+        },
+        {
+          "id": "563fc1f38871c81744c3-1",
+          "line": 1201,
+          "kind": "helper",
+          "expression": "cad(\n        \"param.import\",\n        {\n          version: 1,\n          owner,\n          revision: \"parameters-invalid\",\n          records: [\n            {\n              name: parameterCandidate,\n              expression: \"7\",\n              unit: \"mm\",\n              status: \"CONFIRMED\",\n              source,\n            },\n            {\n              name: parameterBad,\n              expression: \"missing_\" + suffix + \" * 2 mm\",\n              unit: \"mm\",\n              status: \"CONFIRMED\",\n              source,\n            },\n          ],\n        },\n        { expect: \"blocked\" },\n      )"
+        },
+        {
+          "id": "bd55f02c0234c0892be3-2",
+          "line": 1226,
+          "kind": "helper",
+          "expression": "cad(\"param.inspect\", {})"
+        },
+        {
+          "id": "c3236dcdb270ac1e522e-1",
+          "line": 1227,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(\n        after.result.parameters,\n        before.result.parameters,\n        \"Native param preflight must reject the full dependency set before adding the valid candidate\",\n      )"
+        },
+        {
+          "id": "aeda134d6b4092a31ec5-1",
+          "line": 1232,
+          "kind": "assertion",
+          "expression": "assert.match(\n        rejected.result.error,\n        /expression|parameter|depend|invalid|unit/i,\n      )"
+        },
+        {
+          "id": "f9ece6e6d8130f57f247-1",
+          "line": 1236,
+          "kind": "helper",
+          "expression": "recordNegativeAfterState(\"param-invalid-dependency\", rejected, {\n        before: before.result.parameters,\n        after: after.result.parameters,\n        unchanged: true,\n      })"
+        },
+        {
+          "id": "2cf3db17543dd3078e69-1",
+          "line": 1241,
+          "kind": "helper",
+          "expression": "workerEvidenceFor(rejected)"
+        },
+        {
+          "id": "2daaa819da9eeb7a3e91-1",
+          "line": 1256,
+          "kind": "helper",
+          "expression": "cad(\"catalog.import\", catalogFileData, {\n        expect: \"pass\",\n      })"
+        },
+        {
+          "id": "11bccf71468ec2eb36c8-1",
+          "line": 1259,
+          "kind": "assertion",
+          "expression": "assert.equal(imported.result.instances.length, 3)"
+        },
+        {
+          "id": "41339b327457db8d2224-1",
+          "line": 1270,
+          "kind": "assertion",
+          "expression": "assert.ok(byId[id], `Missing native catalog occurrence ${id}`)"
+        },
+        {
+          "id": "fa2006468336096c698c-1",
+          "line": 1271,
+          "kind": "helper",
+          "expression": "cad(\"entity.inspect\", {\n          ref: byId[id].occurrence,\n          frame: \"root\",\n        })"
+        },
+        {
+          "id": "4a148f23866109f2c13b-1",
+          "line": 1275,
+          "kind": "assertion",
+          "expression": "assert.equal(observed.result.kind, \"occurrence\")"
+        },
+        {
+          "id": "ea20f08a908aa9c3c9f0-1",
+          "line": 1276,
+          "kind": "assertion",
+          "expression": "assert.ok(observed.result.occurrencePath)"
+        },
+        {
+          "id": "aa90b559947bfa3b3fcc-1",
+          "line": 1284,
+          "kind": "assertion",
+          "expression": "assert.ok(entry, `Catalog has no native id map entry for ${id}`)"
+        },
+        {
+          "id": "d341146e378e7a77765f-1",
+          "line": 1286,
+          "kind": "assertion",
+          "expression": "assert.ok(\n          definition,\n          `Catalog did not return native definition ref for ${id}`,\n        )"
+        },
+        {
+          "id": "3f91d377666d715e4c98-1",
+          "line": 1290,
+          "kind": "helper",
+          "expression": "cad(\"component.inspect\", {\n          component: definition,\n        })"
+        },
+        {
+          "id": "548f6ade4c20abd5fe50-1",
+          "line": 1293,
+          "kind": "assertion",
+          "expression": "assert.equal(actual.result.component.name, expectedName)"
+        },
+        {
+          "id": "6e796f4d179033ed8768-1",
+          "line": 1294,
+          "kind": "assertion",
+          "expression": "assert.equal(\n          actual.result.bodies.length,\n          0,\n          \"Catalog item without a model must not invent geometry\",\n        )"
+        },
+        {
+          "id": "c55617963749810852bd-1",
+          "line": 1300,
+          "kind": "helper",
+          "expression": "cad(\n        \"catalog.check\",\n        { ...catalogFileData, inspectModel: true },\n        { expect: \"pass\" },\n      )"
+        },
+        {
+          "id": "104e5a76953744b8c826-1",
+          "line": 1305,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(checked.result.differences, [])"
+        },
+        {
+          "id": "66a1832715f5d225ab9d-1",
+          "line": 1306,
+          "kind": "assertion",
+          "expression": "assert.equal(checked.result.instances.length, 3)"
+        },
+        {
+          "id": "23d4121bd58d73c4c4bf-1",
+          "line": 1308,
+          "kind": "helper",
+          "expression": "cad(\"catalog.import\", catalogFileData, {\n        expect: \"blocked\",\n      })"
+        },
+        {
+          "id": "a872800375d6cb082e0c-1",
+          "line": 1311,
+          "kind": "assertion",
+          "expression": "assert.match(rejected.result.error, /already exists|onExisting/i)"
+        },
+        {
+          "id": "c55617963749810852bd-2",
+          "line": 1312,
+          "kind": "helper",
+          "expression": "cad(\n        \"catalog.check\",\n        { ...catalogFileData, inspectModel: true },\n        { expect: \"pass\" },\n      )"
+        },
+        {
+          "id": "2f1e63f40245dce16565-1",
+          "line": 1317,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(afterReject.result.differences, [])"
+        },
+        {
+          "id": "aaa4395c91180bceddef-1",
+          "line": 1318,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(\n        afterReject.result.instances,\n        checked.result.instances,\n        \"Terminal duplicate-import failure must preserve the exact native catalog readback\",\n      )"
+        },
+        {
+          "id": "9857a2b571ae8b6d2347-1",
+          "line": 1323,
+          "kind": "helper",
+          "expression": "recordNegativeAfterState(\"catalog-duplicate-import\", rejected, {\n        before: {\n          status: checked.status,\n          differences: checked.result.differences,\n          instances: checked.result.instances,\n        },\n        after: {\n          status: afterReject.status,\n          differences: afterReject.result.differences,\n          instances: afterReject.result.instances,\n        },\n        unchanged: true,\n      })"
+        },
+        {
+          "id": "2cf3db17543dd3078e69-2",
+          "line": 1336,
+          "kind": "helper",
+          "expression": "workerEvidenceFor(rejected)"
+        },
+        {
+          "id": "d0d80aa34f499aa6dc25-1",
+          "line": 1355,
+          "kind": "helper",
+          "expression": "importedInstances()"
+        },
+        {
+          "id": "785156cb840d66d51a45-1",
+          "line": 1358,
+          "kind": "assertion",
+          "expression": "assert.ok(\n        occurrence,\n        \"Catalog import did not return the assembly occurrence ref\",\n      )"
+        },
+        {
+          "id": "ab5cec6a8c4337a0e004-1",
+          "line": 1376,
+          "kind": "helper",
+          "expression": "cad(\"placement.import\", placementData, {\n        expect: \"pass\",\n      })"
+        },
+        {
+          "id": "cf459eb1b30fe205616f-1",
+          "line": 1379,
+          "kind": "assertion",
+          "expression": "assert.equal(imported.result.poses.length, 1)"
+        },
+        {
+          "id": "84f2d2d9774a4eb3c1c3-1",
+          "line": 1380,
+          "kind": "helper",
+          "expression": "cad(\n        \"placement.check\",\n        { ...placementData, inspectModel: true },\n        { expect: \"pass\" },\n      )"
+        },
+        {
+          "id": "bb15791f335f8c18549f-1",
+          "line": 1390,
+          "kind": "assertion",
+          "expression": "assert.equal(checkedPose.status, \"pass\")"
+        },
+        {
+          "id": "a02fadcfd59f51d992e7-1",
+          "line": 1401,
+          "kind": "assertion",
+          "expression": "assert.ok(\n        Math.abs(initialX - 2.5) < 1e-9,\n        `Native root X translation was ${initialX} cm, expected 2.5 cm`,\n      )"
+        },
+        {
+          "id": "852296af1c6e6e855e87-1",
+          "line": 1406,
+          "kind": "helper",
+          "expression": "cad(\n        \"placement.import\",\n        {\n          ...placementData,\n          revision: \"placement-duplicate\",\n          records: [\n            { ...placementData.records[0], id: \"duplicate-a\" },\n            { ...placementData.records[0], id: \"duplicate-b\" },\n          ],\n        },\n        { expect: \"blocked\" },\n      )"
+        },
+        {
+          "id": "2961d9f4fc920a39dd6f-1",
+          "line": 1418,
+          "kind": "assertion",
+          "expression": "assert.match(\n        rejected.result.error,\n        /Duplicate resolved occurrence path/i,\n      )"
+        },
+        {
+          "id": "84f2d2d9774a4eb3c1c3-2",
+          "line": 1422,
+          "kind": "helper",
+          "expression": "cad(\n        \"placement.check\",\n        { ...placementData, inspectModel: true },\n        { expect: \"pass\" },\n      )"
+        },
+        {
+          "id": "ced7dab6da913fb340f1-1",
+          "line": 1432,
+          "kind": "assertion",
+          "expression": "assert.equal(restoredPose.status, \"pass\")"
+        },
+        {
+          "id": "d6eef778d7e5ff0bd32f-1",
+          "line": 1433,
+          "kind": "assertion",
+          "expression": "assert.ok(\n        Math.abs(\n          requiredItem(\n            restoredPose.actual,\n            3,\n            \"Placement after negative request\",\n          ) - 2.5,\n        ) < 1e-9,\n        \"Rejected duplicate placement changed the native pose\",\n      )"
+        },
+        {
+          "id": "1a9e6052e9c836e9d30a-1",
+          "line": 1443,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(\n        afterReject.result.poses,\n        checked.result.poses,\n        \"Terminal duplicate-placement failure must preserve the complete measured world pose\",\n      )"
+        },
+        {
+          "id": "ded8ad98322b5c4533ce-1",
+          "line": 1448,
+          "kind": "helper",
+          "expression": "recordNegativeAfterState(\"placement-duplicate-path\", rejected, {\n        before: { status: checked.status, poses: checked.result.poses },\n        after: { status: afterReject.status, poses: afterReject.result.poses },\n        unchanged: true,\n      })"
+        },
+        {
+          "id": "2cf3db17543dd3078e69-3",
+          "line": 1453,
+          "kind": "helper",
+          "expression": "workerEvidenceFor(rejected)"
+        },
+        {
+          "id": "16c3f854a12b4a21cbf7-1",
+          "line": 1470,
+          "kind": "helper",
+          "expression": "cad(\"component.create\", {\n          name: \"FMCAD_DI_\" + suffix + \"_StepSource\",\n        })"
+        },
+        {
+          "id": "64f86ccf4b2950de5261-1",
+          "line": 1474,
+          "kind": "helper",
+          "expression": "cad(\n          \"shape.box\",\n          {\n            name: \"SyntheticReplacementSolid\",\n            width: \"11 mm\",\n            depth: \"7 mm\",\n            height: \"5 mm\",\n          },\n          { component: sourceName },\n        )"
+        },
+        {
+          "id": "369adbdc8595d53442e5-1",
+          "line": 1484,
+          "kind": "assertion",
+          "expression": "assert.equal(box.result.bodies.length, 1)"
+        },
+        {
+          "id": "00f53ab545212d3955bc-1",
+          "line": 1485,
+          "kind": "helper",
+          "expression": "cad(\"component.inspect\", {\n          component: sourceComponent.result.component,\n        })"
+        },
+        {
+          "id": "6ebac272bc4c51f716b3-1",
+          "line": 1488,
+          "kind": "assertion",
+          "expression": "assert.equal(\n          sourceState.result.bodies.length,\n          1,\n          \"Synthetic STEP source must contain one native body\",\n        )"
+        },
+        {
+          "id": "1ddba745ec31585cabda-1",
+          "line": 1498,
+          "kind": "helper",
+          "expression": "cad(\"measure.volume\", {\n          ref: sourceBody,\n          units: \"mm3\",\n        })"
+        },
+        {
+          "id": "07a0333288346d77f797-1",
+          "line": 1502,
+          "kind": "assertion",
+          "expression": "assert.ok(\n          Math.abs(sourceVolume.result.value - 385) < 0.01,\n          `Synthetic source volume was ${sourceVolume.result.value} mm^3`,\n        )"
+        },
+        {
+          "id": "059ab009bb6408d82621-1",
+          "line": 1506,
+          "kind": "helper",
+          "expression": "cad(\"export.step\", {\n          path: stepPath,\n          ref: sourceComponent.result.component,\n        })"
+        },
+        {
+          "id": "ca2b42c325a226df1cd6-1",
+          "line": 1510,
+          "kind": "assertion",
+          "expression": "assert.equal(exported.result.exists, true)"
+        },
+        {
+          "id": "29c8aa00b8d0175cf7f7-1",
+          "line": 1511,
+          "kind": "assertion",
+          "expression": "assert.ok(exported.result.bytes > 0)"
+        },
+        {
+          "id": "bc08a222727f0e7a9436-1",
+          "line": 1512,
+          "kind": "assertion",
+          "expression": "assert.equal(\n          fs.statSync(stepPath).size,\n          exported.result.bytes,\n          \"Exported STEP is not present in the owned local fixture root\",\n        )"
+        },
+        {
+          "id": "d0d80aa34f499aa6dc25-2",
+          "line": 1518,
+          "kind": "helper",
+          "expression": "importedInstances()"
+        },
+        {
+          "id": "ed9d4ae9e022c2cd36b9-1",
+          "line": 1521,
+          "kind": "assertion",
+          "expression": "assert.ok(\n          old?.occurrence?.path,\n          \"Catalog check did not return the old native occurrence path\",\n        )"
+        },
+        {
+          "id": "287c98a5ef36fff9221c-1",
+          "line": 1527,
+          "kind": "assertion",
+          "expression": "assert.ok(oldPath)"
+        },
+        {
+          "id": "fed3d3f3f001d018d650-1",
+          "line": 1528,
+          "kind": "helper",
+          "expression": "cad(\"entity.inspect\", {\n          ref: oldOccurrence,\n          frame: \"root\",\n        })"
+        },
+        {
+          "id": "1525f6ce9770c523f431-1",
+          "line": 1532,
+          "kind": "helper",
+          "expression": "importedIdMap()"
+        },
+        {
+          "id": "ee0556ac902924e19410-1",
+          "line": 1533,
+          "kind": "assertion",
+          "expression": "assert.ok(sensorEntry)"
+        },
+        {
+          "id": "39e5b383506f20b5beb4-1",
+          "line": 1534,
+          "kind": "helper",
+          "expression": "cad(\"component.inspect\", {\n          component: sensorEntry.definition,\n        })"
+        },
+        {
+          "id": "e0863d67079fd73cf51e-1",
+          "line": 1537,
+          "kind": "assertion",
+          "expression": "assert.equal(oldOccurrenceBefore.result.occurrencePath, oldPath)"
+        },
+        {
+          "id": "51f9d7654aa1985d3dd4-1",
+          "line": 1538,
+          "kind": "assertion",
+          "expression": "assert.equal(oldComponentBefore.result.bodies.length, 0)"
+        },
+        {
+          "id": "1f15863a65a11daa753b-1",
+          "line": 1539,
+          "kind": "helper",
+          "expression": "cad(\n          \"cots.replace\",\n          {\n            version: 1,\n            owner,\n            revision: \"cots-r2\",\n            expectedRevision: \"wrong-revision\",\n            target: sensorId,\n            model: {\n              path: stepPath,\n              representation: \"envelope\",\n              source,\n              status: \"ESTIMATED\",\n            },\n            occurrencePolicy: \"all\",\n            datumMap: [\n              { name: \"mount\", old: pose(\"component\"), new: pose(\"component\") },\n            ],\n            impacts: Object.fromEntries(\n              [\"matingParts\", \"routings\", \"refs\", \"mass\"].map((key) => [\n                key,\n                {\n                  status: \"known\",\n                  items: [],\n                  source: \"Isolated synthetic fixture inventory\",\n                },\n              ]),\n            ),\n            mass: { value: 3, unit: \"g\", status: \"ESTIMATED\", source },\n            acceptInvalidation: true,\n          },\n          { expect: \"blocked\" },\n        )"
+        },
+        {
+          "id": "597e0baf53f6fff6cc15-1",
+          "line": 1572,
+          "kind": "assertion",
+          "expression": "assert.ok(rejected.result.error)"
+        },
+        {
+          "id": "fed3d3f3f001d018d650-2",
+          "line": 1573,
+          "kind": "helper",
+          "expression": "cad(\"entity.inspect\", {\n          ref: oldOccurrence,\n          frame: \"root\",\n        })"
+        },
+        {
+          "id": "0d746998db122a2a9ac9-1",
+          "line": 1577,
+          "kind": "helper",
+          "expression": "cad(\"component.inspect\", {\n          component: oldComponentBefore.result.component,\n        })"
+        },
+        {
+          "id": "871e77d8c38aee1dde3e-1",
+          "line": 1580,
+          "kind": "assertion",
+          "expression": "assert.equal(\n          unchangedOccurrence.result.occurrencePath,\n          oldOccurrenceBefore.result.occurrencePath,\n          \"Wrong expectedRevision removed or replaced the existing occurrence\",\n        )"
+        },
+        {
+          "id": "b33cc44db89007b35a6f-1",
+          "line": 1585,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(\n          unchangedComponent.result.bodies,\n          oldComponentBefore.result.bodies,\n          \"Wrong expectedRevision changed the existing native definition\",\n        )"
+        },
+        {
+          "id": "7012fe5058ba2b658f24-1",
+          "line": 1590,
+          "kind": "helper",
+          "expression": "recordNegativeAfterState(\"cots-wrong-revision\", rejected, {\n          before: {\n            occurrence: oldOccurrenceBefore.result,\n            component: oldComponentBefore.result,\n          },\n          after: {\n            occurrence: unchangedOccurrence.result,\n            component: unchangedComponent.result,\n          },\n          unchanged: true,\n        })"
+        },
+        {
+          "id": "c35fad3c95c71de5d978-1",
+          "line": 1602,
+          "kind": "helper",
+          "expression": "cad(\n          \"cots.replace\",\n          {\n            version: 1,\n            owner,\n            revision: \"cots-r2\",\n            expectedRevision: \"catalog-r1\",\n            target: sensorId,\n            model: {\n              path: stepPath,\n              representation: \"envelope\",\n              source,\n              status: \"ESTIMATED\",\n            },\n            occurrencePolicy: \"all\",\n            datumMap: [\n              { name: \"mount\", old: pose(\"component\"), new: pose(\"component\") },\n            ],\n            impacts: Object.fromEntries(\n              [\"matingParts\", \"routings\", \"refs\", \"mass\"].map((key) => [\n                key,\n                {\n                  status: \"known\",\n                  items: [],\n                  source: \"Isolated synthetic fixture inventory\",\n                },\n              ]),\n            ),\n            mass: { value: 3, unit: \"g\", status: \"ESTIMATED\", source },\n            acceptInvalidation: true,\n          },\n          { expect: \"unknown\" },\n        )"
+        },
+        {
+          "id": "8a97e63a0800c5c6f0ae-1",
+          "line": 1635,
+          "kind": "assertion",
+          "expression": "assert.equal(replaced.result.replacements.length, 1)"
+        },
+        {
+          "id": "320f6c66f256a65de1eb-1",
+          "line": 1636,
+          "kind": "assertion",
+          "expression": "assert.equal(replaced.result.datumChecks.length, 1)"
+        },
+        {
+          "id": "3c7bb250f466a5d0bce7-1",
+          "line": 1642,
+          "kind": "assertion",
+          "expression": "assert.equal(datumCheck.status, \"pass\")"
+        },
+        {
+          "id": "593db0a2acf8e78c1747-1",
+          "line": 1643,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(\n          replaced.result.unresolved,\n          [{ id: sensorId, field: \"replacement.material\", status: \"unknown\" }],\n          \"The method must preserve the explicit unknown material limitation\",\n        )"
+        },
+        {
+          "id": "cbdf86f3fc7c05ec8101-1",
+          "line": 1653,
+          "kind": "assertion",
+          "expression": "assert.equal(actualReplacement.before.path, oldPath)"
+        },
+        {
+          "id": "b0c8fd9d5b9c7b762c49-1",
+          "line": 1654,
+          "kind": "assertion",
+          "expression": "assert.ok(actualReplacement.after.path)"
+        },
+        {
+          "id": "b872554ea9aa283a2506-1",
+          "line": 1655,
+          "kind": "assertion",
+          "expression": "assert.notEqual(\n          actualReplacement.before.path,\n          actualReplacement.after.path,\n        )"
+        },
+        {
+          "id": "a3e5156198a0c4ba22ce-1",
+          "line": 1659,
+          "kind": "helper",
+          "expression": "cad(\"entity.list\", {\n          kind: \"occurrence\",\n          component: \"root\",\n        })"
+        },
+        {
+          "id": "e5ae03a551f07e3fd692-1",
+          "line": 1664,
+          "kind": "assertion",
+          "expression": "assert.ok(\n          !paths.includes(actualReplacement.before.path),\n          \"Old COTS occurrence still exists in the native assembly\",\n        )"
+        },
+        {
+          "id": "fb3b7f3c97970528f41c-1",
+          "line": 1668,
+          "kind": "assertion",
+          "expression": "assert.ok(\n          paths.includes(actualReplacement.after.path),\n          \"Replacement occurrence is absent from the native assembly\",\n        )"
+        },
+        {
+          "id": "1f351a755256ab8186c3-1",
+          "line": 1672,
+          "kind": "helper",
+          "expression": "cad(\"component.inspect\", {\n          component: replacementName,\n        })"
+        },
+        {
+          "id": "ef329451f9ef9e284295-1",
+          "line": 1675,
+          "kind": "assertion",
+          "expression": "assert.equal(replacement.result.component.name, replacementName)"
+        },
+        {
+          "id": "93f578fe96ab312ebced-1",
+          "line": 1676,
+          "kind": "assertion",
+          "expression": "assert.equal(\n          replacement.result.bodies.length,\n          1,\n          \"Imported STEP did not create one native BRep body\",\n        )"
+        },
+        {
+          "id": "d895c19877ef8cd41e92-1",
+          "line": 1686,
+          "kind": "helper",
+          "expression": "cad(\"measure.volume\", {\n          ref: replacementBody,\n          units: \"mm3\",\n        })"
+        },
+        {
+          "id": "0bf699e53405090e08af-1",
+          "line": 1690,
+          "kind": "assertion",
+          "expression": "assert.ok(\n          Math.abs(volume.result.value - sourceVolume.result.value) < 0.05,\n          `Imported BRep volume ${volume.result.value} mm^3 differs from source ${sourceVolume.result.value} mm^3`,\n        )"
+        },
+        {
+          "id": "500b39ed44e9c47fdec4-1",
+          "line": 1694,
+          "kind": "helper",
+          "expression": "cad(\"entity.inspect\", {\n          ref: actualReplacement.after,\n          frame: \"root\",\n        })"
+        },
+        {
+          "id": "4a148f23866109f2c13b-2",
+          "line": 1698,
+          "kind": "assertion",
+          "expression": "assert.equal(observed.result.kind, \"occurrence\")"
+        },
+        {
+          "id": "8f3ab044b73a416c3c2e-1",
+          "line": 1699,
+          "kind": "assertion",
+          "expression": "assert.equal(\n          observed.result.occurrencePath,\n          actualReplacement.after.path,\n        )"
+        },
+        {
+          "id": "2cf3db17543dd3078e69-4",
+          "line": 1703,
+          "kind": "helper",
+          "expression": "workerEvidenceFor(rejected)"
+        },
+        {
+          "id": "785456949d5d328d7e91-3",
+          "line": 1729,
+          "kind": "helper",
+          "expression": "guard()"
+        },
+        {
+          "id": "32e7931b126112e7416a-3",
+          "line": 1730,
+          "kind": "helper",
+          "expression": "ownedDocument()"
+        },
+        {
+          "id": "9d2cf1ea183a642a345d-1",
+          "line": 1734,
+          "kind": "assertion",
+          "expression": "assert.ok(owned)"
+        },
+        {
+          "id": "7d9cf0573d30ddb70635-1",
+          "line": 1735,
+          "kind": "assertion",
+          "expression": "assert.equal(owned.saved, false)"
+        },
+        {
+          "id": "7f2fcb2be9fa2bc73332-1",
+          "line": 1740,
+          "kind": "assertion",
+          "expression": "assert.ok(\n          docIndex >= 0 && idIndex >= 0,\n          `${call.label} omitted a document identity pin`,\n        )"
+        },
+        {
+          "id": "c09efd69ddb1ad19c36d-1",
+          "line": 1744,
+          "kind": "assertion",
+          "expression": "assert.equal(call.args[docIndex + 1], own.name)"
+        },
+        {
+          "id": "c4b71b0edfdf0e12590c-1",
+          "line": 1745,
+          "kind": "assertion",
+          "expression": "assert.equal(call.args[idIndex + 1], own.creationId)"
+        },
+        {
+          "id": "c421b3a3950812d7536f-1",
+          "line": 1747,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(\n        report.nativeNegativeCases.map((row) => row.status),\n        Array(4).fill(\"verified-terminal-failed-worker-plus-readback\"),\n        \"Every expected negative needs its own terminal failed worker receipt and independent after-readback\",\n      )"
+        },
+        {
+          "id": "2789c84e11e1313291ad-1",
+          "line": 1792,
+          "kind": "helper",
+          "expression": "main()"
+        }
+      ]
+    },
+    {
+      "source": "tests/live-import-receipts.ts",
+      "sha256": "6be7c1fc5ab87307dd4adc9cbc4a4bcd516dac06f68b9da56a77e494ea505aeb",
+      "assertions": [
+        {
+          "id": "bd137f83f3d277935e37-1",
+          "line": 43,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      typeof value === \"string\" && value.length > 0,\n      \"Incomplete fixed native invocation identity\",\n    )"
+        },
+        {
+          "id": "74cde9a3ca2ae0cdeb08-1",
+          "line": 47,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    path.isAbsolute(binding.runtimeRoot),\n    \"Fixed runtime root must be absolute\",\n  )"
+        },
+        {
+          "id": "a58b784d51eadc24b0c1-1",
+          "line": 52,
+          "kind": "assertion",
+          "expression": "assert.match(binding[key], /^[a-f0-9]{64}$/u)"
+        },
+        {
+          "id": "54c3a7036b198176df01-1",
+          "line": 57,
+          "kind": "assertion",
+          "expression": "assert.equal(indices.length, 1, \"Fixed invocation requires one \" + flag)"
+        },
+        {
+          "id": "44183d8c0d323218b55f-1",
+          "line": 58,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      binding.command[indices[0]! + 1],\n      expected,\n      \"Foreign fixed invocation \" + flag,\n    )"
+        },
+        {
+          "id": "d2a35061076ce1eaa268-1",
+          "line": 64,
+          "kind": "helper",
+          "expression": "pin(\"--request-id\", binding.requestId)"
+        },
+        {
+          "id": "7232b55ffe7ece873801-1",
+          "line": 65,
+          "kind": "helper",
+          "expression": "pin(\"--doc\", binding.document.name)"
+        },
+        {
+          "id": "f5949ae4f43e770c90df-1",
+          "line": 66,
+          "kind": "helper",
+          "expression": "pin(\"--doc-id\", binding.document.creationId)"
+        },
+        {
+          "id": "5e1ea480bee0d75cd253-1",
+          "line": 68,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    fs.lstatSync(directory).isDirectory() &&\n      !fs.lstatSync(directory).isSymbolicLink(),\n  )"
+        },
+        {
+          "id": "6551ed32bb15fbf8c23c-1",
+          "line": 85,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    intent.driver.birth,\n    \"No verified driver process birth; refuse native admission\",\n  )"
+        },
+        {
+          "id": "749b38a83d6cfea89614-1",
+          "line": 94,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    fs.lstatSync(claims).isDirectory() &&\n      !fs.lstatSync(claims).isSymbolicLink(),\n  )"
+        },
+        {
+          "id": "b58cdaa6d9ea92e8efd8-1",
+          "line": 127,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      stat.isFile() && stat.size < 1024 * 1024,\n      \"Invalid native invocation record\",\n    )"
+        },
+        {
+          "id": "e7a4faee636a2a326888-1",
+          "line": 135,
+          "kind": "helper",
+          "expression": "asRecord(raw, \"Native invocation intent\")"
+        },
+        {
+          "id": "68eb8839fa86c0249f5d-1",
+          "line": 136,
+          "kind": "helper",
+          "expression": "asRecord(value[\"binding\"], \"Invocation binding\")"
+        },
+        {
+          "id": "2853f01df00a5b9a952b-1",
+          "line": 137,
+          "kind": "helper",
+          "expression": "asRecord(binding.document, \"Invocation document\")"
+        },
+        {
+          "id": "64896112a1c100e195c7-1",
+          "line": 138,
+          "kind": "helper",
+          "expression": "asRecord(value[\"driver\"], \"Invocation driver\")"
+        },
+        {
+          "id": "1c430bc0f8b13a1c7fe9-1",
+          "line": 139,
+          "kind": "assertion",
+          "expression": "assert.equal(value[\"version\"], 1)"
+        },
+        {
+          "id": "4566244e34262f9e08ad-1",
+          "line": 149,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      typeof binding[key] === \"string\" && binding[key].length > 0,\n      \"Invalid invocation \" + key,\n    )"
+        },
+        {
+          "id": "8ccfb5a442c7bbea4658-1",
+          "line": 154,
+          "kind": "assertion",
+          "expression": "assert.ok(typeof document[key] === \"string\" && document[key].length > 0)"
+        },
+        {
+          "id": "6e7c699ad73035310151-1",
+          "line": 155,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    Array.isArray(binding[\"command\"]) &&\n      binding[\"command\"].every((word: unknown) => typeof word === \"string\"),\n  )"
+        },
+        {
+          "id": "1aa324799777af8feeaa-1",
+          "line": 159,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    value[\"commandSha256\"],\n    createHash(\"sha256\")\n      .update(JSON.stringify(binding[\"command\"]))\n      .digest(\"hex\"),\n  )"
+        },
+        {
+          "id": "86666e715c5ce5f0b69e-1",
+          "line": 165,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    path.basename(filename),\n    createHash(\"sha256\").update(String(binding.requestId)).digest(\"hex\") +\n      \".json\",\n  )"
+        },
+        {
+          "id": "ad259c7f742ee64cc83d-1",
+          "line": 170,
+          "kind": "assertion",
+          "expression": "assert.ok(Number.isSafeInteger(driver[\"pid\"]) && Number(driver[\"pid\"]) > 0)"
+        },
+        {
+          "id": "276e244d8ee25a93128f-1",
+          "line": 171,
+          "kind": "assertion",
+          "expression": "assert.ok(typeof driver[\"birth\"] === \"string\" && driver[\"birth\"].length > 0)"
+        },
+        {
+          "id": "2a5b6bf005c77ecfee65-1",
+          "line": 172,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    [\"prepared\", \"terminal-observed\", \"settled\"].includes(\n      String(value[\"state\"]),\n    ),\n  )"
+        },
+        {
+          "id": "b6fdd0baee1e2d482402-1",
+          "line": 178,
+          "kind": "helper",
+          "expression": "parsePublicQueueJob(value[\"terminal\"], \"Stored terminal receipt\")"
+        },
+        {
+          "id": "c44b6ace536fdb8581a2-1",
+          "line": 188,
+          "kind": "helper",
+          "expression": "readNativeInvocation(filename)"
+        },
+        {
+          "id": "a25a277f30b632302729-1",
+          "line": 189,
+          "kind": "helper",
+          "expression": "asRecord(acceptedValue, \"Accepted native invocation\")"
+        },
+        {
+          "id": "49035cc598bc49d79e9c-1",
+          "line": 190,
+          "kind": "helper",
+          "expression": "parsePublicQueueJob(\n    terminalValue,\n    \"Native invocation terminal receipt\",\n  )"
+        },
+        {
+          "id": "83cccee819137ba91f1b-1",
+          "line": 194,
+          "kind": "assertion",
+          "expression": "assert.equal(accepted.requestId, intent.binding.requestId)"
+        },
+        {
+          "id": "8e394dcbf80d3ce935b7-1",
+          "line": 195,
+          "kind": "assertion",
+          "expression": "assert.equal(accepted[\"jobId\"], terminal.id)"
+        },
+        {
+          "id": "f3abdb3a555d864a33ed-1",
+          "line": 196,
+          "kind": "assertion",
+          "expression": "assert.equal(terminal.requestId, intent.binding.requestId)"
+        },
+        {
+          "id": "d5f0551c84f66ea4a243-1",
+          "line": 197,
+          "kind": "assertion",
+          "expression": "assert.equal(terminal.clientId, intent.binding.clientId)"
+        },
+        {
+          "id": "a2ca050dc52cdaec0d94-1",
+          "line": 198,
+          "kind": "assertion",
+          "expression": "assert.ok([\"succeeded\", \"failed\"].includes(terminal.state))"
+        },
+        {
+          "id": "b804add23f4b6990dbb9-1",
+          "line": 199,
+          "kind": "assertion",
+          "expression": "assert.equal(terminal.executionOutcome, terminal.state)"
+        },
+        {
+          "id": "8bcd43991769bada36b4-1",
+          "line": 200,
+          "kind": "assertion",
+          "expression": "assert.equal(terminal.operationResult[\"executionOutcome\"], terminal.state)"
+        },
+        {
+          "id": "4ab1062c08638335a20b-1",
+          "line": 202,
+          "kind": "helper",
+          "expression": "assertWorkerMatchesCli(\n      terminal,\n      intent.terminal,\n      \"Repeated terminal observation\",\n    )"
+        },
+        {
+          "id": "c44b6ace536fdb8581a2-2",
+          "line": 220,
+          "kind": "helper",
+          "expression": "readNativeInvocation(filename)"
+        },
+        {
+          "id": "422969e56cc4ca19e696-1",
+          "line": 221,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    alive(intent.driver),\n    false,\n    \"Original native driver may still submit; defer recovery and cleanup\",\n  )"
+        },
+        {
+          "id": "5bd955dd8c698ddac63e-1",
+          "line": 226,
+          "kind": "helper",
+          "expression": "asRecord(\n    await lookup(structuredClone(intent.binding)),\n    \"Original native worker result\",\n  )"
+        },
+        {
+          "id": "b708d9511033ada3945b-1",
+          "line": 230,
+          "kind": "helper",
+          "expression": "asRecord(\n    value[\"execution\"],\n    \"Original native SDK execution evidence\",\n  )"
+        },
+        {
+          "id": "8b9e27b5e7dae4f46924-1",
+          "line": 234,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    execution[\"sdkSettled\"],\n    true,\n    \"Original SDK execution remains unsettled; never replay\",\n  )"
+        },
+        {
+          "id": "14187cc259fcd30bdf16-1",
+          "line": 239,
+          "kind": "helper",
+          "expression": "parsePublicQueueJob(\n    value[\"job\"],\n    \"Original native worker receipt\",\n  )"
+        },
+        {
+          "id": "52bdda66697465d88ca0-1",
+          "line": 243,
+          "kind": "assertion",
+          "expression": "assert.equal(job.requestId, intent.binding.requestId)"
+        },
+        {
+          "id": "81162a99a0a4be66fd0f-1",
+          "line": 244,
+          "kind": "assertion",
+          "expression": "assert.equal(job.clientId, intent.binding.clientId)"
+        },
+        {
+          "id": "c6b73dae2a6e08f0c10e-1",
+          "line": 245,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    [\"succeeded\", \"failed\"].includes(job.state),\n    \"Original execution remains unsettled; never replay\",\n  )"
+        },
+        {
+          "id": "51b1911399e253b09d1c-1",
+          "line": 249,
+          "kind": "assertion",
+          "expression": "assert.equal(job.executionOutcome, job.state)"
+        },
+        {
+          "id": "53447ea78086c80238de-1",
+          "line": 250,
+          "kind": "assertion",
+          "expression": "assert.equal(job.operationResult[\"executionOutcome\"], job.state)"
+        },
+        {
+          "id": "5014253eedb4f660fc0b-1",
+          "line": 252,
+          "kind": "helper",
+          "expression": "assertWorkerMatchesCli(\n      job,\n      intent.terminal,\n      \"Recovered original native invocation\",\n    )"
+        },
+        {
+          "id": "a5dc5523c54f9a3de481-1",
+          "line": 320,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(\n      byId.get(original.creationId),\n      original,\n      `${label}: pre-existing document ${original.creationId} changed or disappeared`,\n    )"
+        },
+        {
+          "id": "f48aedbdd8585467c25b-1",
+          "line": 333,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    current.activeCreationId,\n    baseline.activeCreationId,\n    `${label}: previously active document was not restored`,\n  )"
+        },
+        {
+          "id": "8b0bfb7e38504e3cdf34-1",
+          "line": 363,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    value !== null && typeof value === \"object\" && !Array.isArray(value),\n    `${label} must be an object`,\n  )"
+        },
+        {
+          "id": "f5770b909cf18980819c-1",
+          "line": 371,
+          "kind": "assertion",
+          "expression": "assert.ok(Array.isArray(value), `${label} must be an array`)"
+        },
+        {
+          "id": "f4532b86c995b5676899-1",
+          "line": 379,
+          "kind": "helper",
+          "expression": "asRecord(value, label)"
+        },
+        {
+          "id": "5a8dd05aad75e554398c-1",
+          "line": 380,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row.id, \"string\", `${label}.id must be a string`)"
+        },
+        {
+          "id": "0c7eadd8c0e1d02f6d9a-1",
+          "line": 381,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    typeof row.requestId,\n    \"string\",\n    `${label}.requestId must be a string`,\n  )"
+        },
+        {
+          "id": "4a041dd0f2a5a6101c52-1",
+          "line": 386,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    typeof row.clientId,\n    \"string\",\n    `${label}.clientId must be a string`,\n  )"
+        },
+        {
+          "id": "d89b10d330957a39417b-1",
+          "line": 391,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row.state, \"string\", `${label}.state must be a string`)"
+        },
+        {
+          "id": "8e5299e6ca0a9272dbb5-1",
+          "line": 392,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    row.code === undefined || typeof row.code === \"string\",\n    `${label}.code must be a string when present`,\n  )"
+        },
+        {
+          "id": "6d06417d173ea97b9e87-1",
+          "line": 396,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    row.executionOutcome === undefined ||\n      typeof row.executionOutcome === \"string\",\n    `${label}.executionOutcome must be a string when present`,\n  )"
+        },
+        {
+          "id": "4a0ddc1dde4a8171acfa-1",
+          "line": 401,
+          "kind": "helper",
+          "expression": "asRecord(\n    row.operationResult,\n    `${label}.operationResult`,\n  )"
+        },
+        {
+          "id": "e17770fe4f235f89cc73-1",
+          "line": 405,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    operationResult[\"code\"] === undefined ||\n      typeof operationResult[\"code\"] === \"string\",\n    `${label}.operationResult.code must be a string when present`,\n  )"
+        },
+        {
+          "id": "9e566ab217043516d9eb-1",
+          "line": 410,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    operationResult[\"executionOutcome\"] === undefined ||\n      typeof operationResult[\"executionOutcome\"] === \"string\",\n    `${label}.operationResult.executionOutcome must be a string when present`,\n  )"
+        },
+        {
+          "id": "f4532b86c995b5676899-2",
+          "line": 432,
+          "kind": "helper",
+          "expression": "asRecord(value, label)"
+        },
+        {
+          "id": "52d0e79ad96f67126322-1",
+          "line": 433,
+          "kind": "helper",
+          "expression": "parsePublicQueueJob(row.job, `${label}.job`)"
+        },
+        {
+          "id": "0cbcbdc28b96aa3e2ce0-1",
+          "line": 436,
+          "kind": "helper",
+          "expression": "asRecord(row.outputs, `${label}.outputs`)"
+        },
+        {
+          "id": "e41ad53145069e5e8b33-1",
+          "line": 439,
+          "kind": "helper",
+          "expression": "asRecord(descriptor, `${label}.outputs.${key}`)"
+        },
+        {
+          "id": "a64e4bd886972737d179-1",
+          "line": 442,
+          "kind": "helper",
+          "expression": "asRecord(\n          output.artifact,\n          `${label}.outputs.${key}.artifact`,\n        )"
+        },
+        {
+          "id": "7768138cb5417b9717ea-1",
+          "line": 448,
+          "kind": "assertion",
+          "expression": "assert.ok(\n        output.name === undefined || typeof output.name === \"string\",\n        `${label}.outputs.${key}.name must be a string when present`,\n      )"
+        },
+        {
+          "id": "d78a4455dbc9e0ae047d-1",
+          "line": 458,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    row.stdout === undefined || typeof row.stdout === \"string\",\n    `${label}.stdout must be a string when present`,\n  )"
+        },
+        {
+          "id": "3a45905cc280f0665352-1",
+          "line": 462,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    row.stderr === undefined || typeof row.stderr === \"string\",\n    `${label}.stderr must be a string when present`,\n  )"
+        },
+        {
+          "id": "52df5832ca2e912f6ab3-1",
+          "line": 479,
+          "kind": "helper",
+          "expression": "parsePublicQueueJob(workerValue, `${label} worker job`)"
+        },
+        {
+          "id": "ef10224554f259712b84-1",
+          "line": 480,
+          "kind": "helper",
+          "expression": "parsePublicQueueJob(cliValue, `${label} CLI terminal projection`)"
+        },
+        {
+          "id": "8ed0d546d77f839c3c55-1",
+          "line": 481,
+          "kind": "assertion",
+          "expression": "assert.equal(worker.id, cli.id)"
+        },
+        {
+          "id": "6cdce2a6ec2411d67e01-1",
+          "line": 482,
+          "kind": "assertion",
+          "expression": "assert.equal(worker.requestId, cli.requestId)"
+        },
+        {
+          "id": "7db0f79f53508b36875a-1",
+          "line": 483,
+          "kind": "assertion",
+          "expression": "assert.equal(worker.clientId, cli.clientId)"
+        },
+        {
+          "id": "830bbedfa965d10c90ca-1",
+          "line": 484,
+          "kind": "assertion",
+          "expression": "assert.equal(worker.state, cli.state)"
+        },
+        {
+          "id": "35fb34e66be2e62b5984-1",
+          "line": 485,
+          "kind": "assertion",
+          "expression": "assert.equal(worker.code, cli.code)"
+        },
+        {
+          "id": "e2d36f5a7cee22b88e21-1",
+          "line": 486,
+          "kind": "assertion",
+          "expression": "assert.equal(worker.executionOutcome, cli.executionOutcome)"
+        },
+        {
+          "id": "66615093b52b2889bd05-1",
+          "line": 487,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(worker.operationResult, cli.operationResult)"
+        }
+      ]
+    },
+    {
+      "source": "tests/scenarios/native-import-cases.ts",
+      "sha256": "82d4444e82cc32c216744f161fdfca47c17ff1c3256b6ab58f5e153545d5cfe6",
+      "assertions": [
+        {
+          "id": "54e04756c2d62feec1c6-1",
+          "line": 25,
+          "kind": "assertion",
+          "expression": "assert.equal(own.file, undefined, \"Test document must remain unsaved\")"
+        },
+        {
+          "id": "9e41792413033b270457-1",
+          "line": 49,
+          "kind": "embedded-python",
+          "expression": "import adsk.core, json\napp = adsk.core.Application.get()\nassert not any(d.creationId == "
+        },
+        {
+          "id": "0215b6dbb6081ad9bf3e-1",
+          "line": 55,
+          "kind": "assertion",
+          "expression": "assert.equal(closed[\"closedCreationId\"], own.creationId)"
+        },
+        {
+          "id": "0ff50957093a2f7b9bb9-1",
+          "line": 60,
+          "kind": "assertion",
+          "expression": "assert.equal(\n            after.documents.some((doc) => doc.creationId === own.creationId),\n            false,\n            \"Close(False) did not remove the exact owned document\",\n          )"
+        },
+        {
+          "id": "8f55112e0c1245b0f6fe-1",
+          "line": 65,
+          "kind": "helper",
+          "expression": "assertProtectedBaselineDocuments(\n            original,\n            after,\n            \"After closing the owned fixture\",\n          )"
+        },
+        {
+          "id": "a543f54594544db16fa1-1",
+          "line": 70,
+          "kind": "helper",
+          "expression": "assertActiveDocumentRestored(original, after, \"Close(False)\")"
+        },
+        {
+          "id": "5edc580840c5937032ab-1",
+          "line": 79,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(completion[\"owner\"], session.report.owner)"
+        },
+        {
+          "id": "c27ec963ac7d1ec9aac1-1",
+          "line": 80,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(completion[\"document\"], own)"
+        },
+        {
+          "id": "9a8c8019639645c443de-1",
+          "line": 87,
+          "kind": "assertion",
+          "expression": "assert.ok(\n                path\n                  .resolve(filename)\n                  .startsWith(\n                    path.join(session.directory, \"legacy/artifacts\") + path.sep,\n                  ),\n                \"Foreign synthetic artifact path\",\n              )"
+        }
+      ]
+    },
+    {
+      "source": "tests/scenarios/programs.ts",
+      "sha256": "66b3c7df4f808fdb399742dd3a68a084e9e076b6f22551b313f3347d25ecca0c",
+      "assertions": [
+        {
+          "id": "311687a38872abf258cc-1",
+          "line": 25,
+          "kind": "embedded-python",
+          "expression": "]\nassert len(matches) == 1, 'Owned creationId is unavailable'\ndoc = matches[0]\nassert doc.name == "
+        },
+        {
+          "id": "819e45edba51816ed174-1",
+          "line": 28,
+          "kind": "embedded-python",
+          "expression": ", 'Owned document identity changed'\nassert sum(d.name == "
+        },
+        {
+          "id": "9dc712422aae638e2b90-1",
+          "line": 29,
+          "kind": "embedded-python",
+          "expression": " for d in app.documents) == 1, 'Ambiguous owned name'\nassert doc.activate()\nassert app.activeDocument is not None and app.activeDocument.creationId == doc.creationId"
+        },
+        {
+          "id": "b6f5f479a98f2352987c-1",
+          "line": 35,
+          "kind": "embedded-python",
+          "expression": "assert doc.isSaved\nfile = cast('adsk.core.DataFile | None', doc.dataFile)\nassert file is not None\nassert file.id == "
+        },
+        {
+          "id": "b73a5af197c9a70be31c-1",
+          "line": 38,
+          "kind": "embedded-python",
+          "expression": "\nassert file.parentProject.id == "
+        },
+        {
+          "id": "a92ab551f3abb7f3d529-1",
+          "line": 40,
+          "kind": "embedded-python",
+          "expression": "assert not doc.isSaved, 'Owned document unexpectedly became saved'\nassert doc.dataFile is None, 'Unsaved owned document unexpectedly has a cloud file'"
+        },
+        {
+          "id": "db54ac31f03e8cdf62c7-1",
+          "line": 44,
+          "kind": "embedded-python",
+          "expression": "\ndesign = cast(adsk.fusion.Design, doc.products.itemByProductType('DesignProductType'))\nassert design is not None"
+        },
+        {
+          "id": "769f2eb05cf5705b59b3-1",
+          "line": 53,
+          "kind": "embedded-python",
+          "expression": "import adsk.core, json\nfrom typing import cast\napp = adsk.core.Application.get()\nassert not any(d.name == "
+        },
+        {
+          "id": "4bcb70994fcc014e2620-1",
+          "line": 56,
+          "kind": "embedded-python",
+          "expression": " for d in app.documents)\nassert app.userInterface.activeCommand in (None, '', 'SelectCommand'), 'Fusion interactive command must be idle before creating a fixture'\ndoc = app.documents.add(cast(adsk.core.DocumentTypes, adsk.core.DocumentTypes.FusionDesignDocumentType))\ndoc.name = "
+        },
+        {
+          "id": "197b565b7df6dba3b5f5-1",
+          "line": 67,
+          "kind": "embedded-python",
+          "expression": ")\nassert design.exportManager.execute(options)\nassert not doc.isSaved, 'Export must not change the unsaved fixture precondition'\n"
+        },
+        {
+          "id": "f926f6dfcb0bfedaca36-1",
+          "line": 77,
+          "kind": "embedded-python",
+          "expression": "assert design.userParameters.count == 0\np = design.userParameters.add('OwnedCounter', adsk.core.ValueInput.createByString('"
+        },
+        {
+          "id": "e7378308582714ca489e-1",
+          "line": 79,
+          "kind": "embedded-python",
+          "expression": "\nassert p is not None\n"
+        },
+        {
+          "id": "0952372d00f2f21d912e-1",
+          "line": 91,
+          "kind": "embedded-python",
+          "expression": "]\nassert len(matches) <= 1\nif matches:\n    doc = matches[0]\n    assert doc.name == "
+        },
+        {
+          "id": "926945d63416650cfc0f-1",
+          "line": 95,
+          "kind": "embedded-python",
+          "expression": "\n    assert app.userInterface.activeCommand in (None, '', 'SelectCommand'), 'Fusion interactive command must be idle before closing a fixture'\n"
+        },
+        {
+          "id": "64e7b7fbcf93c2128ed7-1",
+          "line": 100,
+          "kind": "embedded-python",
+          "expression": "\n    assert doc.close(False)\nassert not any(d.creationId == "
+        },
+        {
+          "id": "311687a38872abf258cc-2",
+          "line": 116,
+          "kind": "embedded-python",
+          "expression": "]\nassert len(matches) == 1, 'Owned creationId is unavailable'\ndoc = matches[0]\nassert doc.name == "
+        },
+        {
+          "id": "819e45edba51816ed174-2",
+          "line": 119,
+          "kind": "embedded-python",
+          "expression": ", 'Owned document identity changed'\nassert sum(d.name == "
+        },
+        {
+          "id": "ca4f1ac7d1aba893847f-1",
+          "line": 120,
+          "kind": "embedded-python",
+          "expression": " for d in app.documents) == 1, 'Ambiguous owned name'\nassert not doc.isSaved and doc.dataFile is None, 'Owned fixture unexpectedly became saved'\nassert app.activeDocument is not None and app.activeDocument.creationId == doc.creationId, 'Fixture is not active'\n"
+        },
+        {
+          "id": "2e9d2bc94d38af32506f-1",
+          "line": 128,
+          "kind": "embedded-python",
+          "expression": "]\nassert len(matches) == 1, 'Original active document is unavailable'\nassert matches[0].activate()\nassert app.activeDocument is not None and app.activeDocument.creationId == "
+        }
+      ]
+    }
+  ]
+}

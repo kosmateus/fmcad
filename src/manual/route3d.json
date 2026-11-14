@@ -7,7 +7,7 @@
     "examples": [
       {"label": "Spatial S-Curve Route", "data": {"schemaVersion": 1, "waypoints": [["0 mm", "0 mm", "0 mm"], ["0 mm", "10 mm", "10 mm"], ["0 mm", "0 mm", "20 mm"]], "up": [0, 0, 1]}, "requires": "Open Design document; three non-collinear 3D waypoints with an inflection.", "output": "result.arcLength is the sampled neutral-axis length in cm and result.minBendRadius is finite; result.frames use the declared up vector."}
     ],
-    "audit": {"sources": ["assets/cad/route3d.py: route_create3d, _route_geometry, _sample_centerline, _transport_frames, _circumradius"], "verified": ["Catmull-Rom through waypoints including inflection", "circumradius bend radius (no Frenet)", "up-projected transport frame", "self-contact and obstacle clearance", "explicit route state"], "tests": ["tests/route3d_test.py", "tests/route3d.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/route3d.py: route_create3d, _route_geometry, _sample_centerline, _transport_frames, _circumradius"], "verified": ["Catmull-Rom through waypoints including inflection", "circumradius bend radius (no Frenet)", "up-projected transport frame", "self-contact and obstacle clearance", "explicit route state"], "tests": ["tests/route3d_test.py", "tests/route3d.test.ts"], "gaps": [], "bugs": []}
   },
   "route.inspect": {
     "sections": [
@@ -17,7 +17,7 @@
     "examples": [
       {"label": "Known Quarter-Arc Inspection", "data": {"schemaVersion": 1, "centerline": [["10 mm", "0 mm", "0 mm"], ["7.071 mm", "7.071 mm", "0 mm"], ["0 mm", "10 mm", "0 mm"]]}, "requires": "Open Design document; three points on a 10 mm-radius quarter circle.", "output": "result.minBendRadius is approximately 1 cm (the known arc radius)."}
     ],
-    "audit": {"sources": ["assets/cad/route3d.py: route_inspect, _route_geometry, _bend_radii, _route_self_contact"], "verified": ["waypoint and explicit centerline modes", "known-arc circumradius", "self-contact and clearance", "read-only envelope"], "tests": ["tests/route3d_test.py", "tests/route3d.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/route3d.py: route_inspect, _route_geometry, _bend_radii, _route_self_contact"], "verified": ["waypoint and explicit centerline modes", "known-arc circumradius", "self-contact and clearance", "read-only envelope"], "tests": ["tests/route3d_test.py", "tests/route3d.test.ts"], "gaps": [], "bugs": []}
   },
   "route.cut-list": {
     "sections": [
@@ -27,7 +27,7 @@
     "examples": [
       {"label": "Explicit 1.1L Plus Two Tails", "data": {"schemaVersion": 1, "length": "100 mm", "allowanceFactor": 1.1, "serviceTail": "15 mm"}, "requires": "Open Design document; L is 100 mm with a 10 percent allowance and a 15 mm service tail at each end.", "output": "result.cutLengthPerPiece is 140 mm (1.1*100 + 2*15) and result.interpretation states the formula."}
     ],
-    "audit": {"sources": ["assets/cad/route3d.py: route_cut_list"], "verified": ["1.1*L + 2*15 mm interpretation", "no double-add when serviceTailModeled", "piece division and totals", "read-only envelope"], "tests": ["tests/route3d_test.py", "tests/route3d.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/route3d.py: route_cut_list"], "verified": ["1.1*L + 2*15 mm interpretation", "no double-add when serviceTailModeled", "piece division and totals", "read-only envelope"], "tests": ["tests/route3d_test.py", "tests/route3d.test.ts"], "gaps": [], "bugs": []}
   },
   "route.motion-states": {
     "sections": [
@@ -37,6 +37,6 @@
     "examples": [
       {"label": "All PAN TILT Extremes", "data": {"schemaVersion": 1, "length": "100 mm", "pan": {"min": "-45 deg", "max": "45 deg"}, "tilt": {"min": "-30 deg", "max": "30 deg"}, "minBendRadius": "5 mm"}, "requires": "Open Design document; the route must bend through the four extreme PAN/TILT corners without exceeding a 5 mm radius.", "output": "result.states has four rows (the PAN x TILT product) and every state.lengthPreserved is true."}
     ],
-    "audit": {"sources": ["assets/cad/route3d.py: route_motion_states, _pose_required_radius"], "verified": ["cartesian PAN x TILT product", "length preservation", "set/numerically-solved/native-dependent state", "read-only envelope"], "tests": ["tests/route3d_test.py", "tests/route3d.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/route3d.py: route_motion_states, _pose_required_radius"], "verified": ["cartesian PAN x TILT product", "length preservation", "set/numerically-solved/native-dependent state", "read-only envelope"], "tests": ["tests/route3d_test.py", "tests/route3d.test.ts"], "gaps": [], "bugs": []}
   }
 }

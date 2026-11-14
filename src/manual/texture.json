@@ -8,6 +8,6 @@
     "examples": [
       {"label": "Generate a tileable wave heightmap", "data": {"path": "C:/textures/height.png", "width": 256, "height": 256, "seed": 7, "amplitude": 1.0, "period": 16, "pattern": "waves", "tileable": true}, "requires": "Existing writable Fusion-host parent and an absent file; replace the host-specific path as needed.", "output": "result.file.exists=true; result.parameters round-trips the request; result.sha256 is deterministic for the parameters."}
     ],
-    "audit": {"sources": ["assets/cad/texture.py:texture_heightmap,_heightmap_png,_heightmap_sample,_value_noise,_texture_path", "assets/cad/core.py:_cad_fields"], "verified": ["deterministic PNG bytes and parameter round-trip", "pattern/seed/amplitude/period validation and tileable wrap", "overwrite/confirm output path handling"], "tests": ["tests/appearance_test.py", "tests/appearance.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/texture.py:texture_heightmap,_heightmap_png,_heightmap_sample,_value_noise,_texture_path", "assets/cad/core.py:_cad_fields"], "verified": ["deterministic PNG bytes and parameter round-trip", "pattern/seed/amplitude/period validation and tileable wrap", "overwrite/confirm output path handling"], "tests": ["tests/appearance_test.py", "tests/appearance.test.ts"], "gaps": [], "bugs": []}
   }
 }

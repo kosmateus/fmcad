@@ -7,7 +7,7 @@
     "examples": [
       {"label": "Pin+slot PCB mount with connector standoff", "data": {"schemaVersion":1,"frame":"component","name":"PcbMount","scheme":"pin-slot","pin":{"x":"0 mm","y":"0 mm"},"slot":{"x":"40 mm","y":"0 mm"},"holes":{"diameter":"3 mm","clearance":"0.5 mm","positions":[{"x":"10 mm","y":"10 mm"},{"x":"30 mm","y":"10 mm"},{"x":"10 mm","y":"30 mm"},{"x":"30 mm","y":"30 mm"}]},"boss":{"diameter":"6 mm","height":"8 mm"},"support":{"connector":true},"material":"FR-4 + brass insert","process":"injection molded"}, "requires": "Native component; PcbMount and PcbMount__pin/__slot names unused.", "output": "result.locatingDofConstrained is 3 and result.overConstrained is false; result.pin and result.slot are datum refs."}
     ],
-    "audit": {"sources": ["assets/cad/fastener.py:_mount_create,_locating_dof"], "verified": ["Pin+slot locates without over-constraining", "Connector standoff/boss support", "Locating datums created; holes/boss as declared prescriptions"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["Holes/boss are feature prescriptions, not live native features"]}
+    "audit": {"sources": ["assets/cad/fastener.py:_mount_create,_locating_dof"], "verified": ["Pin+slot locates without over-constraining", "Connector standoff/boss support", "Locating datums created; holes/boss as declared prescriptions"], "tests": ["tests/fastener_test.py", "tests/fastener.test.ts"], "gaps": [], "bugs": ["Holes/boss are feature prescriptions, not live native features"]}
   },
   "mount.check": {
     "sections": [
@@ -17,7 +17,7 @@
     "examples": [
       {"label": "Located PCB with clearance holes and connector support", "data": {"schemaVersion":1,"frame":"component","scheme":"pin-slot","holes":[{"diameter":"3 mm","clearance":"0.5 mm"},{"diameter":"3 mm","clearance":"0.5 mm"},{"diameter":"3 mm","clearance":"0.5 mm"},{"diameter":"3 mm","clearance":"0.5 mm"}],"connector":{"supported":true,"supportPresent":true}}, "requires": "Read-only; a selected component.", "output": "result.overConstrained is false and result.checks report pass for over-constraint and connector-support."}
     ],
-    "audit": {"sources": ["assets/cad/fastener.py:_mount_check,_locating_dof"], "verified": ["Over-constraint detected when every hole is tight", "Connector support presence"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["Thermal/material behaviour needs declared data"]}
+    "audit": {"sources": ["assets/cad/fastener.py:_mount_check,_locating_dof"], "verified": ["Over-constraint detected when every hole is tight", "Connector support presence"], "tests": ["tests/fastener_test.py", "tests/fastener.test.ts"], "gaps": [], "bugs": ["Thermal/material behaviour needs declared data"]}
   },
   "fastener.stack": {
     "sections": [
@@ -27,7 +27,7 @@
     "examples": [
       {"label": "M3 screw clamping 5.6 mm into an insert", "data": {"schemaVersion":1,"frame":"component","screw":{"length":"12 mm","threadLength":"10 mm","majorDiameter":"3 mm","pitch":"0.5 mm","headDiameter":"6 mm"},"stack":[{"id":"bracket","thickness":"4 mm"},{"id":"pcb","thickness":"1.6 mm"}],"receptacle":{"kind":"insert","depth":"8 mm"},"torque":"0.5 N*m","tool":{"diameter":"4 mm","recess":"5 mm"}}, "requires": "Read-only; a selected component.", "output": "result.clampedLength is 5.6 mm and result.engagement is 4.4 mm; result.bottoming.clearance is 1.6 mm (not bottomed)."}
     ],
-    "audit": {"sources": ["assets/cad/fastener.py:_fastener_stack"], "verified": ["Engagement = threadLength - clamped stack", "Torque declared, never derived from diameter", "Bottoming from declared receptacle depth"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["Access reported only when tool declared"]}
+    "audit": {"sources": ["assets/cad/fastener.py:_fastener_stack"], "verified": ["Engagement = threadLength - clamped stack", "Torque declared, never derived from diameter", "Bottoming from declared receptacle depth"], "tests": ["tests/fastener_test.py", "tests/fastener.test.ts"], "gaps": [], "bugs": ["Access reported only when tool declared"]}
   },
   "fastener.check": {
     "sections": [
@@ -37,7 +37,7 @@
     "examples": [
       {"label": "Engagement and access check", "data": {"schemaVersion":1,"frame":"component","screw":{"length":"12 mm","threadLength":"10 mm"},"stack":[{"thickness":"4 mm"},{"thickness":"1.6 mm"}],"minimumEngagement":"4 mm","receptacle":{"kind":"insert","depth":"8 mm"},"tool":{"diameter":"4 mm","recess":"5 mm"}}, "requires": "Read-only; a selected component.", "output": "result.engagement is 4.4 mm (>= 4 mm) and result.checks report pass for engagement."}
     ],
-    "audit": {"sources": ["assets/cad/fastener.py:_fastener_check,_fastener_stack"], "verified": ["Engagement against declared minimum", "Bottoming and access from declared data"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["No torque/fit derived from diameter"]}
+    "audit": {"sources": ["assets/cad/fastener.py:_fastener_check,_fastener_stack"], "verified": ["Engagement against declared minimum", "Bottoming and access from declared data"], "tests": ["tests/fastener_test.py", "tests/fastener.test.ts"], "gaps": [], "bugs": ["No torque/fit derived from diameter"]}
   },
   "fastener.measured-check": {
     "sections": [
@@ -49,7 +49,7 @@
     "examples": [
       {"label":"Native engagement plus separate legacy comparison","data":{"schemaVersion":1,"mode":"native","native":{"schemaVersion":1,"frame":{"space":"assembly","component":{"kind":"component","name":"root"}},"tolerance":{"axisOffset":"0.05 mm","axisAngle":"1 deg","minimumEngagement":"4 mm"},"screw":{"axis":{"kind":"axis","name":"ScrewAxis"},"headBearing":{"kind":"point","name":"HeadBearing"},"tip":{"kind":"point","name":"ScrewTip"},"threadStart":{"kind":"point","name":"ScrewThreadStart"},"threadEnd":{"kind":"point","name":"ScrewThreadEnd"}},"receptacle":{"kind":"blind","axis":{"kind":"axis","name":"HoleAxis"},"threadStart":{"kind":"point","name":"HoleThreadStart"},"threadEnd":{"kind":"point","name":"HoleThreadEnd"},"bottom":{"kind":"point","name":"HoleBottom"}},"layers":[{"id":"bracket","start":{"kind":"point","name":"StackNear"},"end":{"kind":"point","name":"StackFar"}}]},"declaredEvidence":{"operation":"fastener.check","schemaVersion":1,"frame":"component","screw":{"length":"12 mm","threadLength":"10 mm"},"stack":[{"id":"bracket","thickness":"5 mm"}],"minimumEngagement":"4 mm"}},"requires":"Read-only native references; selected document; occurrence-qualified refs for placed instances.","output":"result.nativeMeasurements.measurements.actualEngagement reports the native axial interval overlap in mm with provenance; result.declaredEvidence retains the independent legacy calculator result."}
     ],
-    "audit": {"sources": ["runtime/python/fmcad/domain/measured_fasteners.py", "runtime/python/fmcad/adapters/fusion/measured_fasteners.py", "runtime/python/fmcad/application/measured_fasteners.py", "src/fastener.js"], "verified": ["Native interval/bottoming/alignment/protrusion evidence remains separate from declared legacy calculations", "Tool access delegates to existing sequence implementation", "CLI and MCP use the canonical prepared Python artifact"], "tests": ["tests/measured_fasteners_test.py", "tests/measured-fasteners-bundle.test.js", "tests/fastener.test.js"], "gaps": [], "bugs": ["Exact thread-flank engagement is not available; only selected axial boundary interval overlap is reported", "Real Fusion synthetic-document qualification and restoration require separate explicit consent"]}
+    "audit": {"sources": ["runtime/python/fmcad/domain/measured_fasteners.py", "runtime/python/fmcad/adapters/fusion/measured_fasteners.py", "runtime/python/fmcad/application/measured_fasteners.py", "src/fastener.js"], "verified": ["Native interval/bottoming/alignment/protrusion evidence remains separate from declared legacy calculations", "Tool access delegates to existing sequence implementation", "CLI and MCP use the canonical prepared Python artifact"], "tests": ["tests/measured_fasteners_test.py", "tests/measured-fasteners-bundle.test.ts", "tests/fastener.test.ts"], "gaps": [], "bugs": ["Exact thread-flank engagement is not available; only selected axial boundary interval overlap is reported", "Real Fusion synthetic-document qualification and restoration require separate explicit consent"]}
   },
   "fastener.schedule": {
     "sections": [
@@ -59,7 +59,7 @@
     "examples": [
       {"label": "Complete two-fastener schedule", "data": {"schemaVersion":1,"frame":"component","fasteners":[{"id":"M3-01","torque":"0.5 N*m","process":"torque wrench","material":"A2-70","vendor":"VENDOR-A"},{"id":"M3-02","torque":"0.5 N*m","process":"torque wrench","material":"A2-70","vendor":"VENDOR-A"}]}, "requires": "Read-only; a selected component.", "output": "result.missingData is empty and result.status is pass."}
     ],
-    "audit": {"sources": ["assets/cad/fastener.py:_fastener_schedule"], "verified": ["Missing torque/process/material reported, never fabricated"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["No torque/fit derived from diameter"]}
+    "audit": {"sources": ["assets/cad/fastener.py:_fastener_schedule"], "verified": ["Missing torque/process/material reported, never fabricated"], "tests": ["tests/fastener_test.py", "tests/fastener.test.ts"], "gaps": [], "bugs": ["No torque/fit derived from diameter"]}
   },
   "bearing.stack-check": {
     "sections": [
@@ -69,7 +69,7 @@
     "examples": [
       {"label": "Fixed-floating pair with inner ring located", "data": {"schemaVersion":1,"frame":"component","rings":{"inner":{"bore":"10 mm"},"outer":{"od":"26 mm"}},"journal":"10 mm","seat":"26 mm","shaftClearance":"0.005 mm","housingClearance":"0.0 mm","shoulder":{"inner":true},"arrangement":"fixed-floating"}, "requires": "Read-only; a selected component.", "output": "result.fixedRing is inner and result.preload is 'none declared'."}
     ],
-    "audit": {"sources": ["assets/cad/fastener.py:_bearing_stack"], "verified": ["Fixed/floating ring distinction", "No default preload", "Axial load chain through the fixed ring"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["No bearing life or stiffness claim"]}
+    "audit": {"sources": ["assets/cad/fastener.py:_bearing_stack"], "verified": ["Fixed/floating ring distinction", "No default preload", "Axial load chain through the fixed ring"], "tests": ["tests/fastener_test.py", "tests/fastener.test.ts"], "gaps": [], "bugs": ["No bearing life or stiffness claim"]}
   },
   "shaft.interface": {
     "sections": [
@@ -79,7 +79,7 @@
     "examples": [
       {"label": "D-flat shaft into a D-flat clamp hub", "data": {"schemaVersion":1,"frame":"component","shaft":{"type":"D-flat","d":"6 mm","flat":{"depth":"0.5 mm"}},"hub":{"bore":"6 mm","boreType":"D-flat","splitClampGap":"0.8 mm","shoulders":[{}]}}, "requires": "Read-only; a selected component.", "output": "result.matedFeatures includes the D-flat mate and result.checks report pass."}
     ],
-    "audit": {"sources": ["assets/cad/fastener.py:_shaft_interface"], "verified": ["D-flat shaft requires a D-flat bore, not a round hole", "Split-clamp gap and axial retention"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["No torque transmission or strength claim"]}
+    "audit": {"sources": ["assets/cad/fastener.py:_shaft_interface"], "verified": ["D-flat shaft requires a D-flat bore, not a round hole", "Split-clamp gap and axial retention"], "tests": ["tests/fastener_test.py", "tests/fastener.test.ts"], "gaps": [], "bugs": ["No torque transmission or strength claim"]}
   },
   "retention.bayonet": {
     "sections": [
@@ -89,7 +89,7 @@
     "examples": [
       {"label": "Three-lug bayonet with capture", "data": {"schemaVersion":1,"frame":"component","lugs":{"count":3,"width":"4 mm","height":"2 mm"},"stroke":"6 mm","rotation":"30 deg","capture":{"depth":"1.5 mm"},"clearances":{"radial":"0.2 mm"}}, "requires": "Read-only; a selected component.", "output": "result.assemblyPath is insert -> rotate -> capture and result.checks report pass."}
     ],
-    "audit": {"sources": ["assets/cad/fastener.py:_retention_bayonet"], "verified": ["Assembly and unlock paths", "Axial capture depth"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["No retention force or release-safety certification"]}
+    "audit": {"sources": ["assets/cad/fastener.py:_retention_bayonet"], "verified": ["Assembly and unlock paths", "Axial capture depth"], "tests": ["tests/fastener_test.py", "tests/fastener.test.ts"], "gaps": [], "bugs": ["No retention force or release-safety certification"]}
   },
   "snap.define": {
     "sections": [
@@ -99,7 +99,7 @@
     "examples": [
       {"label": "ABS cantilever snap definition", "data": {"schemaVersion":1,"frame":"component","geometry":{"length":"10 mm","width":"4 mm","thickness":"1 mm","engagementDepth":"0.6 mm"},"material":{"name":"ABS","modulus":"2.1 GPa","yieldStrength":"40 MPa"}}, "requires": "Read-only; a selected component.", "output": "result.shape is a cantilever beam snap and result.material.modulus is 2.1 GPa."}
     ],
-    "audit": {"sources": ["assets/cad/fastener.py:_snap_define"], "verified": ["Shape definition only; no material default"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["Deflection/strain/force evaluated separately"]}
+    "audit": {"sources": ["assets/cad/fastener.py:_snap_define"], "verified": ["Shape definition only; no material default"], "tests": ["tests/fastener_test.py", "tests/fastener.test.ts"], "gaps": [], "bugs": ["Deflection/strain/force evaluated separately"]}
   },
   "snap.evaluate": {
     "sections": [
@@ -109,7 +109,7 @@
     "examples": [
       {"label": "ABS cantilever 0.6 mm deflection", "data": {"schemaVersion":1,"frame":"component","geometry":{"length":"10 mm","width":"4 mm","thickness":"1 mm","engagementDepth":"0.6 mm","deflection":"0.6 mm"},"material":{"name":"ABS","modulus":"2.1 GPa","yieldStrength":"40 MPa"},"support":{"condition":"cantilever"}}, "requires": "Read-only; a selected component.", "output": "result.stiffness is about 3*2100*0.333/1000 N/mm and result.stress is about 3*2100*1*0.6/(2*100) MPa."}
     ],
-    "audit": {"sources": ["assets/cad/fastener.py:_snap_evaluate,_pressure_mpa"], "verified": ["Cantilever beam deflection/strain/force", "Explicit model scope, no fatigue-life claim", "Material modulus/yield declared, never defaulted"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["No fatigue-life or large-deflection claim"]}
+    "audit": {"sources": ["assets/cad/fastener.py:_snap_evaluate,_pressure_mpa"], "verified": ["Cantilever beam deflection/strain/force", "Explicit model scope, no fatigue-life claim", "Material modulus/yield declared, never defaulted"], "tests": ["tests/fastener_test.py", "tests/fastener.test.ts"], "gaps": [], "bugs": ["No fatigue-life or large-deflection claim"]}
   },
   "shape.hose_barb": {
     "sections": [
@@ -119,6 +119,6 @@
     "examples": [
       {"label": "Two-barb hose fitting", "data": {"schemaVersion":1,"frame":"component","name":"Barb","tubeId":"4 mm","tubeOd":"6 mm","bore":"3 mm","barbs":[{"crest":"7 mm","root":"6 mm","length":"3 mm"},{"crest":"7 mm","root":"6 mm","length":"3 mm"}]}, "requires": "Native component; Barb and Barb__section names unused.", "output": "result.checks report pass for channel-continuity and each barb seating with 1.5 mm radial interference."}
     ],
-    "audit": {"sources": ["assets/cad/fastener.py:_shape_hose_barb,_barb_profile_points"], "verified": ["Channel continuity", "Barb seating interference", "Stepped revolve profile"], "tests": ["tests/fastener_test.py", "tests/fastener.test.js"], "gaps": [], "bugs": ["Seating is geometric interference, not leak-tightness"]}
+    "audit": {"sources": ["assets/cad/fastener.py:_shape_hose_barb,_barb_profile_points"], "verified": ["Channel continuity", "Barb seating interference", "Stepped revolve profile"], "tests": ["tests/fastener_test.py", "tests/fastener.test.ts"], "gaps": [], "bugs": ["Seating is geometric interference, not leak-tightness"]}
   }
 }

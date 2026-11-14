@@ -36,6 +36,234 @@ class Base:
     pass
 
 
+class Property(Base):
+    """Immutable descriptor metadata; no physical/visual property value."""
+
+    def __init__(self, parent: Appearance | Material, id: str, name: str) -> None:
+        self.model_parent: Appearance | Material = parent
+        self.model_id: str = id
+        self.model_name: str = name
+
+    @property
+    def id(self) -> str:
+        self.model_parent.model_valid()
+        return self.model_id
+
+    @property
+    def name(self) -> str:
+        self.model_parent.model_valid()
+        return self.model_name
+
+    @property
+    def isReadOnly(self) -> bool:
+        self.model_parent.model_valid()
+        return True
+
+    @property
+    def parent(self) -> Base:
+        self.model_parent.model_valid()
+        return self.model_parent
+
+
+class Properties(Collection[Property]):
+    def itemById(self, id: str) -> Property | None:
+        return next((item for item in self.values if item.id == id), None)
+
+    def itemByName(self, name: str) -> Property | None:
+        return next((item for item in self.values if item.name == name), None)
+
+
+class Material(Base):
+    def __init__(self, owner: Materials, name: str, description: str = "") -> None:
+        self.model_owner: Materials = owner
+        self.model_id: str = "model-material:" + str(uuid4())
+        self.model_name: str = name
+        self.model_description: str = description
+        self.model_properties: Properties = Properties()
+
+    def model_valid(self) -> None:
+        doc = self.model_owner.model_document
+        if doc is not None and not doc.isValid:
+            raise ValueError("Material belongs to a closed document")
+
+    def model_write(self) -> None:
+        self.model_valid()
+        doc = self.model_owner.model_document
+        if doc is None:
+            raise ValueError("Modeled library materials are read-only")
+        doc.isModified = True
+
+    @property
+    def id(self) -> str:
+        self.model_valid()
+        return self.model_id
+
+    @property
+    def name(self) -> str:
+        self.model_valid()
+        return self.model_name
+
+    @name.setter
+    def name(self, value: str) -> None:
+        if not value.strip():
+            raise ValueError("Material name must be nonempty")
+        if any(item is not self and item.name == value for item in self.model_owner):
+            raise ValueError("Material name already exists")
+        self.model_write()
+        self.model_name = value
+
+    @property
+    def description(self) -> str:
+        self.model_valid()
+        return self.model_description
+
+    @description.setter
+    def description(self, value: str) -> None:
+        self.model_write()
+        self.model_description = value
+
+    @property
+    def materialProperties(self) -> Properties:
+        self.model_valid()
+        return self.model_properties
+
+    @property
+    def parent(self) -> Base:
+        return self.model_owner.model_parent
+
+
+class Materials(Collection[Material]):
+    def __init__(self, parent: Base, document: Document | None) -> None:
+        super().__init__()
+        self.model_parent: Base = parent
+        self.model_document: Document | None = document
+
+    def itemById(self, id: str) -> Material | None:
+        return next((item for item in self.values if item.id == id), None)
+
+    def itemByName(self, name: str) -> Material | None:
+        return next((item for item in self.values if item.name == name), None)
+
+    def addByCopy(self, materialToCopy: Material, name: str) -> Material:
+        if self.model_document is None or not self.model_document.isValid:
+            raise ValueError("Material copies require an open target document")
+        if not name.strip() or self.itemByName(name) is not None:
+            raise ValueError("Material copy name is empty or already exists")
+        materialToCopy.model_valid()
+        material = Material(self, name, materialToCopy.description)
+        material.model_properties = Properties([Property(material, item.id, item.name)
+                                                for item in materialToCopy.materialProperties])
+        self.values.append(material)
+        self.model_document.isModified = True
+        return material
+
+
+class Appearance(Base):
+    def __init__(self, owner: Appearances, name: str) -> None:
+        self.model_owner: Appearances = owner
+        self.model_id: str = "model-appearance:" + str(uuid4())
+        self.model_name: str = name
+        self.model_properties: Properties = Properties()
+
+    def model_valid(self) -> None:
+        doc = self.model_owner.model_document
+        if doc is not None and not doc.isValid:
+            raise ValueError("Appearance belongs to a closed document")
+
+    @property
+    def id(self) -> str:
+        self.model_valid()
+        return self.model_id
+
+    @property
+    def name(self) -> str:
+        self.model_valid()
+        return self.model_name
+
+    @name.setter
+    def name(self, value: str) -> None:
+        self.model_valid()
+        doc = self.model_owner.model_document
+        if doc is None:
+            raise ValueError("Modeled library appearances are read-only")
+        if not value.strip() or any(item is not self and item.name == value for item in self.model_owner):
+            raise ValueError("Appearance name is empty or already exists")
+        self.model_name = value
+        doc.isModified = True
+
+    @property
+    def appearanceProperties(self) -> Properties:
+        self.model_valid()
+        return self.model_properties
+
+    @property
+    def parent(self) -> Base:
+        return self.model_owner.model_parent
+
+
+class Appearances(Collection[Appearance]):
+    def __init__(self, parent: Base, document: Document | None) -> None:
+        super().__init__()
+        self.model_parent: Base = parent
+        self.model_document: Document | None = document
+
+    def itemById(self, id: str) -> Appearance | None:
+        return next((item for item in self.values if item.id == id), None)
+
+    def itemByName(self, name: str) -> Appearance | None:
+        return next((item for item in self.values if item.name == name), None)
+
+    def addByCopy(self, appearanceToCopy: Appearance, name: str) -> Appearance:
+        if self.model_document is None or not self.model_document.isValid:
+            raise ValueError("Appearance copies require an open target document")
+        if not name.strip() or self.itemByName(name) is not None:
+            raise ValueError("Appearance copy name is empty or already exists")
+        appearanceToCopy.model_valid()
+        appearance = Appearance(self, name)
+        appearance.model_properties = Properties([Property(appearance, item.id, item.name)
+                                                  for item in appearanceToCopy.appearanceProperties])
+        self.values.append(appearance)
+        self.model_document.isModified = True
+        return appearance
+
+
+class MaterialLibrary(Base):
+    def __init__(self) -> None:
+        self.model_materials: Materials = Materials(self, None)
+        self.model_appearances: Appearances = Appearances(self, None)
+        appearance = Appearance(self.model_appearances, "Model metadata appearance")
+        appearance.model_properties = Properties([Property(appearance, "model:test-property", "Model descriptor only")])
+        self.model_appearances.values.append(appearance)
+        self.model_materials.values.append(Material(self.model_materials, "Model metadata material", "No physical properties or native library identity implied"))
+
+    @property
+    def id(self) -> str:
+        return "model-library:metadata"
+
+    @property
+    def name(self) -> str:
+        return "Model metadata library"
+
+    @property
+    def materials(self) -> Materials:
+        return self.model_materials
+
+    @property
+    def appearances(self) -> Appearances:
+        return self.model_appearances
+
+
+class MaterialLibraries(Collection[MaterialLibrary]):
+    def __init__(self) -> None:
+        super().__init__([MaterialLibrary()])
+
+    def itemById(self, id: str) -> MaterialLibrary | None:
+        return next((item for item in self.values if item.id == id), None)
+
+    def itemByName(self, name: str) -> MaterialLibrary | None:
+        return next((item for item in self.values if item.name == name), None)
+
+
 class Attribute(Base):
     def __init__(self, collection: Attributes, group: str, name: str, value: str) -> None:
         self.model_collection: Attributes = collection
@@ -147,13 +375,54 @@ class Plane(Base):
 
 
 class Matrix3D(Base):
+    objectType: ClassVar[str] = "adsk::core::Matrix3D"
+
+    def __init__(self) -> None:
+        self.model_cells: list[float] = [
+            1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.
+        ]
+
     @staticmethod
     def create() -> Matrix3D:
         return Matrix3D()
 
     def asArray(self) -> list[float]:
-        # Only the identity placement used by comp_add is implemented.
-        return [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.]
+        return list(self.model_cells)
+
+    @property
+    def translation(self) -> Vector3D:
+        return Vector3D(self.model_cells[3], self.model_cells[7], self.model_cells[11])
+
+    @translation.setter
+    def translation(self, value: Vector3D) -> None:
+        self.model_cells[3] = value.x
+        self.model_cells[7] = value.y
+        self.model_cells[11] = value.z
+
+    def setWithArray(self, values: list[float]) -> bool:
+        if len(values) != 16 or any(not math.isfinite(value) for value in values):
+            raise ValueError("A transform matrix requires 16 finite values")
+        self.model_cells = list(values)
+        return True
+
+    def setWithCoordinateSystem(
+        self,
+        origin: Point3D,
+        xAxis: Vector3D,
+        yAxis: Vector3D,
+        zAxis: Vector3D,
+    ) -> bool:
+        return self.setWithArray([
+            xAxis.x, yAxis.x, zAxis.x, origin.x,
+            xAxis.y, yAxis.y, zAxis.y, origin.y,
+            xAxis.z, yAxis.z, zAxis.z, origin.z,
+            0., 0., 0., 1.,
+        ])
+
+    def copy(self) -> Matrix3D:
+        result = Matrix3D.create()
+        result.model_cells = self.asArray()
+        return result
 
 
 class UnitsManager(Base):
@@ -167,7 +436,7 @@ class UnitsManager(Base):
         try:
             _ = self.evaluateExpression(expression, units)
             return True
-        except (ValueError, SyntaxError, ZeroDivisionError):
+        except (ValueError, SyntaxError, ZeroDivisionError, NotImplementedError):
             return False
 
 
@@ -346,6 +615,7 @@ class Document(Base):
         self.allDocumentReferences: Collection[object] = Collection()
         self.documentReferences: Collection[object] = Collection()
         self.products: Products = Products(Design(self))
+        self.model_viewport: Viewport = Viewport(self)
 
     def _snapshot(self, file: DataFile) -> None:
         from .fusion import Design
@@ -445,15 +715,162 @@ class Documents(Collection[Document]):
         return doc
 
 
+class CameraTypes:
+    OrthographicCameraType = 0
+    PerspectiveCameraType = 1
+    PerspectiveWithOrthoFacesCameraType = 2
+
+
+class Camera(Base):
+    """Detached camera state only; no renderer, fitting or ViewCube solver."""
+    def __init__(self) -> None:
+        self.model_eye = Point3D(10., 10., 10.)
+        self.model_target = Point3D(0., 0., 0.)
+        self.model_upVector = Vector3D(0., 0., 1.)
+        self.model_cameraType: int = CameraTypes.OrthographicCameraType
+        self.model_perspectiveAngle: float = math.pi / 4
+        self.model_extents: tuple[float, float] = (10., 10.)
+        self.model_isFitView: bool = False
+        self.model_isSmoothTransition: bool = False
+
+    @staticmethod
+    def create() -> Camera:
+        return Camera()
+
+    def getExtents(self) -> tuple[bool, float, float]:
+        if self.cameraType != CameraTypes.OrthographicCameraType:
+            return (False, 0., 0.)
+        return (True, *self.model_extents)
+
+    def setExtents(self, width: float, height: float) -> bool:
+        if self.cameraType != CameraTypes.OrthographicCameraType:
+            return False
+        if not all(math.isfinite(v) and v > 0 for v in (width, height)):
+            return False
+        self.model_extents = (width, height)
+        return True
+
+    @property
+    def eye(self) -> Point3D:
+        return deepcopy(self.model_eye)
+
+    @eye.setter
+    def eye(self, value: Point3D) -> None:
+        self.model_eye = deepcopy(value)
+
+    @property
+    def target(self) -> Point3D:
+        return deepcopy(self.model_target)
+
+    @target.setter
+    def target(self, value: Point3D) -> None:
+        self.model_target = deepcopy(value)
+
+    @property
+    def upVector(self) -> Vector3D:
+        return deepcopy(self.model_upVector)
+
+    @upVector.setter
+    def upVector(self, value: Vector3D) -> None:
+        self.model_upVector = deepcopy(value)
+
+    @property
+    def cameraType(self) -> int:
+        return self.model_cameraType
+
+    @cameraType.setter
+    def cameraType(self, value: int) -> None:
+        if value not in (0, 1, 2):
+            raise ValueError("Unknown camera projection")
+        self.model_cameraType = value
+
+    @property
+    def perspectiveAngle(self) -> float:
+        if self.cameraType == CameraTypes.OrthographicCameraType:
+            raise ValueError("Perspective angle requires perspective projection")
+        return self.model_perspectiveAngle
+
+    @perspectiveAngle.setter
+    def perspectiveAngle(self, value: float) -> None:
+        if self.cameraType == CameraTypes.OrthographicCameraType or not 0 < value < math.pi:
+            raise ValueError("Invalid perspective angle or projection")
+        self.model_perspectiveAngle = value
+
+    @property
+    def isFitView(self) -> bool:
+        return self.model_isFitView
+
+    @isFitView.setter
+    def isFitView(self, value: bool) -> None:
+        self.model_isFitView = value
+
+    @property
+    def isSmoothTransition(self) -> bool:
+        return self.model_isSmoothTransition
+
+    @isSmoothTransition.setter
+    def isSmoothTransition(self, value: bool) -> None:
+        self.model_isSmoothTransition = value
+
+    @property
+    def viewOrientation(self) -> int:
+        raise NotImplementedError("ViewCube orientation is not modeled")
+
+    @viewOrientation.setter
+    def viewOrientation(self, value: int) -> None:
+        raise NotImplementedError("ViewCube orientation is not modeled")
+
+
+class Viewport(Base):
+    def __init__(self, document: Document) -> None:
+        self.model_document: Document = document
+        self.model_camera: Camera = Camera.create()
+
+    @property
+    def parentDocument(self) -> Document:
+        return self.model_document
+
+    @property
+    def camera(self) -> Camera:
+        self.model_validate()
+        return deepcopy(self.model_camera)
+
+    @camera.setter
+    def camera(self, value: Camera) -> None:
+        self.model_validate()
+        if value.isFitView or value.isSmoothTransition:
+            raise NotImplementedError("Fit and animated camera transitions require native Fusion")
+        if value.cameraType == CameraTypes.OrthographicCameraType:
+            _, width, height = value.getExtents()
+            if width != height:
+                raise NotImplementedError("Only square viewport extents are modeled")
+        self.model_camera = deepcopy(value)
+
+    def model_validate(self) -> None:
+        if not self.model_document.isValid:
+            raise ValueError("Viewport document is closed")
+
+
 class Application(Base):
     _instance: ClassVar[Application | None] = None
 
     def __init__(self) -> None:
-        self.version: str = "fmcad-simulator-v11-not-Fusion"
+        self.version: str = "fmcad-simulator-v17-not-Fusion"
         self.activeDocument: Document | None = None
         self.documents: Documents = Documents(self)
         self.userInterface: UserInterface = UserInterface()
         self.data: Data = Data(self)
+        self.model_material_libraries: MaterialLibraries = MaterialLibraries()
+
+    @property
+    def materialLibraries(self) -> MaterialLibraries:
+        return self.model_material_libraries
+
+    @property
+    def activeViewport(self) -> Viewport:
+        if self.activeDocument is None:
+            raise ValueError("No active viewport")
+        return self.activeDocument.model_viewport
 
     @property
     def activeProduct(self) -> Product | None:

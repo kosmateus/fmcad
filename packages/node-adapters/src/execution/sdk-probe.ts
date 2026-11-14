@@ -7,7 +7,7 @@ import type {
   PreparedPythonArtifact,
 } from "@fmcad/core";
 import { prepareCadBundle } from "../python/bundle";
-import { pythonValue, verifyPythonArtifact } from "../python/artifact";
+import { pythonLiteral, verifyPythonArtifact } from "../python/artifact";
 
 function fail(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
@@ -153,14 +153,14 @@ export function prepareSdkProbe(
   target: WorkerSdkProbeTarget,
 ): PreparedPythonArtifact {
   const wrapper = `
-def run(_context):
+def run(_context: object) -> None:
     import adsk.core, json
     app = adsk.core.Application.get()
-    doc = _document_target(app, ${pythonValue(target.doc)})
-    _document_assert_identity(doc, ${pythonValue(target.docId ?? null)}, ${pythonValue(target.docFileId ?? null)})
+    doc = _document_target(app, ${pythonLiteral(target.doc)})
+    _document_assert_identity(doc, ${pythonLiteral(target.docId ?? null)}, ${pythonLiteral(target.docFileId ?? null)})
     file, file_error = _document_data_file(doc)
-    observation = dict(capabilityId=${pythonValue(request.capabilityId)},
-        registered=${pythonValue(request.capabilityId)} in CAD_HANDLERS,
+    observation = dict(capabilityId=${pythonLiteral(request.capabilityId)},
+        registered=${pythonLiteral(request.capabilityId)} in CAD_HANDLERS,
         build=str(app.version), docId=str(doc.creationId), docFileId=str(file.id) if file else None)
     print('FMCAD_SDK_PROBE ' + json.dumps(observation, ensure_ascii=True, allow_nan=False))
 `;

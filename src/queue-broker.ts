@@ -15,10 +15,18 @@ import type {
   AuditSnapshot,
 } from "./queue-broker-modules";
 import type { BrokerControlFence } from "../packages/core/src/application/broker-control";
+import type { DispatchFailure } from "../packages/core/src/application/execution";
+import {
+  backendHead,
+  prepareBackendTransition,
+} from "./queue-backend-transition";
 const runtimeRequire = createRequire(__filename);
 const load = <K extends keyof BrokerModules>(name: K): BrokerModules[K] =>
   runtimeRequire(name) as BrokerModules[K];
 const { openIsolatedEpoch, epochAdmission } = load("./queue-isolated-epoch");
+const projectActivity = runtimeRequire(
+  "./dist/node-adapters/persistence/project-history/activity",
+) as typeof import("../packages/node-adapters/src/persistence/project-history/activity");
 const { epochControlDirectory } = load("./queue-epoch-lineage");
 const { QueueGate } = load("./queue-gate");
 const { PauseBudget } = load("./pause-budget");
@@ -542,18 +550,48 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       ? options.testAtomicWorkflowScope
       : fastenersScope;
   const pinned: P.Config = JSON.parse(JSON.stringify(cfg)) as P.Config;
+  const preparationConcurrency = (runtimeRequire(
+    "./dist/node-adapters/execution/phased-workers",
+  ) as Pick<typeof import("../packages/node-adapters/src/execution/phased-workers"),"resolvePreparationConcurrency">).resolvePreparationConcurrency(
+    (pinned["queue"] as {preparationConcurrency?:unknown}|undefined)?.preparationConcurrency,
+  );
   const configHash = brokerConfigHash(pinned);
+  const effectiveBackend = backendHead(dir);
   let identityFile = path.join(dir, "instance.json");
   let oldIdentity = fs.existsSync(identityFile)
     ? readJson<P.Identity>(identityFile)
     : null;
   // A known local configuration rejection must not reserve Fusion or leave a
   // dead marker that prevents the correctly configured backend from starting.
-  if (oldIdentity && oldIdentity.configHash !== configHash)
+  if (
+    !options.backendTransition &&
+    (effectiveBackend?.identity || oldIdentity)?.configHash !== configHash &&
+    oldIdentity
+  )
     fail(
       "CONFIG_CHANGED",
       "Pinned backend configuration differs from the durable broker identity",
     );
+  if (options.backendTransition)
+    prepareBackendTransition(
+      dir,
+      openIsolatedEpoch(dir, { recover: false }),
+      pinned,
+      options.backendTransition,
+    );
+  function assertBackendHeadOwner(current: P.State) {
+    if (!same(backendHead(dir)?.head, effectiveBackend?.head))
+      fail("BACKEND_TRANSITION_CHANGED", "Physical backend head changed before startup");
+    if (effectiveBackend && (!current.epoch ||
+        current.epoch.epochId !== effectiveBackend.head.epochId ||
+        current.epoch.ownerClientId !== effectiveBackend.head.ownerClientId ||
+        current.epoch.ownerTokenHash !== effectiveBackend.head.ownerTokenHash))
+      fail("BACKEND_TRANSITION_CHANGED", "Backend transition no longer belongs to the exact active epoch owner");
+    if (effectiveBackend && !options.backendTransition && effectiveBackend.identity.buildHash !== codeHash)
+      fail("BUILD_CHANGED", "Restore the exact physical backend transition runtime before reopening");
+  }
+  if (effectiveBackend)
+    assertBackendHeadOwner(openIsolatedEpoch(dir, { recover: false }));
   const marker = {
     pid: process.pid,
     birth: processBirth(),
@@ -596,17 +634,34 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const currentAuditScope = fs.existsSync(currentAuditScopeFile)
     ? readJson<P.AuditScope>(currentAuditScopeFile)
     : null;
+  const phaseTimings = load(
+    "./dist/node-adapters/telemetry/phase-timings",
+  ).createPhaseTimingProducer();
+  const measuredStateOptions = {
+    ...options.stateOptions,
+    onCommittedSnapshot: phaseTimings.queueCommitted,
+  };
   const state = openIsolatedEpoch(
     dir,
     migrationSnapshotHash
       ? {
-          ...options.stateOptions,
+          ...measuredStateOptions,
           recover: false,
           expectedSnapshotHash: migrationSnapshotHash,
         }
-      : options.stateOptions,
+      : measuredStateOptions,
   );
+  phaseTimings.queueCommitted(state.data, state.epoch?.root ?? dir);
   if (state.epoch) identityFile = path.join(state.epoch.root, "instance.json");
+  assertBackendHeadOwner(state);
+  if (effectiveBackend) {
+    identityFile = effectiveBackend.identityFile;
+  }
+  // Metadata-only preflight happens before constructing a physical client. A
+  // foreign owner, altered config or unfinished current job sends zero SDK work.
+  const backendTransition = options.backendTransition
+    ? prepareBackendTransition(dir, state, pinned, options.backendTransition)
+    : null;
   if (options.startPaused === true)
     state.pause(true, "startup:" + marker.nonce);
   const gate = new QueueGate(state, marker.nonce);
@@ -1140,6 +1195,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     ownerBirth: marker.birth,
     buildHash: codeHash,
     stage: "startup",
+    ...(backendTransition ? { auditExpectedInstance: {
+      pid: backendTransition.identity.instance.pid,
+      birth: backendTransition.identity.instance.birth,
+      version: backendTransition.identity.instance.version,
+    } } : {}),
   };
   const lifecycle = {
     owner: marker,
@@ -1154,15 +1214,21 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     oldIdentity = fs.existsSync(identityFile)
       ? readJson<P.Identity>(identityFile)
       : null;
-    if (oldIdentity && oldIdentity.configHash !== configHash)
+    if (
+      !backendTransition &&
+      oldIdentity &&
+      oldIdentity.configHash !== configHash
+    )
       fail(
         "CONFIG_CHANGED",
         "Pinned backend configuration differs from the durable broker identity",
       );
     if (
-      load(
-        "./dist/node-adapters/broker-ipc/normal-admission",
-      ).epochStartupPinned(state, oldIdentity?.buildHash, codeHash)
+      !backendTransition &&
+      (successorRuntime ||
+        load(
+          "./dist/node-adapters/broker-ipc/normal-admission",
+        ).epochStartupPinned(state, oldIdentity?.buildHash, codeHash))
     ) {
       // Reopening a broker never adopts another active document or replays the
       // creation operation. The immutable epoch remains tied to its live process.
@@ -1252,7 +1318,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           ),
         }),
       );
-      if (oldIdentity && !sameInstance(instance, oldIdentity.instance)) {
+      if (
+        !backendTransition &&
+        oldIdentity &&
+        !sameInstance(instance, oldIdentity.instance)
+      ) {
         const previousAlive = priorProcessAlive(oldIdentity.instance);
         const versionChanged =
           oldIdentity.instance.version !== instance.version;
@@ -1307,7 +1377,30 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           queueTransition,
         });
       }
-      durable(identityFile, { configHash, buildHash: codeHash, instance });
+      if (backendTransition) {
+        const diagnosticPath = path.join(dir, `broker-startup-${marker.nonce}.result.json`);
+        const observationFiles = [diagnosticPath];
+        if (!options.createBackend) {
+          const receipt = readJson<Record<string, unknown>>(startupReceipt);
+          if (receipt["terminal"] !== true || receipt["outcome"] !== "succeeded" ||
+              !sameInstance(receipt["instance"] as P.Instance, instance) ||
+              Object.entries(startupBinding).some(([key, value]) => !same(receipt[key], value)))
+            fail("BACKEND_TRANSITION_UNPROVEN", "Exact target startup receipt is required; ownership is retained without replay");
+          observationFiles.push(startupReceipt);
+        }
+        identityFile = backendTransition.commit(instance, codeHash, observationFiles);
+      } else if (effectiveBackend) {
+        // A reopen must not rewrite the immutable transition or predecessor.
+        if (
+          oldIdentity?.buildHash !== codeHash ||
+          !sameInstance(oldIdentity.instance, instance)
+        )
+          fail(
+            "BUILD_CHANGED",
+            "Restore the exact physical backend transition runtime before reopening",
+          );
+      } else
+        durable(identityFile, { configHash, buildHash: codeHash, instance });
     }
   } catch (cause) {
     const error = errorInfo(cause);
@@ -1364,10 +1457,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   }
 
   const phased = new (load("./queue-phased").PhasedWorkers)({
+    preparationConcurrency,
     state,
     dir,
     cfg: pinned,
     codeHash,
+    onLocalPhase(job, phase) {
+      phaseTimings.localPhase(state.epoch?.root ?? dir, job, phase);
+    },
     async checkSdkRequest(message, signal) {
       const job = required(state.data.jobs[message.jobId]);
       const prepare =
@@ -1421,7 +1518,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         payload.method = "tools/list";
         delete payload.params;
       }
-      await pythonAdmission.check(payload);
+      await pythonAdmission.check(payload, undefined, { signal });
     },
     properties: clientProperties,
     spawnWorker: options.spawnWorker,
@@ -1454,6 +1551,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         at: Date.now(),
         ...gate.snapshot(),
         owner: marker,
+        projectActivityFence: projectActivity.projectActivityCapability(),
         queued: Object.values(state.data.jobs).filter(
           (job) => job.state === "queued",
         ).length,
@@ -2319,9 +2417,122 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       prepared.record.pythonCheck = prepared.pythonCertificate.report;
     prepared.record.dispatchClass = prepared.pythonCertificate.kind;
     // Test observer may suspend local preparation, never replace checking.
+    await options.testCheckPrepared?.(prepared);
     prepared.pythonCertificate.fence(prepared.outgoing);
     verifyPreparedJob(job, prepared.contextEpoch);
     return prepared;
+  }
+
+  function retainDispatchFailure(
+    context: P.Context,
+    error: unknown,
+    failure: DispatchFailure<P.Prepared>,
+  ) {
+    // Error messages, causes and child output may contain script/headers/tokens.
+    // Read only own data fields and retain a closed vocabulary, never getters.
+    const field = (key: string): unknown =>
+      error && typeof error === "object"
+        ? Object.getOwnPropertyDescriptor(error, key)?.value
+        : undefined;
+    const codes = new Set([
+      "ENOENT",
+      "EACCES",
+      "EPERM",
+      "EINVAL",
+      "EMFILE",
+      "ENFILE",
+      "EAGAIN",
+      "ENOMEM",
+      "ENOSYS",
+      "ENOEXEC",
+      "EPIPE",
+      "ECONNRESET",
+      "ETIMEDOUT",
+      "ABORT_ERR",
+      "EINTR",
+      "ENOBUFS",
+      "EIO",
+      "ESRCH",
+      "ECHILD",
+      "EPROTO",
+      "UNKNOWN_RPC",
+      "MALFORMED_BACKEND_RESULT",
+      "PYTHON_CHECK_REJECTED",
+      "BUILD_CHANGED",
+      "INPUT_CHANGED",
+      "DOCUMENT_CHANGED",
+      "RUN_TIMEOUT",
+      "PREPARED_RPC_UNAVAILABLE",
+      "OUTPUT_PUBLICATION_FAILED",
+      "unsupported_queue_route",
+      "INVALID_SCRIPT",
+      "INVALID_REQUEST",
+    ]);
+    try {
+      const code = field("code"),
+        causeCode = field("causeCode");
+      const transportPhase = field("transportPhase");
+      const prepared = failure.prepared;
+      const binding = prepared?.record.binding;
+      const rpcIdentityMatches =
+        !!binding &&
+        binding.jobId === context.job.id &&
+        binding.buildHash === codeHash &&
+        binding.rpcId === prepared?.rpcId;
+      durable(
+        path.join(
+          jobDir(context.job.id),
+          `dispatch-failure-${randomUUID()}.json`,
+        ),
+        {
+          version: 1,
+          at: Date.now(),
+          jobId: context.job.id,
+          requestId: context.job.requestId,
+          clientId: context.job.clientId,
+          buildHash: codeHash,
+          phase: failure.phase,
+          // This is the local send boundary, not proof of remote SDK entry.
+          submitted: failure.submitted,
+          code: typeof code === "string" && codes.has(code) ? code : null,
+          causeCode:
+            typeof causeCode === "string" && codes.has(causeCode)
+              ? causeCode
+              : null,
+          transportPhase:
+            typeof transportPhase === "string" &&
+            [
+              "spawn",
+              "process",
+              "stdin",
+              "output",
+              "response",
+              "observation",
+            ].includes(transportPhase)
+              ? transportPhase
+              : null,
+          rpcIdentityMatches,
+          rpc: rpcIdentityMatches
+            ? {
+                jobId: binding!.jobId,
+                rpcId: binding!.rpcId,
+                requestHash: binding!.requestHash,
+                buildHash: binding!.buildHash,
+              }
+            : null,
+          worker: {
+            pid: context.child?.pid ?? null,
+            identity: "worker-identity.json",
+            start: "worker-start.json",
+            result: "worker-result.json",
+          },
+        },
+        true,
+      );
+    } catch {
+      // Diagnostics must never prevent unknown classification or permit replay.
+      diagnostics();
+    }
   }
 
   // All adapter calls eventually cross this one physical dispatch boundary.
@@ -2499,15 +2710,17 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         });
         return returned;
       },
-      unknown() {
+      unknown(error, failure) {
         context.unknown = true;
         hold(
           context.job,
           "Physical RPC outcome is unknown; observe the durable receipt without replay",
         );
+        retainDispatchFailure(context, error, failure);
       },
-      notSubmitted(error) {
+      notSubmitted(error, failure) {
         required(context.localDispatchErrors).add(error);
+        retainDispatchFailure(context, error, failure);
       },
     });
   };
@@ -4277,6 +4490,35 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     return result;
   }
 
+  function workerSnapshotHash(): string {
+    if (state._writing || state._fault)
+      fail(
+        "STORAGE_UNAVAILABLE",
+        "Queue snapshot has unresolved durability evidence",
+      );
+    try {
+      fs.lstatSync(
+        path.join(state.epoch?.root ?? dir, "queue-state.pending.json"),
+      );
+    } catch (error) {
+      if (
+        !error ||
+        typeof error !== "object" ||
+        !("code" in error) ||
+        error.code !== "ENOENT"
+      )
+        fail(
+          "STORAGE_UNAVAILABLE",
+          "Queue snapshot durability cannot be inspected",
+        );
+      return hash(JSON.stringify(state.data));
+    }
+    fail(
+      "STORAGE_UNAVAILABLE",
+      "Queue snapshot has unresolved durability evidence",
+    );
+  }
+
   async function dispatch(input: unknown): Promise<unknown> {
     const envelope = decodeEnvelope(input);
     const successorAction =
@@ -4335,6 +4577,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           jobId: required(message.jobId),
           workerToken: required(message.workerToken),
         });
+        const snapshotHash =
+          message.snapshotFence === true ? workerSnapshotHash() : undefined;
         const job = state.status(required(message.jobId));
         // The admitted worker also waits here during preflight/postflight, when
         // the physical probe is owned by the broker rather than active.context.
@@ -4350,14 +4594,18 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         return {
           remainingMs: job.sdkRemainingMs ?? job.timeoutMs,
           phase: job.state,
+          ...(snapshotHash === undefined ? {} : { snapshotHash }),
           control: gate.snapshot(),
         };
       }
       if (active.unknown || state.summary().blocked)
         fail("RECONCILIATION_REQUIRED", "SDK outcome remains unresolved");
+      const snapshotHash =
+        message.snapshotFence === true ? workerSnapshotHash() : undefined;
       return {
         remainingMs: required(active.budget).remaining(),
         waitingForPause: !!active.waitingForPause,
+        ...(snapshotHash === undefined ? {} : { snapshotHash }),
         control: gate.snapshot(),
       };
     }
@@ -4861,7 +5109,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         const existing = Object.values(state.data.jobs).some(
           (job) => job.requestId === request.requestId,
         );
-        let rawPrepared, preparedId, flights;
+        let rawPrepared: P.Prepared | undefined;
+        let preparedId: string | undefined;
+        let flights: Awaited<ReturnType<typeof prepareJobFlights>>;
         try {
           if (!existing && request.kind === "rpc") {
             preparedId = randomUUID();
@@ -4879,41 +5129,77 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           }
           // Offline raw preparation can outlive a stop/reset/build transition.
           // Recheck ownership before publishing an accepted job, not just at SDK send.
-          if (stopping || closed || closing)
-            throw Object.assign(
-              new Error("Broker is stopping; request was not accepted"),
-              { code: "BROKER_STOPPING", notStarted: true },
-            );
-          if (readJson<P.Owner>(lock).nonce !== marker.nonce)
-            throw Object.assign(
-              new Error("Broker ownership changed before acceptance"),
-              { code: "LOCK_CHANGED", notStarted: true },
-            );
-          if (buildHash() !== codeHash)
-            throw Object.assign(
-              new Error("Executable changed before acceptance"),
-              { code: "BUILD_CHANGED", notStarted: true },
-            );
-          resetFence();
-          if (state.epoch) epochAdmission(state, request, clients);
-          if (!existing)
-            load(
-              "./dist/node-adapters/persistence/accepted-inputs",
-            ).retainAdmission(dir, request);
-          const job = state.submit(request, preparedId);
-          if (workflowObservation) {
-            workflowObservation.observerJobHash = required(
-              state.data.jobs[job.id],
-            ).hash;
-            state.armWorkflowObservation(job.id, workflowObservation);
+          const verifyAcceptance = () => {
+            if (stopping || closed || closing)
+              throw Object.assign(
+                new Error("Broker is stopping; request was not accepted"),
+                { code: "BROKER_STOPPING", notStarted: true },
+              );
+            if (readJson<P.Owner>(lock).nonce !== marker.nonce)
+              throw Object.assign(
+                new Error("Broker ownership changed before acceptance"),
+                { code: "LOCK_CHANGED", notStarted: true },
+              );
+            if (buildHash() !== codeHash)
+              throw Object.assign(
+                new Error("Executable changed before acceptance"),
+                { code: "BUILD_CHANGED", notStarted: true },
+              );
+            resetFence();
+          };
+          verifyAcceptance();
+          const accept = () => {
+            verifyAcceptance();
+            if (state.epoch) epochAdmission(state, request, clients);
+            if (!existing)
+              load(
+                "./dist/node-adapters/persistence/accepted-inputs",
+              ).retainAdmission(dir, request);
+            const job = state.submit(request, preparedId);
+            if (workflowObservation) {
+              workflowObservation.observerJobHash = required(
+                state.data.jobs[job.id],
+              ).hash;
+              state.armWorkflowObservation(job.id, workflowObservation);
+            }
+            if (rawPrepared && job.id === preparedId)
+              rawPreparedPosts.set(job.id, rawPrepared);
+            if (flights && job.id === preparedId)
+              flightPlans.set(job.id, flights);
+            if (request.phased && job.state === "preparing")
+              phased.start(required(state.data.jobs[job.id]));
+            return job;
+          };
+          // Original request lookup remains available after archival and never
+          // creates a second job. New durable acceptance shares the project's
+          // lifecycle fence with archive and presence writers.
+          if (existing) return accept();
+          for (;;) {
+            let accepting = false;
+            try {
+              return projectActivity.withProjectActivityFence(
+                request.cwd,
+                () => {
+                  accepting = true;
+                  return accept();
+                },
+              );
+            } catch (error) {
+              // The callback has not run: no input retention, job acceptance or
+              // worker launch occurred. Yield IPC while another writer settles.
+              if (
+                accepting ||
+                !error ||
+                typeof error !== "object" ||
+                !("code" in error) ||
+                error.code !== "REGISTRY_BUSY" ||
+                ("retryable" in error && error.retryable === false)
+              )
+                throw error;
+              await new Promise((resolve) => setTimeout(resolve, 10));
+              verifyAcceptance();
+            }
           }
-          if (rawPrepared && job.id === preparedId)
-            rawPreparedPosts.set(job.id, rawPrepared);
-          if (flights && job.id === preparedId)
-            flightPlans.set(job.id, flights);
-          if (request.phased && job.state === "preparing")
-            phased.start(required(state.data.jobs[job.id]));
-          return job;
         } finally {
           if (preparedId) rawPreparations--;
           if (stopping) setImmediate(drain);
@@ -4954,6 +5240,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           recovery,
           buildHash: codeHash,
           features: {
+            projectHistoryActivityFence: true,
             conditionalIdleStop: true,
             phasedCommands: true,
             atomicWorkflowObserve: true,
@@ -5037,6 +5324,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 ? { deadEpochSuccessor: successorControl.metadata() }
                 : {}),
               features: {
+                projectHistoryActivityFence: true,
                 conditionalIdleStop: true,
                 phasedCommands: true,
                 atomicWorkflowObserve: true,

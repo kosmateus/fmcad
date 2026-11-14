@@ -53,3 +53,7 @@ export function stageOpenCode(root: string): void {
     );
   }
 }
+
+if (require.main === module) {
+  stageOpenCode(path.resolve(__dirname, "../../.."));
+}

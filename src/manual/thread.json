@@ -7,7 +7,7 @@
     "examples": [
       {"label":"Query M10 coarse","data":{"schemaVersion":1,"frame":"component","system":"iso-metric-coarse","query":"M10"},"requires":"A selected component; read-only.","output":"result.entries has one entry with pitch 1.5 mm and lead 1.5 mm (single start)."}
     ],
-    "audit":{"sources":["assets/cad/thread.py:thread_catalog"],"verified":["Curated ISO metric coarse subset","lead = starts * pitch"],"tests":["tests/thread_test.py","tests/thread.test.js"],"gaps":[],"bugs":["Curated subset only; full installed table not enumerated"]}
+    "audit":{"sources":["assets/cad/thread.py:thread_catalog"],"verified":["Curated ISO metric coarse subset","lead = starts * pitch"],"tests":["tests/thread_test.py","tests/thread.test.ts"],"gaps":[],"bugs":["Curated subset only; full installed table not enumerated"]}
   },
   "thread.custom-profile": {
     "sections": [
@@ -17,7 +17,7 @@
     "examples": [
       {"label":"M10x1.5 custom profile","data":{"schemaVersion":1,"frame":"component","majorDiameter":"10 mm","pitch":"1.5 mm","starts":1,"hand":"right","flankAngle":"60 deg","rootShape":"flat","length":"20 mm","runout":"1.5 mm","clearance":"0.1 mm"},"requires":"A selected component; read-only.","output":"result.profile.lead is 1.5 mm and result.profile.depth is (major-minor)/2."}
     ],
-    "audit":{"sources":["assets/cad/thread.py:thread_custom_profile,_thread_profile"],"verified":["lead = starts * pitch and diameter ordering","Custom profile is a recipe, never texturized","Hand/flank/root validation"],"tests":["tests/thread_test.py","tests/thread.test.js"],"gaps":[],"bugs":[]}
+    "audit":{"sources":["assets/cad/thread.py:thread_custom_profile,_thread_profile"],"verified":["lead = starts * pitch and diameter ordering","Custom profile is a recipe, never texturized","Hand/flank/root validation"],"tests":["tests/thread_test.py","tests/thread.test.ts"],"gaps":[],"bugs":[]}
   },
   "thread.pair-check": {
     "sections": [
@@ -27,6 +27,6 @@
     "examples": [
       {"label":"M10x1.5 RH bolt into nut","data":{"schemaVersion":1,"frame":"component","external":{"majorDiameter":"10 mm","minorDiameter":"8.16 mm","pitch":"1.5 mm","starts":1,"hand":"right"},"internal":{"majorDiameter":"10 mm","minorDiameter":"8.38 mm","pitch":"1.5 mm","starts":1,"hand":"right"}},"requires":"A selected component; read-only.","output":"result.pairFit is pass; result.engagementDepth is (external major - internal minor)/2."}
     ],
-    "audit":{"sources":["assets/cad/thread.py:thread_pair_check,_thread_profile"],"verified":["Hand, lead and starts all match for engagement","Radial fit and engagement depth","No torque/preload claim"],"tests":["tests/thread_test.py","tests/thread.test.js"],"gaps":[],"bugs":[]}
+    "audit":{"sources":["assets/cad/thread.py:thread_pair_check,_thread_profile"],"verified":["Hand, lead and starts all match for engagement","Radial fit and engagement depth","No torque/preload claim"],"tests":["tests/thread_test.py","tests/thread.test.ts"],"gaps":[],"bugs":[]}
   }
 }

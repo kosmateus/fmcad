@@ -2,6 +2,8 @@
 import math
 from pathlib import Path
 import unittest
+import sys
+from unittest.mock import patch
 
 import model_test as model
 
@@ -9,7 +11,12 @@ import model_test as model
 ROOT = Path(__file__).resolve().parents[1]
 NAMESPACE = dict(model.namespace)
 NAMESPACE['CAD_HANDLERS'] = dict(model.HANDLERS)
-exec(compile((ROOT / 'assets/cad/thread.py').read_text(), 'thread.py', 'exec'), NAMESPACE)
+# Earlier isolated suites may have restored sys.modules after importing model_test.
+with patch.dict(sys.modules, {
+    'adsk': model.adsk, 'adsk.core': model.adsk.core,
+    'adsk.fusion': model.adsk.fusion,
+}):
+    exec(compile((ROOT / 'assets/cad/thread.py').read_text(), 'thread.py', 'exec'), NAMESPACE)
 HANDLERS = NAMESPACE['CAD_HANDLERS']
 
 

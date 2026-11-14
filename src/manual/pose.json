@@ -7,7 +7,7 @@
     "examples": [
       {"label": "Save a service pose", "data": {"schemaVersion": 1, "frame": "component", "name": "Service", "revision": 1, "fillState": "EMPTY", "springState": "COCKED", "service": {"disconnections": ["tank-dock"]}}, "requires": "A selected component; root attributes available.", "output": "result.name is Service, result.manifest.fillState is EMPTY and result.manifest.springState is COCKED."}
     ],
-    "audit": {"sources": ["assets/cad/pose.py:pose_save,_pose_manifest,_pose_index_write"], "verified": ["Local manifest is not a native ConfigurationTable", "Identity and revision are recorded", "Fill/spring/route/service states are manifest-carried"], "tests": ["tests/pose_test.py", "tests/pose.test.js"], "gaps": [], "bugs": ["Native ConfigurationTable is deliberately not used; no native configuration feature is claimed"]}
+    "audit": {"sources": ["assets/cad/pose.py:pose_save,_pose_manifest,_pose_index_write"], "verified": ["Local manifest is not a native ConfigurationTable", "Identity and revision are recorded", "Fill/spring/route/service states are manifest-carried"], "tests": ["tests/pose_test.py", "tests/pose.test.ts"], "gaps": [], "bugs": ["Native ConfigurationTable is deliberately not used; no native configuration feature is claimed"]}
   },
   "pose.apply": {
     "sections": [
@@ -17,7 +17,7 @@
     "examples": [
       {"label": "Apply the service pose", "data": {"schemaVersion": 1, "frame": "component", "name": "Service"}, "requires": "A saved pose named Service in the same document.", "output": "result.leftApplied is true and result.unapplied lists dimensions that could not be applied."}
     ],
-    "audit": {"sources": ["assets/cad/pose.py:pose_apply,_pose_apply_manifest,_pose_capture,_pose_resolve_refs"], "verified": ["Apply leaves the requested state", "Stale refs and incompatible documents are rejected", "joint.drive and param.apply are reused by dispatch"], "tests": ["tests/pose_test.py", "tests/pose.test.js"], "gaps": [], "bugs": ["Fill/spring/route/service geometry is not synthesized here; downstream GM methods own that effect"]}
+    "audit": {"sources": ["assets/cad/pose.py:pose_apply,_pose_apply_manifest,_pose_capture,_pose_resolve_refs"], "verified": ["Apply leaves the requested state", "Stale refs and incompatible documents are rejected", "joint.drive and param.apply are reused by dispatch"], "tests": ["tests/pose_test.py", "tests/pose.test.ts"], "gaps": [], "bugs": ["Fill/spring/route/service geometry is not synthesized here; downstream GM methods own that effect"]}
   },
   "pose.list": {
     "sections": [
@@ -27,7 +27,7 @@
     "examples": [
       {"label": "List poses", "data": {"schemaVersion": 1, "frame": "component"}, "requires": "A selected component.", "output": "result.poses lists each saved pose by name."}
     ],
-    "audit": {"sources": ["assets/cad/pose.py:pose_list,_pose_index_read"], "verified": ["Read-only manifest enumeration"], "tests": ["tests/pose_test.py", "tests/pose.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/pose.py:pose_list,_pose_index_read"], "verified": ["Read-only manifest enumeration"], "tests": ["tests/pose_test.py", "tests/pose.test.ts"], "gaps": [], "bugs": []}
   },
   "pose.delete": {
     "sections": [
@@ -37,7 +37,7 @@
     "examples": [
       {"label": "Delete the service pose", "data": {"schemaVersion": 1, "frame": "component", "name": "Service", "confirm": true}, "requires": "A saved pose named Service.", "output": "result.deleted is true and the pose no longer appears in pose.list."}
     ],
-    "audit": {"sources": ["assets/cad/pose.py:pose_delete,_pose_index_write"], "verified": ["Manifest-only deletion, no geometry mutation"], "tests": ["tests/pose_test.py", "tests/pose.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/pose.py:pose_delete,_pose_index_write"], "verified": ["Manifest-only deletion, no geometry mutation"], "tests": ["tests/pose_test.py", "tests/pose.test.ts"], "gaps": [], "bugs": []}
   },
   "pose.evaluate": {
     "sections": [
@@ -47,6 +47,6 @@
     "examples": [
       {"label": "Evaluate the service pose", "data": {"schemaVersion": 1, "frame": "component", "name": "Service"}, "requires": "A saved pose named Service in the same document.", "output": "result.restored is true and result.restoreErrors is empty on success."}
     ],
-    "audit": {"sources": ["assets/cad/pose.py:pose_evaluate,_pose_restore,_pose_capture"], "verified": ["Temporary apply then restore", "Restore failure reported separately", "Previous state restored on success"], "tests": ["tests/pose_test.py", "tests/pose.test.js"], "gaps": [], "bugs": ["Restore is not a transaction rollback"]}
+    "audit": {"sources": ["assets/cad/pose.py:pose_evaluate,_pose_restore,_pose_capture"], "verified": ["Temporary apply then restore", "Restore failure reported separately", "Previous state restored on success"], "tests": ["tests/pose_test.py", "tests/pose.test.ts"], "gaps": [], "bugs": ["Restore is not a transaction rollback"]}
   }
 }

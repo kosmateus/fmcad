@@ -27,3 +27,44 @@ export function parseNativeResult(text: string): Record<string, unknown> {
     throw unknownNativeOutcome(error);
   }
 }
+
+/**
+ * Only primitive dimension validation emits this receipt. It is returned inside
+ * the ordinary checked, request-bound native result, never recovered from a
+ * thrown transport exception. Later kernel/selector errors remain unknown.
+ */
+export function nativeInputRejection(
+  operation: string,
+  output: Record<string, unknown>,
+): { code: string; message: string } | undefined {
+  if (
+    !/^shape\.(box|cylinder|tube|ring|cone)$/.test(operation) ||
+    output["operation"] !== operation ||
+    output["success"] !== false ||
+    !Array.isArray(output["created"]) ||
+    output["created"].length !== 0 ||
+    (output["affected"] !== undefined &&
+      (!Array.isArray(output["affected"]) || output["affected"].length !== 0))
+  )
+    return undefined;
+  const result = output["result"];
+  if (!record(result) || result["status"] !== "failed") return undefined;
+  const rejection = result["rejection"],
+    error = result["error"];
+  if (
+    !record(rejection) ||
+    Object.keys(rejection).sort().join(",") !==
+      "kind,mutationStatus,operation,version" ||
+    rejection["kind"] !== "cad-input-rejection" ||
+    rejection["version"] !== 1 ||
+    rejection["operation"] !== operation ||
+    rejection["mutationStatus"] !== "not_started" ||
+    !record(error) ||
+    Object.keys(error).sort().join(",") !== "code,message" ||
+    error["code"] !== "INVALID_INPUT" ||
+    typeof error["message"] !== "string" ||
+    !error["message"]
+  )
+    return undefined;
+  return { code: error["code"], message: error["message"] };
+}

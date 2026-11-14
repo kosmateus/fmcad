@@ -1,3 +1,4 @@
+import { readPhaseTimingReceipt } from "../telemetry/phase-timings.js";
 import fs from "node:fs";
 import path from "node:path";
 import type {
@@ -194,15 +195,23 @@ function readQueueJobs(
         };
       const registeredProject = queueJobProjectId(registry, job);
       if (projectId !== null && registeredProject !== projectId) continue;
+      const receipt =
+        typeof job["hash"] === "string"
+          ? readPhaseTimingReceipt(queueDirectory, {
+              id: job["id"],
+              hash: job["hash"],
+            })
+          : null;
+      const measuredJob = { ...job, sourcePhaseTimings: receipt };
       jobs.push(
         registeredProject && job["projectId"] !== registeredProject
           ? {
-              ...job,
+              ...measuredJob,
               id: job["id"],
               state: job["state"],
               projectId: registeredProject,
             }
-          : { ...job, id: job["id"], state: job["state"] },
+          : { ...measuredJob, id: job["id"], state: job["state"] },
       );
     }
     if (queueRecoveryPending(queueDirectory))
@@ -560,7 +569,34 @@ function telemetryReader(
     },
     locks: (projectDirectory) => readProjectLocks(modules, projectDirectory),
     globalLocks: () => readGlobalLocks(modules, registry),
-    timingSamples: () => missing("timing-samples-not-connected"),
+    timingSamples: () => {
+      if (!currentQueueRead?.value || currentQueueRead.status !== "available")
+        return missing("source-phase-timings-unavailable");
+      const receipts = currentQueueRead.value.jobs.flatMap((job) => {
+        const receipt = record(job["sourcePhaseTimings"]);
+        return receipt && Array.isArray(receipt["queueWaitSamples"])
+          ? [receipt]
+          : [];
+      });
+      if (!receipts.length) return missing("source-phase-timings-not-recorded");
+      const samples = receipts
+        .flatMap(
+          (receipt) =>
+            receipt["queueWaitSamples"] as {
+              valueMs: number;
+              observedAtMs: number;
+            }[],
+        )
+        .sort((left, right) => right.observedAtMs - left.observedAtMs)
+        .slice(0, 2048)
+        .map((sample) => ({ kind: "queueWait" as const, ...sample }));
+      return {
+        status: "available",
+        source: "broker-monotonic-phase-boundaries",
+        value: samples,
+        observedAtMs: Date.now(),
+      };
+    },
     terminalExecutions: () => terminalExecutions(currentQueueRead),
     processAlive: modules.clientProcessAlive,
   });

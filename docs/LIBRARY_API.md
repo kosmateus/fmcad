@@ -241,7 +241,7 @@ implemented, validated migration; no implicit migration/fallback is supplied.
 npm run build:code
 npm run typecheck:tests
 npm run lint
-node --test tests/library-api.test.js tests/library-api-broker.test.js
+node --test tests/library-api.test.js dist/tests/library-api-broker.test.js
 ```
 
 Tests cover effect-free import/construction, shared catalog/local validation,

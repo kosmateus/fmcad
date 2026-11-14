@@ -87,7 +87,18 @@ function ensureDirectoryChain(directory: string): void {
         );
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      mkdirSync(current, { mode: 0o700 });
+      try {
+        mkdirSync(current, { mode: 0o700 });
+      } catch (mkdirError) {
+        if ((mkdirError as NodeJS.ErrnoException).code !== "EEXIST")
+          throw mkdirError;
+      }
+      const created = lstatSync(current);
+      if (created.isSymbolicLink() || !created.isDirectory())
+        fail(
+          "REGISTRY_PATH_INVALID",
+          `Registry directory must not be a symlink: ${current}`,
+        );
     }
   }
 }
@@ -343,20 +354,76 @@ export function openProjectRegistry(
   const lockFile = `${file}.lock`;
   const now = options.now ?? Date.now;
 
-  function withWriteLock<T>(operation: () => T): T {
+  // Liveness permits waiting only, never stealing or deleting another lock.
+  // An empty file may be the short exclusive-create/write publication window.
+  function writerCanFinish(allowSameProcess: boolean): boolean {
+    let fd: number;
+    try {
+      fd = openSync(lockFile, constants.O_RDONLY | constants.O_NOFOLLOW);
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "ENOENT";
+    }
+    try {
+      const stat = fstatSync(fd);
+      if (!stat.isFile() || stat.size > 4096) return false;
+      if (stat.size === 0) return true;
+      const bytes = Buffer.alloc(stat.size);
+      if (readSync(fd, bytes, 0, bytes.length, 0) !== stat.size) return true;
+      let owner: unknown;
+      try {
+        owner = JSON.parse(bytes.toString("utf8")) as unknown;
+      } catch {
+        return false;
+      }
+      if (
+        !owner ||
+        typeof owner !== "object" ||
+        !("pid" in owner) ||
+        typeof owner.pid !== "number" ||
+        !Number.isSafeInteger(owner.pid) ||
+        owner.pid <= 0 ||
+        (!allowSameProcess && owner.pid === process.pid)
+      )
+        return false;
+      try {
+        process.kill(owner.pid, 0);
+        return true;
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code === "EPERM";
+      }
+    } finally {
+      closeSync(fd);
+    }
+  }
+
+  function withWriteLock<T>(operation: () => T, waitForWriter = true): T {
     ensureDirectoryChain(directory);
     let lockFd: number;
-    try {
-      lockFd = openSync(lockFile, "wx", 0o600);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST")
-        fail(
-          "REGISTRY_BUSY",
-          "Project registry has another writer or an unreconciled lock; it was not overwritten",
-          error,
+    const wait = new Int32Array(new SharedArrayBuffer(4));
+    for (;;) {
+      try {
+        lockFd = openSync(lockFile, "wx", 0o600);
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        // Independent processes release their own short synchronous writes.
+        // Never reclaim or remove an existing lock, including an orphaned one.
+        const retryable = writerCanFinish(!waitForWriter);
+        if (waitForWriter && retryable) {
+          Atomics.wait(wait, 0, 0, 10);
+          continue;
+        }
+        throw Object.assign(
+          new ProjectRegistryError(
+            "REGISTRY_BUSY",
+            "Project registry has another writer or an unreconciled lock; it was not overwritten",
+            { cause: error },
+          ),
+          { retryable },
         );
-      throw error;
+      }
     }
+    const ownedLock = fstatSync(lockFd);
     try {
       writeFileSync(
         lockFd,
@@ -368,7 +435,12 @@ export function openProjectRegistry(
       closeSync(lockFd);
       try {
         const lockStat = lstatSync(lockFile);
-        if (lockStat.isSymbolicLink() || !lockStat.isFile())
+        if (
+          lockStat.isSymbolicLink() ||
+          !lockStat.isFile() ||
+          lockStat.dev !== ownedLock.dev ||
+          lockStat.ino !== ownedLock.ino
+        )
           fail(
             "REGISTRY_PATH_INVALID",
             "Project registry lock changed unexpectedly",
@@ -386,6 +458,9 @@ export function openProjectRegistry(
       snapshot: ProjectRegistrySnapshot;
       changed: boolean;
     },
+    // Lifecycle/move/reset callers can already own SQLite's writer fence.
+    // Waiting here would invert registry -> SQLite admission lock ordering.
+    waitForWriter = false,
   ): ProjectRegistrySnapshot {
     return withWriteLock(() => {
       const current = readRegistryFile(file);
@@ -403,7 +478,7 @@ export function openProjectRegistry(
       });
       atomicWrite(file, snapshot);
       return snapshot;
-    });
+    }, waitForWriter);
   }
 
   return {
@@ -411,6 +486,20 @@ export function openProjectRegistry(
 
     read(): ProjectRegistrySnapshot {
       return readRegistryFile(file);
+    },
+
+    withRegistrationFence<T>(
+      operation: (snapshot: ProjectRegistrySnapshot) => T,
+    ): T {
+      return withWriteLock(() => {
+        const result = operation(readRegistryFile(file));
+        if (result && typeof result === "object" && "then" in result)
+          fail(
+            "REGISTRY_FENCE_ASYNC",
+            "Registration fence operations must remain synchronous",
+          );
+        return result;
+      }, false);
     },
 
     lookup(projectId: string): ProjectRegistryEntry | null {
@@ -499,7 +588,7 @@ export function openProjectRegistry(
           },
           changed: true,
         };
-      });
+      }, true); // Enrollment owns no SQLite writer transaction while waiting.
     },
 
     setLifecycle(

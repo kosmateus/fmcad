@@ -3,7 +3,14 @@ import { createTypeScriptImportResolver } from "eslint-import-resolver-typescrip
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["**/dist/**", "**/node_modules/**", "**/.test-artifacts/**"] },
+  {
+    ignores: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/.test-artifacts/**",
+      "src/**/*.d.ts",
+    ],
+  },
   ...tseslint.configs.recommended,
   {
     files: ["packages/**/*.ts", "src/opencode/*.ts"],

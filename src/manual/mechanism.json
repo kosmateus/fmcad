@@ -7,7 +7,7 @@
     "examples": [
       {"label": "External 20/40 gear over two turns", "data": {"schemaVersion": 1, "frame": "component", "coupling": {"type": "rotation", "driverTeeth": 20, "drivenTeeth": 40, "external": true, "zeroPhase": "0 deg"}, "driverRange": {"from": "0 deg", "to": "720 deg"}, "samples": 16}, "requires": "A selected component; read-only.", "output": "result.sign is -1 and result.evaluated.track is unwrapped over 720 deg with driven = -0.5 * driver."}
     ],
-    "audit": {"sources": ["runtime/python/fmcad/domain/mechanism.py:_mechanism_coupling,_mechanism_track", "runtime/python/fmcad/adapters/fusion/mechanism.py:mechanism_couple"], "verified": ["Signed ratio and external sign flip", "Screw lead advance per revolution", "Unwrapped evaluated track", "Mathematical coupling does not create or infer a native link"], "tests": ["tests/mechanism_test.py", "tests/mechanism.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["runtime/python/fmcad/domain/mechanism.py:_mechanism_coupling,_mechanism_track", "runtime/python/fmcad/adapters/fusion/mechanism.py:mechanism_couple"], "verified": ["Signed ratio and external sign flip", "Screw lead advance per revolution", "Unwrapped evaluated track", "Mathematical coupling does not create or infer a native link"], "tests": ["tests/mechanism_test.py", "tests/mechanism.test.ts"], "gaps": [], "bugs": []}
   },
   "mechanism.inspect": {
     "sections": [
@@ -17,7 +17,7 @@
     "examples": [
       {"label": "Check an engaged pair", "data": {"schemaVersion": 1, "frame": "component", "coupling": {"type": "rotation", "ratio": -0.5, "zeroPhase": "0 deg"}, "driverValue": "90 deg", "drivenValue": "-45 deg", "tolerance": "0.01 deg"}, "requires": "A selected component; read-only.", "output": "result.expectedDriven.value is -0.785398 rad and result.engaged is true."}
     ],
-    "audit": {"sources": ["assets/cad/mechanism.py:mechanism_inspect,_mechanism_coupling"], "verified": ["Expected driven value and residual", "Engagement within tolerance"], "tests": ["tests/mechanism_test.py", "tests/mechanism.test.js"], "gaps": [], "bugs": []}
+    "audit": {"sources": ["assets/cad/mechanism.py:mechanism_inspect,_mechanism_coupling"], "verified": ["Expected driven value and residual", "Engagement within tolerance"], "tests": ["tests/mechanism_test.py", "tests/mechanism.test.ts"], "gaps": [], "bugs": []}
   },
   "mechanism.stop-check": {
     "sections": [
@@ -27,7 +27,7 @@
     "examples": [
       {"label": "Program limit before hard stop", "data": {"schemaVersion": 1, "frame": "component", "coupling": {"type": "rotation", "ratio": -0.5}, "limits": {"working": {"min": "0 deg", "max": "200 deg"}, "program": {"max": "180 deg"}, "hard": {"max": "200 deg"}}, "stopSurfaces": [{"clearance": "0.2 mm"}], "sensorWindow": {"from": "0 deg", "to": "170 deg"}, "tolerance": "0.01 deg", "driverValue": "200 deg", "drivenValue": "-100 deg"}, "requires": "A selected component; read-only.", "output": "result.checks show pass for program-vs-hard and engagement; programLimitIsNotPhysicalStop is true."}
     ],
-    "audit": {"sources": ["assets/cad/mechanism.py:mechanism_stop_check,_mechanism_limit_checks"], "verified": ["Program limit distinct from physical stop", "Engagement through hard stop", "Stop-surface margin and sensor window placement"], "tests": ["tests/mechanism_test.py", "tests/mechanism.test.js"], "gaps": [], "bugs": ["Physical stop geometry is caller-supplied clearance evidence, not measured natively"]}
+    "audit": {"sources": ["assets/cad/mechanism.py:mechanism_stop_check,_mechanism_limit_checks"], "verified": ["Program limit distinct from physical stop", "Engagement through hard stop", "Stop-surface margin and sensor window placement"], "tests": ["tests/mechanism_test.py", "tests/mechanism.test.ts"], "gaps": [], "bugs": ["Physical stop geometry is caller-supplied clearance evidence, not measured natively"]}
   },
   "mechanism.motion-link.create": {
     "sections": [
@@ -38,7 +38,7 @@
     "examples": [
       {"label": "Create a 1:1 rotational link", "data": {"schemaVersion": 1, "frame": "component", "confirm": true, "jointOne": {"kind": "joint", "name": "Driver"}, "jointTwo": {"kind": "joint", "name": "Follower"}, "valueOne": "1 rad", "valueTwo": "1 rad", "isReversed": false}, "requires": "Open pinned design; two distinct unsuppressed native revolute joints. Mutating operation; no joint or occurrence motion is commanded.", "output": "result.nativeMotionLink is true after `MotionLinks.add` and immediate native property readback; result.qualified remains false."}
     ],
-    "audit": {"sources": ["runtime/python/fmcad/domain/native_drive.py:_native_motion_link_plan", "runtime/python/fmcad/adapters/fusion/native_drive.py:mechanism_motion_link_create"], "verified": ["Strict input and confirmation validation", "Exact native revolute joint references", "Native link property readback is separate from solver qualification"], "tests": ["tests/mechanism_test.py", "tests/mechanism.test.js", "tests/native-drive-bundle.test.js"], "gaps": [], "bugs": ["Native MotionLink creation/readback remains unverified in live Fusion until the coordinated runtime deployment"]}
+    "audit": {"sources": ["runtime/python/fmcad/domain/native_drive.py:_native_motion_link_plan", "runtime/python/fmcad/adapters/fusion/native_drive.py:mechanism_motion_link_create"], "verified": ["Strict input and confirmation validation", "Exact native revolute joint references", "Native link property readback is separate from solver qualification"], "tests": ["tests/mechanism_test.py", "tests/mechanism.test.ts", "tests/native-drive-bundle.test.ts"], "gaps": [], "bugs": ["Native MotionLink creation/readback remains unverified in live Fusion until the coordinated runtime deployment"]}
   },
   "mechanism.drive-test": {
     "sections": [
@@ -51,6 +51,6 @@
     "examples": [
       {"label": "Bounded rotational follower sample", "data": {"schemaVersion": 1, "confirm": true, "driver": {"kind": "joint", "name": "Driver"}, "waypoints": [0.02, 0.04, 0.06], "followers": [{"joint": {"kind": "joint", "name": "Follower"}, "coordinate": "rotation", "ratio": -2, "phase": 0.3, "tolerance": 0.000001}], "budgetSeconds": 10}, "requires": "Mutating confirmed sample; selected document; distinct native joints; existing refs and all driver waypoints within limits. No native coupling is created.", "output": "result.commandedMathTrack is the intended relationship; result.actualSolver contains measured responses. result.nativeCapability.status remains unknown. result.restore is pass only after independent readback."}
     ],
-    "audit": {"sources": ["runtime/python/fmcad/domain/native_drive.py", "runtime/python/fmcad/application/native_drive.py", "runtime/python/fmcad/adapters/fusion/native_drive.py", "src/catalog/native-drive.js"], "verified": ["Only the driver is assigned", "Followers/transforms are measured independently", "Expected math, measured solver response and native capability remain separate", "Restore is independently read back on success and abort"], "tests": ["tests/native_drive_test.py", "tests/native-drive-bundle.test.js", "tests/native-drive-integration.test.js", "tests/native-drive.types.ts"], "gaps": [], "bugs": ["Real Fusion coupling and restore qualification awaits brokered MotionLink deployment; fake solver tests are not native evidence"]}
+    "audit": {"sources": ["runtime/python/fmcad/domain/native_drive.py", "runtime/python/fmcad/application/native_drive.py", "runtime/python/fmcad/adapters/fusion/native_drive.py", "src/catalog/native-drive.js"], "verified": ["Only the driver is assigned", "Followers/transforms are measured independently", "Expected math, measured solver response and native capability remain separate", "Restore is independently read back on success and abort"], "tests": ["tests/native_drive_test.py", "tests/native-drive-bundle.test.ts", "tests/native-drive-integration.test.ts", "tests/native-drive.types.ts"], "gaps": [], "bugs": ["Real Fusion coupling and restore qualification awaits brokered MotionLink deployment; fake solver tests are not native evidence"]}
   }
 }

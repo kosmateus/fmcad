@@ -12,6 +12,7 @@ from typing import ClassVar
 from . import core
 from ._expressions import UNITS, Quantity, evaluate
 from ._model_geometry import (BRepBodies as BRepBodies, BRepBody as BRepBody,
+    CalculationAccuracy as CalculationAccuracy,
     PhysicalProperties as PhysicalProperties, Sketch as Sketch, Sketches as Sketches,
     SketchCurves as SketchCurves, SketchCurve as SketchCurve, SketchLines as SketchLines, SketchLine as SketchLine,
     SketchLineList as SketchLineList, SketchPoint as SketchPoint, Profile as Profile,
@@ -28,6 +29,8 @@ from ._model_geometry import (BRepBodies as BRepBodies, BRepBody as BRepBody,
 
 class UserParameter(core.Base):
     def __init__(self, owner: UserParameters, name: str, expression: str, unit: str, comment: str) -> None:
+        self.objectType: str = "adsk::fusion::UserParameter"
+        self.attributes: core.Attributes = core.Attributes(owner.doc)
         self.userParameters: UserParameters = owner
         self.model_name: str = name
         self.model_expression: str = expression
@@ -390,12 +393,38 @@ class ConstructionPlanes(core.Collection[ConstructionPlane]):
 
 
 class Occurrence(core.Base):
+    objectType: ClassVar[str] = "adsk::fusion::Occurrence"
+
     def __init__(self, component: Component) -> None:
         self.component: Component = component
+        self.model_transform: core.Matrix3D = core.Matrix3D.create()
 
     @property
     def name(self) -> str:
         return self.component.name + ":1"
+
+    @property
+    def fullPathName(self) -> str:
+        return self.name
+
+    @property
+    def transform2(self) -> core.Matrix3D:
+        if not self.component.model_design.model_doc.isValid:
+            raise ValueError("Occurrence document is closed")
+        return self.model_transform.copy()
+
+    @transform2.setter
+    def transform2(self, value: core.Matrix3D) -> None:
+        if not self.component.model_design.model_doc.isValid:
+            raise ValueError("Occurrence document is closed")
+        cells = value.asArray()
+        if any(cells[index] != expected for index, expected in {
+            0: 1., 1: 0., 2: 0., 4: 0., 5: 1., 6: 0.,
+            8: 0., 9: 0., 10: 1., 12: 0., 13: 0., 14: 0., 15: 1.
+        }.items()):
+            raise NotImplementedError("Occurrence rotations and nonrigid transforms are not modeled")
+        self.model_transform = value.copy()
+        self.component.model_design.model_doc.isModified = True
 
 
 class Occurrences(core.Collection[Occurrence]):
@@ -407,11 +436,10 @@ class Occurrences(core.Collection[Occurrence]):
         timeline = self.model_component.model_design.timeline
         if timeline.markerPosition != timeline.count:
             raise NotImplementedError("Editing a rolled-back timeline is not modeled")
-        if transform.asArray() != core.Matrix3D.create().asArray():
-            raise NotImplementedError("Only identity component placement is modeled")
         design = self.model_component.model_design
         component = Component(design, "Component" + str(design.allComponents.count))
         occurrence = Occurrence(component)
+        occurrence.transform2 = transform
         self.values.append(occurrence)
         design.allComponents.values.append(component)
         design.timeline.values.append(TimelineObject(occurrence))
@@ -431,6 +459,7 @@ class Component(core.Base):
         self.model_design: Design = design
         self.model_name: str | None = name
         self.model_id: str = str(uuid.uuid4())
+        self.model_attributes: core.Attributes = core.Attributes(design.model_doc)
         self.objectType: str = "adsk::fusion::Component"
         self.entityToken: str = "model-component:" + self.model_id
         self.occurrences: Occurrences = Occurrences(self)
@@ -452,6 +481,21 @@ class Component(core.Base):
         self.zConstructionAxis: ConstructionAxis = ConstructionAxis(core.Vector3D(0, 0, 1))
 
     @property
+    def allOccurrences(self) -> core.Collection[Occurrence]:
+        if self is self.model_design.rootComponent:
+            occurrences = list(self.occurrences)
+            if any(occurrence.component.occurrences.count for occurrence in occurrences):
+                raise NotImplementedError("Nested assembly-context occurrence enumeration is not modeled")
+            return core.Collection(occurrences)
+        if self.occurrences.count:
+            raise NotImplementedError("Nested assembly-context occurrence enumeration is not modeled")
+        return core.Collection()
+
+    @property
+    def attributes(self) -> core.Attributes:
+        return self.model_attributes
+
+    @property
     def id(self) -> str:
         return self.model_id
 
@@ -462,7 +506,8 @@ class Component(core.Base):
             units=self.model_design.unitsManager.defaultLengthUnits,
             planes=[dict(name=p.name, origin=p.geometry.origin.asArray(),
                          normal=p.geometry.normal.asArray()) for p in self.constructionPlanes],
-            occurrences=[dict(id=o.component.id, name=o.component.name) for o in self.occurrences],
+            occurrences=[dict(id=o.component.id, name=o.component.name,
+                              transform=o.transform2.asArray()) for o in self.occurrences],
             sketches=[dict(name=s.name, profiles=[dict(first=p.model_first.asArray(),
                 second=p.model_second.asArray()) for p in s.profiles]) for s in self.sketches],
             bodies=[dict(name=b.name, revision=b.revisionId) for b in self.bRepBodies])
@@ -478,9 +523,24 @@ class Component(core.Base):
         self.model_design.model_doc.isModified = True
 
 
+class DesignTypes:
+    DirectDesignType: ClassVar[int] = 0
+    ParametricDesignType: ClassVar[int] = 1
+
+
+class DesignSnapshots:
+    @property
+    def hasPendingSnapshot(self) -> bool:
+        return False
+
+
 class Design(core.Product):
     def __init__(self, doc: core.Document) -> None:
         self.model_doc: core.Document = doc
+        self.designType: int = DesignTypes.ParametricDesignType
+        self.snapshots: DesignSnapshots = DesignSnapshots()
+        self.model_materials: core.Materials = core.Materials(self, doc)
+        self.model_appearances: core.Appearances = core.Appearances(self, doc)
         self.userParameters: UserParameters = UserParameters(doc)
         self.allParameters: UserParameters = self.userParameters
         self.allComponents: core.Collection[Component] = core.Collection()
@@ -490,9 +550,29 @@ class Design(core.Product):
         self.allComponents.values.append(self.rootComponent)
         self.exportManager: ExportManager = ExportManager(doc, self.userParameters)
 
+    @property
+    def materials(self) -> core.Materials:
+        return self.model_materials
+
+    @property
+    def appearances(self) -> core.Appearances:
+        return self.model_appearances
+
     @staticmethod
     def cast(arg: object) -> Design | None:
         return arg if isinstance(arg, Design) else None
+
+    def computeAll(self) -> bool:
+        """Regenerate the supported rectangular graph, never an arbitrary solver."""
+        if not self.model_doc.isValid:
+            raise ValueError("Design document is closed")
+        for component in self.allComponents:
+            for sketch in component.sketches:
+                sketch.model_regenerate()
+            for body in component.bRepBodies:
+                # The existing bounds evaluator regenerates the profile and extent.
+                _ = body.boundingBox
+        return True
 
     def findEntityByToken(self, entityToken: str) -> list[core.Base]:
         if not self.model_doc.isValid:

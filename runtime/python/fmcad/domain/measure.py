@@ -1,6 +1,29 @@
 """DTO-only rules extracted from assets/cad/measure.py. No SDK or filesystem access."""
+import math as _measurement_rules_math
+
+_MEASURE_UNITS = {
+    'length': {'mm': 10.0, 'cm': 1.0, 'm': 0.01, 'in': 1 / 2.54},
+    'area': {'mm2': 100.0, 'cm2': 1.0, 'm2': 0.0001},
+    'volume': {'mm3': 1000.0, 'cm3': 1.0, 'm3': 0.000001},
+    'mass': {'kg': 1.0, 'g': 1000.0},
+    'angle': {'deg': 180 / _measurement_rules_math.pi, 'rad': 1.0},
+}
+
+
+def _measure_value(value: float, dimension: "Literal['length', 'area', 'volume', 'mass', 'angle']", data: "JsonObject") -> "JsonObject":
+    units = _cad_cast(str, data.get('units', next(iter(_MEASURE_UNITS[dimension]))))
+    if units not in _MEASURE_UNITS[dimension]:
+        raise ValueError('Unsupported %s units: %s' % (dimension, units))
+    value = float(value) * _MEASURE_UNITS[dimension][units]
+    if not _measurement_rules_math.isfinite(value):
+        raise ValueError('Measurement is non-finite')
+    return {'value': value, 'units': units, 'dimension': dimension}
+
 
 _MEASURE_INTERNAL = {'length': 'cm', 'area': 'cm^2', 'volume': 'cm^3', 'mass': 'kg', 'angle': 'rad'}
+
+# Best-effort scheduler reserve, charged inside timeBudgetMs: 1000 ms per case
+# plus 250 ms per assigned parameter. Fusion calls are indivisible and unbounded.
 
 _PARAMETER_TEST_DEFAULT_BUDGET_MS = 180000
 

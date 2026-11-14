@@ -26,33 +26,53 @@ import type { BatchStages } from "./batch.js";
 import type { DocumentSaveStageOwner } from "../../packages/core/src/application/documents/stages.js";
 
 const load = createRequire(__filename);
-const json = load(
-  "../core/application/cad/json.js",
+const stagedRoot = [
+  path.resolve(__dirname, "../dist"),
+  path.resolve(__dirname, ".."),
+].find(
+  (root) =>
+    fs.existsSync(path.join(root, "core/application/cad/json.js")) &&
+    fs.existsSync(path.join(root, "node-adapters/persistence/stage-owner.js")),
+);
+if (!stagedRoot) throw new Error("Cannot locate staged core runtime modules");
+const hostRoot = [
+  path.resolve(__dirname, ".."),
+  path.resolve(__dirname, "../.."),
+].find(
+  (root) =>
+    fs.existsSync(path.join(root, "queue-instance.js")) &&
+    fs.existsSync(path.join(root, "queue-isolated-epoch.js")),
+);
+if (!hostRoot) throw new Error("Cannot locate staged queue host modules");
+const loadStaged = (file: string) => load(path.join(stagedRoot, file));
+const loadHost = (file: string) => load(path.join(hostRoot, file));
+const json = loadStaged(
+  "core/application/cad/json.js",
 ) as typeof import("../../packages/core/src/application/cad/json.js");
-const stageCore = load(
-  "../core/application/stage-journal.js",
+const stageCore = loadStaged(
+  "core/application/stage-journal.js",
 ) as typeof import("../../packages/core/src/application/stage-journal.js");
-const documentSave = load(
-  "../core/application/documents/save.js",
+const documentSave = loadStaged(
+  "core/application/documents/save.js",
 ) as typeof import("../../packages/core/src/application/documents/save.js");
-const atomic = load(
-  "../core/application/cad/atomic-receipt.js",
+const atomic = loadStaged(
+  "core/application/cad/atomic-receipt.js",
 ) as typeof import("../../packages/core/src/application/cad/atomic-receipt.js");
-const { createAuthenticatedStageOwner } = load(
-  "../node-adapters/persistence/stage-owner.js",
+const { createAuthenticatedStageOwner } = loadStaged(
+  "node-adapters/persistence/stage-owner.js",
 ) as typeof import("../../packages/node-adapters/src/persistence/stage-owner.js");
-const { stageReceiptReference } = load(
-  "../node-adapters/persistence/stage-journal.js",
+const { stageReceiptReference } = loadStaged(
+  "node-adapters/persistence/stage-journal.js",
 ) as typeof import("../../packages/node-adapters/src/persistence/stage-journal.js");
-const { readBytes } = load(
-  "../node-adapters/persistence/records.js",
+const { readBytes } = loadStaged(
+  "node-adapters/persistence/records.js",
 ) as typeof import("../../packages/node-adapters/src/persistence/records.js");
-const queueInstance = load("../../queue-instance.js") as Pick<
+const queueInstance = loadHost("queue-instance.js") as Pick<
   StageOwnerPorts,
   "buildHash" | "sameInstance" | "nativeWorkflowIdentity"
 >;
 const epoch = () =>
-  load("../../queue-isolated-epoch.js") as {
+  loadHost("queue-isolated-epoch.js") as {
     isolatedEpochDirectory(directory: string): string;
   };
 
@@ -754,7 +774,9 @@ export async function createAuthenticatedStageDependencies(
   const admittedPayload = acceptedPayload(owner.job, owner.accepted);
   const document = isDocumentSave
     ? (
-        load("./document-stages.js") as typeof import("./document-stages.js")
+        loadStaged(
+          "composition/document-stages.js",
+        ) as typeof import("./document-stages.js")
       ).createDocumentSaveStages(
         owner.operationDirectory,
         owner.owner as DocumentSaveStageOwner,

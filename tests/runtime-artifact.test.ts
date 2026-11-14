@@ -87,18 +87,40 @@ test("actual npm tarball runs CLI MCP and worker readonly outside checkout with 
     fs.rmSync(root, { recursive: true, force: true });
   });
   const packedPackages = JSON.parse(
-    execFileSync(
-      "npm",
-      ["pack", "--json", "--ignore-scripts", "--pack-destination", root],
-      {
-        cwd: projectRoot,
-        encoding: "utf8",
-        maxBuffer: 16 * 1024 * 1024,
-      },
-    ).toString(),
+    execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
+      cwd: projectRoot,
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    }).toString(),
   ) as NpmPackedPackage[];
   const packed = packedPackages[0];
   assert.ok(packed);
+  const packageArtifact = process.env["FMCAD_CI_PACKAGE_TARBALL"];
+  const packageTarball = packageArtifact
+    ? path.resolve(projectRoot, packageArtifact)
+    : path.join(
+        root,
+        (
+          JSON.parse(
+            execFileSync(
+              "npm",
+              [
+                "pack",
+                "--json",
+                "--ignore-scripts",
+                "--pack-destination",
+                root,
+              ],
+              {
+                cwd: projectRoot,
+                encoding: "utf8",
+                maxBuffer: 16 * 1024 * 1024,
+              },
+            ),
+          ) as NpmPackedPackage[]
+        )[0]!.filename,
+      );
+  assert.ok(fs.existsSync(packageTarball), "Prepared npm package is missing");
   const packedPaths = packed.files.map((file) => file.path);
   assert.ok(
     ["README.md", "LICENSE", "NOTICE.md"].every((file) =>
@@ -196,7 +218,7 @@ test("actual npm tarball runs CLI MCP and worker readonly outside checkout with 
       "--omit=dev",
       "--no-audit",
       "--no-fund",
-      path.join(root, packed.filename),
+      packageTarball,
     ],
     {
       cwd,
@@ -282,9 +304,15 @@ test("actual npm tarball runs CLI MCP and worker readonly outside checkout with 
     path.join(runtime, "runtime-build.json"),
   );
   assert.equal(pathsAdapter.runtimeBuildIdentity(paths), manifest.fingerprint);
-  const snapshotPointer = readJson<{ snapshot: string }>(
-    path.join(runtime, "runtime/python/typing/current.json"),
+  const snapshotPointerPath = path.join(
+    runtime,
+    "runtime/python/typing/current.json",
   );
+  assert.ok(
+    fs.existsSync(snapshotPointerPath),
+    "installed package is missing the Python definitions pointer",
+  );
+  const snapshotPointer = readJson<{ snapshot: string }>(snapshotPointerPath);
   assert.match(snapshotPointer.snapshot, /^[a-f0-9]{64}$/);
   const snapshotRoot = path.join(
     runtime,

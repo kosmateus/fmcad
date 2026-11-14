@@ -9,6 +9,7 @@ import { simulatorFolder } from "./simulator";
 import { runScenarios } from "./runner";
 import {
   attributeScenarios,
+  unsavedAttributeScenarios,
   attributeBody,
   attribute,
 } from "./attribute-cases";
@@ -17,6 +18,19 @@ import { record, text } from "./contracts";
 import { program, guard, emit } from "./programs";
 
 for (const protocol of ["mcp", "addin"] as const) {
+  test(`retained unsaved attribute sequence and ownership via ${protocol}`, async (t) => {
+    const { directory, model, backend } = await fixture(t, protocol);
+    const [report] = await runScenarios(
+      backend,
+      unsavedAttributeScenarios(1),
+      directory,
+      10,
+    );
+    assert.equal(report?.status, "passed", JSON.stringify(report));
+    assert.equal(report.cleanup, "complete");
+    assert.equal(report.document?.file, undefined);
+    assert.deepEqual(await remaining(model), { active: null, documents: [] });
+  });
   for (const concurrency of [1, 2, 10]) {
     test(`body attributes via ${protocol}, concurrency ${concurrency}`, async (t) => {
       const { directory, model, backend } = await fixture(t, protocol);

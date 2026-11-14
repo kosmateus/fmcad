@@ -10,6 +10,10 @@ export interface ProjectRegistryStore {
   readonly readonlyPath: string;
   read(): ProjectRegistrySnapshot;
   lookup(projectId: string): ProjectRegistryEntry | null;
+  /** Serialize project enrollment with synchronous activity admission. */
+  withRegistrationFence?<T>(
+    operation: (snapshot: ProjectRegistrySnapshot) => T,
+  ): T;
   register(input: RegisterProjectInput): ProjectRegistrySnapshot;
   setLifecycle(
     projectId: string,

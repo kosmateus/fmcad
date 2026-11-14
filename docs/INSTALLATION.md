@@ -59,6 +59,55 @@ The package installs `fmcad` and `fmcad-mcp` executable bins. It uses the
 package's installed resources, not the current directory or a source checkout.
 No plugin is required for either executable or for `fmcad/api`.
 
+## Changing the physical Fusion backend
+
+Ordinary `queue serve --backend ...` is not reconfiguration. It rejects a
+configuration different from the durable identity before reserving Fusion.
+For a released `normal-multidocument` epoch, the existing epoch owner can
+explicitly switch the physical add-in/MCP endpoint on **the same live Fusion**:
+
+1. Verify no current active, queued, preparing, leased, blocked or unknown work
+   remains. Coordinate with other clients, then use the existing authenticated
+   idle `queue stop`; do not delete locks or edit `instance.json`.
+2. Create a private JSON approval (mode `0600`) with a fresh alphanumeric,
+   underscore or hyphen `requestId`, the epoch owner's existing `clientId` and
+   `clientToken`, the completed `queue stop` request's `stopRequestId`, and exact
+   `previousConfig` and `nextConfig` objects. These are
+   the fully loaded broker configurations (`routing: "queue"`, `queue: {}`),
+   not partial CLI overrides. Only physical endpoint fields `backend` (`addin`
+   ↔ `mcp`), `url`, `headers`, `tool` and `protocolVersion` may differ; connection
+   timeouts, transport and local queue/settings must remain exact. Keep
+   credentials out of shell arguments and logs.
+3. Run `fmcad queue transition-backend --backend mcp --backend-approval
+/absolute/private-approval.json --confirm-ownership true` using the matching
+   runtime/config. This starts the **same user-global broker/SDK queue**. The
+   target endpoint must itself be the physical MCP listener, not an add-in
+   proxy. A read-only probe must prove the exact original PID, birth and Fusion
+   version, an idle UI and unmodified current documents.
+4. The supported stop's durable pause is **preserved**, not silently cleared.
+   After checking the listening receipt, the same owner explicitly runs
+   `queue resume --request-id NEW_RESUME_ID` before submitting new work.
+
+A paused transition requires the exact accepted owner stop, its terminal
+`released` receipt, unchanged control generation and the matching predecessor
+runtime. That stop proof is single-use for backend transition. A generic pause,
+foreign receipt or unresolved release does not authorize it.
+
+Foreign credentials, changed evidence/configuration and unfinished current
+work fail before any physical client or SDK request. Quarantined historical
+unknown work remains unknown and is never replayed or accepted by a transition.
+Transport uncertainty retains broker ownership and original startup receipts;
+inspect those receipts before recovery, never blindly repeat a transition.
+
+The transition writes a separate immutable identity and predecessor evidence
+under `physical-backend-transitions/REQUEST_ID`, with an explicit
+`physical-backend-head.json`. It does not rewrite root/epoch identities,
+receipts or the historical configuration hash. A normal reopen uses that exact
+head/runtime; damaged evidence fails closed. To restore the add-in, idle-stop
+and repeat the explicit lifecycle with a **new** request ID and reversed exact
+configurations. Do not restart Fusion, create a second queue directory, remove
+locks, or manually rewrite the head to change backends.
+
 ## One standalone MCP server
 
 Add one stdio MCP server named **`fmcad`** to the MCP client you use. This is
@@ -159,8 +208,20 @@ Offline installed-artifact tests validate packaging, local CLI/MCP startup,
 catalog schemas, and bounded local workers; they do not validate a physical
 Fusion model. A CAD smoke test is separate and should be performed only after
 explicit authorization, with the add-in and compatible broker available and a
-noncritical, explicitly pinned test document. There is no ready web panel
-claimed by this guide; web-panel/browser launch is a separate follow-up.
+noncritical, explicitly pinned test document.
+
+### Console entrypoints
+
+`fmcad console [--config PATH] [--project PATH]` prints the Control Center URL
+once the configured service is ready. `diagnostic` and `--web` remain compatibility
+aliases. No interactive terminal is required and no browser opens automatically.
+Without `--project`, the URL selects the global view. An explicit path must resolve
+to exactly one registered Control Center project; an arbitrary artifact directory
+is not a substitute.
+
+Closing this command releases only caller resources. The shared service continues
+running and broker state is unchanged. Broker inspection, stop, restart and reload
+remain explicit administrative CLI commands with their existing ownership checks.
 
 Useful references: [package README](../README.md), [runtime/platform support](RUNTIME_PATHS.md),
 [CLI command reference](COMMAND_REFERENCE.md), [MCP application](MCP_APPLICATION.md),

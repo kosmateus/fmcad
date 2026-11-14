@@ -119,3 +119,48 @@ export function sourceHash(roots: Readonly<Record<string, string>>): string {
       .update("\0");
   return hash.digest("hex");
 }
+
+export interface ScopedTask<T> {
+  readonly exclusive: boolean;
+  run(): Promise<T>;
+  blocked(reason: string): T;
+}
+/** Coordinator barrier: every earlier cleanup finishes before exclusive state is touched. */
+export async function scopedMap<T>(
+  tasks: readonly ScopedTask<T>[],
+  limit: number,
+  outcome: (result: T) => "passed" | "settled-failure" | "unsettled",
+): Promise<T[]> {
+  concurrencyLimit(limit);
+  const results: T[] = [];
+  let blocked: string | undefined;
+  let index = 0;
+  while (index < tasks.length) {
+    if (blocked) {
+      for (const task of tasks.slice(index))
+        results.push(task.blocked(blocked));
+      break;
+    }
+    const task = tasks[index]!;
+    if (task.exclusive) {
+      const result = await task.run();
+      results.push(result);
+      if (outcome(result) !== "passed")
+        blocked =
+          "An exclusive scenario did not establish successful restoration and cleanup";
+      index++;
+      continue;
+    }
+    let end = index + 1;
+    while (end < tasks.length && !tasks[end]!.exclusive) end++;
+    const batch = await boundedMap(tasks.slice(index, end), limit, (item) =>
+      item.run(),
+    );
+    results.push(...batch);
+    if (batch.some((result) => outcome(result) === "unsettled"))
+      blocked =
+        "An earlier scenario has unsettled cleanup; exclusive/global work is blocked";
+    index = end;
+  }
+  return results;
+}
