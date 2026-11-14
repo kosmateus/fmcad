@@ -35,13 +35,34 @@ test("reviewed assertion mappings name retained individual assertions and real e
     sources: {
       source: string;
       predecessor: string;
-      comparison: { removed: { id: string }[] };
+      comparison: { removed: { id: string; expression: string }[] };
+      transitions?: {
+        predecessor: string;
+        comparison: { removed: { id: string; expression: string }[] };
+      }[];
     }[];
   };
-  const historical = new Set(
+  const historicalExpressions = new Map<string, string>();
+  for (const source of predecessors.sources) {
+    const comparisons = [
+      { predecessor: source.predecessor, comparison: source.comparison },
+      ...(source.transitions ?? []),
+    ];
+    for (const transition of comparisons)
+      for (const site of transition.comparison.removed)
+        historicalExpressions.set(
+          source.source + ":" + transition.predecessor + ":" + site.id,
+          site.expression,
+        );
+  }
+  const historical = new Set(historicalExpressions.keys());
+  const appendedHistorical = new Set(
     predecessors.sources.flatMap((source) =>
-      source.comparison.removed.map(
-        (site) => source.source + ":" + source.predecessor + ":" + site.id,
+      (source.transitions ?? []).flatMap((transition) =>
+        transition.comparison.removed.map(
+          (site) =>
+            source.source + ":" + transition.predecessor + ":" + site.id,
+        ),
       ),
     ),
   );
@@ -80,7 +101,13 @@ test("reviewed assertion mappings name retained individual assertions and real e
       ),
     );
     if (row["requiredObservation"] !== undefined)
-      assert.equal(row["requiredObservation"], expressions.get(key), key);
+      assert.equal(
+        row["requiredObservation"],
+        row["historicalCommit"]
+          ? historicalExpressions.get(key)
+          : expressions.get(key),
+        key,
+      );
     if (row["disposition"] === "native-only") {
       if (row["scenario"] === "native-solids-*") {
         assert.equal(row["qualification"], "not-run");
@@ -94,7 +121,12 @@ test("reviewed assertion mappings name retained individual assertions and real e
         assert.ok(text(row["nativeObligation"]).length > 0);
         assert.ok(Array.isArray(row["requiredCapabilities"]));
         assert.equal(row["retainedSource"], row["source"]);
-        assert.equal(row["requiredObservation"], expressions.get(key));
+        assert.equal(
+          row["requiredObservation"],
+          row["historicalCommit"]
+            ? historicalExpressions.get(key)
+            : expressions.get(key),
+        );
         assert.ok(
           ["migration-required", "owned-handoff-ready"].includes(
             text(row["runnerStatus"]),
@@ -169,5 +201,10 @@ test("reviewed assertion mappings name retained individual assertions and real e
     [...mapped].filter((key) => available.has(key)).length,
     available.size,
     "All current assertion sites must be accounted for exactly once",
+  );
+  assert.deepEqual(
+    [...appendedHistorical].filter((key) => !mapped.has(key)),
+    [],
+    "Every removed assertion in appended source history needs a reviewed disposition",
   );
 });

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "scope": "Latest exact archived source and its first parent, including explicit JS port predecessors; not all earlier changes or semantic equivalence.",
+  "scope": "The original frozen comparison is retained; each later exact source and first-parent comparison is appended. Textual transitions do not establish semantic equivalence.",
   "sources": [
     {
       "source": "tests/helpers/live-broker.js",
@@ -4237,10 +4237,7 @@
             "expression": "assert.equal(installedBuild.fingerprint, expectedBuildHash, 'Runtime fingerprint differs from the selected build.')"
           }
         ],
-        "addedIds": [
-          "17996022ae23b8d067a3-1",
-          "daacc81b75794491d40b-1"
-        ]
+        "addedIds": ["17996022ae23b8d067a3-1", "daacc81b75794491d40b-1"]
       },
       "workingTreeReview": {
         "historicalAfterSha256": "48e1d8ae8b2c993dfbb758d93b6302ddaff75b249b56bd05dd673d6fd1f1882f",
@@ -4397,9 +4394,7 @@
           "2789c84e11e1313291ad-1"
         ],
         "removed": [],
-        "addedIds": [
-          "31f07b3b96b5008df227-1"
-        ]
+        "addedIds": ["31f07b3b96b5008df227-1"]
       },
       "workingTreeReview": {
         "historicalAfterSha256": "1658a35b75bdb3cdd6a3078a192922a92691d68780113641f111b3338d075486",
@@ -4776,10 +4771,7 @@
             "expression": "assert.ok(process.argv.includes('--run') && process.argv.includes('--after-styles'),\n    'Live disabled. Primary must run exclusively, sequentially after styles with --run --after-styles.')"
           }
         ],
-        "addedIds": [
-          "9c9a2704c4e6beb29018-1",
-          "6dc04eb0fab9c1c1d532-1"
-        ]
+        "addedIds": ["9c9a2704c4e6beb29018-1", "6dc04eb0fab9c1c1d532-1"]
       }
     },
     {
@@ -4880,7 +4872,369 @@
       "workingTreeReview": {
         "reason": "All retained assertion IDs and expressions are unchanged; exact original request/job/client/SDK-settlement binding and durable pre-admission intent now cover every phase.",
         "historicalAfterSha256": "bd91e4a52e066ef9afbc17d7608d1a969ffd880db16dbdf825b834837380eb5f"
-      }
+      },
+      "transitions": [
+        {
+          "commit": "3badcefbfe2c3e43a050cf02bba235e6d0333ef0",
+          "predecessor": "6f32da55bdb4b8114720add67451c3adc20dab1f",
+          "introduced": false,
+          "comparison": {
+            "before": {
+              "source": "tests/live-normal-multidocument.ts",
+              "sha256": "1bcf6831378c871c31c0c902e2b2807cdaa53d44aef5d08086f619ae0d8ffb54",
+              "count": 48
+            },
+            "after": {
+              "source": "tests/live-normal-multidocument.ts",
+              "sha256": "68926370b6ec88795ffeabea7f4dce7907fa22220246023ed80cf2cf00f69c06",
+              "count": 86
+            },
+            "retainedIds": [
+              "e5cf23a5cc4f449925a4-1",
+              "3b6a54ef5054da5c6181-1",
+              "c74218979deba0c7e675-1",
+              "849e23022697108c7012-1",
+              "791d0f523c2cb50d61aa-1",
+              "c3faa95406473eebec99-1",
+              "02cf7a2b235ed94b0b2e-1",
+              "f7bfd3db7f614a142a80-1",
+              "1828869d127ae3b63571-1",
+              "4d7b90527d70242d0213-1",
+              "411d90a80062158fa80b-1",
+              "c74218979deba0c7e675-2",
+              "9bd103d2923cdb9c8228-1",
+              "f611ed5b55a4751433fd-1",
+              "90163b31298bd4d5f743-1",
+              "d511e12089c618397b77-1",
+              "8d2e6be1a9abcc9eefcd-1",
+              "cc4f55f5592ef9480c86-1",
+              "12f72a2240947919796f-1",
+              "5fd297efc8095dcdcc89-1",
+              "23fc2996455bb65f5067-1",
+              "9c95cee476b7bb985d19-1",
+              "a9cf34af63925341017b-1",
+              "80b2a14f1bbeca8909a6-1",
+              "4b6c341d89ea1e0c3793-1",
+              "b1adb9264fd60991d395-1",
+              "d0e50c301d9390c36d89-1",
+              "4060af2c358e62d7d8bc-1",
+              "05813179f7d47a984545-1",
+              "a8a69dcbcc440799265a-1",
+              "5a2521c8898fb2136aa1-1",
+              "84970b77f8eeb6525a9e-1",
+              "c95638494770cfbb17d2-1",
+              "f5096cef93f02d9429b2-1",
+              "3598b94c2025217faac7-1",
+              "e718f410198698d77127-1",
+              "b94376baa64f8526c38a-1",
+              "5957462c947268639f9b-1",
+              "b6a7a417b2100e9fb3f3-1",
+              "f7bfd3db7f614a142a80-2",
+              "f5096cef93f02d9429b2-2",
+              "c6f9bcb89a6206f08541-1",
+              "2789c84e11e1313291ad-1"
+            ],
+            "removed": [
+              {
+                "id": "834fa79e8be487ec7ad5-1",
+                "line": 146,
+                "kind": "helper",
+                "expression": "script(\n      0,\n      \"baseline\",\n      `a=adsk.core.Application.get()\nprint('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,\n    documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d['id']))))`,\n    )"
+              },
+              {
+                "id": "f7266c62ba420bc00665-1",
+                "line": 175,
+                "kind": "assertion",
+                "expression": "assert.ok(\n        Array.isArray(documents) &&\n          documents.length === 2 &&\n          Array.isArray(receipts),\n      )"
+              },
+              {
+                "id": "8c73897632a3d94c5fb4-1",
+                "line": 217,
+                "kind": "helper",
+                "expression": "snapshot()"
+              },
+              {
+                "id": "1758d82687dd9b86db42-1",
+                "line": 243,
+                "kind": "assertion",
+                "expression": "assert.ok(report.documents[0] && report.documents[1])"
+              },
+              {
+                "id": "f0f9b6a9ab5c318ea62e-1",
+                "line": 244,
+                "kind": "assertion",
+                "expression": "assert.notEqual(\n      report.documents[0].creationId,\n      report.documents[1].creationId,\n    )"
+              }
+            ],
+            "addedIds": [
+              "4d9e4cb82cde1d875512-1",
+              "05d21ae604af83747a0a-1",
+              "2fe4233085f4698b9483-1",
+              "ebe73d558ec9ae5eae30-1",
+              "ffb9a2fdc2b21ca8a7f6-1",
+              "5df2642caf84f6cc6563-1",
+              "959e47302e1217e1442d-1",
+              "36e14c9ba6a8df785b2e-1",
+              "9e8d1acde447718b60b3-1",
+              "ef05932378fdbf9f3965-1",
+              "051d11c9160ce329ddf7-1",
+              "2e69062d26c7dedd001c-1",
+              "74d3ed1562d00ec517ff-1",
+              "93c02ed1b2ec681c5c69-1",
+              "79da28fd702bece99ed9-1",
+              "1769b44c44902ab55215-1",
+              "79c7476cae34c626585c-1",
+              "82603a9ce56f92ad512e-1",
+              "4d9e4cb82cde1d875512-2",
+              "93450d092c71b609417f-1",
+              "add763c63ecf19301f32-1",
+              "2f49616c6b8c4417a494-1",
+              "458ecbff82d1ef2162ca-1",
+              "d7e001015a9292c69722-1",
+              "7744cce3f0059af50ca2-1",
+              "85557291fb09927239db-1",
+              "09ec931bbe2f7488e5eb-1",
+              "a40d3dfdf5c9a51c5290-1",
+              "1952be71084459e9f4b9-1",
+              "1ee8dbe5c69394106fdd-1",
+              "effd37a4e2af4448d0f6-1",
+              "bb24452d0c813d4f68cc-1",
+              "44d0b35297442b33fa0f-1",
+              "f93e4d9f37f1a3efbb0b-1",
+              "487b39c9ca9b5f8e8cbd-1",
+              "d7e001015a9292c69722-2",
+              "fb4c0884c7e2272b3c4b-1",
+              "de74e7a8cac5996cbbc0-1",
+              "e6344e6e163a9c5896fd-1",
+              "bcbc5c02e319b8151a7f-1",
+              "d7e001015a9292c69722-3",
+              "f3d3d619cfb1086018bf-1",
+              "163b2e2b95a15d56ebbd-1"
+            ]
+          }
+        },
+        {
+          "commit": "6b8ec5f8f82069b0701b8c8881178c30f5bd77e1",
+          "predecessor": "a365989c3eab56bbb51841be56f92998351847c4",
+          "introduced": false,
+          "comparison": {
+            "before": {
+              "source": "tests/live-normal-multidocument.ts",
+              "sha256": "68926370b6ec88795ffeabea7f4dce7907fa22220246023ed80cf2cf00f69c06",
+              "count": 86
+            },
+            "after": {
+              "source": "tests/live-normal-multidocument.ts",
+              "sha256": "914183b3b2b3d5c34a0e83e558a72c456499aa638304b9f08d5f70e090fa47bf",
+              "count": 87
+            },
+            "retainedIds": [
+              "4d9e4cb82cde1d875512-1",
+              "05d21ae604af83747a0a-1",
+              "2fe4233085f4698b9483-1",
+              "ebe73d558ec9ae5eae30-1",
+              "ffb9a2fdc2b21ca8a7f6-1",
+              "5df2642caf84f6cc6563-1",
+              "959e47302e1217e1442d-1",
+              "36e14c9ba6a8df785b2e-1",
+              "9e8d1acde447718b60b3-1",
+              "ef05932378fdbf9f3965-1",
+              "051d11c9160ce329ddf7-1",
+              "2e69062d26c7dedd001c-1",
+              "74d3ed1562d00ec517ff-1",
+              "93c02ed1b2ec681c5c69-1",
+              "79da28fd702bece99ed9-1",
+              "1769b44c44902ab55215-1",
+              "79c7476cae34c626585c-1",
+              "82603a9ce56f92ad512e-1",
+              "4d9e4cb82cde1d875512-2",
+              "e5cf23a5cc4f449925a4-1",
+              "93450d092c71b609417f-1",
+              "add763c63ecf19301f32-1",
+              "2f49616c6b8c4417a494-1",
+              "458ecbff82d1ef2162ca-1",
+              "d7e001015a9292c69722-1",
+              "7744cce3f0059af50ca2-1",
+              "85557291fb09927239db-1",
+              "09ec931bbe2f7488e5eb-1",
+              "a40d3dfdf5c9a51c5290-1",
+              "1952be71084459e9f4b9-1",
+              "3b6a54ef5054da5c6181-1",
+              "c74218979deba0c7e675-1",
+              "849e23022697108c7012-1",
+              "791d0f523c2cb50d61aa-1",
+              "1ee8dbe5c69394106fdd-1",
+              "c3faa95406473eebec99-1",
+              "02cf7a2b235ed94b0b2e-1",
+              "f7bfd3db7f614a142a80-1",
+              "1828869d127ae3b63571-1",
+              "4d7b90527d70242d0213-1",
+              "effd37a4e2af4448d0f6-1",
+              "411d90a80062158fa80b-1",
+              "bb24452d0c813d4f68cc-1",
+              "44d0b35297442b33fa0f-1",
+              "c74218979deba0c7e675-2",
+              "9bd103d2923cdb9c8228-1",
+              "f611ed5b55a4751433fd-1",
+              "90163b31298bd4d5f743-1",
+              "d511e12089c618397b77-1",
+              "8d2e6be1a9abcc9eefcd-1",
+              "cc4f55f5592ef9480c86-1",
+              "12f72a2240947919796f-1",
+              "5fd297efc8095dcdcc89-1",
+              "23fc2996455bb65f5067-1",
+              "f93e4d9f37f1a3efbb0b-1",
+              "487b39c9ca9b5f8e8cbd-1",
+              "d7e001015a9292c69722-2",
+              "fb4c0884c7e2272b3c4b-1",
+              "9c95cee476b7bb985d19-1",
+              "a9cf34af63925341017b-1",
+              "de74e7a8cac5996cbbc0-1",
+              "e6344e6e163a9c5896fd-1",
+              "bcbc5c02e319b8151a7f-1",
+              "80b2a14f1bbeca8909a6-1",
+              "4b6c341d89ea1e0c3793-1",
+              "b1adb9264fd60991d395-1",
+              "d0e50c301d9390c36d89-1",
+              "4060af2c358e62d7d8bc-1",
+              "05813179f7d47a984545-1",
+              "a8a69dcbcc440799265a-1",
+              "5a2521c8898fb2136aa1-1",
+              "84970b77f8eeb6525a9e-1",
+              "c95638494770cfbb17d2-1",
+              "f5096cef93f02d9429b2-1",
+              "e718f410198698d77127-1",
+              "b94376baa64f8526c38a-1",
+              "5957462c947268639f9b-1",
+              "d7e001015a9292c69722-3",
+              "f3d3d619cfb1086018bf-1",
+              "163b2e2b95a15d56ebbd-1",
+              "b6a7a417b2100e9fb3f3-1",
+              "f7bfd3db7f614a142a80-2",
+              "f5096cef93f02d9429b2-2",
+              "c6f9bcb89a6206f08541-1",
+              "2789c84e11e1313291ad-1"
+            ],
+            "removed": [
+              {
+                "id": "3598b94c2025217faac7-1",
+                "line": 546,
+                "kind": "helper",
+                "expression": "script(\n          index,\n          \"close\",\n          `${guard(document)}\nassert d.close(False)\nprint('FMCAD_RESULT '+json.dumps(dict(closed=True,creationId=${JSON.stringify(document.creationId)})))`,\n          document,\n        )"
+              }
+            ],
+            "addedIds": ["03cacd05a2d8930342bf-1", "b94376baa64f8526c38a-2"]
+          }
+        },
+        {
+          "commit": "135007c1b29b1004f9aa17d688b293a9813ebc95",
+          "predecessor": "4d683dfbdc20493c538d244c495db052976fe905",
+          "introduced": false,
+          "comparison": {
+            "before": {
+              "source": "tests/live-normal-multidocument.ts",
+              "sha256": "914183b3b2b3d5c34a0e83e558a72c456499aa638304b9f08d5f70e090fa47bf",
+              "count": 87
+            },
+            "after": {
+              "source": "tests/live-normal-multidocument.ts",
+              "sha256": "982a5d189b9235a80a13eebff75bbbbdab636b6a2010fe875656c135490e2e19",
+              "count": 87
+            },
+            "retainedIds": [
+              "4d9e4cb82cde1d875512-1",
+              "05d21ae604af83747a0a-1",
+              "2fe4233085f4698b9483-1",
+              "ebe73d558ec9ae5eae30-1",
+              "ffb9a2fdc2b21ca8a7f6-1",
+              "5df2642caf84f6cc6563-1",
+              "959e47302e1217e1442d-1",
+              "36e14c9ba6a8df785b2e-1",
+              "9e8d1acde447718b60b3-1",
+              "ef05932378fdbf9f3965-1",
+              "051d11c9160ce329ddf7-1",
+              "2e69062d26c7dedd001c-1",
+              "74d3ed1562d00ec517ff-1",
+              "93c02ed1b2ec681c5c69-1",
+              "79da28fd702bece99ed9-1",
+              "1769b44c44902ab55215-1",
+              "79c7476cae34c626585c-1",
+              "82603a9ce56f92ad512e-1",
+              "4d9e4cb82cde1d875512-2",
+              "e5cf23a5cc4f449925a4-1",
+              "93450d092c71b609417f-1",
+              "add763c63ecf19301f32-1",
+              "2f49616c6b8c4417a494-1",
+              "458ecbff82d1ef2162ca-1",
+              "d7e001015a9292c69722-1",
+              "7744cce3f0059af50ca2-1",
+              "85557291fb09927239db-1",
+              "09ec931bbe2f7488e5eb-1",
+              "a40d3dfdf5c9a51c5290-1",
+              "1952be71084459e9f4b9-1",
+              "3b6a54ef5054da5c6181-1",
+              "c74218979deba0c7e675-1",
+              "849e23022697108c7012-1",
+              "791d0f523c2cb50d61aa-1",
+              "1ee8dbe5c69394106fdd-1",
+              "c3faa95406473eebec99-1",
+              "02cf7a2b235ed94b0b2e-1",
+              "f7bfd3db7f614a142a80-1",
+              "1828869d127ae3b63571-1",
+              "4d7b90527d70242d0213-1",
+              "effd37a4e2af4448d0f6-1",
+              "411d90a80062158fa80b-1",
+              "bb24452d0c813d4f68cc-1",
+              "44d0b35297442b33fa0f-1",
+              "c74218979deba0c7e675-2",
+              "9bd103d2923cdb9c8228-1",
+              "f611ed5b55a4751433fd-1",
+              "90163b31298bd4d5f743-1",
+              "d511e12089c618397b77-1",
+              "8d2e6be1a9abcc9eefcd-1",
+              "cc4f55f5592ef9480c86-1",
+              "12f72a2240947919796f-1",
+              "5fd297efc8095dcdcc89-1",
+              "23fc2996455bb65f5067-1",
+              "f93e4d9f37f1a3efbb0b-1",
+              "487b39c9ca9b5f8e8cbd-1",
+              "d7e001015a9292c69722-2",
+              "fb4c0884c7e2272b3c4b-1",
+              "9c95cee476b7bb985d19-1",
+              "a9cf34af63925341017b-1",
+              "de74e7a8cac5996cbbc0-1",
+              "e6344e6e163a9c5896fd-1",
+              "bcbc5c02e319b8151a7f-1",
+              "80b2a14f1bbeca8909a6-1",
+              "4b6c341d89ea1e0c3793-1",
+              "b1adb9264fd60991d395-1",
+              "d0e50c301d9390c36d89-1",
+              "4060af2c358e62d7d8bc-1",
+              "05813179f7d47a984545-1",
+              "a8a69dcbcc440799265a-1",
+              "5a2521c8898fb2136aa1-1",
+              "84970b77f8eeb6525a9e-1",
+              "c95638494770cfbb17d2-1",
+              "b94376baa64f8526c38a-1",
+              "f5096cef93f02d9429b2-1",
+              "03cacd05a2d8930342bf-1",
+              "e718f410198698d77127-1",
+              "b94376baa64f8526c38a-2",
+              "5957462c947268639f9b-1",
+              "d7e001015a9292c69722-3",
+              "f3d3d619cfb1086018bf-1",
+              "163b2e2b95a15d56ebbd-1",
+              "b6a7a417b2100e9fb3f3-1",
+              "f7bfd3db7f614a142a80-2",
+              "f5096cef93f02d9429b2-2",
+              "c6f9bcb89a6206f08541-1",
+              "2789c84e11e1313291ad-1"
+            ],
+            "removed": [],
+            "addedIds": []
+          }
+        }
+      ]
     },
     {
       "source": "tests/live-pose-methods.js",
@@ -5042,11 +5396,98 @@
           "311fd7e189a89d819e08-1"
         ],
         "removed": [],
-        "addedIds": [
-          "eeaf1df12460ae2bf403-1",
-          "e2d94a0a4bfa23aeb3de-1"
-        ]
-      }
+        "addedIds": ["eeaf1df12460ae2bf403-1", "e2d94a0a4bfa23aeb3de-1"]
+      },
+      "transitions": [
+        {
+          "commit": "3badcefbfe2c3e43a050cf02bba235e6d0333ef0",
+          "predecessor": "6f32da55bdb4b8114720add67451c3adc20dab1f",
+          "introduced": false,
+          "comparison": {
+            "before": {
+              "source": "tests/live-recovery-ports.ts",
+              "sha256": "0ce78906cd0bfe7b647555a6aa02173418dede2e363c9fb0881f66889318bd56",
+              "count": 23
+            },
+            "after": {
+              "source": "tests/live-recovery-ports.ts",
+              "sha256": "d5004f9bbb666ec787a2a044703b4e89abf03beb5284c62e85d286cdc15fd01f",
+              "count": 23
+            },
+            "retainedIds": [
+              "eeaf1df12460ae2bf403-1",
+              "e2d94a0a4bfa23aeb3de-1",
+              "dd077fc11d730d1e3036-1",
+              "374e93893e58ec09d534-1",
+              "374e93893e58ec09d534-2",
+              "7a8162bcf1cd2e9c71ab-1",
+              "fbb11bf45ddf666e3db0-1",
+              "374e93893e58ec09d534-3",
+              "f8e7e8fb03e00798293e-1",
+              "a79cee6e22f1c061daa2-1",
+              "374e93893e58ec09d534-4",
+              "b978b83f0c87b16296eb-1",
+              "1324aa03264fb47f4bc5-1",
+              "99876222da2bfc272781-1",
+              "ee789a9848c0e29a5c9d-1",
+              "374e93893e58ec09d534-5",
+              "8ce0e113fc151e611c75-1",
+              "80a3aebd4a06755f4354-1",
+              "2d8b4fd5cbd4c1709606-1",
+              "9878fe7203b03be028a8-1",
+              "b973b44b858d57cf9236-1",
+              "6625105e34308deefece-1",
+              "311fd7e189a89d819e08-1"
+            ],
+            "removed": [],
+            "addedIds": []
+          }
+        },
+        {
+          "commit": "135007c1b29b1004f9aa17d688b293a9813ebc95",
+          "predecessor": "4d683dfbdc20493c538d244c495db052976fe905",
+          "introduced": false,
+          "comparison": {
+            "before": {
+              "source": "tests/live-recovery-ports.ts",
+              "sha256": "d5004f9bbb666ec787a2a044703b4e89abf03beb5284c62e85d286cdc15fd01f",
+              "count": 23
+            },
+            "after": {
+              "source": "tests/live-recovery-ports.ts",
+              "sha256": "48c27c0eebb5dd959c0dd818fc165d8074c28ea2d63be2f8e44e9406af090e1a",
+              "count": 23
+            },
+            "retainedIds": [
+              "eeaf1df12460ae2bf403-1",
+              "e2d94a0a4bfa23aeb3de-1",
+              "dd077fc11d730d1e3036-1",
+              "374e93893e58ec09d534-1",
+              "374e93893e58ec09d534-2",
+              "7a8162bcf1cd2e9c71ab-1",
+              "fbb11bf45ddf666e3db0-1",
+              "374e93893e58ec09d534-3",
+              "f8e7e8fb03e00798293e-1",
+              "a79cee6e22f1c061daa2-1",
+              "374e93893e58ec09d534-4",
+              "b978b83f0c87b16296eb-1",
+              "1324aa03264fb47f4bc5-1",
+              "99876222da2bfc272781-1",
+              "ee789a9848c0e29a5c9d-1",
+              "374e93893e58ec09d534-5",
+              "8ce0e113fc151e611c75-1",
+              "80a3aebd4a06755f4354-1",
+              "2d8b4fd5cbd4c1709606-1",
+              "9878fe7203b03be028a8-1",
+              "b973b44b858d57cf9236-1",
+              "6625105e34308deefece-1",
+              "311fd7e189a89d819e08-1"
+            ],
+            "removed": [],
+            "addedIds": []
+          }
+        }
+      ]
     },
     {
       "source": "tests/live-response-recovery.ts",

@@ -30,6 +30,50 @@ export function compareAssertionSources(
   };
 }
 
+export interface AssertionHistoryTransition {
+  commit: string;
+  predecessor: string;
+  introduced: boolean;
+  comparison: ReturnType<typeof compareAssertionSources>;
+}
+
+export interface AssertionHistorySource extends AssertionHistoryTransition {
+  source: string;
+  transitions?: AssertionHistoryTransition[];
+}
+
+/** Keep the first frozen comparison and append a new exact source transition. */
+export function appendLatestSourceTransitions(
+  latest: readonly AssertionHistorySource[],
+  previous: readonly AssertionHistorySource[],
+): AssertionHistorySource[] {
+  const previousBySource = new Map(
+    previous.map((source) => [source.source, source]),
+  );
+  return latest.map((source) => {
+    const frozen = previousBySource.get(source.source);
+    if (!frozen) return source;
+    const transitions = frozen.transitions ?? [];
+    if (
+      source.commit === frozen.commit ||
+      transitions.some((transition) => transition.commit === source.commit)
+    )
+      return frozen;
+    return {
+      ...frozen,
+      transitions: [
+        ...transitions,
+        {
+          commit: source.commit,
+          predecessor: source.predecessor,
+          introduced: source.introduced,
+          comparison: source.comparison,
+        },
+      ],
+    };
+  });
+}
+
 // These ports retained/replaced old JS sources rather than Git-detected renames.
 // Resolve the explicit predecessor path before calling a source newly introduced.
 const predecessorPaths: Readonly<Record<string, string>> = {
@@ -37,7 +81,10 @@ const predecessorPaths: Readonly<Record<string, string>> = {
   "tests/live-data-import-fixed.ts": "tests/live-data-import-fixed.js",
   "tests/live-sketch-operations.ts": "tests/live-sketch-operations.js",
 };
-export function auditLatestPredecessors(root: string, archiveGit: string) {
+export function auditLatestPredecessors(
+  root: string,
+  archiveGit: string,
+): AssertionHistorySource[] {
   const git = (...args: string[]) =>
     execFileSync("git", ["--git-dir=" + archiveGit, ...args], {
       encoding: "utf8",
@@ -91,14 +138,28 @@ if (require.main === module) {
   if (!archiveGit || !output)
     throw new Error("Usage: assertion-history ARCHIVE_GIT OUTPUT_JSON");
   const root = path.resolve(__dirname, "../../..");
+  const previousPath = path.join(
+    root,
+    "tests/live-assertion-predecessors.json",
+  );
+  const previous = fs.existsSync(previousPath)
+    ? (
+        JSON.parse(fs.readFileSync(previousPath, "utf8")) as {
+          sources: AssertionHistorySource[];
+        }
+      ).sources
+    : [];
   fs.writeFileSync(
     output,
     JSON.stringify(
       {
         schemaVersion: 1,
         scope:
-          "Latest exact archived source and its first parent, including explicit JS port predecessors; not all earlier changes or semantic equivalence.",
-        sources: auditLatestPredecessors(root, path.resolve(archiveGit)),
+          "The original frozen comparison is retained; each later exact source and first-parent comparison is appended. Textual transitions do not establish semantic equivalence.",
+        sources: appendLatestSourceTransitions(
+          auditLatestPredecessors(root, path.resolve(archiveGit)),
+          previous,
+        ),
       },
       null,
       2,

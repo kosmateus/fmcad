@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { inventorySources } from "./assertion-inventory";
-import { compareAssertionSources } from "./assertion-history";
+import {
+  appendLatestSourceTransitions,
+  compareAssertionSources,
+} from "./assertion-history";
 
 test("predecessor comparison retains removed expectations and duplicate multiplicity across source ports", () => {
   const result = compareAssertionSources(
@@ -23,6 +26,49 @@ test("predecessor comparison retains removed expectations and duplicate multipli
   assert.notEqual(result.before.sha256, result.after.sha256);
 });
 
+test("history regeneration appends a source transition without replacing the frozen comparison", () => {
+  const frozenComparison = compareAssertionSources(
+    "source.ts",
+    "assert.equal(value, 1);",
+    "source.ts",
+    "assert.equal(value, 1); assert.equal(value, 2);",
+  );
+  const latest = {
+    source: "source.ts",
+    commit: "c".repeat(40),
+    predecessor: "a".repeat(40),
+    introduced: false,
+    comparison: compareAssertionSources(
+      "source.ts",
+      "assert.equal(value, 1); assert.equal(value, 2);",
+      "source.ts",
+      "assert.equal(value, 1); assert.equal(value, 2); assert.equal(value, 3);",
+    ),
+  };
+  const previous = [
+    {
+      source: "source.ts",
+      commit: "a".repeat(40),
+      predecessor: "b".repeat(40),
+      introduced: false,
+      comparison: frozenComparison,
+    },
+  ];
+
+  const appended = appendLatestSourceTransitions([latest], previous);
+
+  assert.deepEqual(appended[0]!.comparison, frozenComparison);
+  assert.deepEqual(appended[0]!.transitions, [
+    {
+      commit: latest.commit,
+      predecessor: latest.predecessor,
+      introduced: latest.introduced,
+      comparison: latest.comparison,
+    },
+  ]);
+  assert.deepEqual(appendLatestSourceTransitions([latest], appended), appended);
+});
+
 test("frozen predecessor evidence partitions every current source and preserves removed expressions", () => {
   const root = path.resolve(__dirname, "../../..");
   const evidence = JSON.parse(
@@ -37,9 +83,41 @@ test("frozen predecessor evidence partitions every current source and preserves 
       predecessor: string;
       introduced: boolean;
       comparison: ReturnType<typeof compareAssertionSources>;
+      transitions?: {
+        commit: string;
+        predecessor: string;
+        introduced: boolean;
+        comparison: ReturnType<typeof compareAssertionSources>;
+      }[];
     }[];
   };
   const current = inventorySources(root);
+  const frozenSources = new Map(
+    evidence.sources.map((row) => [row.source, row]),
+  );
+  for (const [source, commit, predecessor, beforeSha256, afterSha256] of [
+    [
+      "tests/live-normal-multidocument.ts",
+      "8042151fe57351da80c109c176487c38abeb7b04",
+      "e6804e66eeea85eb9183ff28186d2ecc95be21b8",
+      "ec73cf25a31db4bf912b8849bbe7b366ca9dc0bcac58d59c68cb18baca4eb75f",
+      "1bcf6831378c871c31c0c902e2b2807cdaa53d44aef5d08086f619ae0d8ffb54",
+    ],
+    [
+      "tests/live-recovery-ports.ts",
+      "8042151fe57351da80c109c176487c38abeb7b04",
+      "e6804e66eeea85eb9183ff28186d2ecc95be21b8",
+      "73e48dbc2322ca40b63a84ad36329db0d1b250a1560559fa4ae08cd5df273984",
+      "0ce78906cd0bfe7b647555a6aa02173418dede2e363c9fb0881f66889318bd56",
+    ],
+  ] as const) {
+    const row = frozenSources.get(source);
+    assert.ok(row, source);
+    assert.equal(row.commit, commit, source);
+    assert.equal(row.predecessor, predecessor, source);
+    assert.equal(row.comparison.before.sha256, beforeSha256, source);
+    assert.equal(row.comparison.after.sha256, afterSha256, source);
+  }
   assert.deepEqual(
     evidence.sources.map((row) => row.source),
     current.map((row) => row.source),
@@ -47,18 +125,34 @@ test("frozen predecessor evidence partitions every current source and preserves 
   for (const [index, row] of evidence.sources.entries()) {
     assert.match(row.commit, /^[0-9a-f]{40}$/u);
     assert.match(row.predecessor, /^[0-9a-f]{40}$/u);
-    const comparison = row.comparison;
+    let previousAfter = row.comparison.after;
+    const comparisons = [row.comparison];
+    for (const transition of row.transitions ?? []) {
+      assert.match(transition.commit, /^[0-9a-f]{40}$/u);
+      assert.match(transition.predecessor, /^[0-9a-f]{40}$/u);
+      assert.equal(transition.comparison.before.sha256, previousAfter.sha256);
+      assert.equal(transition.comparison.before.count, previousAfter.count);
+      comparisons.push(transition.comparison);
+      previousAfter = transition.comparison.after;
+    }
+    for (const comparison of comparisons) {
+      assert.equal(
+        comparison.before.count,
+        comparison.retainedIds.length + comparison.removed.length,
+      );
+      assert.equal(
+        comparison.after.count,
+        comparison.retainedIds.length + comparison.addedIds.length,
+      );
+      assert.ok(comparison.removed.every((site) => site.expression.length > 0));
+    }
+    const comparison = comparisons.at(-1)!;
     assert.equal(comparison.after.sha256, current[index]!.sha256);
     assert.equal(comparison.after.count, current[index]!.assertions.length);
     assert.deepEqual(
       [...comparison.retainedIds, ...comparison.addedIds].sort(),
       current[index]!.assertions.map((site) => site.id).sort(),
     );
-    assert.equal(
-      comparison.before.count,
-      comparison.retainedIds.length + comparison.removed.length,
-    );
-    assert.ok(comparison.removed.every((site) => site.expression.length > 0));
     if (
       [
         "tests/live-data-import.ts",
