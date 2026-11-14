@@ -335,9 +335,15 @@ test("observer rejects unauthorized and malformed observations without mutating 
     );
     const log = workspaceLog(project, config);
     assert.ok(log);
-    for (let i = 0; i < 100 && !fs.existsSync(log); i++)
+    let text = "";
+    for (let i = 0; i < 100; i++) {
+      if (fs.existsSync(log)) {
+        text = fs.readFileSync(log, "utf8");
+        if (text.includes("observer_attached")) break;
+      }
       await new Promise((resolve) => setTimeout(resolve, 20));
-    assert.match(fs.readFileSync(log, "utf8"), /observer_attached/);
+    }
+    assert.match(text, /observer_attached/);
     assert.equal(fs.readFileSync(file, "utf8"), queue);
   } finally {
     if (started) await stopProjectLogger({ queueDir });
