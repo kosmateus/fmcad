@@ -1,6 +1,6 @@
 """DTO-only rules extracted from assets/cad/marking.py. No SDK or filesystem access."""
 import math as _marking_domain_math
-from typing import cast as _cad_cast
+from typing import cast as _marking_cast
 
 from fmcad.domain.values import JsonObject
 from fmcad.domain.values import JsonRecord
@@ -29,10 +29,10 @@ def _marking_deg(rad: float) -> float:
     return rad * 180.0 / _marking_domain_math.pi
 
 def _marking_box_overlap(a: "JsonObject", b: "JsonObject") -> bool:
-    a_min = _cad_cast("Sequence[float]", a['min'])
-    a_max = _cad_cast("Sequence[float]", a['max'])
-    b_min = _cad_cast("Sequence[float]", b['min'])
-    b_max = _cad_cast("Sequence[float]", b['max'])
+    a_min = _marking_cast("Sequence[float]", a['min'])
+    a_max = _marking_cast("Sequence[float]", a['max'])
+    b_min = _marking_cast("Sequence[float]", b['min'])
+    b_max = _marking_cast("Sequence[float]", b['max'])
     return all(a_min[i] <= b_max[i] and b_min[i] <= a_max[i] for i in range(3))
 
 _MARKING_LIMITATIONS = [
@@ -42,11 +42,11 @@ _MARKING_LIMITATIONS = [
     'MIN/MAX derivation and arrow/flow matching are verified against declared levels and flows, not a solver result.']
 
 def _occupancy(mark: "JsonObject") -> "JsonRecord":
-    width = _cad_cast(float, mark['width'])
-    height = _cad_cast(float, mark['height'])
-    depth = _cad_cast("float | None", mark['depth'])
-    stroke = _cad_cast(float, mark['stroke'])
-    pos = _cad_cast("Sequence[float]", mark['position'])
+    width = _marking_cast(float, mark['width'])
+    height = _marking_cast(float, mark['height'])
+    depth = _marking_cast("float | None", mark['depth'])
+    stroke = _marking_cast(float, mark['stroke'])
+    pos = _marking_cast("Sequence[float]", mark['position'])
     half_width = width / 2.0
     half_height = height / 2.0
     half_depth = ((depth if depth is not None else stroke) or 0.0) / 2.0

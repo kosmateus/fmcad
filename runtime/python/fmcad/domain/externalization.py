@@ -1,21 +1,22 @@
 """DTO-only rules extracted from assets/cad/externalization.py. No SDK or filesystem access."""
 import hashlib as _external_hashlib
 import json as _external_json
+import typing as _external_typing
 from typing import (
     NotRequired as _ExternalNotRequired,
     Protocol as _ExternalProtocol,
     Required as _ExternalRequired,
     TypedDict as _ExternalTypedDict,
-    TypeVar,
-    TYPE_CHECKING,
+    TypeVar as _ExternalDomainTypeVar,
 )
 
 from fmcad.domain.values import JsonObject
 from fmcad.domain.values import JsonValue
+from fmcad.domain.values import _CadItemCollection as _ExternalCadItemCollection
 from fmcad.domain.values import _cad_fields as _external_cad_fields
 
 
-if TYPE_CHECKING:
+if _external_typing.TYPE_CHECKING:
     class _ExternalDestination(_ExternalTypedDict):
         projectId: str
         folderId: str
@@ -54,11 +55,26 @@ if TYPE_CHECKING:
         statusReadError: str
         statusReadErrorAt: str
 
-    _ExternalValue = TypeVar('_ExternalValue')
+    _ExternalValue = _ExternalDomainTypeVar('_ExternalValue')
+
+    class _ExternalAttribute(_ExternalProtocol):
+        @property
+        def groupName(self) -> str: ...
+
+        @property
+        def name(self) -> str: ...
+
+        @property
+        def value(self) -> str: ...
+
+    class _ExternalAttributeCollection(_ExternalCadItemCollection[_ExternalAttribute], _ExternalProtocol):
+        def itemByName(self, groupName: str, name: str) -> object: ...
+
+        def add(self, groupName: str, name: str, value: str) -> object: ...
 
     class _ExternalAttributed(_ExternalProtocol):
         @property
-        def attributes(self) -> object: ...
+        def attributes(self) -> _ExternalAttributeCollection: ...
 
 _EXTERNAL_PROBE_RESTORE_RESERVE_MS = 60000
 

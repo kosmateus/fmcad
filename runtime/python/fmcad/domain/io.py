@@ -1,7 +1,7 @@
 """DTO-only rules extracted from assets/cad/io.py. No SDK or filesystem access."""
-import json
-import math
-from typing import cast as _cad_cast
+import json as _io_json
+import math as _io_math
+from typing import cast as _io_cast
 
 from fmcad.domain.values import JsonObject
 from fmcad.domain.values import JsonValue
@@ -15,10 +15,10 @@ _IO_IMPORTS = {'.step': 'createSTEPImportOptions', '.stp': 'createSTEPImportOpti
 def _io_json_object(value: "JsonValue", label: str) -> "JsonObject":
     if not isinstance(value, dict):
         raise ValueError(label + ' must be an object')
-    entries = _cad_cast("dict[object, JsonValue]", value)
+    entries = _io_cast("dict[object, JsonValue]", value)
     if any(not isinstance(key, str) for key in entries):
         raise ValueError(label + ' keys must be strings')
-    return _cad_cast("JsonObject", entries)
+    return _io_cast("JsonObject", entries)
 
 def _io_camera_vector(value: "JsonValue", label: str, count: int) -> "list[float]":
     if not isinstance(value, list) or len(value) != count:
@@ -27,14 +27,14 @@ def _io_camera_vector(value: "JsonValue", label: str, count: int) -> "list[float
     for coordinate in value:
         if type(coordinate) not in (int, float):
             raise ValueError(label + ' must contain ' + str(count) + ' finite numbers')
-        number = _cad_cast("int | float", coordinate)
-        if not math.isfinite(number):
+        number = _io_cast("int | float", coordinate)
+        if not _io_math.isfinite(number):
             raise ValueError(label + ' must contain ' + str(count) + ' finite numbers')
         result.append(float(number))
     return result
 
 def _io_camera_snapshot(value: "JsonValue | _IoCameraState") -> "_IoCameraState":
-    state = _io_json_object(_cad_cast("JsonValue", value), 'Camera state')
+    state = _io_json_object(_io_cast("JsonValue", value), 'Camera state')
     _io_cad_fields(state, ('document', 'eye', 'target', 'up', 'cameraType', 'units'),
                 ('extents', 'perspectiveAngle'))
     document = _io_json_object(state['document'], 'Camera state document')
@@ -59,19 +59,19 @@ def _io_camera_snapshot(value: "JsonValue | _IoCameraState") -> "_IoCameraState"
         angle = state.get('perspectiveAngle')
         if angle is None or type(angle) not in (int, float):
             raise ValueError('Perspective angle must be between zero and pi radians')
-        angle_value = _cad_cast("int | float", angle)
-        if not math.isfinite(angle_value) or not 0 < angle_value < math.pi:
+        angle_value = _io_cast("int | float", angle)
+        if not _io_math.isfinite(angle_value) or not 0 < angle_value < _io_math.pi:
             raise ValueError('Perspective angle must be between zero and pi radians')
         state['perspectiveAngle'] = float(angle_value)
     state.update(document=document, eye=eye, target=target, up=up, units='cm')
-    return _cad_cast("_IoCameraState", state)
+    return _io_cast("_IoCameraState", state)
 
 def _io_visibility_row(value: "JsonValue") -> "_IoVisibilityRow":
     row = _io_json_object(value, 'Visibility row')
     _io_cad_fields(row, ('ref', 'isLightBulbOn'))
     if type(row['isLightBulbOn']) is not bool:
         raise ValueError('Visibility rows require isLightBulbOn:boolean')
-    return _cad_cast("_IoVisibilityRow", row)
+    return _io_cast("_IoVisibilityRow", row)
 
 def _io_section_row(value: "JsonValue") -> "_IoSectionRow":
     row = _io_json_object(value, 'Section row')
@@ -84,7 +84,7 @@ def _io_section_row(value: "JsonValue") -> "_IoSectionRow":
 def _io_shot(value: "JsonValue") -> "_IoShot":
     shot = _io_json_object(value, 'shot')
     _io_cad_fields(shot, ('path',), ('camera', 'width', 'height', 'visibility', 'sections', 'activeComponent'))
-    return _cad_cast("_IoShot", shot)
+    return _io_cast("_IoShot", shot)
 
 def _io_visibility_state(value: "JsonValue") -> "_IoVisibilityState":
     state = _io_json_object(value, 'Visibility state')
@@ -93,8 +93,8 @@ def _io_visibility_state(value: "JsonValue") -> "_IoVisibilityState":
     if not isinstance(state['items'], list):
         raise ValueError('Visibility state items must be an array')
     rows = [_io_visibility_row(item) for item in state['items']]
-    return _cad_cast("_IoVisibilityState", {'document': document, 'items': rows})
+    return _io_cast("_IoVisibilityState", {'document': document, 'items': rows})
 
 def _io_restore_raise(errors: "Sequence[_IoMapping[str, object]]", label: str) -> None:
     if any(row.get('status') == 'failed' for row in errors):
-        raise RuntimeError(label + ' failed: ' + json.dumps(errors, default=str))
+        raise RuntimeError(label + ' failed: ' + _io_json.dumps(errors, default=str))

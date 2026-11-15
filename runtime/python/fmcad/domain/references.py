@@ -1,5 +1,5 @@
 """DTO-only rules extracted from assets/cad/references.py. No SDK or filesystem access."""
-from typing import cast as _cad_cast
+from typing import cast as _references_cast
 
 from fmcad.domain.values import JsonObject
 from fmcad.domain.values import JsonValue
@@ -22,10 +22,10 @@ def _references_edge_snapshot_matches(current_edges: "Sequence[Mapping[str, obje
                                       effective_targets: "Mapping[str, JsonValue] | None" = None,
                                       prior_edges: "Sequence[Mapping[str, object]] | None" = None) -> "tuple[bool, str | None]":
     effective_targets = effective_targets or {}
-    baseline = {_cad_cast(str, edge['edgeId']): edge for edge in (prior_edges if prior_edges is not None else plan_edges)
+    baseline = {_references_cast(str, edge['edgeId']): edge for edge in (prior_edges if prior_edges is not None else plan_edges)
                 if edge.get('ownerFileId') == file_id}
-    expected = {_cad_cast(str, edge['edgeId']): edge for edge in plan_edges if edge.get('ownerFileId') == file_id}
-    current = {_cad_cast(str, edge['edgeId']): edge for edge in current_edges if edge.get('ownerFileId') == file_id}
+    expected = {_references_cast(str, edge['edgeId']): edge for edge in plan_edges if edge.get('ownerFileId') == file_id}
+    current = {_references_cast(str, edge['edgeId']): edge for edge in current_edges if edge.get('ownerFileId') == file_id}
     if len(current) != sum(edge.get('ownerFileId') == file_id for edge in current_edges) or set(current) != set(baseline):
         return False, 'forwardEdgeSetDrift'
     for edge_id, row in current.items():
@@ -46,11 +46,11 @@ def _references_edge_snapshot_matches(current_edges: "Sequence[Mapping[str, obje
 
 
 def _references_occurrence_states(metadata: "JsonObject") -> "list[JsonObject] | None":
-    rows = _cad_cast("list[JsonObject]", metadata.get('occurrences', []))
+    rows = _references_cast("list[JsonObject]", metadata.get('occurrences', []))
     if any(not row.get('token') for row in rows):
         return None
     return sorted([{'token': row['token'], 'nativeToken': row.get('nativeToken'),
                     'transform': row.get('transform'), 'contextKind': row.get('contextKind'),
                     'isDerived': row.get('isDerived'),
                     'isReferencedComponent': row.get('isReferencedComponent')}
-                   for row in rows], key=lambda row: _cad_cast(str, row['token']))
+                   for row in rows], key=lambda row: _references_cast(str, row['token']))

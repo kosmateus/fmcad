@@ -408,8 +408,8 @@ test("light document-status profile carries strict handler and wrapper context",
   const fusionTyping = present(
     full.find((unit) => unit.id === "fusion-typing"),
   ).source;
-  assert.ok(fusionTyping.includes("class _CadAttributes(_Protocol):"));
-  assert.ok(fusionTyping.includes("class _DesignCaster(_Protocol):"));
+  assert.ok(fusionTyping.includes("class _CadAttributes(_FusionProtocol):"));
+  assert.ok(fusionTyping.includes("class _DesignCaster(_FusionProtocol):"));
   const fullCore = present(full.find((unit) => unit.id === "core")).source;
   assert.ok(
     !fullCore.includes('def _entity_resolve_reference(ctx: "CadContext"'),

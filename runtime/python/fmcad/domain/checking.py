@@ -1,5 +1,5 @@
 """DTO-only rules extracted from assets/cad/checking.py. No SDK or filesystem access."""
-from typing import cast as _cad_cast
+from typing import cast as _checking_cast
 
 from fmcad.domain.values import JsonObject
 from fmcad.domain.values import JsonValue
@@ -21,11 +21,11 @@ def _compare_scalar(value: float, expected: "JsonObject", tolerance: float = 0.0
         raise ValueError('tolerance must be nonnegative')
     low = high = None
     if 'equals' in expected:
-        low = _cad_cast(float, expected['equals']) - tolerance
-        high = _cad_cast(float, expected['equals']) + tolerance
+        low = _checking_cast(float, expected['equals']) - tolerance
+        high = _checking_cast(float, expected['equals']) + tolerance
     else:
-        low = _cad_cast(float | None, expected.get('min'))
-        high = _cad_cast(float | None, expected.get('max'))
+        low = _checking_cast(float | None, expected.get('min'))
+        high = _checking_cast(float | None, expected.get('max'))
     if low is not None and high is not None and low > high:
         raise ValueError('expected min exceeds max')
     passed = (low is None or value >= low) and (high is None or value <= high)
@@ -40,14 +40,14 @@ def _predicate_missing(predicate: "JsonObject") -> bool:
 def _is_stale_evidence(item: "JsonObject") -> bool:
     source = item.get('source')
     if source is not None:
-        source = _cad_cast("JsonObject", source)
+        source = _checking_cast("JsonObject", source)
         if source.get('status') in ('ESTIMATED', 'OPEN'):
             return True
         if source.get('revision') is not None and item.get('revision') is not None \
                 and source['revision'] != item['revision']:
             return True
     approval = item.get('supplierApproval')
-    if approval is not None and _cad_cast("JsonObject", approval).get('approved') is not True:
+    if approval is not None and _checking_cast("JsonObject", approval).get('approved') is not True:
         return True
     return False
 
@@ -55,7 +55,7 @@ def _evidence_item(spec: "JsonValue", index: int) -> "JsonObject":
     if not isinstance(spec, dict) or 'id' not in spec or 'kind' not in spec or 'path' not in spec:
         raise ValueError('evidence %d requires id, kind and path' % index)
     kind = spec['kind']
-    if _cad_cast(str, kind) not in _EVIDENCE_KINDS:
+    if _checking_cast(str, kind) not in _EVIDENCE_KINDS:
         raise ValueError('evidence %r: unsupported kind %r' % (spec['id'], kind))
     return {'id': spec['id'], 'kind': kind, 'path': spec['path'], 'revision': spec.get('revision'),
             'source': spec.get('source'), 'supplierApproval': spec.get('supplierApproval'),

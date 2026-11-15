@@ -1,6 +1,6 @@
 """DTO-only rules extracted from assets/cad/data_import.py. No SDK or filesystem access."""
 import math as _di_math
-from typing import cast as _cad_cast
+from typing import cast as _di_cast
 
 from fmcad.domain.values import JsonObject
 from fmcad.domain.values import JsonRecord
@@ -68,10 +68,10 @@ def _di_metadata(plan: "Mapping[str, object]", **values: "JsonValue") -> "JsonRe
 def _di_json_object(value: "JsonValue", label: str) -> "JsonObject":
     if not isinstance(value, dict):
         raise ValueError(label + ' must be an object')
-    entries = _cad_cast("dict[object, JsonValue]", value)
+    entries = _di_cast("dict[object, JsonValue]", value)
     if any(not isinstance(key, str) for key in entries):
         raise ValueError(label + ' keys must be strings')
-    return _cad_cast("JsonObject", entries)
+    return _di_cast("JsonObject", entries)
 
 def _di_json_records(value: "JsonValue", label: str) -> "list[JsonRecord]":
     if not isinstance(value, list):
@@ -85,7 +85,7 @@ def _di_item_metadata(value: "JsonValue") -> "_DiItemMetadata":
     for key in ('owner', 'revision', 'digest'):
         if not isinstance(metadata[key], str):
             raise ValueError('Stored data-import metadata has invalid ' + key)
-    return _cad_cast("_DiItemMetadata", metadata)
+    return _di_cast("_DiItemMetadata", metadata)
 
 def _di_placement_metadata(value: "JsonValue") -> "_DiPlacementMetadata":
     metadata = _di_json_object(value, 'Stored placement metadata')
@@ -99,7 +99,7 @@ def _di_placement_metadata(value: "JsonValue") -> "_DiPlacementMetadata":
     provenance = _di_json_object(metadata['provenance'], 'Stored placement provenance')
     checked = dict(metadata)
     checked.update(matrix=matrix, provenance=provenance)
-    return _cad_cast("_DiPlacementMetadata", checked)
+    return _di_cast("_DiPlacementMetadata", checked)
 
 def _di_plan(value: "JsonObject") -> "_DiPlan":
     fields = ('version', 'operation', 'owner', 'revision', 'expectedRevision', 'onExisting',
@@ -139,7 +139,7 @@ def _di_plan(value: "JsonObject") -> "_DiPlan":
         raise ValueError('Import maxItems and budgetMs must be positive integers')
     value['provenance'], value['result'] = provenance, result
     value['unresolved'], value['warnings'] = unresolved, warnings
-    return _cad_cast("_DiPlan", value)
+    return _di_cast("_DiPlan", value)
 
 def _di_plan_text(plan: "_DiPlan", key: "Literal['owner', 'revision']") -> str:
     value = plan[key]

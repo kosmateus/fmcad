@@ -285,6 +285,51 @@ for (const { operation, data, dependencies, ...selection } of operations) {
   });
 }
 
+test("public measure.baseline.capture preserves BRepBody through the real Fusion checker", async () => {
+  const original = prepareCadScript(
+    "measure.baseline.capture",
+    {
+      bodies: [
+        {
+          role: "housing",
+          body: { kind: "body", token: "body-token-a", name: "Housing" },
+        },
+      ],
+      frame: "assembly",
+      scope: "durable",
+      workBudgetMs: 30000,
+    },
+    {
+      doc: "PublicBrepBaseline",
+      docId: "public-brep-baseline-capture",
+      docFileId: "public-brep-baseline-capture-file",
+    },
+  );
+  const wire = prepareWire(original, "public-brep-baseline-capture");
+  const admission = python.createPythonRpcAdmission({
+    runtime,
+    checker: createChecker(),
+  });
+
+  const certificate = await admission
+    .check(wire.request, wire.artifact)
+    .catch((error: unknown) => {
+      const report =
+        error !== null && typeof error === "object" && "pythonCheck" in error
+          ? error.pythonCheck
+          : error;
+      assert.fail(JSON.stringify(report));
+    });
+
+  assert.equal(certificate.kind, "python");
+  assert.equal(
+    certificate.report?.status,
+    "passed",
+    JSON.stringify(certificate.report?.diagnostics),
+  );
+  assert.deepEqual(certificate.report?.diagnostics, []);
+});
+
 test("public run selection keeps dynamic, initializer, and registry escape sources conservative", (t) => {
   const directory = fs.mkdtempSync(
     path.join(os.tmpdir(), "fmcad-public-source-selection-"),

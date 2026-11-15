@@ -1,6 +1,6 @@
 """DTO-only rules extracted from assets/cad/optics.py. No SDK or filesystem access."""
 import math as _optics_domain_math
-from typing import cast as _cad_cast
+from typing import cast as _optics_cast
 
 from fmcad.domain.values import JsonObject
 
@@ -72,14 +72,14 @@ def _optics_rect_corners(origin: "Sequence[int | float]", d: "Sequence[int | flo
     ]
 
 def _optics_sensor_classify(sensor: "JsonObject", point: "Sequence[int | float]") -> str:
-    origin = _cad_cast("Sequence[int | float]", sensor['origin'])
-    direction = _cad_cast("Sequence[int | float]", sensor['d'])
-    horizontal = _cad_cast("Sequence[int | float]", sensor['h'])
-    vertical = _cad_cast("Sequence[int | float]", sensor['v'])
-    tan_horizontal = _cad_cast("int | float", sensor['tan_h'])
-    tan_vertical = _cad_cast("int | float", sensor['tan_v'])
-    near = _cad_cast("int | float", sensor['near'])
-    far = _cad_cast("int | float", sensor['far'])
+    origin = _optics_cast("Sequence[int | float]", sensor['origin'])
+    direction = _optics_cast("Sequence[int | float]", sensor['d'])
+    horizontal = _optics_cast("Sequence[int | float]", sensor['h'])
+    vertical = _optics_cast("Sequence[int | float]", sensor['v'])
+    tan_horizontal = _optics_cast("int | float", sensor['tan_h'])
+    tan_vertical = _optics_cast("int | float", sensor['tan_v'])
+    near = _optics_cast("int | float", sensor['near'])
+    far = _optics_cast("int | float", sensor['far'])
     w = _optics_vsub(point, origin)
     dist = _optics_vnorm(w)
     if dist < 1e-12:
