@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -132,7 +133,8 @@ test("imported CAD scenario retains its full runtime and fits the native wire wi
 
 test("generic wire extraction and non-native receipts never rewrite input", () => {
   const source =
-    "def run(context: str) -> None:\n    pass\n" + "# padding\n".repeat(70000);
+    "def run(context: str) -> None:\n    pass\n" + "# padding\n".repeat(25999);
+  assert.ok(Buffer.byteLength(source) < 512 * 1024);
   assert.equal(prepareWireArtifact(runtime, source).script, source);
   const native = prepareReceiptScript(
     source,
@@ -151,6 +153,70 @@ test("generic wire extraction and non-native receipts never rewrite input", () =
   assert.ok(native.script.startsWith("# FMCAD native source envelope v1"));
   assert.ok(!addin.script.startsWith("# FMCAD native source envelope v1"));
   assert.ok(addin.script.includes("# padding"));
+  const request = {
+    jsonrpc: "2.0",
+    id: "codec-receipt-rpc",
+    method: "tools/call",
+    params: {
+      name: "fusion_mcp_execute",
+      arguments: { featureType: "script", object: { script: native.script } },
+    },
+  };
+  assert.ok(Buffer.byteLength(JSON.stringify(request)) < 1_048_576);
+});
+
+test("public native preparation chooses smaller JSON for sub-threshold source", async (t) => {
+  const prefix = "def run(context: str) -> None:\n    pass\n";
+  const paddingLine = "# padding\n";
+  const remainingBytes = 259999 - Buffer.byteLength(prefix);
+  const source =
+    prefix +
+    paddingLine.repeat(
+      Math.floor(remainingBytes / Buffer.byteLength(paddingLine)),
+    ) +
+    "#".repeat(remainingBytes % Buffer.byteLength(paddingLine));
+  assert.equal(Buffer.byteLength(source), 259999);
+  const plain = prepareWireArtifact(runtime, source);
+  const encoded = prepareEncodedWireArtifact(runtime, source);
+  const requestFor = (script: string) => ({
+    jsonrpc: "2.0",
+    id: "codec-public-rpc",
+    method: "tools/call",
+    params: {
+      name: "fusion_mcp_execute",
+      arguments: { featureType: "script", object: { script } },
+    },
+  });
+  const plainFinalJSONBytes = Buffer.byteLength(
+    JSON.stringify(requestFor(plain.script)),
+  );
+  const encodedFinalJSONBytes = Buffer.byteLength(
+    JSON.stringify(requestFor(encoded.script)),
+  );
+  assert.ok(encoded.script.startsWith("# FMCAD native source envelope v1"));
+  assert.ok(encodedFinalJSONBytes < plainFinalJSONBytes);
+  assert.equal(
+    encoded.units.find((unit) => unit.filename === "<fmcad-native-source>")
+      ?.source,
+    source,
+  );
+  const report = await checker().check({
+    artifact: encoded,
+    context: { kind: "raw", entrypoint: "run" },
+  });
+  assert.equal(report.status, "passed", JSON.stringify(report));
+  t.diagnostic(
+    JSON.stringify({
+      rawBytes: Buffer.byteLength(source),
+      sourceSha256: createHash("sha256").update(source).digest("hex"),
+      plainScriptBytes: Buffer.byteLength(plain.script),
+      plainFinalJSONBytes,
+      encodedScriptBytes: Buffer.byteLength(encoded.script),
+      encodedFinalJSONBytes,
+      encodedSha256: encoded.sha256,
+      checker: report.status,
+    }),
+  );
 });
 
 test("real checker finds poisoned decoded source without running its top-level failure", async () => {

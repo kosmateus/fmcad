@@ -24,7 +24,8 @@ class SourceCodecTest(unittest.TestCase):
     def test_exact_bytes_and_no_exec(self):
         source = self.source()
         encoded = codec.encode_source(source)
-        self.assertLess(len(encoded.encode()), len(source.encode()))
+        self.assertGreater(len(source.encode('utf-8')), 512 * 1024)
+        self.assertLess(codec._json_string_bytes(encoded), codec._json_string_bytes(source))
         self.assertEqual(codec.decoded_envelope(encoded, ast.parse(encoded)), source)
         result = subprocess.run(
             [sys.executable, '-I', '-S', '-B', str(ROOT / 'runtime/python/entrypoints/source_units.py')],
@@ -38,11 +39,55 @@ class SourceCodecTest(unittest.TestCase):
         self.assertEqual(codec.encode_source(source), source)
         self.assertIsNone(codec.decoded_envelope(source, ast.parse(source)))
 
+    def test_compressible_source_below_previous_threshold_uses_smaller_json(self):
+        source = '# padding\n' * 25999 + '# padding'
+        self.assertEqual(len(source.encode('utf-8')), 259999)
+        self.assertLess(len(source.encode('utf-8')), 512 * 1024)
+        encoded = codec.encode_source(source)
+        self.assertTrue(encoded != source, 'beneficial sub-threshold input should be encoded')
+        self.assertLess(codec._json_string_bytes(encoded), codec._json_string_bytes(source))
+        self.assertTrue(codec.decoded_envelope(encoded, ast.parse(encoded)) == source,
+                        'the selected envelope must round-trip exactly')
+
+    def test_equal_json_cost_keeps_plain_source(self):
+        randomizer = random.Random(731)
+        filler = ''.join(randomizer.choices(
+            'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', k=530000))
+        source = '# repeated padding\n' * 158 + '# ' + filler
+        data = source.encode('utf-8')
+        candidate = codec.envelope(
+            base64.b64encode(zlib.compress(data, 9)).decode('ascii'),
+            len(data), hashlib.sha256(data).hexdigest())
+        self.assertGreater(len(data), 512 * 1024)
+        self.assertEqual(codec._json_string_bytes(candidate), codec._json_string_bytes(source))
+        self.assertTrue(codec.encode_source(source) == source, 'ties must keep the plain source')
+
+    def test_json_string_cost_matches_javascript_json_stringify(self):
+        values = [
+            'żółw 🐢',
+            'quotes: " and backslash: \\',
+            '\x00\x01\x07\x08\x09\x0a\x0b\x0c\x0d\x1f',
+            '\x7f\u2028\u2029',
+        ]
+        script = (
+            "const fs = require('node:fs'); "
+            "const values = JSON.parse(fs.readFileSync(0, 'utf8')); "
+            "process.stdout.write(JSON.stringify(values.map(value => "
+            "Buffer.byteLength(JSON.stringify(value)))));"
+        )
+        result = subprocess.run(
+            ['node', '-e', script], input=json.dumps(values), text=True,
+            capture_output=True, check=True)
+        javascript_costs = json.loads(result.stdout)
+        self.assertEqual([codec._json_string_bytes(value) for value in values], javascript_costs)
+        with self.assertRaises(UnicodeEncodeError):
+            codec.encode_source('\ud800')
+
     def test_encoding_never_expands_incompressible_source(self):
         randomizer = random.Random(0)
         source = '# ' + ''.join(randomizer.choices(
             'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/', k=600000))
-        self.assertEqual(codec.encode_source(source), source)
+        self.assertTrue(codec.encode_source(source) == source, 'incompressible input should stay plain')
         with self.assertRaises(ValueError):
             codec.decode_payload('A' * (24 * 1024 * 1024 + 1), 0, '0' * 64)
 

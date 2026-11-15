@@ -3,13 +3,17 @@ import ast
 import base64
 import hashlib
 import inspect
+import json
 import zlib
 
 
 HEADER = '# FMCAD native source envelope v1\n'
 FILENAME = '<fmcad-native-source>'
 MAX_SOURCE_BYTES = 16 * 1024 * 1024
-ENCODE_THRESHOLD_BYTES = 512 * 1024
+
+
+def _json_string_bytes(value):
+    return len(json.dumps(value, ensure_ascii=False).encode('utf-8'))
 
 
 def decode_payload(payload: str, size: int, digest: str) -> str:
@@ -51,13 +55,11 @@ def envelope(payload, size, digest):
 
 def encode_source(source):
     data = source.encode('utf-8')
-    if len(data) < ENCODE_THRESHOLD_BYTES:
-        return source
     if len(data) > MAX_SOURCE_BYTES:
         raise ValueError('Native source size exceeds 16 MiB')
     encoded = envelope(base64.b64encode(zlib.compress(data, 9)).decode('ascii'),
                        len(data), hashlib.sha256(data).hexdigest())
-    return encoded if len(encoded.encode('utf-8')) < len(data) else source
+    return encoded if _json_string_bytes(encoded) < _json_string_bytes(source) else source
 
 
 def decoded_envelope(source, tree):
