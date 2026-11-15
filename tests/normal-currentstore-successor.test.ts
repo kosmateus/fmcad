@@ -43,6 +43,64 @@ const ref = (file: string) => ({
 const absentError =
   "NoProcessFoundForGivenId,Microsoft.PowerShell.Commands.GetProcessCommand";
 
+function syntheticReceiptPaths(
+  t: { after(fn: () => void): void },
+  root: string,
+) {
+  const queue = load("../src/queue-instance") as ReturnType<
+    typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
+  >;
+  const { createQueueInstance } = load(
+    "../src/dist/node-adapters/execution/queue-instance",
+  ) as typeof import("../packages/node-adapters/src/execution/queue-instance");
+  const platform = load(
+    "../src/dist/config-platform",
+  ) as typeof import("../packages/node-adapters/src/config-platform");
+  const plainLinux = createQueueInstance(
+    load.resolve("../src/queue-instance"),
+    {
+      ...platform,
+      detectPlatform: () => ({
+        platform: "linux",
+        architecture: "x64",
+        nodeVersion: process.versions.node,
+        osRelease: "6.8.0-generic",
+        distribution: "ubuntu",
+        distributionVersion: "24.04",
+      }),
+    },
+  );
+  // Keep the production refusal RED-capable on every host. Only this synthetic
+  // physical endpoint uses local receipt files; it is not a Windows/WSL claim.
+  assert.throws(
+    () =>
+      plainLinux.prepareReceiptScript(
+        "def run(context: str) -> None:\n    pass\n",
+        true,
+        path.join(root, "never-sent.json"),
+        {},
+      ),
+    { code: "FMCAD_UNSUPPORTED_PLATFORM" },
+  );
+  const original = queue.prepareReceiptScript;
+  let mapped = 0;
+  queue.prepareReceiptScript = (code, official, receipt, binding) =>
+    plainLinux.prepareReceiptScript(code, official, receipt, binding, {
+      mapPath(file) {
+        assert.ok(
+          file.startsWith(root + path.sep),
+          "Synthetic receipts must remain in their owned namespace",
+        );
+        mapped++;
+        return file;
+      },
+    });
+  t.after(() => {
+    queue.prepareReceiptScript = original;
+    assert.ok(mapped > 0);
+  });
+}
+
 function fixture(t: { after(fn: () => void): void }) {
   const dir = fs.mkdtempSync("/tmp/opencode/normal-currentstore-");
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -862,7 +920,8 @@ test("normal current-facts parser uses native success/message and never adopts r
   );
 });
 
-test("normal current-facts final receipt artifact passes the real pinned checker without SDK or platform impersonation", async () => {
+test("normal current-facts final receipt artifact passes the real pinned checker without SDK or platform impersonation", async (t) => {
+  syntheticReceiptPaths(t, "/tmp/opencode");
   const { createPythonChecker, createPythonRpcAdmission } = load(
     "../src/python",
   ) as typeof import("../packages/node-adapters/src/python/checker") &
@@ -926,6 +985,7 @@ test("normal current-facts final receipt artifact passes the real pinned checker
 for (const observationMode of ["complete", "missing-remote"]) {
   test(`normal successor uses existing once-only engine and real checker: ${observationMode}; no write or ledger settlement`, async (t) => {
     const f = fixture(t);
+    syntheticReceiptPaths(t, f.dir);
     const successor = load(
       "../src/queue-epoch-successor",
     ) as typeof import("../src/composition/queue-epoch-successor");
