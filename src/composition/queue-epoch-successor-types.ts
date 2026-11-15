@@ -98,8 +98,8 @@ interface ApprovalFields {
   priorRetiredSuccessor?: Reference;
 }
 export type Approval = ApprovalFields & (
-  | { purpose: "dead-isolated-epoch-successor-v1"; normalCurrentStore?: never }
-  | { purpose: "dead-normal-currentstore-successor-v1"; normalCurrentStore: import("./queue-normal-cold-successor").NormalCurrentStoreApproval }
+  | { purpose: "dead-isolated-epoch-successor-v1"; normalCurrentStore?: never; priorNormalCurrentFactsRetry?: never }
+  | { purpose: "dead-normal-currentstore-successor-v1"; normalCurrentStore: import("./queue-normal-cold-successor").NormalCurrentStoreApproval; priorNormalCurrentFactsRetry?: Reference }
 );
 export interface Qualification {
   passed?: boolean;

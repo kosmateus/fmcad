@@ -369,6 +369,8 @@ function assertPriorAbortedSuccessor(
     );
 }
 export function assertSuccessorApproval(value: Inspection, approval: Approval) {
+  if (approval.priorNormalCurrentFactsRetry && !approval.normalCurrentStore)
+    fail("NORMAL_SUCCESSOR_UNPROVEN", "A fresh normal read attempt cannot authorize isolated or atomic work");
   let effectiveIdentity = value.identity;
   if (value.backendTransition) {
     if (
@@ -885,6 +887,7 @@ export async function bootstrapSuccessor(
       permission: "one-proven-new-document-only",
       historicalOutcome: "unknown",
       ...(value.approval.normalCurrentStore ? { normalCurrentStore: value.approval.normalCurrentStore } : {}),
+      ...(value.approval.priorNormalCurrentFactsRetry ? { priorNormalCurrentFactsRetry: value.approval.priorNormalCurrentFactsRetry } : {}),
       ...(value.approval.priorRetiredSuccessor
         ? { priorRetiredSuccessor: value.approval.priorRetiredSuccessor }
         : value.approval.priorAbortedSuccessor

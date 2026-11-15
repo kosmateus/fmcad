@@ -530,6 +530,15 @@ test("FAKE backend succession: another cold scope without a current transition v
   );
 });
 
+test("a normal read-attempt link cannot authorize an isolated or atomic successor", (t) => {
+  const f = backendFixture(t);
+  const untrusted = JSON.parse(JSON.stringify({ ...f.approval,
+    priorNormalCurrentFactsRetry: f.approval.qualification }));
+  assert.throws(() => assertSuccessorApproval(f.inspection, untrusted), {
+    code: "NORMAL_SUCCESSOR_UNPROVEN",
+  });
+});
+
 test("FAKE normal runtime upgrade binds creation to the original authorized normal pair, not the historical quarantine pair", (t) => {
   const f = backendFixture(t);
   const published = f.publish();
