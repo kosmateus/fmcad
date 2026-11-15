@@ -388,6 +388,20 @@ def _animation_handler(mode: str) -> "CadHandler":
     return handler
 
 
-CAD_HANDLERS.update({'animation.' + mode: _animation_handler(mode) for mode in
-                     ('capabilities', 'list', 'inspect', 'create', 'activate', 'play', 'seek', 'workspace')})
+# Named bindings retain the legacy callable name without executing a factory.
+_animation_capabilities: "CadHandler" = lambda ctx, data: _animation_native(ctx, data, 'capabilities')
+_animation_list: "CadHandler" = lambda ctx, data: _animation_native(ctx, data, 'list')
+_animation_inspect: "CadHandler" = lambda ctx, data: _animation_native(ctx, data, 'inspect')
+_animation_create: "CadHandler" = lambda ctx, data: _animation_native(ctx, data, 'create')
+_animation_activate: "CadHandler" = lambda ctx, data: _animation_native(ctx, data, 'activate')
+_animation_play: "CadHandler" = lambda ctx, data: _animation_native(ctx, data, 'play')
+_animation_seek: "CadHandler" = lambda ctx, data: _animation_native(ctx, data, 'seek')
+_animation_workspace: "CadHandler" = lambda ctx, data: _animation_native(ctx, data, 'workspace')
+
+CAD_HANDLERS.update({
+    'animation.capabilities': _animation_capabilities, 'animation.list': _animation_list,
+    'animation.inspect': _animation_inspect, 'animation.create': _animation_create,
+    'animation.activate': _animation_activate, 'animation.play': _animation_play,
+    'animation.seek': _animation_seek, 'animation.workspace': _animation_workspace,
+})
 CAD_HANDLERS.update({'motion.sample': _animation_sample, 'animation.joints': _animation_sample})
