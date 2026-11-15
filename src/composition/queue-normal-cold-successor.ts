@@ -138,24 +138,27 @@ function canonical(file: string, directory = false): string {
     fail("Canonical normal-currentstore path required; symlinks are refused");
   return file;
 }
-function read(file: string): Data {
+function bytes(file: string): Buffer {
   canonical(file);
-  if (fs.statSync(file).size > 16 * 1024 * 1024)
-    fail("Normal-currentstore evidence exceeds its bound");
-  return object(JSON.parse(fs.readFileSync(file, "utf8")) as unknown);
+  return (
+    load(
+      "./dist/node-adapters/persistence/records",
+    ) as typeof import("../../packages/node-adapters/src/persistence/records")
+  ).readBytes(file, 16 * 1024 * 1024, fs, file);
+}
+function read(file: string): Data {
+  return object(JSON.parse(bytes(file).toString("utf8")) as unknown);
 }
 function reference(file: string): Reference {
-  canonical(file);
-  return { path: file, sha256: digest(fs.readFileSync(file)) };
+  return { path: file, sha256: digest(bytes(file)) };
 }
 function checked(entry: Reference, expected?: string): Data {
-  if (
-    !entry ||
-    (expected !== undefined && entry.path !== expected) ||
-    !same(reference(entry.path), entry)
-  )
+  if (!entry || (expected !== undefined && entry.path !== expected))
     fail("Normal-currentstore evidence changed or was retargeted");
-  return read(entry.path);
+  const content = bytes(entry.path);
+  if (digest(content) !== entry.sha256)
+    fail("Normal-currentstore evidence changed or was retargeted");
+  return object(JSON.parse(content.toString("utf8")) as unknown);
 }
 function process(value: unknown): Process {
   const p = object(value);
@@ -357,6 +360,48 @@ function snapshot(
     reference(path.join(epoch, "instance.json")),
   );
   files.push(reference(path.join(epoch, "closed.json")));
+  const closeReceipt = object(closed["receipt"]);
+  const closePath = closeReceipt["path"];
+  if (
+    typeof closePath !== "string" ||
+    !closePath.startsWith(root + path.sep) ||
+    path.basename(closePath) !== "result.json" ||
+    path.basename(path.dirname(closePath)) !== "isolated-scratch-close" ||
+    !Array.isArray(closed["qualificationEvidence"]) ||
+    closed["qualificationEvidence"].length !== 5
+  )
+    fail("Exact normal-admission cleanup output references required");
+  const closeDirectory = path.dirname(closePath);
+  const closeFiles = [
+    closeReceipt,
+    ...closed["qualificationEvidence"].map(object),
+  ];
+  const names = closeFiles.map((entry) =>
+    typeof entry["path"] === "string" ? path.basename(entry["path"]) : "",
+  );
+  if (
+    new Set(names).size !== 6 ||
+    ![
+      "result.json",
+      "intent.json",
+      "start.json",
+      "wire.json",
+      "sdk-closed.json",
+    ].every((name) => names.includes(name)) ||
+    !names.some((name) => /^remote-[a-f0-9-]{36}\.json$/.test(name))
+  )
+    fail("Complete immutable normal-admission cleanup proof required");
+  for (const entry of closeFiles) {
+    if (
+      typeof entry["path"] !== "string" ||
+      path.dirname(entry["path"]) !== closeDirectory ||
+      typeof entry["sha256"] !== "string"
+    )
+      fail("Normal-admission proof escaped its output-only namespace");
+    const ref = { path: entry["path"], sha256: entry["sha256"] };
+    checked(ref);
+    files.push(ref);
+  }
   const producers: Process[] = [process(owner)];
   const sealedRequests: Snapshot["sealedRequests"] = [];
   for (const id of Object.keys(jobs).sort()) {

@@ -879,6 +879,7 @@ async function main() {
         }
       : {}),
   };
+  if (options["--normal-currentstore"] === "true") assert.equal(api.buildHash(runtime), fingerprint, "Normal successor runtime changed during qualification");
   fs.writeFileSync(
     path.join(output, "installed-qualification.json"),
     JSON.stringify(result, null, 2) + "\n",

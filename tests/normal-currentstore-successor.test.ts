@@ -91,11 +91,33 @@ function fixture(t: { after(fn: () => void): void }) {
   };
   write(path.join(dir, "instance.json"), identity);
   write(path.join(epoch, "instance.json"), identity);
+  const closeDirectory = path.join(
+    dir,
+    "epoch-successions",
+    hash("synthetic-prior-close"),
+    "isolated-scratch-close",
+  );
+  const closeFiles = [
+    "result.json",
+    "intent.json",
+    "start.json",
+    "wire.json",
+    "sdk-closed.json",
+    `remote-${randomUUID()}.json`,
+  ].map((name) => {
+    const file = path.join(closeDirectory, name);
+    write(file, {
+      fixture: "synthetic existing close evidence; not physical Fusion proof",
+    });
+    return ref(file);
+  });
   write(path.join(epoch, "closed.json"), {
     epochId: p.epochId,
     document: pointer.document,
     admissionMode: "normal-multidocument",
     historicalOutcome: "unknown",
+    receipt: closeFiles[0],
+    qualificationEvidence: closeFiles.slice(1),
   });
   const { QueueState } = load(
     "../src/queue-state",
@@ -443,7 +465,8 @@ test("normal-currentstore: distinct authentic owners and immutable unknown survi
 
 test("owner authorizer and recovery qualification never read or hash credential-bearing request files", (t) => {
   const f = fixture(t),
-    read = fs.readFileSync;
+    read = fs.readFileSync,
+    open = fs.openSync;
   const history = read(path.join(f.dir, "queue-state.json"));
   const sealed = path.join(f.jobDir, "request.json");
   fs.readFileSync = ((
@@ -457,6 +480,17 @@ test("owner authorizer and recovery qualification never read or hash credential-
     );
     return Reflect.apply(read, fs, [file, ...args]);
   }) as typeof fs.readFileSync;
+  fs.openSync = ((
+    file: Parameters<typeof fs.openSync>[0],
+    ...args: unknown[]
+  ) => {
+    assert.notEqual(
+      String(file),
+      sealed,
+      "Credential request bytes must never be opened",
+    );
+    return Reflect.apply(open, fs, [file, ...args]);
+  }) as typeof fs.openSync;
   try {
     normal.authorizeNormalCurrentStore(
       f.jobClient,
@@ -470,6 +504,7 @@ test("owner authorizer and recovery qualification never read or hash credential-
     );
   } finally {
     fs.readFileSync = read;
+    fs.openSync = open;
   }
 });
 
