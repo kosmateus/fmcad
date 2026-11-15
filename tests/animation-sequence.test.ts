@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type {
@@ -11,7 +12,17 @@ const load = createRequire(
   path.join(process.cwd(), "tests/animation-sequence.test.ts"),
 );
 import fs from "node:fs";
-const { validateCad, buildCadScript } = load("../src/cad") as ModelingApi;
+type PreparedCadArtifact = {
+  script: string;
+  units: { filename: string; source: string }[];
+};
+const { validateCad, prepareCadScript } = load("../src/cad") as ModelingApi & {
+  prepareCadScript(
+    operation: string,
+    data: unknown,
+    context: unknown,
+  ): PreparedCadArtifact;
+};
 
 const catalog = load("../src/catalog/animation-sequence.json") as Record<
   string,
@@ -21,6 +32,44 @@ const manual = load("../src/manual/animation-sequence.json") as Record<
   string,
   AuditedManual
 >;
+
+function assertAnimationRegistry(script: string, operation: string): void {
+  const result = spawnSync(
+    "python3",
+    [
+      "-B",
+      "-c",
+      `import ast, json, sys, types
+adsk = types.ModuleType('adsk')
+adsk.core = types.ModuleType('adsk.core')
+adsk.fusion = types.ModuleType('adsk.fusion')
+sys.modules.update({'adsk': adsk, 'adsk.core': adsk.core, 'adsk.fusion': adsk.fusion})
+class Registry(dict):
+    def update(self, entries):
+        for key, handler in entries.items():
+            assert key not in self, 'Duplicate handler: ' + key
+            assert callable(handler), key
+            self[key] = handler
+tree = ast.parse(sys.stdin.read())
+namespace = {'Registry': Registry}
+for node in tree.body:
+    if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == 'CAD_HANDLERS' for target in node.targets):
+        node.value = ast.Call(func=ast.Name(id='Registry', ctx=ast.Load()), args=[], keywords=[])
+ast.fix_missing_locations(tree)
+exec(compile(tree, '<animation-registry>', 'exec'), namespace)
+print(json.dumps(sorted(namespace['CAD_HANDLERS'])))`,
+    ],
+    { input: script, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
+  );
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const registered = JSON.parse(result.stdout) as string[];
+  assert.ok(registered.includes(operation), `${operation} is registered`);
+  assert.deepEqual(
+    registered.filter((name) => name.startsWith("animation.")),
+    [operation],
+  );
+}
 
 test("GM36 animation sequence/export catalog and manual cover the same operations", () => {
   assert.deepEqual(Object.keys(manual).sort(), Object.keys(catalog).sort());
@@ -54,16 +103,41 @@ test("GM36 animation sequence/export catalog and manual cover the same operation
   }
 });
 
-test("GM36 animation handlers bundle into the CAD script without overwriting animation.*", () => {
-  const script = buildCadScript(
-    "animation.sequence",
-    catalog["animation.sequence"]!.example,
-    { doc: "GM36" },
-  );
-  assert.ok(script.includes("def animation_sequence"));
-  assert.ok(script.includes("def animation_export"));
-  assert.ok(script.includes("'animation.sequence': animation_sequence"));
-  assert.ok(script.includes("'animation.export': animation_export"));
+test("GM36 animation operations keep owned registry entries without bundling siblings", () => {
+  const handlers = {
+    "animation.sequence": "animation_sequence",
+    "animation.export": "animation_export",
+  } as const;
+  const entries = Object.entries(handlers);
+
+  for (const [operation, handler] of entries) {
+    const artifact = prepareCadScript(operation, catalog[operation]!.example, {
+      doc: "GM36",
+    });
+    const sibling = entries.find(([candidate]) => candidate !== operation)!;
+    const animationSource = artifact.units.find(
+      ({ filename }) =>
+        filename === "runtime/python/fmcad/adapters/fusion/animation2.py",
+    );
+
+    assert.ok(animationSource, `${operation} source provenance`);
+    assert.ok(animationSource.source.includes(`def ${handler}`), operation);
+    assert.ok(
+      animationSource.source.includes(`'${operation}': ${handler}`),
+      `${operation} registry ownership`,
+    );
+    assert.ok(artifact.script.includes(`def ${handler}`), operation);
+    assert.ok(
+      artifact.script.includes(`'${operation}': ${handler}`),
+      `${operation} registration`,
+    );
+    assert.ok(!artifact.script.includes(`def ${sibling[1]}`), operation);
+    assert.ok(
+      !artifact.script.includes(`'${sibling[0]}': ${sibling[1]}`),
+      `${operation} must not register its sibling`,
+    );
+    assertAnimationRegistry(artifact.script, operation);
+  }
 });
 
 test("GM36 animation test evidence files exist", () => {
