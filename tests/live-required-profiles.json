@@ -683,6 +683,13 @@
           "execution": "explicit-owned-scope-only"
         },
         {
+          "id": "normal-multidocument-processes",
+          "source": "tests/live-normal-multidocument-processes.js",
+          "kind": "helper",
+          "prerequisites": "Parent live case supplies a running broker and isolated owned fixtures",
+          "execution": "explicit-owned-scope-only"
+        },
+        {
           "id": "recovery-ports",
           "source": "tests/live-recovery-ports.ts",
           "kind": "helper",

@@ -23,6 +23,7 @@
     "tests/live-response-recovery.ts",
     "tests/live-recovery-ports.test.ts",
     "tests/catalog-worker.test.ts",
+    "tests/generic-native-write-contract.test.ts",
     "tests/control-center-agents-projects.test.ts",
     "tests/control-center-test-support.ts",
     "tests/project-history-store.test.ts",
