@@ -986,8 +986,14 @@ def _di_handler(ctx: "CadContext", value: "JsonObject") -> "JsonRecord":
     return result
 
 
-_DI_HANDLERS: dict[str, "CadHandler"] = {
-    name: _di_handler for name in ('param.import', 'catalog.import', 'catalog.check',
-                                   'placement.import', 'placement.check', 'cots.replace')
+_DI_HANDLERS: "dict[str, CadHandler]" = {
+    'param.import': _di_handler, 'catalog.import': _di_handler,
+    'catalog.check': _di_handler, 'placement.import': _di_handler,
+    'placement.check': _di_handler, 'cots.replace': _di_handler,
 }
-CAD_HANDLERS.update(_DI_HANDLERS)
+# Keep dynamic compatibility access separate from operation registration.
+CAD_HANDLERS.update({
+    'param.import': _di_handler, 'catalog.import': _di_handler,
+    'catalog.check': _di_handler, 'placement.import': _di_handler,
+    'placement.check': _di_handler, 'cots.replace': _di_handler,
+})
