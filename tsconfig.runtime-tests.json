@@ -33,6 +33,7 @@
     "tests/fusion-transport-broker.test.ts",
     "tests/queued-rpc-retained-response.test.ts",
     "tests/normal-currentstore-successor.test.ts",
+    "tests/normal-currentfacts-retry-integration.test.ts",
     "tests/normal-serve-retirement.test.ts",
     "tests/normal-currentstore-successor-guards.test.ts",
     "tests/live-sketch-operations.ts",

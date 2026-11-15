@@ -158,8 +158,21 @@ export function createSuccessorControl(p: SuccessorControlPorts) {
       );
     return value;
   }
+  function observationBinding(clientId: string) {
+    return {
+      purpose: normal ? "normal-currentstore-current-facts-v1" : "atomic-recovery-audit-v1",
+      clientId,
+      expectedProcess: a.expectedProcess,
+      successorAuthorityHash: p.authority.sha256,
+      ...(normal ? { normalCurrentStore: normal } : {}),
+      ...(priorNormalRetry === undefined ? {} : {
+        priorNormalCurrentFactsRetry: priorNormalRetry,
+        normalCurrentFactsRetryCandidate: normalRetryCandidate,
+      }),
+    };
+  }
   function safeSummary(result: Record<string, unknown>) {
-    if (normal) return validateNormalCurrentFacts(result["summary"] as Record<string, unknown>, identity);
+    if (normal) return validateNormalCurrentFacts(result["summary"] as Record<string, unknown>, identity, observationBinding(a.clientId));
     const summary = auditSummary(
       {
         result: {
@@ -260,17 +273,7 @@ export function createSuccessorControl(p: SuccessorControlPorts) {
       return {
         identity,
         instance: a.expectedProcess,
-        binding: {
-          purpose: normal ? "normal-currentstore-current-facts-v1" : "atomic-recovery-audit-v1",
-          clientId,
-          expectedProcess: a.expectedProcess,
-          successorAuthorityHash: p.authority.sha256,
-          ...(normal ? { normalCurrentStore: normal } : {}),
-          ...(priorNormalRetry === undefined ? {} : {
-            priorNormalCurrentFactsRetry: priorNormalRetry,
-            normalCurrentFactsRetryCandidate: normalRetryCandidate,
-          }),
-        },
+        binding: observationBinding(clientId),
       };
     },
     async publishComplete(result, _prior, resultFile) {

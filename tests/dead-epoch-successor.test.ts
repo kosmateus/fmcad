@@ -559,10 +559,15 @@ test("fresh normal bootstrap keeps preserved creation identity separate from the
   normal["inspectNormalCurrentFactsRetry"] = () => ({ previousAuthority: lineage.reference(priorFile),
     originalNormalStore: normalStore, currentOwner: f.previousOwner, candidateRoot: f.approval.candidateRoot });
   const inspection = { ...f.inspection, approval,
-    qualification: { ...f.inspection.qualification, normalCurrentStoreSuccessorQualified: true },
+    qualification: { ...f.inspection.qualification, normalCurrentStoreSuccessorQualified: true, normalCurrentFactsRetryQualified: true },
     previousLifecycle: { ...f.inspection.previousLifecycle, buildHash: workerBuild } };
   assert.notEqual(workerBuild, inspection.identity.buildHash);
   assertSuccessorApproval(inspection, approval);
+  const legacyQualification = JSON.parse(JSON.stringify(inspection.qualification));
+  delete legacyQualification.normalCurrentFactsRetryQualified;
+  assert.throws(() => assertSuccessorApproval({ ...inspection, qualification: legacyQualification }, approval), {
+    code: "EPOCH_SUCCESSOR_UNQUALIFIED",
+  });
   assert.throws(() => assertSuccessorApproval({ ...inspection, previousLifecycle: f.inspection.previousLifecycle }, approval), {
     code: "EPOCH_SUCCESSOR_FENCE_CHANGED",
   });

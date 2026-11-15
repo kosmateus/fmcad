@@ -936,7 +936,9 @@ export async function bootstrapSuccessor(
       const pointer = read<Pointer>(
         path.join(root, "isolated-admission-epoch.json"),
       );
-      if (!same(pointer.succession, currentActive.authority))
+      const retry = normalReadRetry(root, read<Approval>(intent.approval.path));
+      if (!same(pointer.succession, currentActive.authority) &&
+          !(retry && same(retry.previousAuthority, currentActive.authority)))
         fail(
           "EPOCH_SUCCESSOR_PENDING",
           "A different unconsumed successor authority remains fenced",
