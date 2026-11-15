@@ -552,8 +552,8 @@ class CadContext:
             raise TypeError('Entity reference must be a name or reference object')
         if isinstance(ref, dict) and 'query' in ref:
             return _entity_resolve_reference(self, _cad_cast('JsonObject', ref), kind)
-        return self._cad_resolve_basic_reference(_cad_cast('str | JsonObject', ref), kind,
-                                                 self.resolve, self._scope)
+        return CadContext._cad_resolve_basic_reference(
+            self, _cad_cast('str | JsonObject', ref), kind, self.resolve, self._scope)
 
     def ref(self, entity: 'adsk.core.Base') -> 'JsonRecord':
         # Fusion exposes a root token that findEntityByToken may not resolve.

@@ -212,6 +212,15 @@ class ShapesTests(unittest.TestCase):
         self.ctx = Context()
         model.TRACE.clear()
 
+    def test_borrowed_cad_resolve_accepts_the_existing_minimal_context(self):
+        ctx = Context()
+        profile = ctx.sketch.profiles.item(0)
+        selector = {'kind': 'profile', 'sketch': ctx.ref(ctx.sketch), 'index': 0}
+        self.assertFalse(hasattr(ctx, '_cad_resolve_basic_reference'))
+
+        self.assertIs(ctx.resolve(selector, 'profile'), profile)
+        self.assertIs(ctx.resolve(ctx.ref(profile), 'profile'), profile)
+
     def test_catalog_matches_registered_shapes_and_compiles(self):
         catalog = json.loads((ROOT / 'src/catalog/shapes.json').read_text())
         catalog.update(json.loads((ROOT / 'src/catalog/shapes-library.json').read_text()))
