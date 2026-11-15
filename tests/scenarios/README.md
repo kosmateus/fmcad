@@ -42,13 +42,21 @@ separate job with isolated broker state.
 
 ## Real Fusion
 
-After installing the matching build, start the configured broker and Fusion
-backend. The protocol must match that configuration:
+Set `FMCAD_LIVE_RUNTIME_ROOT` to the absolute root of the qualified installation,
+then start the configured broker and Fusion backend. The selected installation
+must contain `dist/package.json`, `dist/runtime-build.json` and
+`dist/src/queue-instance.js`; the runner checks the manifest fingerprint against
+the installed runtime bytes before loading a queue client. Missing or mismatched
+identity fails closed. The protocol must match the broker configuration:
 
 ```sh
 npm run test:scenarios:live -- --run --protocol mcp --project-id PROJECT --folder-id FOLDER
 npm run test:scenarios:live -- --run --protocol addin --project-id PROJECT --folder-id FOLDER
 ```
+
+The npm script intentionally does not include `--run`; keep this explicit
+opt-in in the invocation (`npm run test:scenarios:live -- --run ...`). Omitting
+it refuses before configuration, queue or SDK access.
 
 The runner does not start or upgrade a live broker. Fusion defaults to 10
 concurrent scenarios; `--concurrency N` overrides this. The model defaults to

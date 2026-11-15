@@ -32,13 +32,20 @@ export async function nativeDiagnosticQueue(session: ScenarioSession) {
   const root = session.backend.root;
   const config = session.backend.config;
   const load = createRequire(path.join(root, "package.json"));
-  const { QueueClient } = load("./src/queue-client") as {
+  const { resolveQualifiedLiveRuntime } = load(
+    "./tests/helpers/qualified-live-runtime",
+  ) as {
+    resolveQualifiedLiveRuntime(): { dist: string; fingerprint: string };
+  };
+  const runtime = resolveQualifiedLiveRuntime();
+  const loadRuntime = createRequire(path.join(runtime.dist, "package.json"));
+  const { QueueClient } = loadRuntime("./src/queue-client") as {
     QueueClient: new (
       clientId: string,
       options: { cfg: Record<string, unknown> },
     ) => DiagnosticQueue;
   };
-  const { buildHash } = load("./src/queue-instance") as { buildHash(): string };
+  const buildHash = () => runtime.fingerprint;
   const queue = new QueueClient(session.report.owner.clientId, { cfg: config });
   try {
     await queue.register({ autoStart: false });

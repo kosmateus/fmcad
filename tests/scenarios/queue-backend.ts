@@ -30,10 +30,27 @@ export class QueueScenarioBackend implements ScenarioBackend {
     readonly pathMapper: (file: string) => string,
   ) {
     const load = createRequire(path.join(root, "package.json"));
-    this.#module = load("./src/queue-client") as QueueModule;
-    this.#buildHash = (
-      load("./src/queue-instance") as { buildHash(): string }
-    ).buildHash;
+    if (mode === "fusion") {
+      const { resolveQualifiedLiveRuntime } = load(
+        "./tests/helpers/qualified-live-runtime",
+      ) as {
+        resolveQualifiedLiveRuntime(): {
+          dist: string;
+          fingerprint: string;
+        };
+      };
+      const runtime = resolveQualifiedLiveRuntime();
+      const loadRuntime = createRequire(
+        path.join(runtime.dist, "package.json"),
+      );
+      this.#module = loadRuntime("./src/queue-client") as QueueModule;
+      this.#buildHash = () => runtime.fingerprint;
+    } else {
+      this.#module = load("./src/queue-client") as QueueModule;
+      this.#buildHash = (
+        load("./src/queue-instance") as { buildHash(): string }
+      ).buildHash;
+    }
     this.identity = mode + ":" + protocol + ":" + this.#buildHash();
   }
   fusionPath(local: string): string {
@@ -67,7 +84,7 @@ export class QueueScenarioBackend implements ScenarioBackend {
       const status = record(await client.call("status"));
       if (status["buildHash"] !== this.#buildHash())
         throw new Error(
-          "Broker build differs from scenario sources; no update was attempted",
+          "Broker build differs from the qualified runtime; no update was attempted",
         );
     }
     const filename = path.join(

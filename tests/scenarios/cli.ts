@@ -614,10 +614,18 @@ export function scenariosFor(
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const options = parse(argv);
   const root = path.resolve(__dirname, "../../..");
+  const load = createRequire(path.join(root, "package.json"));
+  if (options.backend === "fusion") {
+    const { resolveQualifiedLiveRuntime } = load(
+      "./tests/helpers/qualified-live-runtime",
+    ) as {
+      resolveQualifiedLiveRuntime(): unknown;
+    };
+    resolveQualifiedLiveRuntime();
+  }
   const output = path.join(root, ".test-artifacts/scenarios");
   const temporary = path.join(output, "checker");
   fs.mkdirSync(temporary, { recursive: true });
-  const load = createRequire(path.join(root, "package.json"));
   let model: PythonSimulator | undefined;
   let endpoint: Awaited<ReturnType<typeof simulatorEndpoint>> | undefined;
   let broker: { close(): Promise<void> } | undefined;

@@ -19,6 +19,7 @@ interface Submission {
   sessionId?: string;
   sequence?: unknown;
   timeoutMs: number;
+  buildHash: string;
 }
 interface LiveBrokerPort {
   context(env?: NodeJS.ProcessEnv): { clientId: string };
@@ -326,9 +327,42 @@ test("live SDK tests fail closed outside a broker suite and reject direct mode",
   ]);
 });
 
-test("backend adapter sends SDK calls through the broker, preserves session and never retries unknown outcomes", async () => {
+test("backend adapter sends SDK calls through the broker, preserves session and never retries unknown outcomes", async (t) => {
   const before = { ...process.env };
+  const runtimeRoot = fs.mkdtempSync(
+    path.join(os.tmpdir(), "fmcad-live-runtime-"),
+  );
+  const dist = path.join(runtimeRoot, "dist");
+  const queueClientMarker = path.join(runtimeRoot, "queue-client-loaded");
+  fs.mkdirSync(path.join(dist, "src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(dist, "package.json"),
+    JSON.stringify({ name: "fmcad", version: "0.1.0", fmcadRuntimeLayout: 1 }),
+  );
+  fs.writeFileSync(
+    path.join(dist, "runtime-build.json"),
+    JSON.stringify({
+      version: 1,
+      algorithm: "sha256",
+      fingerprint: "a".repeat(64),
+      entrypoints: {
+        "queue-worker": "src/queue-worker.js",
+        "queue-autostart-worker": "src/queue-autostart-worker.js",
+        "queue-broker": "src/queue-broker.js",
+      },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(dist, "src/queue-instance.js"),
+    `module.exports = { buildHash: () => ${JSON.stringify("a".repeat(64))} };\n`,
+  );
+  fs.writeFileSync(
+    path.join(dist, "src/queue-client.js"),
+    `require("node:fs").writeFileSync(${JSON.stringify(queueClientMarker)}, "loaded"); module.exports = { QueueClient: class {}, inputFiles: () => [] };\n`,
+  );
+  t.after(() => fs.rmSync(runtimeRoot, { recursive: true, force: true }));
   process.env["FMCAD_LIVE_CLIENT"] = "suite";
+  process.env["FMCAD_LIVE_RUNTIME_ROOT"] = runtimeRoot;
   process.env["FMCAD_LIVE_SEQUENCE_ID"] = "lease";
   delete process.env["FMCAD_LIVE_ROUTING"];
   const submitted: Submission[] = [],
@@ -380,6 +414,7 @@ test("backend adapter sends SDK calls through the broker, preserves session and 
         }),
       },
     );
+    assert.equal(fs.existsSync(queueClientMarker), true);
     await client._post({ jsonrpc: "2.0", id: 1, method: "initialize" });
     assert.equal(physicalPosts.length, 0);
     assert.equal(present(submitted[0]).payload.method, "initialize");
@@ -397,6 +432,7 @@ test("backend adapter sends SDK calls through the broker, preserves session and 
       "local work between SDK calls must not hold a lease",
     );
     assert.equal(present(submitted[1]).payload.method, payload.method);
+    assert.equal(present(submitted[1]).buildHash, "a".repeat(64));
     assert.ok(
       present(
         present(present(submitted[1]).payload.params).arguments,
@@ -420,6 +456,7 @@ test("backend adapter sends SDK calls through the broker, preserves session and 
       "FMCAD_LIVE_CLIENT",
       "FMCAD_LIVE_SEQUENCE_ID",
       "FMCAD_LIVE_ROUTING",
+      "FMCAD_LIVE_RUNTIME_ROOT",
     ]) {
       if (before[key] === undefined) delete process.env[key];
       else process.env[key] = before[key];
