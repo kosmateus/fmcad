@@ -63,6 +63,37 @@ export interface NormalCurrentStoreApproval {
   deathProof: Reference;
   producerRetirement: Reference;
 }
+export interface NormalCurrentFactsRetryEvidence {
+  previousRequestId: string;
+  previousAuthority: Reference;
+  physicalResult: Reference;
+  validationFailure: Reference;
+  queueSummary: unknown;
+}
+export interface NormalCurrentFactsRetryCandidate {
+  requestId: string;
+  candidateRoot: string;
+  sourceCommit: string;
+  buildHash: string;
+  qualification: Reference;
+  expectedProcess: Process;
+}
+export interface NormalCurrentFactsRetryCandidateBinding {
+  requestId: string;
+  sourceCommit: string;
+  buildHash: string;
+  qualification: Reference;
+  expectedProcess: Process;
+}
+export interface NormalCurrentFactsRetryInspection {
+  previousAuthority: Reference;
+  baseRequestId: string;
+  originalNormalStore: NormalCurrentStoreApproval;
+  currentOwner: Owner;
+  candidateRoot: string;
+  candidate: NormalCurrentFactsRetryCandidateBinding;
+  expectedProcess: Process;
+}
 interface Snapshot {
   files: Reference[];
   // request.json is credential-bearing: preserve its sealed filesystem identity,
@@ -86,6 +117,15 @@ interface Authorization {
   target: Reference;
   profile: Profile;
   snapshot: Snapshot;
+}
+interface NormalCurrentFactsRetryGrant extends NormalCurrentFactsRetryInspection {
+  version: 1;
+  kind: "normal-currentfacts-retry-authorization";
+  physicalResult: Reference;
+  validationFailure: Reference;
+  failedReadFiles: Reference[];
+  queueSummary: Data;
+  allowNewUnsavedDefault: boolean;
 }
 export interface NormalColdPorts {
   sdkProcess(process: Process): {
@@ -1131,6 +1171,18 @@ export function prepareNormalCurrentFacts(
     fail(
       "Normal current-facts reader cannot adopt an atomic or foreign identity",
     );
+  const retry = normalCurrentFactsRetryBinding(binding);
+  const allowNewUnsavedDefault = retry
+    ? allowsNewUnsavedDefault(
+        normalCurrentFactsRetryRoot(binding),
+        retry.baseRequestId,
+        retry.originalNormalStore,
+        document["creationId"],
+        document["name"],
+      )
+    : false;
+  if (retry && retry.candidateRoot !== installation)
+    fail("The retry candidate must use its exact qualified runtime root");
   const sourceFile = path.join(
     installation,
     "runtime/python/recovery/normal_currentstore.py",
@@ -1153,7 +1205,7 @@ export function prepareNormalCurrentFacts(
         id: "wrapper",
         filename: "<fmcad-normal-currentstore>",
         role: "wrapper",
-        source: `def run(_context: str) -> None:\n    print('FMCAD_RESULT ' + _nc_json.dumps(normal_currentstore_facts(${JSON.stringify(document["creationId"])}, ${JSON.stringify(document["name"])}), allow_nan=False))\n`,
+        source: `def run(_context: str) -> None:\n    print('FMCAD_RESULT ' + _nc_json.dumps(normal_currentstore_facts(${JSON.stringify(document["creationId"])}, ${JSON.stringify(document["name"])}${allowNewUnsavedDefault ? ", True" : ""}), allow_nan=False))\n`,
       },
     ],
     {
@@ -1166,6 +1218,7 @@ export function prepareNormalCurrentFacts(
 export function parseNormalCurrentFacts(
   reply: unknown,
   identity: unknown,
+  binding?: AuditBinding,
 ): Data {
   const text = (
     load(
@@ -1178,19 +1231,34 @@ export function parseNormalCurrentFacts(
   const value = object(
     JSON.parse(rows[0]!.slice("FMCAD_RESULT ".length)) as unknown,
   );
-  return validateNormalCurrentFacts(value, identity);
+  return validateNormalCurrentFacts(value, identity, binding);
 }
 export function validateNormalCurrentFacts(
   input: unknown,
   identity: unknown,
+  binding?: AuditBinding,
 ): Data {
   const value = object(input);
-  const doc = object(object(identity)["resolvedIdentity"]);
+  const doc = object(object(identity)["resolvedIdentity"]),
+    retry = binding ? normalCurrentFactsRetryBinding(binding) : null,
+    allowNewUnsavedDefault = retry
+      ? allowsNewUnsavedDefault(
+          normalCurrentFactsRetryRoot(binding),
+          retry.baseRequestId,
+          retry.originalNormalStore,
+          doc["creationId"],
+          doc["name"],
+        )
+      : false;
   if (
     value["kind"] !== "normal-currentstore-current-facts-v1" ||
     value["originalDocumentCreationId"] !== doc["creationId"] ||
     value["originalDocumentName"] !== doc["name"] ||
     value["originalDocumentPresent"] !== false ||
+    value["identityPolicy"] !==
+      (allowNewUnsavedDefault
+        ? "new-unsaved-default-v1"
+        : "creation-or-name-v1") ||
     value["activeCommand"] !== "SelectCommand" ||
     value["historicalOutcome"] !== "unknown" ||
     value["modelValidation"] !== "not_performed" ||
@@ -1201,7 +1269,14 @@ export function validateNormalCurrentFacts(
         typeof row["creationId"] !== "string" ||
         typeof row["name"] !== "string" ||
         row["creationId"] === doc["creationId"] ||
-        row["name"] === doc["name"]
+        (row["name"] === doc["name"] &&
+          !(
+            allowNewUnsavedDefault &&
+            row["creationId"] !== doc["creationId"] &&
+            row["fileId"] === null &&
+            row["isSaved"] === false &&
+            row["isModified"] === false
+          ))
       );
     })
   )
@@ -1217,4 +1292,992 @@ export function normalCurrentTarget(
   if (!same(value.profile, profile(value.target)))
     fail("Sealed normal successor target changed");
   return value.profile;
+}
+
+function exactReference(value: unknown): Reference {
+  const entry = object(value);
+  if (
+    Object.keys(entry).sort().join() !== "path,sha256" ||
+    typeof entry["path"] !== "string" ||
+    typeof entry["sha256"] !== "string" ||
+    !/^[a-f0-9]{64}$/.test(entry["sha256"])
+  )
+    fail("Exact sealed normal-current-facts reference required");
+  return { path: entry["path"], sha256: entry["sha256"] };
+}
+
+function normalRetryOwner(value: unknown): Owner {
+  const entry = object(value),
+    p = process(entry);
+  if (
+    Object.keys(entry).sort().join() !== "birth,nonce,pid,protocol" ||
+    typeof entry["nonce"] !== "string" ||
+    !entry["nonce"] ||
+    entry["protocol"] !== 2
+  )
+    fail("Exact current normal metadata owner required");
+  return { ...p, nonce: entry["nonce"], protocol: 2 };
+}
+
+function retryCandidate(
+  value: unknown,
+  includeRoot: boolean,
+): NormalCurrentFactsRetryCandidateBinding & { candidateRoot?: string } {
+  const entry = object(value),
+    keys = [
+      "requestId",
+      ...(includeRoot ? ["candidateRoot"] : []),
+      "sourceCommit",
+      "buildHash",
+      "qualification",
+      "expectedProcess",
+    ];
+  if (
+    Object.keys(entry).sort().join() !== keys.sort().join() ||
+    typeof entry["requestId"] !== "string" ||
+    !entry["requestId"] ||
+    entry["requestId"].length > 140 ||
+    typeof entry["sourceCommit"] !== "string" ||
+    !/^[a-f0-9]{40}$/.test(entry["sourceCommit"]) ||
+    typeof entry["buildHash"] !== "string" ||
+    !/^[a-f0-9]{64}$/.test(entry["buildHash"])
+  )
+    fail("Exact fresh normal read candidate is required");
+  const expected = object(entry["expectedProcess"]),
+    selected = process(expected),
+    qualification = exactReference(entry["qualification"]),
+    q = checked(qualification);
+  if (
+    Object.keys(expected).sort().join() !== "birth,pid" ||
+    !/^\d{17,18}$/.test(selected.birth) ||
+    (includeRoot && typeof entry["candidateRoot"] !== "string") ||
+    q["passed"] !== true ||
+    q["productionAdmission"] !== true ||
+    q["liveSdkRequestsSent"] !== 0 ||
+    q["sourceCommit"] !== entry["sourceCommit"] ||
+    q["buildHash"] !== entry["buildHash"] ||
+    q["publicDirectAccessRefused"] !== true ||
+    q["deadEpochSuccessorReadQualified"] !== true ||
+    q["deadEpochSuccessorRestoreQualified"] !== true ||
+    q["normalCurrentStoreSuccessorQualified"] !== true
+  )
+    fail("Fresh normal read candidate lacks its exact passing qualification");
+  const candidateRoot = includeRoot
+    ? canonical(String(entry["candidateRoot"]), true)
+    : undefined;
+  return {
+    requestId: entry["requestId"],
+    sourceCommit: entry["sourceCommit"],
+    buildHash: entry["buildHash"],
+    qualification,
+    expectedProcess: selected,
+    ...(candidateRoot ? { candidateRoot } : {}),
+  };
+}
+
+function retryPath(root: string, previousAuthority: Reference): string {
+  return path.join(
+    root,
+    "normal-currentfacts-retries",
+    previousAuthority.sha256,
+    "authorization.json",
+  );
+}
+
+function retryRoot(entry: Reference): string {
+  const parent = path.dirname(entry.path),
+    collection = path.dirname(parent),
+    root = path.dirname(collection);
+  if (
+    path.basename(collection) !== "normal-currentfacts-retries" ||
+    path.basename(entry.path) !== "authorization.json"
+  )
+    fail("Normal read retry reference escaped its sealed journal namespace");
+  canonical(root, true);
+  return root;
+}
+
+function previousNormalRetryAuthority(
+  root: string,
+  baseRequestId: string,
+  entry: Reference,
+) {
+  const expected = path.join(
+      root,
+      "epoch-successions",
+      digest(baseRequestId),
+      "authority.json",
+    ),
+    authority = checked(entry, expected);
+  const normal = object(authority["normalCurrentStore"]);
+  if (
+    authority["kind"] !== "owner-authenticated-dead-epoch-successor" ||
+    authority["requestId"] !== baseRequestId ||
+    typeof authority["clientId"] !== "string" ||
+    typeof authority["ownerTokenHash"] !== "string" ||
+    !/^[a-f0-9]{64}$/.test(authority["ownerTokenHash"]) ||
+    typeof authority["sourceCommit"] !== "string" ||
+    !/^[a-f0-9]{40}$/.test(authority["sourceCommit"]) ||
+    typeof authority["buildHash"] !== "string" ||
+    !/^[a-f0-9]{64}$/.test(authority["buildHash"]) ||
+    typeof authority["candidateRoot"] !== "string" ||
+    Object.hasOwn(authority, "priorNormalCurrentFactsRetry") ||
+    normal["kind"] !== "normal-currentstore-v1"
+  )
+    fail(
+      "Only one initial normal-currentstore successor authority is retryable",
+    );
+  canonical(String(authority["candidateRoot"]), true);
+  process(authority["expectedProcess"]);
+  normalRetryOwner(authority["previousOwner"]);
+  return { authority, normal: normal as unknown as NormalCurrentStoreApproval };
+}
+
+function retryOriginalNormalStore(
+  root: string,
+  baseRequestId: string,
+  normal: NormalCurrentStoreApproval,
+) {
+  if (normal.kind !== "normal-currentstore-v1")
+    fail("Original normal-currentstore authority is required");
+  const authorizationFile = path.join(
+      journal(root, baseRequestId),
+      "job-owner-authorization.json",
+    ),
+    authorizationValue = checked(
+      normal.jobAuthorization,
+      authorizationFile,
+    ) as unknown as Authorization,
+    p = profile(authorizationValue.target);
+  if (
+    authorizationValue.kind !== "normal-currentstore-job-owner-authorization" ||
+    authorizationValue.requestId !== baseRequestId ||
+    !same(authorizationValue.profile, p) ||
+    !Array.isArray(authorizationValue.snapshot.files)
+  )
+    fail("Original normal job authorization changed");
+  const rawRpcFile = path.join(root, "jobs", p.jobId, `rpc-${p.rpcId}.json`),
+    rawRpcReference = authorizationValue.snapshot.files.find(
+      (entry) => entry.path === rawRpcFile,
+    );
+  if (!rawRpcReference)
+    fail("Original normal RPC document identity is not sealed");
+  const rawRpc = checked(rawRpcReference, rawRpcFile);
+  return { authorizationValue, profile: p, rawRpc };
+}
+
+function retryIdentity(p: Profile) {
+  return {
+    kind: normalColdProfile.kind,
+    resolvedIdentity: { creationId: p.creationId, name: p.documentName },
+  };
+}
+
+function allowsNewUnsavedDefault(
+  root: string,
+  baseRequestId: string,
+  normal: NormalCurrentStoreApproval,
+  creationId: unknown,
+  documentName: unknown,
+): boolean {
+  const p = normalCurrentTarget(normal);
+  if (
+    creationId !== p.creationId ||
+    documentName !== p.documentName ||
+    p.requestKind !== "raw-rpc" ||
+    !["Bez nazwy", "Untitled"].includes(p.documentName)
+  )
+    return false;
+  const { rawRpc } = retryOriginalNormalStore(root, baseRequestId, normal),
+    documents = object(rawRpc["instance"])["documents"];
+  if (!Array.isArray(documents))
+    fail("The original raw RPC has no pinned document identity row");
+  const matches = documents.filter(
+    (entry) => object(entry)["id"] === p.creationId,
+  );
+  if (
+    matches.length !== 1 ||
+    object(matches[0])["name"] !== p.documentName ||
+    object(matches[0])["fileId"] !== null ||
+    object(matches[0])["isSaved"] !== false ||
+    object(matches[0])["isModified"] !== false
+  )
+    fail(
+      "Only the exact original clean unsaved default document may be excluded by name",
+    );
+  return true;
+}
+
+function validateFailedNormalRead(
+  root: string,
+  baseRequestId: string,
+  previousAuthority: Reference,
+  normal: NormalCurrentStoreApproval,
+  physicalResult: Reference,
+  validationFailure: Reference,
+) {
+  const { authority } = previousNormalRetryAuthority(
+      root,
+      baseRequestId,
+      previousAuthority,
+    ),
+    { authorizationValue, profile: p } = retryOriginalNormalStore(
+      root,
+      baseRequestId,
+      normal,
+    ),
+    directory = path.join(
+      root,
+      "epoch-successions",
+      digest(baseRequestId),
+      "dead-epoch-current-observation",
+    ),
+    intentFile = path.join(directory, "intent.json"),
+    startFile = path.join(directory, "start.json"),
+    wireFile = path.join(directory, "wire.json"),
+    receivedFile = path.join(directory, "received-response.json"),
+    resultFile = path.join(directory, "result.json"),
+    intent = read(intentFile),
+    start = read(startFile),
+    wire = read(wireFile),
+    received = read(receivedFile),
+    result = checked(validationFailure, resultFile),
+    physicalBinding = object(start["binding"]),
+    physicalPath = start["receipt"],
+    physical = checked(physicalResult, String(physicalPath)),
+    binding = object(intent["binding"]),
+    canonicalBindingHash = (
+      load("./dist/core/application/cad/json") as {
+        hash(value: unknown): string;
+      }
+    ).hash(binding),
+    identity = retryIdentity(p),
+    key = object(intent["key"]),
+    outgoing = object(wire["outgoing"]),
+    artifact = object(wire["artifact"]),
+    pythonCheck = object(start["pythonCheck"]);
+  if (
+    result["kind"] !== "dead-epoch-current-observation" ||
+    result["status"] !== "failed" ||
+    result["code"] !== "NORMAL_SUCCESSOR_UNPROVEN" ||
+    result["sdkRequestsSent"] !== 1 ||
+    result["nativeOutcome"] !== "unknown" ||
+    result["modelValidation"] !== "not_performed" ||
+    result["rollbackVerification"] !== "not_performed" ||
+    result["jobId"] !== p.jobId ||
+    result["observationJobId"] !== p.rpcId ||
+    result["requestId"] !== baseRequestId + ":observe" ||
+    result["clientId"] !== authority["clientId"] ||
+    intent["version"] !== 1 ||
+    intent["sourceArtifactHash"] !== start["originArtifactHash"] ||
+    !same(intent["identity"], identity) ||
+    key["jobId"] !== p.jobId ||
+    key["observationJobId"] !== p.rpcId ||
+    key["requestId"] !== baseRequestId + ":observe" ||
+    key["clientId"] !== authority["clientId"] ||
+    binding["purpose"] !== "normal-currentstore-current-facts-v1" ||
+    binding["clientId"] !== authority["clientId"] ||
+    !same(
+      process(binding["expectedProcess"]),
+      process(authority["expectedProcess"]),
+    ) ||
+    binding["successorAuthorityHash"] !== previousAuthority.sha256 ||
+    !same(binding["normalCurrentStore"], normal) ||
+    Object.hasOwn(binding, "priorNormalCurrentFactsRetry") ||
+    Object.hasOwn(binding, "normalCurrentFactsRetryCandidate") ||
+    !same(start["instance"], binding["expectedProcess"]) ||
+    start["receipt"] !== physicalResult.path ||
+    physicalBinding["buildHash"] !== authority["buildHash"] ||
+    physicalBinding["jobId"] !== p.jobId ||
+    physicalBinding["purpose"] !== binding["purpose"] ||
+    physicalBinding["auditBindingHash"] !== canonicalBindingHash ||
+    !same(
+      process(physicalBinding["auditExpectedProcess"]),
+      process(binding["expectedProcess"]),
+    ) ||
+    physicalBinding["pythonOriginHash"] !== intent["sourceArtifactHash"] ||
+    pythonCheck["status"] !== "passed" ||
+    received["version"] !== 1 ||
+    received["status"] !== 200 ||
+    received["wireId"] !== outgoing["id"] ||
+    typeof received["raw"] !== "string" ||
+    received["callerId"] === undefined ||
+    outgoing["id"] !== "fmcad:" + String(object(start["binding"])["rpcId"]) ||
+    outgoing["jsonrpc"] !== "2.0" ||
+    outgoing["method"] !== "tools/call" ||
+    physical["terminal"] !== true ||
+    physical["outcome"] !== "succeeded" ||
+    typeof object(physical["instance"])["version"] !== "string" ||
+    !object(physical["instance"])["version"] ||
+    object(physical["instance"])["pid"] !==
+      process(binding["expectedProcess"]).pid ||
+    object(physical["instance"])["birth"] !==
+      process(binding["expectedProcess"]).birth ||
+    Object.entries(physicalBinding).some(
+      ([key, value]) => !same(physical[key], value),
+    ) ||
+    fs.existsSync(path.join(directory, "response.json")) ||
+    fs.existsSync(path.join(path.dirname(directory), "observed-current.json"))
+  )
+    fail(
+      "The previous normal read is not an exact terminal validation failure",
+    );
+
+  const params = object(outgoing["params"]),
+    argumentsValue = object(params["arguments"]),
+    nativeObject = object(argumentsValue["object"]),
+    classification = (
+      load("./dist/python/admission") as {
+        classifyPythonRpc(value: unknown): {
+          kind: string;
+          official: boolean;
+          source: string;
+        };
+      }
+    ).classifyPythonRpc(outgoing),
+    context = object(artifact["context"]),
+    origin = object(context["origin"]),
+    provenance = object(pythonCheck["provenance"]);
+  if (
+    params["name"] !== "fusion_mcp_execute" ||
+    argumentsValue["featureType"] !== "script" ||
+    nativeObject["readOnly"] !== true ||
+    classification.kind !== "python" ||
+    classification.official !== true ||
+    classification.source.length === 0 ||
+    artifact["artifactHash"] !== provenance["artifactHash"] ||
+    artifact["sha256"] !== provenance["wireHash"] ||
+    !same(artifact["request"], start["binding"]) ||
+    origin["artifactHash"] !== intent["sourceArtifactHash"] ||
+    physical["pythonOriginHash"] !== intent["sourceArtifactHash"]
+  )
+    fail(
+      "The previous normal read was not a production-checked read-only SDK call",
+    );
+  (
+    load("./dist/python/context-binding") as {
+      bindPythonArtifactManifest(source: string, manifest: unknown): void;
+    }
+  ).bindPythonArtifactManifest(classification.source, artifact);
+  const reader = prepareNormalCurrentFacts(
+    String(authority["candidateRoot"]),
+    identity,
+    binding as AuditBinding,
+  );
+  if (
+    reader.sourceSha256 !== intent["sourceSha256"] ||
+    reader.artifact.artifactHash !== intent["sourceArtifactHash"]
+  )
+    fail("The failed read artifact no longer matches its sealed candidate");
+
+  let validationCode: unknown;
+  const reply = object(JSON.parse(received["raw"] as string) as unknown);
+  if (
+    reply["jsonrpc"] !== "2.0" ||
+    reply["id"] !== outgoing["id"] ||
+    Object.hasOwn(reply, "error") ||
+    !object(reply["result"]) ||
+    object(reply["result"])["isError"] === true
+  )
+    fail("The original transport response was not a successful RPC reply");
+  try {
+    parseNormalCurrentFacts(reply, identity);
+  } catch (error) {
+    validationCode =
+      error && typeof error === "object" && "code" in error
+        ? error.code
+        : undefined;
+  }
+  if (validationCode !== "NORMAL_SUCCESSOR_UNPROVEN")
+    fail(
+      "The previous reply does not reproduce the sealed normal validator failure",
+    );
+  return {
+    authority,
+    authorizationValue,
+    profile: p,
+    physical,
+    result,
+    files: [
+      reference(intentFile),
+      reference(startFile),
+      reference(wireFile),
+      reference(receivedFile),
+    ],
+  };
+}
+
+function assertRetryQueueSummary(
+  input: unknown,
+  authority: Data,
+  baseRequestId: string,
+  currentOwner: Owner,
+): Data {
+  const summary = object(input),
+    control = object(summary["control"]),
+    successor = object(summary["deadEpochSuccessor"]),
+    expected = process(authority["expectedProcess"]);
+  if (
+    summary["sourceCommit"] !== authority["sourceCommit"] ||
+    summary["buildHash"] !== authority["buildHash"] ||
+    summary["stopping"] !== false ||
+    summary["paused"] !== false ||
+    summary["historicalOutcome"] !== "unknown" ||
+    summary["historicalModelValidation"] !== "not_performed" ||
+    control["instanceId"] !== currentOwner.nonce ||
+    control["buildHash"] !== authority["buildHash"] ||
+    control["activeOperations"] !== 0 ||
+    !same(control["activeIds"], []) ||
+    control["phase"] !== "RECOVERY_BLOCKED" ||
+    control["unresolved"] !== true ||
+    successor["requestId"] !== baseRequestId ||
+    successor["currentFactsAvailable"] !== false ||
+    successor["observationRequestId"] !== baseRequestId + ":observe" ||
+    successor["historicalOutcome"] !== "unknown" ||
+    !same(process(successor["expectedProcess"]), expected)
+  )
+    fail(
+      "A fresh idle queue summary for the exact failed normal observation is required",
+    );
+  return summary;
+}
+
+function retryGrant(
+  root: string,
+  entry: Reference,
+): NormalCurrentFactsRetryGrant {
+  const value = checked(entry) as unknown as NormalCurrentFactsRetryGrant,
+    previousAuthority = exactReference(value.previousAuthority),
+    baseRequestId = value.baseRequestId;
+  if (
+    typeof baseRequestId !== "string" ||
+    !baseRequestId ||
+    entry.path !== retryPath(root, previousAuthority)
+  )
+    fail("Normal read retry authorization was changed or retargeted");
+  const { authority, normal } = previousNormalRetryAuthority(
+      root,
+      baseRequestId,
+      previousAuthority,
+    ),
+    currentOwner = normalRetryOwner(value.currentOwner),
+    candidate = retryCandidate(
+      {
+        ...object(value.candidate),
+        candidateRoot: value.candidateRoot,
+      },
+      true,
+    );
+  const physicalResult = exactReference(value.physicalResult),
+    validationFailure = exactReference(value.validationFailure);
+  if (
+    value.version !== 1 ||
+    value.kind !== "normal-currentfacts-retry-authorization" ||
+    !same(value.originalNormalStore, normal) ||
+    !same(candidate, {
+      ...object(value.candidate),
+      candidateRoot: value.candidateRoot,
+    }) ||
+    !same(process(value.expectedProcess), candidate.expectedProcess) ||
+    candidate.requestId === baseRequestId ||
+    (currentOwner.pid === normalRetryOwner(authority["previousOwner"]).pid &&
+      currentOwner.birth ===
+        normalRetryOwner(authority["previousOwner"]).birth) ||
+    typeof value.allowNewUnsavedDefault !== "boolean"
+  )
+    fail(
+      "Normal read retry authorization does not match its original authority",
+    );
+  const failed = validateFailedNormalRead(
+    root,
+    baseRequestId,
+    previousAuthority,
+    normal,
+    physicalResult,
+    validationFailure,
+  );
+  if (
+    !Array.isArray(value.failedReadFiles) ||
+    !same(value.failedReadFiles, failed.files)
+  )
+    fail("A prior failed-read artifact changed after authorization");
+  const original = retryOriginalNormalStore(root, baseRequestId, normal),
+    allowNewUnsavedDefault = allowsNewUnsavedDefault(
+      root,
+      baseRequestId,
+      normal,
+      original.profile.creationId,
+      original.profile.documentName,
+    );
+  if (value.allowNewUnsavedDefault !== allowNewUnsavedDefault)
+    fail("The original default-document identity proof changed");
+  assertRetryQueueSummary(
+    value.queueSummary,
+    authority,
+    baseRequestId,
+    currentOwner,
+  );
+  return value;
+}
+
+export function authorizeNormalCurrentFactsRetry(
+  epochOwner: Client,
+  evidence: NormalCurrentFactsRetryEvidence,
+  candidateInput: NormalCurrentFactsRetryCandidate,
+): Reference {
+  const root = canonical(epochOwner.dir, true),
+    input = object(evidence),
+    baseRequestId = input["previousRequestId"],
+    previousAuthority = exactReference(input["previousAuthority"]),
+    physicalResult = exactReference(input["physicalResult"]),
+    validationFailure = exactReference(input["validationFailure"]);
+  if (
+    Object.keys(input).sort().join() !==
+      "physicalResult,previousAuthority,previousRequestId,queueSummary,validationFailure" ||
+    typeof baseRequestId !== "string" ||
+    !baseRequestId ||
+    baseRequestId.length > 140
+  )
+    fail("Exact immutable prior normal read evidence is required");
+  const { authority, normal } = previousNormalRetryAuthority(
+      root,
+      baseRequestId,
+      previousAuthority,
+    ),
+    ownerHash = authenticateOwner(epochOwner, String(authority["clientId"])),
+    active = read(path.join(root, "active-epoch-succession.json")),
+    currentOwner = normalRetryOwner(read(path.join(root, "broker.lock"))),
+    candidate = retryCandidate(candidateInput, true),
+    authorizationValue = retryOriginalNormalStore(root, baseRequestId, normal),
+    activeReference = exactReference(active["authority"]);
+  if (
+    Object.keys(object(candidateInput)).sort().join() !==
+      "buildHash,candidateRoot,expectedProcess,qualification,requestId,sourceCommit" ||
+    active["version"] !== 1 ||
+    !same(activeReference, previousAuthority) ||
+    epochOwner.auth.clientId !== authority["clientId"] ||
+    ownerHash !== authority["ownerTokenHash"] ||
+    authorizationValue.profile.epochClientId !== epochOwner.auth.clientId ||
+    Object.hasOwn(authority, "priorNormalCurrentFactsRetry") ||
+    !same(normal, authority["normalCurrentStore"]) ||
+    candidate.requestId === baseRequestId ||
+    candidate.requestId === baseRequestId + ":observe" ||
+    candidate.requestId === baseRequestId + ":create" ||
+    (candidate.expectedProcess.pid ===
+      process(authority["expectedProcess"]).pid &&
+      candidate.expectedProcess.birth ===
+        process(authority["expectedProcess"]).birth) ||
+    (currentOwner.pid === normalRetryOwner(authority["previousOwner"]).pid &&
+      currentOwner.birth === normalRetryOwner(authority["previousOwner"]).birth)
+  )
+    fail(
+      "Fresh retry must retain the authentic active normal owner and select a distinct candidate",
+    );
+  assertRetryQueueSummary(
+    input["queueSummary"],
+    authority,
+    baseRequestId,
+    currentOwner,
+  );
+  const failed = validateFailedNormalRead(
+    root,
+    baseRequestId,
+    previousAuthority,
+    normal,
+    physicalResult,
+    validationFailure,
+  );
+  if (failed.profile.epochClientId !== epochOwner.auth.clientId)
+    fail("The previous normal read belongs to another epoch owner");
+  const allowNewUnsavedDefault = allowsNewUnsavedDefault(
+    root,
+    baseRequestId,
+    normal,
+    failed.profile.creationId,
+    failed.profile.documentName,
+  );
+  const candidateBinding: NormalCurrentFactsRetryCandidateBinding = {
+    requestId: candidate.requestId,
+    sourceCommit: candidate.sourceCommit,
+    buildHash: candidate.buildHash,
+    qualification: candidate.qualification,
+    expectedProcess: candidate.expectedProcess,
+  };
+  const value: NormalCurrentFactsRetryGrant = {
+    version: 1,
+    kind: "normal-currentfacts-retry-authorization",
+    previousAuthority,
+    baseRequestId,
+    physicalResult,
+    validationFailure,
+    failedReadFiles: failed.files,
+    originalNormalStore: normal,
+    currentOwner,
+    candidateRoot: candidate.candidateRoot!,
+    candidate: candidateBinding,
+    expectedProcess: candidate.expectedProcess,
+    queueSummary: object(input["queueSummary"]),
+    allowNewUnsavedDefault,
+  };
+  const file = retryPath(root, previousAuthority);
+  if (fs.existsSync(file)) {
+    const prior = retryGrant(root, reference(file));
+    if (
+      !same(
+        {
+          ...prior,
+          queueSummary: undefined,
+        },
+        {
+          ...value,
+          queueSummary: undefined,
+        },
+      )
+    )
+      fail("The previous authority already consumed its one normal read retry");
+    return reference(file);
+  }
+  return publish(file, value);
+}
+
+function retryRetirementBinding(
+  grantReference: Reference,
+  grant: NormalCurrentFactsRetryGrant,
+  previousAuthority: Data,
+) {
+  return {
+    requestId: grant.candidate.requestId,
+    retryAuthorization: grantReference,
+    previousAuthority: grant.previousAuthority,
+    currentOwner: grant.currentOwner,
+    runtime: previousAuthority["candidateRoot"],
+    buildHash: previousAuthority["buildHash"],
+  };
+}
+
+function retryRetirementFile(entry: Reference, name: string): string {
+  return path.join(path.dirname(entry.path), name);
+}
+
+function retryRetirementClaimFile(root: string, owner: Owner): string {
+  return path.join(
+    root,
+    "normal-currentfacts-retry-producer-claims",
+    digest(JSON.stringify(process(owner))) + ".json",
+  );
+}
+
+export function retireNormalCurrentFactsRetryProducer(
+  epochOwner: Client,
+  grantReference: Reference,
+  apply = false,
+  ports: NormalMetadataRetirementPorts = defaultRetirementPorts,
+): Reference | { pending: true; noSignalReplay: true; sdkRequestsSent: 0 } {
+  const root = retryRoot(grantReference),
+    grant = retryGrant(root, grantReference),
+    { authority } = previousNormalRetryAuthority(
+      root,
+      grant.baseRequestId,
+      grant.previousAuthority,
+    );
+  authenticateOwner(epochOwner, String(authority["clientId"]));
+  if (epochOwner.auth.clientId !== authority["clientId"])
+    fail(
+      "The sealed original epoch owner is required for retry-producer retirement",
+    );
+  const active = read(path.join(root, "active-epoch-succession.json")),
+    currentOwner = normalRetryOwner(read(path.join(root, "broker.lock"))),
+    runtime = canonical(String(authority["candidateRoot"]), true),
+    previewFile = retryRetirementFile(
+      grantReference,
+      "producer-retirement-preview.json",
+    ),
+    effectFile = retryRetirementFile(
+      grantReference,
+      "producer-retirement-effect-start.json",
+    ),
+    resultFile = retryRetirementFile(grantReference, "producer-retired.json"),
+    binding = retryRetirementBinding(grantReference, grant, authority),
+    expectedClaim = {
+      kind: "normal-currentfacts-retry-producer-claim",
+      binding,
+    };
+  if (
+    active["version"] !== 1 ||
+    !same(exactReference(active["authority"]), grant.previousAuthority) ||
+    !same(currentOwner, grant.currentOwner) ||
+    ports.buildHash(runtime) !== authority["buildHash"]
+  )
+    fail(
+      "Only the exact active normal metadata owner and runtime may be retired",
+    );
+
+  if (fs.existsSync(effectFile)) {
+    const effect = read(effectFile),
+      claimFile = retryRetirementClaimFile(root, grant.currentOwner),
+      claim = fs.existsSync(claimFile) ? read(claimFile) : null;
+    if (!same(effect["binding"], binding) || !same(claim, expectedClaim))
+      fail(
+        "An uncertain retry-producer retirement cannot be retargeted or replayed",
+      );
+    if (fs.existsSync(resultFile)) {
+      const result = read(resultFile);
+      if (
+        result["kind"] !== "normal-currentfacts-retry-producer-retired" ||
+        result["retired"] !== true ||
+        !same(result["binding"], binding)
+      )
+        fail("The retry-producer retirement receipt changed");
+      return reference(resultFile);
+    }
+    return { pending: true, noSignalReplay: true, sdkRequestsSent: 0 };
+  }
+  const refs = [
+    grantReference,
+    grant.previousAuthority,
+    grant.physicalResult,
+    grant.validationFailure,
+    grant.originalNormalStore.jobAuthorization,
+    grant.originalNormalStore.deathProof,
+    grant.originalNormalStore.producerRetirement,
+    grant.candidate.qualification,
+  ];
+  if (!apply) {
+    if (fs.existsSync(previewFile)) {
+      const prior = read(previewFile);
+      if (
+        prior["kind"] !== "normal-currentfacts-retry-producer-preview" ||
+        !same(prior["binding"], binding)
+      )
+        fail("The original retry-producer preview cannot be retargeted");
+      return reference(previewFile);
+    }
+    const preview = ports.process(
+      grant.currentOwner,
+      runtime,
+      refs,
+      false,
+      root,
+    );
+    if (
+      preview.retired ||
+      !same(process(preview.process), process(grant.currentOwner)) ||
+      !preview.interpreter
+    )
+      fail("Exact non-mutating retry-producer process proof required");
+    return publish(previewFile, {
+      kind: "normal-currentfacts-retry-producer-preview",
+      binding,
+      preview,
+      sdkRequestsSent: 0,
+    });
+  }
+
+  const previewReference = reference(previewFile),
+    preview = checked(previewReference),
+    proof = object(preview["preview"]);
+  if (
+    preview["kind"] !== "normal-currentfacts-retry-producer-preview" ||
+    !same(preview["binding"], binding) ||
+    !same(process(proof["process"]), process(grant.currentOwner)) ||
+    !proof["interpreter"]
+  )
+    fail(
+      "The exact sealed retry-producer preview is required before retirement",
+    );
+  const claimFile = retryRetirementClaimFile(root, grant.currentOwner);
+  if (!fs.existsSync(claimFile)) {
+    try {
+      publish(claimFile, expectedClaim);
+    } catch (error) {
+      if (
+        !error ||
+        typeof error !== "object" ||
+        !("code" in error) ||
+        error.code !== "EEXIST"
+      )
+        throw error;
+    }
+  }
+  if (!same(read(claimFile), expectedClaim))
+    fail("Another retry attempt already owns this metadata producer");
+  const effect = publish(effectFile, {
+    kind: "normal-currentfacts-retry-producer-effect-start",
+    binding,
+    preview: previewReference,
+    claim: reference(claimFile),
+    sdkRequestsSent: 0,
+  });
+  try {
+    const result = ports.process(
+      {
+        ...grant.currentOwner,
+        processProof: proof["process"] as NonNullable<
+          Sdk1MetadataWorkerProcess["processProof"]
+        >,
+        interpreterProof: proof["interpreter"] as NonNullable<
+          Sdk1MetadataWorkerProcess["interpreterProof"]
+        >,
+      },
+      runtime,
+      [...refs, previewReference, reference(claimFile), effect],
+      true,
+      root,
+    );
+    if (
+      !result.retired ||
+      !same(process(result.process), process(grant.currentOwner)) ||
+      !ports.producerAbsent(grant.currentOwner)
+    )
+      fail(
+        "Retry-producer retirement is not kernel-proven; never repeat its signal",
+      );
+    return publish(resultFile, {
+      version: 1,
+      kind: "normal-currentfacts-retry-producer-retired",
+      binding,
+      retired: true,
+      process: result.process,
+      interpreter: result.interpreter,
+      observedAtUtc: new Date().toISOString(),
+      sdkRequestsSent: 0,
+      historicalOutcome: "unknown",
+    });
+  } catch {
+    return { pending: true, noSignalReplay: true, sdkRequestsSent: 0 };
+  }
+}
+
+export function inspectNormalCurrentFactsRetry(
+  rootInput: string,
+  entryInput: Reference,
+  candidateInput: NormalCurrentFactsRetryCandidateBinding,
+  ports: NormalColdPorts = defaultPorts,
+): NormalCurrentFactsRetryInspection {
+  const root = canonical(rootInput, true),
+    entry = exactReference(entryInput),
+    grant = retryGrant(root, entry),
+    candidate = retryCandidate(candidateInput, false),
+    { authority: previousAuthorityValue } = previousNormalRetryAuthority(
+      root,
+      grant.baseRequestId,
+      grant.previousAuthority,
+    );
+  if (
+    !same(candidate, grant.candidate) ||
+    !same(process(grant.expectedProcess), candidate.expectedProcess)
+  )
+    fail("The retry candidate request/build/qualification/process changed");
+
+  const resultFile = retryRetirementFile(entry, "producer-retired.json"),
+    result = checked(reference(resultFile), resultFile),
+    binding = retryRetirementBinding(entry, grant, previousAuthorityValue),
+    retiredAt = Date.parse(String(result["observedAtUtc"])),
+    currentOwner = normalRetryOwner(grant.currentOwner),
+    active = read(path.join(root, "active-epoch-succession.json")),
+    activeAuthority = exactReference(active["authority"]),
+    rootOwner = normalRetryOwner(read(path.join(root, "broker.lock")));
+  const candidateStartMs = Number(
+    (BigInt(candidate.expectedProcess.birth) - 116444736000000000n) / 10000n,
+  );
+  if (
+    result["version"] !== 1 ||
+    result["kind"] !== "normal-currentfacts-retry-producer-retired" ||
+    result["retired"] !== true ||
+    result["sdkRequestsSent"] !== 0 ||
+    result["historicalOutcome"] !== "unknown" ||
+    !same(result["binding"], binding) ||
+    !same(process(result["process"]), process(currentOwner)) ||
+    !Number.isFinite(retiredAt) ||
+    retiredAt > Date.now() ||
+    candidateStartMs <= retiredAt ||
+    !ports.producerAbsent(currentOwner)
+  )
+    fail(
+      "The original retry metadata owner has no completed exact retirement proof",
+    );
+
+  if (same(activeAuthority, grant.previousAuthority)) {
+    if (!same(rootOwner, currentOwner))
+      fail(
+        "The pre-bootstrap root owner changed before the retry was consumed",
+      );
+  } else {
+    const expectedAuthorityFile = path.join(
+      root,
+      "epoch-successions",
+      digest(candidate.requestId),
+      "authority.json",
+    );
+    if (activeAuthority.path !== expectedAuthorityFile)
+      fail("The retry was consumed by a retargeted active authority");
+    const nextAuthority = checked(activeAuthority);
+    if (
+      nextAuthority["kind"] !== "owner-authenticated-dead-epoch-successor" ||
+      nextAuthority["requestId"] !== candidate.requestId ||
+      nextAuthority["sourceCommit"] !== candidate.sourceCommit ||
+      nextAuthority["buildHash"] !== candidate.buildHash ||
+      nextAuthority["candidateRoot"] !== grant.candidateRoot ||
+      !same(nextAuthority["previousOwner"], currentOwner) ||
+      !same(nextAuthority["normalCurrentStore"], grant.originalNormalStore) ||
+      !same(nextAuthority["priorNormalCurrentFactsRetry"], entry) ||
+      !same(
+        process(nextAuthority["expectedProcess"]),
+        candidate.expectedProcess,
+      ) ||
+      exactReference(nextAuthority["qualification"]).sha256 !==
+        candidate.qualification.sha256 ||
+      same(rootOwner, currentOwner)
+    )
+      fail(
+        "The bootstrapped authority does not consume this exact normal retry",
+      );
+  }
+  return {
+    previousAuthority: grant.previousAuthority,
+    baseRequestId: grant.baseRequestId,
+    originalNormalStore: grant.originalNormalStore,
+    currentOwner,
+    candidateRoot: grant.candidateRoot,
+    candidate: grant.candidate,
+    expectedProcess: candidate.expectedProcess,
+  };
+}
+
+function normalCurrentFactsRetryBinding(
+  binding: AuditBinding,
+): NormalCurrentFactsRetryInspection | null {
+  const link = binding["priorNormalCurrentFactsRetry"],
+    candidate = binding["normalCurrentFactsRetryCandidate"];
+  if (link === undefined && candidate === undefined) return null;
+  if (link === undefined || candidate === undefined)
+    fail(
+      "Incomplete retry evidence cannot downgrade to the legacy default reader",
+    );
+  const entry = exactReference(link),
+    root = retryRoot(entry),
+    inspection = inspectNormalCurrentFactsRetry(
+      root,
+      entry,
+      candidate as NormalCurrentFactsRetryCandidateBinding,
+    ),
+    active = read(path.join(root, "active-epoch-succession.json")),
+    authority = exactReference(active["authority"]);
+  if (
+    binding["purpose"] !== "normal-currentstore-current-facts-v1" ||
+    binding["successorAuthorityHash"] !== authority.sha256 ||
+    !same(binding["normalCurrentStore"], inspection.originalNormalStore) ||
+    !same(process(binding["expectedProcess"]), inspection.expectedProcess)
+  )
+    fail(
+      "The retry reader is not bound to its current normal successor authority",
+    );
+  return inspection;
+}
+
+function normalCurrentFactsRetryRoot(
+  binding: AuditBinding | undefined,
+): string {
+  if (!binding) fail("The normal read retry binding is missing");
+  return retryRoot(exactReference(binding["priorNormalCurrentFactsRetry"]));
 }
