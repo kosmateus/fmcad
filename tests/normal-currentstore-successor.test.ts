@@ -42,6 +42,36 @@ const ref = (file: string) => ({
 });
 const absentError =
   "NoProcessFoundForGivenId,Microsoft.PowerShell.Commands.GetProcessCommand";
+const previousNormalCurrentStoreSource =
+  `"""Present facts for a cold normal-currentstore successor; no model writer."""
+import json as _nc_json
+import adsk.core as _nc_core
+
+
+def normal_currentstore_facts(creation_id: str, document_name: str) -> dict[str, object]:
+    app = _nc_core.Application.get()
+    assert app is not None, 'Fusion application unavailable'
+    ui = app.userInterface
+    assert ui is not None, 'Fusion UI unavailable'
+    documents: list[dict[str, str]] = []
+    present = False
+    for index in range(app.documents.count):
+        doc = app.documents.item(index)
+        assert doc is not None, 'Document inventory changed'
+        documents.append({'creationId': doc.creationId, 'name': doc.name})
+        if doc.creationId == creation_id or doc.name == document_name:
+            present = True
+    return {
+        'kind': 'normal-currentstore-current-facts-v1',
+        'originalDocumentCreationId': creation_id,
+        'originalDocumentName': document_name,
+        'originalDocumentPresent': present,
+        'activeCommand': ui.activeCommand,
+        'documents': documents,
+        'historicalOutcome': 'unknown',
+        'modelValidation': 'not_performed',
+    }
+`.replace(/\r\n/g, "\n");
 
 function syntheticReceiptPaths(
   t: { after(fn: () => void): void },
@@ -327,7 +357,6 @@ function fixture(
             documents: [
               {
                 id: p.creationId,
-                name: p.documentName,
                 fileId: null,
                 isSaved: false,
                 isModified: false,
@@ -1324,6 +1353,18 @@ for (const observationMode of [
     };
     const audit = path.join(f.dir, "epoch-successions", hash(f.requestId));
     const authorityFile = path.join(audit, "authority.json");
+    const previousCandidateRoot =
+      observationMode === "validator-failed"
+        ? path.join(f.dir, "previous-runtime")
+        : path.resolve(".");
+    if (observationMode === "validator-failed") {
+      const previousSourceFile = path.join(
+        previousCandidateRoot,
+        "runtime/python/recovery/normal_currentstore.py",
+      );
+      fs.mkdirSync(path.dirname(previousSourceFile), { recursive: true });
+      fs.writeFileSync(previousSourceFile, previousNormalCurrentStoreSource);
+    }
     const previousQualificationFile = path.join(audit, "qualification.json");
     write(previousQualificationFile, {
       passed: true,
@@ -1345,7 +1386,7 @@ for (const observationMode of [
       normalCurrentStore: f.approval.normalCurrentStore,
       predecessor: {},
       sourceCommit: "f".repeat(40),
-      candidateRoot: path.resolve("."),
+      candidateRoot: previousCandidateRoot,
       buildHash: "f".repeat(64),
       qualification: ref(previousQualificationFile),
       kind: "owner-authenticated-dead-epoch-successor",
@@ -1389,28 +1430,29 @@ for (const observationMode of [
     });
     const original = fs.readFileSync(path.join(f.epoch, "queue-state.json"));
     let calls = 0;
-    const facts = {
-      kind: "normal-currentstore-current-facts-v1",
-      originalDocumentCreationId: p.creationId,
-      originalDocumentName: p.documentName,
-      originalDocumentPresent: false,
-      identityPolicy: "creation-or-name-v1",
-      activeCommand: "SelectCommand",
-      documents:
-        observationMode === "validator-failed"
-          ? [
-              {
-                creationId: randomUUID(),
-                name: "Untitled",
-                fileId: null,
-                isSaved: false,
-                isModified: false,
-              },
-            ]
-          : [],
-      historicalOutcome: "unknown",
-      modelValidation: "not_performed",
-    };
+    const facts =
+      observationMode === "validator-failed"
+        ? {
+            kind: "normal-currentstore-current-facts-v1",
+            originalDocumentCreationId: p.creationId,
+            originalDocumentName: "Untitled",
+            originalDocumentPresent: true,
+            activeCommand: "SelectCommand",
+            documents: [{ creationId: p.creationId, name: "Untitled" }],
+            historicalOutcome: "unknown",
+            modelValidation: "not_performed",
+          }
+        : {
+            kind: "normal-currentstore-current-facts-v1",
+            originalDocumentCreationId: p.creationId,
+            originalDocumentName: p.documentName,
+            originalDocumentPresent: false,
+            identityPolicy: "creation-or-name-v1",
+            activeCommand: "SelectCommand",
+            documents: [],
+            historicalOutcome: "unknown",
+            modelValidation: "not_performed",
+          };
     const send: import("../packages/node-adapters/src/execution/recovery-audit").RecoveryAuditPorts["sendScript"] =
       (scope, script) =>
         scope.post({
@@ -1446,7 +1488,7 @@ for (const observationMode of [
       },
       ports: {
         scriptFormat: "fusion-mcp",
-        installation: path.resolve("."),
+        installation: previousCandidateRoot,
         buildHash: "f".repeat(64),
         begin() {},
         end() {},
@@ -1608,19 +1650,32 @@ for (const observationMode of [
         candidateRoot: path.resolve("."),
         sourceCommit: "e".repeat(40),
         buildHash: "d".repeat(64),
-        expectedProcess: {
-          pid: 900003,
-          birth: String(
-            BigInt(Date.now() + 60000) * 10000n + 116444736000000000n,
-          ),
-        },
+        expectedProcess: authority.expectedProcess,
         qualification: { path: "", sha256: "" },
       };
       const candidateQualificationFile = path.join(
         f.dir,
         "retry-qualification.json",
       );
-      write(candidateQualificationFile, {
+      const candidateQualification = {
+        passed: true,
+        productionAdmission: true,
+        liveSdkRequestsSent: 0,
+        sourceCommit: candidate.sourceCommit,
+        buildHash: candidate.buildHash,
+        publicDirectAccessRefused: true,
+        deadEpochSuccessorReadQualified: true,
+        deadEpochSuccessorRestoreQualified: true,
+        normalCurrentFactsRetryQualified: true,
+        normalCurrentStoreSuccessorQualified: true,
+      };
+      write(candidateQualificationFile, candidateQualification);
+      candidate.qualification = ref(candidateQualificationFile);
+      const previousCandidateQualificationFile = path.join(
+        f.dir,
+        "previous-retry-qualification.json",
+      );
+      write(previousCandidateQualificationFile, {
         passed: true,
         productionAdmission: true,
         liveSdkRequestsSent: 0,
@@ -1631,7 +1686,6 @@ for (const observationMode of [
         deadEpochSuccessorRestoreQualified: true,
         normalCurrentStoreSuccessorQualified: true,
       });
-      candidate.qualification = ref(candidateQualificationFile);
       const queueSummary = {
         sourceCommit: authority.sourceCommit,
         buildHash: "f".repeat(64),
@@ -1657,18 +1711,160 @@ for (const observationMode of [
           unresolved: true,
         },
       };
+      const retryEvidence = {
+        previousRequestId: f.requestId,
+        previousAuthority,
+        physicalResult,
+        validationFailure,
+        queueSummary,
+      };
+      const authorizeRetry = (
+        evidence = retryEvidence,
+        nextCandidate = candidate,
+      ) =>
+        normal.authorizeNormalCurrentFactsRetry(
+          f.epochClient,
+          evidence,
+          nextCandidate,
+        );
+      const assertTemporaryMutationRejected = (
+        file: string,
+        value: unknown,
+        evidence = retryEvidence,
+        nextCandidate = candidate,
+      ) => {
+        const originalBytes = fs.readFileSync(file);
+        try {
+          write(file, value);
+          assert.throws(() => authorizeRetry(evidence, nextCandidate));
+        } finally {
+          fs.writeFileSync(file, originalBytes);
+        }
+      };
+      assert.throws(() =>
+        authorizeRetry({
+          ...retryEvidence,
+          previousAuthority: {
+            ...previousAuthority,
+            sha256: "0".repeat(64),
+          },
+        }),
+      );
+      assert.throws(() =>
+        normal.authorizeNormalCurrentFactsRetry(
+          {
+            ...f.epochClient,
+            auth: {
+              ...f.epochClient.auth,
+              clientToken: "unsealed epoch owner token",
+            },
+          },
+          retryEvidence,
+          candidate,
+        ),
+      );
+      assert.throws(() =>
+        authorizeRetry(retryEvidence, {
+          ...candidate,
+          requestId: f.requestId,
+        }),
+      );
+      assert.throws(() =>
+        authorizeRetry(retryEvidence, {
+          ...candidate,
+          buildHash: "c".repeat(64),
+        }),
+      );
+      assert.throws(() =>
+        authorizeRetry(retryEvidence, {
+          ...candidate,
+          qualification: ref(previousCandidateQualificationFile),
+        }),
+      );
+      assert.deepEqual(candidate.expectedProcess, authority.expectedProcess);
+      for (const expectedProcess of [
+        {
+          ...candidate.expectedProcess,
+          pid: candidate.expectedProcess.pid + 1,
+        },
+        {
+          ...candidate.expectedProcess,
+          birth: String(BigInt(candidate.expectedProcess.birth) + 1n),
+        },
+      ])
+        assert.throws(() =>
+          authorizeRetry(retryEvidence, { ...candidate, expectedProcess }),
+        );
+      for (const invalidQueueSummary of [
+        {
+          ...queueSummary,
+          control: { ...queueSummary.control, activeOperations: 1 },
+        },
+        {
+          ...queueSummary,
+          deadEpochSuccessor: {
+            ...queueSummary.deadEpochSuccessor,
+            requestId: "retargeted-normal-observation",
+          },
+        },
+      ])
+        assert.throws(() =>
+          authorizeRetry({
+            ...retryEvidence,
+            queueSummary: invalidQueueSummary,
+          }),
+        );
+
+      const failedRead = JSON.parse(oldFailureBytes.toString()),
+        physicalReceipt = JSON.parse(oldPhysicalBytes.toString()),
+        wireFile = path.join(observationDirectory, "wire.json"),
+        originalRpcFile = path.join(f.jobDir, `rpc-${p.rpcId}.json`),
+        wire = JSON.parse(fs.readFileSync(wireFile, "utf8")),
+        originalRpc = JSON.parse(fs.readFileSync(originalRpcFile, "utf8"));
+      const unknownFailure = { ...failedRead, status: "unknown" },
+        nonterminalReceipt = { ...physicalReceipt, terminal: false };
+      assert.deepEqual(originalRpc.instance.documents[0], {
+        id: p.creationId,
+        fileId: null,
+        isSaved: false,
+        isModified: false,
+      });
+      assertTemporaryMutationRejected(validationFailure.path, {
+        ...failedRead,
+        code: "TAMPERED_VALIDATION_RESULT",
+      });
+      assertTemporaryMutationRejected(validationFailure.path, unknownFailure, {
+        ...retryEvidence,
+        validationFailure: {
+          path: validationFailure.path,
+          sha256: hash(JSON.stringify(unknownFailure)),
+        },
+      });
+      assertTemporaryMutationRejected(physicalResult.path, nonterminalReceipt, {
+        ...retryEvidence,
+        physicalResult: {
+          path: physicalResult.path,
+          sha256: hash(JSON.stringify(nonterminalReceipt)),
+        },
+      });
+      wire.outgoing.params.arguments.object.readOnly = false;
+      assertTemporaryMutationRejected(wireFile, wire);
+      originalRpc.instance.documents[0].isSaved = true;
+      assertTemporaryMutationRejected(originalRpcFile, originalRpc);
+
       const retry = normal.authorizeNormalCurrentFactsRetry(
         f.epochClient,
-        {
-          previousRequestId: f.requestId,
-          previousAuthority,
-          physicalResult,
-          validationFailure,
-          queueSummary,
-        },
+        retryEvidence,
         candidate,
       );
       assert.ok(fs.existsSync(retry.path));
+      assert.deepEqual(authorizeRetry(), retry);
+      assert.throws(() =>
+        authorizeRetry(retryEvidence, {
+          ...candidate,
+          requestId: candidate.requestId + ":retarget",
+        }),
+      );
       assert.deepEqual(
         fs.readFileSync(validationFailure.path),
         oldFailureBytes,
@@ -1699,7 +1895,7 @@ for (const observationMode of [
             buildHash: () => "f".repeat(64),
             process(owner, runtime, refs, apply, root) {
               assert.equal(root, f.dir);
-              assert.equal(runtime, path.resolve("."));
+              assert.equal(runtime, previousCandidateRoot);
               assert.equal(owner.pid, currentOwner.pid);
               assert.equal(owner.birth, currentOwner.birth);
               assert.ok(
@@ -1716,6 +1912,34 @@ for (const observationMode of [
             },
             producerAbsent: () => producerAbsent,
           };
+      const retryAuthorizationBytes = fs.readFileSync(retry.path);
+      for (const expectedProcess of [
+        {
+          ...candidate.expectedProcess,
+          pid: candidate.expectedProcess.pid + 1,
+        },
+        {
+          ...candidate.expectedProcess,
+          birth: String(BigInt(candidate.expectedProcess.birth) + 1n),
+        },
+      ]) {
+        const changedGrant = JSON.parse(retryAuthorizationBytes.toString());
+        changedGrant.candidate.expectedProcess = expectedProcess;
+        changedGrant.expectedProcess = expectedProcess;
+        try {
+          write(retry.path, changedGrant);
+          assert.throws(() =>
+            normal.retireNormalCurrentFactsRetryProducer(
+              f.epochClient,
+              ref(retry.path),
+              false,
+              retirementPorts,
+            ),
+          );
+        } finally {
+          fs.writeFileSync(retry.path, retryAuthorizationBytes);
+        }
+      }
       const preview = normal.retireNormalCurrentFactsRetryProducer(
         f.epochClient,
         retry,
@@ -1755,19 +1979,60 @@ for (const observationMode of [
         retirementPorts,
       );
       assert.deepEqual(beforeBootstrap.currentOwner, currentOwner);
-      const nextAuthorityFile = path.join(
-        f.dir,
-        "epoch-successions",
-        hash(candidate.requestId),
-        "authority.json",
-      );
-      const nextAuthority = {
-        kind: "owner-authenticated-dead-epoch-successor",
+      const retryApproval = {
+        purpose: "dead-normal-currentstore-successor-v1",
         requestId: candidate.requestId,
+        clientId: p.epochClientId,
+        previousBuildHash: normal.normalCurrentTarget(
+          f.approval.normalCurrentStore!,
+        ).buildHash,
         sourceCommit: candidate.sourceCommit,
         buildHash: candidate.buildHash,
         candidateRoot: candidate.candidateRoot,
         qualification: candidate.qualification,
+        expectedProcess: candidate.expectedProcess,
+        normalCurrentStore: f.approval.normalCurrentStore,
+        priorNormalCurrentFactsRetry: retry,
+      } as import("../src/composition/queue-epoch-successor-types").Approval;
+      assert.doesNotThrow(() =>
+        normal.inspectNormalCurrentStore(
+          f.dir,
+          retryApproval,
+          f.pointer,
+          retirementPorts,
+          currentOwner,
+        ),
+      );
+      const nextAuthorityFile = path.join(
+          f.dir,
+          "epoch-successions",
+          hash(candidate.requestId),
+          "authority.json",
+        ),
+        installedQualificationFile = path.join(
+          path.dirname(nextAuthorityFile),
+          "installed-qualification.json",
+        );
+      fs.mkdirSync(path.dirname(installedQualificationFile), {
+        recursive: true,
+      });
+      fs.copyFileSync(candidateQualificationFile, installedQualificationFile);
+      const installedQualification = ref(installedQualificationFile);
+      const nextAuthority = {
+        version: 1,
+        kind: "owner-authenticated-dead-epoch-successor",
+        nonce: "normal-retry-next-authority",
+        requestId: candidate.requestId,
+        clientId: p.epochClientId,
+        ownerTokenHash: hash(f.epochClient.auth.clientToken),
+        configHash: p.configHash,
+        previousBuildHash: normal.normalCurrentTarget(
+          f.approval.normalCurrentStore!,
+        ).buildHash,
+        sourceCommit: candidate.sourceCommit,
+        buildHash: candidate.buildHash,
+        candidateRoot: candidate.candidateRoot,
+        qualification: installedQualification,
         expectedProcess: candidate.expectedProcess,
         previousOwner: currentOwner,
         normalCurrentStore: f.approval.normalCurrentStore,
@@ -1775,17 +2040,76 @@ for (const observationMode of [
       };
       write(nextAuthorityFile, nextAuthority);
       const nextAuthorityRef = ref(nextAuthorityFile),
-        nextOwner = {
-          pid: 900004,
-          birth: "synthetic-linux-boot:retry-next-owner",
-          nonce: "normal-retry-next-owner",
-          protocol: 2,
-        };
+        auditDirectory = path.dirname(nextAuthorityFile),
+        guard = {
+          kind: "dead-epoch-successor",
+          nonce: nextAuthority.nonce,
+          audit: auditDirectory,
+          clientId: nextAuthority.clientId,
+        },
+        approvalFile = path.join(auditDirectory, "approval.json");
+      write(approvalFile, {
+        ...retryApproval,
+        previousOwner: currentOwner,
+      });
+      const approvalRef = ref(approvalFile);
+      write(path.join(auditDirectory, "intent.json"), {
+        version: 1,
+        requestId: candidate.requestId,
+        clientId: nextAuthority.clientId,
+        ownerTokenHash: nextAuthority.ownerTokenHash,
+        nonce: nextAuthority.nonce,
+        approval: approvalRef,
+        previousOwner: currentOwner,
+      });
+      write(path.join(f.dir, "recovery.lock"), guard);
+      write(path.join(f.dir, "atomic-migration.lock"), guard);
       write(path.join(f.dir, "active-epoch-succession.json"), {
         version: 1,
         authority: nextAuthorityRef,
       });
-      write(path.join(f.dir, "broker.lock"), nextOwner);
+      assert.doesNotThrow(
+        () =>
+          normal.inspectNormalCurrentStore(
+            f.dir,
+            retryApproval,
+            f.pointer,
+            retirementPorts,
+            currentOwner,
+          ),
+        "the exact guarded transition may still own broker.lock before retirement",
+      );
+      const brokerFile = path.join(f.dir, "broker.lock");
+      fs.unlinkSync(brokerFile);
+      write(path.join(auditDirectory, "retired-owner.json"), currentOwner);
+      write(path.join(auditDirectory, "launch-intent.json"), {
+        nonce: nextAuthority.nonce,
+        authority: nextAuthorityRef,
+      });
+      assert.doesNotThrow(
+        () =>
+          normal.inspectNormalCurrentStore(
+            f.dir,
+            retryApproval,
+            f.pointer,
+            retirementPorts,
+            currentOwner,
+          ),
+        "the exact guarded pre-claim state may have no broker.lock",
+      );
+      const nextOwner = {
+        pid: 900004,
+        birth: "synthetic-linux-boot:retry-next-owner",
+        nonce: "normal-retry-next-owner",
+        protocol: 2,
+      };
+      write(brokerFile, nextOwner);
+      write(path.join(f.dir, `broker-lifecycle-${nextOwner.nonce}.json`), {
+        owner: nextOwner,
+        buildHash: candidate.buildHash,
+        configHash: p.configHash,
+        stage: "recovery",
+      });
       const afterBootstrap = normal.inspectNormalCurrentFactsRetry(
         f.dir,
         retry,
@@ -1793,6 +2117,14 @@ for (const observationMode of [
         retirementPorts,
       );
       assert.deepEqual(afterBootstrap.currentOwner, currentOwner);
+      normal.assertNormalCurrentPredecessor(
+        f.dir,
+        {
+          authority: nextAuthority,
+          pointer: f.pointer,
+        } as unknown as import("../src/composition/queue-epoch-successor-types").Checked,
+        retirementPorts,
+      );
       const retryBinding = {
         purpose: "normal-currentstore-current-facts-v1",
         clientId: p.epochClientId,
@@ -1855,6 +2187,18 @@ for (const observationMode of [
           retryBinding,
         ),
       );
+      for (const rejectedDocument of [
+        { ...defaultFacts.documents[0], fileId: "saved-document-file" },
+        { ...defaultFacts.documents[0], isSaved: true },
+        { ...defaultFacts.documents[0], creationId: p.creationId },
+      ])
+        assert.throws(() =>
+          normal.validateNormalCurrentFacts(
+            { ...defaultFacts, documents: [rejectedDocument] },
+            retryIdentity,
+            retryBinding,
+          ),
+        );
       assert.deepEqual(
         fs.readFileSync(validationFailure.path),
         oldFailureBytes,

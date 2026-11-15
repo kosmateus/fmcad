@@ -1035,11 +1035,44 @@ export function inspectNormalCurrentStore(
   const normal = approval.normalCurrentStore;
   if (!normal || normal.kind !== "normal-currentstore-v1")
     fail("A discriminated normal-currentstore approval is required");
+  const retry = approval.priorNormalCurrentFactsRetry
+    ? inspectNormalCurrentFactsRetry(
+        root,
+        approval.priorNormalCurrentFactsRetry,
+        {
+          requestId: approval.requestId,
+          sourceCommit: approval.sourceCommit,
+          buildHash: approval.buildHash,
+          qualification: approval.qualification,
+          expectedProcess: approval.expectedProcess,
+        },
+        ports,
+      )
+    : null;
+  if (
+    retry &&
+    (!same(normal, retry.originalNormalStore) ||
+      approval.candidateRoot !== retry.candidateRoot)
+  )
+    fail(
+      "Normal retry approval must retain its original store and exact candidate root",
+    );
+  const requestId = retry?.baseRequestId ?? approval.requestId,
+    originalOwner = retry
+      ? normalRetryOwner(
+          previousNormalRetryAuthority(
+            root,
+            retry.baseRequestId,
+            retry.previousAuthority,
+          ).authority["previousOwner"],
+        )
+      : predecessorOwner,
+    predecessor = originalOwner ? { pointer, owner: originalOwner } : undefined;
   const value = authorization(
       root,
-      approval.requestId,
+      requestId,
       normal.jobAuthorization,
-      predecessorOwner ? { pointer, owner: predecessorOwner } : undefined,
+      predecessor,
     ),
     p = value.profile;
   if (
@@ -1050,11 +1083,11 @@ export function inspectNormalCurrentStore(
     fail("Normal approval cannot be mixed with a historical atomic successor");
   const retirement = checked(
     normal.producerRetirement,
-    path.join(journal(root, approval.requestId), "producers-retired.json"),
+    path.join(journal(root, requestId), "producers-retired.json"),
   );
   const claim = metadataClaim(
     root,
-    approval.requestId,
+    requestId,
     normal.jobAuthorization,
     p.metadata,
   );
@@ -1082,7 +1115,7 @@ export function inspectNormalCurrentStore(
   if (
     retirement["version"] !== 1 ||
     retirement["kind"] !== "normal-currentstore-producers-retired" ||
-    retirement["requestId"] !== approval.requestId ||
+    retirement["requestId"] !== requestId ||
     !same(retirement["authorization"], normal.jobAuthorization) ||
     !same(retirement["producers"], value.snapshot.producers) ||
     !Number.isFinite(retiredAt) ||
@@ -1134,6 +1167,7 @@ export function inspectNormalCurrentStore(
 export function assertNormalCurrentPredecessor(
   root: string,
   checkedPredecessor: Checked,
+  ports: NormalColdPorts = defaultPorts,
 ): void {
   const a = checkedPredecessor.authority;
   const normal = a["normalCurrentStore"] as
@@ -1144,14 +1178,20 @@ export function assertNormalCurrentPredecessor(
   inspectNormalCurrentStore(
     root,
     {
+      purpose: "dead-normal-currentstore-successor-v1",
       requestId: a.requestId,
       clientId: a.clientId,
       previousBuildHash: a.previousBuildHash,
       expectedProcess: a.expectedProcess,
+      sourceCommit: a.sourceCommit,
+      buildHash: a.buildHash,
+      candidateRoot: a.candidateRoot,
+      qualification: a.qualification,
       normalCurrentStore: normal,
+      priorNormalCurrentFactsRetry: a["priorNormalCurrentFactsRetry"],
     } as Approval,
     checkedPredecessor.pointer,
-    defaultPorts,
+    ports,
     a.previousOwner,
   );
 }
@@ -1359,6 +1399,7 @@ function retryCandidate(
     q["publicDirectAccessRefused"] !== true ||
     q["deadEpochSuccessorReadQualified"] !== true ||
     q["deadEpochSuccessorRestoreQualified"] !== true ||
+    q["normalCurrentFactsRetryQualified"] !== true ||
     q["normalCurrentStoreSuccessorQualified"] !== true
   )
     fail("Fresh normal read candidate lacks its exact passing qualification");
@@ -1497,7 +1538,6 @@ function allowsNewUnsavedDefault(
   );
   if (
     matches.length !== 1 ||
-    object(matches[0])["name"] !== p.documentName ||
     object(matches[0])["fileId"] !== null ||
     object(matches[0])["isSaved"] !== false ||
     object(matches[0])["isModified"] !== false
@@ -1670,7 +1710,6 @@ function validateFailedNormalRead(
   )
     fail("The failed read artifact no longer matches its sealed candidate");
 
-  let validationCode: unknown;
   const reply = object(JSON.parse(received["raw"] as string) as unknown);
   if (
     reply["jsonrpc"] !== "2.0" ||
@@ -1680,17 +1719,42 @@ function validateFailedNormalRead(
     object(reply["result"])["isError"] === true
   )
     fail("The original transport response was not a successful RPC reply");
-  try {
-    parseNormalCurrentFacts(reply, identity);
-  } catch (error) {
-    validationCode =
-      error && typeof error === "object" && "code" in error
-        ? error.code
-        : undefined;
-  }
-  if (validationCode !== "NORMAL_SUCCESSOR_UNPROVEN")
+  const text = (
+      load(
+        "./dist/core/application/cad/recovery-audit",
+      ) as typeof import("../../packages/core/src/application/cad/recovery-audit")
+    ).auditOutputText(reply),
+    rows = text
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("FMCAD_RESULT "));
+  if (rows.length !== 1)
+    fail("The previous normal read did not return exactly one facts result");
+  const facts = object(
+      JSON.parse(rows[0]!.slice("FMCAD_RESULT ".length)) as unknown,
+    ),
+    documents = facts["documents"];
+  if (
+    Object.keys(facts).sort().join() !==
+      "activeCommand,documents,historicalOutcome,kind,modelValidation,originalDocumentCreationId,originalDocumentName,originalDocumentPresent" ||
+    facts["kind"] !== "normal-currentstore-current-facts-v1" ||
+    facts["originalDocumentCreationId"] !== p.creationId ||
+    facts["originalDocumentName"] !== p.documentName ||
+    facts["originalDocumentPresent"] !== true ||
+    facts["activeCommand"] !== "SelectCommand" ||
+    facts["historicalOutcome"] !== "unknown" ||
+    facts["modelValidation"] !== "not_performed" ||
+    !Array.isArray(documents) ||
+    documents.some((entry: unknown) => {
+      const row = object(entry);
+      return (
+        Object.keys(row).sort().join() !== "creationId,name" ||
+        typeof row["creationId"] !== "string" ||
+        typeof row["name"] !== "string"
+      );
+    })
+  )
     fail(
-      "The previous reply does not reproduce the sealed normal validator failure",
+      "The previous reply does not match the sealed legacy normal-facts refusal",
     );
   return {
     authority,
@@ -1779,6 +1843,7 @@ function retryGrant(
       candidateRoot: value.candidateRoot,
     }) ||
     !same(process(value.expectedProcess), candidate.expectedProcess) ||
+    !same(candidate.expectedProcess, process(authority["expectedProcess"])) ||
     candidate.requestId === baseRequestId ||
     (currentOwner.pid === normalRetryOwner(authority["previousOwner"]).pid &&
       currentOwner.birth ===
@@ -1863,10 +1928,7 @@ export function authorizeNormalCurrentFactsRetry(
     candidate.requestId === baseRequestId ||
     candidate.requestId === baseRequestId + ":observe" ||
     candidate.requestId === baseRequestId + ":create" ||
-    (candidate.expectedProcess.pid ===
-      process(authority["expectedProcess"]).pid &&
-      candidate.expectedProcess.birth ===
-        process(authority["expectedProcess"]).birth) ||
+    !same(candidate.expectedProcess, process(authority["expectedProcess"])) ||
     (currentOwner.pid === normalRetryOwner(authority["previousOwner"]).pid &&
       currentOwner.birth === normalRetryOwner(authority["previousOwner"]).birth)
   )
@@ -1959,6 +2021,118 @@ function retryRetirementFile(entry: Reference, name: string): string {
   return path.join(path.dirname(entry.path), name);
 }
 
+function assertRetrySuccessorState(
+  root: string,
+  authorityEntry: Reference,
+  authority: Data,
+  grant: NormalCurrentFactsRetryGrant,
+  currentOwner: Owner,
+  rootOwner: Owner | null,
+): void {
+  const audit = path.dirname(authorityEntry.path),
+    requestId = grant.candidate.requestId,
+    nonce = authority["nonce"],
+    clientId = authority["clientId"],
+    ownerTokenHash = authority["ownerTokenHash"],
+    intentFile = path.join(audit, "intent.json"),
+    recoveryFile = path.join(root, "recovery.lock"),
+    atomicFile = path.join(root, "atomic-migration.lock"),
+    retiredFile = path.join(audit, "retired-owner.json"),
+    launchFile = path.join(audit, "launch-intent.json"),
+    completeFile = path.join(audit, "complete.json"),
+    hasRecovery = fs.existsSync(recoveryFile),
+    hasAtomic = fs.existsSync(atomicFile),
+    guard = { kind: "dead-epoch-successor", nonce, audit, clientId };
+  if (
+    typeof nonce !== "string" ||
+    !nonce ||
+    typeof clientId !== "string" ||
+    typeof ownerTokenHash !== "string" ||
+    hasRecovery !== hasAtomic
+  )
+    fail("The retry successor has no exact startup or completion phase");
+
+  const retired = fs.existsSync(retiredFile) ? read(retiredFile) : null,
+    launch = fs.existsSync(launchFile) ? read(launchFile) : null;
+  if (retired && !same(retired, currentOwner))
+    fail("The retry successor retired a different prior broker owner");
+  if (launch && !same(launch, { nonce, authority: authorityEntry }))
+    fail("The retry successor launch intent was retargeted");
+
+  if (hasRecovery) {
+    if (!same(read(recoveryFile), guard) || !same(read(atomicFile), guard))
+      fail("The retry successor startup guards do not match its authority");
+    const intent = read(intentFile),
+      approvalRef = exactReference(intent["approval"]),
+      approval = checked(approvalRef);
+    if (
+      intent["version"] !== 1 ||
+      intent["requestId"] !== requestId ||
+      intent["clientId"] !== clientId ||
+      intent["ownerTokenHash"] !== ownerTokenHash ||
+      intent["nonce"] !== nonce ||
+      !same(intent["previousOwner"], currentOwner) ||
+      approval["purpose"] !== "dead-normal-currentstore-successor-v1" ||
+      approval["requestId"] !== requestId ||
+      approval["clientId"] !== clientId ||
+      approval["candidateRoot"] !== grant.candidateRoot ||
+      approval["sourceCommit"] !== grant.candidate.sourceCommit ||
+      approval["buildHash"] !== grant.candidate.buildHash ||
+      !same(process(approval["expectedProcess"]), grant.expectedProcess) ||
+      !same(
+        exactReference(approval["qualification"]),
+        grant.candidate.qualification,
+      ) ||
+      !same(approval["previousOwner"], currentOwner) ||
+      !same(approval["normalCurrentStore"], grant.originalNormalStore) ||
+      !same(
+        approval["priorNormalCurrentFactsRetry"],
+        reference(retryPath(root, grant.previousAuthority)),
+      )
+    )
+      fail(
+        "The retry successor intent or approval does not consume this exact grant",
+      );
+  } else if (rootOwner && same(rootOwner, currentOwner)) {
+    fail("The original retry owner remains active without its startup guards");
+  }
+
+  if (!rootOwner) {
+    if (!hasRecovery || !retired || !launch)
+      fail(
+        "A pre-claim retry successor requires matching guards and retirement evidence",
+      );
+    return;
+  }
+  if (same(rootOwner, currentOwner)) {
+    if (!hasRecovery)
+      fail(
+        "The original retry owner cannot remain after successor guard release",
+      );
+    return;
+  }
+  if (hasRecovery && (!retired || !launch))
+    fail(
+      "A claimed retry successor must retain its retirement and launch receipts",
+    );
+  if (!hasRecovery) {
+    const complete = read(completeFile);
+    if (
+      complete["kind"] !== "dead-epoch-successor-metadata-ready" ||
+      complete["requestId"] !== requestId ||
+      !same(exactReference(complete["authority"]), authorityEntry) ||
+      !same(complete["owner"], rootOwner) ||
+      complete["buildHash"] !== grant.candidate.buildHash ||
+      complete["sourceCommit"] !== grant.candidate.sourceCommit ||
+      complete["sdkRequestsSent"] !== 0 ||
+      complete["historicalOutcome"] !== "unknown"
+    )
+      fail(
+        "A claimed retry successor without startup guards needs its exact ready receipt",
+      );
+  }
+}
+
 function retryRetirementClaimFile(root: string, owner: Owner): string {
   return path.join(
     root,
@@ -2035,6 +2209,7 @@ export function retireNormalCurrentFactsRetryProducer(
   const refs = [
     grantReference,
     grant.previousAuthority,
+    ...grant.failedReadFiles,
     grant.physicalResult,
     grant.validationFailure,
     grant.originalNormalStore.jobAuthorization,
@@ -2163,9 +2338,25 @@ export function inspectNormalCurrentFactsRetry(
       grant.baseRequestId,
       grant.previousAuthority,
     );
+  const installedQualification = path.join(
+    root,
+    "epoch-successions",
+    digest(candidate.requestId),
+    "installed-qualification.json",
+  );
   if (
-    !same(candidate, grant.candidate) ||
-    !same(process(grant.expectedProcess), candidate.expectedProcess)
+    !same(
+      { ...candidate, qualification: grant.candidate.qualification },
+      grant.candidate,
+    ) ||
+    candidate.qualification.sha256 !== grant.candidate.qualification.sha256 ||
+    (candidate.qualification.path !== grant.candidate.qualification.path &&
+      candidate.qualification.path !== installedQualification) ||
+    !same(process(grant.expectedProcess), candidate.expectedProcess) ||
+    !same(
+      candidate.expectedProcess,
+      process(previousAuthorityValue["expectedProcess"]),
+    )
   )
     fail("The retry candidate request/build/qualification/process changed");
 
@@ -2176,10 +2367,10 @@ export function inspectNormalCurrentFactsRetry(
     currentOwner = normalRetryOwner(grant.currentOwner),
     active = read(path.join(root, "active-epoch-succession.json")),
     activeAuthority = exactReference(active["authority"]),
-    rootOwner = normalRetryOwner(read(path.join(root, "broker.lock")));
-  const candidateStartMs = Number(
-    (BigInt(candidate.expectedProcess.birth) - 116444736000000000n) / 10000n,
-  );
+    brokerFile = path.join(root, "broker.lock"),
+    rootOwner = fs.existsSync(brokerFile)
+      ? normalRetryOwner(read(brokerFile))
+      : null;
   if (
     result["version"] !== 1 ||
     result["kind"] !== "normal-currentfacts-retry-producer-retired" ||
@@ -2190,7 +2381,6 @@ export function inspectNormalCurrentFactsRetry(
     !same(process(result["process"]), process(currentOwner)) ||
     !Number.isFinite(retiredAt) ||
     retiredAt > Date.now() ||
-    candidateStartMs <= retiredAt ||
     !ports.producerAbsent(currentOwner)
   )
     fail(
@@ -2198,7 +2388,7 @@ export function inspectNormalCurrentFactsRetry(
     );
 
   if (same(activeAuthority, grant.previousAuthority)) {
-    if (!same(rootOwner, currentOwner))
+    if (!rootOwner || !same(rootOwner, currentOwner))
       fail(
         "The pre-bootstrap root owner changed before the retry was consumed",
       );
@@ -2225,13 +2415,25 @@ export function inspectNormalCurrentFactsRetry(
         process(nextAuthority["expectedProcess"]),
         candidate.expectedProcess,
       ) ||
+      exactReference(nextAuthority["qualification"]).path !==
+        installedQualification ||
       exactReference(nextAuthority["qualification"]).sha256 !==
-        candidate.qualification.sha256 ||
-      same(rootOwner, currentOwner)
+        grant.candidate.qualification.sha256 ||
+      (rootOwner !== null &&
+        same(rootOwner, currentOwner) &&
+        !ports.producerAbsent(currentOwner))
     )
       fail(
         "The bootstrapped authority does not consume this exact normal retry",
       );
+    assertRetrySuccessorState(
+      root,
+      activeAuthority,
+      nextAuthority,
+      grant,
+      currentOwner,
+      rootOwner,
+    );
   }
   return {
     previousAuthority: grant.previousAuthority,
