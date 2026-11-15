@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
 const load = createRequire(__filename);
@@ -41,6 +41,114 @@ const admissionModule = load("../src/queue-admission") as {
     checkerFingerprint(): unknown;
   };
 };
+
+function matchingRpcFiles(
+  names: readonly string[],
+  read: (name: string) => unknown,
+  expected: {
+    jobId: string;
+    rpcId: string;
+    sourceHash: string;
+    wireId: string;
+  },
+): string[] {
+  return names.filter((name) => {
+    if (!/^rpc-.*\.json$/.test(name)) return false;
+    const rpc = object(read(name));
+    const binding = object(rpc["binding"]);
+    return (
+      name === `rpc-${expected.rpcId}.json` &&
+      binding["jobId"] === expected.jobId &&
+      binding["rpcId"] === expected.rpcId &&
+      binding["sourceHash"] === expected.sourceHash &&
+      object(rpc["wireRequest"])["id"] === expected.wireId
+    );
+  });
+}
+
+test("RPC artifact selection binds the product despite terminal siblings and file order", () => {
+  const expected = {
+    jobId: "00000000-0000-4000-8000-000000000000",
+    rpcId: "20000000-0000-4000-8000-000000000000",
+    sourceHash: "a".repeat(64),
+    wireId: "fmcad:20000000-0000-4000-8000-000000000000",
+  };
+  const preflightName = "rpc-00000000-0000-4000-8000-000000000001.json";
+  const siblingName = "rpc-10000000-0000-4000-8000-000000000000.json";
+  const productName = `rpc-${expected.rpcId}.json`;
+  const resultName = "rpc-result.json";
+  const productBinding = {
+    jobId: expected.jobId,
+    rpcId: expected.rpcId,
+    sourceHash: expected.sourceHash,
+  };
+  const files = new Map<string, unknown>([
+    [
+      preflightName,
+      {
+        terminal: true,
+        binding: {
+          jobId: expected.jobId,
+          rpcId: "00000000-0000-4000-8000-000000000001",
+        },
+        wireRequest: { id: "fmcad:00000000-0000-4000-8000-000000000001" },
+      },
+    ],
+    [
+      siblingName,
+      {
+        terminal: true,
+        binding: {
+          jobId: expected.jobId,
+          rpcId: "10000000-0000-4000-8000-000000000000",
+          sourceHash: "b".repeat(64),
+        },
+        wireRequest: { id: "fmcad:10000000-0000-4000-8000-000000000000" },
+      },
+    ],
+    [
+      productName,
+      {
+        terminal: false,
+        binding: productBinding,
+        wireRequest: { id: expected.wireId },
+      },
+    ],
+    [
+      resultName,
+      {
+        terminal: true,
+        binding: productBinding,
+        wireRequest: { id: expected.wireId },
+      },
+    ],
+  ]);
+  const read = (name: string) => files.get(name);
+  const adversarialOrder = [
+    preflightName,
+    resultName,
+    siblingName,
+    productName,
+  ];
+
+  assert.equal(
+    adversarialOrder.find((name) => /^rpc-.*\.json$/.test(name)),
+    preflightName,
+    "the old first-match lookup chooses a terminal preflight RPC",
+  );
+  for (const order of [
+    adversarialOrder,
+    [...adversarialOrder].reverse(),
+    [siblingName, productName, preflightName, resultName],
+  ]) {
+    assert.deepEqual(matchingRpcFiles(order, read, expected), [productName]);
+  }
+  assert.deepEqual(
+    matchingRpcFiles([preflightName, siblingName, resultName], read, expected),
+    [],
+    "terminal sibling RPCs and rpc-result.json are not the product RPC",
+  );
+});
 
 for (const responseMode of [
   "missing-receipt",
@@ -112,7 +220,11 @@ for (const responseMode of [
       },
     });
     let productCalls = 0;
+    let productWireId: string | undefined;
     let originalRaw = "";
+    const sourceCode =
+      "def run(context: str) -> None:\n    print('synthetic owned write result')\n";
+    const sourceHash = createHash("sha256").update(sourceCode).digest("hex");
     physical._post = async (payload) => {
       if (payload["method"] === "initialize")
         return {
@@ -167,6 +279,9 @@ for (const responseMode of [
         };
       }
       productCalls++;
+      const wireId = payload["id"];
+      assert.ok(typeof wireId === "string");
+      productWireId = wireId;
       // A physical-port response, not a Fusion execution or model assertion. No
       // remote receipt is emitted, exactly the settlement boundary under test.
       originalRaw =
@@ -230,8 +345,7 @@ for (const responseMode of [
             arguments: {
               featureType: "script",
               object: {
-                script:
-                  "def run(context: str) -> None:\n    print('synthetic owned write result')\n",
+                script: sourceCode,
                 readOnly: false,
               },
             },
@@ -249,13 +363,27 @@ for (const responseMode of [
     assert.equal(result.job.state, "needs_reconciliation");
     assert.equal(productCalls, 1, "No SDK request or response may be replayed");
     const directory = path.join(dir, "jobs", job.id);
-    const rpcName = fs
-      .readdirSync(directory)
-      .find((name) => /^rpc-.*\.json$/.test(name));
-    assert.ok(rpcName);
+    assert.ok(
+      typeof productWireId === "string" && productWireId.startsWith("fmcad:"),
+      "the product RPC must have a unique broker wire ID",
+    );
+    const wireId = productWireId;
+    const rpcId = wireId.slice("fmcad:".length);
+    const expectedBinding = { jobId: job.id, rpcId, sourceHash, wireId };
+    const rpcNames = matchingRpcFiles(
+      fs.readdirSync(directory),
+      (name) => JSON.parse(fs.readFileSync(path.join(directory, name), "utf8")),
+      expectedBinding,
+    );
+    assert.equal(rpcNames.length, 1, "select exactly the original product RPC");
+    const rpcName = rpcNames[0]!;
     const rpc = JSON.parse(
       fs.readFileSync(path.join(directory, rpcName), "utf8"),
     );
+    assert.equal(rpc.binding.jobId, job.id);
+    assert.equal(rpc.binding.rpcId, rpcId);
+    assert.equal(rpc.binding.sourceHash, sourceHash);
+    assert.equal(rpc.wireRequest.id, wireId);
     assert.equal(
       rpc.terminal,
       false,
@@ -272,7 +400,7 @@ for (const responseMode of [
     );
     const received = JSON.parse(fs.readFileSync(receivedPath, "utf8"));
     assert.deepEqual(received.binding, rpc.binding);
-    assert.equal(received.wireId, rpc.wireRequest.id);
+    assert.equal(received.wireId, wireId);
     assert.equal(received.version, 1);
     assert.equal(received.kind, "owned-rpc-received-response-v1");
     assert.equal(
