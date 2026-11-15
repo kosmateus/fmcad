@@ -17,7 +17,7 @@ const load = createRequire(
   path.join(process.cwd(), "tests/python-admission.test.js"),
 );
 test.after((load("./fixtures/fake-wsl-platform.cjs") as () => () => void)());
-const { assertDocumentStatusAdmission } = load(
+const { assertCurrentDocumentStatusAdmission } = load(
   "../dist/tests/fixtures/document-status-admission",
 ) as typeof import("./fixtures/document-status-admission");
 const { dispatchPrepared, initialQueueSnapshot } = load(
@@ -46,9 +46,16 @@ const { createProductionQueueAdmission } = load(
   "../src/queue-admission",
 ) as typeof import("../src/queue-admission");
 const documentStatusAdmission = load(
-  "./fixtures/document-status-admission-6bb.json",
+  "./fixtures/document-status-admission-current.json",
 ) as {
-  checker: { engine: string; version: string; definitionsHash: string };
+  checker: {
+    engine: string;
+    version: string;
+    checkerHash: string;
+    definitionsHash: string;
+    diagnostics: number;
+    cache: string;
+  };
   fences: {
     dispatchPreparedSenderCallsPerValidArtifact: number;
     dispatchPreparedSenderCallsPerNegativeMode: number;
@@ -446,7 +453,7 @@ test("real internal receipt wrapper passes with verified SDK definitions and rej
   assert.equal(fs.existsSync("/tmp/opencode/never-written.json"), false);
 });
 
-test("public document.status checks the current six-unit artifact before exactly one send", async () => {
+test("public document.status checks the current seven-unit artifact before exactly one send", async () => {
   const invocation = validateInvocation({
     version: 1,
     kind: "cad",
@@ -541,7 +548,7 @@ test("public document.status checks the current six-unit artifact before exactly
   await valid.promise;
   assert.equal(required(valid.certificate.report).status, "passed");
   assert.equal(required(valid.certificate.report).diagnostics.length, 0);
-  assertDocumentStatusAdmission(artifact);
+  assertCurrentDocumentStatusAdmission(artifact);
   assert.equal(required(valid.certificate.artifact).sha256, artifact.sha256);
   assert.equal(
     required(valid.certificate.artifact).artifactHash,
@@ -559,6 +566,18 @@ test("public document.status checks the current six-unit artifact before exactly
     required(valid.certificate.report).provenance.definitionsHash,
     documentStatusAdmission.checker.definitionsHash,
   );
+  assert.equal(
+    required(valid.certificate.report).provenance.checkerHash,
+    documentStatusAdmission.checker.checkerHash,
+  );
+  assert.equal(
+    required(valid.certificate.report).provenance.cache,
+    documentStatusAdmission.checker.cache,
+  );
+  assert.equal(
+    required(valid.certificate.report).diagnostics.length,
+    documentStatusAdmission.checker.diagnostics,
+  );
   assert.deepEqual(required(valid.certificate.artifact).units, artifact.units);
   assert.equal(
     valid.senderCalls,
@@ -569,6 +588,7 @@ test("public document.status checks the current six-unit artifact before exactly
     [
       "values",
       "fusion-values",
+      "fusion-typing",
       "core",
       "identity",
       "document_snapshot",
@@ -843,8 +863,7 @@ test("typed phased-worker local deadline aborts the pending admission check", as
   const os = load("node:os") as typeof import("node:os");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-check-abort-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  let observedSignal: AbortSignal | undefined,
-    aborted: boolean | undefined;
+  let observedSignal: AbortSignal | undefined, aborted: boolean | undefined;
   let resolveAborted!: () => void;
   const abortSeen = new Promise<void>((resolve) => {
     resolveAborted = resolve;

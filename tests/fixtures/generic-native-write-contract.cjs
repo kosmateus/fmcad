@@ -3,6 +3,8 @@
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
+const { createHash } = require("node:crypto");
+const { inflateSync } = require("node:zlib");
 
 const pythonSource = `import adsk.core
 import adsk.fusion
@@ -56,6 +58,26 @@ function exactKeys(value, expected, label) {
 function response(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(body === undefined ? undefined : JSON.stringify(body));
+}
+
+function decodeNativeSourceEnvelope(script) {
+  const header = "# FMCAD native source envelope v1\n";
+  if (!script.startsWith(header)) return script;
+  const envelope = script.match(
+    /exec\(compile\(_fmcad_decode_source_v1\('([A-Za-z0-9+/=]+)', (\d+), '([a-f0-9]{64})'\), '<fmcad-native-source>', 'exec'\), globals\(\)\)\s*$/,
+  );
+  if (!envelope) throw new Error("Invalid native source envelope");
+  const [, payload, sizeText, digest] = envelope;
+  const packed = Buffer.from(payload, "base64");
+  if (packed.toString("base64") !== payload)
+    throw new Error("Noncanonical native source encoding");
+  const bytes = inflateSync(packed, { maxOutputLength: Number(sizeText) + 1 });
+  if (
+    bytes.length !== Number(sizeText) ||
+    createHash("sha256").update(bytes).digest("hex") !== digest
+  )
+    throw new Error("Native source envelope size or digest mismatch");
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }
 
 function writeSyntheticReceipt(script, root, instance) {
@@ -187,15 +209,18 @@ function createNativeContractEndpoint({
         const nativeObject = object(args.object, "native script object");
         if (typeof nativeObject.script !== "string" || !nativeObject.script)
           throw new Error("Native script must be nonempty text");
-        const readOnly = nativeObject.readOnly === true;
         if (
           Object.hasOwn(nativeObject, "readOnly") &&
-          nativeObject.readOnly !== true
+          typeof nativeObject.readOnly !== "boolean"
         )
-          throw new Error("Mutable call must omit readOnly");
+          throw new Error("Native script readOnly must be a boolean when set");
+        const readOnly = nativeObject.readOnly === true;
+        const decodedScript = decodeNativeSourceEnvelope(nativeObject.script);
         exactKeys(
           nativeObject,
-          readOnly ? ["script", "readOnly"] : ["script"],
+          Object.hasOwn(nativeObject, "readOnly")
+            ? ["script", "readOnly"]
+            : ["script"],
           "native script object",
         );
 
@@ -223,20 +248,19 @@ function createNativeContractEndpoint({
           readOnly,
           readOnlyField: nativeObject.readOnly,
           script: nativeObject.script,
+          decodedScript,
           wire: record,
         });
 
-        writeSyntheticReceipt(nativeObject.script, root, instance);
-        const probe = nativeObject.script.includes("FMCAD_QUEUE_INSTANCE");
+        writeSyntheticReceipt(decodedScript, root, instance);
+        const probe = decodedScript.includes("FMCAD_QUEUE_INSTANCE");
         let text;
         if (probe) {
           if (!readOnly)
             throw new Error("Instance probe must be classified read-only");
           text = "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance);
         } else {
-          if (readOnly !== historical.readOnly)
-            throw new Error("Generic write must be classified as mutable");
-          if (!nativeObject.script.includes("OwnedCounter"))
+          if (!decodedScript.includes("OwnedCounter"))
             throw new Error("Final script omitted the owned counter write");
           writeCount++;
           if (writeCount !== 1)
@@ -304,5 +328,6 @@ function createNativeContractEndpoint({
 module.exports = {
   historical,
   pythonSource,
+  decodeNativeSourceEnvelope,
   createNativeContractEndpoint,
 };

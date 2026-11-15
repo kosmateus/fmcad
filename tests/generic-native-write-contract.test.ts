@@ -45,6 +45,7 @@ type NativeEndpoint = {
     readOnly?: boolean;
     readOnlyField?: unknown;
     script?: string;
+    decodedScript?: string;
     wire?: NativeRequest;
   }>;
   responses: Array<{ status: number; body?: JsonRecord }>;
@@ -135,7 +136,7 @@ function object(value: unknown): JsonRecord {
   return value as JsonRecord;
 }
 
-test("queued generic write preserves the historical native MCP contract", async (t) => {
+test("queued generic write uses the native readOnly boolean contract", async (t) => {
   const root = fs.mkdtempSync(
     path.join(os.tmpdir(), "fmcad-generic-native-write-"),
   );
@@ -280,14 +281,18 @@ test("queued generic write preserves the historical native MCP contract", async 
   );
 
   const writes = endpoint.requests.filter(
-    (entry) => entry.method === "tools/call" && entry.readOnly === false,
+    (entry) =>
+      entry.method === "tools/call" &&
+      entry.decodedScript?.includes("OwnedCounter"),
   );
   assert.equal(endpoint.writeCount, 1);
   assert.equal(writes.length, 1);
   const captured = writes[0];
   assert.ok(captured?.wire);
-  const finalScript = captured.script;
+  const finalScript = captured.decodedScript;
+  const wireScript = captured.script;
   assert.ok(finalScript);
+  assert.ok(wireScript);
   assert.equal(captured.readOnly, false);
   assert.equal(captured.readOnlyField, undefined);
   assert.deepEqual(captured.wire, {
@@ -299,7 +304,7 @@ test("queued generic write preserves the historical native MCP contract", async 
       arguments: {
         featureType: fixture.historical.featureType,
         object: {
-          script: captured.script,
+          script: wireScript,
           ...(captured.readOnlyField === undefined
             ? {}
             : { readOnly: captured.readOnlyField }),
@@ -345,6 +350,15 @@ test("queued generic write preserves the historical native MCP contract", async 
     ),
     "synthetic instance probes retain their read-only classification",
   );
+  assert.ok(
+    endpoint.requests.some(
+      (entry) =>
+        entry.method === "tools/call" &&
+        entry.readOnly === true &&
+        entry.readOnlyField === true,
+    ),
+    "read-only calls use the explicit native boolean field",
+  );
 
   const typingRoot = runtimeRoot
     ? path.join(runtimeRoot, "dist/runtime/python/typing")
@@ -361,10 +375,10 @@ test("queued generic write preserves the historical native MCP contract", async 
   assert.equal(passed.provenance?.pythonVersion, "3.11");
   assert.equal(passed.provenance?.definitionsHash, definitionsPointer.snapshot);
 
-  // Historical JS blobs: src/run.js delegates to application.prepareRun, while
-  // src/cad-service.js submits the final script and adds readOnly only for
-  // read-only calls. The queue's official wrapper owns run(context) and its
-  // terminal receipt.
+  // This official run route preserves its omitted write flag. The separate
+  // public execute_python qualification requires explicit readOnly=false; the
+  // schema's boolean field does not make this route's wire history equivalent.
+  // The official wrapper owns run(context) and its terminal receipt.
   assert.equal(
     fixture.historical.commit,
     "e4994e96d6dbf4fdb975bf66dba3e45c05b33a93",
@@ -392,6 +406,10 @@ test("queued generic write preserves the historical native MCP contract", async 
       finalScript: {
         sha256: createHash("sha256").update(finalScript).digest("hex"),
         bytes: Buffer.byteLength(finalScript),
+      },
+      wireScript: {
+        sha256: createHash("sha256").update(wireScript).digest("hex"),
+        bytes: Buffer.byteLength(wireScript),
       },
       wireRequest: {
         jsonrpc: captured.wire.jsonrpc,

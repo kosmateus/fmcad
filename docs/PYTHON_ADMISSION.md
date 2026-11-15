@@ -181,7 +181,7 @@ Public queue acceptance and physical transport fences were verified separately:
 the exact candidate `document.status` artifact reaches the mocked public broker
 once, a controlled type error reaches it zero times, and raw receipt transport
 tests cover MCP/add-in positive-once and negative-zero behavior. `document.status`
-is the six-unit light profile; it is not misreported as the full helper test.
+is the seven-unit light profile; it is not misreported as the full helper test.
 
 The first exploratory public `document.save_as` attempt remained `preparing`
 without `pythonChecks`; instrumented follow-up showed why: for each of five
@@ -230,14 +230,13 @@ real complete-helper check. Transport/SDK activity is synthetic. No submitted
 source is executed by the checker, and no live Fusion, geometry or physical
 correctness is claimed.
 
-The retained `document-status-admission-6bb.json` evidence records a Windows CRLF
-working tree. Its four extracted runtime sources (`values`, `fusion-values`,
-`identity`, `document_snapshot`) are text-identical to the LF Git checkout; the
-injected owner lines, prepared core, and wrapper are unchanged. The typed
-`document-status-admission` test helper reconstructs only those historical source
-line endings and verifies the original wire hash, artifact hash, byte length,
-and all six unit hashes. It does not refresh or weaken the historical fixture.
-Admission tests separately check the actual checkout artifact with the real
-checker and require its current certificate and single physical send. Mutating a
-snapshot expression or target identity fails the historical comparison. This
-allows platform checkout spelling without accepting behavioral/source drift.
+The retained `document-status-admission-6bb.json` keeps its historical candidate
+identity and pinned hashes unchanged. Its source commit is unavailable in this
+checkout, so tests do not reconstruct its source or attribute current bytes to
+that candidate. The public output is pinned separately in
+`document-status-admission-current.json`, including its current wire/artifact
+hashes, seven unit hashes, and real checker provenance. Tests require the current
+artifact to match that manifest and explicitly reject it as a substitute for the
+historical `6bb` evidence. Admission tests also retain real-checker, source-unit,
+final-byte stale-artifact, and single-send assertions; behavior or target-identity
+changes fail the current-candidate comparison.

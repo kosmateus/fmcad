@@ -7,7 +7,7 @@ const load = createRequire(
   path.resolve("tests/python-admission-transport.test.js"),
 );
 test.after((load("./fixtures/fake-wsl-platform.cjs") as () => () => void)());
-const { assertDocumentStatusAdmission } = load(
+const { assertCurrentDocumentStatusAdmission } = load(
   "../dist/tests/fixtures/document-status-admission",
 ) as typeof import("./fixtures/document-status-admission");
 const { createBrokerTransport } = load(
@@ -28,7 +28,7 @@ const { prepareCadScript } = load(
   "../src/cad",
 ) as typeof import("../src/composition/cad-execution");
 const documentStatusAdmission = load(
-  "./fixtures/document-status-admission-6bb.json",
+  "./fixtures/document-status-admission-current.json",
 );
 const { prepareReceiptScript } = load("../src/queue-instance") as ReturnType<
   typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
@@ -254,7 +254,7 @@ test("public document.status admits the exact prepared light artifact before one
       : {}),
     preview: invocation.preview === true,
   });
-  assertDocumentStatusAdmission(artifact);
+  assertCurrentDocumentStatusAdmission(artifact);
   client.preparePost = async (payload) => {
     const outgoing = structuredClone(payload);
     assert.equal(
