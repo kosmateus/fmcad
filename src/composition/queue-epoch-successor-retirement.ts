@@ -43,7 +43,12 @@ def verify(stopped=False):
  if stopped: require(tail[0]=='T')
  exe=os.path.realpath(base+'/exe'); cmd=open(base+'/cmdline','rb').read().split(b'\\0')
  require(cmd[-1]==b''); cmd=[v.decode() for v in cmd[:-1]]
- require(cmd==[exe,p['runtime']+'/src/queue-epoch-successor-worker.js'])
+ worker=cmd==[exe,p['runtime']+'/src/queue-epoch-successor-worker.js']
+ normal=False
+ if p.get('producerProfile')=='normal-serve' and len(cmd)==10:
+  config=cmd[7]
+  normal=cmd==[exe,p['runtime']+'/bin/fmcad.js','queue','serve','--backend','mcp','--config',config,'--confirm-ownership','true'] and os.path.isabs(config) and os.path.realpath(config)==config and os.path.isfile(config)
+ require(worker or normal)
  children={task:open(base+'/task/'+task+'/children').read().split() for task in os.listdir(base+'/task')}
  require(not any(children.values()))
  if stopped:
@@ -213,6 +218,7 @@ export function inspectMetadataWorkerProcess(
   root: string,
   inventory: Array<{ path: string; entries: string[] }> = [],
   phase: "inspect" | "freeze" | "retire-frozen" = "inspect",
+  producerProfile: "successor-worker" | "normal-serve" = "successor-worker",
 ): Sdk1MetadataWorkerProcessResult {
   const input: Data = {
     owner,
@@ -223,6 +229,7 @@ export function inspectMetadataWorkerProcess(
     inventory,
     freeze: phase === "freeze",
     stopped: phase === "retire-frozen",
+    producerProfile,
     ...(apply || phase === "freeze"
       ? { expectedProcess: owner.processProof }
       : {}),

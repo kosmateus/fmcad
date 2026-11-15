@@ -144,7 +144,16 @@ const defaultRetirementPorts: NormalMetadataRetirementPorts = {
       load(
         "./dist/composition/queue-epoch-successor-retirement",
       ) as typeof import("./queue-epoch-successor-retirement")
-    ).inspectMetadataWorkerProcess(owner, runtime, refs, apply, root),
+    ).inspectMetadataWorkerProcess(
+      owner,
+      runtime,
+      refs,
+      apply,
+      root,
+      [],
+      "inspect",
+      "normal-serve",
+    ),
 };
 function fail(message: string): never {
   throw Object.assign(new Error(message), {
