@@ -102,6 +102,22 @@ const multiProcess = load("./live-normal-multidocument-processes") as {
     children: unknown[],
     readOriginal: (receipt: Record<string, unknown>) => Promise<unknown>,
   ): Promise<unknown>;
+  submitCancelableReadOnly(
+    queue: {
+      submit(input: Record<string, unknown>): Promise<{ id: string }>;
+    },
+    cfg: { backend: string },
+    requestId: string,
+    fingerprint: string,
+  ): Promise<{ id: string }>;
+  waitForCancelableJob(
+    queue: {
+      call(action: string, values?: Record<string, unknown>): Promise<unknown>;
+    },
+    jobId: string,
+    clientId: string,
+    requestId: string,
+  ): Promise<{ job: Record<string, unknown> }>;
   capture(
     queue: unknown,
     cfg: unknown,
@@ -228,7 +244,7 @@ test("independent runner inventory uses the typed run entrypoint and one origina
   assert.equal(waited, 1);
 });
 
-test("independent runner readiness observes original job state instead of stale admission receipts", async (t) => {
+test("independent runner readiness accepts a pending job with no SDK dispatch", async (t) => {
   const directory = fs.mkdtempSync(
     path.join(os.tmpdir(), "fmcad-runner-state-"),
   );
@@ -249,34 +265,148 @@ test("independent runner readiness observes original job state instead of stale 
     path.join(directory, "report.json"),
     JSON.stringify({ receipts: [receipt] }),
   );
-  let observations = 0;
-  const result = await multiProcess.waitForGroupReadJobs(
-    [
-      {
-        directory,
-        child: { exitCode: null, pid: 123 },
-        runner: { id: "runner" },
-      },
-    ],
-    async (original) => {
-      observations++;
-      assert.deepEqual(original, receipt);
-      return { ...job, state: "queued", dispatch: { rpcCount: 0 } };
-    },
-  );
-  assert.equal(observations, 1);
-  assert.deepEqual(result, [
+  const children = [
     {
-      runnerId: "runner",
-      pid: 123,
-      clientId: "owner",
-      requestId: "baseline",
-      jobId: "original-job",
-      state: "queued",
-      sdkRequestsSent: 0,
+      directory,
+      child: { exitCode: null, pid: 123 },
+      runner: { id: "runner" },
     },
-  ]);
+  ];
+  let observations = 0;
+  for (const state of ["preparing", "processing", "queued"]) {
+    const result = await multiProcess.waitForGroupReadJobs(
+      children,
+      async (original) => {
+        observations++;
+        assert.deepEqual(original, receipt);
+        return { ...job, state, dispatch: { rpcCount: 0 } };
+      },
+    );
+    assert.deepEqual(result, [
+      {
+        runnerId: "runner",
+        pid: 123,
+        clientId: "owner",
+        requestId: "baseline",
+        jobId: "original-job",
+        state,
+        sdkRequestsSent: 0,
+      },
+    ]);
+  }
+  assert.equal(observations, 3);
   assert.equal(job.state, "preparing");
+  for (const invalid of [
+    { ...job, id: "other-job", dispatch: { rpcCount: 0 } },
+    { ...job, clientId: "other-client", dispatch: { rpcCount: 0 } },
+    { ...job, requestId: "other-request", dispatch: { rpcCount: 0 } },
+    { ...job, startedAt: 1, dispatch: { rpcCount: 0 } },
+    { ...job, state: "sending", dispatch: { rpcCount: 0 } },
+    { ...job, state: "queued", dispatch: { rpcCount: 1 } },
+  ]) {
+    await assert.rejects(
+      multiProcess.waitForGroupReadJobs(children, async () => invalid),
+    );
+  }
+});
+
+test("cancel probe waits for the exact owner job to be queued and undispatched", async () => {
+  const job = {
+    id: "cancel-job",
+    clientId: "cancel-owner",
+    requestId: "cancel-request",
+  };
+  const states = ["preparing", "processing", "queued"];
+  let observations = 0;
+  const queue = {
+    async call(action: string, values?: Record<string, unknown>) {
+      assert.equal(action, "result");
+      assert.deepEqual(values, { jobId: "cancel-job" });
+      const state = states[observations++];
+      assert.ok(state);
+      return { job: { ...job, state, dispatch: { rpcCount: 0 } } };
+    },
+  };
+  const result = await multiProcess.waitForCancelableJob(
+    queue,
+    "cancel-job",
+    "cancel-owner",
+    "cancel-request",
+  );
+  assert.equal(observations, 3);
+  assert.equal(result.job["state"], "queued");
+
+  for (const invalid of [
+    { ...job, id: "other-job", state: "queued", dispatch: { rpcCount: 0 } },
+    {
+      ...job,
+      clientId: "other-owner",
+      state: "queued",
+      dispatch: { rpcCount: 0 },
+    },
+    {
+      ...job,
+      requestId: "other-request",
+      state: "queued",
+      dispatch: { rpcCount: 0 },
+    },
+    { ...job, state: "queued", startedAt: 1, dispatch: { rpcCount: 0 } },
+    { ...job, state: "queued", dispatch: { rpcCount: 1 } },
+    { ...job, state: "sending", dispatch: { rpcCount: 0 } },
+  ]) {
+    await assert.rejects(
+      multiProcess.waitForCancelableJob(
+        {
+          async call() {
+            return { job: invalid };
+          },
+        },
+        "cancel-job",
+        "cancel-owner",
+        "cancel-request",
+      ),
+    );
+  }
+});
+
+test("cancel probe submits a queued read-only RPC rather than a phased command", async () => {
+  let submitted: Record<string, unknown> | undefined;
+  const result = await multiProcess.submitCancelableReadOnly(
+    {
+      async submit(input) {
+        submitted = input;
+        return { id: "cancel-job" };
+      },
+    },
+    { backend: "mcp" },
+    "cancel-request",
+    "build-fingerprint",
+  );
+  assert.equal(result.id, "cancel-job");
+  assert.deepEqual(submitted, {
+    requestId: "cancel-request",
+    kind: "rpc",
+    timeoutMs: 180000,
+    backend: "mcp",
+    buildHash: "build-fingerprint",
+    payload: {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "fusion_mcp_execute",
+        arguments: {
+          featureType: "script",
+          object: {
+            readOnly: true,
+            script:
+              'def run(context: str) -> None:\n    print("FMCAD_CANCEL_MUST_NOT_DISPATCH")\n',
+          },
+        },
+      },
+    },
+    description: "Owner cancellation probe: cancel-request",
+  });
 });
 
 test("final independent-runner verification reads queue-summary and rejects missing or unresolved evidence", async () => {

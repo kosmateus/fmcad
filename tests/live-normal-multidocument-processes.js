@@ -315,18 +315,12 @@ async function waitForGroupReadJobs(children, readOriginal) {
       }
       const job = await readOriginal(receipt);
       const rpcCount = Number(job.dispatch?.rpcCount || 0);
-      if (
-        ["preparing", "processing"].includes(String(job.state)) &&
-        rpcCount === 0
-      ) {
-        ready = false;
-        continue;
-      }
-      assert.equal(
-        job.state,
-        "queued",
-        "Runner read must wait behind the hold",
+      assert.equal(job.id, receipt.job.id);
+      assert.ok(
+        ["preparing", "processing", "queued"].includes(String(job.state)),
+        "Runner read must remain pending behind the hold",
       );
+      assert.equal(job.startedAt ?? null, null);
       assert.equal(job.clientId, receipt.clientId);
       assert.equal(job.requestId, receipt.requestId);
       assert.equal(rpcCount, 0);
@@ -397,6 +391,33 @@ async function submitReadOnly(
   });
 }
 
+async function submitCancelableReadOnly(queue, cfg, requestId, fingerprint) {
+  return queue.submit({
+    requestId,
+    kind: "rpc",
+    timeoutMs: 180000,
+    backend: cfg.backend,
+    buildHash: fingerprint,
+    payload: {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "fusion_mcp_execute",
+        arguments: {
+          featureType: "script",
+          object: {
+            readOnly: true,
+            script:
+              'def run(context: str) -> None:\n    print("FMCAD_CANCEL_MUST_NOT_DISPATCH")\n',
+          },
+        },
+      },
+    },
+    description: "Owner cancellation probe: " + requestId,
+  });
+}
+
 async function observeJob(queue, jobId, accept) {
   for (;;) {
     const value = object(await queue.call("result", { jobId }));
@@ -409,6 +430,21 @@ async function observeJob(queue, jobId, accept) {
       );
     await delay(25);
   }
+}
+
+async function waitForCancelableJob(queue, jobId, clientId, requestId) {
+  return observeJob(queue, jobId, (job) => {
+    assert.equal(job.id, jobId);
+    assert.equal(job.clientId, clientId);
+    assert.equal(job.requestId, requestId);
+    assert.ok(
+      ["preparing", "processing", "queued"].includes(String(job.state)),
+      "Cancel probe must remain pending until it is cancellable",
+    );
+    assert.equal(job.startedAt ?? null, null);
+    assert.equal(Number(job.dispatch?.rpcCount || 0), 0);
+    return job.state === "queued";
+  });
 }
 
 async function waitWithResponseRecovery(queue, jobId, requestId) {
@@ -492,7 +528,7 @@ print("FMCAD_MULTI_PROCESS_HOLD_SETTLED")`,
     summary.faultProbe.holdStarted = started.job;
     releaseRunners();
     runnersReleased = true;
-    summary.faultProbe.queuedRunnerProcesses = await waitForGroupReadJobs(
+    summary.faultProbe.pendingRunnerProcesses = await waitForGroupReadJobs(
       processes,
       async (receipt) => {
         let reader = readers.get(receipt.clientId);
@@ -520,20 +556,19 @@ print("FMCAD_MULTI_PROCESS_HOLD_SETTLED")`,
       targetClientId: holdQueue.auth.clientId,
       callerClientId: cancelQueue.auth.clientId,
     };
-    const cancelJob = await submitReadOnly(
+    const cancelJob = await submitCancelableReadOnly(
       cancelQueue,
       cfg,
-      directory,
       ids.cancel,
-      'print("FMCAD_CANCEL_MUST_NOT_DISPATCH")',
       fingerprint,
     );
-    const queuedCancel = await observeJob(
+    const queuedCancel = await waitForCancelableJob(
       cancelQueue,
       cancelJob.id,
-      (job) =>
-        job.state === "queued" && Number(job.dispatch?.rpcCount || 0) === 0,
+      cancelQueue.auth.clientId,
+      ids.cancel,
     );
+    assert.equal(queuedCancel.job.state, "queued");
     const cancelled = object(
       await cancelQueue.call("cancel", { jobId: cancelJob.id }),
     );
@@ -625,7 +660,12 @@ print("FMCAD_MULTI_PROCESS_HOLD_SETTLED")`,
     assert.equal(lostResult.job.requestId, ids.lost);
     assert.equal(lostResult.job.clientId, lostQueue.auth.clientId);
     assert.equal(lostResult.job.state, "succeeded");
-    assert.equal(lostResult.job.dispatch?.rpcCount, 1);
+    // MCP includes initialize and notifications/initialized before its one
+    // tools/call; a replay would add another dispatch to the same job.
+    assert.equal(
+      lostResult.job.dispatch?.rpcCount,
+      cfg.backend === "mcp" ? 3 : 1,
+    );
     assert.equal(lostResult.execution.sdkSettled, true);
     assert.equal(followerResult.job.clientId, continuationQueue.auth.clientId);
     assert.equal(followerResult.job.state, "succeeded");
@@ -906,6 +946,8 @@ module.exports = {
   groupManifest,
   parseOptions,
   submitWithResponseRecovery,
+  submitCancelableReadOnly,
+  waitForCancelableJob,
   verifyRunnerReports,
   waitWithResponseRecovery,
 };
