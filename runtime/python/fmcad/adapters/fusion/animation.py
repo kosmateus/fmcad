@@ -261,11 +261,10 @@ def _animation_sample(ctx: "CadContext", data: "JsonObject") -> "JsonRecord":
                     raise ValueError('Original ' + key + ' is outside joint limits; cannot safely restore')
             if key not in track:
                 continue
-            track_range = track[key]
-            _cad_fields(track_range, ('from', 'to'))
+            range_record = _cad_cast("JsonObject", track[key])
+            _cad_fields(range_record, ('from', 'to'))
             if key not in original:
                 raise ValueError('Joint does not expose ' + prop)
-            range_record = _cad_cast("JsonObject", track_range)
             start, finish = [evaluator(range_record[k]) for k in ('from', 'to')]
             typed_motion = _cad_cast("_AnimationJointMotion", motion)
             limits = typed_motion.rotationLimits if key == 'rotation' else typed_motion.slideLimits

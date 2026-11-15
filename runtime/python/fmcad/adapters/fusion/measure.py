@@ -549,9 +549,8 @@ def _measure_motion(ctx: "CadContext", data: "JsonObject") -> "JsonObject":
 
 def _measure_check(ctx: "CadContext", data: "JsonObject") -> "JsonObject":
     _cad_fields(data, ('measurement',), ('min', 'max', 'expected', 'tolerance', 'id', 'source'))
-    spec = data['measurement']
+    spec = _cad_cast("JsonObject", data['measurement'])
     _cad_fields(spec, ('operation', 'data'))
-    spec = _cad_cast("JsonObject", spec)
     if spec['operation'] not in _MEASURE_SCALARS:
         raise ValueError('check requires a scalar measure operation')
     if not any(k in data for k in ('min', 'max', 'expected')):
