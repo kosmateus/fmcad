@@ -12,8 +12,8 @@ def _assembly_nested_options(data: "JsonObject") -> None:
     if 'sharedParentPolicy' in data and data['sharedParentPolicy'] != 'allInstances':
         raise ValueError('sharedParentPolicy must be allInstances')
 
-def _assembly_pose_delta(before: list[int | float],
-                         after: list[int | float]) -> tuple[float, float]:
+def _assembly_pose_delta(before: 'list[int | float]',
+                         after: 'list[int | float]') -> 'tuple[float, float]':
     linear = _assembly_domain_math.sqrt(sum((before[i] - after[i]) ** 2 for i in (3, 7, 11)))
     trace = sum(before[4 * row + column] * after[4 * row + column]
                 for row in range(3) for column in range(3))
