@@ -1281,7 +1281,7 @@
       "reviewedBinding": "The historical direct close helper was replaced by a branch: non-group cleanup still asserts d.close(False), while grouped cleanup uses ownedCleanupSource with the exact document and original active identity. The source refactor does not prove native cleanup.",
       "requiredObservation": "script(\n          index,\n          \"close\",\n          `${guard(document)}\nassert d.close(False)\nprint('FMCAD_RESULT '+json.dumps(dict(closed=True,creationId=${JSON.stringify(document.creationId)})))`,\n          document,\n        )",
       "reviewedContext": "owned-close-and-full-baseline-restoration",
-      "sourceSha256": "1bcf6831378c871c31c0c902e2b2807cdaa53d44aef5d08086f619ae0d8ffb54",
+      "sourceSha256": "68926370b6ec88795ffeabea7f4dce7907fa22220246023ed80cf2cf00f69c06",
       "reason": "The exact historical observation was removed by 6b8ec5f8f82069b0701b8c8881178c30f5bd77e1 from predecessor a365989c3eab56bbb51841be56f92998351847c4; its current source replacement is reviewed without claiming native qualification.",
       "runnerSource": "tests/live-normal-multidocument.ts",
       "nativeObligation": "owned-close-and-full-baseline-restoration:3598b94c2025217faac7-1",
