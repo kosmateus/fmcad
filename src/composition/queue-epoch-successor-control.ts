@@ -21,7 +21,7 @@ import type { NormalCurrentStoreApproval } from "./queue-normal-cold-successor";
 const load = createRequire(
   path.join(__dirname, "../../queue-epoch-successor-control.js"),
 );
-const { normalColdProfile, normalCurrentTarget, prepareNormalCurrentFacts, parseNormalCurrentFacts, validateNormalCurrentFacts } = load("./dist/composition/queue-normal-cold-successor") as typeof import("./queue-normal-cold-successor");
+const { normalColdProfile, normalCurrentTarget, prepareNormalCurrentFacts, parseNormalCurrentFacts, validateNormalCurrentFacts, inspectNormalCurrentFactsRetry } = load("./dist/composition/queue-normal-cold-successor") as typeof import("./queue-normal-cold-successor");
 const { readJson, idle } = load("./queue-instance") as {
   readJson(file: string, max: number): unknown;
   idle(instance: unknown): boolean;
@@ -73,6 +73,18 @@ export function createSuccessorControl(p: SuccessorControlPorts) {
     audit = checked.audit,
     predecessor = checked.pointer;
   const normal = a["normalCurrentStore"] as NormalCurrentStoreApproval | undefined;
+  const priorNormalRetry = a["priorNormalCurrentFactsRetry"] as Reference | undefined;
+  const normalRetryCandidate = priorNormalRetry === undefined ? undefined : (() => {
+    if (!normal || !a.expectedProcess)
+      fail("NORMAL_SUCCESSOR_UNPROVEN", "A fresh current-facts attempt requires its exact normal scope and selected process");
+    return inspectNormalCurrentFactsRetry(p.dir, priorNormalRetry, {
+      requestId: a.requestId,
+      sourceCommit: a.sourceCommit,
+      buildHash: a.buildHash,
+      qualification: a.qualification,
+      expectedProcess: a.expectedProcess,
+    }).candidate;
+  })();
   const normalTarget = normal ? normalCurrentTarget(normal) : null;
   const oldIntent = normal ? null : read<{ identity: AuditIdentity }>(
     path.join(
@@ -254,6 +266,10 @@ export function createSuccessorControl(p: SuccessorControlPorts) {
           expectedProcess: a.expectedProcess,
           successorAuthorityHash: p.authority.sha256,
           ...(normal ? { normalCurrentStore: normal } : {}),
+          ...(priorNormalRetry === undefined ? {} : {
+            priorNormalCurrentFactsRetry: priorNormalRetry,
+            normalCurrentFactsRetryCandidate: normalRetryCandidate,
+          }),
         },
       };
     },

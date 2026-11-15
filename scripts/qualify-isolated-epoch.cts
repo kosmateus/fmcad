@@ -243,8 +243,10 @@ async function main() {
     undefined,
   );
   if (options["--normal-currentstore"] === "true") {
-    const normal = load(runtime + "/src/dist/composition/queue-normal-cold-successor") as { prepareNormalCurrentFacts: ReaderFactory; retireNormalMetadataProducer?: unknown };
+    const normal = load(runtime + "/src/dist/composition/queue-normal-cold-successor") as { prepareNormalCurrentFacts: ReaderFactory; retireNormalMetadataProducer?: unknown; authorizeNormalCurrentFactsRetry?: unknown; inspectNormalCurrentFactsRetry?: unknown; retireNormalCurrentFactsRetryProducer?: unknown };
     assert.equal(typeof normal.retireNormalMetadataProducer, "function", "Normal metadata retirement must compose the existing kernel, not require an ad-hoc signal");
+    for (const operation of ["authorizeNormalCurrentFactsRetry", "inspectNormalCurrentFactsRetry", "retireNormalCurrentFactsRetryProducer"] as const)
+      assert.equal(typeof normal[operation], "function", "Qualified normal runtime must retain the explicit completed-read transition port");
     const normalIdentity = { kind: "normal-currentstore-v1", resolvedIdentity: { creationId: randomUUID(), name: "FMCAD_MULTI_" + randomUUID() } };
     const binding = { purpose: "normal-currentstore-current-facts-v1", expectedProcess: { pid: current.pid, birth: current.birth } };
     const reader = normal.prepareNormalCurrentFacts(runtime, normalIdentity, binding);

@@ -165,12 +165,28 @@ interface RuntimeModules {
 }
 
 const runtime = {
-  normalColdAction: (client: QueueClientPort, action: string, requestId: string, authorizationFile?: string, options: Record<string, string> = {}) => {
+  normalColdAction: async (client: QueueClientPort, action: string, requestId: string, authorizationFile?: string, options: Record<string, string> = {}) => {
     const normal = runtimeRequire("../../dist/composition/queue-normal-cold-successor.js") as typeof import("../composition/queue-normal-cold-successor");
     const sealed = client as unknown as import("../composition/queue-epoch-successor-types").Client;
-    if (!authorizationFile) throw new Error("Exact normal target or job-owner authorization reference required");
+    if (!authorizationFile) throw new Error("Exact normal target, job-owner authorization or fresh read-attempt reference required");
     const file = path.resolve(authorizationFile);
     const { reference } = runtimeRequire("../../queue-epoch-lineage.js") as typeof import("../queue-epoch-lineage");
+    if (action === "authorize-normal-currentfacts-retry") {
+      const input = JSON.parse(fs.readFileSync(file, "utf8")) as {
+        evidence: Parameters<typeof normal.authorizeNormalCurrentFactsRetry>[1];
+        candidate: Parameters<typeof normal.authorizeNormalCurrentFactsRetry>[2];
+      };
+      if (Object.keys(input).sort().join() !== "candidate,evidence" || input.candidate.requestId !== requestId ||
+          Object.keys(input.evidence).sort().join() !== "physicalResult,previousAuthority,previousRequestId,validationFailure")
+        throw new Error("Exact fresh normal read request and immutable prior read references required; no caller-supplied queue summary");
+      const queueSummary = await client.call("queue-summary") as Parameters<typeof normal.authorizeNormalCurrentFactsRetry>[1]["queueSummary"];
+      return normal.authorizeNormalCurrentFactsRetry(sealed, { ...input.evidence, queueSummary }, input.candidate);
+    }
+    if (action === "retire-normal-currentfacts-producer") {
+      const grant = JSON.parse(fs.readFileSync(file, "utf8")) as { candidate: { requestId: string } };
+      if (grant.candidate.requestId !== requestId) throw new Error("Normal read producer retirement request differs from its immutable attempt");
+      return normal.retireNormalCurrentFactsRetryProducer(sealed, reference(file), options["apply"] === "true");
+    }
     if (action === "authorize-normal-successor") return normal.authorizeNormalCurrentStore(sealed, requestId, reference(file));
     if (action === "retire-normal-metadata-producer") return normal.retireNormalMetadataProducer(sealed, requestId, reference(file), reference(path.resolve(options["sdk-death-proof"]!)), path.resolve(options["producer-runtime"]!), options["apply"] === "true");
     return normal.recordNormalProducerRetirement(sealed, requestId, reference(file));
@@ -335,6 +351,8 @@ const summaries = {
   "successor-epoch":
     "Owner-authenticated metadata-only startup for an exactly pinned dead predecessor and qualified successor runtime; no SDK or grant copying. Requires --request-id and --succession-approval, plus --preflight true or --confirm-ownership true.",
   "authorize-normal-successor": "SDK0 original-job-owner authorization for the qualified normal-currentstore ABI; requires a fresh --request-id, --normal-target and --confirm-ownership true. Never reads credential-bearing job requests or clears unknown work.",
+  "authorize-normal-currentfacts-retry": "SDK0 authorize a fresh normal read attempt only after exact terminal SDK-succeeded read-only evidence and validator failure; requires --normal-read-attempt-approval, a fresh --request-id and --confirm-ownership true. Preserves the failed attempt and never retries unknown or mutating work.",
+  "retire-normal-currentfacts-producer": "Preview, or with --apply true retire once, the exact metadata producer of a completed rejected normal read; requires --normal-read-attempt, matching --request-id and --confirm-ownership true. Never closes Fusion or replays a signal.",
   "record-normal-producers-retired": "Record exact old-SDK and producer absence before a selected new SDK starts; requires epoch owner, --request-id, --job-authorization and --confirm-ownership true. Never signals processes.",
   "retire-normal-metadata-producer": "Preview the exact normal metadata owner through the existing pidfd kernel after authentic SDK death; --apply true permits its single pinned retirement. Requires epoch owner, --request-id, --job-authorization, --sdk-death-proof, --producer-runtime and --confirm-ownership true. Never closes/restarts Fusion or clears unknown jobs.",
   "observe-successor":
@@ -435,6 +453,8 @@ function parse(argv: string[]): { opts: QueueOptions; rest: string[] } {
     "facts-approval",
     "succession-approval",
     "normal-target",
+    "normal-read-attempt-approval",
+    "normal-read-attempt",
     "job-authorization",
     "sdk-death-proof",
     "producer-runtime",
@@ -480,13 +500,18 @@ export async function queueCommand(
   const captureAction = name === "capture-audit-facts";
   const factsApprovalAction = name === "authorize-isolated-scratch";
   const successorAction = name === "successor-epoch";
-  const normalColdAction = ["authorize-normal-successor", "record-normal-producers-retired", "retire-normal-metadata-producer"].includes(name);
-  const normalRequired = name === "retire-normal-metadata-producer" ? ["job-authorization", "sdk-death-proof", "producer-runtime"] : [name === "record-normal-producers-retired" ? "job-authorization" : "normal-target"];
+  const normalColdAction = ["authorize-normal-successor", "record-normal-producers-retired", "retire-normal-metadata-producer", "authorize-normal-currentfacts-retry", "retire-normal-currentfacts-producer"].includes(name);
+  const normalRetirement = ["retire-normal-metadata-producer", "retire-normal-currentfacts-producer"].includes(name);
+  const normalRequired = name === "authorize-normal-currentfacts-retry" ? ["normal-read-attempt-approval"]
+    : name === "retire-normal-currentfacts-producer" ? ["normal-read-attempt"]
+    : name === "retire-normal-metadata-producer" ? ["job-authorization", "sdk-death-proof", "producer-runtime"] : [name === "record-normal-producers-retired" ? "job-authorization" : "normal-target"];
   if (normalColdAction && (!opts["request-id"] || opts["confirm-ownership"] !== "true" || rest.length ||
       normalRequired.some(key => !opts[key]) ||
-      Object.keys(opts).some(key => !["request-id", "confirm-ownership", "config", ...normalRequired, ...(name === "retire-normal-metadata-producer" ? ["apply"] : [])].includes(key))))
+      Object.keys(opts).some(key => !["request-id", "confirm-ownership", "config", ...normalRequired, ...(normalRetirement ? ["apply"] : [])].includes(key))))
     throw new Error("Normal cold successor metadata actions require exact fresh request, sealed owner and explicit confirmation; no overrides");
-  if (["apply", "sdk-death-proof", "producer-runtime"].some(key => opts[key] !== undefined) && (name !== "retire-normal-metadata-producer" || (opts["apply"] !== undefined && opts["apply"] !== "true"))) throw new Error("Pinned normal metadata retirement flags require retire-normal-metadata-producer and explicit --apply true for an effect");
+  if (opts["apply"] !== undefined && (!normalRetirement || opts["apply"] !== "true")) throw new Error("Pinned normal metadata retirement requires explicit --apply true for an effect");
+  if (["sdk-death-proof", "producer-runtime"].some(key => opts[key] !== undefined) && name !== "retire-normal-metadata-producer") throw new Error("Original SDK death/runtime flags require retire-normal-metadata-producer");
+  if (["normal-read-attempt-approval", "normal-read-attempt"].some(key => opts[key] !== undefined) && !normalColdAction) throw new Error("Fresh normal read flags are restricted to normal read attempt actions");
   if (!normalColdAction && opts["job-authorization"] !== undefined) throw new Error("--job-authorization is restricted to normal producer retirement");
   if (!normalColdAction && opts["normal-target"] !== undefined) throw new Error("--normal-target is restricted to normal cold authorization");
   const closedSuccessorAction = name === "authorize-closed-successor";
@@ -843,6 +868,8 @@ export async function queueCommand(
         "authorize-isolated-scratch",
         "successor-epoch",
         "authorize-normal-successor",
+        "authorize-normal-currentfacts-retry",
+        "retire-normal-currentfacts-producer",
         "record-normal-producers-retired",
         "retire-normal-metadata-producer",
         "observe-successor",
@@ -858,7 +885,7 @@ export async function queueCommand(
   if (normalColdAction) {
     try {
       if (!runtime.normalColdAction) throw new Error("Normal currentstore successor is unsupported by this runtime");
-      write(await runtime.normalColdAction(client, name, opts["request-id"]!, opts["job-authorization"] ?? opts["normal-target"], opts));
+      write(await runtime.normalColdAction(client, name, opts["request-id"]!, opts["job-authorization"] ?? opts["normal-target"] ?? opts["normal-read-attempt-approval"] ?? opts["normal-read-attempt"], opts));
       return 0;
     } finally { client.dispose(); }
   }

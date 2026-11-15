@@ -532,11 +532,47 @@ test("FAKE backend succession: another cold scope without a current transition v
 
 test("a normal read-attempt link cannot authorize an isolated or atomic successor", (t) => {
   const f = backendFixture(t);
-  const untrusted = JSON.parse(JSON.stringify({ ...f.approval,
-    priorNormalCurrentFactsRetry: f.approval.qualification }));
-  assert.throws(() => assertSuccessorApproval(f.inspection, untrusted), {
-    code: "NORMAL_SUCCESSOR_UNPROVEN",
+  for (const link of [null, false, {}, f.approval.qualification]) {
+    const untrusted = JSON.parse(JSON.stringify({ ...f.approval,
+      priorNormalCurrentFactsRetry: link }));
+    assert.throws(() => assertSuccessorApproval(f.inspection, untrusted), {
+      code: "NORMAL_SUCCESSOR_UNPROVEN",
+    });
+  }
+});
+
+test("fresh normal bootstrap keeps preserved creation identity separate from the retired read-worker lifecycle", (t) => {
+  const base = fs.mkdtempSync("/tmp/opencode/normal-retry-bootstrap-");
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const f = (load("./fixtures/dead-epoch-successor.cjs") as (base: string, repo: string) => DeadEpochFixture)(base, repository);
+  assertSuccessorApproval(f.inspection, f.approval);
+  const normal = load("../src/dist/composition/queue-normal-cold-successor") as Record<string, unknown>;
+  const original = normal["inspectNormalCurrentFactsRetry"];
+  t.after(() => { normal["inspectNormalCurrentFactsRetry"] = original; });
+  const priorFile = path.join(base, "previous-read-authority.json");
+  const workerBuild = "e".repeat(64);
+  api.durable(priorFile, { buildHash: workerBuild });
+  const normalStore = { kind: "normal-currentstore-v1", jobAuthorization: f.approval.qualification,
+    deathProof: f.approval.qualification, producerRetirement: f.approval.qualification };
+  const approval = JSON.parse(JSON.stringify({ ...f.approval, purpose: "dead-normal-currentstore-successor-v1",
+    normalCurrentStore: normalStore, priorNormalCurrentFactsRetry: f.approval.qualification }));
+  normal["inspectNormalCurrentFactsRetry"] = () => ({ previousAuthority: lineage.reference(priorFile),
+    originalNormalStore: normalStore, currentOwner: f.previousOwner, candidateRoot: f.approval.candidateRoot });
+  const inspection = { ...f.inspection, approval,
+    qualification: { ...f.inspection.qualification, normalCurrentStoreSuccessorQualified: true },
+    previousLifecycle: { ...f.inspection.previousLifecycle, buildHash: workerBuild } };
+  assert.notEqual(workerBuild, inspection.identity.buildHash);
+  assertSuccessorApproval(inspection, approval);
+  assert.throws(() => assertSuccessorApproval({ ...inspection, previousLifecycle: f.inspection.previousLifecycle }, approval), {
+    code: "EPOCH_SUCCESSOR_FENCE_CHANGED",
   });
+  const wrongOwner = JSON.parse(JSON.stringify({ ...approval, previousOwner: { ...approval.previousOwner, nonce: "foreign" } }));
+  assert.throws(() => assertSuccessorApproval(inspection, wrongOwner), { code: "NORMAL_SUCCESSOR_UNPROVEN" });
+  const wrongScope = JSON.parse(JSON.stringify({ ...approval, normalCurrentStore: { ...normalStore,
+    jobAuthorization: { ...normalStore.jobAuthorization, sha256: "f".repeat(64) } } }));
+  assert.throws(() => assertSuccessorApproval(inspection, wrongScope), { code: "NORMAL_SUCCESSOR_UNPROVEN" });
+  const wrongRuntime = JSON.parse(JSON.stringify({ ...approval, candidateRoot: path.join(base, "foreign-runtime") }));
+  assert.throws(() => assertSuccessorApproval(inspection, wrongRuntime), { code: "NORMAL_SUCCESSOR_UNPROVEN" });
 });
 
 test("FAKE normal runtime upgrade binds creation to the original authorized normal pair, not the historical quarantine pair", (t) => {

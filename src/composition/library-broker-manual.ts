@@ -49,6 +49,10 @@ const returns: Record<string, string> = {
     "Returns an exact dead-predecessor preflight or metadata-ready/pending successor bootstrap receipt with source/build and owner evidence. SDK0: current observation, proven-new document creation and a new grant are separate actions. No old model, grant or historical outcome is adopted or replayed.",
   "authorize-normal-successor":
     "Returns an immutable authorization reference bound to the original registered job owner, explicit normal target and unchanged currentstore. SDK0: no request bytes or raw credentials are copied, no SDK runs and unknown work is not settled. A separately authenticated epoch owner must approve the cold successor.",
+  "authorize-normal-currentfacts-retry":
+    "Returns a one-shot normal read-attempt reference bound to a terminal SDK-succeeded read-only observation, its separate validator failure, the exact owner and a fresh qualified candidate. SDK0: preserves all prior results and refuses unknown, active or mutating work.",
+  "retire-normal-currentfacts-producer":
+    "Returns an exact prior normal read metadata-producer preview or once-only pidfd retirement receipt. Requires the immutable fresh-attempt reference and matching request. Never closes Fusion, repeats a signal or settles historical work.",
   "record-normal-producers-retired":
     "Returns an immutable OS absence receipt after the exact old SDK and all currentstore producers have exited, before a new SDK starts. Never signals, closes or restarts processes. Missing, reused or uncertain identities refuse recovery; this is not historical SDK settlement.",
   "retire-normal-metadata-producer":
@@ -105,7 +109,7 @@ export const manuals: Record<string, CommandManual> = Object.fromEntries(
           "tests/console-pause.test.ts",
           "tests/phased-queue.test.js",
           "tests/queue-probe-recovery.test.ts",
-          ...(["authorize-normal-successor", "record-normal-producers-retired", "retire-normal-metadata-producer"].includes(action) ? ["tests/normal-currentstore-successor.test.ts"] : []),
+          ...(["authorize-normal-successor", "record-normal-producers-retired", "retire-normal-metadata-producer", "authorize-normal-currentfacts-retry", "retire-normal-currentfacts-producer"].includes(action) ? ["tests/normal-currentstore-successor.test.ts"] : []),
         ],
         verified: [
           "Offline parsing and typed broker records",

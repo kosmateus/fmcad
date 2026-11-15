@@ -368,9 +368,29 @@ function assertPriorAbortedSuccessor(
       "A new successor approval must explicitly link every prior terminal retirement",
     );
 }
-export function assertSuccessorApproval(value: Inspection, approval: Approval) {
-  if (approval.priorNormalCurrentFactsRetry && !approval.normalCurrentStore)
+function normalReadRetry(root: string, approval: Approval) {
+  if (approval.priorNormalCurrentFactsRetry === undefined) return undefined;
+  if (!approval.normalCurrentStore)
     fail("NORMAL_SUCCESSOR_UNPROVEN", "A fresh normal read attempt cannot authorize isolated or atomic work");
+  const normal = load("./dist/composition/queue-normal-cold-successor") as typeof import("./queue-normal-cold-successor");
+  const retry = normal.inspectNormalCurrentFactsRetry(root, approval.priorNormalCurrentFactsRetry, {
+    requestId: approval.requestId,
+    sourceCommit: approval.sourceCommit,
+    buildHash: approval.buildHash,
+    qualification: approval.qualification,
+    expectedProcess: approval.expectedProcess,
+  });
+  if (approval.candidateRoot !== retry.candidateRoot ||
+      !same(approval.normalCurrentStore, retry.originalNormalStore) ||
+      !same(approval.previousOwner, retry.currentOwner))
+    fail("NORMAL_SUCCESSOR_UNPROVEN", "Fresh normal read must retain its qualified runtime, original scope and exact retired metadata owner");
+  return retry;
+}
+
+export function assertSuccessorApproval(value: Inspection, approval: Approval) {
+  if (approval.priorNormalCurrentFactsRetry !== undefined && !approval.normalCurrentStore)
+    fail("NORMAL_SUCCESSOR_UNPROVEN", "A fresh normal read attempt cannot authorize isolated or atomic work");
+  const retry = normalReadRetry(value.root, approval);
   let effectiveIdentity = value.identity;
   if (value.backendTransition) {
     if (
@@ -421,7 +441,9 @@ export function assertSuccessorApproval(value: Inspection, approval: Approval) {
     approval.pointerHash !== value.snapshot.pointer.sha256 ||
     !same(approval.previousOwner, value.previousOwner) ||
     !same(value.previousLifecycle?.owner, value.previousOwner) ||
-    value.previousLifecycle.buildHash !== effectiveIdentity.buildHash ||
+    value.previousLifecycle.buildHash !== (retry
+      ? read<Checked["authority"]>(retry.previousAuthority.path).buildHash
+      : effectiveIdentity.buildHash) ||
     value.previousLifecycle.configHash !== value.configHash ||
     !["ready", "recovery"].includes(value.previousLifecycle.stage) ||
     approval.stateHash !== value.snapshot.state.sha256 ||
@@ -502,7 +524,9 @@ export function inspectSuccessor(
   const activeSuccession = exists<{ version: number; authority: Reference }>(
     path.join(root, "active-epoch-succession.json"),
   );
-  if (activeSuccession && !same(pointer.succession, activeSuccession.authority))
+  const retry = normalReadRetry(root, approval);
+  if (activeSuccession && !same(pointer.succession, activeSuccession.authority) &&
+      !(retry && same(retry.previousAuthority, activeSuccession.authority)))
     fail(
       "EPOCH_SUCCESSOR_PENDING",
       "An unconsumed successor authority already owns this predecessor; unknown creation must not be bypassed by a new request",
@@ -618,6 +642,8 @@ export function assertCurrentPredecessor(
 ) {
   const value = successionAuthority(root, authorityEntry),
     a = value.authority;
+  if (a["priorNormalCurrentFactsRetry"] !== undefined && !a["normalCurrentStore"])
+    fail("NORMAL_SUCCESSOR_UNPROVEN", "A normal read-attempt link cannot authorize isolated or atomic work");
   assertPriorAbortedSuccessor(
     root,
     a.predecessor.pointer.sha256,
@@ -887,7 +913,7 @@ export async function bootstrapSuccessor(
       permission: "one-proven-new-document-only",
       historicalOutcome: "unknown",
       ...(value.approval.normalCurrentStore ? { normalCurrentStore: value.approval.normalCurrentStore } : {}),
-      ...(value.approval.priorNormalCurrentFactsRetry ? { priorNormalCurrentFactsRetry: value.approval.priorNormalCurrentFactsRetry } : {}),
+      ...(value.approval.priorNormalCurrentFactsRetry !== undefined ? { priorNormalCurrentFactsRetry: value.approval.priorNormalCurrentFactsRetry } : {}),
       ...(value.approval.priorRetiredSuccessor
         ? { priorRetiredSuccessor: value.approval.priorRetiredSuccessor }
         : value.approval.priorAbortedSuccessor
