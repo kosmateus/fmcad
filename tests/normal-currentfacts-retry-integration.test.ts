@@ -104,7 +104,8 @@ def normal_currentstore_facts(creation_id: str, document_name: str) -> dict[str,
   candidate.qualification = ref(qualificationFile);
   const evidence = { previousRequestId: f.baseRequestId, previousAuthority, physicalResult: ref(receipt),
     validationFailure: ref(path.join(directory, "result.json")), queueSummary: {
-      sourceCommit: authority.sourceCommit, buildHash: authority.buildHash, stopping: false,
+      sourceCommit: authority.sourceCommit, buildHash: authority.buildHash, stopping: false, paused: false,
+      historicalOutcome: "unknown", historicalModelValidation: "not_performed",
       held: "metadata only", deadEpochSuccessor: { requestId: f.baseRequestId, expectedProcess: f.expectedProcess,
         predecessorEpochId: f.p.epochId, currentFactsAvailable: false, observationRequestId: key.requestId,
         creationRequestId: f.baseRequestId + ":create", historicalOutcome: "unknown" },
@@ -156,7 +157,7 @@ def normal_currentstore_facts(creation_id: str, document_name: str) -> dict[str,
   osApi.priorProcessAlive = process => process.pid === f.expectedProcess.pid || (nextAlive && process.pid === nextOwner.pid);
   osApi.buildHash = () => candidate.buildHash;
   osApi.brokerConfigHash = () => f.p.configHash;
-  const platform = load("../src/dist/config-platform") as { resolveRuntimePaths(input: unknown): Record<string, unknown> };
+  const platform = load("../src/dist/config-platform/runtime-paths") as { resolveRuntimePaths(input: unknown): Record<string, unknown> };
   const resolvePaths = platform.resolveRuntimePaths;
   platform.resolveRuntimePaths = input => ({ ...resolvePaths(input), installation: repo });
   const successorEntry = load.resolve("../src/dist/composition/queue-epoch-successor");

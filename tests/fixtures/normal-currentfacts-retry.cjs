@@ -25,9 +25,11 @@ function createFixture(t, repo) {
   const jobClient = { dir, auth: { clientId: p.jobClientId, clientToken: 'synthetic-job-token' } };
   const epochClient = { dir, auth: { clientId: p.epochClientId, clientToken: 'synthetic-epoch-token' } };
   const owner = { ...p.metadata, nonce: randomUUID(), protocol: 2 };
-  const pointer = { epochId: p.epochId, root: epoch, ownerClientId: p.epochClientId,
+  const pointer = { version: 1, kind: 'isolated-fresh-scratch-epoch', epochId: p.epochId, root: epoch, ownerClientId: p.epochClientId,
     ownerTokenHash: hash(epochClient.auth.clientToken), currentInstance: p.sdk,
-    document: { creationId: randomUUID(), fileId: null } };
+    historicalOutcome: 'unknown', originalModelValidation: 'not_performed', originalRollbackVerification: 'not_performed',
+    restoreActiveCreationId: null,
+    document: { creationId: randomUUID(), fileId: null, name: 'FMCAD_ISOLATED_' + p.epochId } };
   write(path.join(dir, 'clients.json'), { [p.jobClientId]: hash(jobClient.auth.clientToken),
     [p.epochClientId]: hash(epochClient.auth.clientToken) });
   write(path.join(dir, 'broker.lock'), owner);
@@ -38,9 +40,28 @@ function createFixture(t, repo) {
     configHash: p.configHash, instance: p.sdk };
   write(path.join(dir, 'instance.json'), identity);
   write(path.join(epoch, 'instance.json'), { buildHash: p.buildHash, configHash: p.configHash, instance: p.sdk });
-  const close = path.join(dir, 'epoch-successions', hash('prior-close'), 'isolated-scratch-close');
+  const close = path.join(dir, 'isolated-scratch-close');
   const closeFiles = ['result.json', 'intent.json', 'start.json', 'wire.json', 'sdk-closed.json', `remote-${randomUUID()}.json`]
     .map(name => { const file = path.join(close, name); write(file, { synthetic: true }); return ref(file); });
+  const canonicalHash = require(repo + '/src/dist/core/application/cad/json').hash;
+  const closeBinding = { purpose: 'isolated-scratch-close-v1', epochId: p.epochId,
+    clientId: p.epochClientId, ownerTokenHash: pointer.ownerTokenHash, document: pointer.document,
+    currentInstance: p.sdk, sdkProofPath: closeFiles[4].path, restoreActiveCreationId: null,
+    admissionMode: 'normal-multidocument' };
+  const closeProof = { version: 1, purpose: closeBinding.purpose, document: pointer.document,
+    bindingHash: canonicalHash(closeBinding), closed: true, saved: false, historicalOutcome: 'unknown',
+    originalModelValidation: 'not_performed', originalRollbackVerification: 'not_performed',
+    activeBeforeCloseCreationId: pointer.document.creationId, restoredActiveCreationId: null, activeDocumentRestored: true };
+  const closePhysical = { rpcId: path.basename(closeFiles[5].path).slice(7, -5),
+    auditBindingHash: canonicalHash(closeBinding), pythonOriginHash: 'a'.repeat(64),
+    purpose: closeBinding.purpose, auditExpectedInstance: p.sdk };
+  write(closeFiles[0].path, { kind: 'isolated-scratch-close', status: 'complete', sdkRequestsSent: 1,
+    endpointVerified: true, clientId: p.epochClientId, summary: closeProof });
+  write(closeFiles[1].path, { binding: closeBinding, sourceArtifactHash: 'a'.repeat(64) });
+  write(closeFiles[2].path, { binding: closePhysical, receipt: closeFiles[5].path, pythonCheck: { status: 'passed' } });
+  write(closeFiles[4].path, closeProof);
+  write(closeFiles[5].path, { ...closePhysical, terminal: true, outcome: 'succeeded', instance: p.sdk });
+  for (let index = 0; index < closeFiles.length; index++) closeFiles[index] = ref(closeFiles[index].path);
   write(path.join(epoch, 'closed.json'), { epochId: p.epochId, document: pointer.document,
     admissionMode: 'normal-multidocument', historicalOutcome: 'unknown', receipt: closeFiles[0],
     qualificationEvidence: closeFiles.slice(1) });
@@ -49,6 +70,10 @@ function createFixture(t, repo) {
     requestId: 'history:' + randomUUID(), timeoutMs: 30000, payload: { method: 'ping' } });
   history.next(); history.markDispatch(historical.id);
   history.finish(historical.id, { state: 'needs_reconciliation', code: 'SYNTHETIC_UNKNOWN' });
+  const historicalObserver = history.submit({ kind: 'rpc', clientId: p.epochClientId,
+    requestId: 'history-observer:' + randomUUID(), timeoutMs: 30000, payload: { method: 'ping' } });
+  history.data.jobs[historicalObserver.id].state = 'needs_reconciliation';
+  fs.writeFileSync(path.join(dir, 'queue-state.json'), JSON.stringify(history.data));
   const payload = { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'execute_python',
     arguments: { code: 'print("FUSION_ADDIN_STDIO_OK")', persistent: false } } };
   const current = new QueueState(epoch);
@@ -57,11 +82,18 @@ function createFixture(t, repo) {
   current.next(); current.markDispatch(p.jobId, { rpcCount: 1, completedCount: 0 });
   current.finish(p.jobId, { state: 'needs_reconciliation', code: 'SYNTHETIC_UNKNOWN' });
   p.jobHash = current.data.jobs[p.jobId].hash;
+  const qualificationRoot = path.join(dir, 'isolated-scratch-qualification');
+  const qualificationFiles = ['intent.json', 'start.json', 'wire.json', 'sdk-qualified.json', `remote-${randomUUID()}.json`]
+    .map(name => { const file = path.join(qualificationRoot, name); write(file, { synthetic: true }); return ref(file); });
+  const qualificationFile = path.join(qualificationRoot, 'result.json');
+  write(qualificationFile, { status: 'complete', kind: 'isolated-scratch-qualification', clientId: p.epochClientId,
+    currentInstance: p.sdk, nativeOutcome: 'unknown', summary: { purpose: 'isolated-scratch-epoch-v1',
+      epochId: p.epochId, document: pointer.document } });
   Object.assign(pointer, { originalInstance: p.sdk,
     historicalSnapshotHash: ref(path.join(dir, 'queue-state.json')).sha256,
     historicalIdentityHash: ref(path.join(dir, 'instance.json')).sha256,
-    qualificationReceipt: closeFiles[0], qualificationEvidence: closeFiles.slice(1),
-    quarantinedJobIds: [randomUUID(), randomUUID()] });
+    qualificationReceipt: ref(qualificationFile), qualificationEvidence: qualificationFiles,
+    quarantinedJobIds: [historical.id, historicalObserver.id] });
   write(path.join(dir, 'isolated-admission-epoch.json'), pointer);
   p.requestHash = hash(JSON.stringify(payload)); p.sourceHash = hash(payload.params.arguments.code);
   const rpcFile = path.join(dir, 'jobs', p.jobId, `rpc-${p.rpcId}.json`);
