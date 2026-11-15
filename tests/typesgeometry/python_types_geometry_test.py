@@ -44,7 +44,8 @@ class GeometryTypeContractTests(unittest.TestCase):
                                              f'{path}:{function.lineno} ctx')
                         if 'data' in arguments:
                             expected = 'object' if (
-                                (path.name == 'geometry_feature.py' and function.name == 'handler')
+                                (path.name == 'geometry_feature.py' and function.name in (
+                                    'handler', 'feature_inspect', 'feature_edit'))
                                 or (path.name == 'geometry_model.py' and function.name == '_model_path')
                             ) else 'JsonObject'
                             self.assertEqual(self.annotation_name(arguments['data']), expected,
