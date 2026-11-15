@@ -2708,6 +2708,20 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ),
       settle(prepared, response: P.Response) {
         const { outgoing, record, rpcId, journal } = prepared;
+        // A returned HTTP response is transport evidence, not SDK settlement.
+        // Persist it before matching/receipt validation can throw; otherwise a
+        // missing remote receipt discards the only original error response.
+        durable(
+          path.join(jobDir(context.job.id), `received-response-${rpcId}.json`),
+          {
+            version: 1,
+            kind: "owned-rpc-received-response-v1",
+            binding: record.binding,
+            wireId: outgoing.id,
+            response,
+          },
+          true,
+        );
         const reply = matching(client, response, outgoing);
         const returned = responseForCaller(response, payload, reply);
         if (

@@ -28,6 +28,7 @@
     "tests/project-history-store.test.ts",
     "tests/runtime-artifact.test.ts",
     "tests/fusion-transport-broker.test.ts",
+    "tests/queued-rpc-retained-response.test.ts",
     "tests/live-sketch-operations.ts",
     "tests/live-sketch-operations.test.ts",
     "tests/live-data-import.ts",
