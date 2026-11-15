@@ -18,12 +18,15 @@ interface Entry {
   prerequisites: string;
   baseline:
     | { kind: "later" }
-    | { kind: "unchanged" | "changed"; path: string; sha256: string };
+    | { kind: "unverified" }
+    | { kind: "unchanged"; path: string; sha256: string }
+    | { kind: "changed"; path: string; sha256: string };
   sharedScenarios: string[];
   nativeScenarios?: string[];
 }
 const inventory = load("./tests/live-suite-inventory.json") as {
   baselineCommit: string;
+  baselineCommitProvenance: { status: string; reason: string };
   entries: Entry[];
 };
 const runner = load("./tests/run-live.js") as {
@@ -31,6 +34,10 @@ const runner = load("./tests/run-live.js") as {
   scopedSuites: string[];
 };
 const testsDirectory = path.join(root, "tests");
+function hashCanonicalGitText(file: string): string {
+  const text = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+  return createHash("sha256").update(text).digest("hex");
+}
 const { parse } = load(
   "./dist/tests/scenarios/cli.js",
 ) as typeof import("./scenarios/cli.js");
@@ -157,20 +164,38 @@ test("native scenario extraction does not claim supported model coverage", () =>
   );
 });
 
-test("historical byte identity claims retain their archived hashes", () => {
+test("archived hash claims are compared with canonical current source text", (t) => {
   assert.equal(
     inventory.baselineCommit,
     "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
   );
+  assert.equal(
+    inventory.baselineCommitProvenance.status,
+    "unverified-archival-reference",
+  );
+  assert.ok(inventory.baselineCommitProvenance.reason.length > 20);
+
+  const fixtureDirectory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "live-inventory-source-"),
+  );
+  t.after(() => fs.rmSync(fixtureDirectory, { recursive: true, force: true }));
+  const fixture = path.join(fixtureDirectory, "source.js");
+  fs.writeFileSync(fixture, "const value = 1;\r\n");
+  const initialHash = hashCanonicalGitText(fixture);
+  fs.writeFileSync(fixture, "const value = 1;\n");
+  assert.equal(hashCanonicalGitText(fixture), initialHash);
+  fs.writeFileSync(fixture, "const value = 2;\r\n");
+  assert.notEqual(hashCanonicalGitText(fixture), initialHash);
+
   for (const entry of inventory.entries) {
     const baseline = entry.baseline;
-    assert.ok(["later", "unchanged", "changed"].includes(baseline.kind));
-    if (baseline.kind === "later") continue;
+    assert.ok(
+      ["later", "unverified", "unchanged", "changed"].includes(baseline.kind),
+    );
+    if (baseline.kind === "later" || baseline.kind === "unverified") continue;
     assert.match(baseline.path, /^tests\/live-[a-z-]+\.(js|ts)$/);
     assert.match(baseline.sha256, /^[a-f0-9]{64}$/);
-    const hash = createHash("sha256")
-      .update(fs.readFileSync(path.join(root, entry.source)))
-      .digest("hex");
+    const hash = hashCanonicalGitText(path.join(root, entry.source));
     assert.equal(
       hash === baseline.sha256,
       baseline.kind === "unchanged",

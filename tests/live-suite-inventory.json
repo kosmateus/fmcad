@@ -1,5 +1,9 @@
 {
   "baselineCommit": "a26222ff617b0e9597b2a91b50474bdca8d0a0ce",
+  "baselineCommitProvenance": {
+    "status": "unverified-archival-reference",
+    "reason": "The commit object is unavailable in the source clone and could not be fetched from the configured remote."
+  },
   "entries": [
     {
       "id": "animation-methods",
@@ -371,6 +375,18 @@
       "prerequisites": "Installed matching broker and an isolated owned fixture",
       "baseline": {
         "kind": "later"
+      },
+      "sharedScenarios": []
+    },
+    {
+      "id": "normal-multidocument-processes",
+      "source": "tests/live-normal-multidocument-processes.js",
+      "runner": "helper",
+      "model": "helper",
+      "scope": "Independent-process harness for shared-broker multi-document live coverage",
+      "prerequisites": "Parent live case supplies a running broker and isolated owned fixtures",
+      "baseline": {
+        "kind": "unverified"
       },
       "sharedScenarios": []
     },
