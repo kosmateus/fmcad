@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import type { TestContext } from "node:test";
 import type { DeadEpochFixture } from "./fixtures/epoch-fixture-types";
@@ -527,6 +528,49 @@ test("FAKE backend succession: another cold scope without a current transition v
       lineage.successorEpochIdentity(f.dir, { ...published.pointer }, snapshot),
     { code: "EPOCH_LINEAGE_INVALID" },
   );
+});
+
+test("FAKE normal runtime upgrade binds creation to the original authorized normal pair, not the historical quarantine pair", (t) => {
+  const f = backendFixture(t);
+  const published = f.publish();
+  const originalJobs = [...published.pointer.quarantinedJobIds];
+  const authorizationFile = path.join(
+    f.dir,
+    "normal-job-owner-authorization.json",
+  );
+  api.durable(authorizationFile, {
+    kind: "normal-currentstore-job-owner-authorization",
+    requestId: published.authority.requestId,
+    snapshot: { jobOwnerTokenHash: "a".repeat(64) },
+    profile: {
+      kind: "normal-currentstore-target-v1",
+      epochClientId: published.authority.clientId,
+      jobClientId: "normal-job-owner",
+      jobId: originalJobs[0],
+      rpcId: originalJobs[1],
+    },
+  });
+  published.authority["normalCurrentStore"] = {
+    kind: "normal-currentstore-v1",
+    jobAuthorization: lineage.reference(authorizationFile),
+  };
+  api.durable(published.entry.path, published.authority);
+  published.entry = lineage.reference(published.entry.path);
+  published.pointer.succession = published.entry;
+  f.qualifiedCreationUpgrade(published);
+  published.pointer.quarantinedJobIds = [randomUUID(), randomUUID()];
+  api.durable(
+    path.join(f.dir, "isolated-admission-epoch.json"),
+    published.pointer,
+  );
+  const audit = path.join(f.dir, "normal-origin-read");
+  fs.mkdirSync(audit);
+  const snapshot = lineage.predecessorSnapshot(f.dir, audit, true);
+  const verify = () =>
+    lineage.successorEpochIdentity(f.dir, { ...published.pointer }, snapshot);
+  assert.equal(verify().buildHash, published.identity.buildHash);
+  fs.appendFileSync(authorizationFile, " ");
+  assert.throws(verify, { code: "EPOCH_LINEAGE_INVALID" });
 });
 
 test("FAKE historical runtime upgrade: authenticated creation build and later identity build are distinct without changing SDK/history", (t) => {
