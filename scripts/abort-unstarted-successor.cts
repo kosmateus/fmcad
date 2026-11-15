@@ -380,7 +380,7 @@ export function abortUnstartedSuccessor(
         fail("Exact pinned 923c six-file native observation required");
       const retained = (
         operatorLoad(
-          "../src/dist/node-adapters/execution/recovery-audit.js",
+          "../dist/src/dist/node-adapters/execution/recovery-audit.js",
         ) as RetainedAuditVerifier
       ).verifyRetainedAuditResponse({
         directory: observationDir,

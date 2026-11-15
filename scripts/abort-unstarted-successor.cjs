@@ -221,7 +221,7 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
                 !nativeObservation ||
                 !(0, node_util_1.isDeepStrictEqual)(names, nativeNames))
                 fail("Exact pinned 923c six-file native observation required");
-            const retained = operatorLoad("../src/dist/node-adapters/execution/recovery-audit.js").verifyRetainedAuditResponse({
+            const retained = operatorLoad("../dist/src/dist/node-adapters/execution/recovery-audit.js").verifyRetainedAuditResponse({
                 directory: observationDir,
                 key,
                 identity: originalIdentity,

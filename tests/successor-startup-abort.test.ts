@@ -195,9 +195,11 @@ function readyFixture(t: TestContext) {
   return { ...f, owner, observation };
 }
 
-function sdkSubmittedUnknownFixture(t: TestContext) {
+function sdkSubmittedUnknownFixture(
+  t: TestContext,
+  expectedProcess = { pid: 3332, birth: "134391194634692184" },
+) {
   const f = readyFixture(t),
-    expectedProcess = { pid: 3332, birth: "134391194634692184" },
     authorityFile = path.join(f.audit, "authority.json");
   // This is a fake Windows process, not the developer's live Windows host.
   // Plain Linux CI has no PowerShell observer and must not silently supply one.
@@ -372,8 +374,9 @@ function sdkSubmittedUnknownFixture(t: TestContext) {
 function nativeSdkSubmittedUnknownFixture(
   t: TestContext,
   sourceCommit: string = nativeAuditProfile.sourceCommit,
+  expectedProcessOverride?: { pid: number; birth: string },
 ) {
-  const f = sdkSubmittedUnknownFixture(t),
+  const f = sdkSubmittedUnknownFixture(t, expectedProcessOverride),
     predecessor = f.authority.predecessor,
     rootIdentityFile = predecessor.rootIdentity.path,
     predecessorIdentityFile = predecessor.identity.path;
@@ -689,6 +692,74 @@ function nativeSdkSubmittedUnknownFixture(
   return { ...f, observationIntent, start, wire };
 }
 
+function packedWithdrawalOperator(base: string) {
+  const packDirectory = path.join(base, "packed");
+  const unpackDirectory = path.join(base, "unpacked");
+  fs.mkdirSync(packDirectory);
+  fs.mkdirSync(unpackDirectory);
+  const npmConfig = path.join(base, "empty.npmrc");
+  fs.writeFileSync(npmConfig, "");
+  const nodeDirectory = path.dirname(process.execPath),
+    pack = spawnSync(
+      process.platform === "win32" ? "npm.cmd" : "npm",
+      [
+        "pack",
+        "--ignore-scripts",
+        "--json",
+        "--pack-destination",
+        packDirectory,
+      ],
+      {
+        cwd: repo,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: [nodeDirectory, process.env["PATH"] ?? ""].join(path.delimiter),
+          npm_config_audit: "false",
+          npm_config_cache: path.join(base, "npm-cache"),
+          npm_config_fund: "false",
+          npm_config_offline: "true",
+          npm_config_userconfig: npmConfig,
+        },
+        shell: process.platform === "win32",
+      },
+    );
+  assert.equal(pack.status, 0, pack.stderr);
+  const archives = fs
+    .readdirSync(packDirectory)
+    .filter((name) => name.endsWith(".tgz"));
+  assert.equal(archives.length, 1);
+  const extract = spawnSync(
+    "tar",
+    ["-xzf", path.join(packDirectory, archives[0]!), "-C", unpackDirectory],
+    { encoding: "utf8" },
+  );
+  assert.equal(extract.status, 0, extract.stderr);
+  const packageRoot = path.join(unpackDirectory, "package"),
+    operatorFile = path.join(
+      packageRoot,
+      "scripts/abort-unstarted-successor.cjs",
+    ),
+    retainedVerifier = path.join(
+      packageRoot,
+      "dist/src/dist/node-adapters/execution/recovery-audit.js",
+    );
+  assert.ok(fs.statSync(operatorFile).isFile());
+  assert.ok(fs.statSync(retainedVerifier).isFile());
+  assert.equal(
+    fs.existsSync(
+      path.join(
+        packageRoot,
+        "src/dist/node-adapters/execution/recovery-audit.js",
+      ),
+    ),
+    false,
+  );
+  return createRequire(operatorFile)(
+    "./abort-unstarted-successor.cjs",
+  ) as typeof import("../scripts/abort-unstarted-successor.cjs");
+}
+
 test("pinned 923c native SDK1 withdrawal accepts the exact retained six-file audit", (t) => {
   const f = nativeSdkSubmittedUnknownFixture(t),
     names = [
@@ -731,6 +802,105 @@ test("pinned 923c native SDK1 withdrawal accepts the exact retained six-file aud
   assert.deepEqual(fs.readdirSync(f.observation).sort(), names.sort());
   for (const [i, file] of files.entries())
     assert.deepEqual(fs.readFileSync(file), before[i]);
+});
+
+test("packed native6 withdrawal preflight enters retained audit with bound death and retirement receipts", (t) => {
+  const expectedProcess = {
+      pid: 33684,
+      birth: "134391533161165520",
+    },
+    f = nativeSdkSubmittedUnknownFixture(
+      t,
+      nativeAuditProfile.sourceCommit,
+      expectedProcess,
+    ),
+    retirement = writeSdk1RetirementReceipt(f),
+    packedOperator = packedWithdrawalOperator(f.base),
+    names = [
+      "intent.json",
+      "start.json",
+      "wire.json",
+      "received-response.json",
+      "remote-" + f.start.binding.rpcId + ".json",
+      "result.json",
+    ],
+    retainedFiles = names.map((name) => path.join(f.observation, name)),
+    proof = JSON.parse(fs.readFileSync(f.proofFile, "utf8")),
+    protectedFiles = [
+      f.approvalFile,
+      f.authorityEntry.path,
+      f.proofFile,
+      ...retainedFiles,
+      retirement.beforeFile,
+      retirement.startFile,
+      retirement.afterFile,
+      path.join(f.dir, "broker.lock"),
+      path.join(f.dir, "active-epoch-succession.json"),
+    ],
+    before = protectedFiles.map((file) => fs.readFileSync(file));
+  assert.deepEqual(f.authority.expectedProcess, expectedProcess);
+  assert.deepEqual(proof.expectedProcess, expectedProcess);
+  assert.equal(proof.after.state, "absent");
+  const preview = packedOperator.abortUnstartedSuccessor(
+    f.client,
+    f.approvalFile,
+    false,
+    { withdrawUnknown: true, processDeathProofFile: f.proofFile },
+  ) as Record<string, unknown>;
+  assert.equal(preview["operation"], "withdraw-after-sdk-unknown");
+  assert.equal(preview["sdkRequestsSent"], 1);
+  assert.equal(preview["nativeOutcome"], "unknown");
+  assert.equal(preview["processDeathProofRequired"], false);
+  assert.equal(preview["retirementPerformed"], false);
+  assert.equal(preview["applyReady"], true);
+  const factPaths = new Set(
+    (preview["facts"] as Array<{ path: string }>).map((fact) => fact.path),
+  );
+  for (const file of [
+    ...retainedFiles,
+    f.proofFile,
+    retirement.beforeFile,
+    retirement.startFile,
+    retirement.afterFile,
+  ])
+    assert.ok(factPaths.has(file), "packed preflight must bind " + file);
+  for (const [index, file] of protectedFiles.entries())
+    assert.deepEqual(fs.readFileSync(file), before[index]);
+  assert.equal(fs.existsSync(path.join(f.audit, "abort-unstarted")), false);
+});
+
+test("packed legacy SDK1 withdrawal keeps the exact four-file compatibility", (t) => {
+  const f = sdkSubmittedUnknownFixture(t),
+    names = ["intent.json", "result.json", "start.json", "wire.json"],
+    observationFiles = names.map((name) => path.join(f.observation, name)),
+    packedOperator = packedWithdrawalOperator(f.base),
+    protectedFiles = [
+      f.approvalFile,
+      f.authorityEntry.path,
+      f.proofFile,
+      ...observationFiles,
+    ],
+    before = protectedFiles.map((file) => fs.readFileSync(file));
+  assert.notEqual(f.authority.sourceCommit, nativeAuditProfile.sourceCommit);
+  assert.deepEqual(fs.readdirSync(f.observation).sort(), names);
+  const preview = packedOperator.abortUnstartedSuccessor(
+    f.client,
+    f.approvalFile,
+    false,
+    { withdrawUnknown: true, processDeathProofFile: f.proofFile },
+  ) as Record<string, unknown>;
+  assert.equal(preview["operation"], "withdraw-after-sdk-unknown");
+  assert.equal(preview["sdkRequestsSent"], 1);
+  assert.equal(preview["nativeOutcome"], "unknown");
+  assert.equal(preview["applyReady"], true);
+  const factPaths = new Set(
+    (preview["facts"] as Array<{ path: string }>).map((fact) => fact.path),
+  );
+  for (const file of [...observationFiles, f.proofFile])
+    assert.ok(factPaths.has(file), "packed legacy preflight must bind " + file);
+  for (const [index, file] of protectedFiles.entries())
+    assert.deepEqual(fs.readFileSync(file), before[index]);
+  assert.equal(fs.existsSync(path.join(f.audit, "abort-unstarted")), false);
 });
 
 for (const changed of [
@@ -1324,8 +1494,14 @@ test("new withdrawal evaluator does not import its verifier from the historical 
   assert.deepEqual(fs.readFileSync(f.approvalFile), before);
 });
 
-function sdk1RetirementReceiptFixture(t: TestContext) {
-  const f = sdkSubmittedUnknownFixture(t);
+function writeSdk1RetirementReceipt(f: {
+  audit: string;
+  clientId: string;
+  dir: string;
+  owner: unknown;
+  proofFile: string;
+  requestId: string;
+}) {
   api.durable(path.join(f.dir, "broker.lock"), f.owner);
   const journal = path.join(f.audit, "sdk1-worker-retirement");
   fs.mkdirSync(journal);
@@ -1353,7 +1529,12 @@ function sdk1RetirementReceiptFixture(t: TestContext) {
     nativeOutcome: "unknown",
     historicalOutcome: "unknown",
   });
-  return { ...f, afterFile, beforeFile, startFile };
+  return { afterFile, beforeFile, startFile };
+}
+
+function sdk1RetirementReceiptFixture(t: TestContext) {
+  const f = sdkSubmittedUnknownFixture(t);
+  return { ...f, ...writeSdk1RetirementReceipt(f) };
 }
 
 test("SDK1 withdrawal restores only the exact dead metadata marker after its separate retirement receipt", (t) => {
