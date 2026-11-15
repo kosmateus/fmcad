@@ -49,6 +49,9 @@ const { pythonUnitContexts } = load(
 const { createPythonChecker } = load(
   "./packages/node-adapters/dist/python/checker",
 ) as typeof import("../packages/node-adapters/src/python/checker");
+const { prepareWireArtifact } = load(
+  "./packages/node-adapters/dist/python/source-units",
+) as typeof import("../packages/node-adapters/src/python/source-units");
 
 const runtime = path.join(root, "dist/runtime/python");
 const typingRoot = path.join(runtime, "typing");
@@ -144,10 +147,11 @@ test("receipt-wrapped canonical catalog source retains runtime, roots, maps and 
     { jobId: "catalog-recovery" },
     { mapPath: (value) => value },
   );
-  assert.equal(prepared.units.length, 2);
+  assert.equal(prepared.units.length, 3);
+  assert.equal(prepared.units[0]?.filename, "<fmcad-native-source>");
   assert.equal(record(prepared.context)["origin"], undefined);
   const contexts = pythonUnitContexts(prepared);
-  assert.deepEqual(contexts["embedded:0"], { kind: "raw", entrypoint: "run" });
+  assert.deepEqual(contexts["embedded:1"], { kind: "raw", entrypoint: "run" });
 
   const report = await checker.check({
     artifact: prepared,
@@ -160,7 +164,7 @@ test("receipt-wrapped canonical catalog source retains runtime, roots, maps and 
   assert.equal(report.provenance.artifactHash, prepared.artifactHash);
   assert.equal(report.provenance.wireHash, prepared.sha256);
   assert.ok(passes.length > 0);
-  assert.ok(passes.every((pass) => pass.fileCount === 2));
+  assert.ok(passes.every((pass) => pass.fileCount === 3));
   assert.ok(passes.every((pass) => pass.hasValues && pass.hasLateRuntime));
   assert.ok(passes.every((pass) => pass.userRoot && pass.workerRoot));
   assert.ok(
@@ -182,6 +186,67 @@ test("receipt-wrapped canonical catalog source retains runtime, roots, maps and 
     JSON.stringify(report.diagnostics),
   );
   assert.equal(units.length, 152);
+});
+
+test("claimed decoded receipt bytes cannot replace the source in the actual envelope", async (t) => {
+  const { checker } = await fakeChecker(t);
+  const { original } = sourceParts();
+  const prepared = prepareReceiptScript(
+    original.script,
+    true,
+    "/offline/codec-tamper.json",
+    {},
+    { mapPath: (value) => value },
+  );
+  const tampered = preparePythonArtifact(
+    prepared.units.map((unit) => ({
+      ...unit,
+      source:
+        unit.filename === "<fmcad-native-source>"
+          ? unit.source + "\npass\n"
+          : unit.source,
+      embedded: unit.id !== "wire",
+    })),
+    { context: prepared.context, request: prepared.request },
+  );
+  const report = await checker.check({
+    artifact: tampered,
+    context: { kind: "raw", entrypoint: "run" },
+    unitContexts: pythonUnitContexts(tampered),
+  });
+  assert.notEqual(report.status, "passed", JSON.stringify(report));
+  assert.equal(report.provenance.artifactHash, tampered.artifactHash);
+});
+
+test("legacy unencoded canonical receipt keeps its original two-unit recovery", async (t) => {
+  const { checker } = await fakeChecker(t);
+  const { original } = sourceParts();
+  const encoded = prepareReceiptScript(
+    original.script,
+    true,
+    "/offline/legacy-codec.json",
+    {},
+    { mapPath: (value) => value },
+  );
+  const prepared = prepareWireArtifact(
+    runtime,
+    encoded.units.find((unit) => unit.filename === "<fmcad-native-source>")!
+      .source,
+    { context: encoded.context, request: encoded.request },
+  );
+  assert.equal(prepared.units.length, 2);
+  const report = await checker.check({
+    artifact: prepared,
+    context: { kind: "raw", entrypoint: "run" },
+    unitContexts: pythonUnitContexts(prepared),
+  });
+  assert.equal(report.status, "failed", JSON.stringify(report));
+  assert.ok(
+    report.diagnostics.some(
+      (item) =>
+        item.unitId === "wrapper" && item.filename === "<fmcad-wrapper>",
+    ),
+  );
 });
 
 test("a changed canonical byte is preserved in analysis and cannot be reported as a passing artifact", async (t) => {

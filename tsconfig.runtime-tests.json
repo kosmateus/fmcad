@@ -8,6 +8,7 @@
     "sourceMap": false
   },
   "include": [
+    "tests/python-source-codec.test.ts",
     "tests/scenarios/**/*.ts",
     "tests/run-identity-admission.test.ts",
     "tests/broker-composition.test.ts",

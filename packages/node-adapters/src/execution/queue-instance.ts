@@ -2,7 +2,10 @@ import * as fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { prepareWireArtifact } from "../python/source-units";
+import {
+  prepareEncodedWireArtifact,
+  prepareWireArtifact,
+} from "../python/source-units";
 import { verifyPythonArtifact } from "../python/artifact";
 import { pythonArtifactManifest } from "../python/context-binding";
 import { queueDocumentSnapshotSource } from "../python/document-probe";
@@ -733,7 +736,7 @@ finally:
     binding: unknown,
     { mapPath = fusionPath }: { mapPath?: (file: string) => string } = {},
   ) {
-    return prepareWireArtifact(
+    return (official ? prepareEncodedWireArtifact : prepareWireArtifact)(
       resolveRuntimePaths({ anchor: anchor }).runtime,
       receiptWrapper(code, official, receiptPath, binding, mapPath),
       {
