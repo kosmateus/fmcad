@@ -727,6 +727,13 @@ def literal_argument_rewrites(parsed, user_tree, functions, wraps):
             escaped.add(node.id)
     unique = {name: node for name, node in unique.items() if name not in escaped and calls[name]}
     bindings = {node: {} for node in unique.values()}
+    scope_locals = {}
+    for scope in set(scopes.values()):
+        if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            local = {part.arg for part in ast.walk(scope.args) if isinstance(part, ast.arg)}
+            local.update(part.id for part in ast.walk(scope)
+                         if isinstance(part, ast.Name) and isinstance(part.ctx, (ast.Store, ast.Del)))
+            scope_locals[scope] = local
     def environment(node):
         result = {}
         chain = []
@@ -736,10 +743,7 @@ def literal_argument_rewrites(parsed, user_tree, functions, wraps):
             scope = scopes.get(scope)
         for scope in reversed(chain):
             if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-                local = {part.arg for part in ast.walk(scope.args) if isinstance(part, ast.arg)}
-                local.update(part.id for part in ast.walk(scope)
-                             if isinstance(part, ast.Name) and isinstance(part.ctx, (ast.Store, ast.Del)))
-                for name in local:
+                for name in scope_locals[scope]:
                     result.pop(name, None)
                 result.update(bindings.get(scope, {}))
             elif isinstance(scope, ast.ClassDef):
@@ -1125,7 +1129,7 @@ def analyse(request):
                     retained = []
                     for member in node.body:
                         if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            facade[member.name] = facts(ast.Module(body=[copy.deepcopy(member)], type_ignores=[]),
+                            facade[member.name] = facts(ast.Module(body=[member], type_ignores=[]),
                                                        unit['filename'], method=member.name, unit='helpers', casts=casts)
                             spans[member.name] = [min([member.lineno] + [d.lineno for d in member.decorator_list]),
                                                   member.end_lineno]
@@ -1134,19 +1138,29 @@ def analyse(request):
                     node.body = retained or [ast.Pass()]
         entry = facts(tree, unit['filename'], unit=unit['id'], casts=casts)
         class Eager(ast.NodeTransformer):
+            def visit(self, node):
+                # Copy only visited nodes; function bodies are never visited.
+                return super().visit(copy.copy(node))
+
+            def generic_visit(self, node):
+                for field, value in ast.iter_fields(node):
+                    if isinstance(value, list):
+                        setattr(node, field, list(value))
+                return super().generic_visit(node)
+
             def visit_FunctionDef(self, node):
                 node.body = [ast.copy_location(ast.Pass(), node)]
                 return node
 
             visit_AsyncFunctionDef = visit_FunctionDef
 
-        eager = Eager().visit(copy.deepcopy(tree))
+        eager = Eager().visit(tree)
         entry['eager'] = facts(eager, unit['filename'], unit=unit['id'], casts=casts)
         entry['opaque'] = entry['eager']['opaque']
         statements = []
         for node in tree.body:
             if isinstance(node, ast.If) and not node.orelse:
-                shell = copy.deepcopy(node)
+                shell = copy.copy(node)
                 shell.body = [ast.Pass()]
                 statements.append((shell, False))
                 typing_only = isinstance(node.test, ast.Name) and node.test.id in type_guards
@@ -1154,7 +1168,7 @@ def analyse(request):
             else:
                 statements.append((node, False))
         for node, typing_only in statements:
-            statement = ast.Module(body=[copy.deepcopy(node)], type_ignores=[])
+            statement = ast.Module(body=[node], type_ignores=[])
             registration = removable_registration(node, functions)
             if registration is not None and isinstance(node.value.args[0], ast.Dict):
                 mapping = node.value.args[0]
@@ -1168,13 +1182,15 @@ def analyse(request):
                         end = offset(following.lineno, following.col_offset)
                     else:
                         end = offset(mapping.end_lineno, mapping.end_col_offset - 1)
-                    row = facts(ast.Module(body=[ast.Expr(value=copy.deepcopy(value))], type_ignores=[]),
+                    row = facts(ast.Module(body=[ast.Expr(value=value)], type_ignores=[]),
                                 unit['filename'], unit=unit['id'], casts=casts)
                     definitions.append(dict(row, unit=unit['id'], start=key.lineno,
                                             end=value.end_lineno, column=key.col_offset,
                                             byteStart=start, byteEnd=end, removable=False,
                                             registration=[constant(key, {})]))
-                statement.body[0].value.args[0] = ast.Dict(keys=[], values=[])
+                statement.body[0] = copy.copy(node)
+                statement.body[0].value = copy.copy(node.value)
+                statement.body[0].value.args = [ast.Dict(keys=[], values=[]), *node.value.args[1:]]
                 registration = None
             dependency = facts(statement, unit['filename'], unit=unit['id'], casts=casts)
             # Only declarations whose creation has no calls are removable here.
