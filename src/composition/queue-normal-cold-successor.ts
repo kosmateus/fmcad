@@ -169,11 +169,17 @@ function bytes(file: string): Buffer {
       "Credential-bearing job requests are sealed metadata only; never open or hash them",
     );
   canonical(file);
+  // Match the existing successor/lineage snapshot bound without widening the
+  // smaller limit for ordinary output evidence or opening sealed requests.
+  const maxBytes =
+    path.basename(file) === "queue-state.json"
+      ? 256 * 1024 * 1024
+      : 16 * 1024 * 1024;
   return (
     load(
       "./dist/node-adapters/persistence/records",
     ) as typeof import("../../packages/node-adapters/src/persistence/records")
-  ).readBytes(file, 16 * 1024 * 1024, fs, file);
+  ).readBytes(file, maxBytes, fs, file);
 }
 function read(file: string): Data {
   return object(JSON.parse(bytes(file).toString("utf8")) as unknown);

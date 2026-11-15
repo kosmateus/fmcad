@@ -564,6 +564,26 @@ test("normal-currentstore: distinct authentic owners and immutable unknown survi
   assert.equal(receipt.snapshot.sealedRequests.length, 1);
 });
 
+test("normal owner authorization preserves a retained historical queue snapshot above 16 MiB", (t) => {
+  const f = fixture(t);
+  const file = path.join(f.dir, "queue-state.json");
+  // The real incident's historical queue snapshot is 34,367,179 bytes. The
+  // existing queue/successor reader supports 256 MiB; retain its exact bytes.
+  fs.appendFileSync(file, " ".repeat(17 * 1024 * 1024));
+  const before = hash(fs.readFileSync(file));
+  const authorization = normal.authorizeNormalCurrentStore(
+    f.jobClient,
+    f.requestId + ":large-history",
+    f.targetReference,
+  );
+  const value = JSON.parse(fs.readFileSync(authorization.path, "utf8"));
+  assert.deepEqual(
+    value.snapshot.files.find((entry: { path: string }) => entry.path === file),
+    { path: file, sha256: before },
+  );
+  assert.equal(hash(fs.readFileSync(file)), before);
+});
+
 test("owner authorizer and recovery qualification never read or hash credential-bearing request files", (t) => {
   const f = fixture(t),
     read = fs.readFileSync,
