@@ -15,6 +15,12 @@ const load = createRequire(path.join(process.cwd(), "tests/cad.test.ts"));
 test.after(load("./fixtures/fake-wsl-platform.cjs")());
 const { catalog, validateCad, buildCadScript, prepareCadScript, executeCad } =
   load("../src/cad") as CadApi;
+const { cadBundleUnits } = load(
+  "../packages/node-adapters/dist/python/bundle",
+) as typeof import("../packages/node-adapters/src/python/bundle");
+const { preparePythonArtifact, verifyPythonArtifact } = load(
+  "../packages/node-adapters/dist/python/artifact",
+) as typeof import("../packages/node-adapters/src/python/artifact");
 const { parseCadInput } = load("../src/cad-input") as {
   parseCadInput(
     words: string[],
@@ -84,6 +90,28 @@ function python(program: string, input: string) {
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   return result.stdout;
+}
+function registeredPython(script: string, afterRegistration: string) {
+  return python(
+    stubImports +
+      `import ast
+tree = ast.parse(sys.stdin.read())
+class Registry(dict):
+    def update(self, entries):
+        for key, handler in entries.items():
+            assert key not in self, 'Duplicate handler: ' + key
+            assert callable(handler), key
+            self[key] = handler
+namespace = {'Registry': Registry}
+for node in tree.body:
+    if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'CAD_HANDLERS' for t in node.targets):
+        node.value = ast.Call(func=ast.Name(id='Registry', ctx=ast.Load()), args=[], keywords=[])
+ast.fix_missing_locations(tree)
+exec(compile(tree, '<cad-registry>', 'exec'), namespace)
+` +
+      afterRegistration,
+    script,
+  );
 }
 
 test("CAD integration: every catalog example validates through the actual dispatcher", async (t) => {
@@ -166,27 +194,12 @@ test("CAD integration: every generated Python request compiles and round-trips J
   }
 });
 
-test("CAD integration: executable Python registry exactly matches non-Node catalog without overwrites", () => {
-  const script = buildCadScript("status", {}, context);
-  const output = python(
-    stubImports +
-      `import ast
-tree = ast.parse(sys.stdin.read())
-class Registry(dict):
-    def update(self, entries):
-        for key, handler in entries.items():
-            assert key not in self, 'Duplicate handler: ' + key
-            assert callable(handler), key
-            self[key] = handler
-namespace = {'Registry': Registry}
-for node in tree.body:
-    if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'CAD_HANDLERS' for t in node.targets):
-        node.value = ast.Call(func=ast.Name(id='Registry', ctx=ast.Load()), args=[], keywords=[])
-ast.fix_missing_locations(tree)
-exec(compile(tree, '<cad-registry>', 'exec'), namespace)
-print(json.dumps(sorted(namespace['CAD_HANDLERS'])))
-`,
-    script,
+test("CAD integration: full executable Python registry matches the non-Node catalog without overwrites", () => {
+  const artifact = preparePythonArtifact(cadBundleUnits(process.cwd()));
+  verifyPythonArtifact(artifact);
+  const output = registeredPython(
+    artifact.script,
+    "print(json.dumps(sorted(namespace['CAD_HANDLERS'])))",
   );
   assert.deepEqual(
     JSON.parse(output),
@@ -234,6 +247,48 @@ print(json.dumps(sorted(namespace['CAD_HANDLERS'])))
       "ui.respond",
     ],
   );
+});
+
+test("CAD integration: selected status artifact binds its request to the measurement handler", () => {
+  const prepared = prepareCadScript("status", {}, context);
+  const fullUnits = cadBundleUnits(process.cwd());
+  const measure = prepared.units.find(
+    (unit) =>
+      unit.filename === "runtime/python/fmcad/adapters/fusion/measure.py",
+  );
+
+  assert.equal(prepared.request.operation, "status");
+  assert.equal(
+    scriptConfig(prepared.script, ["_FMCAD_REQUEST"])._FMCAD_REQUEST.operation,
+    "status",
+  );
+  assert.ok(prepared.units.length < fullUnits.length);
+  assert.ok(
+    measure,
+    "The selected artifact must retain the source handler unit",
+  );
+  assert.match(measure.source, /'status': _measure_status/);
+
+  const result = JSON.parse(
+    registeredPython(
+      prepared.script,
+      `namespace['_measure_snapshot'] = lambda ctx, data: {
+    'document': {'name': 'Fixture'},
+    'counts': {'bodies': 1},
+    'issues': ['timeline warning'],
+    'limitations': ['snapshot only']}
+result = namespace['CAD_HANDLERS']['status'](object(), {})
+print(json.dumps(result))`,
+    ),
+  );
+  assert.deepEqual(result, {
+    document: { name: "Fixture" },
+    counts: { bodies: 1 },
+    issues: ["timeline warning"],
+    observedHealth: "issues",
+    acceptance: "notEvaluated",
+    limitations: ["snapshot only"],
+  });
 });
 
 test("new Node-only routes dispatch through their explicit coordinators, not the Python registry", async (t) => {
