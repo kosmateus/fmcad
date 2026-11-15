@@ -141,6 +141,7 @@ function fixture(
   runtime?: { sourceCommit: string; buildHash: string },
   raw = false,
   documentName?: string,
+  compactPreflight?: "valid" | "partial" | "wrong-job" | "wrong-process" | "wrong-source" | "nonterminal" | "active-command",
 ) {
   const payload = {
     jsonrpc: "2.0",
@@ -352,7 +353,7 @@ function fixture(
       : {}),
     instance: {
       ...p.sdk,
-      ...(raw
+      ...(raw && !compactPreflight
         ? {
             documents: [
               {
@@ -373,6 +374,29 @@ function fixture(
       buildHash: p.buildHash,
     },
   });
+  if (compactPreflight) {
+    const rpcId = randomUUID();
+    const binding = { jobId: p.jobId, rpcId, requestHash: hash(`preflight:${p.jobId}:${rpcId}`), buildHash: p.buildHash };
+    const instance = { ...p.sdk, activeCommand: "SelectCommand", documents: [{
+      id: p.creationId, fileId: null, isSaved: false, isModified: false,
+    }] };
+    const receipt = path.join(jobDir, `preflight-${rpcId}.receipt.json`);
+    const start = { version: 2, jobId: p.jobId, buildHash: p.buildHash, instance: p.sdk,
+      at: Date.now() - 100, binding, receipt };
+    const complete = { version: 2, jobId: p.jobId, buildHash: p.buildHash,
+      completed: true, idle: true, requiresIdle: true, instance };
+    const physical = { ...binding, terminal: true, outcome: "succeeded", instance: p.sdk };
+    if (compactPreflight === "wrong-job") complete.jobId = randomUUID();
+    if (compactPreflight === "wrong-process") start.instance = { ...p.sdk, birth: "foreign-birth" };
+    if (compactPreflight === "wrong-source") physical.buildHash = "e".repeat(64);
+    if (compactPreflight === "nonterminal") physical.terminal = false;
+    if (compactPreflight === "active-command") complete.idle = false;
+    write(path.join(jobDir, "preflight-start.json"), start);
+    if (compactPreflight !== "partial") write(path.join(jobDir, "preflight.json"), complete);
+    write(path.join(jobDir, "preflight-result.json"), { stage: "instance_probe", at: new Date().toISOString(),
+      failed: false, text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance) });
+    write(receipt, physical);
+  }
   const requestId = `normal-cold:${randomUUID()}`;
   const target = Object.fromEntries(
     Object.entries(p).filter(
@@ -495,6 +519,29 @@ function fixture(
     approval,
     targetReference,
   };
+}
+
+test("normal cold quarantine accepts compact product identity only through its exact successful preflight", (t) => {
+  const f = fixture(t, laterRuntime, true, "Untitled", "valid");
+  const target = JSON.parse(fs.readFileSync(f.targetReference.path, "utf8"));
+  const product = path.join(f.jobDir, `rpc-${target.rpcId}.json`);
+  const bytes = fs.readFileSync(product);
+  assert.equal(JSON.parse(bytes.toString()).terminal, false);
+  assert.equal(JSON.parse(bytes.toString()).instance.documents, undefined);
+  normal.inspectNormalCurrentStore(f.dir, f.approval, f.pointer, f.ports);
+  assert.deepEqual(fs.readFileSync(product), bytes, "Preflight is not product settlement");
+  const preflight = path.join(f.jobDir, "preflight.json");
+  const changed = JSON.parse(fs.readFileSync(preflight, "utf8"));
+  changed.instance.documents[0].id = randomUUID();
+  write(preflight, changed);
+  assert.throws(() => normal.inspectNormalCurrentStore(f.dir, f.approval, f.pointer, f.ports));
+  assert.deepEqual(fs.readFileSync(product), bytes);
+});
+
+for (const mode of ["partial", "wrong-job", "wrong-process", "wrong-source", "nonterminal", "active-command"] as const) {
+  test(`normal cold quarantine refuses unproven compact-instance inventory: ${mode}`, (t) => {
+    assert.throws(() => fixture(t, laterRuntime, true, "Untitled", mode), { code: "NORMAL_SUCCESSOR_UNPROVEN" });
+  });
 }
 
 test("normal raw RPC successor binds the original owner, payload and broker without inventing a worker", (t) => {
