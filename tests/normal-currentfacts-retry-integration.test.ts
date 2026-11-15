@@ -8,6 +8,99 @@ const load = createRequire(__filename);
 const normal = load("../src/dist/composition/queue-normal-cold-successor") as typeof import("../src/composition/queue-normal-cold-successor");
 const { createFixture } = load("../../tests/fixtures/normal-currentfacts-retry.cjs");
 
+test("initial normal cold authority allows default-name identity only after old SDK and producer fencing", async (t) => {
+  const repo = path.resolve(".");
+  const f = createFixture(t, repo);
+  const { write, ref } = f;
+  const sdkOs = load("../src/dist/composition/queue-epoch-successor-retirement") as typeof import("../src/composition/queue-epoch-successor-retirement");
+  const osApi = load("../src/queue-instance") as {
+    priorProcessAlive(value: { pid: number }): boolean; buildHash(): string; brokerConfigHash(value: unknown): string;
+  };
+  const platform = load("../src/dist/config-platform/runtime-paths") as { resolveRuntimePaths(input: unknown): Record<string, unknown> };
+  const old = { query: sdkOs.querySdkProcess, alive: osApi.priorProcessAlive,
+    build: osApi.buildHash, config: osApi.brokerConfigHash, paths: platform.resolveRuntimePaths };
+  const build = "7".repeat(64);
+  const source = "6".repeat(40);
+  const nextOwner = { pid: 900004, birth: "synthetic-boot:cold", nonce: randomUUID(), protocol: 2 };
+  let started = false;
+  sdkOs.querySdkProcess = f.ports.sdkProcess;
+  osApi.priorProcessAlive = process => process.pid === f.expectedProcess.pid || (started && process.pid === nextOwner.pid);
+  osApi.buildHash = () => build;
+  osApi.brokerConfigHash = () => f.p.configHash;
+  platform.resolveRuntimePaths = input => ({ ...old.paths(input), installation: repo });
+  const entries = [load.resolve("../src/dist/composition/queue-epoch-successor"), load.resolve("../src/queue-epoch-successor")];
+  const cached = entries.map(file => load.cache[file]);
+  entries.forEach(file => { delete load.cache[file]; });
+  const children = load("node:child_process") as { spawn: (...args: unknown[]) => unknown };
+  const spawn = children.spawn;
+  t.after(() => {
+    sdkOs.querySdkProcess = old.query; osApi.priorProcessAlive = old.alive;
+    osApi.buildHash = old.build; osApi.brokerConfigHash = old.config; platform.resolveRuntimePaths = old.paths;
+    children.spawn = spawn;
+    entries.forEach((file, index) => { const previous = cached[index]; if (previous) load.cache[file] = previous; else delete load.cache[file]; });
+  });
+  const successor = load("../src/queue-epoch-successor") as typeof import("../src/composition/queue-epoch-successor");
+  fs.mkdirSync(path.join(f.dir, "epoch-successions"), { recursive: true });
+  const qualification = path.join(f.dir, "cold-qualification.json");
+  write(qualification, { passed: true, productionAdmission: true, liveSdkRequestsSent: 0,
+    sourceCommit: source, buildHash: build, runtime: repo, publicDirectAccessRefused: true,
+    deadEpochSuccessorReadQualified: true, deadEpochSuccessorRestoreQualified: true,
+    normalCurrentStoreSuccessorQualified: true, normalCurrentFactsRetryQualified: true });
+  const approvalFile = path.join(f.dir, "cold-approval.json");
+  const approval = { version: 1, purpose: "dead-normal-currentstore-successor-v1", requestId: f.baseRequestId,
+    clientId: f.p.epochClientId, predecessorEpochId: f.p.epochId, previousBuildHash: f.p.buildHash,
+    previousOwner: f.owner, pointerHash: ref(path.join(f.dir, "isolated-admission-epoch.json")).sha256,
+    stateHash: ref(path.join(f.epoch, "queue-state.json")).sha256,
+    rootStateHash: ref(path.join(f.dir, "queue-state.json")).sha256,
+    rootIdentityHash: ref(path.join(f.dir, "instance.json")).sha256,
+    candidateRoot: repo, sourceCommit: source, buildHash: build, qualification: ref(qualification),
+    expectedProcess: f.expectedProcess, normalCurrentStore: f.normalStore };
+  write(approvalFile, approval);
+  const audit = path.join(f.dir, "epoch-successions", f.hash(f.baseRequestId));
+  let launches = 0;
+  children.spawn = () => { launches++; return { on() {}, unref() {}, stdin: { on() {}, end(input: string) {
+    const { nonce } = JSON.parse(input);
+    successor.claimSuccessorBroker(f.dir, nextOwner, nonce, build, {});
+    started = true;
+    write(path.join(audit, "worker-ready.json"), { nonce, owner: nextOwner, buildHash: build, sdkRequestsSent: 0 });
+  } } }; };
+  await successor.bootstrapSuccessor(f.epochClient, {}, { approval: approvalFile, requestId: f.baseRequestId, confirmOwnership: true });
+  const authority = ref(path.join(audit, "authority.json"));
+  await successor.bootstrapSuccessor(f.epochClient, {}, { approval: approvalFile, requestId: f.baseRequestId, confirmOwnership: true });
+  assert.equal(launches, 1, "Existing metadata receipt never launches another producer");
+  await assert.rejects(successor.bootstrapSuccessor(f.epochClient, {}, {
+    approval: approvalFile, requestId: f.baseRequestId + ":reuse", confirmOwnership: true }), { code: "INVALID_REQUEST" });
+  const identity = { kind: "normal-currentstore-v1", resolvedIdentity: { creationId: f.p.creationId, name: "Untitled" } };
+  const binding = { purpose: "normal-currentstore-current-facts-v1", clientId: f.p.epochClientId,
+    expectedProcess: f.expectedProcess, successorAuthorityHash: authority.sha256, normalCurrentStore: f.normalStore };
+  const prepared = normal.prepareNormalCurrentFacts(repo, identity, binding);
+  assert.match(prepared.artifact.script, /normal_currentstore_facts\([^\r\n]*, True\)/);
+  const facts = { kind: binding.purpose, originalDocumentCreationId: f.p.creationId, originalDocumentName: "Untitled",
+    originalDocumentPresent: false, identityPolicy: "new-unsaved-default-v1", activeCommand: "SelectCommand",
+    documents: [{ creationId: randomUUID(), name: "Untitled", fileId: null, isSaved: false, isModified: false }],
+    historicalOutcome: "unknown", modelValidation: "not_performed" };
+  normal.validateNormalCurrentFacts(facts, identity, binding);
+  assert.throws(() => normal.validateNormalCurrentFacts(facts, identity));
+  assert.throws(() => normal.prepareNormalCurrentFacts(repo, identity, { ...binding, clientId: "foreign-owner" }));
+  assert.throws(() => normal.prepareNormalCurrentFacts(repo, identity, { ...binding, expectedProcess: { ...f.expectedProcess, birth: "foreign" } }));
+  assert.throws(() => normal.prepareNormalCurrentFacts(repo, identity, { ...binding, successorAuthorityHash: "f".repeat(64) }));
+  assert.throws(() => normal.validateNormalCurrentFacts({ ...facts,
+    documents: [{ ...facts.documents[0], isSaved: true }] }, identity, binding));
+  const lineage = load("../src/queue-epoch-lineage") as typeof import("../src/queue-epoch-lineage");
+  const proven = JSON.parse(JSON.stringify(lineage.successionAuthority(f.dir, authority)));
+  assert.throws(() => normal.assertNormalCurrentPredecessor(f.dir, proven,
+    { ...f.ports, producerAbsent: () => false }), { code: "NORMAL_SUCCESSOR_UNPROVEN" });
+  const query = sdkOs.querySdkProcess;
+  sdkOs.querySdkProcess = process => ({ state: "present", ...process, observedAtUtc: new Date().toISOString() });
+  assert.throws(() => normal.prepareNormalCurrentFacts(repo, identity, binding), { code: "NORMAL_SUCCESSOR_UNPROVEN" });
+  sdkOs.querySdkProcess = query;
+  const originalProduct = fs.readFileSync(f.rpcFile);
+  write(f.rpcFile, { ...JSON.parse(originalProduct.toString()), terminal: true, outcome: "succeeded" });
+  assert.throws(() => normal.prepareNormalCurrentFacts(repo, identity, binding), { code: "NORMAL_SUCCESSOR_UNPROVEN" });
+  fs.writeFileSync(f.rpcFile, originalProduct);
+  assert.match(normal.prepareNormalCurrentFacts(repo, identity, binding).artifact.script, /normal_currentstore_facts\([^\r\n]*, True\)/);
+});
+
 test("legacy failed normal read traverses fresh authorization, retirement and existing successor inspectors on the same SDK", async (t) => {
   const repo = path.resolve(".");
   const f = createFixture(t, repo);

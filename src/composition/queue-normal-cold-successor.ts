@@ -361,6 +361,65 @@ function profile(entry: Reference): Profile {
     fail("Exact predecessor configuration hash required");
   return { ...normalColdProfile, ...target } as unknown as Profile;
 }
+function rawDocumentInventory(root: string, p: Profile, rpc: Data): unknown[] {
+  const original = object(rpc["instance"])["documents"];
+  if (Array.isArray(original)) return original;
+  // New metadata-only successors may retain a compact product instance. Their
+  // existing, completed preflight is separate document evidence, never evidence
+  // that the product ran, failed, or can be replayed.
+  const dir = path.join(root, "jobs", p.jobId);
+  if (!["preflight-start.json", "preflight.json", "preflight-result.json"].every(name => fs.existsSync(path.join(dir, name))))
+    fail("The compact product instance has no complete original preflight document observation");
+  const start = read(path.join(dir, "preflight-start.json"));
+  const complete = read(path.join(dir, "preflight.json"));
+  const result = read(path.join(dir, "preflight-result.json"));
+  const binding = object(start["binding"]);
+  const rpcId = binding["rpcId"];
+  if (typeof rpcId !== "string" || !/^[a-f0-9-]{36}$/.test(rpcId))
+    fail("An exact original preflight RPC is required for document evidence");
+  const receiptPath = path.join(dir, `preflight-${rpcId}.receipt.json`);
+  if (!fs.existsSync(receiptPath)) fail("Original preflight has no bound terminal receipt");
+  const physical = read(receiptPath);
+  const observedAt = typeof result["at"] === "string" ? Date.parse(result["at"]) : NaN;
+  const rows = typeof result["text"] === "string"
+    ? result["text"].split(/\r?\n/).filter(line => line.startsWith("FMCAD_QUEUE_INSTANCE ")) : [];
+  let observed: Data = {};
+  if (rows.length === 1) {
+    try { observed = object(JSON.parse(rows[0]!.slice("FMCAD_QUEUE_INSTANCE ".length))); }
+    catch { fail("Preflight document observation is malformed"); }
+  }
+  if (start["version"] !== 2 || complete["version"] !== 2 ||
+      start["jobId"] !== p.jobId || complete["jobId"] !== p.jobId ||
+      start["buildHash"] !== p.buildHash || complete["buildHash"] !== p.buildHash ||
+      binding["jobId"] !== p.jobId || binding["buildHash"] !== p.buildHash ||
+      binding["requestHash"] !== digest(`preflight:${p.jobId}:${rpcId}`) ||
+      Object.keys(binding).sort().join() !== "buildHash,jobId,requestHash,rpcId" ||
+      start["receipt"] !== receiptPath || complete["completed"] !== true ||
+      complete["idle"] !== true || complete["requiresIdle"] !== true ||
+      result["stage"] !== "instance_probe" || result["failed"] !== false || rows.length !== 1 ||
+      typeof start["at"] !== "number" || !Number.isFinite(observedAt) ||
+      start["at"] <= 0 || observedAt < start["at"] || observedAt > Date.now() ||
+      !same(observed, complete["instance"]) ||
+      ![start["instance"], complete["instance"], physical["instance"]].every(value =>
+        same(process(value), process(p.sdk)) && object(value)["version"] === p.sdk.version) ||
+      physical["terminal"] !== true || physical["outcome"] !== "succeeded" ||
+      Object.entries(binding).some(([key, value]) => !same(physical[key], value)) ||
+      !Array.isArray(observed["documents"]))
+    fail("Document fallback requires the original job's exact successful idle preflight, not a product completion");
+  const documents = observed["documents"] as unknown[];
+  const identities = new Set<string>();
+  for (const value of documents) {
+    const doc = object(value);
+    if (Object.keys(doc).sort().join() !== "fileId,id,isModified,isSaved" ||
+        typeof doc["id"] !== "string" || !doc["id"] || identities.has(doc["id"]) ||
+        !(doc["fileId"] === null || typeof doc["fileId"] === "string") ||
+        typeof doc["isSaved"] !== "boolean" || typeof doc["isModified"] !== "boolean")
+      fail("Preflight inventory needs unique complete document identities");
+    identities.add(doc["id"]);
+  }
+  return documents;
+}
+
 function snapshot(
   root: string,
   p: Profile,
@@ -398,13 +457,23 @@ function snapshot(
   if (rawRpc) {
     if (!p.predecessorSource) fail("Raw predecessor source evidence required");
     const source = checked(p.predecessorSource);
-    if (
-      source["physicalREADY"] !== true ||
-      source["sourceCommit"] !== p.sourceCommit ||
-      source["buildHash"] !== p.buildHash ||
-      !same(process(source["sdk"]), process(p.sdk))
-    )
-      fail("Raw predecessor source/build/process provenance does not match");
+    if (source["physicalREADY"] === true) {
+      if (source["sourceCommit"] !== p.sourceCommit || source["buildHash"] !== p.buildHash ||
+          !same(process(source["sdk"]), process(p.sdk)))
+        fail("Raw predecessor source/build/process provenance does not match");
+    } else {
+      // A published epoch already carries authenticated runtime provenance. Do
+      // not manufacture physicalREADY for a later unresolved public request.
+      if (!same(pointer["succession"], p.predecessorSource))
+        fail("Raw source authority must be the published predecessor's exact succession");
+      const lineage = load("./queue-epoch-lineage") as typeof import("../queue-epoch-lineage");
+      const proven = lineage.successionAuthority(root, p.predecessorSource);
+      lineage.epochLineage(root, pointer as unknown as Pointer);
+      if (proven.authority.sourceCommit !== p.sourceCommit || proven.authority.buildHash !== p.buildHash ||
+          proven.authority.clientId !== p.epochClientId ||
+          !same(process(proven.authority.expectedProcess), process(p.sdk)))
+        fail("Published runtime source/build/process provenance does not match the unknown job");
+    }
   }
   const payload = rawRpc ? object(request["payload"]) : {};
   const params = rawRpc ? object(payload["params"]) : {};
@@ -641,8 +710,7 @@ function snapshot(
       object(rpc["request"])["method"] !== payload["method"] ||
       object(rpc["wireRequest"])["id"] !== "fmcad:" + p.rpcId ||
       object(rpc["wireRequest"])["method"] !== payload["method"] ||
-      !Array.isArray(object(rpc["instance"])["documents"]) ||
-      !(object(rpc["instance"])["documents"] as unknown[]).some(
+      !rawDocumentInventory(root, p, rpc).some(
         (doc) => object(doc)["id"] === p.creationId,
       )
     )
@@ -1195,6 +1263,31 @@ export function assertNormalCurrentPredecessor(
     a.previousOwner,
   );
 }
+function coldDefaultScope(binding: AuditBinding) {
+  if (!binding["normalCurrentStore"]) return null;
+  const normal = binding["normalCurrentStore"] as NormalCurrentStoreApproval;
+  const target = normalCurrentTarget(normal);
+  if (target.requestKind !== "raw-rpc" || !["Bez nazwy", "Untitled"].includes(target.documentName)) return null;
+  const root = path.dirname(path.dirname(path.dirname(normal.jobAuthorization.path)));
+  const active = object(read(path.join(root, "active-epoch-succession.json")));
+  const entry = exactReference(active["authority"]);
+  if (entry.sha256 !== binding["successorAuthorityHash"])
+    fail("Cold default identity requires the exact active normal authority");
+  const lineage = load("./queue-epoch-lineage") as typeof import("../queue-epoch-lineage");
+  const proven = lineage.successionAuthority(root, entry);
+  const a = proven.authority;
+  if (!same(a["normalCurrentStore"], normal) || a["priorNormalCurrentFactsRetry"] !== undefined ||
+      a.clientId !== binding["clientId"] || !same(process(a.expectedProcess), process(binding["expectedProcess"])) ||
+      typeof a["candidateRoot"] !== "string" || typeof a["configHash"] !== "string" || typeof a["nonce"] !== "string")
+    fail("Cold default identity is not transferable to another owner, process or normal scope");
+  normalRetryOwner(a["previousOwner"]);
+  // This retains both authentic old SDK death and all-producers-retired/new-birth
+  // fences. A live SDK or a new document alone is never quarantine authority.
+  // The public lineage type omits the private broker fields validated above.
+  assertNormalCurrentPredecessor(root, proven as unknown as Checked);
+  return { root, baseRequestId: a.requestId, originalNormalStore: normal, candidateRoot: a["candidateRoot"] };
+}
+
 export function prepareNormalCurrentFacts(
   installation: string,
   identity: unknown,
@@ -1212,23 +1305,26 @@ export function prepareNormalCurrentFacts(
       "Normal current-facts reader cannot adopt an atomic or foreign identity",
     );
   const retry = normalCurrentFactsRetryBinding(binding);
-  const allowNewUnsavedDefault = retry
-    ? allowsNewUnsavedDefault(
-        normalCurrentFactsRetryRoot(binding),
-        retry.baseRequestId,
-        retry.originalNormalStore,
-        document["creationId"],
-        document["name"],
-      )
-    : false;
-  if (retry && retry.candidateRoot !== installation)
-    fail("The retry candidate must use its exact qualified runtime root");
   const sourceFile = path.join(
     installation,
     "runtime/python/recovery/normal_currentstore.py",
   );
   canonical(sourceFile);
   const source = fs.readFileSync(sourceFile, "utf8");
+  // Frozen two-argument predecessor readers must be reproduced byte-for-byte.
+  const cold = !retry && source.includes("allow_new_unsaved_default") ? coldDefaultScope(binding) : null;
+  const identityScope = retry || cold;
+  const allowNewUnsavedDefault = identityScope
+    ? allowsNewUnsavedDefault(
+        retry ? normalCurrentFactsRetryRoot(binding) : cold!.root,
+        identityScope.baseRequestId,
+        identityScope.originalNormalStore,
+        document["creationId"],
+        document["name"],
+      )
+    : false;
+  if (identityScope && identityScope.candidateRoot !== installation)
+    fail("The normal identity candidate must use its exact qualified runtime root");
   const artifact = (
     load(
       "./dist/python/artifact",
@@ -1281,11 +1377,13 @@ export function validateNormalCurrentFacts(
   const value = object(input);
   const doc = object(object(identity)["resolvedIdentity"]),
     retry = binding ? normalCurrentFactsRetryBinding(binding) : null,
-    allowNewUnsavedDefault = retry
+    cold = !retry && binding && value["identityPolicy"] === "new-unsaved-default-v1" ? coldDefaultScope(binding) : null,
+    identityScope = retry || cold,
+    allowNewUnsavedDefault = identityScope
       ? allowsNewUnsavedDefault(
-          normalCurrentFactsRetryRoot(binding),
-          retry.baseRequestId,
-          retry.originalNormalStore,
+          retry ? normalCurrentFactsRetryRoot(binding) : cold!.root,
+          identityScope.baseRequestId,
+          identityScope.originalNormalStore,
           doc["creationId"],
           doc["name"],
         )
@@ -1530,7 +1628,7 @@ function allowsNewUnsavedDefault(
   )
     return false;
   const { rawRpc } = retryOriginalNormalStore(root, baseRequestId, normal),
-    documents = object(rawRpc["instance"])["documents"];
+    documents = rawDocumentInventory(root, p, rawRpc);
   if (!Array.isArray(documents))
     fail("The original raw RPC has no pinned document identity row");
   const matches = documents.filter(
