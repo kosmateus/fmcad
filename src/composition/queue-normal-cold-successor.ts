@@ -37,6 +37,7 @@ export const normalColdProfile = Object.freeze({
 export interface NormalCurrentStoreTarget {
   kind: "normal-currentstore-target-v1";
   requestKind?: "raw-rpc";
+  predecessorSource?: Reference;
   sourceCommit?: string;
   buildHash?: string;
   epochId: string;
@@ -254,7 +255,7 @@ function profile(entry: Reference): Profile {
     "configHash",
   ];
   if (Object.hasOwn(target, "requestKind")) {
-    keys.push("requestKind");
+    keys.push("requestKind", "predecessorSource");
     if (
       target["requestKind"] !== "raw-rpc" ||
       !Object.hasOwn(target, "sourceCommit") ||
@@ -283,7 +284,10 @@ function profile(entry: Reference): Profile {
     Object.keys(target).sort().join() !== keys.sort().join() ||
     target["kind"] !== "normal-currentstore-target-v1" ||
     keys
-      .filter((key) => !["kind", "sdk", "metadata"].includes(key))
+      .filter(
+        (key) =>
+          !["kind", "sdk", "metadata", "predecessorSource"].includes(key),
+      )
       .some((key) => typeof target[key] !== "string" || !target[key]) ||
     ["epochId", "jobId", "rpcId", "creationId"].some(
       (key) => !/^[a-f0-9-]{36}$/.test(String(target[key])),
@@ -339,6 +343,20 @@ function snapshot(
     : read(path.join(root, "broker.lock"));
   const args = request["argv"];
   const rawRpc = p.requestKind === "raw-rpc";
+  // Ordinary broker reopen writes only instance/build/config, not a Git SHA.
+  // Raw targets must retain the separately recorded physical-ready provenance;
+  // never invent or rewrite the predecessor's instance identity.
+  if (rawRpc) {
+    if (!p.predecessorSource) fail("Raw predecessor source evidence required");
+    const source = checked(p.predecessorSource);
+    if (
+      source["physicalREADY"] !== true ||
+      source["sourceCommit"] !== p.sourceCommit ||
+      source["buildHash"] !== p.buildHash ||
+      !same(process(source["sdk"]), process(p.sdk))
+    )
+      fail("Raw predecessor source/build/process provenance does not match");
+  }
   const payload = rawRpc ? object(request["payload"]) : {};
   const params = rawRpc ? object(payload["params"]) : {};
   const scriptArgs = rawRpc ? object(params["arguments"]) : {};
@@ -382,7 +400,8 @@ function snapshot(
     pointer["root"] !== epoch ||
     pointer["ownerClientId"] !== p.epochClientId ||
     !same(process(pointer["currentInstance"]), process(p.sdk)) ||
-    identity["sourceCommit"] !== p.sourceCommit ||
+    (identity["sourceCommit"] !== p.sourceCommit &&
+      !(rawRpc && identity["sourceCommit"] === undefined)) ||
     identity["buildHash"] !== p.buildHash ||
     identity["configHash"] !== p.configHash ||
     !same(process(identity["instance"]), process(p.sdk)) ||
@@ -444,6 +463,7 @@ function snapshot(
     reference(path.join(epoch, "instance.json")),
   );
   files.push(reference(path.join(epoch, "closed.json")));
+  if (rawRpc) files.push(reference(p.predecessorSource!.path));
   const closeReceipt = object(closed["receipt"]);
   const closePath = closeReceipt["path"];
   if (

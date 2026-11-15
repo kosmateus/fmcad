@@ -320,8 +320,24 @@ function fixture(
     ),
   );
   const targetFile = path.join(dir, "normal-target.json");
+  const sourceFile = path.join(dir, "predecessor-physical-ready.json");
+  if (raw) {
+    write(sourceFile, {
+      physicalREADY: true,
+      sourceCommit: p.sourceCommit,
+      buildHash: p.buildHash,
+      sdk: p.sdk,
+    });
+    const reopenedIdentity = {
+      buildHash: p.buildHash,
+      configHash: p.configHash,
+      instance: p.sdk,
+    };
+    write(path.join(epoch, "instance.json"), reopenedIdentity);
+  }
   write(targetFile, {
     ...target,
+    ...(raw ? { predecessorSource: ref(sourceFile) } : {}),
     jobHash: job.hash,
     kind: "normal-currentstore-target-v1",
   });
@@ -506,6 +522,7 @@ test("normal raw RPC successor binds the original owner, payload and broker with
   fs.unlinkSync(worker);
   const target = JSON.parse(fs.readFileSync(f.targetReference.path, "utf8"));
   delete target.requestKind;
+  delete target.predecessorSource;
   write(f.targetReference.path, target);
   assert.throws(
     () =>
