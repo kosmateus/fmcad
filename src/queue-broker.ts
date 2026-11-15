@@ -6206,16 +6206,23 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           "resources/list",
           "resources/templates/list",
         ].includes(rawPayload.method);
+        // Local stdio initialization does not create an upstream HTTP session.
+        // Raw calls without an explicit upstream session must negotiate their
+        // own, just like broker-owned catalog reads and prepared tool calls.
+        const openSession =
+          physicalCatalogRead ||
+          (rawPayload.method === "tools/call" &&
+            job.request.sessionId === undefined);
         const headers = Object.fromEntries(
           Object.entries(client.server.headers || {}).filter(
             ([name]) => name.toLowerCase() !== "mcp-protocol-version",
           ),
         );
         const operation = (async () => {
-          const sessionId = physicalCatalogRead
+          const sessionId = openSession
             ? await client._openSession()
             : job.request.sessionId;
-          const protocolVersion = physicalCatalogRead
+          const protocolVersion = openSession
             ? client.negotiatedProtocolVersion
             : job.request.protocolVersion;
           if (protocolVersion)

@@ -201,9 +201,11 @@ function writeFakeReceipts(
   assert.fail("unexpected fake script nesting");
 }
 
-for (const backend of ["mcp", "addin"])
+for (const { backend, externalSession } of ["mcp", "addin"].flatMap((backend) =>
+  [true, false].map((externalSession) => ({ backend, externalSession })),
+))
   for (const disconnect of [false, true]) {
-    test(`production broker transport selects ${backend}: ${disconnect ? "unknown without replay" : "scoped raw protocol and native receipt"}`, async (t) => {
+    test(`production broker transport selects ${backend}: ${externalSession ? "external session" : "broker session"}: ${disconnect ? "unknown without replay" : "scoped raw protocol and native receipt"}`, async (t) => {
       if (disconnect && !process.env["FMCAD_TRANSPORT_BROKER_CHILD"]) {
         // Unknown ownership deliberately refuses shutdown. Keep that behavior in
         // a disposable child rather than weakening the production close contract.
@@ -218,7 +220,7 @@ for (const backend of ["mcp", "addin"])
             "--test",
             "--test-force-exit",
             "--test-name-pattern",
-            `production broker transport selects ${backend}: unknown`,
+            `production broker transport selects ${backend}: ${externalSession ? "external session" : "broker session"}: unknown`,
             __filename,
           ],
           {
@@ -241,6 +243,7 @@ for (const backend of ["mcp", "addin"])
         documents: [],
       };
       let products = 0;
+      let missingSessions = 0;
       const catalogs: Array<{
         payload: HttpRpcRequest;
         session: string | string[] | undefined;
@@ -280,6 +283,12 @@ for (const backend of ["mcp", "addin"])
             res.end();
             return;
           }
+          if (!req.headers["mcp-session-id"]) {
+            missingSessions++;
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: "Missing MCP-Session-Id header" }));
+            return;
+          }
           if (payload.method === "resources/list") {
             catalogs.push({
               payload,
@@ -311,8 +320,18 @@ for (const backend of ["mcp", "addin"])
           }
           products++;
           assert.equal(payload.params.name, "capture_viewport");
-          assert.equal(req.headers["mcp-session-id"], "external-session");
-          assert.equal(req.headers["mcp-protocol-version"], "2025-03-26");
+          assert.equal(
+            req.headers["mcp-session-id"],
+            externalSession ? "external-session" : "local-discovery",
+          );
+          assert.equal(
+            req.headers["mcp-protocol-version"],
+            externalSession
+              ? "2025-03-26"
+              : backend === "addin"
+                ? "2025-06-18"
+                : "2024-11-05",
+          );
           if (disconnect) {
             res.destroy();
             return;
@@ -383,7 +402,7 @@ for (const backend of ["mcp", "addin"])
           cwd: root,
           timeoutMs: 3000,
           protocolVersion: "2025-03-26",
-          sessionId: "external-session",
+          ...(externalSession ? { sessionId: "external-session" } : {}),
           payload: {
             jsonrpc: "2.0",
             id: "caller-original",
@@ -408,6 +427,11 @@ for (const backend of ["mcp", "addin"])
           break;
         await new Promise((resolve) => setTimeout(resolve, 10));
       } while (Date.now() < deadline);
+      assert.equal(
+        missingSessions,
+        0,
+        "HTTP 400: Missing MCP-Session-Id header",
+      );
       assert.equal(
         products,
         1,
