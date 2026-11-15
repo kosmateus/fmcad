@@ -483,6 +483,7 @@ export function assertSuccessorApproval(value: Inspection, approval: Approval) {
     q.deadEpochSuccessorReadQualified !== true ||
     q.deadEpochSuccessorRestoreQualified !== true
     || (approval.normalCurrentStore && q.normalCurrentStoreSuccessorQualified !== true)
+    || (approval.priorNormalCurrentFactsRetry !== undefined && q.normalCurrentFactsRetryQualified !== true)
   )
     fail(
       "EPOCH_SUCCESSOR_UNQUALIFIED",

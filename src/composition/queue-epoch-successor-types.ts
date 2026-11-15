@@ -111,6 +111,7 @@ export interface Qualification {
   deadEpochSuccessorReadQualified?: boolean;
   deadEpochSuccessorRestoreQualified?: boolean;
   normalCurrentStoreSuccessorQualified?: boolean;
+  normalCurrentFactsRetryQualified?: boolean;
 }
 export interface Inspection {
   root: string;

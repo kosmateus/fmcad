@@ -855,7 +855,7 @@ async function main() {
     auditFactsCaptureQualified: true,
     deadEpochSuccessorReadQualified: true,
     deadEpochSuccessorRestoreQualified: true,
-    ...(options["--normal-currentstore"] === "true" ? { normalCurrentStoreSuccessorQualified: true } : {}),
+    ...(options["--normal-currentstore"] === "true" ? { normalCurrentStoreSuccessorQualified: true, normalCurrentFactsRetryQualified: true } : {}),
     regionalFixtureTypedOperationsQualified: true,
     fixedContainmentProgramQualified: true,
     fixedSectionsProgramQualified: true,
