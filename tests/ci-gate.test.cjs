@@ -255,7 +255,7 @@ test("one candidate build feeds CI and offline regression consumers", () => {
   assert.doesNotMatch(reusable, /github\.run_id|github\.run_attempt/);
   assert.equal(
     (reusable.match(/uses: actions\/upload-artifact@v4/g) || []).length,
-    4,
+    5,
   );
   assert.equal((reusable.match(/overwrite: true/g) || []).length, 3);
   assert.match(jobs.prepare, /retention-days: 90/);
