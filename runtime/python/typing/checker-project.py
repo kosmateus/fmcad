@@ -7,6 +7,8 @@ import tokenize
 import re
 import hashlib
 import pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from source_codec import decoded_envelope
 
 
 def literal(node):
@@ -57,6 +59,7 @@ def inspect(unit, declared_units):
             insert = node.end_lineno
         else:
             break
+    decoded = decoded_envelope(original_source, tree)
     embedded, gaps, replacements = [], [], []
     parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
     for node in ast.walk(tree):
@@ -75,7 +78,8 @@ def inspect(unit, declared_units):
             continue
         if name == 'exec' and node.args and isinstance(node.args[0], ast.Call) and isinstance(node.args[0].func, ast.Name) and node.args[0].func.id == 'compile':
             continue  # compile is visited independently
-        code = literal(node.args[0]) if node.args else None
+        code = (decoded if decoded is not None and node is tree.body[-1].value.args[0]
+                else literal(node.args[0]) if node.args else None)
         filename = literal(node.args[1]) if name == 'compile' and len(node.args) > 1 else None
         if code is None:
             gaps.append(node.lineno)
@@ -188,6 +192,9 @@ def inspect(unit, declared_units):
     binding.visit(tree)
     unit = dict(unit, originalSource=original_source, insert=insert, embedded=embedded, gaps=gaps, early=early,
                 top_calls=top_calls, has_run=binding.present, run_line=binding.line)
+    if decoded is not None:
+        unit['decodedSource'] = {'filename': tree.body[-1].value.args[0].args[1].value,
+                                 'sha256': hashlib.sha256(decoded.encode('utf-8')).hexdigest()}
     if replacements:
         source_bytes = source.encode('utf-8')
         analysis_bytes = source_bytes

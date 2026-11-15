@@ -2,6 +2,10 @@
 import ast
 import json
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'typing'))
+from source_codec import decoded_envelope, encode_source
 
 
 def literal(node):
@@ -22,29 +26,36 @@ def literal(node):
     return None
 
 
-def extract(source, filename, units, seen, depth=0):
+def extract(source, filename, units, seen, budget, depth=0):
     if depth > 32:
         raise ValueError('Nested literal compile depth exceeds 32')
     tree = ast.parse(source, filename=filename)
+    decoded = decoded_envelope(source, tree)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
             continue
         if node.func.id != 'compile' or len(node.args) < 2:
             continue
-        code, name = literal(node.args[0]), literal(node.args[1])
+        code = (decoded if decoded is not None and node is tree.body[-1].value.args[0]
+                else literal(node.args[0]))
+        name = literal(node.args[1])
         if code is None or name is None:
             continue
         if name in seen:
             if seen[name] != code:
                 raise ValueError('Conflicting embedded source filename: ' + name)
             continue
+        budget[0] += len(code.encode('utf-8'))
+        if budget[0] > 16 * 1024 * 1024 or len(units) >= 255:
+            raise ValueError('Embedded source inventory exceeds 16 MiB or 256 units')
         seen[name] = code
         units.append({'filename': name, 'source': code})
-        extract(code, name, units, seen, depth + 1)
+        extract(code, name, units, seen, budget, depth + 1)
 
 
 if __name__ == '__main__':
     request = json.load(sys.stdin)
+    source = encode_source(request['source']) if request.get('encodeNative') else request['source']
     result = []
-    extract(request['source'], '<fmcad-wire>', result, {})
-    json.dump(result, sys.stdout, ensure_ascii=True, allow_nan=False)
+    extract(source, '<fmcad-wire>', result, {}, [len(source.encode('utf-8'))])
+    json.dump({'source': source, 'units': result}, sys.stdout, ensure_ascii=True, allow_nan=False)

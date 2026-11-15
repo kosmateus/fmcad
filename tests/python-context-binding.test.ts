@@ -378,7 +378,15 @@ test("actual cad-v1 helper stage receipt retains all source units and namespace 
     pythonArtifactManifest(original),
   );
   assert.equal(retainedOrigin(final).units.length, original.units.length);
-  assert.ok(retainedOrigin(final).units.length > 100);
+  assert.deepEqual(
+    retainedOrigin(final).units,
+    original.units.map(({ id, filename, role, sha256 }) => ({
+      id,
+      filename,
+      role,
+      sha256,
+    })),
+  );
   assert.deepEqual(
     at(retainedOrigin(final).context, "unitContexts", "user-script"),
     {
@@ -561,7 +569,13 @@ test("large final receipt uses bounded source files without raising diagnostic l
         },
       ]),
     );
-    assert.ok(artifact.bytes.length > 1024 * 1024);
+    const decodedReceipt = artifact.units.find(
+      (unit) => unit.filename === "<fmcad-native-source>",
+    );
+    assert.ok(
+      decodedReceipt && Buffer.byteLength(decodedReceipt.source) > 1024 * 1024,
+    );
+    assert.ok(artifact.bytes.length <= 1024 * 1024);
     const report = await checker.check({
       artifact,
       context: { kind: "raw" },

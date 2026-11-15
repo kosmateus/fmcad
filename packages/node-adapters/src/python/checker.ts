@@ -23,6 +23,7 @@ import type {
 import { preparePythonArtifact, verifyPythonArtifact } from "./artifact.js";
 import { cadBundleUnits } from "./bundle.js";
 import { mapPythonOrigin } from "./context-binding.js";
+import { prepareWireArtifact } from "./source-units.js";
 import {
   checkerHash,
   checkerObject,
@@ -66,6 +67,7 @@ interface Unit {
   projectedBodies?: { id: string; unitId: string; startLine: number; endLine: number; sha256: string }[];
   has_run: boolean;
   run_line: number;
+  decodedSource?: { filename: string; sha256: string };
 }
 interface ProjectionBody {
   readonly id: string;
@@ -414,7 +416,7 @@ function recoverCanonicalBundleArtifact(
   }
 
   if (
-    artifact.units.length !== 2 || artifact.sourceMap.length !== 1 ||
+    ![2, 3].includes(artifact.units.length) || artifact.sourceMap.length !== 1 ||
     !artifact.context || typeof artifact.context !== "object" || Array.isArray(artifact.context)
   )
     return null;
@@ -425,14 +427,25 @@ function recoverCanonicalBundleArtifact(
   const mappedIds = new Set(artifact.sourceMap.map((entry) => entry.unitId));
   const mapped = artifact.units.filter((unit) => mappedIds.has(unit.id));
   const embedded = artifact.units.filter((unit) => !mappedIds.has(unit.id));
+  const queue = embedded.find((unit) => unit.filename === "<fmcad-queue>");
+  const codec = embedded.find((unit) => unit.filename === "<fmcad-native-source>");
   if (
-    mapped.length !== 1 || embedded.length !== 1 ||
+    mapped.length !== 1 || embedded.length !== (codec ? 2 : 1) ||
     mapped[0]!.id !== "wire" || mapped[0]!.filename !== "<fmcad-wire>" || mapped[0]!.role !== "wrapper" ||
-    embedded[0]!.id !== "embedded:0" || embedded[0]!.filename !== "<fmcad-queue>" || embedded[0]!.role !== "user"
+    !queue || queue.id !== (codec ? "embedded:1" : "embedded:0") || queue.role !== "user" ||
+    (codec && (codec.id !== "embedded:0" || codec.role !== "user"))
   )
     return null;
-  const original = recoveredCanonicalSource(embedded[0]!.source, typingRoot);
-  if (!original || original.sha256 !== embedded[0]!.sha256)
+  if (codec) {
+    if (!artifact.script.startsWith("# FMCAD native source envelope v1\n")) return null;
+    // Re-inventory the exact known envelope with the shared bounded AST decoder.
+    // An extra unit claim alone cannot establish a canonical source origin.
+    const decoded = prepareWireArtifact(resolve(typingRoot, ".."), artifact.script,
+      { context: artifact.context, request: artifact.request });
+    if (decoded.artifactHash !== artifact.artifactHash) return null;
+  }
+  const original = recoveredCanonicalSource(queue.source, typingRoot);
+  if (!original || original.sha256 !== queue.sha256)
     return null;
 
   const origin = {
@@ -442,9 +455,9 @@ function recoverCanonicalBundleArtifact(
     request: original.request,
     sourceMap: original.sourceMap,
     segments: [{
-      sha256: embedded[0]!.sha256,
+      sha256: queue.sha256,
       startLine: 1,
-      endLine: embedded[0]!.source.split("\n").length,
+      endLine: queue.source.split("\n").length,
     }],
     units: original.units.map(({ id, filename, role, sha256 }) => ({ id, filename, role, sha256 })),
   };
@@ -456,7 +469,7 @@ function recoverCanonicalBundleArtifact(
     return null;
   return {
     artifact: normalized,
-    binding: recoveryBinding(original, "queue-literal", embedded[0]!.id),
+    binding: recoveryBinding(original, "queue-literal", queue.id),
   };
 }
 
@@ -787,12 +800,16 @@ export function createPythonChecker(
         const helper = await readFile(
           join(options.typingRoot, "checker-project.py"),
         );
+        const sourceCodec = await readFile(
+          join(options.typingRoot, "source_codec.py"),
+        );
         const injected =
           "import adsk.core\nfrom fmcad_context import Facade\napp: adsk.core.Application\nui: adsk.core.UserInterface\nFMCAD: Facade\n";
         provenance.typingHash = checkerHash(
           Buffer.concat([
             typing,
             helper,
+            sourceCodec,
             Buffer.from(injected),
             Buffer.from(entrypointImport + "\n" + entrypointDeclaration),
           ]),
@@ -801,6 +818,7 @@ export function createPythonChecker(
         await writeFile(join(stubs, "fmcad_injected.pyi"), injected);
         const helperPath = join(inventoryDirectory, "project.py");
         await writeFile(helperPath, helper);
+        await writeFile(join(inventoryDirectory, "source_codec.py"), sourceCodec);
         const seeds = [
           {
             id: "wire",
@@ -913,6 +931,21 @@ export function createPythonChecker(
           }
         }
         let analysisBytes = 0;
+        const decodedEntrypoints = new Map<number, number>();
+        const decodedTargets = new Set<number>();
+        for (const [index, unit] of units.entries()) {
+          if (unit.decodedSource === undefined) continue;
+          const decoded = unit.decodedSource;
+          const targets = units.map((target, targetIndex) => ({ target, targetIndex })).filter(
+            ({ target }) => target.filename === decoded.filename &&
+              target.sha256 === decoded.sha256 && target.originalSourceHash === decoded.sha256,
+          );
+          if (decoded.filename !== "<fmcad-native-source>" || targets.length !== 1 ||
+              targets[0]!.targetIndex === index)
+            throw new Error("Decoded entrypoint is not bound to one exact checked source namespace");
+          decodedEntrypoints.set(index, targets[0]!.targetIndex);
+          decodedTargets.add(targets[0]!.targetIndex);
+        }
         for (const [index, unit] of units.entries()) {
           throwIfAborted(signal);
           const source = await readFile(
@@ -1337,11 +1370,16 @@ export function createPythonChecker(
             prelude.push("    from fmcad_injected import ui");
           if (unit.context.deferredFacade)
             prelude.push("    from fmcad_injected import FMCAD");
-          if (checksEntrypoint(unit)) prelude.push(entrypointImport);
+          if (checksEntrypoint(unit)) {
+            const decodedIndex = decodedEntrypoints.get(index);
+            if (decodedIndex !== undefined)
+              prelude.push(`from unit_${decodedIndex} import run`);
+            prelude.push(entrypointImport);
+          }
           const lines = unit.source.split("\n");
           lines.splice(unit.insert, 0, ...prelude);
           if (checksEntrypoint(unit)) lines.push(entrypointDeclaration);
-          const name = `unit-${index}.py`;
+          const name = decodedTargets.has(index) ? `unit_${index}.py` : `unit-${index}.py`;
           await writeFile(join(directory, name), lines.join("\n"));
           locations.set(name, { unit, preludeLines: prelude.length });
         }
