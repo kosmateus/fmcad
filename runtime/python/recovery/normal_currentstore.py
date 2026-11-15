@@ -1,6 +1,7 @@
 """Present facts for a cold normal-currentstore successor; no model writer."""
 import json as _nc_json
 import adsk.core as _nc_core
+from typing import cast as _nc_cast
 
 
 def normal_currentstore_facts(creation_id: str, document_name: str,
@@ -17,7 +18,8 @@ def normal_currentstore_facts(creation_id: str, document_name: str,
         assert doc is not None, 'Document inventory changed'
         assert doc.creationId and doc.creationId not in seen, 'Distinct document creation identities required'
         seen.add(doc.creationId)
-        data_file = doc.dataFile
+        # The SDK stub declares DataFile, but an unsaved document returns None.
+        data_file = _nc_cast('_nc_core.DataFile | None', doc.dataFile)
         file_id = data_file.id if data_file is not None else None
         documents.append({'creationId': doc.creationId, 'name': doc.name,
                           'fileId': file_id, 'isSaved': doc.isSaved, 'isModified': doc.isModified})
