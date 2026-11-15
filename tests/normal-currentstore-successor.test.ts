@@ -101,7 +101,16 @@ function syntheticReceiptPaths(
   });
 }
 
-function fixture(t: { after(fn: () => void): void }) {
+const legacyProfile = p;
+const laterRuntime = {
+  sourceCommit: "129de8c03ddbf5513ddbbe2c320b24cee3e3d4bc",
+  buildHash: "b78202e98bfc623649f4cfce2a97856232e88fc49a72c457811b46e83e058671",
+};
+function fixture(
+  t: { after(fn: () => void): void },
+  runtime?: { sourceCommit: string; buildHash: string },
+) {
+  const p = { ...legacyProfile, ...runtime };
   const dir = fs.mkdtempSync("/tmp/opencode/normal-currentstore-");
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const epoch = path.join(dir, "admission-epochs", p.epochId);
@@ -264,7 +273,7 @@ function fixture(t: { after(fn: () => void): void }) {
   const requestId = `normal-cold:${randomUUID()}`;
   const target = Object.fromEntries(
     Object.entries(p).filter(
-      ([key]) => !["sourceCommit", "buildHash"].includes(key),
+      ([key]) => runtime || !["sourceCommit", "buildHash"].includes(key),
     ),
   );
   const targetFile = path.join(dir, "normal-target.json");
@@ -564,6 +573,43 @@ test("normal-currentstore: distinct authentic owners and immutable unknown survi
   assert.equal(receipt.snapshot.sealedRequests.length, 1);
 });
 
+test("normal successor binds a later predecessor runtime without changing historical authority", (t) => {
+  const runtime = laterRuntime;
+  const f = fixture(t, runtime);
+  const receipt = JSON.parse(fs.readFileSync(f.authorization.path, "utf8"));
+  assert.equal(receipt.profile.sourceCommit, runtime.sourceCommit);
+  assert.equal(receipt.profile.buildHash, runtime.buildHash);
+  normal.inspectNormalCurrentStore(f.dir, f.approval, f.pointer, f.ports);
+  for (const key of ["sourceCommit", "buildHash"]) {
+    const target = JSON.parse(fs.readFileSync(f.targetReference.path, "utf8"));
+    const incomplete = { ...target };
+    delete incomplete[key];
+    const incompleteFile = path.join(f.dir, `missing-${key}.json`);
+    write(incompleteFile, incomplete);
+    assert.throws(
+      () =>
+        normal.authorizeNormalCurrentStore(
+          f.jobClient,
+          `missing-${key}:${randomUUID()}`,
+          ref(incompleteFile),
+        ),
+      /required together/,
+    );
+    target[key] = key === "sourceCommit" ? "0".repeat(40) : "0".repeat(64);
+    const file = path.join(f.dir, `wrong-${key}.json`);
+    write(file, target);
+    assert.throws(
+      () =>
+        normal.authorizeNormalCurrentStore(
+          f.jobClient,
+          `wrong-${key}:${randomUUID()}`,
+          ref(file),
+        ),
+      /Unsupported source/,
+    );
+  }
+});
+
 test("normal owner authorization preserves a retained historical queue snapshot above 16 MiB", (t) => {
   const f = fixture(t);
   const file = path.join(f.dir, "queue-state.json");
@@ -629,9 +675,15 @@ test("owner authorizer and recovery qualification never read or hash credential-
   }
 });
 
-for (const outcome of ["retired", "unknown"]) {
-  test(`normal metadata composes existing pidfd kernel once after SDK death: ${outcome}`, (t) => {
-    const f = fixture(t);
+for (const [outcome, runtime] of [
+  ["retired", undefined],
+  ["unknown", undefined],
+  ["retired", laterRuntime],
+  ["unknown", laterRuntime],
+] as const) {
+  test(`normal metadata composes existing pidfd kernel once after SDK death: ${outcome}, ${runtime ? "explicit" : "legacy"} runtime`, (t) => {
+    const p = { ...legacyProfile, ...runtime };
+    const f = fixture(t, runtime);
     fs.unlinkSync(f.retirement.path); // Simulate the real order: SDK death, metadata retirement, then producer receipt.
     const original = fs.readFileSync(path.join(f.epoch, "queue-state.json"));
     const processProof = {
@@ -689,6 +741,23 @@ for (const outcome of ["retired", "unknown"]) {
         },
       };
     const death = f.approval.normalCurrentStore!.deathProof;
+    if (runtime) {
+      assert.throws(
+        () =>
+          normal.retireNormalMetadataProducer(
+            f.epochClient,
+            f.requestId,
+            f.authorization,
+            death,
+            f.dir,
+            false,
+            { ...ports, buildHash: () => legacyProfile.buildHash },
+          ),
+        /exact qualified predecessor runtime/,
+      );
+      assert.equal(previews, 0);
+      assert.equal(effects, 0);
+    }
     normal.retireNormalMetadataProducer(
       f.epochClient,
       f.requestId,

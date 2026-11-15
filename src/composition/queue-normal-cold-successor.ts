@@ -27,8 +27,8 @@ const digest = (value: string | Uint8Array) =>
   createHash("sha256").update(value).digest("hex");
 const absentError =
   "NoProcessFoundForGivenId,Microsoft.PowerShell.Commands.GetProcessCommand";
-/** The qualified source ABI is fixed; incident identities are explicit sealed
- * operator input, never constants in the reusable recovery adapter. */
+/** Retained legacy target binding. New targets explicitly pin their predecessor
+ * source and runtime; neither form can change after owner authorization. */
 export const normalColdProfile = Object.freeze({
   kind: "normal-currentstore-v1" as const,
   sourceCommit: "4bae34f9970b1a3179528a1dd06e2d0e5a3f702d",
@@ -36,6 +36,8 @@ export const normalColdProfile = Object.freeze({
 });
 export interface NormalCurrentStoreTarget {
   kind: "normal-currentstore-target-v1";
+  sourceCommit?: string;
+  buildHash?: string;
   epochId: string;
   epochClientId: string;
   jobId: string;
@@ -250,6 +252,21 @@ function profile(entry: Reference): Profile {
     "metadata",
     "configHash",
   ];
+  if (
+    Object.hasOwn(target, "sourceCommit") ||
+    Object.hasOwn(target, "buildHash")
+  ) {
+    keys.push("sourceCommit", "buildHash");
+    if (
+      typeof target["sourceCommit"] !== "string" ||
+      !/^[a-f0-9]{40}$/.test(target["sourceCommit"]) ||
+      typeof target["buildHash"] !== "string" ||
+      !/^[a-f0-9]{64}$/.test(target["buildHash"])
+    )
+      fail(
+        "Exact predecessor source commit and runtime hash required together",
+      );
+  }
   if (
     Object.keys(target).sort().join() !== keys.sort().join() ||
     target["kind"] !== "normal-currentstore-target-v1" ||
@@ -632,7 +649,7 @@ export function retireNormalMetadataProducer(
   const value = authorization(client.dir, requestId, jobAuthorization),
     p = value.profile;
   canonical(runtime, true);
-  if (ports.buildHash(runtime) !== normalColdProfile.buildHash)
+  if (ports.buildHash(runtime) !== p.buildHash)
     fail(
       "Only the exact qualified predecessor runtime may retire its normal metadata owner",
     );
