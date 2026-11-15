@@ -111,7 +111,7 @@ const cadBundleBaseManifest: readonly BundleModule[] =
             {
               id: "core",
               path: "assets/cad/core.py",
-              dependencies: ["values", "fusion-values"],
+              dependencies: ["values", "fusion-values", "fusion-typing"],
             },
             {
               id: "inspection-domain",

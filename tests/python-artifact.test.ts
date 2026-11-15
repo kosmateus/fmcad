@@ -374,6 +374,7 @@ test("light document-status profile carries strict handler and wrapper context",
     [
       "values",
       "fusion-values",
+      "fusion-typing",
       "core",
       "identity",
       "document_snapshot",
@@ -381,6 +382,11 @@ test("light document-status profile carries strict handler and wrapper context",
     ],
   );
   const core = present(status.units.find((unit) => unit.id === "core")).source;
+  const statusTyping = present(
+    status.units.find((unit) => unit.id === "fusion-typing"),
+  ).source;
+  assert.ok(statusTyping.includes("class _CadAttributes(_FusionProtocol):"));
+  assert.ok(statusTyping.includes("class _DesignCaster(_FusionProtocol):"));
   for (const signature of [
     'def _entity_resolve_reference(ctx: "CadContext", ref: "JsonObject",',
     'def _entity_inspect(ctx: "CadContext", data: "JsonObject") -> "JsonRecord": ...',

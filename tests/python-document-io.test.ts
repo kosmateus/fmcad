@@ -170,7 +170,14 @@ assert simulation['productAccessed'] is False
     orderBundle(composed, ["core", "identity", "document_snapshot"]).map(
       (unit) => unit.id,
     ),
-    ["values", "fusion-values", "core", "identity", "document_snapshot"],
+    [
+      "values",
+      "fusion-values",
+      "fusion-typing",
+      "core",
+      "identity",
+      "document_snapshot",
+    ],
   );
   assert.throws(
     () =>
