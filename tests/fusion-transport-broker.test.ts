@@ -12,7 +12,11 @@ import { isolateRuntimeTestEnvironment } from "./runtime-test-environment.js";
 
 type HttpRpcParams = {
   name?: string;
-  arguments?: { code?: string; object?: { script?: string } };
+  arguments?: {
+    code?: string;
+    persistent?: boolean;
+    object?: { script?: string };
+  };
   protocolVersion?: string;
   cursor?: string;
 };
@@ -307,7 +311,7 @@ for (const { backend, externalSession } of ["mcp", "addin"].flatMap((backend) =>
           const args = payload.params.arguments;
           assert.ok(args);
           const script = args.code || args.object?.script;
-          if (script) {
+          if (script && !script.includes("FUSION_ADDIN_STDIO_OK")) {
             assert.match(script, /FMCAD_QUEUE_INSTANCE/);
             writeFakeReceipts(script, root, instance);
             const stdout = "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance);
@@ -319,7 +323,11 @@ for (const { backend, externalSession } of ["mcp", "addin"].flatMap((backend) =>
             return;
           }
           products++;
-          assert.equal(payload.params.name, "capture_viewport");
+          assert.equal(
+            payload.params.name,
+            externalSession ? "capture_viewport" : "execute_python",
+          );
+          if (script) writeFakeReceipts(script, root, instance);
           assert.equal(
             req.headers["mcp-session-id"],
             externalSession ? "external-session" : "local-discovery",
@@ -407,7 +415,15 @@ for (const { backend, externalSession } of ["mcp", "addin"].flatMap((backend) =>
             jsonrpc: "2.0",
             id: "caller-original",
             method: "tools/call",
-            params: { name: "capture_viewport", arguments: {} },
+            params: externalSession
+              ? { name: "capture_viewport", arguments: {} }
+              : {
+                  name: "execute_python",
+                  arguments: {
+                    code: 'print("FUSION_ADDIN_STDIO_OK")',
+                    persistent: false,
+                  },
+                },
           },
         },
       });
