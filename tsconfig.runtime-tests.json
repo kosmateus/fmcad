@@ -280,6 +280,7 @@
     "tests/publish.test.ts",
     "tests/python-artifact.test.ts",
     "tests/python-source-selection.test.ts",
+    "tests/python-specialization.test.ts",
     "tests/minimal-native-payload.test.ts",
     "tests/native-payload-fence.test.ts",
     "tests/python-compatibility-preparation.test.ts",

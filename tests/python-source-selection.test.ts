@@ -21,7 +21,7 @@ const { preparePythonArtifact, verifyPythonArtifact } = load(
 ) as typeof import("../packages/node-adapters/src/python/artifact");
 
 test("declaration selection preserves eager effects, captured predecessors and checked type dependencies", () => {
-  const source = `from typing import TYPE_CHECKING, TypedDict
+  const source = `from typing import TYPE_CHECKING, TypedDict, Protocol
 from functools import wraps
 events = []
 class CadContext:
@@ -32,6 +32,8 @@ class Unused:
     pass
 class UnusedRecord(TypedDict):
     value: float | None
+class UnusedProtocol(Protocol):
+    values: list['ResultType']
 if TYPE_CHECKING:
     class UnusedType:
         pass

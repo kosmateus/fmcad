@@ -94,8 +94,31 @@ expressions outside this proven subset are retained. Original UTF-8 source spans
 are removed without reparsing text heuristically, and source hashes identify the
 resulting code supplied to the checker and transport.
 
-These rules do not specialize the bodies of general functions for particular
-argument values. A shared handler containing several branches still brings the
-dependencies of those branches. Classes with unresolved method reachability
-retain their methods. Those are conservative boundaries, not claims that every
-retained byte is necessary for one observed execution.
+Finite registry comprehensions with inert closure values can be lowered to
+individual literal entries. Closed direct calls then supply literal argument
+bindings through `inspect.Signature.bind`, including captured factory parameters.
+A function is specialized only where every observed caller agrees and no alias,
+rebinding, or unresolved call invalidates the binding. Recognized closure
+decorators additionally require proof that the relevant argument is forwarded
+unchanged. Bindings decide branch feasibility; they do not replace argument
+objects, evaluated defaults, or their identities. Unknown conditions retain their
+branches, including side effects in short-circuit prefixes. The compiler symbol
+tables veto a rewrite that would change the binding of a retained reference;
+generator-shape changes are also rejected.
+
+Method selection starts from explicit construction and propagates receiver sets
+through assignments and closed direct calls. Method receiver parameters are
+qualified by their owning class. Other names are conservatively unioned across
+scopes, so uncertainty can increase retention but cannot prove a method dead.
+Aliases passed to unknown code, reflective access, unknown subtypes, class-object
+escapes, decorators, and ambiguous receivers retain the class. Implicit special
+methods and effectful method declarations remain roots. In particular, the
+existing CAD dispatch callbacks can still prevent trimming `CadContext`; the
+selector does not pretend those calls have a proven closed receiver graph.
+
+Source rewrites and declaration deletion share a pass over original UTF-8 spans.
+Identical preparation requests reuse an immutable result keyed by the complete
+source inventory, exact submitted source, generated/user mode, and parser bytes.
+This reduces repeated analysis, not cold preparation cost. Every prepared program
+still enters the exact-source checker and transport fence. These are conservative
+boundaries, not claims that every retained byte is necessary for one execution.

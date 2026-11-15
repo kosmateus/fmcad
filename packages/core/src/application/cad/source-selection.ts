@@ -23,6 +23,68 @@ export interface PythonSelectionFacts {
   readonly symbols: Readonly<Record<string, readonly PythonDependencyFacts[]>>;
   readonly definitions?: readonly PythonDefinitionFacts[];
   readonly facadeRequired?: boolean;
+  readonly receiverClasses?: readonly {
+    readonly unit: string;
+    readonly name: string;
+    readonly escaped: boolean;
+    readonly used: readonly string[];
+    readonly methods: readonly {
+      readonly name: string;
+      readonly start: number;
+      readonly end: number;
+      readonly column: number;
+      readonly removable: boolean;
+    }[];
+  }[];
+  readonly registryExpansions?: readonly PythonRegistryExpansion[];
+  readonly literalRewrites?: readonly {
+    readonly unit: string;
+    readonly byteStart: number;
+    readonly byteEnd: number;
+    readonly source: string;
+  }[];
+}
+
+export interface PythonRegistryExpansion {
+  readonly unit: string;
+  readonly byteStart: number;
+  readonly byteEnd: number;
+  readonly entries: readonly {
+    readonly operation: string;
+    readonly source: string;
+  }[];
+}
+
+/** The adapter proves finite inert construction; policy retains requested keys. */
+export function pythonSourceRewrites(
+  facts: PythonSelectionFacts,
+  selection: PythonSourceSelection,
+): readonly {
+  unit: string;
+  byteStart: number;
+  byteEnd: number;
+  source: string;
+}[] {
+  if (selection.mode !== "static") return [];
+  const registry = (facts.registryExpansions ?? [])
+    .filter((entry) => selection.units.includes(entry.unit))
+    .map((entry) => ({
+      unit: entry.unit,
+      byteStart: entry.byteStart,
+      byteEnd: entry.byteEnd,
+      source:
+        "{" +
+        entry.entries
+          .filter((row) => selection.operations?.includes(row.operation))
+          .map((row) => row.source)
+          .join(", ") +
+        "}",
+    }));
+  return registry.length
+    ? registry
+    : (facts.literalRewrites ?? []).filter((edit) =>
+        selection.units.includes(edit.unit),
+      );
 }
 
 export interface PythonDefinitionFacts extends PythonDependencyFacts {
@@ -74,7 +136,30 @@ export function unusedPythonDefinitions(
       changed = true;
     }
   }
-  return definitions.filter((entry) => !retained.has(entry));
+  const unused = definitions.filter((entry) => !retained.has(entry));
+  if (selection.mode === "static")
+    for (const owner of facts.receiverClasses ?? []) {
+      if (owner.escaped || !selection.units.includes(owner.unit)) continue;
+      for (const method of owner.methods) {
+        if (
+          !method.removable ||
+          method.name.startsWith("__") ||
+          owner.used.includes(method.name)
+        )
+          continue;
+        unused.push({
+          ...method,
+          unit: owner.unit,
+          defines: [],
+          references: [],
+          operations: [],
+          methods: [],
+          calls: [],
+          opaque: false,
+        });
+      }
+    }
+  return unused;
 }
 
 export interface PythonSourceSelection {
