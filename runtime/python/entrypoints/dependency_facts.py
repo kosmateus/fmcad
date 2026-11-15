@@ -529,6 +529,28 @@ def removable_registration(node, functions):
     return None
 
 
+def inert_typeddict(node, aliases, shadowed):
+    """Standard TypedDict fields without evaluated user-defined type operators."""
+    def annotation(value, union=False):
+        if isinstance(value, ast.Constant):
+            return value.value is None or (not union and isinstance(value.value, str))
+        if isinstance(value, ast.Name):
+            return value.id in {'str', 'int', 'float', 'bool', 'bytes', 'object'} - shadowed
+        if isinstance(value, ast.BinOp) and isinstance(value.op, ast.BitOr):
+            return (annotation(value.left, True) and annotation(value.right, True)
+                    and any(isinstance(part, ast.Name) for part in ast.walk(value)))
+        return False
+    return (isinstance(node, ast.ClassDef) and len(node.bases) == 1
+            and isinstance(node.bases[0], ast.Name) and node.bases[0].id in aliases
+            and not node.keywords and not node.decorator_list and not getattr(node, 'type_params', [])
+            and all(isinstance(member, ast.Pass)
+                    or (isinstance(member, ast.Expr) and isinstance(member.value, ast.Constant)
+                        and isinstance(member.value.value, str))
+                    or (isinstance(member, ast.AnnAssign) and isinstance(member.target, ast.Name)
+                        and member.value is None and annotation(member.annotation))
+                    for member in node.body))
+
+
 def shadowed_names(parsed):
     names = set()
     for _, tree in parsed:
@@ -540,7 +562,7 @@ def shadowed_names(parsed):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 for alias in node.names:
                     if not (isinstance(node, ast.ImportFrom) and node.module == 'typing'
-                            and alias.name in ('TYPE_CHECKING', 'Protocol')):
+                            and alias.name in ('TYPE_CHECKING', 'Protocol', 'TypedDict')):
                         names.add(alias.asname or alias.name.split('.')[0])
     return names
 
@@ -569,6 +591,9 @@ def analyse(request):
                  if isinstance(node, ast.ImportFrom) and node.module == 'typing'
                  for alias in node.names if alias.name == 'Protocol'}
     protocols.difference_update(shadowed)
+    typed_dicts = {alias.asname or alias.name for _, tree in parsed for node in tree.body
+                  if isinstance(node, ast.ImportFrom) and node.module == 'typing'
+                  for alias in node.names if alias.name == 'TypedDict'} - shadowed
     if shadowed.intersection(('property', 'staticmethod', 'classmethod')):
         protocols.clear()
     functions = {}
@@ -650,6 +675,7 @@ def analyse(request):
                                     start=min([node.lineno] + [d.lineno for d in getattr(node, 'decorator_list', [])]),
                                     end=node.end_lineno, column=node.col_offset,
                                     removable=typing_only or inert_binding(node, protocols)
+                                    or inert_typeddict(node, typed_dicts, shadowed)
                                     or ('setattr' not in shadowed and inert_decorated_function(node, functions, wraps)))
             if registration is not None:
                 definition['registration'] = registration
