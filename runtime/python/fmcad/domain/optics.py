@@ -1,5 +1,8 @@
 """DTO-only rules extracted from assets/cad/optics.py. No SDK or filesystem access."""
 import math as _optics_domain_math
+from typing import cast as _cad_cast
+
+from fmcad.domain.values import JsonObject
 
 
 def _optics_vsub(a: "Sequence[int | float]", b: "Sequence[int | float]") -> "list[int | float]":

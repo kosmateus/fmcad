@@ -3,6 +3,9 @@ import math as _sequence_domain_math
 from collections.abc import Sequence as _sequence_Sequence
 from typing import cast as _sequence_cast
 
+from fmcad.domain.values import JsonObject
+
+
 def _sequence_vsub(a: _sequence_Sequence[float], b: _sequence_Sequence[float]) -> list[float]:
     return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 

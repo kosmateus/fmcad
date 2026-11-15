@@ -1,4 +1,8 @@
 """DTO-only rules extracted from assets/cad/checking.py. No SDK or filesystem access."""
+from typing import cast as _cad_cast
+
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
 
 _EVIDENCE_KINDS = ('model', 'drawing', 'image', 'film')
 

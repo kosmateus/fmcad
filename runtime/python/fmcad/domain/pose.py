@@ -3,6 +3,9 @@ import json as _pose_domain_json
 from collections.abc import Hashable as _pose_Hashable
 from typing import cast as _pose_cast
 
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
+
 _POSE_FILL_STATES = (None, 'FULL', 'EMPTY')
 
 _POSE_SPRING_STATES = (None, 'FREE', 'COCKED', 'COMPRESSED')

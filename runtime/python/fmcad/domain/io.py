@@ -1,4 +1,11 @@
 """DTO-only rules extracted from assets/cad/io.py. No SDK or filesystem access."""
+import json
+import math
+from typing import cast as _cad_cast
+
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
+from fmcad.domain.values import _cad_fields as _io_cad_fields
 
 _IO_IMPORTS = {'.step': 'createSTEPImportOptions', '.stp': 'createSTEPImportOptions',
                '.f3d': 'createFusionArchiveImportOptions', '.iges': 'createIGESImportOptions',
@@ -28,7 +35,7 @@ def _io_camera_vector(value: "JsonValue", label: str, count: int) -> "list[float
 
 def _io_camera_snapshot(value: "JsonValue | _IoCameraState") -> "_IoCameraState":
     state = _io_json_object(_cad_cast("JsonValue", value), 'Camera state')
-    _cad_fields(state, ('document', 'eye', 'target', 'up', 'cameraType', 'units'),
+    _io_cad_fields(state, ('document', 'eye', 'target', 'up', 'cameraType', 'units'),
                 ('extents', 'perspectiveAngle'))
     document = _io_json_object(state['document'], 'Camera state document')
     eye = _io_camera_vector(state['eye'], 'Snapshot points', 3)
@@ -61,14 +68,14 @@ def _io_camera_snapshot(value: "JsonValue | _IoCameraState") -> "_IoCameraState"
 
 def _io_visibility_row(value: "JsonValue") -> "_IoVisibilityRow":
     row = _io_json_object(value, 'Visibility row')
-    _cad_fields(row, ('ref', 'isLightBulbOn'))
+    _io_cad_fields(row, ('ref', 'isLightBulbOn'))
     if type(row['isLightBulbOn']) is not bool:
         raise ValueError('Visibility rows require isLightBulbOn:boolean')
     return _cad_cast("_IoVisibilityRow", row)
 
 def _io_section_row(value: "JsonValue") -> "_IoSectionRow":
     row = _io_json_object(value, 'Section row')
-    _cad_fields(row, ('name', 'isLightBulbOn'))
+    _io_cad_fields(row, ('name', 'isLightBulbOn'))
     name, visible = row['name'], row['isLightBulbOn']
     if not isinstance(name, str) or type(visible) is not bool:
         raise ValueError('Section rows require {name, isLightBulbOn:boolean}')
@@ -76,12 +83,12 @@ def _io_section_row(value: "JsonValue") -> "_IoSectionRow":
 
 def _io_shot(value: "JsonValue") -> "_IoShot":
     shot = _io_json_object(value, 'shot')
-    _cad_fields(shot, ('path',), ('camera', 'width', 'height', 'visibility', 'sections', 'activeComponent'))
+    _io_cad_fields(shot, ('path',), ('camera', 'width', 'height', 'visibility', 'sections', 'activeComponent'))
     return _cad_cast("_IoShot", shot)
 
 def _io_visibility_state(value: "JsonValue") -> "_IoVisibilityState":
     state = _io_json_object(value, 'Visibility state')
-    _cad_fields(state, ('document', 'items'))
+    _io_cad_fields(state, ('document', 'items'))
     document = _io_json_object(state['document'], 'Visibility state document')
     if not isinstance(state['items'], list):
         raise ValueError('Visibility state items must be an array')

@@ -1,4 +1,10 @@
 """DTO-only rules extracted from assets/cad/containment.py. No SDK or filesystem access."""
+import math
+
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
+
+
 def _containment_vsub(a: "Sequence[float]", b: "Sequence[float]") -> "list[float]":
     return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 

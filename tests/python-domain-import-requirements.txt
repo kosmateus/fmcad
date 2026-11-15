@@ -1,0 +1,4 @@
+# Pinned tools for enforcing and reporting the extracted Python module graph.
+-c python-constraints.txt
+import-linter==2.16
+pydeps==3.0.9

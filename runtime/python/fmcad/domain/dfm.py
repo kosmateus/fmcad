@@ -1,4 +1,7 @@
 """DTO-only rules extracted from assets/cad/dfm.py. No SDK or filesystem access."""
+import math
+
+
 def _dfm_deg(rad: float) -> float:
     return rad * 180.0 / math.pi
 

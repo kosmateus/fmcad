@@ -3,6 +3,8 @@ import math as _fastener_domain_math
 import re as _fastener_domain_re
 from typing import TypedDict as _fastener_TypedDict
 
+from fmcad.domain.values import JsonValue
+
 
 class _LocatingHole(_fastener_TypedDict):
     x: "JsonValue"

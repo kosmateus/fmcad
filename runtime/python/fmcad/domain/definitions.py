@@ -1,6 +1,9 @@
 """SDK-free definitions validation and numerical data operations."""
 import re as _definition_domain_re
 
+from fmcad.domain.values import JsonObject
+
+
 def _definition_id(value: object) -> str:
     if not isinstance(value, str) or not _definition_domain_re.fullmatch(r'[A-Za-z0-9_-]+', value):
         raise ValueError('Recipe id must contain letters, digits, underscores or hyphens')

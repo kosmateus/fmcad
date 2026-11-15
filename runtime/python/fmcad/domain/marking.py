@@ -1,5 +1,9 @@
 """DTO-only rules extracted from assets/cad/marking.py. No SDK or filesystem access."""
 import math as _marking_domain_math
+from typing import cast as _cad_cast
+
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonRecord
 
 
 _MARK_KINDS = ('text', 'symbol', 'arrow')

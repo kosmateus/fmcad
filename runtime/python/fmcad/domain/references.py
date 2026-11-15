@@ -1,4 +1,10 @@
 """DTO-only rules extracted from assets/cad/references.py. No SDK or filesystem access."""
+from typing import cast as _cad_cast
+
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
+
+
 _REFERENCES_NATIVE_REPORT_RESERVE_MS = 10000
 
 _REFERENCES_NATIVE_MIN_POLL_MS = 1000

@@ -6,6 +6,9 @@ from collections.abc import Sequence as _InspectionSequence
 from typing import TYPE_CHECKING as _INSPECTION_TYPE_CHECKING
 from typing import cast as _inspection_cast
 
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
+
 if _INSPECTION_TYPE_CHECKING:
     from typing import Callable as _InspectionCallable
     from typing import NotRequired as _InspectionNotRequired

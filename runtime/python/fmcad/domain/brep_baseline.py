@@ -4,6 +4,10 @@ import math as _brep_baseline_math
 from typing import TYPE_CHECKING as _BREP_TYPE_CHECKING, Literal as _BrepLiteral
 from typing import Protocol as _BrepProtocol, TypedDict as _BrepTypedDict, cast as _brep_cast
 
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonRecord
+from fmcad.domain.values import JsonValue
+
 
 if _BREP_TYPE_CHECKING:
     class _BrepBodySpec(_BrepTypedDict):
@@ -28,7 +32,7 @@ if _BREP_TYPE_CHECKING:
         bodies: list[_BrepBodySpec]
 
     class _BrepSnapshot(_BrepProtocol):
-        body: "adsk.fusion.BRepBody"
+        body: object
         frame: "JsonObject | str"
 
         @property

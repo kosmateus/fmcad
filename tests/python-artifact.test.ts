@@ -392,7 +392,7 @@ test("light document-status profile carries strict handler and wrapper context",
   const values = present(
     status.units.find((unit) => unit.id === "values"),
   ).source;
-  assert.ok(values.includes("class _CadAttributes(_Protocol):"));
+  assert.ok(!values.includes("class _CadAttributes(_Protocol):"));
   assert.ok(
     core.includes(
       '_cad_cast("_CadAttributes", ctx.root.attributes).itemByName',
@@ -405,6 +405,11 @@ test("light document-status profile carries strict handler and wrapper context",
   );
 
   const full = cadBundleUnits(root, "full");
+  const fusionTyping = present(
+    full.find((unit) => unit.id === "fusion-typing"),
+  ).source;
+  assert.ok(fusionTyping.includes("class _CadAttributes(_Protocol):"));
+  assert.ok(fusionTyping.includes("class _DesignCaster(_Protocol):"));
   const fullCore = present(full.find((unit) => unit.id === "core")).source;
   assert.ok(
     !fullCore.includes('def _entity_resolve_reference(ctx: "CadContext"'),

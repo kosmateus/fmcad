@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
@@ -13,6 +14,8 @@ import { withMeasuredFasteners } from "./measured-fasteners-manifest.js";
 import { withNativeDrive } from "./native-drive-manifest.js";
 import { withSketchGeometryProofModules } from "./sketch-geometry-proof-manifest.js";
 import type { SourceInput } from "./artifact.js";
+
+const DOMAIN_IMPORT_LOWERING_VERSION = 1;
 
 export interface BundleModule {
   readonly id: string;
@@ -99,6 +102,11 @@ const cadBundleBaseManifest: readonly BundleModule[] =
               id: "fusion-values",
               path: "runtime/python/fmcad/adapters/fusion/values.py",
               dependencies: ["values"],
+            },
+            {
+              id: "fusion-typing",
+              path: "runtime/python/fmcad/adapters/fusion/typing.py",
+              dependencies: [],
             },
             {
               id: "core",
@@ -280,6 +288,49 @@ if _CAD_TYPE_CHECKING:
 const unitCache = new Map<string, readonly SourceInput[]>();
 function sourceHash(source: string): string {
   return createHash("sha256").update(source, "utf8").digest("hex");
+}
+
+function lowerDomainImports(
+  helper: string,
+  units: readonly Pick<SourceInput, "id" | "filename" | "source">[],
+): readonly Pick<SourceInput, "id" | "filename" | "source">[] {
+  const input = JSON.stringify({ units });
+  const result = spawnSync("python3", ["-I", "-S", "-B", helper], {
+    input,
+    encoding: "utf8",
+    timeout: 30000,
+    maxBuffer: Math.max(1024 * 1024, Buffer.byteLength(input) * 12),
+  });
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      "Python domain import lowering failed: " +
+        (result.error?.message ?? result.stderr),
+    );
+  }
+  const parsed = JSON.parse(result.stdout) as {
+    version?: unknown;
+    units?: unknown;
+  };
+  const loweredUnits = parsed.units;
+  if (
+    parsed.version !== DOMAIN_IMPORT_LOWERING_VERSION ||
+    !Array.isArray(loweredUnits) ||
+    loweredUnits.length !== units.length
+  )
+    throw new Error("Python domain import lowering returned an invalid inventory");
+  return units.map((unit, index) => {
+    const lowered = loweredUnits[index] as Partial<SourceInput> | undefined;
+    if (
+      lowered?.id !== unit.id ||
+      lowered.filename !== unit.filename ||
+      typeof lowered.source !== "string"
+    ) {
+      throw new Error(
+        "Python domain import lowering changed inventory identity: " + unit.id,
+      );
+    }
+    return { ...unit, source: lowered.source };
+  });
 }
 
 function loaderLayers(source: string, variable: string): readonly string[] {
@@ -503,6 +554,11 @@ export function cadBundleUnits(
   const sources = ordered.map((item) =>
     readFileSync(join(root, item.path), "utf8"),
   );
+  const domainImportHelper = join(
+    root,
+    "runtime/python/entrypoints/lower_domain_imports.py",
+  );
+  const domainImportHelperSource = readFileSync(domainImportHelper, "utf8");
   const buildPath = join(root, "runtime-build.json");
   const key = createHash("sha256")
     .update(
@@ -510,6 +566,8 @@ export function cadBundleUnits(
         root,
         profile,
         manifest,
+        domainImportLoweringVersion: DOMAIN_IMPORT_LOWERING_VERSION,
+        domainImportHelperSource,
         build: existsSync(buildPath) ? readFileSync(buildPath, "utf8") : null,
         sources,
       }),
@@ -517,11 +575,19 @@ export function cadBundleUnits(
     .digest("hex");
   const cached = unitCache.get(key);
   if (cached) return cached;
+  const loweredSources = lowerDomainImports(
+    domainImportHelper,
+    ordered.map((item, index) => ({
+      id: item.id,
+      filename: item.path,
+      source: sources[index]!,
+    })),
+  );
   const modules = new Map(manifest.map((item) => [item.id, item]));
   const prepared = new Map<string, SourceInput>();
   const units = Object.freeze(
     ordered.map((item, index) => {
-      let source = sources[index]!;
+      let source = loweredSources[index]!.source;
       // These new runtime units are text checkouts, not bytecode blobs. Use
       // canonical LF in their prepared source so Windows autocrlf does not
       // change unit/wire hashes. The cache key above still binds raw bytes.

@@ -1,4 +1,12 @@
 """DTO-only rules extracted from assets/cad/interference.py. No SDK or filesystem access."""
+import json
+import math
+from typing import cast as _cad_cast
+
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
+
+
 def _interference_version(data: "JsonObject") -> None:
     if data.get('schemaVersion') != 1 or data.get('frame') != 'component':
         raise ValueError('GM19 operations require schemaVersion:1 and frame:component')

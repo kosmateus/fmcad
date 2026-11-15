@@ -1,5 +1,9 @@
 """DTO-only rules extracted from assets/cad/explode.py. No SDK or filesystem access."""
 import math as _explode_domain_math
+from typing import cast as _cad_cast
+
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
 
 _EXPLODE_EASINGS = ('linear', 'smoothstep', 'easeIn', 'easeOut', 'easeInOut')
 
