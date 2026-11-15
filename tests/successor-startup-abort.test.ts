@@ -29,6 +29,12 @@ const reference = (file: string) => ({
   path: file,
   sha256: api.hash(fs.readFileSync(file)),
 });
+const nativeAuditProfile = {
+  sourceCommit: "923c339d3b8c85ca74e0c22511128958a97e7476",
+  buildHash: "63a7c521b4beb0808afc12815fa3a0ff3ec6dcbd5528bb5557fe284ad5872e14",
+  configHash:
+    "fb8fba61d742d82c5cea76df8c8e7e235dd2bb09744685835aa4622f88dbd045",
+} as const;
 
 function fixture(t: TestContext) {
   const base = fs.mkdtempSync(path.join(repo, ".successor-abort-test-"));
@@ -361,6 +367,446 @@ function sdkSubmittedUnknownFixture(t: TestContext) {
     },
   });
   return { ...f, proofFile, observationIntent, start, wire };
+}
+
+function nativeSdkSubmittedUnknownFixture(
+  t: TestContext,
+  sourceCommit: string = nativeAuditProfile.sourceCommit,
+) {
+  const f = sdkSubmittedUnknownFixture(t),
+    predecessor = f.authority.predecessor,
+    rootIdentityFile = predecessor.rootIdentity.path,
+    predecessorIdentityFile = predecessor.identity.path;
+  for (const file of new Set([rootIdentityFile, predecessorIdentityFile])) {
+    const identity = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    api.durable(file, {
+      ...identity,
+      configHash: nativeAuditProfile.configHash,
+    });
+  }
+  const rootIdentityRef = reference(rootIdentityFile),
+    predecessorIdentityRef = reference(predecessorIdentityFile),
+    livePointerFile = path.join(f.dir, "isolated-admission-epoch.json"),
+    livePointer = JSON.parse(
+      fs.readFileSync(livePointerFile, "utf8"),
+    ) as Record<string, unknown>;
+  livePointer["historicalIdentityHash"] = rootIdentityRef.sha256;
+  api.durable(livePointerFile, livePointer);
+  const archivedPointerFile = predecessor.pointer.path;
+  api.durable(archivedPointerFile, livePointer);
+  const predecessorPointerRef = reference(archivedPointerFile);
+  f.authority = {
+    ...f.authority,
+    predecessor: {
+      ...predecessor,
+      pointer: predecessorPointerRef,
+      identity: predecessorIdentityRef,
+      rootIdentity: rootIdentityRef,
+    },
+  };
+  f.approval = {
+    ...f.approval,
+    pointerHash: predecessorPointerRef.sha256,
+    rootIdentityHash: rootIdentityRef.sha256,
+  };
+  const qualificationFile = f.authority.qualification.path,
+    qualification = JSON.parse(
+      fs.readFileSync(qualificationFile, "utf8"),
+    ) as Record<string, unknown>;
+  qualification["sourceCommit"] = sourceCommit;
+  qualification["buildHash"] = nativeAuditProfile.buildHash;
+  api.durable(qualificationFile, qualification);
+  const qualificationRef = reference(qualificationFile),
+    authorityFile = path.join(f.audit, "authority.json");
+  f.authority = {
+    ...f.authority,
+    sourceCommit,
+    buildHash: nativeAuditProfile.buildHash,
+    configHash: nativeAuditProfile.configHash,
+    qualification: qualificationRef,
+  };
+  api.durable(authorityFile, f.authority);
+  f.authorityEntry = reference(authorityFile);
+  f.approval = {
+    ...f.approval,
+    sourceCommit,
+    buildHash: nativeAuditProfile.buildHash,
+    qualification: qualificationRef,
+  };
+  api.durable(f.approvalFile, f.approval);
+  const intentFile = path.join(f.audit, "intent.json"),
+    intent = JSON.parse(fs.readFileSync(intentFile, "utf8")) as Record<
+      string,
+      unknown
+    >;
+  api.durable(intentFile, {
+    ...intent,
+    approval: reference(f.approvalFile),
+  });
+  api.durable(path.join(f.dir, "active-epoch-succession.json"), {
+    version: 1,
+    authority: f.authorityEntry,
+  });
+  api.durable(path.join(f.audit, "launch-intent.json"), {
+    nonce: f.nonce,
+    authority: f.authorityEntry,
+  });
+  for (const name of ["worker-ready.json", "complete.json"]) {
+    const file = path.join(f.audit, name),
+      value = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+        string,
+        unknown
+      >;
+    if (name === "worker-ready.json")
+      value["buildHash"] = nativeAuditProfile.buildHash;
+    else
+      Object.assign(value, {
+        authority: f.authorityEntry,
+        buildHash: nativeAuditProfile.buildHash,
+        sourceCommit,
+      });
+    api.durable(file, value);
+  }
+  const lifecycleFile = path.join(
+    f.dir,
+    "broker-lifecycle-" + f.owner.nonce + ".json",
+  );
+  const lifecycle = JSON.parse(
+    fs.readFileSync(lifecycleFile, "utf8"),
+  ) as Record<string, unknown>;
+  api.durable(lifecycleFile, {
+    ...lifecycle,
+    buildHash: nativeAuditProfile.buildHash,
+    configHash: nativeAuditProfile.configHash,
+  });
+
+  const observationIntentFile = path.join(f.observation, "intent.json"),
+    observationStartFile = path.join(f.observation, "start.json"),
+    observationWireFile = path.join(f.observation, "wire.json"),
+    observationResultFile = path.join(f.observation, "result.json"),
+    key = {
+      jobId: f.inspection.pointer.quarantinedJobIds[0],
+      observationJobId: f.inspection.pointer.quarantinedJobIds[1],
+      requestId: f.requestId + ":observe",
+      clientId: f.clientId,
+    },
+    expectedProcess = f.authority.expectedProcess,
+    observationBinding = {
+      purpose: "atomic-recovery-audit-v1",
+      clientId: f.clientId,
+      expectedProcess,
+      successorAuthorityHash: f.authorityEntry.sha256,
+    },
+    observationIntent: Record<string, unknown> = {
+      version: 1,
+      key,
+      binding: observationBinding,
+      identity: f.auditIdentity,
+      sourceSha256: "",
+      sourceArtifactHash: "",
+    },
+    runtimeLoad = createRequire(
+      path.join(f.approval.candidateRoot, "src/queue-instance.js"),
+    ),
+    nativeReader = (
+      runtimeLoad("./queue-atomic-recovery-audit") as {
+        prepareRecoveryAudit(
+          runtime: string,
+          identity: unknown,
+          binding: Record<string, unknown>,
+        ): {
+          sourceSha256: string;
+          artifact: { script: string; artifactHash: string; sha256: string };
+        };
+      }
+    ).prepareRecoveryAudit(
+      f.approval.candidateRoot,
+      f.auditIdentity,
+      observationBinding,
+    );
+  observationIntent["sourceSha256"] = nativeReader.sourceSha256;
+  observationIntent["sourceArtifactHash"] = nativeReader.artifact.artifactHash;
+  api.durable(observationIntentFile, observationIntent);
+
+  const rpcId = randomUUID(),
+    script = nativeReader.artifact.script,
+    sourceHash = api.hash(script),
+    physical = {
+      jobId: key.jobId,
+      rpcId,
+      requestHash: "1".repeat(64),
+      buildHash: nativeAuditProfile.buildHash,
+      sourceHash,
+      purpose: "atomic-recovery-audit-v1",
+      auditBindingHash: (
+        load("../src/dist/core/application/cad/json") as {
+          hash(value: unknown): string;
+        }
+      ).hash(observationBinding),
+      pythonOriginHash: nativeReader.artifact.artifactHash,
+      auditExpectedProcess: expectedProcess,
+    },
+    { preparePythonArtifact } = load(
+      "../src/dist/python/artifact",
+    ) as typeof import("../packages/node-adapters/src/python/artifact"),
+    { pythonArtifactManifest } = load(
+      "../src/dist/python/context-binding",
+    ) as typeof import("../packages/node-adapters/src/python/context-binding"),
+    prepared = preparePythonArtifact(
+      [
+        {
+          id: "wire",
+          filename: "<fmcad-wire>",
+          source: script,
+          role: "user",
+        },
+      ],
+      {
+        context: {
+          entrypoints: [],
+          origin: {
+            artifactHash: nativeReader.artifact.artifactHash,
+            sha256: api.hash("synthetic native audit source"),
+            context: {
+              kind: "atomic-recovery-audit-v1",
+              ...observationBinding,
+            },
+            request: { identity: f.auditIdentity },
+            sourceMap: [],
+            segments: [{ sha256: sourceHash, startLine: 1, endLine: 1 }],
+            units: [],
+          },
+        },
+        request: physical,
+      },
+    ),
+    artifact = pythonArtifactManifest(prepared),
+    start = {
+      binding: physical,
+      instance: expectedProcess,
+      receipt: path.join(f.observation, "remote-" + rpcId + ".json"),
+      pythonCheck: {
+        status: "passed",
+        provenance: {
+          artifactHash: prepared.artifactHash,
+          wireHash: prepared.sha256,
+        },
+      },
+      originArtifactHash: nativeReader.artifact.artifactHash,
+    },
+    wire = {
+      outgoing: {
+        jsonrpc: "2.0",
+        id: "fmcad:" + rpcId,
+        method: "tools/call",
+        params: {
+          name: "fusion_mcp_execute",
+          arguments: {
+            featureType: "script",
+            object: { script: prepared.script, readOnly: true },
+          },
+        },
+      },
+      artifact,
+    },
+    summary = {
+      version: 1,
+      purpose: "atomic-recovery-audit-v1",
+      profile: "atomic-recovery-counts-v1",
+      requestIdentity: f.auditIdentity,
+      nativeOutcome: "unknown",
+      modelValidation: "not_performed",
+      rollbackVerification: "not_performed",
+      modulePresent: false,
+      ui: { activeCommand: "SelectCommand", idle: true },
+      commandDefinition: { status: "absent" },
+      document: { status: "absent", matches: 0 },
+      snapshot: null,
+      fingerprint: null,
+    };
+  start.originArtifactHash = nativeReader.artifact.artifactHash;
+  api.durable(observationStartFile, start);
+  api.durable(observationWireFile, wire);
+  api.durable(path.join(f.observation, "received-response.json"), {
+    version: 1,
+    binding: physical,
+    wireId: wire.outgoing.id,
+    callerId: 1,
+    status: 200,
+    raw: JSON.stringify({
+      jsonrpc: "2.0",
+      id: wire.outgoing.id,
+      result: {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: "FMCAD_RESULT " + JSON.stringify(summary) + "\n",
+            }),
+          },
+        ],
+      },
+    }),
+  });
+  api.durable(start.receipt, {
+    ...physical,
+    terminal: true,
+    outcome: "succeeded",
+    instance: {
+      ...expectedProcess,
+      version: "synthetic-fusion-version",
+      activeCommand: "SelectCommand",
+    },
+  });
+  api.durable(observationResultFile, {
+    kind: "dead-epoch-current-observation",
+    ...key,
+    status: "failed",
+    code: "AUDIT_OUTPUT_INVALID",
+    sdkRequestsSent: 1,
+    nativeOutcome: "unknown",
+    modelValidation: "not_performed",
+    rollbackVerification: "not_performed",
+  });
+  const proof = JSON.parse(fs.readFileSync(f.proofFile, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  api.durable(f.proofFile, {
+    ...proof,
+    bindings: {
+      authority: f.authorityEntry,
+      observationIntent: reference(observationIntentFile),
+      observationStart: reference(observationStartFile),
+      observationWire: reference(observationWireFile),
+      observationResult: reference(observationResultFile),
+    },
+  });
+  return { ...f, observationIntent, start, wire };
+}
+
+test("pinned 923c native SDK1 withdrawal accepts the exact retained six-file audit", (t) => {
+  const f = nativeSdkSubmittedUnknownFixture(t),
+    names = [
+      "intent.json",
+      "start.json",
+      "wire.json",
+      "received-response.json",
+      "remote-" + f.start.binding.rpcId + ".json",
+      "result.json",
+    ],
+    files = names.map((name) => path.join(f.observation, name)),
+    before = files.map((file) => fs.readFileSync(file));
+  const preview = abortUnstartedSuccessor(f.client, f.approvalFile, false, {
+    withdrawUnknown: true,
+    processDeathProofFile: f.proofFile,
+  }) as Record<string, unknown>;
+  assert.equal(preview["operation"], "withdraw-after-sdk-unknown");
+  assert.equal(preview["sdkRequestsSent"], 1);
+  assert.equal(preview["nativeOutcome"], "unknown");
+  assert.equal(preview["historicalOutcome"], "unknown");
+  const facts = preview["facts"] as Array<{ path: string; sha256: string }>;
+  assert.deepEqual(
+    facts
+      .filter((entry) => path.dirname(entry.path) === f.observation)
+      .sort((a, b) => a.path.localeCompare(b.path)),
+    files
+      .map((file) => reference(file))
+      .sort((a, b) => a.path.localeCompare(b.path)),
+  );
+  const deathProof = JSON.parse(fs.readFileSync(f.proofFile, "utf8")) as {
+    bindings: Record<string, unknown>;
+  };
+  assert.deepEqual(Object.keys(deathProof.bindings).sort(), [
+    "authority",
+    "observationIntent",
+    "observationResult",
+    "observationStart",
+    "observationWire",
+  ]);
+  assert.deepEqual(fs.readdirSync(f.observation).sort(), names.sort());
+  for (const [i, file] of files.entries())
+    assert.deepEqual(fs.readFileSync(file), before[i]);
+});
+
+for (const changed of [
+  "foreign-source",
+  "missing-remote",
+  "tampered-response",
+  "process-mismatch",
+  "death-proof-process-mismatch",
+  "wrong-local-failure",
+  "live-death-observer",
+  "null-death-observer",
+]) {
+  test("pinned native SDK1 withdrawal refuses " + changed, (t) => {
+    const f = nativeSdkSubmittedUnknownFixture(
+      t,
+      changed === "foreign-source"
+        ? "a".repeat(40)
+        : nativeAuditProfile.sourceCommit,
+    );
+    if (changed === "missing-remote") fs.unlinkSync(f.start.receipt);
+    else if (changed === "tampered-response") {
+      const file = path.join(f.observation, "received-response.json"),
+        response = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+          string,
+          unknown
+        >;
+      response["raw"] = "{}";
+      api.durable(file, response);
+    } else if (changed === "process-mismatch") {
+      const remote = JSON.parse(fs.readFileSync(f.start.receipt, "utf8")) as {
+        instance: { pid: number; birth: string };
+      };
+      remote.instance.birth += "-different";
+      api.durable(f.start.receipt, remote);
+    } else if (changed === "death-proof-process-mismatch") {
+      const proof = JSON.parse(fs.readFileSync(f.proofFile, "utf8")) as {
+        expectedProcess: { pid: number; birth: string };
+      };
+      proof.expectedProcess.birth += "-different";
+      api.durable(f.proofFile, proof);
+    } else if (changed === "wrong-local-failure") {
+      const file = path.join(f.observation, "result.json"),
+        result = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+          string,
+          unknown
+        >;
+      result["code"] = "AUDIT_REQUEST_INVALID";
+      api.durable(file, result);
+    } else if (
+      changed === "live-death-observer" ||
+      changed === "null-death-observer"
+    ) {
+      const proof = JSON.parse(fs.readFileSync(f.proofFile, "utf8")) as {
+        after: { state: string; errorId: string };
+      };
+      if (changed === "live-death-observer") proof.after.state = "present";
+      else {
+        proof.after.state = "unknown";
+        proof.after.errorId = "AccessDenied";
+      }
+      api.durable(f.proofFile, proof);
+    }
+    const before = fs
+      .readdirSync(f.observation)
+      .map((name) => path.join(f.observation, name))
+      .filter((file) => fs.existsSync(file))
+      .map((file) => [file, fs.readFileSync(file)] as const);
+    assert.throws(() =>
+      abortUnstartedSuccessor(f.client, f.approvalFile, false, {
+        withdrawUnknown: true,
+        processDeathProofFile: f.proofFile,
+      }),
+    );
+    for (const [file, bytes] of before)
+      assert.deepEqual(fs.readFileSync(file), bytes);
+  });
 }
 
 function retirementFixture(t: TestContext) {

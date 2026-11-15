@@ -13,6 +13,9 @@ const node_module_1 = require("node:module");
 const node_util_1 = require("node:util");
 const node_child_process_1 = require("node:child_process");
 const node_crypto_1 = require("node:crypto");
+const retainedNativeSourceCommit = "923c339d3b8c85ca74e0c22511128958a97e7476";
+const retainedNativeBuildHash = "63a7c521b4beb0808afc12815fa3a0ff3ec6dcbd5528bb5557fe284ad5872e14";
+const retainedNativeConfigHash = "fb8fba61d742d82c5cea76df8c8e7e235dd2bb09744685835aa4622f88dbd045";
 // This fixed program has no shell, PID-only signal, SIGTERM fallback or Fusion
 // access. The pidfd is opened BEFORE /proc identity checks and held to exit.
 exports.metadataRetirementPidfdProgram = `import os,sys,json,hashlib,signal,select
@@ -170,7 +173,15 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
         observationResult: ref(node_path_1.default.join(observationDir, "result.json")),
     });
     const verifyDeathProof = (file, authorityEntry, expectedProcess) => successor.verifySdkProcessDeathProof(file, expectedProcess, deathBindings(authorityEntry));
-    const verifySdkUnknownAttempt = (authorityEntry, expectedProcess, expectedBuildHash, jobIds, proofFile, requireProof) => {
+    const predecessorAuditIdentity = (pointer) => {
+        const receipt = object(pointer["qualificationReceipt"]), intentFile = node_path_1.default.join(node_path_1.default.dirname(text(receipt["path"])), "intent.json"), evidence = pointer["qualificationEvidence"];
+        if (!Array.isArray(evidence) ||
+            !evidence.some((entry) => (0, node_util_1.isDeepStrictEqual)(object(entry), ref(intentFile)) &&
+                object(entry)["path"] === intentFile))
+            fail("Exact predecessor qualification identity required");
+        return read(intentFile)["identity"];
+    };
+    const verifySdkUnknownAttempt = (authorityEntry, expectedProcess, expectedBuildHash, expectedSourceCommit, expectedConfigHash, originalIdentity, jobIds, proofFile, requireProof) => {
         const jobs = jobIds;
         if (!Array.isArray(jobs) || jobs.length < 2)
             fail("Original holder and observer required");
@@ -183,9 +194,52 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
         if (!node_fs_1.default.existsSync(observationDir))
             fail("Exact SDK1 observation journal required");
         const names = node_fs_1.default.readdirSync(observationDir).sort();
-        if (!(0, node_util_1.isDeepStrictEqual)(names, ["intent.json", "result.json", "start.json", "wire.json"]))
+        const legacyNames = [
+            "intent.json",
+            "result.json",
+            "start.json",
+            "wire.json",
+        ];
+        if (names.includes("received-response.json")
+            ? names.length !== 6 ||
+                legacyNames.some((name) => !names.includes(name))
+            : !(0, node_util_1.isDeepStrictEqual)(names, legacyNames))
             fail("SDK1 withdrawal requires a terminal lost-observation journal with no response receipt or pending dispatch");
         const observationIntentFile = node_path_1.default.join(observationDir, "intent.json"), observationStartFile = node_path_1.default.join(observationDir, "start.json"), observationWireFile = node_path_1.default.join(observationDir, "wire.json"), observationResultFile = node_path_1.default.join(observationDir, "result.json"), observationIntent = read(observationIntentFile), start = read(observationStartFile), startBinding = object(start["binding"]), pythonCheck = object(start["pythonCheck"]), provenance = object(pythonCheck["provenance"]), wire = read(observationWireFile), outgoing = object(wire["outgoing"]), params = object(outgoing["params"]), args = object(params["arguments"]), artifact = object(wire["artifact"]), result = read(observationResultFile);
+        const nativeObservation = names.includes("received-response.json"), receiptName = "remote-" + String(startBinding["rpcId"]) + ".json", nativeNames = [
+            "intent.json",
+            "start.json",
+            "wire.json",
+            "received-response.json",
+            receiptName,
+            "result.json",
+        ].sort();
+        const retainedRefs = [];
+        if (expectedSourceCommit === retainedNativeSourceCommit) {
+            if (expectedBuildHash !== retainedNativeBuildHash ||
+                expectedConfigHash !== retainedNativeConfigHash ||
+                !nativeObservation ||
+                !(0, node_util_1.isDeepStrictEqual)(names, nativeNames))
+                fail("Exact pinned 923c six-file native observation required");
+            const retained = operatorLoad("../src/dist/node-adapters/execution/recovery-audit.js").verifyRetainedAuditResponse({
+                directory: observationDir,
+                key,
+                identity: originalIdentity,
+                binding: object(observationIntent["binding"]),
+                instance: expectedProcess,
+                buildHash: expectedBuildHash,
+            });
+            const runtime = text(authority["candidateRoot"]), reader = (0, node_module_1.createRequire)(node_path_1.default.join(runtime, "src/queue-atomic-recovery-audit.js"))("./queue-atomic-recovery-audit").prepareRecoveryAudit(runtime, observationIntent["identity"], object(observationIntent["binding"]));
+            if (observationIntent["sourceSha256"] !== reader.sourceSha256 ||
+                observationIntent["sourceArtifactHash"] !==
+                    reader.artifact.artifactHash ||
+                startBinding["sourceHash"] !== reader.artifact.sha256)
+                fail("Retained native observation differs from the original source-bound audit builder");
+            retainedRefs.push(...Object.values(retained.files));
+        }
+        else if (nativeObservation) {
+            fail("Retained native observation is restricted to the pinned 923c profile");
+        }
         const python = classifyPythonRpc(outgoing);
         // Both registered historical encodings are exact, closed shapes. In
         // particular the failed old Python wire is evidence, not native success.
@@ -264,6 +318,7 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
             observationWireFile,
             observationResultFile,
             processDeathProof,
+            retainedRefs,
         };
     };
     const intentFile = node_path_1.default.join(audit, "intent.json"), intent = read(intentFile);
@@ -279,7 +334,12 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
     if (node_fs_1.default.existsSync(completeFile)) {
         const complete = read(completeFile), original = read(node_path_1.default.join(abortDir, "intent.json"));
         if (complete["kind"] === "dead-epoch-successor-withdrawn-after-sdk-unknown") {
-            const authorityFile = node_path_1.default.join(audit, "authority.json"), authorityEntry = ref(authorityFile), authority = read(authorityFile), pointer = lineage.successionAuthority(root, authorityEntry).pointer, processDeathProof = object(complete["processDeathProof"]), sdkUnknown = verifySdkUnknownAttempt(authorityEntry, object(authority["expectedProcess"]), text(authority["buildHash"]), pointer["quarantinedJobIds"], processDeathProofFile || text(processDeathProof["path"]), true);
+            const authorityFile = node_path_1.default.join(audit, "authority.json"), authorityEntry = ref(authorityFile), authority = read(authorityFile), pointer = lineage.successionAuthority(root, authorityEntry).pointer, processDeathProof = object(complete["processDeathProof"]), sdkUnknown = verifySdkUnknownAttempt(authorityEntry, object(authority["expectedProcess"]), text(authority["buildHash"]), text(authority["sourceCommit"]), text(authority["configHash"]), authority["sourceCommit"] === retainedNativeSourceCommit
+                ? predecessorAuditIdentity(pointer)
+                : undefined, pointer["quarantinedJobIds"], processDeathProofFile || text(processDeathProof["path"]), true);
+            const completeFacts = Array.isArray(complete["facts"])
+                ? complete["facts"]
+                : [];
             if (complete["status"] !== "withdrawn" ||
                 complete["requestId"] !== requestId ||
                 complete["clientId"] !== client.auth.clientId ||
@@ -310,11 +370,12 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
                 !(0, node_util_1.isDeepStrictEqual)(original["facts"], complete["facts"]) ||
                 !(0, node_util_1.isDeepStrictEqual)(original["processDeathProof"], complete["processDeathProof"]) ||
                 !Array.isArray(complete["facts"]) ||
-                !complete["facts"].some((entry) => (0, node_util_1.isDeepStrictEqual)(entry, sdkUnknown.processDeathProof)) ||
+                !completeFacts.some((entry) => (0, node_util_1.isDeepStrictEqual)(entry, sdkUnknown.processDeathProof)) ||
+                sdkUnknown.retainedRefs.some((retained) => !completeFacts.some((entry) => (0, node_util_1.isDeepStrictEqual)(entry, retained))) ||
                 (processDeathProofFile &&
                     !(0, node_util_1.isDeepStrictEqual)(ref(processDeathProofFile), complete["processDeathProof"])))
                 fail("Original SDK1 withdrawal receipt changed");
-            for (const entry of complete["facts"]) {
+            for (const entry of completeFacts) {
                 const proof = object(entry);
                 if (files.fileHash(text(proof["path"])).sha256 !== proof["sha256"])
                     fail("SDK1 withdrawal evidence changed");
@@ -452,12 +513,16 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
             clientId: client.auth.clientId,
         };
         let sdkUnknownProof;
+        let sdkUnknownAttempt;
         if (sdkUnknown) {
             if (!withdrawUnknown)
                 fail("SDK1 unknown transport requires the explicit withdrawal confirmation path");
-            const evidence = verifySdkUnknownAttempt(entry, object(authority["expectedProcess"]), text(authority["buildHash"]), jobs, processDeathProofFile, apply);
+            const evidence = verifySdkUnknownAttempt(entry, object(authority["expectedProcess"]), text(authority["buildHash"]), text(authority["sourceCommit"]), text(authority["configHash"]), authority["sourceCommit"] === retainedNativeSourceCommit
+                ? predecessorAuditIdentity(pointer)
+                : undefined, jobs, processDeathProofFile, apply);
             if (!(0, node_util_1.isDeepStrictEqual)(evidence.key, key))
                 fail("SDK1 observation key changed");
+            sdkUnknownAttempt = evidence;
             sdkUnknownProof = evidence.processDeathProof;
         }
         else {
@@ -582,7 +647,11 @@ function abortUnstartedSuccessor(client, approvalFile, apply, { retirementInspec
             ...(previous ? [previousFile] : []),
             ...retirementFacts,
             ...(sdkUnknownProof ? [sdkUnknownProof.path] : []),
-        ].map(ref);
+        ].map((file) => sdkUnknownAttempt?.retainedRefs.find((retained) => retained.path === file) ?? ref(file));
+        if (sdkUnknownAttempt)
+            for (const retained of sdkUnknownAttempt.retainedRefs)
+                if (!facts.some((fact) => fact.path === retained.path))
+                    facts.push(retained);
         if (!apply)
             return sdkUnknown
                 ? {

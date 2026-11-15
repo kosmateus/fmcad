@@ -54,6 +54,31 @@ interface SuccessorProofVerifier {
     bindings: SdkProcessDeathBindings,
   ): Ref;
 }
+interface RetainedAuditVerifier {
+  verifyRetainedAuditResponse(input: {
+    directory: string;
+    key: Record<string, string>;
+    identity: unknown;
+    binding: Data;
+    instance: { pid: number; birth: string };
+    buildHash: string;
+  }): { files: Record<string, Ref> };
+}
+interface RecoveryAuditSourceBuilder {
+  prepareRecoveryAudit(
+    runtime: string,
+    identity: unknown,
+    binding: Data,
+  ): {
+    sourceSha256: string;
+    artifact: { artifactHash: string; sha256: string };
+  };
+}
+const retainedNativeSourceCommit = "923c339d3b8c85ca74e0c22511128958a97e7476";
+const retainedNativeBuildHash =
+  "63a7c521b4beb0808afc12815fa3a0ff3ec6dcbd5528bb5557fe284ad5872e14";
+const retainedNativeConfigHash =
+  "fb8fba61d742d82c5cea76df8c8e7e235dd2bb09744685835aa4622f88dbd045";
 // This fixed program has no shell, PID-only signal, SIGTERM fallback or Fusion
 // access. The pidfd is opened BEFORE /proc identity checks and held to exit.
 export const metadataRetirementPidfdProgram = `import os,sys,json,hashlib,signal,select
@@ -263,10 +288,31 @@ export function abortUnstartedSuccessor(
       expectedProcess,
       deathBindings(authorityEntry),
     );
+  const predecessorAuditIdentity = (pointer: Data) => {
+    const receipt = object(pointer["qualificationReceipt"]),
+      intentFile = path.join(
+        path.dirname(text(receipt["path"])),
+        "intent.json",
+      ),
+      evidence = pointer["qualificationEvidence"];
+    if (
+      !Array.isArray(evidence) ||
+      !evidence.some(
+        (entry) =>
+          same(object(entry), ref(intentFile)) &&
+          object(entry)["path"] === intentFile,
+      )
+    )
+      fail("Exact predecessor qualification identity required");
+    return read(intentFile)["identity"];
+  };
   const verifySdkUnknownAttempt = (
     authorityEntry: Ref,
     expectedProcess: Data,
     expectedBuildHash: string,
+    expectedSourceCommit: string,
+    expectedConfigHash: string,
+    originalIdentity: unknown,
     jobIds: unknown,
     proofFile: string | undefined,
     requireProof: boolean,
@@ -283,7 +329,18 @@ export function abortUnstartedSuccessor(
     if (!fs.existsSync(observationDir))
       fail("Exact SDK1 observation journal required");
     const names = fs.readdirSync(observationDir).sort();
-    if (!same(names, ["intent.json", "result.json", "start.json", "wire.json"]))
+    const legacyNames = [
+      "intent.json",
+      "result.json",
+      "start.json",
+      "wire.json",
+    ];
+    if (
+      names.includes("received-response.json")
+        ? names.length !== 6 ||
+          legacyNames.some((name) => !names.includes(name))
+        : !same(names, legacyNames)
+    )
       fail(
         "SDK1 withdrawal requires a terminal lost-observation journal with no response receipt or pending dispatch",
       );
@@ -302,6 +359,62 @@ export function abortUnstartedSuccessor(
       args = object(params["arguments"]),
       artifact = object(wire["artifact"]),
       result = read(observationResultFile);
+    const nativeObservation = names.includes("received-response.json"),
+      receiptName = "remote-" + String(startBinding["rpcId"]) + ".json",
+      nativeNames = [
+        "intent.json",
+        "start.json",
+        "wire.json",
+        "received-response.json",
+        receiptName,
+        "result.json",
+      ].sort();
+    const retainedRefs: Ref[] = [];
+    if (expectedSourceCommit === retainedNativeSourceCommit) {
+      if (
+        expectedBuildHash !== retainedNativeBuildHash ||
+        expectedConfigHash !== retainedNativeConfigHash ||
+        !nativeObservation ||
+        !same(names, nativeNames)
+      )
+        fail("Exact pinned 923c six-file native observation required");
+      const retained = (
+        operatorLoad(
+          "../src/dist/node-adapters/execution/recovery-audit.js",
+        ) as RetainedAuditVerifier
+      ).verifyRetainedAuditResponse({
+        directory: observationDir,
+        key,
+        identity: originalIdentity,
+        binding: object(observationIntent["binding"]),
+        instance: expectedProcess as { pid: number; birth: string },
+        buildHash: expectedBuildHash,
+      });
+      const runtime = text(authority["candidateRoot"]),
+        reader = (
+          createRequire(
+            path.join(runtime, "src/queue-atomic-recovery-audit.js"),
+          )("./queue-atomic-recovery-audit") as RecoveryAuditSourceBuilder
+        ).prepareRecoveryAudit(
+          runtime,
+          observationIntent["identity"],
+          object(observationIntent["binding"]),
+        );
+      if (
+        observationIntent["sourceSha256"] !== reader.sourceSha256 ||
+        observationIntent["sourceArtifactHash"] !==
+          reader.artifact.artifactHash ||
+        startBinding["sourceHash"] !== reader.artifact.sha256
+      )
+        fail(
+          "Retained native observation differs from the original source-bound audit builder",
+        );
+      retainedRefs.push(...Object.values(retained.files));
+    } else if (nativeObservation) {
+      fail(
+        "Retained native observation is restricted to the pinned 923c profile",
+      );
+    }
     const python = classifyPythonRpc(outgoing);
     // Both registered historical encodings are exact, closed shapes. In
     // particular the failed old Python wire is evidence, not native success.
@@ -388,6 +501,7 @@ export function abortUnstartedSuccessor(
       observationWireFile,
       observationResultFile,
       processDeathProof,
+      retainedRefs,
     };
   };
   const intentFile = path.join(audit, "intent.json"),
@@ -422,10 +536,18 @@ export function abortUnstartedSuccessor(
           authorityEntry,
           object(authority["expectedProcess"]),
           text(authority["buildHash"]),
+          text(authority["sourceCommit"]),
+          text(authority["configHash"]),
+          authority["sourceCommit"] === retainedNativeSourceCommit
+            ? predecessorAuditIdentity(pointer)
+            : undefined,
           pointer["quarantinedJobIds"],
           processDeathProofFile || text(processDeathProof["path"]),
           true,
         );
+      const completeFacts = Array.isArray(complete["facts"])
+        ? complete["facts"]
+        : [];
       if (
         complete["status"] !== "withdrawn" ||
         complete["requestId"] !== requestId ||
@@ -460,14 +582,17 @@ export function abortUnstartedSuccessor(
         !same(original["facts"], complete["facts"]) ||
         !same(original["processDeathProof"], complete["processDeathProof"]) ||
         !Array.isArray(complete["facts"]) ||
-        !complete["facts"].some((entry) =>
+        !completeFacts.some((entry) =>
           same(entry, sdkUnknown.processDeathProof),
+        ) ||
+        sdkUnknown.retainedRefs.some(
+          (retained) => !completeFacts.some((entry) => same(entry, retained)),
         ) ||
         (processDeathProofFile &&
           !same(ref(processDeathProofFile), complete["processDeathProof"]))
       )
         fail("Original SDK1 withdrawal receipt changed");
-      for (const entry of complete["facts"] as unknown[]) {
+      for (const entry of completeFacts) {
         const proof = object(entry);
         if (files.fileHash(text(proof["path"])).sha256 !== proof["sha256"])
           fail("SDK1 withdrawal evidence changed");
@@ -630,6 +755,8 @@ export function abortUnstartedSuccessor(
       clientId: client.auth.clientId,
     };
     let sdkUnknownProof: Ref | undefined;
+    let sdkUnknownAttempt:
+      ReturnType<typeof verifySdkUnknownAttempt> | undefined;
     if (sdkUnknown) {
       if (!withdrawUnknown)
         fail(
@@ -639,11 +766,17 @@ export function abortUnstartedSuccessor(
         entry,
         object(authority["expectedProcess"]),
         text(authority["buildHash"]),
+        text(authority["sourceCommit"]),
+        text(authority["configHash"]),
+        authority["sourceCommit"] === retainedNativeSourceCommit
+          ? predecessorAuditIdentity(pointer)
+          : undefined,
         jobs,
         processDeathProofFile,
         apply,
       );
       if (!same(evidence.key, key)) fail("SDK1 observation key changed");
+      sdkUnknownAttempt = evidence;
       sdkUnknownProof = evidence.processDeathProof;
     } else {
       if (withdrawUnknown)
@@ -816,7 +949,16 @@ export function abortUnstartedSuccessor(
       ...(previous ? [previousFile] : []),
       ...retirementFacts,
       ...(sdkUnknownProof ? [sdkUnknownProof.path] : []),
-    ].map(ref);
+    ].map(
+      (file) =>
+        sdkUnknownAttempt?.retainedRefs.find(
+          (retained) => retained.path === file,
+        ) ?? ref(file),
+    );
+    if (sdkUnknownAttempt)
+      for (const retained of sdkUnknownAttempt.retainedRefs)
+        if (!facts.some((fact) => fact.path === retained.path))
+          facts.push(retained);
     if (!apply)
       return sdkUnknown
         ? {
