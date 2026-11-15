@@ -283,7 +283,7 @@ def _measure_scalar(ctx: "CadContext", data: "JsonObject", mode: "Literal['diame
     _cad_fields(data, ('ref',), ('units',))
     entity = ctx.resolve(data['ref'])
     context = _measure_space(ctx, [entity])
-    dimension = mode if mode in ('area', 'volume', 'mass') else 'length'
+    dimension = 'area' if mode == 'area' else 'volume' if mode == 'volume' else 'mass' if mode == 'mass' else 'length'
     _measure_value(0, dimension, data)
     method = mode
     if mode in ('radius', 'diameter'):
@@ -549,9 +549,8 @@ def _measure_motion(ctx: "CadContext", data: "JsonObject") -> "JsonObject":
 
 def _measure_check(ctx: "CadContext", data: "JsonObject") -> "JsonObject":
     _cad_fields(data, ('measurement',), ('min', 'max', 'expected', 'tolerance', 'id', 'source'))
-    spec = data['measurement']
+    spec = _cad_cast("JsonObject", data['measurement'])
     _cad_fields(spec, ('operation', 'data'))
-    spec = _cad_cast("JsonObject", spec)
     if spec['operation'] not in _MEASURE_SCALARS:
         raise ValueError('check requires a scalar measure operation')
     if not any(k in data for k in ('min', 'max', 'expected')):
@@ -1204,13 +1203,46 @@ def _measure_pair_handler(mode: "Literal['interference', 'clearance']") -> "CadH
 
 
 _MEASURE_SCALARS = {'measure.' + mode for mode in ('diameter', 'radius', 'distance', 'angle', 'length', 'area', 'volume', 'mass', 'thickness')}
-CAD_HANDLERS.update({'measure.' + mode: _measure_handler(mode) for mode in ('diameter', 'radius', 'length', 'area', 'volume', 'mass')})
+
+
+def measure_diameter(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _measure_scalar(ctx, data, 'diameter')
+
+
+def measure_radius(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _measure_scalar(ctx, data, 'radius')
+
+
+def measure_length(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _measure_scalar(ctx, data, 'length')
+
+
+def measure_area(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _measure_scalar(ctx, data, 'area')
+
+
+def measure_volume(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _measure_scalar(ctx, data, 'volume')
+
+
+def measure_mass(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _measure_scalar(ctx, data, 'mass')
+
+
+_measure_interference: "CadHandler" = lambda ctx, data: _measure_pair(ctx, data, 'interference')
+_measure_clearance: "CadHandler" = lambda ctx, data: _measure_pair(ctx, data, 'clearance')
+
+CAD_HANDLERS.update({
+    'measure.diameter': measure_diameter, 'measure.radius': measure_radius,
+    'measure.length': measure_length, 'measure.area': measure_area,
+    'measure.volume': measure_volume, 'measure.mass': measure_mass,
+})
 CAD_HANDLERS.update({
     'measure.distance': _measure_distance, 'measure.angle': _measure_angle,
     'measure.bounds': _measure_bounds, 'measure.section': _measure_section, 'measure.thickness': _measure_thickness,
     'check': _measure_check, 'parameter.test': _measure_parameter_test,
-    'assembly.interference': _measure_pair_handler('interference'),
-    'assembly.clearance': _measure_pair_handler('clearance'),
+    'assembly.interference': _measure_interference,
+    'assembly.clearance': _measure_clearance,
     'assembly.motion_check': _measure_motion, 'audit': _measure_snapshot, 'snapshot': _measure_snapshot,
     'diff': _measure_diff, 'status': _measure_status, 'report': _measure_report,
 })

@@ -62,17 +62,17 @@ test("GM28 rejects malformed payloads before SDK dispatch", async () => {
   assert.equal(dispatches, 0);
 });
 
-test("GM28 native handoff bundles the optics module", () => {
-  const script = buildCadScript(
-    "optics.frustum",
-    catalog["optics.frustum"]!.example,
-    { doc: "GM28" },
-  );
-  assert.ok(script.includes("def optics_frustum"));
-  assert.ok(script.includes("'optics.frustum': optics_frustum"));
-  assert.ok(script.includes("'optics.coverage': optics_coverage"));
-  assert.ok(script.includes("'optics.occlusion': optics_occlusion"));
-  assert.ok(
-    script.includes("'sensor.alignment-check': sensor_alignment_check"),
-  );
+test("GM28 public preparation retains each requested optics handler", () => {
+  for (const [operation, handler] of [
+    ["optics.frustum", "optics_frustum"],
+    ["optics.coverage", "optics_coverage"],
+    ["optics.occlusion", "optics_occlusion"],
+    ["sensor.alignment-check", "sensor_alignment_check"],
+  ] as const) {
+    const script = buildCadScript(operation, catalog[operation]!.example, {
+      doc: "GM28",
+    });
+    assert.ok(script.includes(`def ${handler}`), operation);
+    assert.ok(script.includes(`'${operation}': ${handler}`), operation);
+  }
 });

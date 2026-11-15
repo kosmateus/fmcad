@@ -14,7 +14,7 @@ from functools import wraps
 
 import adsk.core
 import adsk.fusion
-from typing import TYPE_CHECKING, TYPE_CHECKING as _CAD_TYPE_CHECKING
+from typing import TYPE_CHECKING, TYPE_CHECKING as _CAD_TYPE_CHECKING, Protocol as _CadProtocol
 from typing import TypeAlias as _CadTypeAlias, TypedDict as _CadTypedDict, cast as _cad_cast, overload as _cad_overload
 
 
@@ -24,6 +24,17 @@ else:
     CAD_HANDLERS = {}
 if TYPE_CHECKING:
     CadEntity: _CadTypeAlias = adsk.core.Base
+
+if TYPE_CHECKING:
+    class _CadBasicReferenceResolver(_CadProtocol):
+        @_cad_overload
+        def __call__(self, ref: object, kind: "Literal['sketch']") -> "adsk.fusion.Sketch": ...
+
+        @_cad_overload
+        def __call__(self, ref: object, kind: "Literal['profile']") -> "adsk.fusion.Profile": ...
+
+        @_cad_overload
+        def __call__(self, ref: object, kind: None = None) -> "CadEntity": ...
 
 if TYPE_CHECKING:
     class _ParameterUpdate(_CadTypedDict):
@@ -310,6 +321,94 @@ class CadContext:
             component = occurrence.component
         return component, occurrence
 
+    def _cad_resolve_basic_reference(
+            self, ref: 'str | JsonObject', kind: 'str | None',
+            resolve_reference: '_CadBasicReferenceResolver',
+            resolve_scope: 'Callable[[JsonObject], tuple[adsk.fusion.Component, adsk.fusion.Occurrence | None]]'
+            ) -> 'CadEntity':
+        """Resolve token, name, profile, and origin references without query adapters."""
+        data: JsonObject = _cad_cast('JsonObject', {'name': ref} if isinstance(ref, str) else dict(_cad_cast('dict[object, object]', ref)))
+        reference_kind = _cad_cast('str | None', data.get('kind'))
+        if kind and reference_kind and kind != reference_kind:
+            raise ValueError('Reference kind conflicts with required kind')
+        kind = kind or reference_kind
+        component, occurrence = resolve_scope(data)
+        name = _cad_cast('str | None', data.get('name'))
+        if data.get('token'):
+            candidates = list(self.design.findEntityByToken(_cad_cast('str', data['token'])))
+            if data.get('path') is not None:
+                natives = [getattr(e, 'nativeObject', None) or e for e in candidates]
+                candidates = [e for e in _cad_items(self.root.allOccurrences)
+                              if e.fullPathName == _cad_cast('str', data['path']) and
+                              (getattr(e, 'nativeObject', None) or e) in natives]
+            explicit_scope = 'component' in data or 'occurrence' in data
+            if explicit_scope:
+                candidates = [e for e in candidates if _cad_owner(e) == component]
+            candidates = [e for e in candidates if not kind or _cad_kind(e) == kind]
+            entity = _cad_unique(candidates, 'Entity token')
+            # A token is authoritative over a stale display name, not over context or kind.
+            if occurrence is not None and _cad_owner(entity) == component:
+                entity = self._proxy(entity, occurrence)
+        elif kind == 'profile' and 'sketch' in data:
+            sketch_ref = data['sketch']
+            if isinstance(sketch_ref, str):
+                sketch_ref = {'name': sketch_ref}
+            sketch_ref = dict(_cad_cast('JsonObject', sketch_ref))
+            for key in ('component', 'occurrence'):
+                if key in data:
+                    sketch_ref[key] = data[key]
+            sketch = resolve_reference(sketch_ref, 'sketch')
+            profiles = _cad_items(sketch.profiles)
+            if 'loopCount' in data:
+                loops = _cad_cast('int', data['loopCount'])
+                if type(loops) is not int or loops < 1 or 'index' in data:
+                    raise ValueError('Profile loopCount must be a positive integer and cannot be combined with index')
+                entity = _cad_unique([p for p in profiles if p.profileLoops.count == loops],
+                                     'Sketch profiles with loopCount %d' % loops)
+            elif 'index' in data:
+                index = _cad_cast('int', data['index'])
+                if type(index) is not int or index < 0 or index >= len(profiles):
+                    raise ValueError('Profile index must be an explicit in-range zero-based integer')
+                entity = profiles[index]
+            else:
+                entity = _cad_unique(profiles, 'Sketch profiles; supply an explicit index when ambiguous')
+            entity = _cad_cast('adsk.fusion.Profile', self._proxy(entity, _cad_cast('adsk.fusion.Occurrence | None', getattr(sketch, 'assemblyContext', None))))
+            if 'index' in data:
+                self._profile_selections.append((entity, _cad_cast('int', data['index'])))
+        elif name == 'root':
+            entity = self.root
+        elif name in _CAD_ORIGINS:
+            entity = self._proxy(_cad_cast('adsk.core.Base', getattr(component, _CAD_ORIGINS[name])), occurrence)
+        else:
+            if not isinstance(name, str) or not name:
+                raise ValueError('Reference requires token, name, or a profile sketch')
+            candidates = list(self._entities(kind, component, occurrence))
+            if kind is None:
+                candidates += list(self._entities('component')) + list(self._entities('occurrence'))
+            matches = [e for e in candidates if _cad_cast('str | None', getattr(e, 'name', None)) == name or
+                       (_cad_kind(e) == 'occurrence' and _cad_cast('adsk.fusion.Occurrence', e).fullPathName == name)]
+            alias = _cad_cast('adsk.core.Attribute | None', self.root.attributes.itemByName(_CAD_ALIAS_GROUP, name))
+            if alias:
+                target = resolve_reference(_cad_cast(object, json.loads(alias.value)), None)
+                if (not kind or _cad_kind(target) == kind) and (_cad_owner(target) == component or
+                                                                _cad_kind(target) in ('component', 'occurrence', 'parameter')):
+                    target_context = _cad_cast('adsk.fusion.Occurrence | None', getattr(target, 'assemblyContext', None))
+                    if occurrence is None or target_context is None or target_context == occurrence:
+                        matches.append(self._proxy(target, occurrence))
+            entity = _cad_unique(matches, 'Reference ' + name)
+        if kind and _cad_kind(entity) != kind:
+            raise ValueError('Expected %s, got %s' % (kind, _cad_kind(entity)))
+        if _cad_kind(entity) == 'profile' and data.get('token') and ('index' in data or 'loopCount' in data):
+            if 'sketch' not in data:
+                raise ValueError('An explicit profile index or loopCount requires a sketch reference')
+            selected = resolve_reference({k: v for k, v in data.items() if k != 'token'}, 'profile')
+            if (_cad_cast('adsk.core.Base', getattr(selected, 'nativeObject', None) or selected)) != (_cad_cast('adsk.core.Base', getattr(entity, 'nativeObject', None) or entity)):
+                raise ValueError('Profile token disagrees with explicit sketch/index or loopCount selection')
+            if 'index' in data:
+                self._profile_selections.append((_cad_cast('adsk.fusion.Profile', entity), _cad_cast(int, data['index'])))
+        return entity
+
+
     def _proxy(self, entity: 'CadEntity', occurrence: 'adsk.fusion.Occurrence | None') -> 'CadEntity':
         if occurrence is None or _cad_kind(entity) in ('component', 'parameter', 'occurrence'):
             return entity
@@ -453,86 +552,8 @@ class CadContext:
             raise TypeError('Entity reference must be a name or reference object')
         if isinstance(ref, dict) and 'query' in ref:
             return _entity_resolve_reference(self, _cad_cast('JsonObject', ref), kind)
-        data: JsonObject = _cad_cast('JsonObject', {'name': ref} if isinstance(ref, str) else dict(_cad_cast('dict[object, object]', ref)))
-        reference_kind = _cad_cast('str | None', data.get('kind'))
-        if kind and reference_kind and kind != reference_kind:
-            raise ValueError('Reference kind conflicts with required kind')
-        kind = kind or reference_kind
-        component, occurrence = self._scope(data)
-        name = _cad_cast('str | None', data.get('name'))
-        if data.get('token'):
-            candidates = list(self.design.findEntityByToken(_cad_cast('str', data['token'])))
-            if data.get('path') is not None:
-                natives = [getattr(e, 'nativeObject', None) or e for e in candidates]
-                candidates = [e for e in _cad_items(self.root.allOccurrences)
-                              if e.fullPathName == _cad_cast('str', data['path']) and
-                              (getattr(e, 'nativeObject', None) or e) in natives]
-            explicit_scope = 'component' in data or 'occurrence' in data
-            if explicit_scope:
-                candidates = [e for e in candidates if _cad_owner(e) == component]
-            candidates = [e for e in candidates if not kind or _cad_kind(e) == kind]
-            entity = _cad_unique(candidates, 'Entity token')
-            # A token is authoritative over a stale display name, not over context or kind.
-            if occurrence is not None and _cad_owner(entity) == component:
-                entity = self._proxy(entity, occurrence)
-        elif kind == 'profile' and 'sketch' in data:
-            sketch_ref = data['sketch']
-            if isinstance(sketch_ref, str):
-                sketch_ref = {'name': sketch_ref}
-            sketch_ref = dict(_cad_cast('JsonObject', sketch_ref))
-            for key in ('component', 'occurrence'):
-                if key in data:
-                    sketch_ref[key] = data[key]
-            sketch = self.resolve(sketch_ref, 'sketch')
-            profiles = _cad_items(sketch.profiles)
-            if 'loopCount' in data:
-                loops = _cad_cast('int', data['loopCount'])
-                if type(loops) is not int or loops < 1 or 'index' in data:
-                    raise ValueError('Profile loopCount must be a positive integer and cannot be combined with index')
-                entity = _cad_unique([p for p in profiles if p.profileLoops.count == loops],
-                                     'Sketch profiles with loopCount %d' % loops)
-            elif 'index' in data:
-                index = _cad_cast('int', data['index'])
-                if type(index) is not int or index < 0 or index >= len(profiles):
-                    raise ValueError('Profile index must be an explicit in-range zero-based integer')
-                entity = profiles[index]
-            else:
-                entity = _cad_unique(profiles, 'Sketch profiles; supply an explicit index when ambiguous')
-            entity = _cad_cast('adsk.fusion.Profile', self._proxy(entity, _cad_cast('adsk.fusion.Occurrence | None', getattr(sketch, 'assemblyContext', None))))
-            if 'index' in data:
-                self._profile_selections.append((entity, _cad_cast('int', data['index'])))
-        elif name == 'root':
-            entity = self.root
-        elif name in _CAD_ORIGINS:
-            entity = self._proxy(_cad_cast('adsk.core.Base', getattr(component, _CAD_ORIGINS[name])), occurrence)
-        else:
-            if not isinstance(name, str) or not name:
-                raise ValueError('Reference requires token, name, or a profile sketch')
-            candidates = list(self._entities(kind, component, occurrence))
-            if kind is None:
-                candidates += list(self._entities('component')) + list(self._entities('occurrence'))
-            matches = [e for e in candidates if _cad_cast('str | None', getattr(e, 'name', None)) == name or
-                       (_cad_kind(e) == 'occurrence' and _cad_cast('adsk.fusion.Occurrence', e).fullPathName == name)]
-            alias = _cad_cast('adsk.core.Attribute | None', self.root.attributes.itemByName(_CAD_ALIAS_GROUP, name))
-            if alias:
-                target = self.resolve(_cad_cast(object, json.loads(alias.value)))
-                if (not kind or _cad_kind(target) == kind) and (_cad_owner(target) == component or
-                                                              _cad_kind(target) in ('component', 'occurrence', 'parameter')):
-                    target_context = _cad_cast('adsk.fusion.Occurrence | None', getattr(target, 'assemblyContext', None))
-                    if occurrence is None or target_context is None or target_context == occurrence:
-                        matches.append(self._proxy(target, occurrence))
-            entity = _cad_unique(matches, 'Reference ' + name)
-        if kind and _cad_kind(entity) != kind:
-            raise ValueError('Expected %s, got %s' % (kind, _cad_kind(entity)))
-        if _cad_kind(entity) == 'profile' and data.get('token') and ('index' in data or 'loopCount' in data):
-            if 'sketch' not in data:
-                raise ValueError('An explicit profile index or loopCount requires a sketch reference')
-            selected = self.resolve({k: v for k, v in data.items() if k != 'token'}, 'profile')
-            if (_cad_cast('adsk.core.Base', getattr(selected, 'nativeObject', None) or selected)) != (_cad_cast('adsk.core.Base', getattr(entity, 'nativeObject', None) or entity)):
-                raise ValueError('Profile token disagrees with explicit sketch/index or loopCount selection')
-            if 'index' in data:
-                self._profile_selections.append((_cad_cast('adsk.fusion.Profile', entity), _cad_cast(int, data['index'])))
-        return entity
+        return CadContext._cad_resolve_basic_reference(
+            self, _cad_cast('str | JsonObject', ref), kind, self.resolve, self._scope)
 
     def ref(self, entity: 'adsk.core.Base') -> 'JsonRecord':
         # Fusion exposes a root token that findEntityByToken may not resolve.

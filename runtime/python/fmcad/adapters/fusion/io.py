@@ -1286,31 +1286,159 @@ def _io_checkpoint(ctx: "CadContext", data: "JsonObject", action: str) -> "JsonR
     return _io_import(ctx, {'path': str(path), 'mode': 'new'})
 
 
-_IO_HANDLERS: dict[str, "CadHandler"] = {
-    'visibility.show': lambda c, d: _io_visibility(c, d, 'show'),
-    'visibility.hide': lambda c, d: _io_visibility(c, d, 'hide'),
-    'visibility.restore': lambda c, d: _io_visibility(c, d, 'restore'),
-    'visibility.isolate': lambda c, d: _io_visibility(c, d, 'isolate'),
-    'camera.save': lambda c, d: _io_camera(c, d, 'save'),
-    'camera.restore': lambda c, d: _io_camera(c, d, 'restore'),
-    'camera.set': lambda c, d: _io_camera(c, d, 'set'),
+def _io_legacy_callable(execute: "CadHandler") -> "CadHandler":
+    def handler(c: "CadContext", d: "JsonObject") -> "JsonValue":
+        return execute(c, d)
+    setattr(handler, '__name__', '<lambda>')
+    return handler
+
+
+@_io_legacy_callable
+def _io_visibility_show(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_visibility(c, d, 'show')
+
+
+@_io_legacy_callable
+def _io_visibility_hide(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_visibility(c, d, 'hide')
+
+
+@_io_legacy_callable
+def _io_visibility_restore(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_visibility(c, d, 'restore')
+
+
+@_io_legacy_callable
+def _io_visibility_isolate(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_visibility(c, d, 'isolate')
+
+
+@_io_legacy_callable
+def _io_camera_save(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_camera(c, d, 'save')
+
+
+@_io_legacy_callable
+def _io_camera_restore(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_camera(c, d, 'restore')
+
+
+@_io_legacy_callable
+def _io_camera_set(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_camera(c, d, 'set')
+
+
+@_io_legacy_callable
+def _io_appearance_list(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_style(c, d, 'appearance', 'list')
+
+
+@_io_legacy_callable
+def _io_appearance_assign(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_style(c, d, 'appearance', 'assign')
+
+
+@_io_legacy_callable
+def _io_appearance_inspect(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_style(c, d, 'appearance', 'inspect')
+
+
+@_io_legacy_callable
+def _io_appearance_clear(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_style(c, d, 'appearance', 'clear')
+
+
+@_io_legacy_callable
+def _io_material_list(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_style(c, d, 'material', 'list')
+
+
+@_io_legacy_callable
+def _io_material_assign(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_style(c, d, 'material', 'assign')
+
+
+@_io_legacy_callable
+def _io_material_inspect(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_style(c, d, 'material', 'inspect')
+
+
+@_io_legacy_callable
+def _io_checkpoint_create(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_checkpoint(c, d, 'create')
+
+
+@_io_legacy_callable
+def _io_checkpoint_list(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_checkpoint(c, d, 'list')
+
+
+@_io_legacy_callable
+def _io_checkpoint_inspect(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_checkpoint(c, d, 'inspect')
+
+
+@_io_legacy_callable
+def _io_checkpoint_open(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_checkpoint(c, d, 'open')
+
+
+@_io_legacy_callable
+def _io_export_native(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_export(c, d, 'native')
+
+
+@_io_legacy_callable
+def _io_export_step(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_export(c, d, 'step')
+
+
+@_io_legacy_callable
+def _io_export_mesh(c: "CadContext", d: "JsonObject") -> "JsonValue":
+    return _io_export(c, d, 'mesh')
+
+# Retain the compatibility table and its callable identities for dynamic callers.
+_IO_HANDLERS: "dict[str, CadHandler]" = {
+    'visibility.show': _io_visibility_show,
+    'visibility.hide': _io_visibility_hide,
+    'visibility.restore': _io_visibility_restore,
+    'visibility.isolate': _io_visibility_isolate,
+    'camera.save': _io_camera_save,
+    'camera.restore': _io_camera_restore,
+    'camera.set': _io_camera_set,
     'shot.pack': _io_shots, 'view.compare': _io_compare, 'section.view': _io_section,
     'reference.image': _io_reference_image,
-    'appearance.list': lambda c, d: _io_style(c, d, 'appearance', 'list'),
-    'appearance.assign': lambda c, d: _io_style(c, d, 'appearance', 'assign'),
-    'appearance.inspect': lambda c, d: _io_style(c, d, 'appearance', 'inspect'),
-    'appearance.clear': lambda c, d: _io_style(c, d, 'appearance', 'clear'),
-    'material.list': lambda c, d: _io_style(c, d, 'material', 'list'),
-    'material.assign': lambda c, d: _io_style(c, d, 'material', 'assign'),
-    'material.inspect': lambda c, d: _io_style(c, d, 'material', 'inspect'),
+    'appearance.list': _io_appearance_list,
+    'appearance.assign': _io_appearance_assign,
+    'appearance.inspect': _io_appearance_inspect,
+    'appearance.clear': _io_appearance_clear,
+    'material.list': _io_material_list,
+    'material.assign': _io_material_assign,
+    'material.inspect': _io_material_inspect,
     'import.file': _io_import,
-    'checkpoint.create': lambda c, d: _io_checkpoint(c, d, 'create'),
-    'checkpoint.list': lambda c, d: _io_checkpoint(c, d, 'list'),
-    'checkpoint.inspect': lambda c, d: _io_checkpoint(c, d, 'inspect'),
-    'checkpoint.open': lambda c, d: _io_checkpoint(c, d, 'open'),
-    'export.native': lambda c, d: _io_export(c, d, 'native'),
-    'export.step': lambda c, d: _io_export(c, d, 'step'),
-    'export.mesh': lambda c, d: _io_export(c, d, 'mesh'),
+    'checkpoint.create': _io_checkpoint_create,
+    'checkpoint.list': _io_checkpoint_list,
+    'checkpoint.inspect': _io_checkpoint_inspect,
+    'checkpoint.open': _io_checkpoint_open,
+    'export.native': _io_export_native,
+    'export.step': _io_export_step,
+    'export.mesh': _io_export_mesh,
     'export.parts': _io_parts, 'export.verify': _io_verify,
 }
-CAD_HANDLERS.update(_IO_HANDLERS)
+# Register each callable independently of the optional compatibility table.
+CAD_HANDLERS.update({
+    'visibility.show': _io_visibility_show, 'visibility.hide': _io_visibility_hide,
+    'visibility.restore': _io_visibility_restore, 'visibility.isolate': _io_visibility_isolate,
+    'camera.save': _io_camera_save, 'camera.restore': _io_camera_restore,
+    'camera.set': _io_camera_set,
+    'shot.pack': _io_shots, 'view.compare': _io_compare, 'section.view': _io_section,
+    'reference.image': _io_reference_image,
+    'appearance.list': _io_appearance_list, 'appearance.assign': _io_appearance_assign,
+    'appearance.inspect': _io_appearance_inspect, 'appearance.clear': _io_appearance_clear,
+    'material.list': _io_material_list, 'material.assign': _io_material_assign,
+    'material.inspect': _io_material_inspect, 'import.file': _io_import,
+    'checkpoint.create': _io_checkpoint_create, 'checkpoint.list': _io_checkpoint_list,
+    'checkpoint.inspect': _io_checkpoint_inspect, 'checkpoint.open': _io_checkpoint_open,
+    'export.native': _io_export_native, 'export.step': _io_export_step,
+    'export.mesh': _io_export_mesh, 'export.parts': _io_parts, 'export.verify': _io_verify,
+})
