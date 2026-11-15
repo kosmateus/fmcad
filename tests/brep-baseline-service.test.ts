@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import type { FmcadServices } from "../src/api";
 import type { Client } from "../src/queue-broker-ports";
@@ -15,28 +14,6 @@ function objectValue(value: unknown): Record<string, unknown> {
     value !== null && typeof value === "object" && !Array.isArray(value),
   );
   return value as Record<string, unknown>;
-}
-function partial<T extends object>(value: Partial<T>): T {
-  return new Proxy(value, {
-    get(target, key) {
-      assert.ok(
-        Reflect.has(target, key) ||
-          [
-            "prepareCallTool",
-            "prepareUiGuardedScript",
-            "prepareListTools",
-            "preparePost",
-            "withRequest",
-            "reqOpts",
-            "capabilities",
-            "serverInfo",
-            "negotiatedProtocolVersion",
-          ].includes(String(key)),
-        `Unexpected fixture access: ${String(key)}`,
-      );
-      return Reflect.get(target, key);
-    },
-  }) as T;
 }
 interface BrepOutput {
   success: boolean;
@@ -105,6 +82,16 @@ const { queueDirectory } = load("../src/queue-connection") as {
 const { durable } = load("../src/queue-instance") as {
   durable(path: string, value: unknown): void;
 };
+const { createBrokerTransport } = load(
+  "../src/dist/fusion-transport/broker",
+) as typeof import("../packages/node-adapters/src/fusion-transport/broker");
+const { prepareWireArtifact } = load(
+  "../src/dist/python/source-units",
+) as typeof import("../packages/node-adapters/src/python/source-units");
+const pythonRuntime = path.join(
+  path.dirname(load.resolve("../package.json")),
+  "runtime/python",
+);
 
 const context = {
   doc: "Synthetic",
@@ -294,107 +281,118 @@ test(
         },
       },
     };
-    const fakeBackend: Partial<Client> = {
-      server: { timeoutMs: brokerCommandTimeoutMs },
-      _parse: JSON.parse,
-      async _post(envelope) {
-        const request = objectValue(envelope.params?.["arguments"]);
-        const requestObject = objectValue(request["object"]);
-        const script = requestObject["script"];
-        assert.equal(typeof script, "string");
-        if (typeof script !== "string") throw new Error("missing script");
-        let receiptSource = script,
-          binding,
-          receiptFile;
-        for (let depth = 0; depth < 8; depth++) {
-          binding = receiptSource.match(
-            /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
-          );
-          receiptFile = receiptSource.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
-          if (binding && receiptFile) break;
-          const wrapped = receiptSource.match(
-            /exec\(compile\(("(?:\\.|[^"\\])*")/,
-          );
-          if (!wrapped) break;
-          receiptSource = JSON.parse(wrapped[1]!);
-        }
-        assert.ok(
-          binding && receiptFile,
-          "fake backend must acknowledge the exact current receipt binding",
+    const fakeBackend = createBrokerTransport(
+      {
+        backend: "mcp",
+        tool: "fusion_mcp_execute",
+        url: "http://127.0.0.1:8765/mcp",
+        timeoutMs: brokerCommandTimeoutMs,
+        headers: {},
+      },
+      {
+        version: "test",
+        requestTimeout: () => brokerCommandTimeoutMs,
+        bridgeSource: () => assert.fail("MCP has no bridge"),
+      },
+    );
+    fakeBackend._post = async (envelope) => {
+      if (envelope["method"] === "initialize")
+        return {
+          status: 200,
+          raw: JSON.stringify({
+            jsonrpc: "2.0",
+            id: envelope["id"],
+            result: {
+              protocolVersion: objectValue(envelope["params"])[
+                "protocolVersion"
+              ],
+            },
+          }),
+        };
+      if (envelope["method"] === "notifications/initialized")
+        return { status: 202, raw: "" };
+      assert.ok(
+        Buffer.byteLength(JSON.stringify(envelope), "utf8") <= 1_048_576,
+        "The complete final native request must fit the HTTP limit",
+      );
+      const request = objectValue(objectValue(envelope["params"])["arguments"]);
+      const requestObject = objectValue(request["object"]);
+      const wireScript = requestObject["script"];
+      assert.equal(typeof wireScript, "string");
+      if (typeof wireScript !== "string") throw new Error("missing script");
+      const artifact = prepareWireArtifact(pythonRuntime, wireScript);
+      const script = artifact.units.map((unit) => unit.source).join("\n");
+      let receiptSource = script,
+        binding,
+        receiptFile;
+      for (let depth = 0; depth < 8; depth++) {
+        binding = receiptSource.match(
+          /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
         );
-        const record = JSON.parse(JSON.parse(binding[1]!));
-        const target = JSON.parse(receiptFile[1]!)
-          .replace(/^\\\\wsl\$\\[^\\]+/, "")
-          .replaceAll("\\", "/");
-        durable(target, {
-          ...record,
-          terminal: true,
-          outcome: "succeeded",
-          instance,
-        });
-        if (script.includes("FMCAD_QUEUE_INSTANCE")) {
-          const text = "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance);
-          return {
-            status: 200,
-            raw: JSON.stringify({
-              jsonrpc: "2.0",
-              id: envelope.id,
-              result: { content: [{ type: "text", text }] },
-            }),
-          };
-        }
-        assert.match(script, /class BrepBaselineService/);
-        assert.match(script, /class FusionExactBrepSerializer/);
-        assert.match(script, /_measure_baseline_internal_handler/);
-        assert.ok(requestObject["readOnly"]);
-        const stageId = fs.readdirSync(
-          path.join(project, ".cad/baseline-staging"),
-        )[0];
-        assert.ok(stageId);
-        const stageDir = path.join(project, ".cad/baseline-staging", stageId);
-        const entries = fs.readdirSync(stageDir);
-        const op =
-          entries.length === 0
-            ? "measure.baseline.capture_internal"
-            : "measure.baseline.compare_internal";
-        const stagePaths = [0, 1].map((index) =>
-          path.join(stageDir, `${index}.smt`),
+        receiptFile = receiptSource.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
+        if (binding && receiptFile) break;
+        const wrapped = receiptSource.match(
+          /exec\(compile\(("(?:\\.|[^"\\])*")/,
         );
-        nativeCalls.push({ operation: op, stagePaths });
-        assert.ok(script.includes(JSON.stringify(op)) || script.includes(op));
-        if (op.endsWith("capture_internal")) {
-          for (const [index, stagePath] of stagePaths.entries()) {
-            fs.writeFileSync(
-              stagePath,
-              Buffer.from(`fake-exact-brep-${index}`),
-              { flag: "wx" },
-            );
-          }
-          const text =
-            "FMCAD_RESULT " +
-            JSON.stringify({
-              success: true,
-              operation: op,
-              result: {
-                status: "pass",
-                precision: "exact",
-                manifest,
-                stagedPayloadCount: 2,
-              },
-            });
-          return {
-            status: 200,
-            raw: JSON.stringify({
-              jsonrpc: "2.0",
-              id: envelope.id,
-              result: { content: [{ type: "text", text }] },
-            }),
-          };
+        if (!wrapped) break;
+        receiptSource = JSON.parse(wrapped[1]!);
+      }
+      assert.ok(
+        binding && receiptFile,
+        "fake backend must acknowledge the exact current receipt binding",
+      );
+      const record = JSON.parse(JSON.parse(binding[1]!));
+      const target = JSON.parse(receiptFile[1]!)
+        .replace(/^\\\\wsl\$\\[^\\]+/, "")
+        .replaceAll("\\", "/");
+      durable(target, {
+        ...record,
+        terminal: true,
+        outcome: "succeeded",
+        instance,
+      });
+      if (script.includes("FMCAD_QUEUE_INSTANCE")) {
+        const text = "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance);
+        return {
+          status: 200,
+          raw: JSON.stringify({
+            jsonrpc: "2.0",
+            id: envelope["id"],
+            result: { content: [{ type: "text", text }] },
+          }),
+        };
+      }
+      assert.match(script, /class BrepBaselineService/);
+      assert.match(script, /class FusionExactBrepSerializer/);
+      assert.match(script, /_measure_baseline_internal_handler/);
+      assert.ok(
+        artifact.units.some(
+          (unit) => unit.filename === "<fmcad-native-source>",
+        ),
+        "The large BREP bundle must traverse the verified native codec",
+      );
+      assert.ok(requestObject["readOnly"]);
+      const stageId = fs.readdirSync(
+        path.join(project, ".cad/baseline-staging"),
+      )[0];
+      assert.ok(stageId);
+      const stageDir = path.join(project, ".cad/baseline-staging", stageId);
+      const entries = fs.readdirSync(stageDir);
+      const op =
+        entries.length === 0
+          ? "measure.baseline.capture_internal"
+          : "measure.baseline.compare_internal";
+      const stagePaths = [0, 1].map((index) =>
+        path.join(stageDir, `${index}.smt`),
+      );
+      nativeCalls.push({ operation: op, stagePaths });
+      assert.ok(script.includes(JSON.stringify(op)) || script.includes(op));
+      if (op.endsWith("capture_internal")) {
+        for (const [index, stagePath] of stagePaths.entries()) {
+          fs.writeFileSync(stagePath, Buffer.from(`fake-exact-brep-${index}`), {
+            flag: "wx",
+          });
         }
-        assert.deepEqual(
-          stagePaths.map((file) => fs.readFileSync(file).toString()),
-          ["fake-exact-brep-0", "fake-exact-brep-1"],
-        );
         const text =
           "FMCAD_RESULT " +
           JSON.stringify({
@@ -402,38 +400,50 @@ test(
             operation: op,
             result: {
               status: "pass",
-              passed: true,
               precision: "exact",
-              geometryEqual: true,
-              poseEqual: true,
-              bodies: manifest.bodies.map((body) => ({
-                role: body.role,
-                volumeEqual: true,
-                poseEqual: true,
-              })),
+              manifest,
+              stagedPayloadCount: 2,
             },
           });
         return {
           status: 200,
           raw: JSON.stringify({
             jsonrpc: "2.0",
-            id: envelope.id,
+            id: envelope["id"],
             result: { content: [{ type: "text", text }] },
           }),
         };
-      },
-      async callTool(value) {
-        const response = await this._post!({
-          jsonrpc: "2.0",
-          id: randomUUID(),
-          method: "tools/call",
-          params: { name: "fusion_mcp_execute", arguments: value },
+      }
+      assert.deepEqual(
+        stagePaths.map((file) => fs.readFileSync(file).toString()),
+        ["fake-exact-brep-0", "fake-exact-brep-1"],
+      );
+      const text =
+        "FMCAD_RESULT " +
+        JSON.stringify({
+          success: true,
+          operation: op,
+          result: {
+            status: "pass",
+            passed: true,
+            precision: "exact",
+            geometryEqual: true,
+            poseEqual: true,
+            bodies: manifest.bodies.map((body) => ({
+              role: body.role,
+              volumeEqual: true,
+              poseEqual: true,
+            })),
+          },
         });
-        return {
-          failed: false,
-          text: JSON.parse(response.raw).result.content[0].text,
-        };
-      },
+      return {
+        status: 200,
+        raw: JSON.stringify({
+          jsonrpc: "2.0",
+          id: envelope["id"],
+          result: { content: [{ type: "text", text }] },
+        }),
+      };
     };
     const config = resolveFmcadConfiguration({
       adapter: {
@@ -470,7 +480,7 @@ test(
       {
         dir: brokerDirectory,
         confirmOwnership: true,
-        createBackend: () => partial<Client>(fakeBackend),
+        createBackend: () => fakeBackend as unknown as Client,
         pollMs: 5,
         spawnWorker: ((
           executable: string,
