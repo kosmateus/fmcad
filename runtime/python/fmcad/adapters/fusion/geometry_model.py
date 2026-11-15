@@ -896,8 +896,152 @@ def _model_add_feature(collection: object, mode: str, feature_input: object) -> 
         _geometry_model_cast("adsk.fusion.PathPatternFeatureInput", feature_input)), mode)
 
 
+def _model_extrude_profiles(ctx: "CadContext", data: "JsonObject") -> "tuple[list[CadEntity], bool]":
+    has_profile, has_profiles = 'profile' in data, 'profiles' in data
+    if has_profile == has_profiles:
+        raise ValueError('Supply exactly one of profile or profiles for model.extrude')
+    if has_profiles:
+        profile_refs_value = data['profiles']
+        if not isinstance(profile_refs_value, list) or not profile_refs_value:
+            raise ValueError('profiles must be a nonempty array of profile references')
+        profiles = [_model_resolve(ctx, ref) for ref in profile_refs_value]
+        for index, profile in enumerate(profiles):
+            if getattr(profile, 'assemblyContext', None) is not None or _cad_owner(profile) != ctx.component:
+                raise ValueError('Every extrude profile must be native geometry owned by the selected component')
+            if any(profile == other for other in profiles[:index]):
+                raise ValueError('profiles must contain distinct profile references')
+        planes = [_model_extrude_profile_plane(profile) for profile in profiles]
+        if any(not planes[0].isCoPlanarTo(plane) for plane in planes[1:]):
+            raise ValueError('All profiles in a multi-profile extrusion must be co-planar')
+        return profiles, True
+    if isinstance(data['profile'], (list, tuple)):
+        raise ValueError('profile accepts one reference; use profiles for a collection')
+    return [_model_resolve(ctx, data['profile'])], False
+
+
+def _model_extent_mode(data: "JsonObject", mode: str) -> str:
+    extent_value = data.get('extent', 'distance')
+    if not isinstance(extent_value, str) or extent_value not in ('distance', 'throughAll', 'toEntity'):
+        raise ValueError('extent must be distance, throughAll, or toEntity')
+    distance_key = 'distance' if mode == 'extrude' else 'depth'
+    if (distance_key in data) != (extent_value == 'distance'):
+        raise ValueError(distance_key + ' is required only for distance extent')
+    if ('target' in data) != (extent_value == 'toEntity'):
+        raise ValueError('target is required only for toEntity extent')
+    if 'offset' in data and extent_value != 'toEntity':
+        raise ValueError('offset requires toEntity extent')
+    if mode == 'extrude' and data.get('symmetric', False):
+        if extent_value != 'distance' or 'direction' in data or 'startOffset' in data:
+            raise ValueError('Symmetric extrude requires distance and cannot specify direction or startOffset')
+    if mode == 'hole' and extent_value == 'toEntity' and 'reverse' in data:
+        raise ValueError('toEntity hole determines direction automatically; reverse is unsupported')
+    return extent_value
+
+
+def _model_extrude(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    _model_fields(data, (), ('profile', 'profiles', 'extent', 'distance', 'target', 'offset',
+                            'startOffset', 'symmetric', 'direction', 'taper', 'operation',
+                            'solid', 'participants', 'name'))
+    profiles, multiple = _model_extrude_profiles(ctx, data)
+    extent_mode = _model_extent_mode(data, 'extrude')
+    for key in ('distance', 'offset', 'startOffset'):
+        if key in data:
+            ctx.length(data[key])
+    if 'taper' in data:
+        ctx.angle(data['taper'])
+    direction = _geometry_model_cast("adsk.fusion.ExtentDirections", _model_enum(
+        _geometry_model_fusion.ExtentDirections, data.get('direction', 'positive'), {
+            'positive': 'PositiveExtentDirection', 'negative': 'NegativeExtentDirection'}))
+    refs: list["JsonValue"] = [data[key] for key in ('profile', 'target') if key in data]
+    for key in ('profiles', 'participants'):
+        if key in data:
+            value = data[key]
+            if not isinstance(value, list) or not value:
+                raise ValueError(key + ' must be a nonempty reference array')
+            refs.extend(value)
+    for ref in refs:
+        entity = _model_resolve(ctx, ref)
+        owner = _cad_owner(entity)
+        if getattr(entity, 'assemblyContext', None) is not None or (owner is not None and owner != ctx.component):
+            raise ValueError('Modeling requires native input geometry in the selected component; cross-occurrence creation is unsupported')
+    features = ctx.component.features
+    operation = _model_operation(data)
+    participants: list["adsk.fusion.BRepBody"] | None = None
+    if 'participants' in data:
+        if data.get('operation', 'newBody') not in ('cut', 'intersect'):
+            raise ValueError('participants are supported only for cut/intersect or holes')
+        participants = []
+        body_caster = _geometry_model_cast(_GeometryModelBodyCaster, _geometry_model_fusion.BRepBody)
+        for entity in _model_entities(ctx, data['participants'], kind='body'):
+            body = body_caster.cast(entity)
+            if body is None:
+                raise ValueError('participants must reference bodies')
+            participants.append(body)
+        if multiple and any(_cad_owner(body) != ctx.component or
+                            getattr(body, 'assemblyContext', None) is not None for body in participants):
+            raise ValueError('Extrude participants must be native bodies owned by the selected component')
+    target: "CadEntity | None" = None
+    if extent_mode == 'toEntity':
+        target = _model_resolve(ctx, data['target'])
+        plane_caster = _geometry_model_cast(_GeometryModelConstructionPlaneCaster, _geometry_model_fusion.ConstructionPlane)
+        face_caster = _geometry_model_cast(_GeometryModelFaceCaster, _geometry_model_fusion.BRepFace)
+        if plane_caster.cast(target) is None and face_caster.cast(target) is None:
+            raise ValueError('Unsupported toEntity target type')
+    collection = features.extrudeFeatures
+    profile_input = ctx.collection(profiles) if multiple else _geometry_model_cast("tuple[CadEntity, ...]", profiles)[0]
+    inp = collection.createInput(profile_input, operation)
+    taper = ctx.value(data.get('taper', '0 deg'))
+    if 'startOffset' in data:
+        inp.startExtent = _model_ok(_geometry_model_fusion.OffsetStartDefinition.create(ctx.value(data['startOffset'])), 'OffsetStartDefinition.create')
+    if _geometry_model_cast(bool, data.get('symmetric', False)):
+        _model_ok(inp.setSymmetricExtent(ctx.value(data['distance']), True, taper), 'setSymmetricExtent')
+    else:
+        if extent_mode == 'distance':
+            extent = _geometry_model_fusion.DistanceExtentDefinition.create(ctx.value(data['distance']))
+        elif extent_mode == 'throughAll':
+            extent = _geometry_model_fusion.ThroughAllExtentDefinition.create()
+        else:
+            extent = _geometry_model_fusion.ToEntityExtentDefinition.create(
+                _geometry_model_cast("CadEntity", target), False, ctx.value(data.get('offset', '0 mm')))
+        _model_ok(extent, 'create extent')
+        _model_ok(inp.setOneSideExtent(extent, direction, taper), 'setOneSideExtent')
+    inp.isSolid = _geometry_model_cast(bool, data.get('solid', True))
+    if participants is not None:
+        inp.participantBodies = participants
+    feature = _model_add_feature(collection, 'extrude', inp)
+    reference = _model_created(ctx, feature, data.get('name'))
+    health_state = _geometry_model_cast(int, feature.healthState)
+    if multiple and health_state != _geometry_model_fusion.FeatureHealthStates.HealthyFeatureHealthState:
+        raise RuntimeError('%s created a non-healthy multi-profile feature %s (healthState=%s): %s; inspect partial changes' %
+                           ('extrude', feature.name, feature.healthState, feature.errorOrWarningMessage))
+    if health_state == _geometry_model_fusion.FeatureHealthStates.ErrorFeatureHealthState:
+        raise RuntimeError('%s created an unhealthy feature %s: %s; inspect partial changes' %
+                           ('extrude', feature.name, feature.errorOrWarningMessage))
+    body_refs = [ctx.ref(body) for body in _model_items(feature.bodies)]
+    result: JsonObject = {'feature': reference, 'bodies': body_refs,
+                         'healthState': int(health_state), 'message': feature.errorOrWarningMessage}
+    if multiple:
+        result.update({
+            'profileRefs': [ctx.ref(profile) for profile in profiles],
+            'profileCount': len(profiles),
+            'bodyCount': len(body_refs),
+            'profileBodyMapping': {
+                'status': 'unavailable',
+                'reason': 'Fusion does not expose a stable result-body to input-profile mapping; use the returned body refs as identities.',
+            },
+        })
+    return result
+
+
+@_cad_scoped_step('model', native_only=True)
+def model_extrude(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    return _model_extrude(ctx, data)
+
+
 @_cad_scoped_step('model', native_only=True)
 def model_feature(ctx: "CadContext", data: "JsonObject", mode: str) -> "JsonValue":
+    if mode == 'extrude':
+        return _model_extrude(ctx, data)
     surface_variant = mode in ('loft', 'sweep', 'revolve') and data.get('solid') is False
     if surface_variant:
         preflight = _geometry_model_cast(_GeometryModelSurfacePreflight, _surface_model_preflight)
@@ -905,7 +1049,6 @@ def model_feature(ctx: "CadContext", data: "JsonObject", mode: str) -> "JsonValu
         if blocked is not None:
             return blocked
     schemas = {
-        'extrude': ((), ('profile', 'profiles', 'extent', 'distance', 'target', 'offset', 'startOffset', 'symmetric', 'direction', 'taper')),
         'revolve': (('profile', 'axis', 'angle'), ('symmetric',)),
         'sweep': (('profile', 'path'), ('twist', 'taper', 'orientation', 'guideRail')),
         'loft': (('profiles',), ('closed', 'rails', 'centerLine')),
@@ -926,37 +1069,12 @@ def model_feature(ctx: "CadContext", data: "JsonObject", mode: str) -> "JsonValu
     required, optional = schemas[mode]
     if surface_variant:
         optional += ('schemaVersion', 'frame', 'representation', 'onExisting', 'protected') + (('endConditions',) if mode == 'loft' else ())
-    operation_modes = ('extrude', 'revolve', 'sweep', 'loft', 'thicken')
+    operation_modes = ('revolve', 'sweep', 'loft', 'thicken')
     if mode in operation_modes:
         optional += ('operation', 'solid', 'participants') if mode != 'thicken' else ('operation',)
     if mode == 'hole':
         optional += ('participants',)
     _model_fields(data, required, optional + ('name',))
-    extrude_profiles: list["CadEntity"] = []
-    multi_profile_extrude = False
-    if mode == 'extrude':
-        has_profile, has_profiles = 'profile' in data, 'profiles' in data
-        if has_profile == has_profiles:
-            raise ValueError('Supply exactly one of profile or profiles for model.extrude')
-        multi_profile_extrude = has_profiles
-        if has_profiles:
-            profile_refs_value = data['profiles']
-            if not isinstance(profile_refs_value, list) or not profile_refs_value:
-                raise ValueError('profiles must be a nonempty array of profile references')
-            profile_refs = profile_refs_value
-            extrude_profiles = [_model_resolve(ctx, ref) for ref in profile_refs]
-            for index, profile in enumerate(extrude_profiles):
-                if getattr(profile, 'assemblyContext', None) is not None or _cad_owner(profile) != ctx.component:
-                    raise ValueError('Every extrude profile must be native geometry owned by the selected component')
-                if any(profile == other for other in extrude_profiles[:index]):
-                    raise ValueError('profiles must contain distinct profile references')
-            planes = [_model_extrude_profile_plane(profile) for profile in extrude_profiles]
-            if any(not planes[0].isCoPlanarTo(plane) for plane in planes[1:]):
-                raise ValueError('All profiles in a multi-profile extrusion must be co-planar')
-        else:
-            if isinstance(data['profile'], (list, tuple)):
-                raise ValueError('profile accepts one reference; use profiles for a collection')
-            extrude_profiles = [_model_resolve(ctx, data['profile'])]
     resolved_query: "JsonObject | None" = None
     selected_edges: list["CadEntity"] | None = None
     if mode in ('fillet', 'chamfer'):
@@ -981,40 +1099,20 @@ def model_feature(ctx: "CadContext", data: "JsonObject", mode: str) -> "JsonValu
                 if getattr(edge, 'assemblyContext', None) is not None or _cad_owner(edge) != ctx.component:
                     raise ValueError('Modeling requires native input geometry in the selected component; cross-occurrence creation is unsupported')
     extent_mode: str = 'distance'
-    if mode in ('extrude', 'hole'):
-        extent_value = data.get('extent', 'distance')
-        if not isinstance(extent_value, str) or extent_value not in ('distance', 'throughAll', 'toEntity'):
-            raise ValueError('extent must be distance, throughAll, or toEntity')
-        extent_mode = extent_value
-        distance_key = 'distance' if mode == 'extrude' else 'depth'
-        if (distance_key in data) != (extent_mode == 'distance'):
-            raise ValueError(distance_key + ' is required only for distance extent')
-        if ('target' in data) != (extent_mode == 'toEntity'):
-            raise ValueError('target is required only for toEntity extent')
-        if 'offset' in data and extent_mode != 'toEntity':
-            raise ValueError('offset requires toEntity extent')
-        if mode == 'extrude' and data.get('symmetric', False):
-            if extent_mode != 'distance' or 'direction' in data or 'startOffset' in data:
-                raise ValueError('Symmetric extrude requires distance and cannot specify direction or startOffset')
-        if mode == 'hole' and extent_mode == 'toEntity' and 'reverse' in data:
-            raise ValueError('toEntity hole determines direction automatically; reverse is unsupported')
+    if mode == 'hole':
+        extent_mode = _model_extent_mode(data, mode)
     if mode == 'sweep' and 'guideRail' in data and any(k in data for k in ('orientation', 'twist', 'taper')):
         raise ValueError('guideRail cannot combine with orientation, twist, or taper (ignored by Fusion)')
     if mode == 'loft' and 'rails' in data and 'centerLine' in data:
         raise ValueError('Loft accepts rails or centerLine, not both')
     # Validate dimensional compatibility, but retain the original expressions in ValueInput.
-    if mode in ('extrude', 'hole', 'sweep'):
+    if mode in ('hole', 'sweep'):
         for key in ('distance', 'depth', 'diameter', 'offset', 'startOffset', 'boreDiameter', 'boreDepth', 'sinkDiameter'):
             if key in data:
                 ctx.length(data[key])
         for key in ('taper', 'twist', 'sinkAngle'):
             if key in data:
                 ctx.angle(data[key])
-    direction: "adsk.fusion.ExtentDirections | None" = None
-    if mode == 'extrude':
-        direction = _geometry_model_cast("adsk.fusion.ExtentDirections", _model_enum(
-            _geometry_model_fusion.ExtentDirections, data.get('direction', 'positive'), {
-                'positive': 'PositiveExtentDirection', 'negative': 'NegativeExtentDirection'}))
     orientation: "adsk.fusion.SweepOrientationTypes | None" = None
     if mode == 'sweep' and 'orientation' in data:
         orientation = _geometry_model_cast("adsk.fusion.SweepOrientationTypes", _model_enum(
@@ -1075,12 +1173,8 @@ def model_feature(ctx: "CadContext", data: "JsonObject", mode: str) -> "JsonValu
             if body is None:
                 raise ValueError('participants must reference bodies')
             participants.append(body)
-        if mode == 'extrude' and multi_profile_extrude and any(
-                _cad_owner(body) != ctx.component or getattr(body, 'assemblyContext', None) is not None
-                for body in participants):
-            raise ValueError('Extrude participants must be native bodies owned by the selected component')
     target: "CadEntity | None" = None
-    if mode in ('extrude', 'hole') and extent_mode == 'toEntity':
+    if mode == 'hole' and extent_mode == 'toEntity':
         target = _model_resolve(ctx, data['target'])
         target_entity = target
         plane_caster = _geometry_model_cast(
@@ -1111,29 +1205,7 @@ def model_feature(ctx: "CadContext", data: "JsonObject", mode: str) -> "JsonValu
             if curve_caster.cast(curve) is None and edge_caster.cast(curve) is None:
                 raise ValueError('Loft guides require sketch curves, edges, or path descriptors')
             prepared_guides.append(curve)
-    if mode == 'extrude':
-        collection = features.extrudeFeatures
-        profile_input = (ctx.collection(extrude_profiles) if multi_profile_extrude else
-                         _geometry_model_cast("tuple[CadEntity, ...]", extrude_profiles)[0])
-        inp = collection.createInput(profile_input, _geometry_model_cast(
-            "adsk.fusion.FeatureOperations", operation))
-        taper = ctx.value(data.get('taper', '0 deg'))
-        if 'startOffset' in data:
-            inp.startExtent = _model_ok(_geometry_model_fusion.OffsetStartDefinition.create(ctx.value(data['startOffset'])), 'OffsetStartDefinition.create')
-        if _geometry_model_cast(bool, data.get('symmetric', False)):
-            _model_ok(inp.setSymmetricExtent(ctx.value(data['distance']), True, taper), 'setSymmetricExtent')
-        else:
-            if extent_mode == 'distance':
-                extent = _geometry_model_fusion.DistanceExtentDefinition.create(ctx.value(data['distance']))
-            elif extent_mode == 'throughAll':
-                extent = _geometry_model_fusion.ThroughAllExtentDefinition.create()
-            else:
-                extent = _geometry_model_fusion.ToEntityExtentDefinition.create(
-                    _geometry_model_cast("CadEntity", target), False, ctx.value(data.get('offset', '0 mm')))
-            _model_ok(extent, 'create extent')
-            _model_ok(inp.setOneSideExtent(
-                extent, _geometry_model_cast("adsk.fusion.ExtentDirections", direction), taper), 'setOneSideExtent')
-    elif mode == 'revolve':
+    if mode == 'revolve':
         collection = features.revolveFeatures
         inp = collection.createInput(_model_resolve(ctx, data['profile']), _model_resolve(ctx, data['axis']),
                                      _geometry_model_cast("adsk.fusion.FeatureOperations", operation))
@@ -1302,7 +1374,7 @@ def model_feature(ctx: "CadContext", data: "JsonObject", mode: str) -> "JsonValu
         else:
             collection = features.pathPatternFeatures
             inp = collection.createInput(entities, _model_path(ctx, data['path']), _model_quantity(ctx, data['quantity']), ctx.value(data['distance']), _model_distance_type(data))
-    if mode in ('extrude', 'revolve', 'sweep', 'loft'):
+    if mode in ('revolve', 'sweep', 'loft'):
         _geometry_model_cast(_GeometryModelSolidFeatureInput, inp).isSolid = _geometry_model_cast(
             bool, data.get('solid', True))
     if participants is not None:
@@ -1312,25 +1384,12 @@ def model_feature(ctx: "CadContext", data: "JsonObject", mode: str) -> "JsonValu
     feature = _model_add_feature(collection, mode, inp)
     reference = _model_created(ctx, feature, data.get('name'))
     health_state = _geometry_model_cast(int, feature.healthState)
-    if multi_profile_extrude and health_state != _geometry_model_fusion.FeatureHealthStates.HealthyFeatureHealthState:
-        raise RuntimeError('%s created a non-healthy multi-profile feature %s (healthState=%s): %s; inspect partial changes' %
-                           (mode, feature.name, feature.healthState, feature.errorOrWarningMessage))
     if health_state == _geometry_model_fusion.FeatureHealthStates.ErrorFeatureHealthState:
         raise RuntimeError('%s created an unhealthy feature %s: %s; inspect partial changes' %
                            (mode, feature.name, feature.errorOrWarningMessage))
     body_refs = [ctx.ref(body) for body in _model_items(feature.bodies)]
     result: "JsonObject" = {'feature': reference, 'bodies': body_refs,
                              'healthState': int(health_state), 'message': feature.errorOrWarningMessage}
-    if multi_profile_extrude:
-        result.update({
-            'profileRefs': [ctx.ref(profile) for profile in extrude_profiles],
-            'profileCount': len(extrude_profiles),
-            'bodyCount': len(body_refs),
-            'profileBodyMapping': {
-                'status': 'unavailable',
-                'reason': 'Fusion does not expose a stable result-body to input-profile mapping; use the returned body refs as identities.',
-            },
-        })
     if resolved_query is not None:
         result['resolvedQuery'] = resolved_query
         result['selectionAssociativity'] = 'snapshot'

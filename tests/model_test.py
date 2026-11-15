@@ -5,6 +5,7 @@ import pathlib
 import sys
 import types
 import unittest
+from unittest.mock import patch
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -1393,6 +1394,22 @@ class ModelTests(unittest.TestCase):
         self.call('model.extrude', {'profile': profile, 'distance': 'wall * 2'})
         self.assertEqual(next(t[1] for t in reversed(TRACE) if t[0] == 'oneSideExtent').value,
                          ('expression', 'wall * 2'))
+
+    def test_extrude_executes_without_multimode_feature_dispatch(self):
+        def unrelated(*args):
+            raise AssertionError('Extrude entered another feature execution family')
+
+        with patch.dict(namespace, {'model_feature': unrelated,
+                                    '_surface_model_preflight': unrelated,
+                                    '_model_path': unrelated, '_entity_query': unrelated}):
+            result = self.call('model.extrude', {
+                'profile': {'kind': 'profile', 'sketch': 'Section', 'index': 0},
+                'distance': '2 in', 'name': 'SeparateExtrusion'})
+        self.assertEqual(result['feature']['name'], 'SeparateExtrusion')
+        self.assertEqual(result['healthState'], 0)
+        self.assertEqual(next(t[1] for t in TRACE if t[0] == 'oneSideExtent').value,
+                         ('expression', '2 in'))
+        self.assertTrue(next(t[2] for t in TRACE if t[:2] == ('set', 'isSolid')))
 
     def test_hole_all_and_to_extents_all_hole_types(self):
         for extra in ({}, {'type': 'counterbore', 'boreDiameter': '8 mm', 'boreDepth': '2 mm'},

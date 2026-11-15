@@ -21,8 +21,11 @@ def _model_handler(mode: str) -> "CadHandler":
     return handler
 
 
+CAD_HANDLERS.update({'model.extrude': model_extrude})
+
+
 CAD_HANDLERS.update({'model.' + mode: _model_handler(mode) for mode in (
-    'extrude', 'revolve', 'sweep', 'loft', 'hole', 'shell', 'thicken', 'combine',
+    'revolve', 'sweep', 'loft', 'hole', 'shell', 'thicken', 'combine',
     'split', 'fillet', 'chamfer', 'draft', 'thread', 'mirror')})
 
 
