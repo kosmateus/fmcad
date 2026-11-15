@@ -36,6 +36,7 @@ export const normalColdProfile = Object.freeze({
 });
 export interface NormalCurrentStoreTarget {
   kind: "normal-currentstore-target-v1";
+  requestKind?: "raw-rpc";
   sourceCommit?: string;
   buildHash?: string;
   epochId: string;
@@ -252,6 +253,17 @@ function profile(entry: Reference): Profile {
     "metadata",
     "configHash",
   ];
+  if (Object.hasOwn(target, "requestKind")) {
+    keys.push("requestKind");
+    if (
+      target["requestKind"] !== "raw-rpc" ||
+      !Object.hasOwn(target, "sourceCommit") ||
+      !Object.hasOwn(target, "buildHash")
+    )
+      fail(
+        "Raw RPC requires its explicit discriminator and predecessor runtime",
+      );
+  }
   if (
     Object.hasOwn(target, "sourceCommit") ||
     Object.hasOwn(target, "buildHash")
@@ -326,6 +338,38 @@ function snapshot(
     ? (predecessor.owner as unknown as Data)
     : read(path.join(root, "broker.lock"));
   const args = request["argv"];
+  const rawRpc = p.requestKind === "raw-rpc";
+  const payload = rawRpc ? object(request["payload"]) : {};
+  const params = rawRpc ? object(payload["params"]) : {};
+  const scriptArgs = rawRpc ? object(params["arguments"]) : {};
+  const rawRequestMatches =
+    request["kind"] === "rpc" &&
+    request["phased"] === undefined &&
+    args === undefined &&
+    (request["buildHash"] === undefined ||
+      request["buildHash"] === p.buildHash) &&
+    payload["method"] === "tools/call" &&
+    params["name"] === "execute_python" &&
+    typeof scriptArgs["code"] === "string" &&
+    scriptArgs["persistent"] === false &&
+    scriptArgs["session_id"] === undefined &&
+    // The canonical job hash below binds the payload. Its persisted property
+    // order need not match the original transport-byte requestHash journal.
+    digest(String(scriptArgs["code"])) === p.sourceHash;
+  const commandMatches =
+    request["kind"] === "command" &&
+    request["phased"] === true &&
+    request["buildHash"] === p.buildHash &&
+    Array.isArray(args) &&
+    !args.some((arg) => typeof arg !== "string") &&
+    args[0] === "run" &&
+    args.length === 8 &&
+    ["--doc", "--doc-id", "--helpers"].every(
+      (flag) => args.filter((arg) => arg === flag).length === 1,
+    ) &&
+    args[args.indexOf("--doc-id") + 1] === p.creationId &&
+    args[args.indexOf("--doc") + 1] === p.documentName &&
+    args[args.indexOf("--helpers") + 1] === "cad-v1";
   const immutableRequest = { ...request };
   delete immutableRequest["description"];
   const canonicalRequest = (
@@ -350,22 +394,10 @@ function snapshot(
     job["state"] !== "needs_reconciliation" ||
     job["hash"] !== p.jobHash ||
     digest(canonicalRequest) !== p.jobHash ||
-    request["kind"] !== "command" ||
+    !(rawRpc ? rawRequestMatches : commandMatches) ||
     request["clientId"] !== p.jobClientId ||
     request["requestId"] !== p.jobRequestId ||
-    request["phased"] !== true ||
     request["backend"] !== "mcp" ||
-    request["buildHash"] !== p.buildHash ||
-    !Array.isArray(args) ||
-    args.some((arg) => typeof arg !== "string") ||
-    args[0] !== "run" ||
-    args.length !== 8 ||
-    ["--doc", "--doc-id", "--helpers"].some(
-      (flag) => args.filter((arg) => arg === flag).length !== 1,
-    ) ||
-    args[args.indexOf("--doc-id") + 1] !== p.creationId ||
-    args[args.indexOf("--doc") + 1] !== p.documentName ||
-    args[args.indexOf("--helpers") + 1] !== "cad-v1" ||
     typeof request["ownerToken"] !== "string" ||
     request["ownerToken"] !== clients[p.jobClientId] ||
     pointer["ownerTokenHash"] !== clients[p.epochClientId] ||
@@ -460,7 +492,8 @@ function snapshot(
     if (!/^[a-f0-9-]{36}$/.test(id)) fail("Noncanonical job namespace");
     const dir = canonical(path.join(root, "jobs", id), true);
     if (
-      (id === p.jobId || fs.existsSync(path.join(dir, "worker-start.json"))) &&
+      ((!rawRpc && id === p.jobId) ||
+        fs.existsSync(path.join(dir, "worker-start.json"))) &&
       !fs.existsSync(path.join(dir, "worker-identity.json"))
     )
       fail(
@@ -497,6 +530,24 @@ function snapshot(
   const rpcFile = path.join(root, "jobs", p.jobId, `rpc-${p.rpcId}.json`);
   const rpc = read(rpcFile),
     binding = object(rpc["binding"]);
+  if (rawRpc) {
+    if (
+      fs.existsSync(path.join(root, "jobs", p.jobId, "worker-start.json")) ||
+      fs.existsSync(path.join(root, "jobs", p.jobId, "worker-identity.json")) ||
+      rpc["method"] !== "tools/call" ||
+      object(rpc["request"])["id"] !== payload["id"] ||
+      object(rpc["request"])["method"] !== payload["method"] ||
+      object(rpc["wireRequest"])["id"] !== "fmcad:" + p.rpcId ||
+      object(rpc["wireRequest"])["method"] !== payload["method"] ||
+      !Array.isArray(object(rpc["instance"])["documents"]) ||
+      !(object(rpc["instance"])["documents"] as unknown[]).some(
+        (doc) => object(doc)["id"] === p.creationId,
+      )
+    )
+      fail(
+        "Raw RPC must retain its actual broker-only producer and observed document binding",
+      );
+  }
   if (
     rpc["terminal"] !== false ||
     binding["jobId"] !== p.jobId ||

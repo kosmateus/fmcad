@@ -109,8 +109,28 @@ const laterRuntime = {
 function fixture(
   t: { after(fn: () => void): void },
   runtime?: { sourceCommit: string; buildHash: string },
+  raw = false,
 ) {
-  const p = { ...legacyProfile, ...runtime };
+  const payload = {
+    jsonrpc: "2.0",
+    id: 3,
+    method: "tools/call",
+    params: {
+      name: "execute_python",
+      arguments: { code: 'print("FUSION_ADDIN_STDIO_OK")', persistent: false },
+    },
+  };
+  const p = {
+    ...legacyProfile,
+    ...runtime,
+    ...(raw
+      ? {
+          requestKind: "raw-rpc",
+          sourceHash: hash(payload.params.arguments.code),
+          requestHash: hash(JSON.stringify(payload)),
+        }
+      : {}),
+  };
   const dir = fs.mkdtempSync("/tmp/opencode/normal-currentstore-");
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const epoch = path.join(dir, "admission-epochs", p.epochId);
@@ -209,23 +229,30 @@ function fixture(
     requestId: p.jobRequestId,
     hash: p.jobHash,
     state: "needs_reconciliation",
-    request: {
-      kind: "command",
-      phased: true,
-      backend: "mcp",
-      buildHash: p.buildHash,
-      ownerToken: hash(jobClient.auth.clientToken),
-      argv: [
-        "run",
-        "/synthetic/private-writer.py",
-        "--doc-id",
-        p.creationId,
-        "--doc",
-        p.documentName,
-        "--helpers",
-        "cad-v1",
-      ],
-    },
+    request: raw
+      ? {
+          kind: "rpc",
+          backend: "mcp",
+          ownerToken: hash(jobClient.auth.clientToken),
+          payload,
+        }
+      : {
+          kind: "command",
+          phased: true,
+          backend: "mcp",
+          buildHash: p.buildHash,
+          ownerToken: hash(jobClient.auth.clientToken),
+          argv: [
+            "run",
+            "/synthetic/private-writer.py",
+            "--doc-id",
+            p.creationId,
+            "--doc",
+            p.documentName,
+            "--helpers",
+            "cad-v1",
+          ],
+        },
   };
   const current = new QueueState(epoch);
   current.submit(
@@ -238,7 +265,7 @@ function fixture(
     },
     p.jobId,
   );
-  current.readyTurn(p.jobId);
+  if (!raw) current.readyTurn(p.jobId);
   current.next();
   current.markDispatch(p.jobId, { rpcCount: 3, completedCount: 2 });
   current.finish(p.jobId, {
@@ -246,22 +273,38 @@ function fixture(
     code: "SYNTHETIC_ORIGINAL_UNKNOWN",
   });
   job.hash = current.data.jobs[p.jobId]!.hash;
-  write(path.join(jobDir, "worker-identity.json"), {
-    pid: 429882,
-    birth: "synthetic-linux-boot:7973485",
-  });
-  write(path.join(jobDir, "worker-result.json"), {
-    code: 1,
-    terminal: true,
-    workflowOutcome: null,
-  });
+  if (!raw)
+    write(path.join(jobDir, "worker-identity.json"), {
+      pid: 429882,
+      birth: "synthetic-linux-boot:7973485",
+    });
+  if (!raw)
+    write(path.join(jobDir, "worker-result.json"), {
+      code: 1,
+      terminal: true,
+      workflowOutcome: null,
+    });
   write(path.join(jobDir, "request.json"), {
     credential: "NEVER READ OR HASH THIS SEALED FIXTURE",
   });
   const rpcFile = path.join(jobDir, `rpc-${p.rpcId}.json`);
   write(rpcFile, {
     terminal: false,
-    instance: p.sdk,
+    ...(raw
+      ? {
+          method: "tools/call",
+          request: { jsonrpc: "2.0", id: payload.id, method: payload.method },
+          wireRequest: {
+            jsonrpc: "2.0",
+            id: "fmcad:" + p.rpcId,
+            method: payload.method,
+          },
+        }
+      : {}),
+    instance: {
+      ...p.sdk,
+      ...(raw ? { documents: [{ id: p.creationId, fileId: null }] } : {}),
+    },
     binding: {
       jobId: p.jobId,
       rpcId: p.rpcId,
@@ -377,6 +420,117 @@ function fixture(
     targetReference,
   };
 }
+
+test("normal raw RPC successor binds the original owner, payload and broker without inventing a worker", (t) => {
+  const f = fixture(t, laterRuntime, true);
+  const authorization = JSON.parse(
+    fs.readFileSync(f.authorization.path, "utf8"),
+  );
+  assert.equal(authorization.profile.requestKind, "raw-rpc");
+  assert.equal(authorization.snapshot.producers.length, 1);
+  assert.equal(
+    fs.existsSync(path.join(f.jobDir, "worker-identity.json")),
+    false,
+  );
+  assert.equal(
+    JSON.parse(fs.readFileSync(path.join(f.epoch, "queue-state.json"), "utf8"))
+      .jobs[p.jobId].state,
+    "needs_reconciliation",
+  );
+  assert.throws(() =>
+    normal.authorizeNormalCurrentStore(
+      f.epochClient,
+      `foreign:${randomUUID()}`,
+      f.targetReference,
+    ),
+  );
+  const denyMutation = (
+    file: string,
+    mutate: (value: {
+      binding: { requestHash: string };
+      wireRequest: { id: string };
+      buildHash: string;
+      sourceCommit: string;
+      jobs: Record<
+        string,
+        {
+          state?: string;
+          id?: string;
+          request?: { payload: { params: { arguments: { code: string } } } };
+        }
+      >;
+    }) => void,
+  ) => {
+    const before = fs.readFileSync(file);
+    const value = JSON.parse(before.toString());
+    mutate(value);
+    write(file, value);
+    assert.throws(() =>
+      normal.authorizeNormalCurrentStore(
+        f.jobClient,
+        `negative:${randomUUID()}`,
+        ref(f.targetReference.path),
+      ),
+    );
+    fs.writeFileSync(file, before);
+  };
+  const rpcFile = path.join(f.jobDir, `rpc-${p.rpcId}.json`);
+  denyMutation(rpcFile, (value) => {
+    value.binding.requestHash = "e".repeat(64);
+  });
+  denyMutation(rpcFile, (value) => {
+    value.wireRequest.id = "foreign-rpc";
+  });
+  denyMutation(f.targetReference.path, (value) => {
+    value.buildHash = "f".repeat(64);
+  });
+  denyMutation(f.targetReference.path, (value) => {
+    value.sourceCommit = "f".repeat(40);
+  });
+  denyMutation(path.join(f.epoch, "queue-state.json"), (value) => {
+    value.jobs[p.jobId]!.request!.payload.params.arguments.code =
+      "print('tampered')";
+  });
+  denyMutation(path.join(f.epoch, "queue-state.json"), (value) => {
+    value.jobs[randomUUID()] = { state: "running", id: randomUUID() };
+  });
+  const worker = path.join(f.jobDir, "worker-identity.json");
+  write(worker, { pid: 987654, birth: "foreign:1" });
+  assert.throws(() =>
+    normal.authorizeNormalCurrentStore(
+      f.jobClient,
+      `fake-worker:${randomUUID()}`,
+      f.targetReference,
+    ),
+  );
+  fs.unlinkSync(worker);
+  const target = JSON.parse(fs.readFileSync(f.targetReference.path, "utf8"));
+  delete target.requestKind;
+  write(f.targetReference.path, target);
+  assert.throws(
+    () =>
+      normal.authorizeNormalCurrentStore(
+        f.jobClient,
+        `mixed:${randomUUID()}`,
+        ref(f.targetReference.path),
+      ),
+    /profile|producer|worker/i,
+  );
+});
+
+test("a phased command cannot opt into the broker-only raw RPC profile", (t) => {
+  const f = fixture(t, laterRuntime);
+  const target = JSON.parse(fs.readFileSync(f.targetReference.path, "utf8"));
+  target.requestKind = "raw-rpc";
+  write(f.targetReference.path, target);
+  assert.throws(() =>
+    normal.authorizeNormalCurrentStore(
+      f.jobClient,
+      `mixed:${randomUUID()}`,
+      ref(f.targetReference.path),
+    ),
+  );
+});
 
 test("public normal metadata CLI requires sealed existing clients, exact input refs and no SDK/broker calls", async (t) => {
   const f = fixture(t),
