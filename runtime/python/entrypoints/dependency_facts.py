@@ -1064,6 +1064,10 @@ def analyse(request):
                 isinstance(node, ast.FunctionDef) and node.name == 'run' for node in user_tree.body):
             return dict(unsupported=True, reason='No executable entrypoint in source fragment')
         user_facts = facts(user_tree, '<user>', user=not request.get('generated', False))
+        if user_facts['opaque']:
+            # Core policy necessarily retains the full inventory for this root.
+            # Do not repeatedly parse megabytes that cannot change that decision.
+            return dict(unsupported=True, reason='Opaque entrypoint requires complete namespace')
     except SyntaxError:
         # The ordinary checker owns user syntax diagnostics.
         return dict(unsupported=True)
