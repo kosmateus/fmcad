@@ -323,8 +323,9 @@ for (const responseMode of [
           ...JSON.parse(JSON.parse(binding[1]!)), terminal: true, outcome: "succeeded", instance,
         }));
         return { status: 200, raw: JSON.stringify({ jsonrpc: "2.0", id: payload["id"],
-          result: { isError: false, content: [{ type: "text", text: JSON.stringify({
-            success: true, stdout: "FUSION_ADDIN_STDIO_OK\n", stderr: "",
+          result: { content: [{ type: "text", text: JSON.stringify({
+            message: JSON.stringify({ success: true, stdout: "FUSION_ADDIN_STDIO_OK\n", stderr: "" }) + "\n",
+            success: true,
           }) }] } }) };
       }
       const wireId = payload["id"];
@@ -413,13 +414,24 @@ for (const responseMode of [
       await new Promise((resolve) => setTimeout(resolve, 10));
     } while (Date.now() < deadline);
     if (responseMode === "native-legacy-python") {
-      assert.equal(result.job.state, "succeeded");
+      assert.equal(result.job.state, "succeeded", JSON.stringify(result));
       assert.equal(productCalls, 1);
       assert.ok(realChecks >= 3,
         "The real checker must certify preflight, adapted public Python and postflight");
       const files = fs.readdirSync(path.join(dir, "jobs", job.id)).filter(name => /^rpc-.*\.json$/.test(name));
       const records = files.map(name => JSON.parse(fs.readFileSync(path.join(dir, "jobs", job.id, name), "utf8")));
       assert.equal(records.filter(record => record.binding?.sourceHash === sourceHash && record.terminal === true).length, 1);
+      const response = await request<{ rpc: { raw: string } }>(dir, { action: "result", auth, jobId: job.id });
+      const publicResult = JSON.parse(response.rpc.raw).result;
+      assert.equal(publicResult.isError, false);
+      assert.deepEqual(JSON.parse(publicResult.content[0].text), {
+        success: true, stdout: "FUSION_ADDIN_STDIO_OK\n", stderr: "",
+      });
+      const product = records.find(record => record.binding?.sourceHash === sourceHash);
+      const retained = JSON.parse(fs.readFileSync(path.join(dir, "jobs", job.id,
+        `received-response-${product.binding.rpcId}.json`), "utf8"));
+      assert.equal(JSON.parse(retained.response.raw).result.isError, undefined,
+        "Do not rewrite native received-response evidence to match the public contract");
       return;
     }
     assert.equal(result.job.state, "needs_reconciliation");

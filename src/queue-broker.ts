@@ -460,6 +460,27 @@ function responseForCaller(
   request: P.Rpc,
   reply: P.Reply | null,
 ) {
+  if (request.method === "tools/call" && request.params?.name === "execute_python" && reply && !reply.error) {
+    const result = object(reply.result);
+    const content = result["content"];
+    if (Array.isArray(content) && content.length === 1 && object(content[0])["type"] === "text") {
+      // Native Fusion wraps printed JSON in {success,message}; our public
+      // execute_python contract exposes the captured stdout/stderr directly.
+      // Keep received-response and native receipts untouched. Only the caller's
+      // response is adapted, after exact wire identity and receipt settlement.
+      try {
+        const outer = object(JSON.parse(String(object(content[0])["text"])));
+        if (outer["success"] === true && typeof outer["message"] === "string") {
+          const value = object(JSON.parse(outer["message"]));
+          if (typeof value["success"] === "boolean" && typeof value["stdout"] === "string" &&
+              typeof value["stderr"] === "string") {
+            reply = { ...reply, result: { ...result, isError: value["success"] !== true,
+              content: [{ type: "text", text: JSON.stringify(value) }] } };
+          }
+        }
+      } catch { /* Not the native compatibility envelope; preserve the reply. */ }
+    }
+  }
   return own(request, "id")
     ? { ...response, raw: JSON.stringify({ ...reply, id: request.id }) }
     : response;
