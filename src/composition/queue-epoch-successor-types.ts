@@ -20,8 +20,8 @@ export interface SdkProcessDeathBindings {
 }
 export interface NormalProcessDeathBindings {
   jobAuthorization: Reference;
-  producerRetirement: Reference;
   originalRpc: Reference;
+  predecessorState: Reference;
 }
 export interface SdkProcessDeathProof {
   version: 1;

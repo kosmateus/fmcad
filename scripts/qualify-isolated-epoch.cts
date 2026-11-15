@@ -243,7 +243,8 @@ async function main() {
     undefined,
   );
   if (options["--normal-currentstore"] === "true") {
-    const normal = load(runtime + "/src/dist/composition/queue-normal-cold-successor") as { prepareNormalCurrentFacts: ReaderFactory };
+    const normal = load(runtime + "/src/dist/composition/queue-normal-cold-successor") as { prepareNormalCurrentFacts: ReaderFactory; retireNormalMetadataProducer?: unknown };
+    assert.equal(typeof normal.retireNormalMetadataProducer, "function", "Normal metadata retirement must compose the existing kernel, not require an ad-hoc signal");
     const normalIdentity = { kind: "normal-currentstore-v1", resolvedIdentity: { creationId: randomUUID(), name: "FMCAD_MULTI_" + randomUUID() } };
     const binding = { purpose: "normal-currentstore-current-facts-v1", expectedProcess: { pid: current.pid, birth: current.birth } };
     const reader = normal.prepareNormalCurrentFacts(runtime, normalIdentity, binding);
