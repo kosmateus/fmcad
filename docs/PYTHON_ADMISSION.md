@@ -25,6 +25,14 @@ exact-request admission fences before SDK execution.
 
 ## Exact request admission
 
+Native `fusion_mcp_execute` and `fusion_mcp_read` requests must fit the native
+HTTP ingress limit of 1,048,576 bytes. Admission measures the complete final JSON
+as UTF-8 before checker work or SDK dispatch. Oversized requests fail locally with
+`NATIVE_MCP_PAYLOAD_TOO_LARGE` and `not_started`; they are not unknown SDK results.
+The same immutable-request certificate rejects later payload changes. This
+transport constraint is independent of the public MCP input limit and does not
+apply to the add-in's separate `execute_python` protocol.
+
 `node-adapters/python/admission.ts` closes RPC classification: known protocol,
 discovery and native non-Python tools are explicit; unknown tools are refused.
 `execute_python` and script `fusion_mcp_execute` are always Python. Literal
