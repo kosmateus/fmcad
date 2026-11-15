@@ -72,14 +72,16 @@ test("GM31 rejects malformed payloads before SDK dispatch", async () => {
   assert.equal(dispatches, 0);
 });
 
-test("GM31 native handoff bundles the dfm module", () => {
-  const script = buildCadScript(
-    "measure.draft",
-    catalog["measure.draft"]!.example,
-    { doc: "GM31" },
-  );
-  assert.ok(script.includes("def _measure_draft"));
-  assert.ok(script.includes("'measure.draft': _measure_draft"));
-  assert.ok(script.includes("'undercut.check': _undercut_check"));
-  assert.ok(script.includes("'manufacturing.check': _manufacturing_check"));
+test("GM31 public preparation retains each requested dfm handler", () => {
+  for (const [operation, handler] of [
+    ["measure.draft", "_measure_draft"],
+    ["undercut.check", "_undercut_check"],
+    ["manufacturing.check", "_manufacturing_check"],
+  ] as const) {
+    const script = buildCadScript(operation, catalog[operation]!.example, {
+      doc: "GM31",
+    });
+    assert.ok(script.includes(`def ${handler}`), operation);
+    assert.ok(script.includes(`'${operation}': ${handler}`), operation);
+  }
 });
