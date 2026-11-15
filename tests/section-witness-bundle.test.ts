@@ -154,8 +154,6 @@ test("typed CLI and MCP execute section and witness through one fake broker arti
       assert.equal(request.featureType, "script");
       assert.equal(request.object.readOnly, true);
       const script = request.object.script;
-      assert.match(script, /_measure_section_series/);
-      assert.match(script, /_measure_witness_check/);
       assert.match(script, /_FMCAD_REQUEST: "_FMCADRequest" = \{/);
       const operation = [
         "measure.section-series",
@@ -164,6 +162,12 @@ test("typed CLI and MCP execute section and witness through one fake broker arti
       assert.ok(
         operation,
         "prepared artifact must carry the typed catalog invocation",
+      );
+      assert.match(
+        script,
+        operation === "measure.section-series"
+          ? /_measure_section_series/
+          : /_measure_witness_check/,
       );
       const data =
         operation === "measure.section-series" ? sectionData : witnessData;
