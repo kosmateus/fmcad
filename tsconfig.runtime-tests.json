@@ -9,6 +9,7 @@
   },
   "include": [
     "tests/python-source-codec.test.ts",
+    "tests/python-public-source-selection.test.ts",
     "tests/scenarios/**/*.ts",
     "tests/run-identity-admission.test.ts",
     "tests/broker-composition.test.ts",

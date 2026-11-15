@@ -1,4 +1,8 @@
-import type { WorkerSdkProbeRequest, WorkerRequest } from "@fmcad/core";
+import {
+  resolveFmcadConfiguration,
+  type WorkerSdkProbeRequest,
+  type WorkerRequest,
+} from "@fmcad/core";
 import type {
   Client,
   Origin,
@@ -28,6 +32,9 @@ const { createWorkerSdkProbe, prepareSdkProbe } = runtimeRequire(
 const { preparePythonArtifact } = runtimeRequire(
   "../src/python",
 ) as typeof import("../packages/node-adapters/src/python/artifact");
+const { prepareWireArtifact } = runtimeRequire(
+  "../src/python",
+) as typeof import("../packages/node-adapters/src/python/source-units");
 const { serve } = runtimeRequire(
   "../src/queue-broker",
 ) as typeof import("../src/queue-broker");
@@ -296,9 +303,17 @@ require(${JSON.stringify(runtimeRequire.resolve("../src/queue-worker"))}).run(pr
         );
       },
       async _post(payload: Rpc) {
-        const script = text(
+        const wireScript = text(
           at(payload, "params", "arguments", "object", "script"),
         );
+        assert.ok(
+          Buffer.byteLength(JSON.stringify(payload), "utf8") <= 1_048_576,
+        );
+        const artifact = prepareWireArtifact(
+          path.join(testRoot, "dist/runtime/python"),
+          wireScript,
+        );
+        const script = artifact.units.map((unit) => unit.source).join("\n");
         if (script.includes("FMCAD_QUEUE_INSTANCE")) {
           emitReceipt(script);
           stages.push(
@@ -399,7 +414,15 @@ require(${JSON.stringify(runtimeRequire.resolve("../src/queue-worker"))}).run(pr
             typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
           >
         ).buildHash(),
-        timeoutMs: 10000,
+        // Exercise the normal product budget, not a shortened test deadline.
+        // Queue requests require a positive budget; zero/unlimited is invalid.
+        timeoutMs: resolveFmcadConfiguration({
+          adapter: { backend: "mcp", url: "http://127.0.0.1:1/mcp" },
+          environment: {},
+          file: {},
+          platformDefaults: {},
+          acceptedService: null,
+        }).timeoutMs,
       },
     });
     let result;
@@ -418,6 +441,7 @@ require(${JSON.stringify(runtimeRequire.resolve("../src/queue-worker"))}).run(pr
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     assert.equal(at(result, "job", "state"), "failed", JSON.stringify(result));
+    assert.ok(text(at(result, "stdout")), JSON.stringify(result));
     assert.equal(JSON.parse(text(at(result, "stdout"))).status, "partial");
     assert.equal(JSON.parse(text(at(result, "stdout"))).success, false);
     assert.equal(
