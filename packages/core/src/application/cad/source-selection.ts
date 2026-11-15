@@ -21,12 +21,67 @@ export interface PythonSelectionFacts {
   readonly units: readonly PythonUnitFacts[];
   readonly facade: Readonly<Record<string, PythonDependencyFacts>>;
   readonly symbols: Readonly<Record<string, readonly PythonDependencyFacts[]>>;
+  readonly definitions?: readonly PythonDefinitionFacts[];
+  readonly facadeRequired?: boolean;
+}
+
+export interface PythonDefinitionFacts extends PythonDependencyFacts {
+  readonly unit: string;
+  readonly start: number;
+  readonly end: number;
+  readonly column: number;
+  readonly removable: boolean;
+  readonly registration?: readonly string[];
+  readonly byteStart?: number;
+  readonly byteEnd?: number;
+}
+
+/** Retain all initialization and close references over individual declarations. */
+export function unusedPythonDefinitions(
+  facts: PythonSelectionFacts,
+  selection: PythonSourceSelection,
+): readonly PythonDefinitionFacts[] {
+  const definitions = (facts.definitions ?? []).filter((entry) =>
+    selection.units.includes(entry.unit),
+  );
+  const retained = new Set<PythonDefinitionFacts>();
+  const names = new Set([
+    ...(facts.facadeRequired === false ? [] : ["FMCAD"]),
+    "CadContext",
+    "_document_target",
+    "_document_assert_identity",
+    "_document_activate_target",
+    ...facts.user.references,
+  ]);
+  for (const method of selection.methods)
+    for (const name of facts.facade[method]?.references ?? []) names.add(name);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const entry of definitions) {
+      if (retained.has(entry)) continue;
+      if (
+        entry.registration &&
+        !entry.registration.some((operation) =>
+          selection.operations?.includes(operation),
+        )
+      )
+        continue;
+      if (entry.removable && !entry.defines.some((name) => names.has(name)))
+        continue;
+      retained.add(entry);
+      for (const name of entry.references) names.add(name);
+      changed = true;
+    }
+  }
+  return definitions.filter((entry) => !retained.has(entry));
 }
 
 export interface PythonSourceSelection {
   readonly units: readonly string[];
   readonly methods: readonly string[];
   readonly mode: "static" | "conservative";
+  readonly operations?: readonly string[];
 }
 
 /** Least fixed point over parser facts and the existing initialization graph.
@@ -47,8 +102,13 @@ export function selectPythonSources(
   const units = new Map(facts.units.map((unit) => [unit.id, unit]));
   const selected = new Set<string>();
   const methods = new Set<string>();
+  const operations = new Set<string>();
   const symbols = new Set<string>(["CAD_HANDLERS"]);
-  const pendingUnits = ["core", "identity", "helpers"];
+  const pendingUnits = [
+    "core",
+    "identity",
+    ...(facts.facadeRequired === false ? [] : ["helpers"]),
+  ];
   const pendingSymbols = [
     "CadContext",
     "_document_target",
@@ -56,10 +116,9 @@ export function selectPythonSources(
     "_document_activate_target",
   ];
   const pendingMethods = [
-    "__init__",
-    "emit",
-    "has_emitted",
-    "terminal",
+    ...(facts.facadeRequired === false
+      ? []
+      : ["__init__", "emit", "has_emitted", "terminal"]),
     ...facts.user.methods,
   ];
   const pendingFacts: PythonDependencyFacts[] = [facts.user];
@@ -102,6 +161,7 @@ export function selectPythonSources(
     const entry = pendingFacts.pop();
     if (!entry) continue;
     if (entry.opaque) return all();
+    for (const operation of entry.operations) operations.add(operation);
     pendingMethods.push(...entry.methods);
     pendingSymbols.push(...entry.references);
     for (const unit of facts.units) {
@@ -119,6 +179,7 @@ export function selectPythonSources(
       .filter((unit) => selected.has(unit.id))
       .map((unit) => unit.id),
     methods: [...methods],
+    operations: [...operations],
     mode: "static",
   };
 }

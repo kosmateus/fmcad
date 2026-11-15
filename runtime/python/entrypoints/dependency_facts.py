@@ -1,6 +1,7 @@
 """Parse dependency facts offline. Never import or execute submitted Python."""
 import ast
 import copy
+import inspect
 import json
 import symtable
 import sys
@@ -272,7 +273,7 @@ def facts(tree, filename, *, user=False, method=None, unit=None, casts=()):
             receiver = node.value
             if user and not (isinstance(receiver, ast.Name) and receiver.id == 'FMCAD'):
                 opaque = True
-            if isinstance(receiver, ast.Name) and receiver.id == ('FMCAD' if user else 'self') and (user or unit == 'helpers'):
+            if isinstance(receiver, ast.Name) and (receiver.id == 'FMCAD' or (receiver.id == 'self' and unit == 'helpers')):
                 if user:
                     parent = parents.get(node)
                     if not isinstance(parent, ast.Call) or parent.func is not node:
@@ -283,6 +284,14 @@ def facts(tree, filename, *, user=False, method=None, unit=None, casts=()):
                 if isinstance(decorator, ast.Name):
                     calls.add(decorator.id)
         if not isinstance(node, ast.Call):
+            if (unit != 'core' and isinstance(node, ast.Compare) and len(node.ops) == 1
+                    and isinstance(node.ops[0], (ast.In, ast.NotIn))
+                    and isinstance(node.comparators[0], ast.Name)
+                    and node.comparators[0].id == 'CAD_HANDLERS'):
+                try:
+                    operations.update(operation_choices(node.left, parents))
+                except Unknown:
+                    opaque = True
             if (unit != 'core' and isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load)
                     and isinstance(node.value, ast.Name) and node.value.id == 'CAD_HANDLERS'):
                 try:
@@ -344,23 +353,237 @@ def facts(tree, filename, *, user=False, method=None, unit=None, casts=()):
                 operations=sorted(operations), methods=sorted(methods), calls=sorted(calls - imports), opaque=opaque)
 
 
+def inert_function(node):
+    """A definition without executable decorators/defaults/attribute lookups."""
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.decorator_list:
+        return False
+    arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+    arguments += [arg for arg in (node.args.vararg, node.args.kwarg) if arg is not None]
+    expressions = [node.returns, *(arg.annotation for arg in arguments),
+                   *node.args.defaults, *node.args.kw_defaults]
+    return not getattr(node, 'type_params', []) and all(
+        expression is None or inert_value(expression) for expression in expressions)
+
+
+def inert_handler_value(node, functions):
+    if isinstance(node, (ast.Name, ast.Constant)):
+        return True
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+        return False
+    candidates = functions.get(node.func.id, [])
+    if not candidates or not all(isinstance(arg, (ast.Name, ast.Constant))
+                                 for arg in [*node.args, *(kw.value for kw in node.keywords)]):
+        return False
+    for function in candidates:
+        if function.decorator_list or not binds_call(function, node):
+            return False
+        body = [child for child in function.body if not (
+            isinstance(child, ast.Expr) and isinstance(child.value, ast.Constant)
+            and isinstance(child.value.value, str))]
+        if not body:
+            return False
+        declarations, result = body[:-1], body[-1]
+        if not all(inert_function(child) for child in declarations):
+            return False
+        if not (isinstance(result, ast.Return) and isinstance(result.value, ast.Name)
+                and result.value.id in {child.name for child in declarations}):
+            return False
+    return True
+
+
+def closure_result(function, function_parameters, wraps):
+    """Prove a small closure factory mutates only functions it just allocated."""
+    local = {}
+    for statement in function.body:
+        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant):
+            continue
+        if isinstance(statement, ast.FunctionDef):
+            declaration = copy.deepcopy(statement)
+            declaration.decorator_list = []
+            if not inert_function(declaration):
+                return None
+            for decorator in statement.decorator_list:
+                if not (isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Name)
+                        and decorator.func.id in wraps and len(decorator.args) == 1 and not decorator.keywords
+                        and isinstance(decorator.args[0], ast.Name)
+                        and decorator.args[0].id in function_parameters | local.keys()):
+                    return None
+            local[statement.name] = statement
+            continue
+        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
+            call = statement.value
+            if (isinstance(call.func, ast.Name) and call.func.id == 'setattr'
+                    and len(call.args) == 3 and not call.keywords
+                    and isinstance(call.args[0], ast.Name) and call.args[0].id in local
+                    and isinstance(call.args[1], ast.Constant) and isinstance(call.args[1].value, str)
+                    and inert_value(call.args[2])):
+                continue
+        if isinstance(statement, ast.Return) and isinstance(statement.value, ast.Name):
+            return local.get(statement.value.id)
+        return None
+    return None
+
+
+def inert_decorated_function(node, functions, wraps):
+    if not isinstance(node, ast.FunctionDef) or not node.decorator_list:
+        return False
+    declaration = copy.deepcopy(node)
+    declaration.decorator_list = []
+    if not inert_function(declaration):
+        return False
+    for decorator in node.decorator_list:
+        factory = decorator.func if isinstance(decorator, ast.Call) else decorator
+        if not isinstance(factory, ast.Name) or factory.id not in functions:
+            return False
+        if isinstance(decorator, ast.Call) and not all(
+                inert_value(arg) for arg in [*decorator.args, *(kw.value for kw in decorator.keywords)]):
+            return False
+        for candidate in functions[factory.id]:
+            if candidate.decorator_list:
+                return False
+            if isinstance(decorator, ast.Call) and not binds_call(candidate, decorator):
+                return False
+            applied = closure_result(candidate, set(), wraps) if isinstance(decorator, ast.Call) else candidate
+            if applied is None:
+                return False
+            parameters = applied.args.posonlyargs + applied.args.args
+            application = ast.Call(func=ast.Name(id='_decorator', ctx=ast.Load()), args=[ast.Constant(value=None)], keywords=[])
+            if (not parameters or not binds_call(applied, application)
+                    or closure_result(applied, {parameters[0].arg}, wraps) is None):
+                return False
+    return True
+
+
+def binds_call(function, call):
+    if any(isinstance(arg, ast.Starred) for arg in call.args) or any(kw.arg is None for kw in call.keywords):
+        return False
+    parameters = []
+    positional = function.args.posonlyargs + function.args.args
+    default_start = len(positional) - len(function.args.defaults)
+    for index, arg in enumerate(positional):
+        kind = inspect.Parameter.POSITIONAL_ONLY if index < len(function.args.posonlyargs) else inspect.Parameter.POSITIONAL_OR_KEYWORD
+        parameters.append(inspect.Parameter(arg.arg, kind, default=None if index >= default_start else inspect.Parameter.empty))
+    if function.args.vararg:
+        parameters.append(inspect.Parameter(function.args.vararg.arg, inspect.Parameter.VAR_POSITIONAL))
+    for arg, default in zip(function.args.kwonlyargs, function.args.kw_defaults):
+        parameters.append(inspect.Parameter(arg.arg, inspect.Parameter.KEYWORD_ONLY,
+                                            default=None if default is not None else inspect.Parameter.empty))
+    if function.args.kwarg:
+        parameters.append(inspect.Parameter(function.args.kwarg.arg, inspect.Parameter.VAR_KEYWORD))
+    try:
+        inspect.Signature(parameters).bind(*[None for _ in call.args], **{kw.arg: None for kw in call.keywords})
+    except TypeError:
+        return False
+    return True
+
+
+def inert_value(node):
+    if isinstance(node, (ast.Name, ast.Constant)):
+        return True
+    if isinstance(node, (ast.Tuple, ast.List)):
+        return all(inert_value(item) for item in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(isinstance(key, ast.Constant) and inert_value(value)
+                   for key, value in zip(node.keys, node.values))
+    return False
+
+
+def inert_binding(node, protocols=()):
+    if inert_function(node):
+        return True
+    if isinstance(node, ast.Assign):
+        return all(isinstance(target, ast.Name) for target in node.targets) and inert_value(node.value)
+    if isinstance(node, ast.AnnAssign):
+        return (isinstance(node.target, ast.Name) and inert_value(node.annotation)
+                and (node.value is None or inert_value(node.value)))
+    if isinstance(node, ast.ClassDef):
+        protocol = len(node.bases) == 1 and isinstance(node.bases[0], ast.Name) and node.bases[0].id in protocols
+        body = copy.deepcopy(node.body)
+        if protocol:
+            for member in body:
+                if isinstance(member, ast.FunctionDef) and all(
+                        isinstance(decorator, ast.Name) and decorator.id in ('property', 'staticmethod', 'classmethod')
+                        for decorator in member.decorator_list):
+                    member.decorator_list = []
+        return ((not node.bases or protocol) and not node.keywords and not node.decorator_list
+                and not getattr(node, 'type_params', []) and all(
+                    inert_binding(child) or isinstance(child, ast.Pass)
+                    or (isinstance(child, ast.Expr) and isinstance(child.value, ast.Constant))
+                    for child in body))
+    return False
+
+
+def removable_registration(node, functions):
+    value = node.value if isinstance(node, ast.Expr) else None
+    if not (isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)
+            and isinstance(value.func.value, ast.Name) and value.func.value.id == 'CAD_HANDLERS'
+            and value.func.attr == 'update' and len(value.args) == 1 and not value.keywords):
+        return None
+    try:
+        entries = dictionary_keys(value.args[0], {}, {})
+    except (Unknown, TypeError):
+        return None
+    if all(isinstance(key, str) and inert_handler_value(handler, functions)
+           for key, handler in entries.items()):
+        return sorted(entries)
+    return None
+
+
+def shadowed_names(parsed):
+    names = set()
+    for _, tree in parsed:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+                names.add(node.id)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(node.name)
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                for alias in node.names:
+                    if not (isinstance(node, ast.ImportFrom) and node.module == 'typing'
+                            and alias.name in ('TYPE_CHECKING', 'Protocol')):
+                        names.add(alias.asname or alias.name.split('.')[0])
+    return names
+
+
 def analyse(request):
-    units, facade, spans, symbols = [], {}, {}, {}
+    units, facade, spans, symbols, definitions = [], {}, {}, {}, []
     try:
         user_tree = ast.parse(request['source'], filename='<user>')
-        user_facts = facts(user_tree, '<user>', user=True)
+        if request.get('generated', False) and not any(
+                isinstance(node, ast.FunctionDef) and node.name == 'run' for node in user_tree.body):
+            return dict(unsupported=True, reason='No executable entrypoint in source fragment')
+        user_facts = facts(user_tree, '<user>', user=not request.get('generated', False))
     except SyntaxError:
         # The ordinary checker owns user syntax diagnostics.
         return dict(unsupported=True)
     parsed = [(unit, ast.parse(unit['source'], filename=unit['filename'])) for unit in request['units']]
     casts = {alias.asname or alias.name for _, tree in parsed for node in ast.walk(tree)
              if isinstance(node, ast.ImportFrom) and node.module == 'typing'
-             for alias in node.names if alias.name == 'cast'}
+              for alias in node.names if alias.name == 'cast'}
+    type_guards = {alias.asname or alias.name for _, tree in parsed for node in tree.body
+                   if isinstance(node, ast.ImportFrom) and node.module == 'typing'
+                   for alias in node.names if alias.name == 'TYPE_CHECKING'}
+    shadowed = shadowed_names(parsed)
+    type_guards.difference_update(shadowed)
+    protocols = {alias.asname or alias.name for _, tree in parsed for node in tree.body
+                 if isinstance(node, ast.ImportFrom) and node.module == 'typing'
+                 for alias in node.names if alias.name == 'Protocol'}
+    protocols.difference_update(shadowed)
+    if shadowed.intersection(('property', 'staticmethod', 'classmethod')):
+        protocols.clear()
     functions = {}
     for _, tree in parsed:
         for node in tree.body:
             if isinstance(node, ast.FunctionDef):
                 functions.setdefault(node.name, []).append(node)
+    rebound = {node.id for _, tree in parsed for node in ast.walk(tree)
+               if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del))}
+    functions = {name: nodes for name, nodes in functions.items() if name not in rebound}
+    wraps = {alias.asname or alias.name for _, tree in parsed for node in tree.body
+             if isinstance(node, ast.ImportFrom) and node.module == 'functools'
+             for alias in node.names if alias.name == 'wraps'} - rebound - functions.keys()
+    if 'setattr' in shadowed:
+        wraps.clear()
     for unit, tree in parsed:
         if unit['id'] == 'helpers':
             for node in tree.body:
@@ -386,9 +609,51 @@ def analyse(request):
         eager = Eager().visit(copy.deepcopy(tree))
         entry['eager'] = facts(eager, unit['filename'], unit=unit['id'], casts=casts)
         entry['opaque'] = entry['eager']['opaque']
+        statements = []
         for node in tree.body:
+            if isinstance(node, ast.If) and not node.orelse:
+                shell = copy.deepcopy(node)
+                shell.body = [ast.Pass()]
+                statements.append((shell, False))
+                typing_only = isinstance(node.test, ast.Name) and node.test.id in type_guards
+                statements.extend((child, typing_only) for child in node.body)
+            else:
+                statements.append((node, False))
+        for node, typing_only in statements:
             statement = ast.Module(body=[copy.deepcopy(node)], type_ignores=[])
+            registration = removable_registration(node, functions)
+            if registration is not None and isinstance(node.value.args[0], ast.Dict):
+                mapping = node.value.args[0]
+                encoded_lines = unit['source'].encode('utf-8').splitlines(keepends=True)
+                def offset(line, column):
+                    return sum(len(part) for part in encoded_lines[:line - 1]) + column
+                for index, (key, value) in enumerate(zip(mapping.keys, mapping.values)):
+                    start = offset(key.lineno, key.col_offset)
+                    if index + 1 < len(mapping.keys):
+                        following = mapping.keys[index + 1]
+                        end = offset(following.lineno, following.col_offset)
+                    else:
+                        end = offset(mapping.end_lineno, mapping.end_col_offset - 1)
+                    row = facts(ast.Module(body=[ast.Expr(value=copy.deepcopy(value))], type_ignores=[]),
+                                unit['filename'], unit=unit['id'], casts=casts)
+                    definitions.append(dict(row, unit=unit['id'], start=key.lineno,
+                                            end=value.end_lineno, column=key.col_offset,
+                                            byteStart=start, byteEnd=end, removable=False,
+                                            registration=[constant(key, {})]))
+                statement.body[0].value.args[0] = ast.Dict(keys=[], values=[])
+                registration = None
             dependency = facts(statement, unit['filename'], unit=unit['id'], casts=casts)
+            # Only declarations whose creation has no calls are removable here.
+            # Decorators, defaults and class initialization remain real roots;
+            # their bodies must never be replaced by checker-only stubs.
+            definition = dict(dependency, unit=unit['id'],
+                                    start=min([node.lineno] + [d.lineno for d in getattr(node, 'decorator_list', [])]),
+                                    end=node.end_lineno, column=node.col_offset,
+                                    removable=typing_only or inert_binding(node, protocols)
+                                    or ('setattr' not in shadowed and inert_decorated_function(node, functions, wraps)))
+            if registration is not None:
+                definition['registration'] = registration
+            definitions.append(definition)
             for name in dependency['defines']:
                 if name != 'CAD_HANDLERS':
                     symbols.setdefault(name, []).append(dependency)
@@ -399,7 +664,9 @@ def analyse(request):
             return dict(unsupported=True, unit=unit['id'])
         units.append(dict(entry, id=unit['id'], dependencies=unit['dependencies'], handlers=list(handlers), handlerReferences=handlers))
     return dict(unsupported=False, facts=dict(units=units, facade=facade,
-                symbols=symbols, user=user_facts), spans=spans)
+                symbols=symbols, user=user_facts, definitions=definitions,
+                facadeRequired=not request.get('generated', False) or any(
+                    isinstance(node, ast.Name) and node.id == 'FMCAD' for node in ast.walk(user_tree))), spans=spans)
 
 
 if __name__ == '__main__':
