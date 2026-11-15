@@ -11,7 +11,7 @@ const load = createRequire(__filename);
 const { createBrokerTransport } = load(
   "../src/dist/fusion-transport/broker",
 ) as typeof import("../packages/node-adapters/src/fusion-transport/broker");
-const { serve } = load("../src/queue-broker") as {
+type BrokerHost = {
   serve(
     cfg: Record<string, unknown>,
     options: Omit<
@@ -27,14 +27,14 @@ const object = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" && !Array.isArray(v)
     ? (v as Record<string, unknown>)
     : {};
-// This test isolates post-response retention, not Python analysis or execution.
-// The independent generic queued-worker contract suite covers the real checker.
+// Retention failures use an explicit checker fixture. The native compatibility
+// regression below additionally certifies the real final wire with production.
 const admissionModule = load("../src/queue-admission") as {
   createProductionQueueAdmission(...args: unknown[]): {
     admission: {
       check(
         payload: unknown,
-      ): Promise<{ kind: string; fence(outgoing: unknown): void }>;
+      ): Promise<{ kind: string; report?: { status: string }; fence(outgoing: unknown): void }>;
     };
     checkPrepared(prepared: unknown): Promise<unknown>;
     fencePrepared(prepared: unknown, buildHash: string): void;
@@ -155,6 +155,7 @@ for (const responseMode of [
   "foreign-jsonrpc",
   "malformed-jsonrpc",
   "http-error",
+  "native-legacy-python",
 ]) {
   test(`owned RPC retains returned raw before settlement failure: ${responseMode}`, async (t) => {
     if (!process.env["FMCAD_RETAINED_RPC_CHILD"]) {
@@ -172,14 +173,30 @@ for (const responseMode of [
           responseMode,
           __filename,
         ],
-        { env, encoding: "utf8", timeout: 20000 },
+        { env, encoding: "utf8", timeout: responseMode === "native-legacy-python" ? 90000 : 20000 },
       );
       assert.equal(child.status, 0, child.stdout + child.stderr);
       assert.match(child.stdout, /tests 1\b/);
       return;
     }
     const originalAdmission = admissionModule.createProductionQueueAdmission;
-    admissionModule.createProductionQueueAdmission = () => ({
+    let realChecks = 0;
+    if (responseMode === "native-legacy-python") {
+      admissionModule.createProductionQueueAdmission = (...args) => {
+        const production = originalAdmission(...args);
+        return { ...production, admission: { ...production.admission,
+          async check(payload, ...rest: unknown[]) {
+            const certificate = await Reflect.apply(production.admission.check, production.admission, [payload, ...rest]);
+            if (certificate.kind === "python") {
+              assert.equal(certificate.report?.status, "passed");
+              realChecks++;
+            }
+            return certificate;
+          },
+        } };
+      };
+    }
+    else admissionModule.createProductionQueueAdmission = () => ({
       admission: {
         async check() {
           return { kind: "python", fence() {} };
@@ -222,8 +239,9 @@ for (const responseMode of [
     let productCalls = 0;
     let productWireId: string | undefined;
     let originalRaw = "";
-    const sourceCode =
-      "def run(context: str) -> None:\n    print('synthetic owned write result')\n";
+    const sourceCode = responseMode === "native-legacy-python"
+      ? 'print("FUSION_ADDIN_STDIO_OK")'
+      : "def run(context: str) -> None:\n    print('synthetic owned write result')\n";
     const sourceHash = createHash("sha256").update(sourceCode).digest("hex");
     physical._post = async (payload) => {
       if (payload["method"] === "initialize")
@@ -238,11 +256,16 @@ for (const responseMode of [
       if (payload["method"] === "notifications/initialized")
         return { status: 202, raw: "" };
       const args = object(object(payload["params"])["arguments"]);
-      const code =
+      const wireCode =
         typeof args["code"] === "string"
           ? args["code"]
           : object(args["object"])["script"];
-      assert.ok(typeof code === "string");
+      assert.ok(typeof wireCode === "string");
+      const { prepareWireArtifact } = load("../src/dist/python/source-units") as typeof import("../packages/node-adapters/src/python/source-units");
+      // Inspect the actual envelope's bounded AST inventory, not a particular
+      // plain/compressed representation. This does not execute Python or adsk.
+      const inventory = prepareWireArtifact(path.resolve(__dirname, "../runtime/python"), wireCode);
+      const code = inventory.units.map(unit => unit.source).join("\n");
       if (code.includes("FMCAD_QUEUE_INSTANCE")) {
         const filename = /_qr_path = ("(?:\\.|[^"\\])*")/.exec(code);
         const binding =
@@ -279,6 +302,31 @@ for (const responseMode of [
         };
       }
       productCalls++;
+      if (responseMode === "native-legacy-python") {
+        assert.equal(object(payload["params"])["name"], "fusion_mcp_execute",
+          "Native Fusion does not advertise the public execute_python tool");
+        assert.equal(args["featureType"], "script");
+        assert.equal(object(args["object"])["readOnly"], false,
+          "Arbitrary public Python must not claim native read-only authority");
+        assert.match(code, /def run\(_context: str\)/);
+        const publicEntry = inventory.units.find(unit => unit.source.startsWith("import contextlib as _qp_contextlib\n"));
+        assert.ok(publicEntry, "Keep the public compatibility entrypoint in the checked source inventory");
+        const evaluated = spawnSync("python3", ["-I", "-S", "-c",
+          "import sys; ns = {}; exec(sys.stdin.read(), ns); ns['run']('')"],
+        { input: publicEntry.source, encoding: "utf8", timeout: 10000 });
+        assert.equal(evaluated.status, 0, evaluated.stderr);
+        assert.deepEqual(JSON.parse(evaluated.stdout), { success: true, stdout: "FUSION_ADDIN_STDIO_OK\n", stderr: "" });
+        const filename = /_qr_path = ("(?:\\.|[^"\\])*")/.exec(code);
+        const binding = /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/.exec(code);
+        assert.ok(filename && binding, "The transformed native script still requires its exact SDK receipt");
+        fs.writeFileSync(JSON.parse(filename[1]!), JSON.stringify({
+          ...JSON.parse(JSON.parse(binding[1]!)), terminal: true, outcome: "succeeded", instance,
+        }));
+        return { status: 200, raw: JSON.stringify({ jsonrpc: "2.0", id: payload["id"],
+          result: { isError: false, content: [{ type: "text", text: JSON.stringify({
+            success: true, stdout: "FUSION_ADDIN_STDIO_OK\n", stderr: "",
+          }) }] } }) };
+      }
       const wireId = payload["id"];
       assert.ok(typeof wireId === "string");
       productWireId = wireId;
@@ -312,6 +360,9 @@ for (const responseMode of [
         raw: originalRaw,
       };
     };
+    // The broker captures the admission constructor at module initialization.
+    // Load it only after selecting the explicit fixture or real checker above.
+    const { serve } = load("../src/queue-broker") as BrokerHost;
     const broker = await serve(cfg, {
       dir,
       confirmOwnership: true,
@@ -320,7 +371,8 @@ for (const responseMode of [
       nativePath: (value: string) => value,
     });
     t.after(async () => {
-      await assert.rejects(broker.close(), { code: "RECONCILIATION_REQUIRED" });
+      if (responseMode === "native-legacy-python") await broker.close();
+      else await assert.rejects(broker.close(), { code: "RECONCILIATION_REQUIRED" });
       fs.rmSync(root, { recursive: true, force: true });
     });
     const auth = {
@@ -341,8 +393,8 @@ for (const responseMode of [
           id: "synthetic-caller",
           method: "tools/call",
           params: {
-            name: "fusion_mcp_execute",
-            arguments: {
+            name: responseMode === "native-legacy-python" ? "execute_python" : "fusion_mcp_execute",
+            arguments: responseMode === "native-legacy-python" ? { code: sourceCode, persistent: false } : {
               featureType: "script",
               object: {
                 script: sourceCode,
@@ -357,9 +409,19 @@ for (const responseMode of [
     let result: { job: { state: string } };
     do {
       result = await request(dir, { action: "result", auth, jobId: job.id });
-      if (result.job.state === "needs_reconciliation") break;
+      if (["needs_reconciliation", "succeeded", "failed"].includes(result.job.state)) break;
       await new Promise((resolve) => setTimeout(resolve, 10));
     } while (Date.now() < deadline);
+    if (responseMode === "native-legacy-python") {
+      assert.equal(result.job.state, "succeeded");
+      assert.equal(productCalls, 1);
+      assert.ok(realChecks >= 3,
+        "The real checker must certify preflight, adapted public Python and postflight");
+      const files = fs.readdirSync(path.join(dir, "jobs", job.id)).filter(name => /^rpc-.*\.json$/.test(name));
+      const records = files.map(name => JSON.parse(fs.readFileSync(path.join(dir, "jobs", job.id, name), "utf8")));
+      assert.equal(records.filter(record => record.binding?.sourceHash === sourceHash && record.terminal === true).length, 1);
+      return;
+    }
     assert.equal(result.job.state, "needs_reconciliation");
     assert.equal(productCalls, 1, "No SDK request or response may be replayed");
     const directory = path.join(dir, "jobs", job.id);

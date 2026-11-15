@@ -2414,9 +2414,29 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         // Receipt/instance/transport wrappers are bound BEFORE final bytes are
         // prepared. No code substitution is allowed after this boundary.
         binding.sourceHash = hash(code);
+        const nativePublicPython = python && cfg.backend === "mcp";
+        // execute_python is our public compatibility API, not a native Fusion
+        // tool. Native Fusion invokes run(context) and consumes printed JSON.
+        // Adapt before receipt wrapping and final-byte admission, never at send.
+        const executable = nativePublicPython ? `import contextlib as _qp_contextlib
+import io as _qp_io
+import json as _qp_json
+def run(_context: str) -> None:
+    _qp_out, _qp_err = _qp_io.StringIO(), _qp_io.StringIO()
+    try:
+        with _qp_contextlib.redirect_stdout(_qp_out), _qp_contextlib.redirect_stderr(_qp_err):
+            exec(compile(${JSON.stringify(code)}, '<fmcad-public-python>', 'exec'), {
+                '__name__': '__main__',
+                '__fmcad_native_lifecycle__': globals().get('__fmcad_native_lifecycle__')})
+    except BaseException as _qp_exception:
+        print(_qp_json.dumps({'success': False, 'stdout': _qp_out.getvalue(),
+              'stderr': _qp_err.getvalue(), 'error': str(_qp_exception)}))
+        raise
+    print(_qp_json.dumps({'success': True, 'stdout': _qp_out.getvalue(), 'stderr': _qp_err.getvalue()}))
+` : code;
         let prepared = prepareReceiptScript(
-          code,
-          official,
+          executable,
+          official || nativePublicPython,
           record.receipt,
           binding,
           nativePaths,
@@ -2436,7 +2456,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             sha256,
           })),
         };
-        if (python) scriptArgs.code = prepared.script;
+        if (nativePublicPython) required(outgoing.params).name = "fusion_mcp_execute";
+        if (nativePublicPython) required(outgoing.params).arguments = {
+          featureType: "script", object: { script: prepared.script, readOnly: false },
+        };
+        else if (python) scriptArgs.code = prepared.script;
         else required(scriptArgs.object).script = prepared.script;
       }
     }
