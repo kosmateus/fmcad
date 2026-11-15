@@ -110,6 +110,7 @@ jobs:
       - run: node .github/scripts/ci-restore-build-artifact.cjs
         env:
           FMCAD_CI_SOURCE_SHA: ${{ github.sha }}
+      - run: npm run test:python-family-dependencies
       - run: npx prettier --check --end-of-line auto .github/workflows/*.yml .github/scripts/*.cjs tests/ci-gate.test.cjs
       - run: npm run lint
       - run: npm run format:check

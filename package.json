@@ -68,7 +68,8 @@
     "test:offline-gap:14": "node --experimental-strip-types --test --test-concurrency=1 dist/tests/review-pixels.test.js dist/tests/route3d.test.js dist/tests/runner-stream.test.js dist/tests/runtime-paths.test.js dist/tests/saved-audit-key.test.js dist/tests/saved-audit-path.test.js dist/tests/saved-destination-approval.test.js dist/tests/saved-document-guard.test.js dist/tests/saved-first-save-evidence.test.js dist/tests/saved-first-save-scope.test.js",
     "test:offline-gap:15": "node --experimental-strip-types --test --test-concurrency=1 dist/tests/saved-fixture-control.test.js dist/tests/saved-fixture-reader.test.js dist/tests/scratch-qualification.test.js dist/tests/sdk-probe-port.test.js dist/tests/sequence.test.js dist/tests/server-metadata.test.js dist/tests/settled-epoch-evidence.test.js dist/tests/settled-epoch-startup.test.js dist/tests/shape-library.test.js dist/tests/sheetmetal.test.js",
     "test:offline-gap:16": "node --experimental-strip-types --test --test-concurrency=1 dist/tests/style-motion-inputs.test.js dist/tests/successor-process-guard.test.js dist/tests/upstream-queue-regressions.test.js",
-    "test:qualification-harness": "node --test --test-concurrency=1 dist/tests/native/integrated-qualification-first-smoke.test.js dist/tests/native/integrated-qualification.test.js dist/tests/native/regional-typed.test.js"
+    "test:qualification-harness": "node --test --test-concurrency=1 dist/tests/native/integrated-qualification-first-smoke.test.js dist/tests/native/integrated-qualification.test.js dist/tests/native/regional-typed.test.js",
+    "test:python-family-dependencies": "node --experimental-strip-types --test --test-concurrency=1 tests/python-family-dependency-contracts.test.ts"
   },
   "bin": {
     "fmcad": "dist/bin/fmcad.js",
