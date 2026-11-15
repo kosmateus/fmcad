@@ -25,7 +25,8 @@
     "scripts/qualify-isolated-epoch.cts",
     "scripts/qualify-closed-successor-worker.cts",
     "scripts/upgrade-epoch-checker.cts",
-    "scripts/abort-unstarted-successor.cts"
+    "scripts/abort-unstarted-successor.cts",
+    "scripts/recover-retained-successor.cts"
   ],
   "references": [
     {

@@ -850,7 +850,11 @@ function readSuccessionAuthority(
       "Successor runtime has no pinned installed production-checker qualification",
     );
   return {
-    authority,
+    authority: (
+      load(
+        "./dist/composition/queue-epoch-successor-retained",
+      ) as typeof import("./composition/queue-epoch-successor-retained")
+    ).retainedEvaluatorAuthority(root, authority, entry),
     audit,
     pointer,
     state,

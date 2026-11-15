@@ -36,11 +36,19 @@ async function main(): Promise<void> {
     cfg = parsed["cfg"],
     dir = parsed["dir"],
     audit = parsed["audit"],
-    nonce = parsed["nonce"];
+    nonce = parsed["nonce"],
+    workerJournal = parsed["workerJournal"];
   if (typeof dir !== "string" || typeof audit !== "string")
     throw new Error("Successor worker directories required");
+  if (
+    workerJournal !== undefined &&
+    (workerJournal !== path.join(audit, "retained-evaluator-handoff") ||
+      typeof workerJournal !== "string")
+  )
+    throw new Error("Exact retained evaluator journal required");
+  const journal = typeof workerJournal === "string" ? workerJournal : audit;
   const owner = { pid: process.pid, birth: api.processBirth(), nonce };
-  files.exclusive(path.join(audit, "worker-claim.json"), owner);
+  files.exclusive(path.join(journal, "worker-claim.json"), owner);
   try {
     const broker = await host().serve(cfg, {
       dir,
@@ -49,7 +57,7 @@ async function main(): Promise<void> {
       autoReconcile: false,
     });
     const marker = api.readJson(path.join(dir, "broker.lock"));
-    files.exclusive(path.join(audit, "worker-ready.json"), {
+    files.exclusive(path.join(journal, "worker-ready.json"), {
       nonce,
       owner: marker,
       buildHash: broker.buildHash,
@@ -68,7 +76,7 @@ async function main(): Promise<void> {
           );
       });
   } catch (error) {
-    files.exclusive(path.join(audit, "worker-error.json"), {
+    files.exclusive(path.join(journal, "worker-error.json"), {
       nonce,
       code: errorCode(error) || "SUCCESSOR_START_FAILED",
     });

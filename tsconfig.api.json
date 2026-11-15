@@ -53,6 +53,7 @@
     "src/queue-atomic-migration.ts",
     "src/queue-atomic-migration-files.ts",
     "src/queue-atomic-recovery-audit.ts",
+    "src/composition/queue-epoch-successor-retained.ts",
     "src/queue-atomic-wire.ts",
     "src/atomic-observation-binding.ts",
     "src/queue-epoch-runtime-upgrade.ts",
