@@ -51,6 +51,8 @@ const returns: Record<string, string> = {
     "Returns an immutable authorization reference bound to the original registered job owner, explicit normal target and unchanged currentstore. SDK0: no request bytes or raw credentials are copied, no SDK runs and unknown work is not settled. A separately authenticated epoch owner must approve the cold successor.",
   "record-normal-producers-retired":
     "Returns an immutable OS absence receipt after the exact old SDK and all currentstore producers have exited, before a new SDK starts. Never signals, closes or restarts processes. Missing, reused or uncertain identities refuse recovery; this is not historical SDK settlement.",
+  "retire-normal-metadata-producer":
+    "Returns a non-mutating exact metadata-owner preview, or with --apply true its one-shot pidfd retirement receipt/pending fence. Requires distinct epoch authorization, original job-owner approval, authentic old SDK death, all other producers gone and the exact predecessor runtime/interpreter/process. Never replays a signal after uncertainty and never closes/restarts Fusion or resolves an original SDK operation.",
   "observe-successor":
     "Returns the original pending, complete or failed current-process observation for an existing owner successor authority. Known current facts must remain request/source/process-bound; the historical native outcome stays unknown. It does not create a document or authorize a second observation after a lost reply.",
   "authorize-closed-successor":
@@ -103,7 +105,7 @@ export const manuals: Record<string, CommandManual> = Object.fromEntries(
           "tests/console-pause.test.ts",
           "tests/phased-queue.test.js",
           "tests/queue-probe-recovery.test.ts",
-          ...(["authorize-normal-successor", "record-normal-producers-retired"].includes(action) ? ["tests/normal-currentstore-successor.test.ts"] : []),
+          ...(["authorize-normal-successor", "record-normal-producers-retired", "retire-normal-metadata-producer"].includes(action) ? ["tests/normal-currentstore-successor.test.ts"] : []),
         ],
         verified: [
           "Offline parsing and typed broker records",

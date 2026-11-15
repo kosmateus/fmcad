@@ -11,6 +11,8 @@ import type {
   Approval,
   Pointer,
   Checked,
+  Sdk1MetadataWorkerProcess,
+  Sdk1MetadataWorkerProcessResult,
 } from "./queue-epoch-successor-types";
 import type {
   AuditBinding,
@@ -91,6 +93,16 @@ export interface NormalColdPorts {
   };
   producerAbsent(process: Process): boolean;
 }
+export interface NormalMetadataRetirementPorts extends NormalColdPorts {
+  buildHash(runtime: string): string;
+  process(
+    owner: Sdk1MetadataWorkerProcess,
+    runtime: string,
+    refs: Reference[],
+    apply: boolean,
+    root: string,
+  ): Sdk1MetadataWorkerProcessResult;
+}
 const defaultPorts: NormalColdPorts = {
   sdkProcess(process) {
     return (
@@ -117,6 +129,19 @@ const defaultPorts: NormalColdPorts = {
     }
   },
 };
+const defaultRetirementPorts: NormalMetadataRetirementPorts = {
+  ...defaultPorts,
+  buildHash: (runtime) =>
+    (load("./queue-instance") as { buildHash(root: string): string }).buildHash(
+      runtime,
+    ),
+  process: (owner, runtime, refs, apply, root) =>
+    (
+      load(
+        "./dist/composition/queue-epoch-successor-retirement",
+      ) as typeof import("./queue-epoch-successor-retirement")
+    ).inspectMetadataWorkerProcess(owner, runtime, refs, apply, root),
+};
 function fail(message: string): never {
   throw Object.assign(new Error(message), {
     code: "NORMAL_SUCCESSOR_UNPROVEN",
@@ -139,6 +164,10 @@ function canonical(file: string, directory = false): string {
   return file;
 }
 function bytes(file: string): Buffer {
+  if (path.basename(file) === "request.json")
+    fail(
+      "Credential-bearing job requests are sealed metadata only; never open or hash them",
+    );
   canonical(file);
   return (
     load(
@@ -537,6 +566,235 @@ function authorization(
     fail("Owner authorization or preserved currentstore changed");
   return value;
 }
+function deathBindings(root: string, value: Authorization, entry: Reference) {
+  const p = value.profile;
+  return {
+    jobAuthorization: entry,
+    originalRpc: reference(
+      path.join(root, "jobs", p.jobId, `rpc-${p.rpcId}.json`),
+    ),
+    predecessorState: reference(
+      path.join(root, "admission-epochs", p.epochId, "queue-state.json"),
+    ),
+  };
+}
+function metadataClaimFile(root: string, producer: Process): string {
+  return path.join(
+    root,
+    "normal-metadata-retirements",
+    digest(JSON.stringify(process(producer))) + ".json",
+  );
+}
+function metadataClaim(
+  root: string,
+  requestId: string,
+  entry: Reference,
+  producer: Process,
+): Reference | null {
+  const file = metadataClaimFile(root, producer);
+  if (!fs.existsSync(file)) return null;
+  const value = read(file),
+    binding = object(value["binding"]);
+  if (value["kind"] !== "normal-metadata-producer-effect-authority")
+    fail("Invalid normal metadata producer authority");
+  if (
+    binding["requestId"] !== requestId ||
+    !same(binding["jobAuthorization"], entry)
+  )
+    fail(
+      "The original normal request owns this producer; never retarget or replay an uncertain signal",
+    );
+  return reference(file);
+}
+/** Narrow normal-owner composition over the existing qualified pidfd kernel.
+ * Preview performs OS reads only. An apply intent is exclusive: uncertain
+ * effects are never retried, even if the caller loses the reply. */
+export function retireNormalMetadataProducer(
+  client: Client,
+  requestId: string,
+  jobAuthorization: Reference,
+  sdkDeathProof: Reference,
+  runtime: string,
+  apply = false,
+  ports: NormalMetadataRetirementPorts = defaultRetirementPorts,
+): Reference | { pending: true; noSignalReplay: true; sdkRequestsSent: 0 } {
+  const sealed = checked(
+    jobAuthorization,
+    path.join(journal(client.dir, requestId), "job-owner-authorization.json"),
+  ) as unknown as Authorization;
+  authenticateOwner(client, profile(sealed.target).epochClientId);
+  const value = authorization(client.dir, requestId, jobAuthorization),
+    p = value.profile;
+  canonical(runtime, true);
+  if (ports.buildHash(runtime) !== normalColdProfile.buildHash)
+    fail(
+      "Only the exact qualified predecessor runtime may retire its normal metadata owner",
+    );
+  checked(sdkDeathProof);
+  (
+    load("./queue-epoch-successor") as typeof import("./queue-epoch-successor")
+  ).verifySdkProcessDeathProof(
+    sdkDeathProof.path,
+    p.sdk,
+    deathBindings(client.dir, value, jobAuthorization),
+  );
+  if (object(read(sdkDeathProof.path)["before"])["version"] !== p.sdk.version)
+    fail("Original SDK death proof version changed");
+  const sdk = ports.sdkProcess(p.sdk),
+    at = Date.parse(sdk.observedAtUtc);
+  if (
+    sdk.state !== "absent" ||
+    sdk.pid !== p.sdk.pid ||
+    sdk.errorId !== absentError ||
+    !Number.isFinite(at) ||
+    at > Date.now() ||
+    Date.now() - at > 30000 ||
+    value.snapshot.producers
+      .filter((producer) => !same(producer, p.metadata))
+      .some((producer) => !ports.producerAbsent(producer))
+  )
+    fail(
+      "Authentic old SDK death and all other producers' absence are required before metadata retirement",
+    );
+  const owner = read(path.join(client.dir, "broker.lock")) as unknown as Owner;
+  const directory = journal(client.dir, requestId),
+    previewFile = path.join(directory, "metadata-retirement-preview.json"),
+    effectFile = path.join(directory, "metadata-retirement-effect-start.json"),
+    resultFile = path.join(directory, "metadata-retired.json");
+  const binding = {
+    requestId,
+    jobAuthorization,
+    sdkDeathProof,
+    runtime,
+    owner,
+  };
+  const priorClaim = metadataClaim(
+    client.dir,
+    requestId,
+    jobAuthorization,
+    p.metadata,
+  );
+  if (priorClaim && !same(checked(priorClaim)["binding"], binding))
+    fail("Original producer runtime/death proof must not be retargeted");
+  const refs = [
+    ...value.snapshot.files,
+    value.target,
+    jobAuthorization,
+    sdkDeathProof,
+  ];
+  if (fs.existsSync(effectFile)) {
+    const effect = read(effectFile);
+    if (
+      !priorClaim ||
+      !same(effect["claim"], priorClaim) ||
+      !same(effect["binding"], binding)
+    )
+      fail(
+        "Original normal metadata retirement intent changed; no signal replay",
+      );
+    if (fs.existsSync(resultFile)) {
+      const result = read(resultFile);
+      if (!same(result["binding"], binding) || result["retired"] !== true)
+        fail("Original normal metadata retirement result changed");
+      return reference(resultFile);
+    }
+    return { pending: true, noSignalReplay: true, sdkRequestsSent: 0 };
+  }
+  if (!apply) {
+    if (fs.existsSync(previewFile)) {
+      if (!same(read(previewFile)["binding"], binding))
+        fail("Original metadata preview cannot be retargeted");
+      return reference(previewFile);
+    }
+    const preview = ports.process(owner, runtime, refs, false, client.dir);
+    if (
+      preview.retired ||
+      !same(process(preview.process), p.metadata) ||
+      !preview.interpreter
+    )
+      fail("Exact non-mutating metadata process/interpreter preview required");
+    return publish(previewFile, {
+      kind: "normal-metadata-retirement-preview",
+      binding,
+      preview,
+      sdkRequestsSent: 0,
+    });
+  }
+  const previewReference = reference(previewFile);
+  const preview = checked(previewReference);
+  if (
+    !same(preview["binding"], binding) ||
+    preview["kind"] !== "normal-metadata-retirement-preview"
+  )
+    fail("Original normal metadata process preview required");
+  const proof = preview["preview"] as Sdk1MetadataWorkerProcessResult;
+  if (
+    !proof.process ||
+    !proof.interpreter ||
+    !same(process(proof.process), p.metadata)
+  )
+    fail("Exact kernel process proof and pinned interpreter required");
+  if (!priorClaim) {
+    try {
+      publish(metadataClaimFile(client.dir, p.metadata), {
+        kind: "normal-metadata-producer-effect-authority",
+        binding,
+      });
+    } catch (error) {
+      if (
+        !error ||
+        typeof error !== "object" ||
+        !("code" in error) ||
+        error.code !== "EEXIST"
+      )
+        throw error;
+    }
+  }
+  const claim = metadataClaim(
+    client.dir,
+    requestId,
+    jobAuthorization,
+    p.metadata,
+  );
+  if (!claim || !same(checked(claim)["binding"], binding))
+    fail("A concurrent different request owns normal metadata retirement");
+  const effect = publish(effectFile, {
+    kind: "normal-metadata-retirement-effect-start",
+    binding,
+    preview: previewReference,
+    claim,
+    sdkRequestsSent: 0,
+  });
+  try {
+    const result = ports.process(
+      {
+        ...owner,
+        processProof: proof.process,
+        interpreterProof: proof.interpreter,
+      },
+      runtime,
+      [...refs, previewReference, claim, effect],
+      true,
+      client.dir,
+    );
+    if (
+      !result.retired ||
+      !same(result.process, proof.process) ||
+      !ports.producerAbsent(p.metadata)
+    )
+      fail("Metadata retirement is not kernel-proven; never repeat the signal");
+    return publish(resultFile, {
+      kind: "normal-metadata-producer-retired",
+      binding,
+      retired: true,
+      process: result.process,
+      sdkRequestsSent: 0,
+      originalExecutionOutcome: "unknown",
+    });
+  } catch {
+    return { pending: true, noSignalReplay: true, sdkRequestsSent: 0 };
+  }
+}
 /** A read-only OS receipt recorded AFTER all old producers are absent and
  * BEFORE the selected successor SDK starts. This function never signals them. */
 export function recordNormalProducerRetirement(
@@ -582,6 +840,12 @@ export function recordNormalProducerRetirement(
       producers: value.snapshot.producers,
       observedAtUtc: new Date().toISOString(),
       sdkAbsent: sdk,
+      metadataRetirement: metadataClaim(
+        client.dir,
+        requestId,
+        entry,
+        p.metadata,
+      ),
     },
   );
 }
@@ -612,6 +876,23 @@ export function inspectNormalCurrentStore(
     normal.producerRetirement,
     path.join(journal(root, approval.requestId), "producers-retired.json"),
   );
+  const claim = metadataClaim(
+    root,
+    approval.requestId,
+    normal.jobAuthorization,
+    p.metadata,
+  );
+  if (
+    !same(retirement["metadataRetirement"] ?? null, claim) ||
+    (claim &&
+      !same(
+        object(checked(claim)["binding"])["sdkDeathProof"],
+        normal.deathProof,
+      ))
+  )
+    fail(
+      "Normal producer receipt must preserve its original metadata effect authority",
+    );
   const retiredAt = Date.parse(String(retirement["observedAtUtc"]));
   const retiredSdk = object(retirement["sdkAbsent"]);
   const absentAt = Date.parse(String(retiredSdk["observedAtUtc"]));
@@ -643,13 +924,7 @@ export function inspectNormalCurrentStore(
     fail(
       "The selected new SDK must start only after all exact old producers retired",
     );
-  const bindings = {
-    jobAuthorization: normal.jobAuthorization,
-    producerRetirement: normal.producerRetirement,
-    originalRpc: reference(
-      path.join(root, "jobs", p.jobId, `rpc-${p.rpcId}.json`),
-    ),
-  };
+  const bindings = deathBindings(root, value, normal.jobAuthorization);
   checked(normal.deathProof);
   (
     load("./queue-epoch-successor") as typeof import("./queue-epoch-successor")

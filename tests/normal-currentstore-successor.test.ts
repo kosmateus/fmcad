@@ -277,8 +277,8 @@ function fixture(t: { after(fn: () => void): void }) {
     },
     bindings: {
       jobAuthorization: authorization,
-      producerRetirement: retirement,
       originalRpc: ref(rpcFile),
+      predecessorState: ref(path.join(epoch, "queue-state.json")),
     },
   });
   const approval = {
@@ -346,7 +346,8 @@ test("public normal metadata CLI requires sealed existing clients, exact input r
     previousEntry = load.cache[entry];
   delete load.cache[entry];
   const authorize = normal.authorizeNormalCurrentStore,
-    retire = normal.recordNormalProducerRetirement;
+    retire = normal.recordNormalProducerRetirement,
+    retireMetadata = normal.retireNormalMetadataProducer;
   normal.authorizeNormalCurrentStore = (client, requestId, target) => {
     assert.ok(client instanceof SealedClient);
     assert.equal(requestId, f.requestId);
@@ -361,9 +362,26 @@ test("public normal metadata CLI requires sealed existing clients, exact input r
     calls.push("retire");
     return f.retirement;
   };
+  normal.retireNormalMetadataProducer = (
+    client,
+    requestId,
+    auth,
+    death,
+    runtime,
+    apply,
+  ) => {
+    assert.ok(client instanceof SealedClient);
+    assert.equal(requestId, f.requestId);
+    assert.deepEqual(auth, f.authorization);
+    assert.deepEqual(death, f.approval.normalCurrentStore!.deathProof);
+    assert.equal(runtime, f.dir);
+    calls.push(apply ? "metadata-apply" : "metadata-preview");
+    return f.retirement;
+  };
   t.after(() => {
     normal.authorizeNormalCurrentStore = authorize;
     normal.recordNormalProducerRetirement = retire;
+    normal.retireNormalMetadataProducer = retireMetadata;
     if (previousClient) load.cache[clientFile] = previousClient;
     else delete load.cache[clientFile];
     if (previousEntry) load.cache[entry] = previousEntry;
@@ -432,7 +450,32 @@ test("public normal metadata CLI requires sealed existing clients, exact input r
       deps,
     ),
   );
-  assert.deepEqual(calls, ["authorize", "dispose", "retire", "dispose"]);
+  const metadata = [
+    "retire-normal-metadata-producer",
+    "--request-id",
+    f.requestId,
+    "--job-authorization",
+    f.authorization.path,
+    "--sdk-death-proof",
+    f.approval.normalCurrentStore!.deathProof.path,
+    "--producer-runtime",
+    f.dir,
+    "--confirm-ownership",
+    "true",
+  ];
+  await queueCommand(metadata, deps);
+  await queueCommand([...metadata, "--apply", "true"], deps);
+  await assert.rejects(queueCommand([...metadata, "--apply", "false"], deps));
+  assert.deepEqual(calls, [
+    "authorize",
+    "dispose",
+    "retire",
+    "dispose",
+    "metadata-preview",
+    "dispose",
+    "metadata-apply",
+    "dispose",
+  ]);
 });
 
 test("normal-currentstore: distinct authentic owners and immutable unknown survive SDK0 qualification", (t) => {
@@ -507,6 +550,203 @@ test("owner authorizer and recovery qualification never read or hash credential-
     fs.openSync = open;
   }
 });
+
+for (const outcome of ["retired", "unknown"]) {
+  test(`normal metadata composes existing pidfd kernel once after SDK death: ${outcome}`, (t) => {
+    const f = fixture(t);
+    fs.unlinkSync(f.retirement.path); // Simulate the real order: SDK death, metadata retirement, then producer receipt.
+    const original = fs.readFileSync(path.join(f.epoch, "queue-state.json"));
+    const processProof = {
+      ...p.metadata,
+      exe: "/synthetic/node",
+      exeSha256: "a".repeat(64),
+      cmdline: [
+        "/synthetic/node",
+        f.dir + "/src/queue-epoch-successor-worker.js",
+      ],
+      childrenByTask: { "1": [] },
+      socketRows: [],
+    };
+    const interpreter = {
+      path: "/synthetic/python3",
+      sha256: "b".repeat(64),
+      version: "synthetic interpreter",
+    };
+    let previews = 0,
+      effects = 0,
+      metadataAbsent = false;
+    const ports: import("../src/composition/queue-normal-cold-successor").NormalMetadataRetirementPorts =
+      {
+        ...f.ports,
+        buildHash: () => p.buildHash,
+        producerAbsent: (process) =>
+          process.pid === p.metadata.pid ? metadataAbsent : true,
+        process(owner, runtime, refs, apply, root) {
+          assert.equal(root, f.dir);
+          assert.equal(runtime, f.dir);
+          assert.equal(owner.pid, p.metadata.pid);
+          assert.equal(owner.birth, p.metadata.birth);
+          assert.ok(
+            refs.every((entry) => !entry.path.endsWith("request.json")),
+          );
+          if (!apply) {
+            previews++;
+            return { process: processProof, retired: false, interpreter };
+          }
+          effects++;
+          assert.deepEqual(owner.processProof, processProof);
+          assert.deepEqual(owner.interpreterProof, interpreter);
+          assert.ok(
+            refs.some((entry) =>
+              entry.path.endsWith("metadata-retirement-effect-start.json"),
+            ),
+          );
+          if (outcome === "unknown")
+            throw Object.assign(
+              new Error("synthetic lost kernel acknowledgement"),
+              { code: "SYNTHETIC_UNKNOWN" },
+            );
+          metadataAbsent = true;
+          return { process: processProof, retired: true, interpreter };
+        },
+      };
+    const death = f.approval.normalCurrentStore!.deathProof;
+    normal.retireNormalMetadataProducer(
+      f.epochClient,
+      f.requestId,
+      f.authorization,
+      death,
+      f.dir,
+      false,
+      ports,
+    );
+    const result = normal.retireNormalMetadataProducer(
+      f.epochClient,
+      f.requestId,
+      f.authorization,
+      death,
+      f.dir,
+      true,
+      ports,
+    );
+    const repeated = normal.retireNormalMetadataProducer(
+      f.epochClient,
+      f.requestId,
+      f.authorization,
+      death,
+      f.dir,
+      true,
+      ports,
+    );
+    assert.deepEqual(repeated, result);
+    assert.equal(previews, 1);
+    assert.equal(effects, 1);
+    if (outcome === "unknown") {
+      assert.deepEqual(result, {
+        pending: true,
+        noSignalReplay: true,
+        sdkRequestsSent: 0,
+      });
+      const retarget = f.requestId + ":retarget";
+      const anotherOwnerGrant = normal.authorizeNormalCurrentStore(
+        f.jobClient,
+        retarget,
+        f.targetReference,
+      );
+      const anotherProofFile = path.join(f.dir, "retarget-death-proof.json");
+      const oldProof = JSON.parse(fs.readFileSync(death.path, "utf8"));
+      write(anotherProofFile, {
+        ...oldProof,
+        bindings: { ...oldProof.bindings, jobAuthorization: anotherOwnerGrant },
+      });
+      assert.throws(() =>
+        normal.retireNormalMetadataProducer(
+          f.epochClient,
+          retarget,
+          anotherOwnerGrant,
+          ref(anotherProofFile),
+          f.dir,
+          true,
+          ports,
+        ),
+      );
+      metadataAbsent = true;
+      assert.throws(() =>
+        normal.recordNormalProducerRetirement(
+          f.epochClient,
+          retarget,
+          anotherOwnerGrant,
+          ports,
+        ),
+      );
+      assert.equal(effects, 1);
+    } else {
+      assert.ok("path" in result);
+      const receipt = JSON.parse(fs.readFileSync(result.path, "utf8"));
+      assert.equal(receipt.retired, true);
+      assert.equal(receipt.originalExecutionOutcome, "unknown");
+      normal.recordNormalProducerRetirement(
+        f.epochClient,
+        f.requestId,
+        f.authorization,
+        ports,
+      );
+    }
+    assert.deepEqual(
+      fs.readFileSync(path.join(f.epoch, "queue-state.json")),
+      original,
+    );
+  });
+}
+
+for (const bad of [
+  "owner",
+  "runtime",
+  "live-sdk",
+  "producer",
+  "missing-death",
+]) {
+  test(`normal metadata refuses ${bad} before any kernel effect`, (t) => {
+    const f = fixture(t);
+    let kernel = 0;
+    const ports: import("../src/composition/queue-normal-cold-successor").NormalMetadataRetirementPorts =
+      {
+        ...f.ports,
+        buildHash: () => (bad === "runtime" ? "f".repeat(64) : p.buildHash),
+        process() {
+          kernel++;
+          assert.fail("No kernel call after a refused normal proof");
+        },
+      };
+    if (bad === "live-sdk")
+      ports.sdkProcess = (process) => ({
+        state: "present",
+        pid: process.pid,
+        birth: process.birth,
+        observedAtUtc: new Date().toISOString(),
+      });
+    if (bad === "producer") ports.producerAbsent = () => false;
+    const death =
+      bad === "missing-death"
+        ? {
+            path: path.join(f.dir, "missing-proof.json"),
+            sha256: "f".repeat(64),
+          }
+        : f.approval.normalCurrentStore!.deathProof;
+    assert.throws(() =>
+      normal.retireNormalMetadataProducer(
+        bad === "owner" ? f.jobClient : f.epochClient,
+        f.requestId,
+        f.authorization,
+        death,
+        f.dir,
+        true,
+        ports,
+      ),
+    );
+    assert.equal(kernel, 0);
+  });
+}
 
 for (const mode of [
   "job-owner",
