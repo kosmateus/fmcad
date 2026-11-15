@@ -52,13 +52,15 @@ test("GM34 rejects malformed payloads before SDK dispatch", async () => {
   assert.equal(dispatches, 0);
 });
 
-test("GM34 native handoff bundles the marking module", () => {
-  const script = buildCadScript(
-    "marking.create",
-    catalog["marking.create"]!.example,
-    { doc: "GM34" },
-  );
-  assert.ok(script.includes("def _marking_create"));
-  assert.ok(script.includes("'marking.create': _marking_create"));
-  assert.ok(script.includes("'marking.check': _marking_check"));
+test("GM34 public preparation retains each requested marking handler", () => {
+  for (const [operation, handler] of [
+    ["marking.create", "_marking_create"],
+    ["marking.check", "_marking_check"],
+  ] as const) {
+    const script = buildCadScript(operation, catalog[operation]!.example, {
+      doc: "GM34",
+    });
+    assert.ok(script.includes(`def ${handler}`), operation);
+    assert.ok(script.includes(`'${operation}': ${handler}`), operation);
+  }
 });
