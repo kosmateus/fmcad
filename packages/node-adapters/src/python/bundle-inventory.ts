@@ -89,48 +89,48 @@ const cadBundleBaseManifest: readonly BundleModule[] =
     withRegionalGeometryModules(
       withBrepBaselineModules(
         documentIoCadManifest(
-        withGeometryModules([
-          {
-            id: "values",
-            path: "runtime/python/fmcad/domain/values.py",
-            dependencies: [],
-          },
-          {
-            id: "fusion-values",
-            path: "runtime/python/fmcad/adapters/fusion/values.py",
-            dependencies: ["values"],
-          },
-          {
-            id: "core",
-            path: "assets/cad/core.py",
-            dependencies: ["values", "fusion-values"],
-          },
-          {
-            id: "inspection-domain",
-            path: "runtime/python/fmcad/domain/inspection.py",
-            dependencies: [],
-          },
-          {
-            id: "inspection",
-            path: "runtime/python/fmcad/adapters/fusion/inspection.py",
-            dependencies: ["core", "inspection-domain"],
-            owner: "inspection",
-          },
-          ...families.flatMap((id) => {
-            const migrated = assemblyBundleManifest.filter(
-              (unit) => unit.id === id || unit.id.startsWith(`${id}-`),
-            );
-            return migrated.length
-              ? migrated
-              : [
-                  {
-                    id,
-                    path: `assets/cad/${id}.py`,
-                    dependencies: ["core", ...(initialization[id] ?? [])],
-                  },
-                ];
-          }),
-        ]),
+          withGeometryModules([
+            {
+              id: "values",
+              path: "runtime/python/fmcad/domain/values.py",
+              dependencies: [],
+            },
+            {
+              id: "fusion-values",
+              path: "runtime/python/fmcad/adapters/fusion/values.py",
+              dependencies: ["values"],
+            },
+            {
+              id: "core",
+              path: "assets/cad/core.py",
+              dependencies: ["values", "fusion-values"],
+            },
+            {
+              id: "inspection-domain",
+              path: "runtime/python/fmcad/domain/inspection.py",
+              dependencies: [],
+            },
+            {
+              id: "inspection",
+              path: "runtime/python/fmcad/adapters/fusion/inspection.py",
+              dependencies: ["core", "inspection-domain"],
+              owner: "inspection",
+            },
+            ...families.flatMap((id) => {
+              const migrated = assemblyBundleManifest.filter(
+                (unit) => unit.id === id || unit.id.startsWith(`${id}-`),
+              );
+              return migrated.length
+                ? migrated
+                : [
+                    {
+                      id,
+                      path: `assets/cad/${id}.py`,
+                      dependencies: ["core", ...(initialization[id] ?? [])],
+                    },
+                  ];
+            }),
+          ]),
         ),
       ),
     ),
@@ -140,22 +140,33 @@ export const cadBundleManifest: readonly BundleModule[] = Object.freeze(
   withMeasuredFasteners(
     withNativeDrive(
       withSemanticModelState(
-        withSelectionRules(
-          withSectionWitnessModules(cadBundleBaseManifest),
-        ),
+        withSelectionRules(withSectionWitnessModules(cadBundleBaseManifest)),
       ),
     ),
-  ).flatMap((item) => item.id === "atomic" ? [item, {
-    id: "atomic-status",
-    path: "runtime/python/fmcad/adapters/fusion/atomic_status.py",
-    dependencies: [],
-  }, {
-    id: "atomic-status-dispatch",
-    path: "runtime/python/fmcad/adapters/fusion/atomic_status_dispatch.py",
-    dependencies: ["atomic", "atomic-status"],
-  }] : [item]).map((item) =>
-    Object.freeze({ ...item, dependencies: Object.freeze(item.dependencies) }),
-  ),
+  )
+    .flatMap((item) =>
+      item.id === "atomic"
+        ? [
+            item,
+            {
+              id: "atomic-status",
+              path: "runtime/python/fmcad/adapters/fusion/atomic_status.py",
+              dependencies: [],
+            },
+            {
+              id: "atomic-status-dispatch",
+              path: "runtime/python/fmcad/adapters/fusion/atomic_status_dispatch.py",
+              dependencies: ["atomic", "atomic-status"],
+            },
+          ]
+        : [item],
+    )
+    .map((item) =>
+      Object.freeze({
+        ...item,
+        dependencies: Object.freeze(item.dependencies),
+      }),
+    ),
 );
 
 export function orderBundle(
@@ -272,11 +283,8 @@ function sourceHash(source: string): string {
 }
 
 function loaderLayers(source: string, variable: string): readonly string[] {
-  const match = source.match(
-    new RegExp(`for ${variable} in \\(([^)]*)\\):`),
-  );
-  if (!match?.[1])
-    throw new Error("Missing compatibility loader layer list");
+  const match = source.match(new RegExp(`for ${variable} in \\(([^)]*)\\):`));
+  if (!match?.[1]) throw new Error("Missing compatibility loader layer list");
   const layers = [...match[1].matchAll(/'([^']+)'/g)].map((item) => {
     if (!item[1]) throw new Error("Invalid compatibility loader layer list");
     return item[1];
@@ -306,7 +314,10 @@ function compatibilityDependencies(
       const unit = prepared.get(id);
       if (!unit)
         throw new Error(
-          "Compatibility dependency was not prepared before " + item.id + ": " + id,
+          "Compatibility dependency was not prepared before " +
+            item.id +
+            ": " +
+            id,
         );
       return [id, unit];
     }),
@@ -406,7 +417,10 @@ function preparedCompatibilityLoader(
       dependencyIds.has(unit.id) && dependencyFilenames.has(unit.filename),
   );
   const manifestLayers = resolved.map((unit) =>
-    unit.filename.slice("runtime/python/fmcad/".length, -runtimeName.length - 1),
+    unit.filename.slice(
+      "runtime/python/fmcad/".length,
+      -runtimeName.length - 1,
+    ),
   );
   if (
     JSON.stringify(layers) !== JSON.stringify(manifestLayers) ||
@@ -437,9 +451,7 @@ function preparedCompatibilityLoader(
       unit.filename.endsWith(`/application/${runtimeName}`),
     );
     if (
-      !application?.source.includes(
-        `, '${item.id}'))`,
-      ) &&
+      !application?.source.includes(`, '${item.id}'))`) &&
       !application?.source.includes(
         `_FMCAD_GEOMETRY_LOADED = (*globals().get('_FMCAD_GEOMETRY_LOADED', ()), '${item.id}')`,
       )
@@ -451,21 +463,14 @@ function preparedCompatibilityLoader(
     const adapter = resolved.find((unit) =>
       unit.filename.endsWith(`/adapters/fusion/${runtimeName}`),
     );
-    if (
-      !adapter?.source.includes(
-        `_fmcad_${item.id}_runtime_loaded = True`,
-      )
-    )
+    if (!adapter?.source.includes(`_fmcad_${item.id}_runtime_loaded = True`))
       throw new Error(
         `Compatibility runtime marker is not set by its prepared adapter: ${item.id}`,
       );
   }
 
   const dependencyHashes = resolved
-    .map(
-      (unit) =>
-        `${unit.id}:${unit.filename}:${sourceHash(unit.source)}`,
-    )
+    .map((unit) => `${unit.id}:${unit.filename}:${sourceHash(unit.source)}`)
     .join(", ");
   const provenance = `# Prepared compatibility boundary; original-sha256=${sourceHash(source)}\n# Resolved manifest source units: ${dependencyHashes}\n`;
   const guard = geometry
@@ -546,4 +551,3 @@ export function cadBundleUnits(
   unitCache.set(key, units);
   return units;
 }
-
