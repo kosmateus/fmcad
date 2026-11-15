@@ -2,14 +2,14 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { createRequire } = require('node:module');
 const childProcess = require('node:child_process');
 const { randomUUID } = require('node:crypto');
-const { QueueClient } = require('../../src/queue-client');
-const { loadConfig } = require('../../src/config');
 const { createBrokerTransport } = require('../../packages/node-adapters/dist/fusion-transport/broker');
 const { requestTimeout } = require('../../src/request-timeout');
 const { resolveRuntimePaths } = require('../../src/dist/config-platform');
 const scope = require('./live-scope');
+const { resolveQualifiedLiveRuntime } = require('./qualified-live-runtime');
 
 function commandScript(code) {
   return `import contextlib, io, json, traceback, re
@@ -124,6 +124,10 @@ function disposeBackend(client) {
 function createBackend(server, dependencies = {}) {
   const value = context(dependencies.clientId
     ? { ...process.env, FMCAD_LIVE_CLIENT: dependencies.clientId } : process.env);
+  const runtime = resolveQualifiedLiveRuntime();
+  const loadRuntime = createRequire(path.join(runtime.dist, 'package.json'));
+  const queueModule = loadRuntime('./src/queue-client');
+  const loadConfig = dependencies.loadConfig || loadRuntime('./src/config').loadConfig;
   const client = (dependencies.createBackend || createBrokerTransport)({ ...server, routing: 'queue' }, {
     version: require('../../package.json').version,
     requestTimeout,
@@ -133,9 +137,9 @@ function createBackend(server, dependencies = {}) {
         fs.readFileSync(path.join(assets, 'addin-bridge.py'), 'utf8');
     },
   });
-  const cfg = { ...(dependencies.loadConfig || loadConfig)({ routing: 'queue' }).cfg, backend: server.backend || 'mcp',
+  const cfg = { ...loadConfig({ routing: 'queue' }).cfg, backend: server.backend || 'mcp',
     timeoutMs: server.timeoutMs };
-  const queue = dependencies.queue || new QueueClient(value.clientId, { cfg });
+  const queue = dependencies.queue || new queueModule.QueueClient(value.clientId, { cfg });
   const post = client._post.bind(client);
   client._post = async (payload, sessionId, controlPlane) => {
     payload = scope.payload(payload);
@@ -155,12 +159,12 @@ function createBackend(server, dependencies = {}) {
       fs.writeFileSync(file, commandScript(payload.params.arguments.code), { flag: 'wx', mode: 0o600 });
       argv = ['run', file];
     }
-    const buildHash = require('../../src/queue-instance').buildHash();
+    const buildHash = runtime.fingerprint;
     const protocolVersion = client.negotiatedProtocolVersion || client.server.protocolVersion;
     const dispatch = async requestId => {
       const job = await queue.submit({ ...(command ? {
         kind: 'command', argv,
-        inputFiles: require('../../src/queue-client').inputFiles(argv, process.cwd()),
+        inputFiles: queueModule.inputFiles(argv, process.cwd()),
       } : { kind: 'rpc', payload, ...(sessionId ? { sessionId } : {}) }),
         buildHash, protocolVersion, requestId, cwd: process.cwd(), backend: cfg.backend, timeoutMs: cfg.timeoutMs,
         description: 'Live integration ' + (process.env.FMCAD_LIVE_SUITE || 'test') + ': ' + (payload.params?.name || payload.method) });
