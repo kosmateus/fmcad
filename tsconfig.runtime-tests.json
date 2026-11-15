@@ -378,6 +378,7 @@
     "tests/execution-pipeline-process.test.ts",
     "tests/execution-pipeline.test.ts",
     "tests/execution-worker-stages.test.ts",
+    "tests/helper-stage-runtime.test.ts",
     "tests/instance-loss-recovery.test.ts",
     "tests/isolated-document-guard.test.ts",
     "tests/isolated-epoch.test.ts",

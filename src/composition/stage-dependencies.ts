@@ -789,7 +789,9 @@ export async function createAuthenticatedStageDependencies(
   if (!isDocumentSave && !isBatch && !isHelper) return null;
   if (isHelper)
     (
-      load("./cad-service.js") as typeof import("./cad-service.js")
+      loadStaged(
+        "composition/cad-service.js",
+      ) as typeof import("./cad-service.js")
     ).decodeInvocation(payload);
   const owner = createAuthenticatedStageOwner({
     brokerDirectory,
