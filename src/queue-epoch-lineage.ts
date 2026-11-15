@@ -366,6 +366,36 @@ function verifyCreationBuild(
   const binding = record(intent["binding"]),
     physical = record(start["binding"]);
   const jobs = pointer["quarantinedJobIds"];
+  // Normal succession observes its separately authorized current-store job.
+  // The inherited quarantine pair remains historical and is not its SDK key.
+  let creationJobs: unknown[] = Array.isArray(jobs) ? jobs : [];
+  if (authority["normalCurrentStore"] !== undefined) {
+    const normal = record(authority["normalCurrentStore"]);
+    if (
+      normal["kind"] !== "normal-currentstore-v1" ||
+      !referenceValue(normal["jobAuthorization"])
+    )
+      fail("Normal creation origin requires its immutable job authorization");
+    const entry = normal["jobAuthorization"];
+    const authorization = record(read(entry, entry.path));
+    const profile = record(authorization["profile"]);
+    if (
+      authorization["kind"] !== "normal-currentstore-job-owner-authorization" ||
+      authorization["requestId"] !== authority.requestId ||
+      typeof profile["jobClientId"] !== "string" ||
+      !profile["jobClientId"] ||
+      !/^[a-f0-9]{64}$/.test(
+        String(record(authorization["snapshot"])["jobOwnerTokenHash"]),
+      ) ||
+      profile["kind"] !== "normal-currentstore-target-v1" ||
+      profile["epochClientId"] !== authority.clientId ||
+      ![profile["jobId"], profile["rpcId"]].every(
+        (id) => typeof id === "string" && /^[a-f0-9-]{36}$/.test(id),
+      )
+    )
+      fail("Normal creation origin owner or logical RPC binding changed");
+    creationJobs = [profile["jobId"], profile["rpcId"]];
+  }
   const instance = (value: unknown) => {
     const p = record(value),
       expected = record(pointer.currentInstance);
@@ -390,8 +420,8 @@ function verifyCreationBuild(
     binding["clientId"] !== pointer.ownerClientId ||
     !instance(binding["currentInstance"]) ||
     !Array.isArray(jobs) ||
-    binding["targetJobId"] !== jobs[0] ||
-    binding["observationJobId"] !== jobs[1] ||
+    binding["targetJobId"] !== creationJobs[0] ||
+    binding["observationJobId"] !== creationJobs[1] ||
     physical["jobId"] !== binding["targetJobId"] ||
     binding["sdkProofPath"] !== path.join(dir, "sdk-qualified.json") ||
     binding["successorAuthorityHash"] !== pointer.succession?.sha256 ||
