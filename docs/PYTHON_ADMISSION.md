@@ -23,6 +23,21 @@ reflection retain the complete runtime and facade rather than changing their
 semantics. Every resulting source artifact still passes the ordinary checker and
 exact-request admission fences before SDK execution.
 
+## Lossless native receipt encoding
+
+Large official native receipt scripts may use a zlib/base64 envelope after source
+selection. This preserves the entire selected program, including the full runtime
+when dynamic dependencies require it; encoding is not dependency selection.
+Ordinary `prepareWireArtifact` remains input-identical. Receipt encoding starts at
+512 KiB and is used only when it reduces the wire size.
+
+The shared decoder verifies canonical base64, a complete zlib stream with no
+trailing data, UTF-8 byte length and SHA-256. Decoded sources are bounded at
+16 MiB and encoded input at 24 MiB. The checker inventories the decoded source,
+checks its actual entrypoint and binds it to the wire entrypoint and source hash;
+the envelope does not replace checking with a synthetic entrypoint. Admission
+still measures and certifies the complete final JSON request after encoding.
+
 ## Exact request admission
 
 Native `fusion_mcp_execute` and `fusion_mcp_read` requests must fit the native
