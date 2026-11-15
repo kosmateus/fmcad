@@ -1365,6 +1365,39 @@ test("typed help preserves every registered English and Polish page and text lay
     title: "Return Contract",
     text: "Starts the sole shared broker on an explicitly approved physical addin/MCP endpoint after owner-authenticated idle stop. Exact existing epoch credentials, old/new configs and a read-only receipt for the same live Fusion PID/birth/version are required. Returns listening metadata with buildHash, not model or physical validation. Historical identity/receipts/unknown work remain immutable; uncertainty retains ownership without replay.",
   };
+  const normalRecoveryReturnContracts = {
+    "queue authorize-normal-successor":
+      "Returns an immutable authorization reference bound to the original registered job owner, explicit normal target and unchanged currentstore. SDK0: no request bytes or raw credentials are copied, no SDK runs and unknown work is not settled. A separately authenticated epoch owner must approve the cold successor.",
+    "queue record-normal-producers-retired":
+      "Returns an immutable OS absence receipt after the exact old SDK and all currentstore producers have exited, before a new SDK starts. Never signals, closes or restarts processes. Missing, reused or uncertain identities refuse recovery; this is not historical SDK settlement.",
+    "queue retire-normal-metadata-producer":
+      "Returns a non-mutating exact metadata-owner preview, or with --apply true its one-shot pidfd retirement receipt/pending fence. Requires distinct epoch authorization, original job-owner approval, authentic old SDK death, all other producers gone and the exact predecessor runtime/interpreter/process. Never replays a signal after uncertainty and never closes/restarts Fusion or resolves an original SDK operation.",
+  };
+  const expectedNormalRecoveryManuals = Object.fromEntries(
+    Object.entries(normalRecoveryReturnContracts).map(([key, text]) => {
+      const expectedManual = record(expectedManuals[key]);
+      const expectedSections = list(expectedManual["sections"]);
+      const expectedReturnContract = record(expectedSections[0]);
+      const expectedAudit = record(expectedManual["audit"]);
+      return [
+        key,
+        {
+          ...expectedManual,
+          sections: [
+            { ...expectedReturnContract, text },
+            ...expectedSections.slice(1),
+          ],
+          audit: {
+            ...expectedAudit,
+            tests: [
+              ...list(expectedAudit["tests"]),
+              "tests/normal-currentstore-successor.test.ts",
+            ],
+          },
+        },
+      ];
+    }),
+  );
   assert.deepEqual(currentBrokerManual, {
     ...expectedBrokerManual,
     manuals: {
@@ -1376,6 +1409,7 @@ test("typed help preserves every registered English and Polish page and text lay
           ...expectedTransitionSections.slice(1),
         ],
       },
+      ...expectedNormalRecoveryManuals,
     },
   });
   const oldHelp = historicalPublicBoundary("help"),
