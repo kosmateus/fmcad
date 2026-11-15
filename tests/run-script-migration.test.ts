@@ -51,7 +51,7 @@ const cases: [string, RunArguments[4], RunArguments[5], RunArguments[6]][] = [
   ],
 ];
 for (const [label, identity, helper, operations] of cases) {
-  test(`run migration preserves complete ${label} artifacts and raw provenance`, (t) => {
+  test(`run migration preserves ${label} source, guards and raw provenance`, (t) => {
     const f = fixture(t);
     const args: RunArguments = [
       f.file,
@@ -74,13 +74,26 @@ for (const [label, identity, helper, operations] of cases) {
     const migrated = context.run(after, () =>
       current.prepareRunScript(...args),
     );
-    assert.deepEqual(migrated, historical);
+    if (helper) {
+      assert.ok(migrated.units.length < historical.units.length);
+      assert.deepEqual(migrated.context, historical.context);
+      assert.deepEqual(migrated.request, historical.request);
+      for (const unit of migrated.units) {
+        if (unit.id === "helpers") continue;
+        assert.deepEqual(
+          unit,
+          historical.units.find((original) => original.id === unit.id),
+        );
+      }
+    } else {
+      assert.deepEqual(migrated, historical);
+    }
     assert.deepEqual(after, before);
     assert.deepEqual(after, {
       sourcePath: f.file,
       sourceHash: createHash("sha256").update(f.source).digest("hex"),
     });
-    assert.equal(current.buildRunScript(...args), historical.script);
+    assert.equal(current.buildRunScript(...args), migrated.script);
     assert.equal(fs.readFileSync(f.file, "utf8"), f.source);
   });
 }

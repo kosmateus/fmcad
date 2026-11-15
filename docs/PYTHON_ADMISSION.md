@@ -4,6 +4,27 @@
 complete `passed` result bound to the prepared artifact and exact wire hash.
 Rejection is local `not_started` evidence, not a CAD execution result.
 
+## Automatic helper source selection
+
+`run --helpers cad-v1` analyses the actual argument-substituted Python source
+offline. A Python AST/symbol-table adapter supplies facts; the host-independent
+application selects source units and facade methods, including transitive symbol,
+initialization and operation-dispatch dependencies. Registry ownership transfers
+retain their predecessors and original execution order. Callers do not maintain
+helper dependency lists.
+
+Selection is conservative, not a claim of globally minimal Python programs.
+Whole retained source units remain available to the real checker, including
+definitions that are not reachable from this invocation. Reachability of dynamic
+dispatch is analysed separately from those typing dependencies. The closed
+statically understood user subset supports direct facade calls and finite literal
+dispatch alternatives. Unresolved dispatch, facade escapes, imported code or
+reflection retain the complete runtime and facade rather than changing their
+semantics. Every resulting source artifact still passes the ordinary checker and
+exact-request admission fences before SDK execution.
+
+## Exact request admission
+
 `node-adapters/python/admission.ts` closes RPC classification: known protocol,
 discovery and native non-Python tools are explicit; unknown tools are refused.
 `execute_python` and script `fusion_mcp_execute` are always Python. Literal

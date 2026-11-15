@@ -7,7 +7,7 @@ import {
   type RunRequest,
 } from "@fmcad/core";
 import { pythonLiteral, preparePythonArtifact } from "./artifact.js";
-import { cadBundleUnits } from "./bundle.js";
+import { selectRunBundle } from "./source-selection.js";
 import {
   resolveRuntimePaths,
   type RuntimePathsOptions,
@@ -80,9 +80,10 @@ export function createRunScriptAdapter(ports: RunSourcePorts) {
       {
         pythonValue: pythonLiteral,
         prepare: preparePythonArtifact,
-        runtime: (version) => {
+        runtime: (version, source) => {
           const paths = resolveRuntimePaths({ anchor: __filename });
-          if (version) return cadBundleUnits(paths.installation);
+          if (version)
+            return selectRunBundle(paths.installation, source.source);
           const filename = "fmcad/adapters/fusion/identity.py";
           return [
             {
