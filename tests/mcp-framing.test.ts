@@ -137,7 +137,45 @@ test("UTF-8 JSONL decoder counts bytes across chunks, reports invalid UTF-8 and 
     { kind: "invalid-utf8" },
   ]);
   assert.equal(decoder.bufferedBytes, 0);
-  assert.equal(MCP_MAX_INPUT_FRAME_BYTES, 1024 * 1024);
+  assert.equal(MCP_MAX_INPUT_FRAME_BYTES, 10_485_760);
+});
+
+test("default UTF-8 JSONL framing accepts exactly 10 MiB and rejects 10 MiB plus one byte", async () => {
+  const limit = 10_485_760;
+  const decoder = new JsonLineDecoder();
+  const frames: InputFrame[] = [];
+  const payload = Buffer.concat([
+    Buffer.alloc(limit - 2, 0x61),
+    Buffer.from("é", "utf8"),
+  ]);
+  assert.equal(payload.length, limit);
+  const split = payload.length - 1;
+  await decoder.push(payload.subarray(0, split), (frame) => {
+    frames.push(frame);
+  });
+  assert.equal(decoder.bufferedBytes, split);
+  await decoder.push(
+    Buffer.concat([payload.subarray(split), Buffer.from("\n")]),
+    (frame) => {
+      frames.push(frame);
+    },
+  );
+  assert.equal(frames.length, 1);
+  assert.equal(frames[0]?.kind, "line");
+  if (frames[0]?.kind === "line") {
+    assert.equal(Buffer.byteLength(frames[0].text, "utf8"), limit);
+    assert.equal(frames[0].text.at(-1), "é");
+  }
+
+  const oversizedDecoder = new JsonLineDecoder();
+  const oversizedFrames: InputFrame[] = [];
+  await oversizedDecoder.push(
+    Buffer.concat([Buffer.alloc(limit + 1, 0x61), Buffer.from("\n")]),
+    (frame) => {
+      oversizedFrames.push(frame);
+    },
+  );
+  assert.deepEqual(oversizedFrames, [{ kind: "too-large" }]);
 });
 
 test("JSON-RPC request and upstream JSON/SSE framing reject invalid ids and retain images exactly", () => {
