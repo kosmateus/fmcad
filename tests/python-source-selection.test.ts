@@ -72,6 +72,16 @@ test("automatic registration analysis retains predecessor captures and ordered o
     assert.ok(predecessor >= 0, operation);
     assert.ok(successor > predecessor, operation);
   }
+  const hookUnits = selectRunBundle(
+    root,
+    "def run(context):\n    FMCAD.call('frame.context_audit', {})\n",
+  );
+  assert.ok(
+    hookUnits.some((unit) => unit.id === "semantic-model-state-application"),
+  );
+  assert.ok(
+    hookUnits.some((unit) => unit.id === "semantic-model-state-fusion"),
+  );
 });
 
 test("unresolved dispatch, facade escapes and reflection retain the exact complete runtime", () => {
@@ -153,7 +163,7 @@ facade.terminal()
   });
 });
 
-test("definition dependencies do not turn an unreachable dynamic callable into a runtime root", () => {
+test("AST dependency closure handles aliases, registration hooks and dynamic reachability", () => {
   const sources = {
     core: "class CadContext:\n    pass\n",
     identity:
@@ -163,8 +173,13 @@ test("definition dependencies do not turn an unreachable dynamic callable into a
     bridge: "def _bridge(): return _leaf()\n",
     leaf: "def _leaf(): return 42\ndef _unused(ctx, operation): return ctx.call(operation, {})\n",
     unrelated: "def _spare(): return 7\n",
+    needed: "class Needed:\n    pass\n",
   };
-  const analyse = (leaf: string) => {
+  const analyse = (
+    leaf: string,
+    extra: Record<string, string> = {},
+    user = "def run(context):\n    FMCAD.ping()\n",
+  ) => {
     const parsed = spawnSync(
       "python3",
       [
@@ -175,13 +190,15 @@ test("definition dependencies do not turn an unreachable dynamic callable into a
       ],
       {
         input: JSON.stringify({
-          source: "def run(context):\n    FMCAD.ping()\n",
-          units: Object.entries({ ...sources, leaf }).map(([id, source]) => ({
-            id,
-            filename: id + ".py",
-            source,
-            dependencies: [],
-          })),
+          source: user,
+          units: Object.entries({ ...sources, leaf, ...extra }).map(
+            ([id, source]) => ({
+              id,
+              filename: id + ".py",
+              source,
+              dependencies: [],
+            }),
+          ),
         }),
         encoding: "utf8",
       },
@@ -191,7 +208,8 @@ test("definition dependencies do not turn an unreachable dynamic callable into a
       unsupported: boolean;
       facts: PythonSelectionFacts;
     };
-    assert.equal(result.unsupported, false);
+    if (result.unsupported)
+      return { mode: "unsupported" as const, units: [] as string[] };
     return selectPythonSources(result.facts);
   };
   const selected = analyse(sources.leaf);
@@ -199,9 +217,36 @@ test("definition dependencies do not turn an unreachable dynamic callable into a
   assert.ok(selected.units.includes("bridge"));
   assert.ok(selected.units.includes("leaf"));
   assert.ok(!selected.units.includes("unrelated"));
+  const alias = analyse(
+    "from typing import cast as adapt\ndef _leaf(): return adapt('Needed', None)\n",
+  );
+  assert.equal(alias.mode, "static");
+  assert.ok(alias.units.includes("needed"));
   const dynamic = analyse(
     "def _leaf(): return _unused(None, 'runtime')\ndef _unused(ctx, operation): return ctx.call(operation, {})\n",
   );
   assert.equal(dynamic.mode, "conservative");
   assert.ok(dynamic.units.includes("unrelated"));
+  const hooked = analyse(
+    sources.leaf,
+    {
+      registrar:
+        "def register(registry):\n    registry.update({'custom.operation': _leaf})\n",
+      registration: "register(CAD_HANDLERS)\n",
+    },
+    "def run(context):\n    FMCAD.call('custom.operation', {})\n",
+  );
+  assert.equal(hooked.mode, "static");
+  for (const id of ["registrar", "registration", "leaf"])
+    assert.ok(hooked.units.includes(id), id);
+  assert.ok(!hooked.units.includes("unrelated"));
+  const initializer = analyse(sources.leaf, {
+    initializer: "exec('namespace_change = True')\n",
+  });
+  assert.equal(initializer.mode, "conservative");
+  assert.ok(initializer.units.includes("unrelated"));
+  const escapedRegistry = analyse(sources.leaf, {
+    registrar: "registry = CAD_HANDLERS\nregistry.update({})\n",
+  });
+  assert.equal(escapedRegistry.mode, "unsupported");
 });

@@ -40,7 +40,10 @@ export function selectPythonSources(
     methods: Object.keys(facts.facade),
     mode: "conservative",
   });
-  if (facts.user.opaque) return all();
+  // An opaque initializer can affect the shared namespace even when no literal
+  // operation or symbol points at its source unit.
+  if (facts.user.opaque || facts.units.some((unit) => unit.eager.opaque))
+    return all();
   const units = new Map(facts.units.map((unit) => [unit.id, unit]));
   const selected = new Set<string>();
   const methods = new Set<string>();

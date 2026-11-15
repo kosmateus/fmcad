@@ -40,9 +40,47 @@ def dictionary_keys(node, bindings, dictionaries):
     raise Unknown()
 
 
-def registrations(tree):
+def registrations(tree, registry_names=('CAD_HANDLERS',), depth=0, functions=None):
+    if depth > 8:
+        raise Unknown()
     bindings, dictionaries, handlers = {}, {}, {}
+    indirect = {}
+    if functions is None:
+        functions = {node.name: [node] for node in tree.body if isinstance(node, ast.FunctionDef)}
     seen = set()
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Name) or node.id not in registry_names or not isinstance(node.ctx, ast.Load):
+            continue
+        parent = parents.get(node)
+        if isinstance(parent, ast.Attribute) and parent.value is node and parent.attr in ('owner', 'update', 'pop', 'get', 'dispatch'):
+            continue
+        if isinstance(parent, ast.Subscript) and parent.value is node:
+            continue
+        if isinstance(parent, ast.Compare):
+            continue
+        if (isinstance(parent, ast.Call) and isinstance(parent.func, ast.Name)
+                and parent.func.id == 'hasattr' and parent.args and parent.args[0] is node):
+            continue
+        if isinstance(parent, ast.Call) and isinstance(parent.func, ast.Name) and parent.func.id in functions:
+            for function in functions[parent.func.id]:
+                parameters = function.args.posonlyargs + function.args.args
+                if node not in parent.args or len(parent.args) > len(parameters):
+                    raise Unknown()
+                parameter = parameters[parent.args.index(node)].arg
+                # A nested scope can shadow the registry parameter; do not infer
+                # an alias through that scope without a binding proof.
+                if any(isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))
+                       and any((isinstance(binding, ast.arg) and binding.arg == parameter)
+                               or (isinstance(binding, ast.Name) and binding.id == parameter and isinstance(binding.ctx, ast.Store))
+                               for binding in ast.walk(child))
+                       for statement in function.body for child in ast.walk(statement)):
+                    raise Unknown()
+                indirect.update(registrations(ast.Module(body=function.body, type_ignores=[]), (parameter,), depth + 1, functions))
+            continue
+        # An escaped/aliased registry can register arbitrary operations. Its
+        # absence from the literal index is not evidence that it is unused.
+        raise Unknown()
     # Registration keys are data, not callable bodies. Keep all owners for an
     # operation so ordered ownership transfers retain the existing semantics.
     statements = [(node, {}) for node in reversed(tree.body)]
@@ -50,7 +88,7 @@ def registrations(tree):
         node, local = statements.pop()
         if isinstance(node, ast.For):
             if not any(isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
-                       and isinstance(call.func.value, ast.Name) and call.func.value.id == 'CAD_HANDLERS'
+                       and isinstance(call.func.value, ast.Name) and call.func.value.id in registry_names
                        and call.func.attr in ('update', 'pop') for call in ast.walk(node)):
                 continue
             targets = node.target.elts if isinstance(node.target, (ast.Tuple, ast.List)) else [node.target]
@@ -95,38 +133,38 @@ def registrations(tree):
                     pass
         if (isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)
                 and isinstance(value.func.value, ast.Name)
-                and value.func.value.id == 'CAD_HANDLERS' and value.func.attr == 'update'):
+                and value.func.value.id in registry_names and value.func.attr == 'update'):
             if len(value.args) != 1 or value.keywords:
                 raise Unknown()
             seen.add(id(value))
             handlers.update(dictionary_keys(value.args[0], current, dictionaries))
         if (isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)
                 and isinstance(value.func.value, ast.Name)
-                and value.func.value.id == 'CAD_HANDLERS' and value.func.attr == 'pop'):
+                and value.func.value.id in registry_names and value.func.attr == 'pop'):
             if not value.args:
                 raise Unknown()
             seen.add(id(value))
             handlers.setdefault(constant(value.args[0], current), ast.Constant(value=None))
         for target in targets:
             if (isinstance(target, ast.Subscript) and isinstance(target.value, ast.Name)
-                    and target.value.id == 'CAD_HANDLERS'):
+                    and target.value.id in registry_names):
                 handlers[constant(target.slice, current)] = value
                 seen.add(id(target))
     for node in ast.walk(tree):
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                and isinstance(node.func.value, ast.Name) and node.func.value.id == 'CAD_HANDLERS'
+                and isinstance(node.func.value, ast.Name) and node.func.value.id in registry_names
                 and node.func.attr in ('update', 'pop', 'setdefault', 'clear', '__setitem__', '__delitem__')
                 and id(node) not in seen):
             raise Unknown()
         if (isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name)
-                and node.value.id == 'CAD_HANDLERS' and isinstance(node.ctx, (ast.Store, ast.Del))
+                and node.value.id in registry_names and isinstance(node.ctx, (ast.Store, ast.Del))
                 and id(node) not in seen):
             raise Unknown()
     if any(not isinstance(item, str) for item in handlers):
         raise Unknown()
-    return {key: sorted({node.id for node in ast.walk(value)
+    return {**indirect, **{key: sorted({node.id for node in ast.walk(value)
                          if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)})
-            for key, value in handlers.items()}
+            for key, value in handlers.items()}}
 
 
 def operation_choices(node, parents):
@@ -174,7 +212,7 @@ def operation_choices(node, parents):
     raise Unknown()
 
 
-def facts(tree, filename, *, user=False, method=None, unit=None):
+def facts(tree, filename, *, user=False, method=None, unit=None, casts=()):
     source = ast.unparse(tree)
     table = symtable.symtable(source, filename, 'exec')
     defines = {symbol.get_name() for symbol in table.get_symbols()
@@ -210,7 +248,7 @@ def facts(tree, filename, *, user=False, method=None, unit=None):
             if annotation is not None:
                 annotations.update(ast.walk(annotation))
         if (isinstance(node, ast.Call) and node.args and isinstance(node.func, ast.Name)
-                and (node.func.id == 'cast' or node.func.id.endswith('_cast'))):
+                and node.func.id in casts):
             annotations.update(ast.walk(node.args[0]))
     for node in ast.walk(tree):
         # Forward annotations and cast/type-alias arguments also need providers
@@ -314,8 +352,16 @@ def analyse(request):
     except SyntaxError:
         # The ordinary checker owns user syntax diagnostics.
         return dict(unsupported=True)
-    for unit in request['units']:
-        tree = ast.parse(unit['source'], filename=unit['filename'])
+    parsed = [(unit, ast.parse(unit['source'], filename=unit['filename'])) for unit in request['units']]
+    casts = {alias.asname or alias.name for _, tree in parsed for node in ast.walk(tree)
+             if isinstance(node, ast.ImportFrom) and node.module == 'typing'
+             for alias in node.names if alias.name == 'cast'}
+    functions = {}
+    for _, tree in parsed:
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef):
+                functions.setdefault(node.name, []).append(node)
+    for unit, tree in parsed:
         if unit['id'] == 'helpers':
             for node in tree.body:
                 if isinstance(node, ast.ClassDef) and node.name == 'FMCAD':
@@ -323,13 +369,13 @@ def analyse(request):
                     for member in node.body:
                         if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
                             facade[member.name] = facts(ast.Module(body=[copy.deepcopy(member)], type_ignores=[]),
-                                                       unit['filename'], method=member.name, unit='helpers')
+                                                       unit['filename'], method=member.name, unit='helpers', casts=casts)
                             spans[member.name] = [min([member.lineno] + [d.lineno for d in member.decorator_list]),
                                                   member.end_lineno]
                         else:
                             retained.append(member)
                     node.body = retained or [ast.Pass()]
-        entry = facts(tree, unit['filename'], unit=unit['id'])
+        entry = facts(tree, unit['filename'], unit=unit['id'], casts=casts)
         class Eager(ast.NodeTransformer):
             def visit_FunctionDef(self, node):
                 node.body = [ast.copy_location(ast.Pass(), node)]
@@ -338,16 +384,16 @@ def analyse(request):
             visit_AsyncFunctionDef = visit_FunctionDef
 
         eager = Eager().visit(copy.deepcopy(tree))
-        entry['eager'] = facts(eager, unit['filename'], unit=unit['id'])
+        entry['eager'] = facts(eager, unit['filename'], unit=unit['id'], casts=casts)
         entry['opaque'] = entry['eager']['opaque']
         for node in tree.body:
             statement = ast.Module(body=[copy.deepcopy(node)], type_ignores=[])
-            dependency = facts(statement, unit['filename'], unit=unit['id'])
+            dependency = facts(statement, unit['filename'], unit=unit['id'], casts=casts)
             for name in dependency['defines']:
                 if name != 'CAD_HANDLERS':
                     symbols.setdefault(name, []).append(dependency)
         try:
-            handlers = registrations(tree)
+            handlers = registrations(tree, functions=functions)
         except Unknown:
             # An unrecognised registration could own any requested operation.
             return dict(unsupported=True, unit=unit['id'])

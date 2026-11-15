@@ -150,7 +150,7 @@ test("installed consumer retains real CLI, worker, MCP and public API admission 
   assert.match(integration, /fail 0\b/);
 });
 
-test("installed consumer checks the complete cad-v1 helper with retained origins", (t) => {
+test("installed consumer checks automatically selected cad-v1 helpers with retained origins", (t) => {
   const directory = fs.mkdtempSync("/tmp/opencode/admission-installed-helper-");
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   installConsumer(directory);
@@ -171,7 +171,11 @@ test("installed consumer checks the complete cad-v1 helper with retained origins
     const started=Date.now();
     (async()=>{
       const certificate=await admission.check(request,artifact),report=certificate.report;
-       assert.equal(original.units.length,154);assert.equal(artifact.context.origin.units.length,154);assert.equal(artifact.context.origin.sourceMap.length,153);
+       assert.ok(original.units.length>3&&original.units.length<154);
+       assert.deepEqual(artifact.context.origin.units,pythonArtifactManifest(original).units);
+       assert.deepEqual(artifact.context.origin.sourceMap,original.sourceMap);
+       for(const id of ['core','identity','helpers'])assert.ok(original.units.some(unit=>unit.id===id));
+       for(const id of ['cam','optics'])assert.ok(!original.units.some(unit=>unit.id===id));
       assert.equal(report.status,'passed',JSON.stringify(report.reasons));assert.equal(report.diagnostics.length,0);
       assert.equal(report.provenance.artifactHash,artifact.artifactHash);assert.equal(report.provenance.wireHash,artifact.sha256);
       assert.equal(report.provenance.definitionsHash,'83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179');
@@ -201,8 +205,9 @@ test("installed consumer checks the complete cad-v1 helper with retained origins
     ),
   );
   assert.equal(result["status"], "passed");
-  assert.equal(result["units"], 154);
-  assert.equal(result["maps"], 153);
+  const units = result["units"];
+  assert.ok(typeof units === "number" && units > 3 && units < 154);
+  assert.equal(result["maps"], units - 1);
   assert.equal(result["diagnostics"], 0);
   assert.ok(
     array(result["contexts"]).some(

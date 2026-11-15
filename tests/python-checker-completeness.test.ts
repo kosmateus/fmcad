@@ -381,7 +381,9 @@ test("prepared canonical cad-v1 receipt retains all 154 helper units, maps, byte
   const scriptFile = path.join(directory, "canonical-stage.py");
   (load("node:fs") as typeof import("node:fs")).writeFileSync(
     scriptFile,
-    'ARGS = []\nDOC_NAME = ""\ndef run(context: str) -> None:\n    stage = FMCAD.stage()\n    journal = FMCAD.journalInspect()\n    plan = FMCAD.resumePlan()\n    print(stage, journal, plan)\n',
+    // Dynamic dispatch deliberately requires the complete runtime: this test
+    // covers full-inventory mapping independently of static source selection.
+    'ARGS = []\nDOC_NAME = ""\ndef run(context: str) -> None:\n    stage = FMCAD.stage()\n    journal = FMCAD.journalInspect()\n    plan = FMCAD.resumePlan()\n    if context:\n        FMCAD.call(context, {})\n    print(stage, journal, plan)\n',
   );
 
   const { prepareRunScript } = load(
@@ -473,7 +475,11 @@ test("prepared canonical cad-v1 receipt retains all 154 helper units, maps, byte
   assert.ok(helper && receiptWrapper);
   const originalHelper = unitsById.get("user-script");
   assert.ok(originalHelper);
-  assert.equal(helper.id, "embedded:1");
+  assert.match(helper.id, /^embedded:\d+$/);
+  assert.equal(
+    final.units.filter((unit) => unit.filename === scriptFile).length,
+    1,
+  );
   assert.equal(helper.role, "user");
   assert.equal(helper.source, originalHelper.source);
   assert.equal(helper.sha256, originalHelper.sha256);
