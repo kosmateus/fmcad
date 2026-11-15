@@ -510,6 +510,17 @@ function snapshot(
   const sealedRequests: Snapshot["sealedRequests"] = [];
   for (const id of Object.keys(jobs).sort()) {
     if (!/^[a-f0-9-]{36}$/.test(id)) fail("Noncanonical job namespace");
+    const candidate = object(jobs[id]);
+    // A raw RPC cancelled/expired before starting has no worker or output dir.
+    // Retain its ledger entry; never infer absence for any started producer.
+    if (
+      rawRpc &&
+      ["cancelled", "expired"].includes(String(candidate["state"])) &&
+      candidate["startedAt"] == null &&
+      candidate["dispatch"] == null &&
+      !fs.existsSync(path.join(root, "jobs", id))
+    )
+      continue;
     const dir = canonical(path.join(root, "jobs", id), true);
     if (
       ((!rawRpc && id === p.jobId) ||
@@ -533,6 +544,28 @@ function snapshot(
           ctimeMs: s.ctimeMs,
         });
       } else {
+        if (
+          rawRpc &&
+          name === "stages" &&
+          id !== p.jobId &&
+          ["succeeded", "failed", "cancelled", "expired"].includes(
+            String(candidate["state"]),
+          )
+        ) {
+          canonical(file, true);
+          const entries = fs.readdirSync(file).sort();
+          if (
+            entries.length > 10_000 ||
+            entries.some(
+              (entry, index) =>
+                entry !== String(index).padStart(8, "0") + ".json",
+            )
+          )
+            fail("Unsupported retained stage journal namespace");
+          for (const entry of entries)
+            files.push(reference(path.join(file, entry)));
+          continue;
+        }
         // Known output-only records; reject unknown namespaces instead of
         // walking or copying arbitrary credential/user files.
         if (

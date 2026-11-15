@@ -272,6 +272,23 @@ function fixture(
     state: "needs_reconciliation",
     code: "SYNTHETIC_ORIGINAL_UNKNOWN",
   });
+  if (raw) {
+    const file = path.join(epoch, "queue-state.json");
+    const stored = JSON.parse(fs.readFileSync(file, "utf8"));
+    const cancelled = randomUUID();
+    stored.jobs[cancelled] = {
+      id: cancelled,
+      state: "cancelled",
+      startedAt: null,
+    };
+    const completed = randomUUID();
+    stored.jobs[completed] = { id: completed, state: "succeeded" };
+    write(path.join(dir, "jobs", completed, "stages", "00000000.json"), {
+      sequence: 0,
+      status: "completed",
+    });
+    write(file, stored);
+  }
   job.hash = current.data.jobs[p.jobId]!.hash;
   if (!raw)
     write(path.join(jobDir, "worker-identity.json"), {
@@ -443,6 +460,21 @@ test("normal raw RPC successor binds the original owner, payload and broker with
     fs.readFileSync(f.authorization.path, "utf8"),
   );
   assert.equal(authorization.profile.requestKind, "raw-rpc");
+  const stage = authorization.snapshot.files.find((entry: { path: string }) =>
+    entry.path.includes("/stages/"),
+  );
+  assert.ok(stage);
+  const stageBefore = fs.readFileSync(stage.path);
+  write(stage.path, { sequence: 0, status: "tampered" });
+  assert.throws(() =>
+    normal.recordNormalProducerRetirement(
+      f.epochClient,
+      f.requestId,
+      f.authorization,
+      f.ports,
+    ),
+  );
+  fs.writeFileSync(stage.path, stageBefore);
   assert.equal(authorization.snapshot.producers.length, 1);
   assert.equal(
     fs.existsSync(path.join(f.jobDir, "worker-identity.json")),
