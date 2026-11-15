@@ -172,7 +172,7 @@ test("installed consumer checks automatically selected cad-v1 helpers with retai
     (async()=>{
       const certificate=await admission.check(request,artifact),report=certificate.report;
        assert.ok(original.units.length>3&&original.units.length<154);
-       assert.deepEqual(artifact.context.origin.units,pythonArtifactManifest(original).units);
+       assert.deepEqual(artifact.context.origin.units,original.units.map(({id,filename,role,sha256})=>({id,filename,role,sha256})));
        assert.deepEqual(artifact.context.origin.sourceMap,original.sourceMap);
        for(const id of ['core','identity','helpers'])assert.ok(original.units.some(unit=>unit.id===id));
        for(const id of ['cam','optics'])assert.ok(!original.units.some(unit=>unit.id===id));
