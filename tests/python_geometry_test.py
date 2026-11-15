@@ -1,5 +1,6 @@
 """Preservation evidence, not a Fusion/live or physical geometry acceptance."""
 import ast
+from collections import Counter
 import hashlib
 import json
 from pathlib import Path
@@ -10,7 +11,25 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 FAMILIES = ('model', 'sketch', 'sketch_plan', 'curve', 'datum', 'surface', 'shapes', 'feature')
 BASELINE = ROOT / 'tests/fixtures/python-geometry/baseline.json'
-
+STRUCTURAL_SEAMS = json.loads(
+    (BASELINE.parent / 'structural-seams.json').read_text())
+SEAM_FUNCTIONS_BY_FILE = {}
+SEAM_REGISTRATIONS_BY_FILE = {}
+for mapping in STRUCTURAL_SEAMS['mappings']:
+    registrations = mapping.get('registrations', {})
+    if registrations:
+        source = mapping['historicalFile'].removeprefix('runtime/python/fmcad/')
+        current = SEAM_REGISTRATIONS_BY_FILE.setdefault(source, {})
+        for key, handler in registrations.items():
+            if key in current:
+                raise AssertionError(f'Duplicate structural seam registration in fixture: {key}')
+            current[key] = handler
+for source, delegates in STRUCTURAL_SEAMS['delegations'].items():
+    SEAM_FUNCTIONS_BY_FILE.setdefault(source, set()).update(delegates)
+for source, names in STRUCTURAL_SEAMS['additionalExecutionSeams'].items():
+    SEAM_FUNCTIONS_BY_FILE.setdefault(source, set()).update(names)
+# The fixture binds six historical statement hashes to current dispatch and
+# execution roles; those roles are structurally checked before this comparison.
 # These adapter bodies received type-directed boundary/SDK rewrites. Their
 # runtime behavior is checked by the fake-SDK suites (`model_test.py` and
 # `feature_rework_test.py`) and the captured geometry transcript below; keep
@@ -48,12 +67,28 @@ TYPE_DIRECTED_REWRITES = {
 }
 
 
-def statement_hashes(source):
+def _is_mapped_registry_update(node, relative):
+    if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Attribute)
+            and isinstance(node.value.func.value, ast.Name)
+            and node.value.func.value.id == 'CAD_HANDLERS'
+            and node.value.func.attr == 'update'
+            and len(node.value.args) == 1 and isinstance(node.value.args[0], ast.Dict)):
+        return False
+    keys = node.value.args[0].keys
+    mapped_keys = SEAM_REGISTRATIONS_BY_FILE.get(relative, {})
+    return bool(keys) and all(isinstance(key, ast.Constant) and isinstance(key.value, str)
+                              and key.value in mapped_keys for key in keys)
+
+
+def statement_hashes(source, relative=None):
     class TypeAnnotations(ast.NodeTransformer):
         def __init__(self):
             self.function_stack = []
 
         def visit_FunctionDef(self, node):
+            if relative is not None and node.name in SEAM_FUNCTIONS_BY_FILE.get(relative, set()):
+                return None
             # These helpers add precise typing around existing nullable SDK calls;
             # the dedicated fake-SDK transcript still checks their runtime effects.
             if node.name in ('_curve_profile_file', '_curve_offset_constraint', '_curve_offset_dimension'):
@@ -87,19 +122,6 @@ def statement_hashes(source):
         raise ValueError('Vector requires three finite unitless numbers')
     return list(value)
 """).body[0]
-            if node.name == '_shapes_primitive':
-                # The only behavioral addition is a known nonmutating input
-                # rejection. Pin its exact boundary and witness before undoing
-                # the wrapper for historical comparison. shapes_test covers
-                # no effects on rejection and propagation after native mutation.
-                for index, statement in enumerate(node.body):
-                    if isinstance(statement, ast.Try):
-                        digest = hashlib.sha256(ast.dump(
-                            statement, include_attributes=False).encode()).hexdigest()
-                        if digest != '68c4891820c152faa07cc297af18afcbb4a07e4178c46b9bb4b521ca1f90ede1':
-                            raise AssertionError('Primitive preflight rejection boundary changed')
-                        node.body[index:index + 1] = statement.body
-                        break
             node.returns = None
             node.decorator_list = [decorator for decorator in node.decorator_list
                                    if not (isinstance(decorator, ast.Name)
@@ -273,9 +295,15 @@ def statement_hashes(source):
                             and statement.name.startswith(('_GeometryDatum', '_GeometrySurface'))
                             for statement in node.body)):
                 return None
+            if (isinstance(node.test, ast.Name) and node.test.id == '_GeometryFeature_TYPE_CHECKING'
+                    and not node.orelse and node.body
+                    and all(isinstance(statement, ast.ClassDef)
+                            and statement.name.startswith('_Feature') for statement in node.body)):
+                return None
             return self.generic_visit(node)
 
     statements = [normalized for node in ast.parse(source).body
+                  if not _is_mapped_registry_update(node, relative)
                   if (normalized := TypeAnnotations().visit(node)) is not None]
     normalized = []
     for node in statements:
@@ -300,6 +328,195 @@ def statement_hashes(source):
 
 
 class GeometryExtractionTests(unittest.TestCase):
+    def _geometry_source(self, relative):
+        return ROOT / 'runtime/python/fmcad' / relative
+
+    def _function(self, relative, name, source=None):
+        tree = ast.parse(source if source is not None else self._geometry_source(relative).read_text())
+        matches = [node for node in tree.body
+                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name]
+        self.assertEqual(len(matches), 1, f'{relative} must define {name} exactly once')
+        return matches[0]
+
+    def _function_in_source(self, source, name):
+        tree = ast.parse(source)
+        matches = [node for node in tree.body
+                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name]
+        self.assertEqual(len(matches), 1, f'{name} must be defined exactly once')
+        return matches[0]
+
+    def _assert_registry_mappings(self, overrides=None):
+        for relative, expected in SEAM_REGISTRATIONS_BY_FILE.items():
+            source = (overrides or {}).get(relative, self._geometry_source(relative).read_text())
+            tree = ast.parse(source)
+            actual = Counter()
+            for node in tree.body:
+                if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+                        and isinstance(node.value.func, ast.Attribute)
+                        and isinstance(node.value.func.value, ast.Name)
+                        and node.value.func.value.id == 'CAD_HANDLERS'
+                        and node.value.func.attr == 'update' and len(node.value.args) == 1
+                        and isinstance(node.value.args[0], ast.Dict)):
+                    continue
+                for key, value in zip(node.value.args[0].keys, node.value.args[0].values):
+                    if isinstance(key, ast.Constant) and key.value in expected:
+                        target = value.id if isinstance(value, ast.Name) else ast.unparse(value)
+                        actual[(key.value, target)] += 1
+            self.assertEqual(actual, Counter((key, target) for key, target in expected.items()), relative)
+
+    def _assert_delegation(self, relative, name, expected, source=None):
+        function = self._function(relative, name, source)
+        if relative == 'application/geometry_shapes.py' and name in {
+                'shape_box', 'shape_cylinder', 'shape_tube', 'shape_ring', 'shape_cone'}:
+            reserve = ast.parse("if 'name' in data:\n    _shapes_reserve(ctx, [data['name']])").body[0]
+            self.assertEqual(len(function.body), 2, name)
+            self.assertEqual(ast.dump(function.body[0]), ast.dump(reserve), name)
+        else:
+            self.assertEqual(len(function.body), 1, name)
+        statement = function.body[-1]
+        self.assertIsInstance(statement, ast.Return, name)
+        call = statement.value
+        self.assertIsInstance(call, ast.Call, name)
+        self.assertIsInstance(call.func, ast.Name, name)
+        target, *tail = expected
+        self.assertEqual(call.func.id, target, name)
+        self.assertEqual(call.keywords, [], name)
+        actual_args = [(type(arg), getattr(arg, 'id', getattr(arg, 'value', None))) for arg in call.args]
+        expected_args = [(ast.Name, 'ctx'), (ast.Name, 'data')]
+        expected_args.extend((ast.Constant, value) for value in tail)
+        self.assertEqual(actual_args, expected_args, name)
+
+    def _assert_primitive_preflight(self, source):
+        name = STRUCTURAL_SEAMS['primitiveDispatch']['inputFunction']
+        function = self._function_in_source(source, name)
+        tries = [node for node in ast.walk(function) if isinstance(node, ast.Try)]
+        self.assertEqual(len(tries), 1, 'Primitive preflight must contain exactly one Try boundary')
+        self.assertTrue(function.body and function.body[0] is tries[0],
+                        'Primitive input validation must remain inside the preflight Try')
+        digest = hashlib.sha256(ast.dump(tries[0], include_attributes=False).encode()).hexdigest()
+        self.assertEqual(digest, STRUCTURAL_SEAMS['primitiveDispatch']['inputTrySha256'],
+                         'Primitive preflight rejection boundary or witness changed')
+
+    def _assert_primitive_execution_seams(self):
+        source = self._geometry_source('adapters/fusion/geometry_shapes.py').read_text()
+        primitive = STRUCTURAL_SEAMS['primitiveDispatch']
+        self._assert_primitive_preflight(source)
+        self._function_in_source(source, '_shapes_primitive_plane')
+
+        dispatch = self._function_in_source(source, primitive['dispatcher'])
+        self.assertEqual(len(dispatch.body), 1)
+        result = dispatch.body[0]
+        self.assertIsInstance(result, ast.Return)
+        self.assertIsInstance(result.value, ast.Call)
+        self.assertIsInstance(result.value.func, ast.Subscript)
+        table = result.value.func.value
+        self.assertIsInstance(table, ast.Dict)
+        actual_modes = Counter((key.value, value.id) for key, value in zip(table.keys, table.values)
+                               if isinstance(key, ast.Constant) and isinstance(value, ast.Name))
+        self.assertEqual(actual_modes, Counter(primitive['modes'].items()))
+
+        for name, (mode, sizes) in primitive['primitiveWrappers'].items():
+            function = self._function_in_source(source, name)
+            self.assertEqual(len(function.body), 1, name)
+            returned = function.body[0]
+            self.assertIsInstance(returned, ast.Return, name)
+            call = returned.value
+            self.assertIsInstance(call, ast.Call, name)
+            self.assertIsInstance(call.func, ast.Name, name)
+            self.assertEqual(call.func.id, '_shapes_extruded_primitive', name)
+            self.assertEqual([ast.unparse(arg) for arg in call.args],
+                             ['ctx', 'data', repr(mode), repr(tuple(sizes))], name)
+
+        for name in primitive['creationFunctions']:
+            function = self._function_in_source(source, name)
+            self.assertGreaterEqual(len(function.body), 3, name)
+            first = function.body[0]
+            self.assertIsInstance(first, ast.Assign, name)
+            self.assertIsInstance(first.value, ast.Call, name)
+            self.assertIsInstance(first.value.func, ast.Name, name)
+            self.assertEqual(first.value.func.id, primitive['inputFunction'], name)
+            rejection = function.body[1]
+            self.assertIsInstance(rejection, ast.If, name)
+            self.assertIsInstance(rejection.test, ast.Compare, name)
+            self.assertIsInstance(rejection.test.left, ast.Name, name)
+            self.assertEqual(rejection.test.left.id, 'rejection', name)
+            self.assertEqual([type(op) for op in rejection.test.ops], [ast.IsNot], name)
+            self.assertEqual(len(rejection.body), 1, name)
+            self.assertIsInstance(rejection.body[0], ast.Return, name)
+            self.assertIsInstance(function.body[2], ast.Assign, name)
+            plane_call = function.body[2].value
+            self.assertIsInstance(plane_call, ast.Call, name)
+            self.assertIsInstance(plane_call.func, ast.Name, name)
+            self.assertEqual(plane_call.func.id, '_shapes_primitive_plane', name)
+
+    def _assert_extrusion_execution_seam(self):
+        relative = 'adapters/fusion/geometry_model.py'
+        wrapper = self._function(relative, 'model_extrude')
+        self.assertEqual(len(wrapper.body), 1)
+        self.assertIsInstance(wrapper.body[0], ast.Return)
+        self.assertIsInstance(wrapper.body[0].value, ast.Call)
+        self.assertEqual(ast.unparse(wrapper.body[0].value), '_model_extrude(ctx, data)')
+
+        feature = self._function(relative, 'model_feature')
+        expected = ast.parse("if mode == 'extrude':\n    return _model_extrude(ctx, data)").body[0]
+        self.assertEqual(ast.dump(feature.body[0]), ast.dump(expected))
+
+        extrude = self._function(relative, '_model_extrude')
+        self.assertGreaterEqual(len(extrude.body), 3)
+        self.assertIsInstance(extrude.body[0], ast.Expr)
+        self.assertEqual(ast.unparse(extrude.body[0].value.func), '_model_fields')
+        self.assertIsInstance(extrude.body[1], ast.Assign)
+        self.assertEqual(ast.unparse(extrude.body[1].value.func), '_model_extrude_profiles')
+        self.assertIsInstance(extrude.body[2], ast.Assign)
+        self.assertEqual(ast.unparse(extrude.body[2].value.func), '_model_extent_mode')
+
+    def _assert_feature_dispatch_seams(self):
+        for name, target, mode in (('feature_inspect', '_feature_inspect', 'inspect'),
+                                   ('feature_edit', '_feature_edit', 'edit')):
+            function = self._function('application/geometry_feature.py', name)
+            expected_source = (
+                "if not isinstance(data, dict):\n"
+                "    raise TypeError('Operation data must be an object')\n"
+                "payload = _geometry_feature_cast(\"JsonObject\", data)\n"
+                f"if 'schemaVersion' in payload or 'frame' in payload:\n"
+                f"    return {target}(ctx, payload)\n"
+                f"return _assembly_history(ctx, payload, '{mode}')\n")
+            expected = ast.parse(expected_source)
+            actual = ast.Module(body=function.body, type_ignores=[])
+            self.assertEqual(ast.dump(actual), ast.dump(expected), name)
+
+    def _assert_structural_seams(self):
+        baseline = json.loads(BASELINE.read_text())
+        mapped_by_family = {}
+        for mapping in STRUCTURAL_SEAMS['mappings']:
+            family, digest = mapping['family'], mapping['historicalDigest']
+            self.assertEqual(baseline['statements'][family].count(digest), 1,
+                             f"Historical mapping must pin one {family} statement: {digest}")
+            mapped_by_family.setdefault(family, []).append(digest)
+
+        self._assert_registry_mappings()
+        for relative, delegates in STRUCTURAL_SEAMS['delegations'].items():
+            for name, expected in delegates.items():
+                self._assert_delegation(relative, name, expected)
+        for relative, names in STRUCTURAL_SEAMS['additionalExecutionSeams'].items():
+            for name in names:
+                self._function(relative, name)
+        self._assert_primitive_execution_seams()
+        self._assert_extrusion_execution_seam()
+        self._assert_feature_dispatch_seams()
+        return mapped_by_family
+
+    def _family_statement_hashes(self, family, overrides=None):
+        actual = []
+        for layer in ('domain', 'adapters/fusion', 'application'):
+            relative = f'{layer}/geometry_{family}.py'
+            source = (overrides or {}).get(relative, self._geometry_source(relative).read_text())
+            actual.extend(statement_hashes(source, relative))
+        return actual
+
+    def _assert_statement_multiset(self, expected, actual):
+        self.assertEqual(Counter(actual), Counter(expected))
+
     def test_geometry_datum_cast_imports_are_unique_in_flat_namespace(self):
         modules = ('domain/geometry_datum.py', 'adapters/fusion/geometry_datum.py')
         aliases = []
@@ -318,33 +535,122 @@ class GeometryExtractionTests(unittest.TestCase):
         baseline = json.loads(BASELINE.read_text())
         rewrites = json.loads((BASELINE.parent / 'typed-rewrites.json').read_text())
         adjusted = dict(baseline['statements'])
+        mapped = self._assert_structural_seams()
         for family in ('model', 'feature', 'datum', 'shapes'):
             excluded = {digest for values in rewrites[family].values() for digest in values}
             adjusted[family] = [digest for digest in adjusted[family] if digest not in excluded]
+        for family, digests in mapped.items():
+            remaining = list(adjusted[family])
+            for digest in digests:
+                self.assertIn(digest, remaining, f'No historical statement to map: {digest}')
+                remaining.remove(digest)
+            adjusted[family] = remaining
         # This source is intentionally staged to validate nested JSON shapes;
         # fake-SDK output/effect ordering remains covered by model_test.
         adjusted['model'] = [digest for digest in adjusted['model']
                              if digest != 'a80df3ad20aa88a06ab4f8c4906e5ec2fa3b29a7b7450facb91e0449dced026d']
         for family in FAMILIES:
             with self.subTest(family=family):
-                actual = []
-                for layer in ('domain', 'adapters/fusion', 'application'):
-                    actual.extend(statement_hashes((ROOT / f'runtime/python/fmcad/{layer}/geometry_{family}.py').read_text()))
-                self.assertEqual(sorted(actual), sorted(adjusted[family]))
+                actual = self._family_statement_hashes(family)
+                self._assert_statement_multiset(adjusted[family], actual)
+
+    def test_statement_preservation_detects_removal_and_duplication(self):
+        baseline = json.loads(BASELINE.read_text())
+        rewrites = json.loads((BASELINE.parent / 'typed-rewrites.json').read_text())
+        mapped = self._assert_structural_seams()
+        adjusted = dict(baseline['statements'])
+        for family in ('model', 'feature', 'datum', 'shapes'):
+            excluded = {digest for values in rewrites[family].values() for digest in values}
+            adjusted[family] = [digest for digest in adjusted[family] if digest not in excluded]
+        for family, digests in mapped.items():
+            for digest in digests:
+                adjusted[family].remove(digest)
+        adjusted['model'].remove('a80df3ad20aa88a06ab4f8c4906e5ec2fa3b29a7b7450facb91e0449dced026d')
+
+        selected = None
+        for family in FAMILIES:
+            for layer in ('domain', 'adapters/fusion', 'application'):
+                relative = f'{layer}/geometry_{family}.py'
+                source = self._geometry_source(relative).read_text()
+                for node in ast.parse(source).body:
+                    if (not isinstance(node, (ast.FunctionDef, ast.ClassDef)) or node.decorator_list
+                            or node.end_lineno is None):
+                        continue
+                    snippet = ast.get_source_segment(source, node)
+                    hashes = statement_hashes(snippet, relative)
+                    if len(hashes) == 1 and hashes[0] in adjusted[family]:
+                        selected = family, relative, source, node, hashes[0]
+                        break
+                if selected:
+                    break
+            if selected:
+                break
+        self.assertIsNotNone(selected, 'Expected an unchanged source statement for negative controls')
+        family, relative, source, node, digest = selected
+        lines = source.splitlines(keepends=True)
+        start, end = node.lineno - 1, node.end_lineno
+        removed = ''.join(lines[:start] + lines[end:])
+        duplicated = source + '\n\n' + ast.get_source_segment(source, node) + '\n'
+        for label, mutated in (('removed', removed), ('duplicated', duplicated)):
+            with self.subTest(mutation=label, digest=digest):
+                actual = self._family_statement_hashes(family, {relative: mutated})
+                with self.assertRaises(AssertionError):
+                    self._assert_statement_multiset(adjusted[family], actual)
 
     def test_primitive_rejection_normalization_rejects_boundary_or_witness_drift(self):
         source = (ROOT / 'runtime/python/fmcad/adapters/fusion/geometry_shapes.py').read_text()
+        moved_tree = ast.parse(source)
+        input_function = next(node for node in moved_tree.body
+                              if isinstance(node, ast.FunctionDef)
+                              and node.name == '_shapes_primitive_inputs')
+        plane_function = next(node for node in moved_tree.body
+                              if isinstance(node, ast.FunctionDef)
+                              and node.name == '_shapes_primitive_plane')
+        moved_try = input_function.body.pop(0)
+        plane_function.body.insert(0, moved_try)
+        moved_try_source = ast.unparse(moved_tree)
         mutations = (
             source.replace("'mutationStatus': 'not_started'", "'mutationStatus': 'unknown'", 1),
             source.replace('    except ValueError as exc:', '    except Exception as exc:', 1),
             source.replace("        _model_fields(data, ('name',) + sizes, ('plane',))",
                            "        ctx.call('model.extrude', {})\n"
                            "        _model_fields(data, ('name',) + sizes, ('plane',))", 1),
+            moved_try_source,
         )
         for mutated in mutations:
             self.assertNotEqual(mutated, source)
-            with self.assertRaisesRegex(AssertionError, 'Primitive preflight rejection boundary changed'):
-                statement_hashes(mutated)
+            with self.assertRaises(AssertionError):
+                self._assert_primitive_preflight(mutated)
+
+    def test_structural_dispatch_guards_reject_registration_and_wrapper_drift(self):
+        relative = 'application/geometry_model.py'
+        source = self._geometry_source(relative).read_text()
+        changed_target = source.replace("'model.revolve': model_revolve",
+                                        "'model.revolve': model_sweep", 1)
+        removed_registration = source.replace("'model.revolve': model_revolve, ", '', 1)
+        duplicated_registration = source.replace(
+            "'model.revolve': model_revolve,",
+            "'model.revolve': model_revolve, 'model.revolve': model_revolve,", 1)
+        for mutated in (changed_target, removed_registration, duplicated_registration):
+            with self.assertRaises(AssertionError):
+                self._assert_registry_mappings({relative: mutated})
+
+        wrong_mode = source.replace("return model_feature(ctx, data, 'revolve')",
+                                    "return model_feature(ctx, data, 'sweep')", 1)
+        with self.assertRaises(AssertionError):
+            self._assert_delegation(relative, 'model_revolve', ['model_feature', 'revolve'], wrong_mode)
+
+        feature_relative = 'adapters/fusion/geometry_feature.py'
+        feature_source = self._geometry_source(feature_relative).read_text()
+        feature_tree = ast.parse(feature_source)
+        checking = next(node for node in feature_tree.body
+                        if isinstance(node, ast.If) and isinstance(node.test, ast.Name)
+                        and node.test.id == '_GeometryFeature_TYPE_CHECKING')
+        checking.body.insert(0, ast.Expr(ast.Call(func=ast.Name(id='runtime_effect', ctx=ast.Load()),
+                                                  args=[], keywords=[])))
+        injected_effect = ast.unparse(feature_tree)
+        self.assertNotEqual(Counter(statement_hashes(feature_source, feature_relative)),
+                            Counter(statement_hashes(injected_effect, feature_relative)))
 
     def test_domains_import_without_sdk_and_keep_native_entities_out(self):
         script = '''import builtins, importlib.util, sys
