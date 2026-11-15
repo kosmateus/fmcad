@@ -44,7 +44,7 @@ const { pythonArtifactManifest } = load(
 };
 const reference = (file: string) => lineage.reference(file);
 
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, native = false) {
   const base = fs.mkdtempSync(
     path.join(os.tmpdir(), "sdk1-worker-retirement-"),
   );
@@ -54,6 +54,17 @@ async function fixture(t: TestContext) {
       repo: string,
     ) => DeadEpochFixture
   )(base, repo);
+  if (native) {
+    const source = "923c339d3b8c85ca74e0c22511128958a97e7476";
+    f.authority.sourceCommit = source;
+    f.approval.sourceCommit = source;
+    const q = JSON.parse(
+      fs.readFileSync(f.approval.qualification.path, "utf8"),
+    );
+    q.sourceCommit = source;
+    api.durable(f.approval.qualification.path, q);
+    f.approval.qualification = reference(f.approval.qualification.path);
+  }
   fs.rmSync(path.join(f.audit, "isolated-scratch-qualification"), {
     recursive: true,
   });
@@ -186,9 +197,26 @@ async function fixture(t: TestContext) {
     observationWireFile = path.join(observation, "wire.json"),
     observationResultFile = path.join(observation, "result.json"),
     rpcId = randomUUID();
+  const nativeReader = native
+    ? (
+        load(
+          "../src/queue-atomic-recovery-audit",
+        ) as typeof import("../src/queue-atomic-recovery-audit")
+      ).prepareRecoveryAudit(
+        runtime,
+        f.auditIdentity,
+        observationIntent.binding,
+      )
+    : null;
+  if (nativeReader) {
+    observationIntent.sourceSha256 = nativeReader.sourceSha256;
+    observationIntent.sourceArtifactHash = nativeReader.artifact.artifactHash;
+  }
   api.durable(observationIntentFile, observationIntent);
   const originalSource = "print('synthetic read-only observation')",
-    code = originalSource + "\n# synthetic observation wrapper";
+    code =
+      nativeReader?.artifact.script ??
+      originalSource + "\n# synthetic observation wrapper";
   const binding = {
       jobId: key.jobId,
       rpcId,
@@ -196,7 +224,13 @@ async function fixture(t: TestContext) {
       buildHash: f.authority.buildHash,
       sourceHash: api.hash(code),
       purpose: "atomic-recovery-audit-v1",
-      auditBindingHash: "7".repeat(64),
+      auditBindingHash: native
+        ? (
+            load("../src/dist/core/application/cad/json") as {
+              hash(v: unknown): string;
+            }
+          ).hash(observationIntent.binding)
+        : "7".repeat(64),
       pythonOriginHash: observationIntent.sourceArtifactHash,
       auditExpectedProcess: expectedProcess,
     },
@@ -254,8 +288,13 @@ async function fixture(t: TestContext) {
       id: "fmcad:" + rpcId,
       method: "tools/call",
       params: {
-        name: "execute_python",
-        arguments: { code, persistent: false },
+        name: native ? "fusion_mcp_execute" : "execute_python",
+        arguments: native
+          ? {
+              featureType: "script",
+              object: { script: prepared.script, readOnly: true },
+            }
+          : { code, persistent: false },
       },
     },
     artifact,
@@ -265,12 +304,61 @@ async function fixture(t: TestContext) {
     kind: "dead-epoch-current-observation",
     ...key,
     status: "failed",
-    code: "ENOENT",
+    code: native ? "AUDIT_OUTPUT_INVALID" : "ENOENT",
     sdkRequestsSent: 1,
     nativeOutcome: "unknown",
     modelValidation: "not_performed",
     rollbackVerification: "not_performed",
   });
+  if (native) {
+    const summary = {
+      version: 1,
+      purpose: "atomic-recovery-audit-v1",
+      profile: "atomic-recovery-counts-v1",
+      requestIdentity: f.auditIdentity,
+      nativeOutcome: "unknown",
+      modelValidation: "not_performed",
+      rollbackVerification: "not_performed",
+      modulePresent: false,
+      ui: { activeCommand: "SelectCommand", idle: true },
+      commandDefinition: { status: "absent" },
+      document: { status: "absent", matches: 0 },
+      snapshot: null,
+      fingerprint: null,
+    };
+    api.durable(path.join(observation, "received-response.json"), {
+      version: 1,
+      binding,
+      wireId: "fmcad:" + rpcId,
+      callerId: 1,
+      status: 200,
+      raw: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "fmcad:" + rpcId,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: "FMCAD_RESULT " + JSON.stringify(summary) + "\n",
+              }),
+            },
+          ],
+        },
+      }),
+    });
+    api.durable(start.receipt, {
+      ...binding,
+      terminal: true,
+      outcome: "succeeded",
+      instance: {
+        ...expectedProcess,
+        version: "synthetic-fusion-version",
+        activeCommand: "SelectCommand",
+      },
+    });
+  }
 
   const bindings = {
       authority: f.authorityEntry,
@@ -366,6 +454,9 @@ async function fixture(t: TestContext) {
       observationStartFile,
       observationWireFile,
       observationResultFile,
+      ...(native
+        ? [path.join(observation, "received-response.json"), start.receipt]
+        : []),
     ],
   };
 }
@@ -383,6 +474,106 @@ function absentSdkPorts() {
       };
     },
   };
+}
+
+test("SDK1 retirement accepts the six-file retained native audit only after exact SDK death", async (t) => {
+  const f = await fixture(t, true),
+    protectedFiles = [
+      ...f.observationFiles,
+      path.join(f.audit, "authority.json"),
+      f.deathProofFile,
+    ],
+    before = protectedFiles.map((file) => fs.readFileSync(file));
+  const preview = await retireSdk1MetadataWorker(
+    f.client,
+    f.approvalFile,
+    f.deathProofFile,
+    false,
+    absentSdkPorts(),
+  );
+  assert.equal(preview.sdkRequestsSent, 1);
+  const exited = once(f.worker, "exit");
+  const retired = await retireSdk1MetadataWorker(
+    f.client,
+    f.approvalFile,
+    f.deathProofFile,
+    true,
+    absentSdkPorts(),
+  );
+  const [, signal] = await exited;
+  assert.equal(signal, "SIGKILL");
+  assert.equal(retired.sdkRequestsSent, 1);
+  assert.equal(api.priorProcessAlive(f.owner), false);
+  for (const [i, file] of protectedFiles.entries())
+    assert.deepEqual(fs.readFileSync(file), before[i]);
+});
+
+for (const changed of [
+  "missing-remote",
+  "raw-tamper",
+  "foreign-remote",
+  "wrong-local-result",
+  "missing-death",
+  "live-sdk",
+  "active-dispatch",
+  "subsequent-producer",
+]) {
+  test("native SDK1 after-death retirement refuses " + changed, async (t) => {
+    const f = await fixture(t, true),
+      observation = path.join(f.audit, "dead-epoch-current-observation"),
+      start = JSON.parse(
+        fs.readFileSync(path.join(observation, "start.json"), "utf8"),
+      ),
+      remoteFile = String(start.receipt),
+      rawFile = path.join(observation, "received-response.json");
+    const ports: Partial<
+      import("../src/composition/queue-epoch-successor-types").Sdk1MetadataWorkerRetirementPorts
+    > = absentSdkPorts();
+    if (changed === "missing-remote") fs.unlinkSync(remoteFile);
+    if (changed === "raw-tamper") {
+      const raw = JSON.parse(fs.readFileSync(rawFile, "utf8"));
+      raw.wireId = "foreign";
+      api.durable(rawFile, raw);
+    }
+    if (changed === "foreign-remote") {
+      const remote = JSON.parse(fs.readFileSync(remoteFile, "utf8"));
+      remote.instance.birth = "reused-sdk";
+      api.durable(remoteFile, remote);
+    }
+    if (changed === "wrong-local-result") {
+      const file = path.join(observation, "result.json"),
+        result = JSON.parse(fs.readFileSync(file, "utf8"));
+      result.code = "OTHER_ERROR";
+      api.durable(file, result);
+    }
+    if (changed === "missing-death") fs.unlinkSync(f.deathProofFile);
+    if (changed === "live-sdk")
+      ports.deathQuery = (expected) => ({
+        state: "present",
+        pid: expected.pid,
+        birth: expected.birth,
+        observedAtUtc: new Date().toISOString(),
+      });
+    if (changed === "active-dispatch") f.status.control.activeOperations = 1;
+    if (changed === "subsequent-producer")
+      fs.mkdirSync(path.join(f.audit, "isolated-scratch-qualification"));
+    await assert.rejects(
+      retireSdk1MetadataWorker(
+        f.client,
+        f.approvalFile,
+        f.deathProofFile,
+        true,
+        ports,
+      ),
+    );
+    assert.equal(api.priorProcessAlive(f.owner), true);
+    assert.equal(
+      fs.existsSync(
+        path.join(f.audit, "sdk1-worker-retirement", "effect-start.json"),
+      ),
+      false,
+    );
+  });
 }
 
 test("SDK1 retirement is append-only and targets only its exact quiescent metadata worker", async (t) => {

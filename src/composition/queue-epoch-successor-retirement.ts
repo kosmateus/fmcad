@@ -195,9 +195,14 @@ function defaultCertify(
   sourceCommit: string,
   buildHash: string,
 ) {
-  if (sourceCommit !== sdk1SourceCommit || buildHash !== sdk1BuildHash)
+  const pinned =
+    (sourceCommit === sdk1SourceCommit && buildHash === sdk1BuildHash) ||
+    (sourceCommit === "923c339d3b8c85ca74e0c22511128958a97e7476" &&
+      buildHash ===
+        "63a7c521b4beb0808afc12815fa3a0ff3ec6dcbd5528bb5557fe284ad5872e14");
+  if (!pinned)
     fail("Only the pinned qualified SDK1 metadata-worker runtime is supported");
-  if (api.buildHash(runtime) !== sdk1BuildHash)
+  if (api.buildHash(runtime) !== buildHash)
     fail("Pinned SDK1 runtime bytes changed");
 }
 export function inspectMetadataWorkerProcess(
@@ -468,7 +473,22 @@ function verifySdk1Attempt(
 
   const observationDir = path.join(audit, "dead-epoch-current-observation");
   if (
-    !same(fs.readdirSync(observationDir).sort(), [
+    fs.realpathSync(observationDir) !== observationDir ||
+    !fs.lstatSync(observationDir).isDirectory()
+  )
+    fail("Canonical original SDK1 observation directory required");
+  const observationNames = fs.readdirSync(observationDir).sort(),
+    nativeObservation = observationNames.includes("received-response.json");
+  if (
+    authority["sourceCommit"] === "923c339d3b8c85ca74e0c22511128958a97e7476" &&
+    !nativeObservation
+  )
+    fail(
+      "The pinned 923c retirement extension requires the original six-file retained native observation",
+    );
+  if (
+    !nativeObservation &&
+    !same(observationNames, [
       "intent.json",
       "result.json",
       "start.json",
@@ -494,8 +514,12 @@ function verifySdk1Attempt(
     artifact = object(wire["artifact"]),
     artifactContext = object(artifact["context"]),
     artifactOrigin = object(artifactContext["origin"]),
-    artifactOriginContext = object(artifactOrigin["context"]),
-    artifactOriginRequest = object(artifactOrigin["request"]),
+    artifactOriginContext = nativeObservation
+      ? {}
+      : object(artifactOrigin["context"]),
+    artifactOriginRequest = nativeObservation
+      ? {}
+      : object(artifactOrigin["request"]),
     result = read(observationResultFile),
     rpcId = text(startBinding["rpcId"]),
     key = {
@@ -545,104 +569,175 @@ function verifySdk1Attempt(
       );
     })();
   if (
-    observationIntent["version"] !== 1 ||
-    !same(observationIntent["key"], key) ||
-    !same(observationIntent["binding"], {
-      purpose: "atomic-recovery-audit-v1",
-      clientId,
-      expectedProcess,
-      successorAuthorityHash: authorityRef.sha256,
-    }) ||
-    !sha(observationIntent["sourceSha256"]) ||
-    !sha(observationIntent["sourceArtifactHash"]) ||
-    startBinding["jobId"] !== key.jobId ||
-    !rpcId ||
-    !sha(startBinding["requestHash"]) ||
-    startBinding["buildHash"] !== authority["buildHash"] ||
-    !sha(startBinding["sourceHash"]) ||
-    startBinding["purpose"] !== "atomic-recovery-audit-v1" ||
-    !sha(startBinding["auditBindingHash"]) ||
-    startBinding["pythonOriginHash"] !==
-      observationIntent["sourceArtifactHash"] ||
-    !same(startBinding["auditExpectedProcess"], expectedProcess) ||
-    !same(start["instance"], expectedProcess) ||
-    start["receipt"] !==
-      path.join(observationDir, "remote-" + rpcId + ".json") ||
-    fs.existsSync(text(start["receipt"])) ||
-    pythonCheck["status"] !== "passed" ||
-    !sha(provenance["artifactHash"]) ||
-    !sha(provenance["wireHash"]) ||
-    start["originArtifactHash"] !== observationIntent["sourceArtifactHash"] ||
-    !recordKeys(outgoing, ["jsonrpc", "id", "method", "params"]) ||
-    outgoing["jsonrpc"] !== "2.0" ||
-    outgoing["id"] !== "fmcad:" + rpcId ||
-    outgoing["method"] !== "tools/call" ||
-    !recordKeys(params, ["name", "arguments"]) ||
-    params["name"] !== "execute_python" ||
-    !recordKeys(args, ["code", "persistent"]) ||
-    typeof args["code"] !== "string" ||
-    !args["code"] ||
-    args["persistent"] !== false ||
-    !recordKeys(artifact, [
-      "version",
-      "runtimeVersion",
-      "units",
-      "context",
-      "request",
-      "sourceMap",
-      "sha256",
-      "artifactHash",
-    ]) ||
-    artifact["artifactHash"] !== provenance["artifactHash"] ||
-    artifact["sha256"] !== provenance["wireHash"] ||
-    !same(artifact["request"], startBinding) ||
-    !Array.isArray(artifactContext["entrypoints"]) ||
-    artifactOrigin["artifactHash"] !==
-      observationIntent["sourceArtifactHash"] ||
-    !originSegmentBound ||
-    !same(artifactOriginContext, {
-      kind: "atomic-recovery-audit-v1",
-      purpose: "atomic-recovery-audit-v1",
-      clientId,
-      expectedProcess,
-      successorAuthorityHash: authorityRef.sha256,
-    }) ||
-    !same(artifactOriginRequest["identity"], observationIntent["identity"]) ||
-    !recordKeys(result, [
-      "kind",
-      "jobId",
-      "observationJobId",
-      "requestId",
-      "clientId",
-      "status",
-      "code",
-      "sdkRequestsSent",
-      "nativeOutcome",
-      "modelValidation",
-      "rollbackVerification",
-    ]) ||
-    result["kind"] !== "dead-epoch-current-observation" ||
-    !same(result["jobId"], key.jobId) ||
-    !same(result["observationJobId"], key.observationJobId) ||
-    result["requestId"] !== key.requestId ||
-    result["clientId"] !== clientId ||
-    result["status"] !== "failed" ||
-    typeof result["code"] !== "string" ||
-    !result["code"] ||
-    result["sdkRequestsSent"] !== 1 ||
-    result["nativeOutcome"] !== "unknown" ||
-    result["modelValidation"] !== "not_performed" ||
-    result["rollbackVerification"] !== "not_performed"
+    !nativeObservation &&
+    (observationIntent["version"] !== 1 ||
+      !same(observationIntent["key"], key) ||
+      !same(observationIntent["binding"], {
+        purpose: "atomic-recovery-audit-v1",
+        clientId,
+        expectedProcess,
+        successorAuthorityHash: authorityRef.sha256,
+      }) ||
+      !sha(observationIntent["sourceSha256"]) ||
+      !sha(observationIntent["sourceArtifactHash"]) ||
+      startBinding["jobId"] !== key.jobId ||
+      !rpcId ||
+      !sha(startBinding["requestHash"]) ||
+      startBinding["buildHash"] !== authority["buildHash"] ||
+      !sha(startBinding["sourceHash"]) ||
+      startBinding["purpose"] !== "atomic-recovery-audit-v1" ||
+      !sha(startBinding["auditBindingHash"]) ||
+      startBinding["pythonOriginHash"] !==
+        observationIntent["sourceArtifactHash"] ||
+      !same(startBinding["auditExpectedProcess"], expectedProcess) ||
+      !same(start["instance"], expectedProcess) ||
+      start["receipt"] !==
+        path.join(observationDir, "remote-" + rpcId + ".json") ||
+      fs.existsSync(text(start["receipt"])) ||
+      pythonCheck["status"] !== "passed" ||
+      !sha(provenance["artifactHash"]) ||
+      !sha(provenance["wireHash"]) ||
+      start["originArtifactHash"] !== observationIntent["sourceArtifactHash"] ||
+      !recordKeys(outgoing, ["jsonrpc", "id", "method", "params"]) ||
+      outgoing["jsonrpc"] !== "2.0" ||
+      outgoing["id"] !== "fmcad:" + rpcId ||
+      outgoing["method"] !== "tools/call" ||
+      !recordKeys(params, ["name", "arguments"]) ||
+      params["name"] !== "execute_python" ||
+      !recordKeys(args, ["code", "persistent"]) ||
+      typeof args["code"] !== "string" ||
+      !args["code"] ||
+      args["persistent"] !== false ||
+      !recordKeys(artifact, [
+        "version",
+        "runtimeVersion",
+        "units",
+        "context",
+        "request",
+        "sourceMap",
+        "sha256",
+        "artifactHash",
+      ]) ||
+      artifact["artifactHash"] !== provenance["artifactHash"] ||
+      artifact["sha256"] !== provenance["wireHash"] ||
+      !same(artifact["request"], startBinding) ||
+      !Array.isArray(artifactContext["entrypoints"]) ||
+      artifactOrigin["artifactHash"] !==
+        observationIntent["sourceArtifactHash"] ||
+      !originSegmentBound ||
+      !same(artifactOriginContext, {
+        kind: "atomic-recovery-audit-v1",
+        purpose: "atomic-recovery-audit-v1",
+        clientId,
+        expectedProcess,
+        successorAuthorityHash: authorityRef.sha256,
+      }) ||
+      !same(artifactOriginRequest["identity"], observationIntent["identity"]) ||
+      !recordKeys(result, [
+        "kind",
+        "jobId",
+        "observationJobId",
+        "requestId",
+        "clientId",
+        "status",
+        "code",
+        "sdkRequestsSent",
+        "nativeOutcome",
+        "modelValidation",
+        "rollbackVerification",
+      ]) ||
+      result["kind"] !== "dead-epoch-current-observation" ||
+      !same(result["jobId"], key.jobId) ||
+      !same(result["observationJobId"], key.observationJobId) ||
+      result["requestId"] !== key.requestId ||
+      result["clientId"] !== clientId ||
+      result["status"] !== "failed" ||
+      typeof result["code"] !== "string" ||
+      !result["code"] ||
+      result["sdkRequestsSent"] !== 1 ||
+      result["nativeOutcome"] !== "unknown" ||
+      result["modelValidation"] !== "not_performed" ||
+      result["rollbackVerification"] !== "not_performed")
   )
     fail(
       "Exact source/request-bound historical execute_python SDK1 unknown attempt required",
     );
-  try {
-    bindPythonArtifactManifest(args["code"] as string, artifact);
-  } catch {
-    fail(
-      "Historical execute_python source does not match its complete artifact manifest",
+  if (!nativeObservation)
+    try {
+      bindPythonArtifactManifest(args["code"] as string, artifact);
+    } catch {
+      fail(
+        "Historical execute_python source does not match its complete artifact manifest",
+      );
+    }
+
+  let retainedRefs: Reference[] = [];
+  if (nativeObservation) {
+    if (
+      authority["sourceCommit"] !== "923c339d3b8c85ca74e0c22511128958a97e7476"
+    )
+      fail(
+        "Retained six-file SDK1 retirement is restricted to the exact 923c source",
+      );
+    if (
+      !same(
+        observationNames,
+        [
+          "intent.json",
+          "result.json",
+          "start.json",
+          "wire.json",
+          "received-response.json",
+          "remote-" + rpcId + ".json",
+        ].sort(),
+      )
+    )
+      fail(
+        "Exact six-file retained native observation required after SDK death",
+      );
+    const retained = (
+      load(
+        "./dist/node-adapters/execution/recovery-audit",
+      ) as typeof import("../../packages/node-adapters/src/execution/recovery-audit")
+    ).verifyRetainedAuditResponse({
+      directory: observationDir,
+      key: key as Record<string, string>,
+      identity: read(
+        path.join(
+          path.dirname(
+            text(object(predecessorPointer["qualificationReceipt"])["path"]),
+          ),
+          "intent.json",
+        ),
+      )["identity"],
+      binding: {
+        purpose: "atomic-recovery-audit-v1",
+        clientId,
+        expectedProcess,
+        successorAuthorityHash: authorityRef.sha256,
+      },
+      instance: expectedProcess as unknown as Process,
+      buildHash: text(authority["buildHash"]),
+    });
+    const reader = (
+      createRequire(path.join(runtime, "src/queue-atomic-recovery-audit.js"))(
+        "./queue-atomic-recovery-audit",
+      ) as typeof import("../queue-atomic-recovery-audit")
+    ).prepareRecoveryAudit(
+      runtime,
+      observationIntent["identity"],
+      object(observationIntent["binding"]),
     );
+    if (
+      observationIntent["sourceSha256"] !== reader.sourceSha256 ||
+      observationIntent["sourceArtifactHash"] !==
+        reader.artifact.artifactHash ||
+      startBinding["sourceHash"] !== reader.artifact.sha256
+    )
+      fail(
+        "Retained native observation differs from the original source-bound audit builder",
+      );
+    retainedRefs = Object.values(retained.files);
   }
 
   const processDeathProofPath = fs.realpathSync(sdkProcessDeathProofFile),
@@ -730,6 +825,7 @@ function verifySdk1Attempt(
       ref(metadataFile),
       ref(lifecycleFile),
       ...Object.values(observation.bindings),
+      ...retainedRefs,
       processDeathProof,
       ref(path.join(runtime, "src/queue-epoch-successor-worker.js")),
     ];
@@ -928,6 +1024,16 @@ export async function retireSdk1MetadataWorker(
     text(attempt.authority["sourceCommit"]),
     text(attempt.authority["buildHash"]),
   );
+  if (
+    ports.certify === defaultCertify &&
+    attempt.authority["sourceCommit"] ===
+      "923c339d3b8c85ca74e0c22511128958a97e7476" &&
+    attempt.authority["configHash"] !==
+      "fb8fba61d742d82c5cea76df8c8e7e235dd2bb09744685835aa4622f88dbd045"
+  )
+    fail(
+      "Only the pinned 923c metadata configuration may use retained native SDK1 retirement",
+    );
   const proofAfter = () => verifyFreshAbsence(ports, expectedProcess);
   proofAfter();
   if (existingAfter) return completion(attempt, ports);

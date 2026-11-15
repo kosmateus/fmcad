@@ -104,20 +104,19 @@ interface FreezeInput {
   auditInput: RetainedAuditInput;
 }
 
-/** Submitted journals alone cannot close the 923c unownedPost boundary. A
- * production cut requires separate source-bound coverage for every such route;
- * the isolated SDK-free test profile is not a production qualification. */
+/** Submitted journals alone cannot close the 923c unownedPost boundary or its
+ * writer-path symlink gap. A production cut needs both complete route coverage
+ * and canonical producer-component identity with a post-freeze recheck. The
+ * isolated SDK-free test profile is not a production qualification. */
 export function inspectRetainedDispatchCut(
   input: FreezeInput,
   testProfile?: { sourceCommit: string; buildHash: string; configHash: string },
 ): DispatchCut {
-  const profile = testProfile ?? {
-    sourceCommit: "923c339d3b8c85ca74e0c22511128958a97e7476",
-    buildHash:
-      "63a7c521b4beb0808afc12815fa3a0ff3ec6dcbd5528bb5557fe284ad5872e14",
-    configHash:
-      "fb8fba61d742d82c5cea76df8c8e7e235dd2bb09744685835aa4622f88dbd045",
-  };
+  if (!testProfile)
+    fail(
+      "Whole-source SDK closure is unproven: 923c unownedPost has no owned RPC journal, and writer paths do not prove canonical identity of all producer directory components. No freeze, retirement or handoff is permitted from submitted-record inventory or fixed-root lstat observations alone",
+    );
+  const profile = testProfile;
   if (
     input.sourceCommit !== profile.sourceCommit ||
     input.buildHash !== profile.buildHash ||
@@ -126,10 +125,6 @@ export function inspectRetainedDispatchCut(
   )
     fail(
       "No source-bound durable-before-send producer profile for this metadata runtime",
-    );
-  if (!testProfile)
-    fail(
-      "Whole-source SDK closure is unproven: 923c unownedPost can send without an owned RPC journal. No freeze, retirement or handoff is permitted from submitted-record inventory alone",
     );
   return (
     load(
