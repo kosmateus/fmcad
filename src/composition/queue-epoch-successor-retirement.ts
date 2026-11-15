@@ -175,7 +175,7 @@ function verifyAbsentSdk(
     );
   return observed;
 }
-function defaultDeathQuery(expected: Process): Sdk1SdkProcessObservation {
+export function querySdkProcess(expected: Process): Sdk1SdkProcessObservation {
   if (!Number.isSafeInteger(expected.pid) || expected.pid <= 0)
     fail("Exact old SDK PID required for a fresh OS absence query");
   const script = `$ErrorActionPreference="Stop"; $target=${expected.pid}; try { $p=Get-Process -Id $target -ErrorAction Stop; [pscustomobject]@{state="present";pid=$p.Id;birth=$p.StartTime.ToFileTimeUtc().ToString();observedAtUtc=[DateTime]::UtcNow.ToString("o")}|ConvertTo-Json -Compress } catch { if ($_.FullyQualifiedErrorId -eq "${exactSdkProcessAbsentErrorId}") { [pscustomobject]@{state="absent";pid=$target;errorId=$_.FullyQualifiedErrorId;observedAtUtc=[DateTime]::UtcNow.ToString("o")}|ConvertTo-Json -Compress } else { throw } }`;
@@ -273,7 +273,7 @@ export function inspectMetadataWorkerProcess(
 }
 const defaultPorts: Sdk1MetadataWorkerRetirementPorts = {
   certify: defaultCertify,
-  deathQuery: defaultDeathQuery,
+  deathQuery: querySdkProcess,
   process: inspectMetadataWorkerProcess,
 };
 

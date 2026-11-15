@@ -17,9 +17,11 @@ import type {
   CurrentInstance,
   Process,
 } from "./queue-epoch-successor-types";
+import type { NormalCurrentStoreApproval } from "./queue-normal-cold-successor";
 const load = createRequire(
   path.join(__dirname, "../../queue-epoch-successor-control.js"),
 );
+const { normalColdProfile, normalCurrentTarget, prepareNormalCurrentFacts, parseNormalCurrentFacts, validateNormalCurrentFacts } = load("./dist/composition/queue-normal-cold-successor") as typeof import("./queue-normal-cold-successor");
 const { readJson, idle } = load("./queue-instance") as {
   readJson(file: string, max: number): unknown;
   idle(instance: unknown): boolean;
@@ -70,16 +72,18 @@ export function createSuccessorControl(p: SuccessorControlPorts) {
   const a = checked.authority,
     audit = checked.audit,
     predecessor = checked.pointer;
-  const oldIntent = read<{ identity: AuditIdentity }>(
+  const normal = a["normalCurrentStore"] as NormalCurrentStoreApproval | undefined;
+  const normalTarget = normal ? normalCurrentTarget(normal) : null;
+  const oldIntent = normal ? null : read<{ identity: AuditIdentity }>(
     path.join(
       path.dirname(predecessor.qualificationReceipt.path),
       "intent.json",
     ),
   );
-  const identity = oldIntent.identity;
+  const identity = normalTarget ? { kind: normalColdProfile.kind, resolvedIdentity: { creationId: normalTarget.creationId, name: normalTarget.documentName } } : oldIntent!.identity;
   if (
     !identity?.resolvedIdentity?.creationId ||
-    !/^fmcad_atomic_[a-f0-9]{32}$/.test(identity.commandId || "")
+    (!normal && !("commandId" in identity && /^fmcad_atomic_[a-f0-9]{32}$/.test(identity.commandId || "")))
   )
     fail(
       "EPOCH_SUCCESSOR_IDENTITY_UNAVAILABLE",
@@ -108,8 +112,8 @@ export function createSuccessorControl(p: SuccessorControlPorts) {
     if (
       clientId !== a.clientId ||
       p.clients()[clientId] !== a.ownerTokenHash ||
-      target !== predecessor.quarantinedJobIds[0] ||
-      observer !== predecessor.quarantinedJobIds[1]
+      target !== (normalTarget ? normalTarget.jobId : predecessor.quarantinedJobIds[0]) ||
+      observer !== (normalTarget ? normalTarget.rpcId : predecessor.quarantinedJobIds[1])
     )
       fail(
         "NOT_OWNER",
@@ -143,6 +147,7 @@ export function createSuccessorControl(p: SuccessorControlPorts) {
     return value;
   }
   function safeSummary(result: Record<string, unknown>) {
+    if (normal) return validateNormalCurrentFacts(result["summary"] as Record<string, unknown>, identity);
     const summary = auditSummary(
       {
         result: {
@@ -231,6 +236,7 @@ export function createSuccessorControl(p: SuccessorControlPorts) {
     kind: observationKind,
     jobDirectory: () => audit,
     sendScript: p.sendAuditScript,
+    ...(normal ? { prepareReader: prepareNormalCurrentFacts, parseSummary: parseNormalCurrentFacts } : {}),
     async inspect(message, clientId) {
       if (message.requestId !== a.requestId + ":observe")
         fail(
@@ -243,10 +249,11 @@ export function createSuccessorControl(p: SuccessorControlPorts) {
         identity,
         instance: a.expectedProcess,
         binding: {
-          purpose: "atomic-recovery-audit-v1",
+          purpose: normal ? "normal-currentstore-current-facts-v1" : "atomic-recovery-audit-v1",
           clientId,
           expectedProcess: a.expectedProcess,
           successorAuthorityHash: p.authority.sha256,
+          ...(normal ? { normalCurrentStore: normal } : {}),
         },
       };
     },
@@ -307,6 +314,7 @@ export function createSuccessorControl(p: SuccessorControlPorts) {
       authority: p.authority,
       sourceCommit: a.sourceCommit,
       forbiddenIds: priorDocuments,
+      ...(normal ? { quarantinedJobIds: predecessor.quarantinedJobIds } : {}),
       matches(epoch: ScratchParameters["state"]["epoch"]) {
         return same(epoch, predecessor);
       },
@@ -331,10 +339,10 @@ export function createSuccessorControl(p: SuccessorControlPorts) {
           identity,
           instance: scope.currentInstance,
           binding: {
-            purpose: "atomic-recovery-audit-v1",
+            purpose: normal ? "normal-currentstore-current-facts-v1" : "atomic-recovery-audit-v1",
             clientId: a.clientId,
-            targetJobId: predecessor.quarantinedJobIds[0],
-            observationJobId: predecessor.quarantinedJobIds[1],
+            targetJobId: normalTarget ? normalTarget.jobId : predecessor.quarantinedJobIds[0],
+            observationJobId: normalTarget ? normalTarget.rpcId : predecessor.quarantinedJobIds[1],
             control: message["control"],
             currentInstance: scope.currentInstance,
             historicalInstance: predecessor.originalInstance,

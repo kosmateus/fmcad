@@ -18,6 +18,11 @@ export interface SdkProcessDeathBindings {
   observationWire: Reference;
   observationResult: Reference;
 }
+export interface NormalProcessDeathBindings {
+  jobAuthorization: Reference;
+  producerRetirement: Reference;
+  originalRpc: Reference;
+}
 export interface SdkProcessDeathProof {
   version: 1;
   kind: "sdk-process-death-proof-v1";
@@ -43,7 +48,7 @@ export interface SdkProcessDeathProof {
     observedAtUtc: string;
     errorId: string;
   };
-  bindings: SdkProcessDeathBindings;
+  bindings: SdkProcessDeathBindings | NormalProcessDeathBindings;
 }
 export interface Owner extends Process {
   nonce: string;
@@ -72,9 +77,8 @@ export interface Checked {
   identity: Record<string, unknown>;
   effectiveIdentity?: EffectivePredecessorIdentity;
 }
-export interface Approval {
+interface ApprovalFields {
   version: number;
-  purpose: string;
   requestId: string;
   clientId: string;
   predecessorEpochId: string;
@@ -93,6 +97,10 @@ export interface Approval {
   priorAbortedSuccessor?: Reference;
   priorRetiredSuccessor?: Reference;
 }
+export type Approval = ApprovalFields & (
+  | { purpose: "dead-isolated-epoch-successor-v1"; normalCurrentStore?: never }
+  | { purpose: "dead-normal-currentstore-successor-v1"; normalCurrentStore: import("./queue-normal-cold-successor").NormalCurrentStoreApproval }
+);
 export interface Qualification {
   passed?: boolean;
   productionAdmission?: boolean;
@@ -102,6 +110,7 @@ export interface Qualification {
   publicDirectAccessRefused?: boolean;
   deadEpochSuccessorReadQualified?: boolean;
   deadEpochSuccessorRestoreQualified?: boolean;
+  normalCurrentStoreSuccessorQualified?: boolean;
 }
 export interface Inspection {
   root: string;

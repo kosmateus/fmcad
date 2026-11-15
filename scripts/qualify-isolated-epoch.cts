@@ -58,6 +58,7 @@ async function main() {
         "--output",
         "--source-commit",
         "--closed-fixture",
+        "--normal-currentstore",
       ].includes(key) ||
       options[key] ||
       !value
@@ -67,6 +68,7 @@ async function main() {
   }
   const runtime = path.resolve(options["--runtime"] || ""),
     output = path.resolve(options["--output"] || "");
+  if (options["--normal-currentstore"] !== undefined && options["--normal-currentstore"] !== "true") throw new Error("--normal-currentstore supports only true");
   if (
     !options["--runtime"] ||
     !options["--output"] ||
@@ -240,6 +242,27 @@ async function main() {
     successorRead.record.binding["auditExpectedInstance"],
     undefined,
   );
+  if (options["--normal-currentstore"] === "true") {
+    const normal = load(runtime + "/src/dist/composition/queue-normal-cold-successor") as { prepareNormalCurrentFacts: ReaderFactory };
+    const normalIdentity = { kind: "normal-currentstore-v1", resolvedIdentity: { creationId: randomUUID(), name: "FMCAD_MULTI_" + randomUUID() } };
+    const binding = { purpose: "normal-currentstore-current-facts-v1", expectedProcess: { pid: current.pid, birth: current.birth } };
+    const reader = normal.prepareNormalCurrentFacts(runtime, normalIdentity, binding);
+    const receipt = path.join(output, "never-sent-normal-currentstore.json");
+    neverSent.push(receipt);
+    const prepared = wire.prepareRecoveryAuditWire({ reader, receipt, instance: current, buildHash: fingerprint, jobId: randomUUID(), auditBinding: binding, payload: {
+      jsonrpc: "2.0", id: "offline-normal", method: "tools/call", params: { name: "fusion_mcp_execute", arguments: { featureType: "script", object: { script: reader.artifact.script, readOnly: true } } },
+    } });
+    const certificate = await production.admission.check(prepared.outgoing, prepared.artifact);
+    assert.equal(certificate.report.status, "passed");
+    assert.equal(certificate.report.provenance.checker, "basedpyright");
+    certificate.fence(prepared.outgoing);
+    const changed = structuredClone(prepared.outgoing);
+    const native = object(object(changed.params.arguments)["object"]);
+    native["script"] = text(native["script"]) + "\n# unapproved normal bytes";
+    assert.throws(() => certificate.fence(changed));
+    assert.deepEqual(prepared.record.binding["auditExpectedProcess"], binding.expectedProcess);
+    reports.push({ operation: "normal-currentstore-current-facts-native", artifactHash: prepared.artifact.artifactHash, report: certificate.report, finalByteTamperRejected: true });
+  }
   const captureDirectory = path.join(output, "explicit-audit-facts-capture");
   fs.mkdirSync(captureDirectory, { mode: 0o700 });
   const captureBinding = {
@@ -829,6 +852,7 @@ async function main() {
     auditFactsCaptureQualified: true,
     deadEpochSuccessorReadQualified: true,
     deadEpochSuccessorRestoreQualified: true,
+    ...(options["--normal-currentstore"] === "true" ? { normalCurrentStoreSuccessorQualified: true } : {}),
     regionalFixtureTypedOperationsQualified: true,
     fixedContainmentProgramQualified: true,
     fixedSectionsProgramQualified: true,

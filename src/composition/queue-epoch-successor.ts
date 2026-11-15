@@ -18,6 +18,7 @@ import type {
   Ready,
   Reference,
   SdkProcessDeathBindings,
+  NormalProcessDeathBindings,
   SdkProcessDeathProof,
   BootstrapOptions,
   ObserverClient,
@@ -88,7 +89,7 @@ function priorRetirementLink(value: {
 export function verifySdkProcessDeathProof(
   file: string,
   expectedProcess: Process,
-  bindings: SdkProcessDeathBindings,
+  bindings: SdkProcessDeathBindings | NormalProcessDeathBindings,
 ): Reference {
   if (
     !path.isAbsolute(file) ||
@@ -407,7 +408,7 @@ export function assertSuccessorApproval(value: Inspection, approval: Approval) {
   }
   if (
     approval.version !== 1 ||
-    approval.purpose !== "dead-isolated-epoch-successor-v1" ||
+    approval.purpose !== (approval.normalCurrentStore ? "dead-normal-currentstore-successor-v1" : "dead-isolated-epoch-successor-v1") ||
     approval.requestId !== value.requestId ||
     approval.clientId !== value.clientId ||
     approval.predecessorEpochId !== value.pointer.epochId ||
@@ -457,6 +458,7 @@ export function assertSuccessorApproval(value: Inspection, approval: Approval) {
     q.publicDirectAccessRefused !== true ||
     q.deadEpochSuccessorReadQualified !== true ||
     q.deadEpochSuccessorRestoreQualified !== true
+    || (approval.normalCurrentStore && q.normalCurrentStoreSuccessorQualified !== true)
   )
     fail(
       "EPOCH_SUCCESSOR_UNQUALIFIED",
@@ -484,6 +486,8 @@ export function inspectSuccessor(
     fail("INVALID_REQUEST", "A stable owner successor request ID is required");
   const audit = path.join(root, "epoch-successions", hash(requestId));
   const state = openIsolatedEpoch(root, { recover: false });
+  if (approval.normalCurrentStore && state.admissionMode !== "normal-multidocument")
+    fail("NORMAL_SUCCESSOR_UNPROVEN", "Only a verified closed normal-admission currentstore may use the normal successor adapter");
   if (!state.epoch)
     fail(
       "EPOCH_SUCCESSOR_REQUIRED",
@@ -575,6 +579,8 @@ export function inspectSuccessor(
     };
   }
   assertSuccessorApproval(value, approval);
+  if (approval.normalCurrentStore)
+    (load("./dist/composition/queue-normal-cold-successor") as typeof import("./queue-normal-cold-successor")).inspectNormalCurrentStore(root, approval, pointer);
   epochLineage(root, pointer);
   for (const name of ["fusion-reset.lock", "autostart.lock"])
     if (fs.existsSync(path.join(root, name)))
@@ -647,6 +653,8 @@ export function assertCurrentPredecessor(
       "EPOCH_SUCCESSOR_FENCE_CHANGED",
       "The active epoch is not the preserved predecessor or its exact successor",
     );
+  if (a["normalCurrentStore"])
+    (load("./dist/composition/queue-normal-cold-successor") as typeof import("./queue-normal-cold-successor")).assertNormalCurrentPredecessor(root, value);
   return value;
 }
 
@@ -876,6 +884,7 @@ export async function bootstrapSuccessor(
       qualification,
       permission: "one-proven-new-document-only",
       historicalOutcome: "unknown",
+      ...(value.approval.normalCurrentStore ? { normalCurrentStore: value.approval.normalCurrentStore } : {}),
       ...(value.approval.priorRetiredSuccessor
         ? { priorRetiredSuccessor: value.approval.priorRetiredSuccessor }
         : value.approval.priorAbortedSuccessor
