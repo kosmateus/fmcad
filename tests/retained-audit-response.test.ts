@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { createHash, randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
+import childProcess, { type SpawnOptions, spawn } from "node:child_process";
 import { once } from "node:events";
 
 const load = createRequire(__filename);
@@ -592,6 +592,27 @@ test("retained metadata retirement is SDK1 terminal, append-only, and kills only
   assert.deepEqual(
     JSON.parse(fs.readFileSync(path.join(f.dir, "broker.lock"), "utf8")),
     f.owner,
+  );
+  const physicalSpawn = childProcess.spawn;
+  t.mock.method(
+    childProcess,
+    "spawn",
+    (executable: string, args: readonly string[], options: SpawnOptions) => {
+      assert.equal(executable, process.execPath);
+      assert.equal(path.basename(args[0]!), "queue-epoch-successor-worker.js");
+      return physicalSpawn(
+        executable,
+        [
+          "--require",
+          path.join(
+            process.cwd(),
+            "tests/fixtures/retained-evaluator-offline.cjs",
+          ),
+          ...args,
+        ],
+        options,
+      );
+    },
   );
   const resumed = await recovery.resumeRetainedSuccessor(
     f.client,
