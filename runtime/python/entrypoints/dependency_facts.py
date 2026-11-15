@@ -492,13 +492,27 @@ def inert_value(node):
     return False
 
 
-def inert_binding(node, protocols=()):
+def inert_builtin_annotation(node, shadowed=()):
+    if isinstance(node, ast.Constant):
+        return node.value is None or node.value is Ellipsis or isinstance(node.value, str)
+    builtins = {'list', 'dict', 'tuple', 'set', 'frozenset', 'type', 'str', 'int', 'float', 'bool', 'bytes', 'object'}
+    if isinstance(node, ast.Name):
+        return node.id in builtins and node.id not in shadowed
+    if isinstance(node, ast.Tuple):
+        return all(inert_builtin_annotation(item, shadowed) for item in node.elts)
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
+        return (node.value.id in {'list', 'dict', 'tuple', 'set', 'frozenset', 'type'}
+                and node.value.id not in shadowed and inert_builtin_annotation(node.slice, shadowed))
+    return False
+
+
+def inert_binding(node, protocols=(), shadowed=()):
     if inert_function(node):
         return True
     if isinstance(node, ast.Assign):
         return all(isinstance(target, ast.Name) for target in node.targets) and inert_value(node.value)
     if isinstance(node, ast.AnnAssign):
-        return (isinstance(node.target, ast.Name) and inert_value(node.annotation)
+        return (isinstance(node.target, ast.Name) and (inert_value(node.annotation) or inert_builtin_annotation(node.annotation, shadowed))
                 and (node.value is None or inert_value(node.value)))
     if isinstance(node, ast.ClassDef):
         protocol = len(node.bases) == 1 and isinstance(node.bases[0], ast.Name) and node.bases[0].id in protocols
@@ -511,7 +525,7 @@ def inert_binding(node, protocols=()):
                     member.decorator_list = []
         return ((not node.bases or protocol) and not node.keywords and not node.decorator_list
                 and not getattr(node, 'type_params', []) and all(
-                    inert_binding(child) or isinstance(child, ast.Pass)
+                    inert_binding(child, shadowed=shadowed) or isinstance(child, ast.Pass)
                     or (isinstance(child, ast.Expr) and isinstance(child.value, ast.Constant))
                     for child in body))
     return False
@@ -1169,7 +1183,7 @@ def analyse(request):
             definition = dict(dependency, unit=unit['id'],
                                     start=min([node.lineno] + [d.lineno for d in getattr(node, 'decorator_list', [])]),
                                     end=node.end_lineno, column=node.col_offset,
-                                    removable=typing_only or inert_binding(node, protocols)
+                                    removable=typing_only or inert_binding(node, protocols, shadowed)
                                     or inert_typeddict(node, typed_dicts, shadowed)
                                     or ('setattr' not in shadowed and inert_decorated_function(node, functions, wraps)))
             if registration is not None:
