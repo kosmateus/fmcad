@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import fs from "node:fs";
+import vm from "node:vm";
 import type { WorkerBackend } from "../packages/core/src";
 import nodePath from "node:path";
 const sourceDirectory = nodePath.join(process.cwd(), "tests");
@@ -21,6 +23,39 @@ const cad = load(
 const worker = load(
   "../src/dist/composition/execution-worker",
 ) as typeof import("../src/composition/execution-worker");
+
+test("helper stage validation loads the staged service from the host runtime layout", async () => {
+  const root = process.cwd();
+  const filename = nodePath.join(root, "src/composition/stage-dependencies.js");
+  const source = fs.readFileSync(
+    nodePath.join(root, "src/dist/composition/stage-dependencies.js"),
+    "utf8",
+  );
+  const load = createRequire(filename);
+  const module = {
+    exports: {} as {
+      createAuthenticatedStageDependencies(input: unknown): Promise<unknown>;
+    },
+  };
+  const evaluate = vm.runInThisContext(
+    "(function(require,module,exports,__filename,__dirname){\n" +
+      source +
+      "\nreadCommittedQueueSnapshot = async () => ({jobs:{owned:{id:'owned',request:{payload:{kind:'run',request:{helperVersion:'cad-v1'}}}}}});\n})",
+    { filename },
+  );
+  evaluate(load, module, module.exports, filename, nodePath.dirname(filename));
+  await assert.rejects(
+    module.exports.createAuthenticatedStageDependencies({
+      brokerDirectory: root,
+      jobId: "owned",
+    }),
+    (error: Error & { code?: string }) => {
+      assert.notEqual(error.code, "MODULE_NOT_FOUND");
+      assert.match(error.message, /run|invocation|version|script|request/i);
+      return true;
+    },
+  );
+});
 
 test("ordinary worker commands do not read a concurrently changing stage-owner snapshot", async (t) => {
   const blocked = new Error(
