@@ -454,9 +454,7 @@ def inert_decorated_function(node, functions, wraps):
     return True
 
 
-def binds_call(function, call):
-    if any(isinstance(arg, ast.Starred) for arg in call.args) or any(kw.arg is None for kw in call.keywords):
-        return False
+def call_signature(function):
     parameters = []
     positional = function.args.posonlyargs + function.args.args
     default_start = len(positional) - len(function.args.defaults)
@@ -470,8 +468,14 @@ def binds_call(function, call):
                                             default=None if default is not None else inspect.Parameter.empty))
     if function.args.kwarg:
         parameters.append(inspect.Parameter(function.args.kwarg.arg, inspect.Parameter.VAR_KEYWORD))
+    return inspect.Signature(parameters)
+
+
+def binds_call(function, call):
+    if any(isinstance(arg, ast.Starred) for arg in call.args) or any(kw.arg is None for kw in call.keywords):
+        return False
     try:
-        inspect.Signature(parameters).bind(*[None for _ in call.args], **{kw.arg: None for kw in call.keywords})
+        call_signature(function).bind(*[None for _ in call.args], **{kw.arg: None for kw in call.keywords})
     except TypeError:
         return False
     return True
@@ -567,8 +571,493 @@ def shadowed_names(parsed):
     return names
 
 
+def registry_expansions(unit, tree, functions):
+    """Finite comprehension values are inert closures; never evaluate user code."""
+    rows = []
+    lines = unit['source'].encode('utf-8').splitlines(keepends=True)
+    starts = [0]
+    for line in lines:
+        starts.append(starts[-1] + len(line))
+    for statement in tree.body:
+        if removable_registration(statement, functions) is None:
+            continue
+        mapping = statement.value.args[0]
+        if not isinstance(mapping, ast.DictComp) or len(mapping.generators) != 1:
+            continue
+        generator = mapping.generators[0]
+        if not isinstance(generator.target, ast.Name) or generator.ifs or generator.is_async:
+            continue
+        try:
+            values = constant(generator.iter, {})
+            if not isinstance(values, (list, tuple)) or any(type(value) not in (str, int, bool, type(None)) for value in values):
+                continue
+            entries = []
+            for value in values:
+                class Bind(ast.NodeTransformer):
+                    def visit_Name(self, node):
+                        if isinstance(node.ctx, ast.Load) and node.id == generator.target.id:
+                            return ast.copy_location(ast.Constant(value=value), node)
+                        return node
+                handler = Bind().visit(copy.deepcopy(mapping.value))
+                key = constant(mapping.key, {generator.target.id: value})
+                if not isinstance(key, str) or not inert_handler_value(handler, functions):
+                    raise Unknown()
+                entries.append(dict(operation=key, source=repr(key) + ': ' + ast.unparse(handler)))
+            if len({row['operation'] for row in entries}) != len(entries):
+                continue
+            rows.append(dict(unit=unit['id'],
+                             byteStart=starts[mapping.lineno - 1] + mapping.col_offset,
+                             byteEnd=starts[mapping.end_lineno - 1] + mapping.end_col_offset,
+                             entries=entries))
+        except (Unknown, TypeError, ValueError):
+            continue
+    return rows
+
+
+def decorator_preserves_parameter(function, parameter, functions, wraps):
+    positional = function.args.posonlyargs + function.args.args
+    names = [arg.arg for arg in positional]
+    if parameter not in names:
+        return False
+    index = names.index(parameter)
+    for decorator in function.decorator_list:
+        factory = decorator.func if isinstance(decorator, ast.Call) else decorator
+        if not isinstance(factory, ast.Name) or len(functions.get(factory.id, [])) != 1:
+            return False
+        candidate = functions[factory.id][0]
+        applied = closure_result(candidate, set(), wraps) if isinstance(decorator, ast.Call) else candidate
+        if applied is None:
+            return False
+        parameters = applied.args.posonlyargs + applied.args.args
+        if not parameters:
+            return False
+        handler = parameters[0].arg
+        wrapper = closure_result(applied, {handler}, wraps)
+        if wrapper is None:
+            return False
+        wrapper_parameters = wrapper.args.posonlyargs + wrapper.args.args
+        parent = {child: node for statement in wrapper.body for node in ast.walk(statement)
+                  for child in ast.iter_child_nodes(node)}
+        invocations = []
+        for node, owner in parent.items():
+            if isinstance(node, ast.Name) and node.id == handler:
+                if not isinstance(owner, ast.Call) or owner.func is not node:
+                    return False
+                invocations.append(owner)
+        if not invocations:
+            return False
+        protected = {arg.arg for arg in wrapper_parameters}
+        protected.update(arg.arg for arg in (wrapper.args.vararg, wrapper.args.kwarg) if arg is not None)
+        if any(isinstance(node, ast.Name) and node.id in protected and isinstance(node.ctx, (ast.Store, ast.Del))
+               for statement in wrapper.body for node in ast.walk(statement)):
+            return False
+        for call in invocations:
+            if index < len(wrapper_parameters):
+                if len(call.args) <= index or not isinstance(call.args[index], ast.Name) or call.args[index].id != wrapper_parameters[index].arg:
+                    return False
+            else:
+                prefix = len(wrapper_parameters)
+                if (wrapper.args.vararg is None or len(call.args) != prefix + 1
+                        or not isinstance(call.args[-1], ast.Starred)
+                        or not isinstance(call.args[-1].value, ast.Name)
+                        or call.args[-1].value.id != wrapper.args.vararg.arg):
+                    return False
+            if (wrapper.args.kwarg is None or len(call.keywords) != 1
+                    or call.keywords[0].arg is not None
+                    or not isinstance(call.keywords[0].value, ast.Name)
+                    or call.keywords[0].value.id != wrapper.args.kwarg.arg):
+                return False
+        for node, owner in parent.items():
+            if isinstance(node, ast.Name) and wrapper.args.kwarg and node.id == wrapper.args.kwarg.arg:
+                if not isinstance(owner, ast.keyword) or owner.arg is not None or parent.get(owner) not in invocations:
+                    return False
+    return True
+
+
+def literal_argument_rewrites(parsed, user_tree, functions, wraps):
+    """Closed direct-call bindings. Unknown callers or rebinding veto a parameter."""
+    decorated_safe = 'setattr' not in shadowed_names(parsed)
+    unique = {name: values[0] for name, values in functions.items()
+              if len(values) == 1 and (not values[0].decorator_list
+                                      or (decorated_safe and inert_decorated_function(values[0], functions, wraps)))}
+    collisions = set()
+    for tree in [*(tree for _, tree in parsed), user_tree]:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+                collisions.add(node.id)
+            elif isinstance(node, ast.arg):
+                collisions.add(node.arg)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node is not unique.get(node.name):
+                collisions.add(node.name)
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                collisions.update(alias.asname or alias.name.split('.')[0] for alias in node.names)
+    unique = {name: node for name, node in unique.items() if name not in collisions}
+    parents, scopes = {}, {}
+    def index(node, scope):
+        scopes[node] = scope
+        nested = node if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)) else scope
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+            index(child, nested)
+    for _, tree in parsed:
+        index(tree, None)
+    index(user_tree, None)
+    calls = {name: [] for name in unique}
+    escaped = set()
+    for node, parent in parents.items():
+        if not isinstance(node, ast.Name) or node.id not in unique or not isinstance(node.ctx, ast.Load):
+            continue
+        if isinstance(parent, ast.Call) and parent.func is node:
+            calls[node.id].append(parent)
+        else:
+            escaped.add(node.id)
+    unique = {name: node for name, node in unique.items() if name not in escaped and calls[name]}
+    bindings = {node: {} for node in unique.values()}
+    def environment(node):
+        result = {}
+        chain = []
+        scope = scopes.get(node)
+        while scope is not None:
+            chain.append(scope)
+            scope = scopes.get(scope)
+        for scope in reversed(chain):
+            if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                local = {part.arg for part in ast.walk(scope.args) if isinstance(part, ast.arg)}
+                local.update(part.id for part in ast.walk(scope)
+                             if isinstance(part, ast.Name) and isinstance(part.ctx, (ast.Store, ast.Del)))
+                for name in local:
+                    result.pop(name, None)
+                result.update(bindings.get(scope, {}))
+            elif isinstance(scope, ast.ClassDef):
+                result.clear()
+        return result
+    def scalar(node, local):
+        if isinstance(node, ast.Constant) and type(node.value) in (str, int, bool, type(None)):
+            return node.value
+        if isinstance(node, ast.Name) and node.id in local:
+            return local[node.id]
+        raise Unknown()
+    changed = True
+    while changed:
+        changed = False
+        for name, function in unique.items():
+            parameters = function.args.posonlyargs + function.args.args
+            defaults = dict(zip([arg.arg for arg in parameters[-len(function.args.defaults):]], function.args.defaults)) if function.args.defaults else {}
+            defaults.update({arg.arg: value for arg, value in zip(function.args.kwonlyargs, function.args.kw_defaults) if value is not None})
+            modified = {part.id for part in ast.walk(function) if isinstance(part, ast.Name) and isinstance(part.ctx, (ast.Store, ast.Del))}
+            modified.update(name for part in ast.walk(function) if isinstance(part, (ast.Global, ast.Nonlocal)) for name in part.names)
+            candidate = {}
+            for parameter in parameters + function.args.kwonlyargs:
+                if parameter.arg in modified or (function.decorator_list and not decorator_preserves_parameter(function, parameter.arg, functions, wraps)):
+                    continue
+                values = []
+                for call in calls[name]:
+                    if not binds_call(function, call):
+                        break
+                    bound = call_signature(function).bind(*call.args, **{kw.arg: kw.value for kw in call.keywords})
+                    argument = bound.arguments.get(parameter.arg, defaults.get(parameter.arg))
+                    try:
+                        values.append(scalar(argument, environment(call) if parameter.arg in bound.arguments else {}))
+                    except Unknown:
+                        break
+                else:
+                    if values and all(type(value) is type(values[0]) and value == values[0] for value in values):
+                        candidate[parameter.arg] = values[0]
+            if candidate != bindings[function]:
+                bindings[function] = candidate
+                changed = True
+    edits = []
+    for unit, tree in parsed:
+        lines = unit['source'].encode('utf-8').splitlines(keepends=True)
+        starts = [0]
+        for line in lines:
+            starts.append(starts[-1] + len(line))
+        for function in tree.body:
+            if function not in bindings or not bindings[function]:
+                continue
+            # Bindings select branches, never replace argument objects or defaults.
+            body = ast.Module(body=function.body, type_ignores=[])
+            original_source = ast.unparse(function)
+            before = ast.dump(body, include_attributes=False)
+            rewritten = prune_literal_branches(body, environment)
+            if ast.dump(rewritten, include_attributes=False) == before:
+                continue
+            clone = copy.copy(function)
+            clone.body = rewritten.body
+            replacement = ast.unparse(clone)
+            if not preserves_lexical_bindings(original_source, replacement):
+                continue
+            start_line = min([function.lineno] + [node.lineno for node in function.decorator_list])
+            edits.append(dict(unit=unit['id'], byteStart=starts[start_line - 1] + function.col_offset,
+                              byteEnd=starts[function.end_lineno - 1] + function.end_col_offset,
+                              source=replacement))
+    return edits
+
+
+def preserves_lexical_bindings(original, selected):
+    def tables(source):
+        result = {}
+        def visit(table, prefix):
+            key = (*prefix, table.get_name(), str(table.get_type()))
+            if key in result:
+                raise Unknown()
+            result[key] = table
+            for child in table.get_children():
+                visit(child, key)
+        visit(symtable.symtable(source, '<specialization>', 'exec'), ())
+        return result
+    try:
+        if sum(isinstance(node, (ast.Yield, ast.YieldFrom)) for node in ast.walk(ast.parse(original))) != sum(
+                isinstance(node, (ast.Yield, ast.YieldFrom)) for node in ast.walk(ast.parse(selected))):
+            return False
+        before, after = tables(original), tables(selected)
+        for key, scope in after.items():
+            previous = before.get(key)
+            if previous is None:
+                return False
+            for symbol in scope.get_symbols():
+                if not symbol.is_referenced():
+                    continue
+                old = previous.lookup(symbol.get_name())
+                for flag in ('is_local', 'is_global', 'is_nonlocal', 'is_free', 'is_parameter'):
+                    if getattr(symbol, flag)() != getattr(old, flag)():
+                        return False
+        return True
+    except (Unknown, SyntaxError, KeyError):
+        return False
+
+
+def prune_literal_branches(tree, environment):
+    def value(node):
+        if isinstance(node, ast.Name) and node.id in environment(node):
+            return environment(node)[node.id]
+        if isinstance(node, ast.Constant) and type(node.value) in (str, int, bool, type(None)):
+            return node.value
+        if isinstance(node, (ast.Tuple, ast.List)):
+            return tuple(value(item) for item in node.elts)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            return not value(node.operand)
+        if isinstance(node, ast.BoolOp):
+            result = value(node.values[0])
+            for expression in node.values[1:]:
+                if isinstance(node.op, ast.And) and not result:
+                    return result
+                if isinstance(node.op, ast.Or) and result:
+                    return result
+                result = value(expression)
+            return result
+        if isinstance(node, ast.Compare) and len(node.ops) == 1:
+            left, right = value(node.left), value(node.comparators[0])
+            operation = node.ops[0]
+            if isinstance(operation, ast.Eq):
+                return left == right
+            if isinstance(operation, ast.NotEq):
+                return left != right
+            if isinstance(operation, (ast.Is, ast.IsNot)) and (left is None or right is None or type(left) is bool or type(right) is bool):
+                result = left is right
+                return not result if isinstance(operation, ast.IsNot) else result
+            if isinstance(operation, (ast.In, ast.NotIn)) and isinstance(right, (tuple, str)):
+                result = left in right
+                return not result if isinstance(operation, ast.NotIn) else result
+        raise Unknown()
+    class Prune(ast.NodeTransformer):
+        def visit_If(self, node):
+            try:
+                branch = node.body if value(node.test) else node.orelse
+            except (Unknown, TypeError):
+                return self.generic_visit(node)
+            result = []
+            for statement in branch:
+                transformed = self.visit(statement)
+                result.extend(transformed if isinstance(transformed, list) else [transformed])
+            return result or [ast.copy_location(ast.Pass(), node)]
+        def visit_IfExp(self, node):
+            try:
+                return self.visit(node.body if value(node.test) else node.orelse)
+            except (Unknown, TypeError):
+                return self.generic_visit(node)
+        def generic_visit(self, node):
+            node = super().generic_visit(node)
+            for field in ('body', 'orelse', 'finalbody'):
+                statements = getattr(node, field, None)
+                if isinstance(statements, list):
+                    for index, statement in enumerate(statements):
+                        if isinstance(statement, (ast.Return, ast.Raise)):
+                            setattr(node, field, statements[:index + 1])
+                            break
+            return node
+    return Prune().visit(tree)
+
+
+def receiver_method_facts(parsed, user_tree, functions):
+    """Flow-insensitive receiver sets; unresolved escape retains the whole class.
+
+    Names across lexical scopes are deliberately unioned (an over-approximation),
+    never inferred from a spelling convention or a type annotation.
+    """
+    trees = [tree for _, tree in parsed] + [user_tree]
+    nodes = [node for tree in trees for node in ast.walk(tree)]
+    parents = {child: node for node in nodes for child in ast.iter_child_nodes(node)}
+    classes = {}
+    duplicates = set()
+    for unit, tree in parsed:
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef):
+                continue
+            if node.name in classes:
+                duplicates.add(node.name)
+            classes[node.name] = (unit, node)
+    shadowed = {node.arg for node in nodes if isinstance(node, ast.arg)}
+    shadowed.update(node.id for node in nodes if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)))
+    shadowed.update(alias.asname or alias.name.split('.')[0] for node in nodes
+                    if isinstance(node, (ast.Import, ast.ImportFrom)) for alias in node.names)
+    classes = {name: pair for name, pair in classes.items() if name not in duplicates | shadowed
+               and not pair[1].bases and not pair[1].keywords and not pair[1].decorator_list
+               and not any(isinstance(member, ast.FunctionDef) and member.name in ('__getattr__', '__getattribute__') for member in pair[1].body)}
+    methods = {name: {member.name: member for member in tree.body if isinstance(member, ast.FunctionDef)}
+               for name, (_, tree) in classes.items()}
+    points = {}
+    escaped = set()
+    used = {name: set() for name in classes}
+    bound_receivers = {}
+    method_receivers = {}
+    for name, members in methods.items():
+        for member in members.values():
+            parameters = member.args.posonlyargs + member.args.args
+            if not parameters or member.decorator_list:
+                escaped.add(name)
+                continue
+            receiver = parameters[0].arg
+            method_receivers[member] = receiver
+            if any(isinstance(part, ast.Name) and part.id == receiver and isinstance(part.ctx, (ast.Store, ast.Del))
+                   for part in ast.walk(member)):
+                escaped.add(name)
+                continue
+            def bind(node):
+                if node is not member and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+                    if any(isinstance(part, ast.arg) and part.arg == receiver for part in ast.walk(node)):
+                        escaped.add(name)
+                        return
+                if isinstance(node, ast.Name) and node.id == receiver:
+                    bound_receivers[node] = name
+                for child in ast.iter_child_nodes(node):
+                    bind(child)
+            bind(member)
+    def add(name, values):
+        previous = points.setdefault(name, set())
+        count = len(previous)
+        previous.update(values)
+        return len(previous) != count
+    def receivers(node):
+        if node in bound_receivers:
+            return {bound_receivers[node]}
+        if isinstance(node, ast.Name):
+            return points.get(node.id, set())
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in classes:
+            return {node.func.id}
+        return set()
+    local_names = {node.arg for node in nodes if isinstance(node, ast.arg)}
+    local_names.update(alias.asname or alias.name.split('.')[0] for node in nodes
+                       if isinstance(node, (ast.Import, ast.ImportFrom)) for alias in node.names)
+    for node in nodes:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(node is not candidate for candidate in functions.get(node.name, [])):
+            local_names.add(node.name)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in functions:
+            owner = parents.get(node)
+            if not isinstance(owner, ast.Call) or owner.func is not node:
+                local_names.add(node.id)
+    safe_functions = {name: values[0] for name, values in functions.items()
+                      if len(values) == 1 and name not in local_names and not values[0].decorator_list}
+    resolved_calls = set()
+    ambiguous = set()
+    changed = True
+    while changed:
+        changed = False
+        for node in nodes:
+            if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                if all(isinstance(target, ast.Name) for target in targets):
+                    for target in targets:
+                        changed |= add(target.id, receivers(node.value))
+            if not isinstance(node, ast.Call):
+                continue
+            targets = []
+            args = node.args
+            if isinstance(node.func, ast.Name) and node.func.id in safe_functions:
+                targets.append(safe_functions[node.func.id])
+            elif isinstance(node.func, ast.Attribute):
+                owners = receivers(node.func.value)
+                if owners and all(node.func.attr in methods[owner] and not methods[owner][node.func.attr].decorator_list for owner in owners):
+                    targets.extend(methods[owner][node.func.attr] for owner in owners)
+                    args = [node.func.value, *args]
+            for target in targets:
+                call = ast.Call(func=node.func, args=args, keywords=node.keywords)
+                if not binds_call(target, call):
+                    continue
+                bound = call_signature(target).bind(*args, **{kw.arg: kw.value for kw in node.keywords})
+                if any(isinstance(value, (tuple, dict)) and value for value in bound.arguments.values()):
+                    continue
+                resolved_calls.add(node)
+                for name, value in bound.arguments.items():
+                    if method_receivers.get(target) == name:
+                        continue
+                    changed |= add(name, receivers(value))
+                    if not receivers(value):
+                        ambiguous.add(name)
+                for parameter in target.args.posonlyargs + target.args.args + target.args.kwonlyargs:
+                    if parameter.arg not in bound.arguments:
+                        ambiguous.add(parameter.arg)
+    known = set(safe_functions.values()) | {method for members in methods.values() for method in members.values()}
+    for node in nodes:
+        if isinstance(node, ast.arg):
+            owner = parents.get(parents.get(node))
+            if owner not in known:
+                ambiguous.add(node.arg)
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and not receivers(node.value):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            ambiguous.update(target.id for target in targets if isinstance(target, ast.Name))
+    for name in ambiguous:
+        escaped.update(points.get(name, set()))
+    for node in nodes:
+        parent = parents.get(node)
+        if isinstance(node, ast.Name) and node.id in classes and isinstance(node.ctx, ast.Load):
+            if not (isinstance(parent, ast.Call) and parent.func is node):
+                escaped.add(node.id)
+        if isinstance(node, ast.Attribute):
+            for owner in receivers(node.value):
+                if node.attr.startswith('__') or (isinstance(node.ctx, (ast.Store, ast.Del)) and node.attr in methods[owner]):
+                    escaped.add(owner)
+                used[owner].add(node.attr)
+                if node.attr in methods[owner] and not (isinstance(parent, ast.Call) and parent.func is node):
+                    escaped.add(owner)
+        owners = receivers(node)
+        if not owners or (isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load)):
+            continue
+        if isinstance(parent, ast.Attribute) and parent.value is node:
+            continue
+        if isinstance(parent, (ast.Assign, ast.AnnAssign)) and parent.value is node:
+            targets = parent.targets if isinstance(parent, ast.Assign) else [parent.target]
+            if all(isinstance(target, ast.Name) for target in targets):
+                continue
+        call = parent if isinstance(parent, ast.Call) else parents.get(parent) if isinstance(parent, ast.keyword) else None
+        if call in resolved_calls:
+            continue
+        escaped.update(owners)
+    result = []
+    for name, (unit, node) in classes.items():
+        counts = {}
+        for member in node.body:
+            if isinstance(member, ast.FunctionDef):
+                counts[member.name] = counts.get(member.name, 0) + 1
+        result.append(dict(unit=unit['id'], name=name, escaped=name in escaped, used=sorted(used[name]),
+                           methods=[dict(name=member.name, start=member.lineno, end=member.end_lineno,
+                                         column=member.col_offset, removable=inert_function(member) and counts[member.name] == 1)
+                                    for member in node.body if isinstance(member, ast.FunctionDef)]))
+    return result
+
+
 def analyse(request):
-    units, facade, spans, symbols, definitions = [], {}, {}, {}, []
+    units, facade, spans, symbols, definitions, expansions = [], {}, {}, {}, [], []
     try:
         user_tree = ast.parse(request['source'], filename='<user>')
         if request.get('generated', False) and not any(
@@ -610,6 +1099,8 @@ def analyse(request):
     if 'setattr' in shadowed:
         wraps.clear()
     for unit, tree in parsed:
+        if request.get('specialize', False):
+            expansions.extend(registry_expansions(unit, tree, functions))
         if unit['id'] == 'helpers':
             for node in tree.body:
                 if isinstance(node, ast.ClassDef) and node.name == 'FMCAD':
@@ -689,8 +1180,12 @@ def analyse(request):
             # An unrecognised registration could own any requested operation.
             return dict(unsupported=True, unit=unit['id'])
         units.append(dict(entry, id=unit['id'], dependencies=unit['dependencies'], handlers=list(handlers), handlerReferences=handlers))
+    literal_rewrites = literal_argument_rewrites(parsed, user_tree, functions, wraps) if request.get('specialize', False) and not expansions else []
+    receiver_facts = receiver_method_facts(parsed, user_tree, functions) if request.get('specialize', False) and not expansions and not literal_rewrites else []
     return dict(unsupported=False, facts=dict(units=units, facade=facade,
-                symbols=symbols, user=user_facts, definitions=definitions,
+                symbols=symbols, user=user_facts, definitions=definitions, registryExpansions=expansions,
+                literalRewrites=literal_rewrites,
+                receiverClasses=receiver_facts,
                 facadeRequired=not request.get('generated', False) or any(
                     isinstance(node, ast.Name) and node.id == 'FMCAD' for node in ast.walk(user_tree))), spans=spans)
 
