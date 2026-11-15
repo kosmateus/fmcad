@@ -4,7 +4,19 @@ import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import { createRequire } from "node:module";
+import type {
+  PreparedPythonArtifact,
+  PythonArtifactManifest,
+} from "../packages/core/src/domain/python-artifact";
 const load = createRequire(path.resolve("package.json"));
+const { prepareWireArtifact, pythonArtifactManifest } = load(
+  "./src/python",
+) as {
+  prepareWireArtifact(runtime: string, source: string): PreparedPythonArtifact;
+  pythonArtifactManifest(
+    artifact: PreparedPythonArtifact,
+  ): PythonArtifactManifest;
+};
 // This rejection fixture stops during startup admission. It deliberately supplies
 // the real MCP transport, whose later add-in-only UI methods are absent.
 type Config = import("../src/queue-broker-ports").Config;
@@ -33,7 +45,7 @@ function text(value: unknown): string {
   assert.ok(typeof value === "string");
   return value;
 }
-test("production transport refuses corrupted startup Python before any admission, including session initialization", async (t) => {
+test("production transport rejects invalid startup Python before any admission, including session initialization", async (t) => {
   const directory = fs.mkdtempSync("/tmp/opencode/admission-broker-");
   const methods: string[] = [];
   let scripts = 0;
@@ -109,27 +121,43 @@ test("production transport refuses corrupted startup Python before any admission
           },
         );
         const prepare = client.prepareCallTool.bind(client);
-        client.prepareCallTool = (args, name) =>
-          prepare(
+        client.prepareCallTool = (args, name) => {
+          // Build from invalid source instead of mutating a prepared artifact;
+          // integrity rejection is not evidence that the checker rejects it.
+          const artifact = prepareWireArtifact(
+            path.resolve("dist/runtime/python"),
+            'invalid_startup: int = "bad"\n',
+          );
+          return prepare(
             {
               ...args,
               object: {
                 ...record(args["object"]),
-                script:
-                  text(record(args["object"])["script"]) +
-                  '\ninvalid_startup: int = "bad"\n',
+                script: artifact.script,
               },
             },
             name,
+            pythonArtifactManifest(artifact),
           );
+        };
         return client;
       },
     }),
     (error) => {
       const failure = record(error);
-      assert.equal(failure["code"], "PYTHON_CHECK_REJECTED");
+      assert.equal(
+        failure["code"],
+        "PYTHON_CHECK_REJECTED",
+        text(failure["message"]),
+      );
       assert.equal(failure["probeNotSubmitted"], true);
-      assert.notEqual(record(failure["pythonCheck"])["status"], "passed");
+      const pythonCheck = record(failure["pythonCheck"]);
+      assert.equal(pythonCheck["status"], "failed");
+      assert.ok(
+        Array.isArray(pythonCheck["diagnostics"]) &&
+          pythonCheck["diagnostics"].length > 0,
+        "the prepared type error must reach the Python checker",
+      );
       return true;
     },
   );
