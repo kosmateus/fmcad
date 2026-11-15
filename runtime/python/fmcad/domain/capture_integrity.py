@@ -10,6 +10,9 @@ from typing import TYPE_CHECKING as _CAPTURE_TYPE_CHECKING, Literal as _CAPTURE_
 from typing import NotRequired as _CAPTURE_NotRequired, TypedDict as _CAPTURE_TypedDict
 from typing import cast as _CAPTURE_cast
 
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
+
 
 if _CAPTURE_TYPE_CHECKING:
     class _CaptureThresholds(_CAPTURE_TypedDict):

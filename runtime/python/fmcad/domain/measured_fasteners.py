@@ -3,6 +3,9 @@ import math as _mf_math
 from collections.abc import Sequence as _MFSequence
 from typing import Literal as _MFLiteral, overload as _MFOverload, cast as _MFCast
 
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
+
 
 def _mf_vector(value: "JsonValue", label: str) -> list[float]:
     if not isinstance(value, (list, tuple)) or len(value) != 3:

@@ -1,15 +1,22 @@
 """DTO-only rules extracted from assets/cad/externalization.py. No SDK or filesystem access."""
 import hashlib as _external_hashlib
 import json as _external_json
+import typing as _external_typing
 from typing import (
     NotRequired as _ExternalNotRequired,
     Protocol as _ExternalProtocol,
     Required as _ExternalRequired,
     TypedDict as _ExternalTypedDict,
+    TypeVar as _ExternalDomainTypeVar,
 )
 
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
+from fmcad.domain.values import _CadItemCollection as _ExternalCadItemCollection
+from fmcad.domain.values import _cad_fields as _external_cad_fields
 
-if TYPE_CHECKING:
+
+if _external_typing.TYPE_CHECKING:
     class _ExternalDestination(_ExternalTypedDict):
         projectId: str
         folderId: str
@@ -48,11 +55,26 @@ if TYPE_CHECKING:
         statusReadError: str
         statusReadErrorAt: str
 
-    _ExternalValue = TypeVar('_ExternalValue')
+    _ExternalValue = _ExternalDomainTypeVar('_ExternalValue')
+
+    class _ExternalAttribute(_ExternalProtocol):
+        @property
+        def groupName(self) -> str: ...
+
+        @property
+        def name(self) -> str: ...
+
+        @property
+        def value(self) -> str: ...
+
+    class _ExternalAttributeCollection(_ExternalCadItemCollection[_ExternalAttribute], _ExternalProtocol):
+        def itemByName(self, groupName: str, name: str) -> object: ...
+
+        def add(self, groupName: str, name: str, value: str) -> object: ...
 
     class _ExternalAttributed(_ExternalProtocol):
         @property
-        def attributes(self) -> "adsk.core.Attributes": ...
+        def attributes(self) -> _ExternalAttributeCollection: ...
 
 _EXTERNAL_PROBE_RESTORE_RESERVE_MS = 60000
 
@@ -206,7 +228,7 @@ def _external_is_str(value: object) -> bool:
     return isinstance(value, str)
 
 def _external_boundary_endpoint_preflight(endpoint: "_ExternalBoundaryEndpoint",item_ids: "set[str]",group_ids: "set[str]",datum_names: "set[str]") -> "None":
-    _cad_fields(endpoint,(),('itemId','instanceIndex','memberIndex','relativePath','occurrence','originName','rootDatum','componentOrigin'))
+    _external_cad_fields(endpoint,(),('itemId','instanceIndex','memberIndex','relativePath','occurrence','originName','rootDatum','componentOrigin'))
     identities=[key for key in ('itemId','occurrence','rootDatum') if endpoint.get(key) is not None]
     _external_require(len(identities)==1,'Boundary endpoint requires exactly one itemId, occurrence or rootDatum identity')
     component_origin=endpoint.get('componentOrigin')
@@ -252,14 +274,14 @@ def _external_boundary_endpoint_preflight(endpoint: "_ExternalBoundaryEndpoint",
 
 def _external_source_pin(runtime: "_ExternalRuntime",source: "_ExternalProbeSource",binding: "bool"=False) -> "_ExternalPin":
     if 'itemId' in source:
-        _cad_fields(source,('itemId',))
+        _external_cad_fields(source,('itemId',))
         _external_require(source['itemId'] in runtime['items'],'Unknown source itemId')
         pin=runtime['items'][source['itemId']]['targetPin']
         _external_require(pin is not None,'Source item copy/reuse not yet complete')
         if pin is None:raise ValueError('Source item copy/reuse not yet complete')
         return _external_cast('_ExternalPin',dict(pin))
     key='dataFileId' if binding else 'fileId'
-    _cad_fields(source,('projectId',key,'version'),('creationId','context'))
+    _external_cad_fields(source,('projectId',key,'version'),('creationId','context'))
     version=source.get('version')
     _external_require(type(version) is int and version>0,'Source version must be a positive integer')
     _external_require(source.get('context') in (None,'topLevel'),'Source context must be topLevel when specified')

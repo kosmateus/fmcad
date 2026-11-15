@@ -6,7 +6,7 @@
   "main": "./dist/src/dist/entrypoints/opencode.mjs",
   "scripts": {
     "check:dependencies": "node --test tests/dependency-guards.test.cjs",
-    "prebuild": "npm run check:dependencies",
+    "prebuild": "npm run check:dependencies && npm run check:python-domain-imports",
     "build": "npm run build:code && node dist/scripts/adsk-refresh/cli.js --pinned scripts/adsk-refresh/api-lock.json dist/runtime/python/typing && node dist/scripts/devtools/stage-core.js --identity-only",
     "prepack": "npm run build",
     "build:code": "tsc -b tsconfig.json && tsc -p scripts/adsk-refresh/tsconfig.json && tsc -p tsconfig.api.json && tsc -b tsconfig.devtools.json && tsc -p tsconfig.launchers.json && tsc -p tsconfig.tool-launchers.json && node dist/scripts/devtools/stage-compatibility.js && node dist/scripts/devtools/stage-queue-runtime.js && node dist/scripts/devtools/stage-core.js && tsc -p tsconfig.devtools-tests.json && node --test dist/tests/devtools/*.test.js && npm run build:opencode && npm run build:console-browser && node dist/scripts/devtools/stage-core.js --identity-only && tsc -p tsconfig.runtime-tests.json && node dist/scripts/devtools/stage-queue-runtime.js --tests && npm run build:docs",
@@ -69,7 +69,10 @@
     "test:offline-gap:15": "node --experimental-strip-types --test --test-concurrency=1 dist/tests/saved-fixture-control.test.js dist/tests/saved-fixture-reader.test.js dist/tests/scratch-qualification.test.js dist/tests/sdk-probe-port.test.js dist/tests/sequence.test.js dist/tests/server-metadata.test.js dist/tests/settled-epoch-evidence.test.js dist/tests/settled-epoch-startup.test.js dist/tests/shape-library.test.js dist/tests/sheetmetal.test.js",
     "test:offline-gap:16": "node --experimental-strip-types --test --test-concurrency=1 dist/tests/style-motion-inputs.test.js dist/tests/successor-process-guard.test.js dist/tests/upstream-queue-regressions.test.js",
     "test:qualification-harness": "node --test --test-concurrency=1 dist/tests/native/integrated-qualification-first-smoke.test.js dist/tests/native/integrated-qualification.test.js dist/tests/native/regional-typed.test.js",
-    "test:python-family-dependencies": "node --experimental-strip-types --test --test-concurrency=1 tests/python-family-dependency-contracts.test.ts"
+    "test:python-family-dependencies": "node --experimental-strip-types --test --test-concurrency=1 tests/python-family-dependency-contracts.test.ts",
+    "check:python-domain-imports": "python3 -B scripts/check_python_domain_imports.py",
+    "report:python-domain-imports": "python3 -B scripts/report_python_domain_imports.py",
+    "test:python-domain-imports": "python3 -B tests/python_domain_imports_test.py && node --experimental-strip-types --test tests/python-domain-imports.test.ts && node --test dist/tests/python-artifact.test.js"
   },
   "bin": {
     "fmcad": "dist/bin/fmcad.js",

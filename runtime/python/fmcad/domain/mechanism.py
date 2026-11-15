@@ -2,6 +2,8 @@
 import math as _mechanism_domain_math
 from typing import Literal as _mechanism_Literal, TypedDict as _mechanism_TypedDict
 
+from fmcad.domain.values import JsonObject
+
 
 class _ScrewCoupling(_mechanism_TypedDict):
     type: _mechanism_Literal['screw']

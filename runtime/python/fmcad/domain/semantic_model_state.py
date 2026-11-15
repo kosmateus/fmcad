@@ -4,6 +4,10 @@ import math as _semantic_math
 import copy as _semantic_copy
 from typing import cast as _semantic_cast
 
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonRecord
+from fmcad.domain.values import JsonValue
+
 
 _SEMANTIC_IDENTITY: list[int | float] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 _SEMANTIC_CHANNELS = ('geometry', 'pose', 'attributes', 'topology', 'visibility')

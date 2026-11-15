@@ -101,7 +101,10 @@ test("build, CI, and package lifecycles run the dependency guard", () => {
     "utf8",
   );
 
-  assert.equal(packageJson.scripts.prebuild, "npm run check:dependencies");
+  assert.equal(
+    packageJson.scripts.prebuild,
+    "npm run check:dependencies && npm run check:python-domain-imports",
+  );
   assert.equal(packageJson.scripts.prepack, "npm run build");
   assert.match(ci, /run: npm run build\s/);
 });

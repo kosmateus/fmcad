@@ -2,6 +2,9 @@
 from typing import TYPE_CHECKING as _SELECTION_TYPE_CHECKING
 from typing import TypedDict as _SelectionTypedDict, cast as _selection_rule_cast
 
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonValue
+
 
 if _SELECTION_TYPE_CHECKING:
     class _SelectionCardinality(_SelectionTypedDict):

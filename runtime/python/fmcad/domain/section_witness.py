@@ -5,6 +5,10 @@ import time as _section_time
 from typing import Callable as _SectionCallable, ParamSpec as _SectionParamSpec
 from typing import TypeVar as _SectionTypeVar, cast as _section_cast
 
+from fmcad.domain.values import JsonObject
+from fmcad.domain.values import JsonRecord
+from fmcad.domain.values import JsonValue
+
 
 _SectionCallArgs = _SectionParamSpec('_SectionCallArgs')
 _SectionCallResult = _SectionTypeVar('_SectionCallResult')
