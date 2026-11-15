@@ -67,14 +67,58 @@ def _shapes_handler(mode: str) -> "CadHandler":
     return handler
 
 
+@_cad_scoped_step('shape', native_only=True)
+def shape_box(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    if 'name' in data:
+        _shapes_reserve(ctx, [data['name']])
+    return _shapes_box(ctx, data)
+
+
+@_cad_scoped_step('shape', native_only=True)
+def shape_cylinder(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    if 'name' in data:
+        _shapes_reserve(ctx, [data['name']])
+    return _shapes_cylinder(ctx, data)
+
+
+@_cad_scoped_step('shape', native_only=True)
+def shape_tube(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    if 'name' in data:
+        _shapes_reserve(ctx, [data['name']])
+    return _shapes_tube(ctx, data)
+
+
+@_cad_scoped_step('shape', native_only=True)
+def shape_ring(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    if 'name' in data:
+        _shapes_reserve(ctx, [data['name']])
+    return _shapes_ring(ctx, data)
+
+
+@_cad_scoped_step('shape', native_only=True)
+def shape_cone(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
+    if 'name' in data:
+        _shapes_reserve(ctx, [data['name']])
+    return _shapes_cone(ctx, data)
+
+
 def _shapes_gm10_handler(mode: str) -> "CadHandler":
     def handler(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
         return _shapes_gm10(ctx, data, mode)
     return handler
 
 
+CAD_HANDLERS.update({
+    'shape.box': shape_box,
+    'shape.cylinder': shape_cylinder,
+    'shape.tube': shape_tube,
+    'shape.ring': shape_ring,
+    'shape.cone': shape_cone,
+})
+
+
 CAD_HANDLERS.update({'shape.' + mode: _shapes_handler(mode) for mode in (
-    'box', 'cylinder', 'tube', 'ring', 'cone', 'revolved_profile', 'bolt_circle',
+    'revolved_profile', 'bolt_circle',
     'slot', 'slot_pattern', 'rib', 'web', 'route', 'helix')})
 
 

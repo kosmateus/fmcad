@@ -331,6 +331,32 @@ class ShapesTests(unittest.TestCase):
         self.assertEqual(self.ctx.component.sketches.count, 0)
         self.assertEqual(model.TRACE, [])
 
+    def test_named_primitive_execution_preserves_dispatch_and_rejection_order(self):
+        cases = {'box': {'width': '20 mm', 'depth': '10 mm'},
+                 'cylinder': {'radius': '10 mm'},
+                 'tube': {'outerRadius': '10 mm', 'innerRadius': '6 mm'},
+                 'ring': {'outerRadius': '10 mm', 'innerRadius': '6 mm'},
+                 'cone': {'baseRadius': '10 mm', 'topRadius': '5 mm'}}
+
+        def legacy_dispatch(*args):
+            raise AssertionError('Named primitive depends on the multimode dispatcher')
+
+        with patch.dict(NAMESPACE, {'_shapes_recipe': legacy_dispatch,
+                                    '_shapes_primitive': legacy_dispatch}):
+            for mode, sizes in cases.items():
+                with self.subTest(mode=mode):
+                    ctx = Context()
+                    result = ctx.call('shape.' + mode, dict(sizes, name='Part', height='20 mm'))
+                    self.assertEqual(result['recipe'], mode)
+                    self.assertEqual(len(result['helpers']), 3 if mode == 'cone' else 1)
+                    # The public name reservation precedes length rejection.
+                    ctx.component.sketches.values.append(types.SimpleNamespace(name='Taken'))
+                    with self.assertRaisesRegex(ValueError, 'Reserved shape name already exists'):
+                        ctx.call('shape.' + mode, dict(sizes, name='Taken', height='0 mm'))
+                    rejected = ctx.call('shape.' + mode, dict(sizes, name='Invalid', height='0 mm'))
+                    self.assertEqual(rejected['rejection']['operation'], 'shape.' + mode)
+                    self.assertEqual(rejected['rejection']['mutationStatus'], 'not_started')
+
     def test_primitive_native_failure_is_not_input_rejection(self):
         def failed_section(*args):
             model.TRACE.append(('partial-native-mutation',))

@@ -486,11 +486,8 @@ def _shapes_section(ctx: "CadContext", name: str, plane: "JsonValue",
     return sketch, profile
 
 
-def _shapes_primitive(ctx: "CadContext", data: "JsonObject", mode: str) -> "JsonObject":
-    sizes = {'box': ('width', 'depth', 'height'), 'cylinder': ('radius', 'height'),
-             'tube': ('outerRadius', 'innerRadius', 'height'),
-             'ring': ('outerRadius', 'innerRadius', 'height'),
-             'cone': ('baseRadius', 'topRadius', 'height')}[mode]
+def _shapes_primitive_inputs(ctx: "CadContext", data: "JsonObject", mode: str,
+                             sizes: tuple[str, ...]) -> "JsonObject | None":
     # Only input validation belongs to the known nonmutating rejection boundary.
     # Native lookup, helper creation and kernel failures must still propagate.
     try:
@@ -504,35 +501,75 @@ def _shapes_primitive(ctx: "CadContext", data: "JsonObject", mode: str) -> "Json
         return {'status': 'failed',
                 'error': {'code': 'INVALID_INPUT', 'message': str(exc)},
                 'rejection': {'kind': 'cad-input-rejection', 'version': 1,
-                              'operation': 'shape.' + mode,
-                              'mutationStatus': 'not_started'}}
+                               'operation': 'shape.' + mode,
+                               'mutationStatus': 'not_started'}}
+    return None
+
+
+def _shapes_primitive_plane(ctx: "CadContext", data: "JsonObject") -> "JsonValue":
     plane = data.get('plane', 'XY')
     entity = _shapes_native(ctx, plane)
     if _cad_type(entity) != 'ConstructionPlane':
         raise ValueError('Primitive plane must be a construction plane, not a face')
     if ctx.occurrence is not None:
         raise ValueError('Primitive creation requires component scope, not occurrence scope')
+    return plane
+
+
+def _shapes_extruded_primitive(ctx: "CadContext", data: "JsonObject", mode: str,
+                              sizes: tuple[str, ...]) -> "JsonObject":
+    rejection = _shapes_primitive_inputs(ctx, data, mode, sizes)
+    if rejection is not None:
+        return rejection
+    plane = _shapes_primitive_plane(ctx, data)
     names = [_geometry_shapes_cast("str", data['name']) + '__section']
-    if mode == 'cone':
-        names += [_geometry_shapes_cast("str", data['name']) + '__top',
-                  _geometry_shapes_cast("str", data['name']) + '__topPlane']
     _shapes_reserve(ctx, [_geometry_shapes_cast("str", data['name'])] + names)
     dims = {k: data[k] for k in sizes if k != 'height'}
-    if mode == 'cone':
-        dims = {'radius': data['baseRadius']}
     sketch, profile = _shapes_section(ctx, names[0], plane, dims)
-    if mode == 'cone':
-        top_plane = ctx.call('datum.plane', {'name': names[2], 'plane': plane, 'offset': data['height']})
-        top_sketch, top = _shapes_section(ctx, names[1], top_plane, {'radius': data['topRadius']})
-        result = _geometry_shapes_cast("JsonObject", ctx.call(
-            'model.loft', {'name': data['name'], 'profiles': [profile, top]}))
-        result['helpers'] = [sketch, top_plane, top_sketch]
-    else:
-        result = _geometry_shapes_cast("JsonObject", ctx.call(
-            'model.extrude', {'name': data['name'], 'profile': profile, 'distance': data['height']}))
-        result['helpers'] = [sketch]
+    result = _geometry_shapes_cast("JsonObject", ctx.call(
+        'model.extrude', {'name': data['name'], 'profile': profile, 'distance': data['height']}))
+    result['helpers'] = [sketch]
     result['recipe'] = mode
     return result
+
+
+def _shapes_box(ctx: "CadContext", data: "JsonObject") -> "JsonObject":
+    return _shapes_extruded_primitive(ctx, data, 'box', ('width', 'depth', 'height'))
+
+
+def _shapes_cylinder(ctx: "CadContext", data: "JsonObject") -> "JsonObject":
+    return _shapes_extruded_primitive(ctx, data, 'cylinder', ('radius', 'height'))
+
+
+def _shapes_tube(ctx: "CadContext", data: "JsonObject") -> "JsonObject":
+    return _shapes_extruded_primitive(ctx, data, 'tube', ('outerRadius', 'innerRadius', 'height'))
+
+
+def _shapes_ring(ctx: "CadContext", data: "JsonObject") -> "JsonObject":
+    return _shapes_extruded_primitive(ctx, data, 'ring', ('outerRadius', 'innerRadius', 'height'))
+
+
+def _shapes_cone(ctx: "CadContext", data: "JsonObject") -> "JsonObject":
+    rejection = _shapes_primitive_inputs(ctx, data, 'cone', ('baseRadius', 'topRadius', 'height'))
+    if rejection is not None:
+        return rejection
+    plane = _shapes_primitive_plane(ctx, data)
+    names = [_geometry_shapes_cast("str", data['name']) + suffix
+             for suffix in ('__section', '__top', '__topPlane')]
+    _shapes_reserve(ctx, [_geometry_shapes_cast("str", data['name'])] + names)
+    sketch, profile = _shapes_section(ctx, names[0], plane, {'radius': data['baseRadius']})
+    top_plane = ctx.call('datum.plane', {'name': names[2], 'plane': plane, 'offset': data['height']})
+    top_sketch, top = _shapes_section(ctx, names[1], top_plane, {'radius': data['topRadius']})
+    result = _geometry_shapes_cast("JsonObject", ctx.call(
+        'model.loft', {'name': data['name'], 'profiles': [profile, top]}))
+    result['helpers'] = [sketch, top_plane, top_sketch]
+    result['recipe'] = 'cone'
+    return result
+
+
+def _shapes_primitive(ctx: "CadContext", data: "JsonObject", mode: str) -> "JsonObject":
+    return {'box': _shapes_box, 'cylinder': _shapes_cylinder, 'tube': _shapes_tube,
+            'ring': _shapes_ring, 'cone': _shapes_cone}[mode](ctx, data)
 
 
 # --- GM10 generic shape library ---
