@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import http from "node:http";
+import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -355,3 +357,200 @@ function text(value: unknown): string {
   assert.ok(typeof value === "string");
   return value;
 }
+
+const { createBrokerTransport } = load(
+  "../packages/node-adapters/dist/fusion-transport/broker.js",
+) as typeof import("../packages/node-adapters/src/fusion-transport/broker");
+type ProbeClient =
+  import("../packages/node-adapters/src/execution/queue-instance").ProbeClient;
+
+async function mcpFixture(
+  t: import("node:test").TestContext,
+  reply: (id: number) => Record<string, unknown>,
+) {
+  let rawResponse = "";
+  const server = http.createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => (body += chunk));
+    request.on("end", () => {
+      const message = JSON.parse(body) as { id?: number; method: string };
+      if (message.method === "initialize") {
+        response.setHeader("Mcp-Session-Id", "probe-response-test");
+        response.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: {
+              protocolVersion: "2025-11-25",
+              serverInfo: { name: "fixture", version: "1" },
+            },
+          }),
+        );
+        return;
+      }
+      if (message.method === "notifications/initialized") {
+        response.writeHead(202);
+        response.end();
+        return;
+      }
+      rawResponse = JSON.stringify({
+        jsonrpc: "2.0",
+        id: message.id,
+        ...reply(message.id ?? 2),
+      });
+      response.end(rawResponse);
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const physical = createBrokerTransport(
+    {
+      backend: "mcp",
+      transport: "http",
+      url: `http://127.0.0.1:${address.port}/mcp`,
+      tool: "fusion_mcp_execute",
+      timeoutMs: 1000,
+      protocolVersion: "2025-11-25",
+    },
+    {
+      version: "test",
+      bridgeSource: () => "",
+      requestTimeout: (serverConfig) => serverConfig.timeoutMs ?? 1000,
+    },
+  );
+  const client: ProbeClient = {
+    server: { timeoutMs: 1000 },
+    prepareCallTool: (args, tool, manifest) =>
+      physical.prepareCallTool({ ...args }, tool, manifest),
+    callTool: (args, tool) => physical.callTool({ ...args }, tool),
+  };
+  return { client, raw: () => rawResponse };
+}
+
+function probeMarker(identity: Record<string, unknown>) {
+  return `FMCAD_QUEUE_INSTANCE ${JSON.stringify(identity)}`;
+}
+
+function readDiagnostic(file: string) {
+  return JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+}
+
+test("instance probe preserves raw MCP response and reads structured stdout", async (t) => {
+  const identity = {
+    pid: 1420,
+    birth: "probe:1420",
+    version: "fixture",
+    documents: [],
+  };
+  const contentText = JSON.stringify({ success: true, message: "" });
+  const structuredContent = {
+    success: true,
+    stdout: probeMarker(identity),
+    stderr: "",
+  };
+  const { client, raw } = await mcpFixture(t, () => ({
+    result: {
+      content: [{ type: "text", text: contentText }],
+      structuredContent,
+      isError: false,
+    },
+  }));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "instance-probe-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const diagnosticPath = path.join(directory, "preflight-result.json");
+
+  const probe = await qi.prepareProbe(client, {
+    diagnosticPath,
+    requireIdle: false,
+  });
+  assert.deepEqual(await probe(), identity);
+
+  const diagnostic = readDiagnostic(diagnosticPath);
+  assert.equal(diagnostic["text"], probeMarker(identity));
+  assert.equal(diagnostic["transportText"], contentText);
+  assert.equal(diagnostic["rawResponse"], raw());
+  assert.deepEqual(diagnostic["data"], structuredContent);
+});
+
+test("instance probe rejects conflicting identities in content and structured stdout", async (t) => {
+  const contentIdentity = {
+    pid: 1420,
+    birth: "probe:1420",
+    version: "fixture",
+    documents: [],
+  };
+  const structuredIdentity = {
+    ...contentIdentity,
+    pid: 1421,
+    birth: "probe:1421",
+  };
+  const structuredContent = { stdout: probeMarker(structuredIdentity) };
+  const { client, raw } = await mcpFixture(t, () => ({
+    result: {
+      content: [{ type: "text", text: probeMarker(contentIdentity) }],
+      structuredContent,
+    },
+  }));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "instance-probe-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const diagnosticPath = path.join(directory, "preflight-result.json");
+  let observed = false;
+
+  const probe = await qi.prepareProbe(client, {
+    diagnosticPath,
+    requireIdle: false,
+    onObservation: () => (observed = true),
+  });
+  await assert.rejects(probe(), {
+    code: "INSTANCE_UNAVAILABLE",
+    message: "Conflicting Fusion instance identities",
+  });
+  assert.equal(observed, false);
+  assert.equal(readDiagnostic(diagnosticPath)["rawResponse"], raw());
+});
+
+test("instance probe retains the raw response but does not accept empty structured stdout", async (t) => {
+  const structuredContent = { success: true, stdout: "", stderr: "" };
+  const { client, raw } = await mcpFixture(t, () => ({
+    result: { content: [], structuredContent },
+  }));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "instance-probe-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const diagnosticPath = path.join(directory, "preflight-result.json");
+
+  const probe = await qi.prepareProbe(client, {
+    diagnosticPath,
+    requireIdle: false,
+  });
+  await assert.rejects(probe(), {
+    code: "INSTANCE_UNAVAILABLE",
+    message: "Fusion instance probe returned no identity",
+  });
+  const diagnostic = readDiagnostic(diagnosticPath);
+  assert.equal(diagnostic["rawResponse"], raw());
+  assert.deepEqual(diagnostic["data"], structuredContent);
+});
+
+test("instance probe retains native JSON-RPC error details and raw response", async (t) => {
+  const nativeError = { code: -32000, message: "fixture failure" };
+  const { client, raw } = await mcpFixture(t, () => ({ error: nativeError }));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "instance-probe-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const diagnosticPath = path.join(directory, "preflight-result.json");
+
+  const probe = await qi.prepareProbe(client, {
+    diagnosticPath,
+    requireIdle: false,
+  });
+  await assert.rejects(probe(), { code: "MCP_ERROR" });
+  const diagnostic = readDiagnostic(diagnosticPath);
+  assert.equal(diagnostic["rawResponse"], raw());
+  assert.deepEqual(diagnostic["nativeError"], nativeError);
+});

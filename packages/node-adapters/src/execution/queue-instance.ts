@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   prepareEncodedWireArtifact,
   prepareWireArtifact,
@@ -73,6 +74,8 @@ interface WorkflowValue extends NativeReceiptIdentity {
 export interface ProbeOutput {
   failed?: unknown;
   text?: string;
+  data?: unknown;
+  rawResponse?: string;
 }
 interface ProbeArguments {
   featureType: string;
@@ -485,15 +488,24 @@ def run(_context: str) -> None:
         try {
           output = await send();
         } catch (error) {
-          if (diagnosticPath)
-            durable(diagnosticPath, {
+          if (diagnosticPath) {
+            const details: Record<string, unknown> = {
               stage: "instance_probe",
               at: new Date().toISOString(),
               code:
                 (error as NodeJS.ErrnoException).code ||
                 "PROBE_TRANSPORT_ERROR",
               message: (error as Error).message,
-            });
+            };
+            const rawResponse = (error as { rawResponse?: unknown })
+              .rawResponse;
+            const nativeError = (error as { nativeError?: unknown })
+              .nativeError;
+            if (typeof rawResponse === "string")
+              details["rawResponse"] = rawResponse;
+            if (nativeError !== undefined) details["nativeError"] = nativeError;
+            durable(diagnosticPath, details);
+          }
           throw error;
         } finally {
           client.server.timeoutMs = previousTimeout;
@@ -515,34 +527,54 @@ def run(_context: str) -> None:
       client.server.timeoutMs = previousTimeout;
     }
     async function inspect(output: ProbeOutput) {
-      if (diagnosticPath)
-        durable(diagnosticPath, {
-          stage: "instance_probe",
-          at: new Date().toISOString(),
-          failed: output.failed,
-          text: String(output.text || "").slice(-16384),
-        });
+      const diagnostic = {
+        stage: "instance_probe",
+        at: new Date().toISOString(),
+        failed: output.failed,
+        text: String(output.text || "").slice(-16384),
+        data: output.data,
+        rawResponse: output.rawResponse,
+      };
+      if (diagnosticPath) durable(diagnosticPath, diagnostic);
       if (output.failed)
         fail("INSTANCE_UNAVAILABLE", "Read-only Fusion instance probe failed");
-      const text = output.text || "";
-      const line = text
-        .split(/\r?\n/)
-        .find((line) => line.startsWith("FMCAD_QUEUE_INSTANCE "));
-      if (!line)
+      const structured =
+        output.data &&
+        typeof output.data === "object" &&
+        !Array.isArray(output.data)
+          ? (output.data as Record<string, unknown>)
+          : undefined;
+      const stdout =
+        typeof structured?.["stdout"] === "string" ? structured["stdout"] : "";
+      const marker = "FMCAD_QUEUE_INSTANCE ";
+      const lines = [output.text || "", stdout].flatMap((text) =>
+        text.split(/\r?\n/).filter((line) => line.startsWith(marker)),
+      );
+      if (!lines.length)
         fail(
           "INSTANCE_UNAVAILABLE",
           "Fusion instance probe returned no identity",
         );
-      const result = JSON.parse(
-        line!.slice("FMCAD_QUEUE_INSTANCE ".length),
-      ) as FusionIdentity;
-      if (
-        !Number.isSafeInteger(result.pid) ||
-        !result.birth ||
-        !result.version ||
-        !Array.isArray(result.documents)
-      )
-        fail("INSTANCE_UNAVAILABLE", "Incomplete Fusion identity");
+      const results = lines.map((line) => {
+        const result = JSON.parse(line.slice(marker.length)) as FusionIdentity;
+        if (
+          !Number.isSafeInteger(result.pid) ||
+          !result.birth ||
+          !result.version ||
+          !Array.isArray(result.documents)
+        )
+          fail("INSTANCE_UNAVAILABLE", "Incomplete Fusion identity");
+        return result;
+      });
+      if (results.some((result) => !isDeepStrictEqual(result, results[0])))
+        fail("INSTANCE_UNAVAILABLE", "Conflicting Fusion instance identities");
+      const result = results[0]!;
+      if (diagnosticPath)
+        durable(diagnosticPath, {
+          ...diagnostic,
+          text: lines[0],
+          transportText: diagnostic.text,
+        });
       if (onObservation) await onObservation(result);
       if (requireIdle && !idle(result))
         throw Object.assign(
