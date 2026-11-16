@@ -43,6 +43,7 @@ interface CliSettlementFailure {
   clientId: string;
   reason: "lookup-unavailable" | "lookup-error" | "invalid-terminal-result";
 }
+export const cliSettlementTimeoutMs = 240_000;
 type TerminalExecution = Execution & {
   state: "succeeded" | "failed";
   sdkSettled: true;
@@ -473,7 +474,7 @@ export function recordCliSettlementFailure(
 export function awaitCliSettlement(
   filename: string,
   env: NodeJS.ProcessEnv = process.env,
-  timeoutMs = 240_000,
+  timeoutMs = cliSettlementTimeoutMs,
 ) {
   const invocation = ownedInvocation({
     ...env,

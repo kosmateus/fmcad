@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
 import {
+  cliSettlementTimeoutMs,
   legacyIntents,
   recordCliSettlement,
   recordCliSettlementFailure,
@@ -573,7 +574,7 @@ export class ScenarioSession {
       stderr = fs.openSync(stderrFile, "wx", 0o600);
     let code: number | null;
     const settledResults = new Map<string, Execution>(),
-      attemptedSettlements = new Set<string>();
+      settlementStartedAt = new Map<string, number>();
     let childExited = false;
     try {
       const pattern =
@@ -633,47 +634,44 @@ export class ScenarioSession {
             !intent.completed ||
             !intent.admissionRequested ||
             intent.settlement ||
-            intent.settlementFailure ||
-            attemptedSettlements.has(intent.requestId)
+            intent.settlementFailure
           )
             continue;
-          attemptedSettlements.add(intent.requestId);
-          let result: Execution | null;
+          const startedAt =
+            settlementStartedAt.get(intent.requestId) ?? Date.now();
+          settlementStartedAt.set(intent.requestId, startedAt);
+          let result: Execution | null = null,
+            failure:
+              | "lookup-unavailable"
+              | "lookup-error"
+              | "invalid-terminal-result" = "lookup-unavailable";
           try {
             result = await this.backend.lookup!(
               this.report.owner,
               intent.requestId,
             );
           } catch {
+            failure = "lookup-error";
+          }
+          if (result) {
+            try {
+              recordCliSettlement(
+                text(intent.filename),
+                this.report.owner,
+                result,
+              );
+              settledResults.set(intent.requestId, result);
+              continue;
+            } catch {
+              failure = "invalid-terminal-result";
+            }
+          }
+          if (Date.now() - startedAt >= cliSettlementTimeoutMs)
             recordCliSettlementFailure(
               text(intent.filename),
               this.report.owner,
-              "lookup-error",
+              failure,
             );
-            continue;
-          }
-          if (!result) {
-            recordCliSettlementFailure(
-              text(intent.filename),
-              this.report.owner,
-              "lookup-unavailable",
-            );
-            continue;
-          }
-          try {
-            recordCliSettlement(
-              text(intent.filename),
-              this.report.owner,
-              result,
-            );
-            settledResults.set(intent.requestId, result);
-          } catch {
-            recordCliSettlementFailure(
-              text(intent.filename),
-              this.report.owner,
-              "invalid-terminal-result",
-            );
-          }
         }
       };
       let settlementMonitorError: unknown;
@@ -681,7 +679,7 @@ export class ScenarioSession {
         do {
           await settleCompletedCommands();
           if (!childExited)
-            await new Promise<void>((resolve) => setTimeout(resolve, 10));
+            await new Promise<void>((resolve) => setTimeout(resolve, 100));
         } while (!childExited);
         await settleCompletedCommands();
       })().catch((error: unknown) => {

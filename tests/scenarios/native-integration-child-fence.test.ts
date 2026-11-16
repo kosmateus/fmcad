@@ -51,6 +51,7 @@ test("owned integration CLI settles each child dispatch before the next one", as
     { mode: 0o600 },
   );
   const requestOrder: string[] = [];
+  const lookupCounts = new Map<string, number>();
   const backend: ScenarioBackend = {
     identity: report.backendIdentity,
     mode: "simulator",
@@ -64,6 +65,9 @@ test("owned integration CLI settles each child dispatch before the next one", as
     lookup: async (actualOwner, requestId) => {
       assert.deepEqual(actualOwner, owner);
       if (!requestOrder.includes(requestId)) requestOrder.push(requestId);
+      const lookups = (lookupCounts.get(requestId) ?? 0) + 1;
+      lookupCounts.set(requestId, lookups);
+      if (lookups === 1) return null;
       return {
         requestId,
         state: "succeeded",
@@ -134,6 +138,8 @@ exports.main = async (_argv, { stderr }) => {
     "owned child CLI dispatches two settled commands",
   );
   assert.equal(requestOrder.length, 2);
+  assert.equal(lookupCounts.size, 2);
+  assert.ok([...lookupCounts.values()].every((lookups) => lookups === 2));
   assert.equal(session.report.requests.length, 2);
   assert.deepEqual(
     session.report.requests.map((request) => request.result?.state),

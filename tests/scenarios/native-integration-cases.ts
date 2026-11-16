@@ -4,6 +4,11 @@ import { createHash } from "node:crypto";
 import type { FixtureFolder } from "./contracts";
 import type { Scenario } from "./runner";
 export const nativeIntegrationCapability = "native-owned-integration-cli";
+export function nativeIntegrationSourceHash(source: string): string {
+  return createHash("sha256")
+    .update(source.replace(/\r\n/gu, "\n"))
+    .digest("hex");
+}
 interface NativeCase {
   readonly id: string;
   readonly source: string;
@@ -30,11 +35,8 @@ export function nativeIntegrationScenarios(
       // Per-case exclusive barriers preserve old global assumptions until narrowed by evidence.
       scope: "exclusive-instance",
       async run(session) {
-        const bytes = fs.readFileSync(path.join(root, entry.source));
-        if (
-          createHash("sha256").update(bytes).digest("hex") !==
-          entry.sourceSha256
-        )
+        const source = fs.readFileSync(path.join(root, entry.source), "utf8");
+        if (nativeIntegrationSourceHash(source) !== entry.sourceSha256)
           throw new Error(
             "Retained native integration source changed after assertion review",
           );
