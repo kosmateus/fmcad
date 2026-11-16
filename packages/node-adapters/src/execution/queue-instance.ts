@@ -202,7 +202,7 @@ export function createQueueInstance(
 
   function reclaim(dir: string) {
     const file = path.join(dir, "broker.lock");
-    const marker = readJson(file) as ProcessIdentity;
+    const marker = readJson(file) as ProcessIdentity & { nonce?: string };
     if (
       !Number.isSafeInteger(marker.pid) ||
       marker.pid <= 0 ||
@@ -233,7 +233,29 @@ export function createQueueInstance(
       const current = readJson(file);
       if (JSON.stringify(current) !== JSON.stringify(marker))
         fail("LOCK_CHANGED", "Broker ownership changed during recovery");
-      durable(path.join(dir, `reclaimed-${randomUUID()}.json`), marker, true);
+      const reclaimedFile = path.join(dir, `reclaimed-${randomUUID()}.json`);
+      durable(reclaimedFile, marker, true);
+      const lifecycleFile = path.join(
+        dir,
+        `broker-lifecycle-${String(marker.nonce)}.json`,
+      );
+      const lifecycleValue = fs.existsSync(lifecycleFile)
+        ? readJson(lifecycleFile)
+        : {};
+      const lifecycle = isRecord(lifecycleValue) ? lifecycleValue : {};
+      // A bounded local rejection never replaces the last actual SDK owner.
+      if (!(
+        lifecycle["stage"] === "rejected" &&
+        lifecycle["code"] === "NORMAL_RESTART_UNPROVEN" &&
+        lifecycle["probeNotSubmitted"] === true &&
+        lifecycle["safeToRecover"] === true
+      ))
+        durable(path.join(dir, "broker-reclaimed-head.json"), {
+          ownerReference: {
+            path: reclaimedFile,
+            sha256: hash(fs.readFileSync(reclaimedFile)),
+          },
+        });
       fs.unlinkSync(file);
       const fd = fs.openSync(dir, "r");
       try {

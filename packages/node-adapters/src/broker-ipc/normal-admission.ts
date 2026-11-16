@@ -21,14 +21,15 @@ export function epochStartupPinned(
   },
   previousBuild: unknown,
   currentBuild: string,
+  settledRestart = false,
 ): boolean {
   if (!state.epoch) return false;
   if (
     state.admissionMode === "normal-multidocument" &&
     typeof previousBuild === "string" &&
-    previousBuild !== currentBuild
+    (previousBuild !== currentBuild || settledRestart)
   ) {
-    state.assertEpoch(true);
+    if (!settledRestart) state.assertEpoch(true);
     // This is the current store only. The retired history remains immutable,
     // not a reason to replay it or to discard a live current operation.
     const current = state.data;

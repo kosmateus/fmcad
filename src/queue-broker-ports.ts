@@ -33,6 +33,7 @@ export interface Identity {
   buildHash: string;
   instance: Instance;
   sourceCommit?: string;
+  normalRestart?: Reference;
 }
 export interface Owner {
   pid: number;

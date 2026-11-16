@@ -425,6 +425,20 @@ export async function ensureBroker(
             "BROKER_STALE",
             "Previous broker marker remains and queue.autoRecover is false; explicit recovery required.",
           );
+        const rejected = readRecord(
+          path.join(dir, `broker-lifecycle-${String(owner["nonce"])}.json`),
+        );
+        if (
+          rejected?.["stage"] === "rejected" &&
+          rejected["code"] === "NORMAL_RESTART_UNPROVEN" &&
+          rejected["probeNotSubmitted"] === true &&
+          rejected["safeToRecover"] !== true &&
+          isRecord(rejected["owner"]) &&
+          rejected["owner"]["pid"] === owner["pid"] &&
+          rejected["owner"]["birth"] === owner["birth"] &&
+          rejected["owner"]["nonce"] === owner["nonce"]
+        )
+          queue.fail("NORMAL_RESTART_UNPROVEN", String(rejected["message"]));
         if (recoverableBroker(dir, owner)) {
           try {
             // Recover only the dead supervisor. The original job/lease owner and
@@ -447,7 +461,12 @@ export async function ensureBroker(
           );
         }
       }
-    } else if (!fs.existsSync(marker) && !fs.existsSync(startup) && !launched) {
+    } else if (
+      !fs.existsSync(marker) &&
+      !fs.existsSync(startup) &&
+      !fs.existsSync(path.join(dir, "recovery.lock")) &&
+      !launched
+    ) {
       const nonce = randomUUID();
       try {
         claimStart(startup, {
