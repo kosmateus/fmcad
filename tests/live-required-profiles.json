@@ -664,9 +664,15 @@
         {
           "id": "gm07",
           "source": "tests/live-gm07.js",
-          "kind": "external-fixture",
-          "prerequisites": "Externally prepared exact document, client, runtime and Fusion version",
-          "execution": "explicit-owned-scope-only"
+          "kind": "suite-owned-scratch",
+          "prerequisites": "Explicitly pinned qualified runtime/build, client and Fusion version; runner creates one unique unsaved scratch and closes only its exact verified identity",
+          "execution": "explicit-owned-scope-only",
+          "requiredEnvironment": [
+            "FMCAD_LIVE_RUNTIME_ROOT",
+            "FMCAD_LIVE_BUILD_HASH",
+            "FMCAD_LIVE_CLIENT",
+            "FMCAD_LIVE_FUSION_VERSION"
+          ]
         },
         {
           "id": "gm12-spring",

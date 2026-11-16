@@ -1,8 +1,8 @@
 'use strict';
 
 // GM07 fixed-run adapter. The installed source-pinned program owns all method
-// calls; this wrapper never creates a document or sends raw modeling Python.
-// Its explicit caller cleanup closes only the exact verified unsaved scratch.
+// calls; this runner creates only its uniquely named scratch and sends no raw
+// modeling Python. Caller cleanup closes only that exact verified scratch.
 const assert = require('node:assert/strict');
 const childProcess = require('node:child_process');
 const crypto = require('node:crypto');
@@ -15,8 +15,6 @@ const name = 'FMCAD_GM07_' + crypto.randomUUID().replaceAll('-', '_');
 const fixtureId = 'gm07-curves-program-v1';
 const fixturePrefix = 'NQGM07CURVE01';
 const fixedSourceCommit = '0fc1d992db1a3c7b7c5b3d3944d44aba8bc3fa0d';
-const expectedRuntimeRoot = '/home/kamil/.local/share/fmcad/releases/b811af8/node_modules/fmcad';
-const expectedBuildHash = 'b865bd3ca761ba71d4a2661d487301823f0326b6faf1df101cc8e345a5e60526';
 const expectedManifestSha256 = 'aef99573a0ce45f852ea6883f0921e20056961a9d0b44bb8ced7654fd0707bb5';
 const expectedScriptSha256 = 'aad7f113451db0784b16235de4d77cf7d8af024c3880338728154274616dbe16';
 const targetOperations = ['sketch.profile-file', 'curve.fit', 'curve.inspect', 'curve.offset', 'curve.offset-edit'];
@@ -36,12 +34,13 @@ const report = {
   broker: { routing: 'queue', client: process.env.FMCAD_LIVE_CLIENT || null },
   name,
   startedAt: new Date().toISOString(),
-  scope: 'Existing exact owner-bound pristine unsaved scratch only. The fixed source creates one sketch; the caller closes only that exact scratch after terminal-result verification. No document creation, save, cloud write, existing-geometry edit or preference change.',
+  scope: 'The suite creates one uniquely named owner-bound pristine unsaved scratch; the fixed source creates one sketch; caller cleanup closes only that exact scratch after terminal-result verification. No save, cloud write, existing-geometry edit or preference change.',
   fixedProgram: {
     fixtureId, sourceCommit: fixedSourceCommit, fixturePrefix,
-    runtimeRoot: expectedRuntimeRoot, buildHash: expectedBuildHash,
+    runtimeRoot: process.env.FMCAD_LIVE_RUNTIME_ROOT || null,
+    buildHash: process.env.FMCAD_LIVE_BUILD_HASH || null,
     manifestSha256: expectedManifestSha256, scriptSha256: expectedScriptSha256,
-    status: 'OFFLINE-CANDIDATE-QUALIFIED; NOT-ACTIVE; NATIVE-NOTRUN',
+    status: 'NOT-CHECKED; NATIVE-NOTRUN',
   },
   commands: [], methodResults: [], assertions: [], tests: [], ownedDocuments: [],
   remainingOwnedDocuments: 'unknown',
@@ -68,6 +67,15 @@ function requiredEnv(name) {
       { code: 'NATIVE_FIXTURE_SCOPE_REQUIRED' });
   }
   return value;
+}
+
+function runtimePins() {
+  const selectedRoot = requiredEnv('FMCAD_LIVE_RUNTIME_ROOT');
+  assert.ok(path.isAbsolute(selectedRoot), 'FMCAD_LIVE_RUNTIME_ROOT must be an absolute path.');
+  return {
+    runtimeRoot: fs.realpathSync(selectedRoot),
+    expectedBuildHash: requiredEnv('FMCAD_LIVE_BUILD_HASH'),
+  };
 }
 
 // Same execution-only interpretation as the corrected GM12 helper: a nested
@@ -110,7 +118,8 @@ function inspectY(result) {
   };
 }
 
-function fixedContract(runtimeRoot, expectedBuild = null) {
+function fixedContract(runtimeRoot, expectedBuild) {
+  assert.match(expectedBuild, /^[a-f0-9]{64}$/u, 'FMCAD_LIVE_BUILD_HASH must be a SHA-256 fingerprint.');
   const runtime = require(path.join(runtimeRoot, 'dist/src/queue-instance.js'));
   const { fixtureContract } = require(path.join(runtimeRoot, 'dist/src/queue-native-fixture-grant.js'));
   const contract = fixtureContract(fixtureId);
@@ -142,14 +151,13 @@ function fixedContract(runtimeRoot, expectedBuild = null) {
   const installedBuild = JSON.parse(fs.readFileSync(path.join(runtimeRoot, 'dist/runtime-build.json'), 'utf8'));
   const buildHash = runtime.buildHash();
   assert.equal(installedBuild.fingerprint, buildHash, 'Runtime fingerprint differs from installed package identity.');
-  if (expectedBuild) assert.equal(buildHash, expectedBuild, 'Build differs from the offline-qualified candidate.');
+  assert.equal(buildHash, expectedBuild, 'Build differs from the offline-qualified candidate.');
   return { runtime, contract, manifest, manifestSha256, scriptSha256, scriptPath, cliPath, buildHash };
 }
 
 function offlineCheck() {
-  const runtimeRoot = fs.realpathSync(process.env.FMCAD_LIVE_RUNTIME_ROOT || expectedRuntimeRoot);
-  assert.equal(runtimeRoot, expectedRuntimeRoot, 'Use only the source-pinned GM07 candidate for offline checks.');
-  const pinned = fixedContract(runtimeRoot);
+  const { runtimeRoot, expectedBuildHash } = runtimePins();
+  const pinned = fixedContract(runtimeRoot, expectedBuildHash);
   const pythonCheck = childProcess.spawnSync('python3', ['-B', '-c',
     'import runpy,sys; value=runpy.run_path(sys.argv[1]); assert callable(value["run"])', pinned.scriptPath],
   { encoding: 'utf8', timeout: 10000 });
@@ -171,11 +179,12 @@ function offlineCheck() {
     helperVersion: pinned.contract.helperVersion,
     scope: pinned.manifest.scope,
     callerCleanupRequired: pinned.manifest.callerCleanupRequired,
+    status: 'OFFLINE-CANDIDATE-QUALIFIED; NATIVE-NOTRUN',
     adapterCheck: 'PASS-OFFLINE',
     nativeStatus: 'NOTRUN-no-active-runtime-grant-or-fresh-scope',
   };
   report.tests = [{ name: 'gm07-fixed-source-offline-adapter-check', status: 'NOTRUN',
-    note: 'Manifest/source/build hashes match the inactive offline-qualified candidate; no broker or Fusion request was made.' }];
+    note: 'Manifest/source hashes and the explicit runtime build pin match; no broker or Fusion request was made.' }];
   report.operationCoverage = coverageOperations.map(operation => ({ operation, canonical: true,
     test: 'tests/live-gm07.js', status: 'NOTRUN-before-native-fixed-run' }));
   report.finishedAt = new Date().toISOString();
@@ -526,8 +535,12 @@ print('LIVE_GM07 ' + json.dumps({"closedCreationId": ${JSON.stringify(identity.c
 async function main() {
   persist();
   try {
-    const runtimeRoot = fs.realpathSync(requiredEnv('FMCAD_LIVE_RUNTIME_ROOT'));
-    const pinned = fixedContract(runtimeRoot);
+    const { runtimeRoot, expectedBuildHash } = runtimePins();
+    const pinned = fixedContract(runtimeRoot, expectedBuildHash);
+    report.fixedProgram = { ...report.fixedProgram, runtimeRoot, buildHash: pinned.buildHash,
+      manifestSha256: pinned.manifestSha256, scriptSha256: pinned.scriptSha256,
+      status: 'RUNTIME-BUILD-VERIFIED; NATIVE-NOTRUN' };
+    persist();
     process.env.FMCAD_LIVE_ROUTING = 'queue';
     const clientId = requiredEnv('FMCAD_LIVE_CLIENT');
     report.broker.client = clientId;
@@ -580,7 +593,7 @@ async function main() {
     report.tests = [{ name: 'gm07-source-pinned-native-methods', status: 'pass', operations: coverageOperations }];
   } catch (error) {
     failure = error;
-    if (error.code === 'NATIVE_FIXTURE_SCOPE_REQUIRED' || /FMCAD_LIVE_(CLIENT|RUNTIME_ROOT|DOC_NAME|DOC_ID|RESTORE_DOC_ID|FUSION_VERSION) is required/.test(error.message))
+    if (error.code === 'NATIVE_FIXTURE_SCOPE_REQUIRED' || /FMCAD_LIVE_(CLIENT|RUNTIME_ROOT|BUILD_HASH|DOC_NAME|DOC_ID|RESTORE_DOC_ID|FUSION_VERSION)/.test(error.message))
       blockedReason = error.message;
     report.tests = [{ name: 'gm07-source-pinned-native-methods',
       status: uncertain ? 'unknown' : blockedReason ? 'blocked' : 'fail', error: error.message,
@@ -641,7 +654,7 @@ async function entry() {
 }
 
 entry().catch(error => {
-  blockedReason = /EPOCH_CLIENT_NOT_GRANTED|NATIVE_FIXTURE_SCOPE_REQUIRED|NATIVE_FIXTURE_CHANGED|BUILD_CHANGED/.test(error.message)
+  blockedReason = /EPOCH_CLIENT_NOT_GRANTED|NATIVE_FIXTURE_SCOPE_REQUIRED|NATIVE_FIXTURE_CHANGED|BUILD_CHANGED|FMCAD_LIVE_(RUNTIME_ROOT|BUILD_HASH)/.test(error.message)
     ? error.message : blockedReason;
   report.tests = [{ name: 'gm07-source-pinned-wrapper-setup',
     status: uncertain ? 'unknown' : blockedReason ? 'blocked' : 'fail', error: error.message,

@@ -64,6 +64,238 @@ test("fixed GM07 and GM12 public operations retain canonical SDK/document contra
   }
 });
 
+test("GM07 offline check requires the explicitly selected build fingerprint", (t) => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-gm07-pin-"));
+  t.after(() => fs.rmSync(runtimeRoot, { recursive: true, force: true }));
+  const buildHash = "b".repeat(64);
+  const operations = [
+    "sketch.create",
+    "sketch.inspect",
+    "sketch.profile-file",
+    "curve.fit",
+    "curve.inspect",
+    "curve.offset",
+    "curve.offset-edit",
+  ];
+  const context = vm.createContext({
+    assert,
+    childProcess: { spawnSync: () => ({ status: 0, stderr: "" }) },
+    fs,
+    path,
+    process: {
+      env: {
+        FMCAD_LIVE_RUNTIME_ROOT: runtimeRoot,
+        FMCAD_LIVE_BUILD_HASH: "c".repeat(64),
+      },
+    },
+    fixtureId: "gm07-curves-program-v1",
+    fixturePrefix: "NQGM07CURVE01",
+    expectedRuntimeRoot: runtimeRoot,
+    coverageOperations: operations,
+    report: { fixedProgram: {} },
+    catalog: Object.fromEntries(operations.map((operation) => [operation, {}])),
+    contracts: Object.fromEntries(
+      operations.map((operation) => [
+        operation,
+        {
+          service: { kind: "python" },
+          requirements: { sdk: "required", document: true },
+        },
+      ]),
+    ),
+    persist: () => {},
+    console: { log: () => {} },
+    fixedContract: (root: string, expectedBuild: string) => {
+      assert.equal(root, runtimeRoot);
+      assert.equal(
+        expectedBuild,
+        buildHash,
+        "Build differs from the offline-qualified candidate",
+      );
+      return {
+        buildHash,
+        scriptPath: path.join(runtimeRoot, "gm07-curves.py"),
+        contract: { kind: "fixed-run-v1", helperVersion: "cad-v1" },
+        manifest: {
+          scope: "exact owner-bound pristine unsaved scratch",
+          callerCleanupRequired: true,
+        },
+        manifestSha256: "a".repeat(64),
+        scriptSha256: "b".repeat(64),
+      };
+    },
+  });
+  for (const name of ["requiredEnv", "runtimePins", "offlineCheck"])
+    vm.runInContext(retainedFunction("live-gm07.js", name), context);
+
+  const offlineCheck = vm.runInContext("offlineCheck", context) as () => void;
+  assert.throws(
+    offlineCheck,
+    /Build differs from the offline-qualified candidate/u,
+  );
+  (context["process"] as { env: Record<string, string> }).env[
+    "FMCAD_LIVE_BUILD_HASH"
+  ] = buildHash;
+  assert.doesNotThrow(offlineCheck);
+});
+
+test("GM07 provisions and closes only its exact new unsaved scratch", async (t) => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-gm07-run-"));
+  t.after(() => fs.rmSync(runtimeRoot, { recursive: true, force: true }));
+  const scratchName = "FMCAD_GM07_test_owned_scratch";
+  const scratchId = "12345678-1234-1234-1234-123456789abc";
+  const originalId = "87654321-4321-4321-4321-cba987654321";
+  const buildHash = "b".repeat(64);
+  const baselineDocument = {
+    name: "Existing user document",
+    creationId: originalId,
+    fileId: null,
+    saved: false,
+    modified: false,
+    active: true,
+  };
+  const scratch = {
+    name: scratchName,
+    creationId: scratchId,
+    fileId: null,
+    saved: false,
+    modified: false,
+    active: true,
+  };
+  let stateReads = 0;
+  const createdCommands: string[][] = [];
+  const fixtureScopes: [string | null, string | null][] = [];
+  const cleanupScripts: string[] = [];
+  const context = vm.createContext({
+    assert,
+    fs,
+    path,
+    process: {
+      env: {
+        FMCAD_LIVE_RUNTIME_ROOT: runtimeRoot,
+        FMCAD_LIVE_BUILD_HASH: buildHash,
+        FMCAD_LIVE_CLIENT: "gm07-owned-client",
+        FMCAD_LIVE_FUSION_VERSION: "fixture-fusion-version",
+      },
+    },
+    name: scratchName,
+    fixtureId: "gm07-curves-program-v1",
+    fixedSourceCommit: "source-pinned",
+    fixturePrefix: "NQGM07CURVE01",
+    identity: undefined,
+    restoreDocumentId: undefined,
+    baseline: undefined,
+    documentCreated: false,
+    uncertain: false,
+    fixedRunSettled: false,
+    failure: undefined,
+    blockedReason: undefined,
+    report: {
+      fixedProgram: {},
+      broker: {},
+      methodResults: [],
+      ownedDocuments: [],
+      tests: [],
+    },
+    reportPath: "test-report.json",
+    targetOperations: [],
+    coverageOperations: [],
+    persist: () => {},
+    console: { log: () => {}, error: () => {} },
+    fixture: (name: string | null, id: string | null) =>
+      fixtureScopes.push([name, id]),
+    state: () => {
+      stateReads += 1;
+      return stateReads === 1
+        ? { documents: [baselineDocument], activeCreationId: originalId }
+        : {
+            documents: [{ ...baselineDocument, active: false }, scratch],
+            activeCreationId: scratchId,
+          };
+    },
+    cli: (args: string[]) => {
+      createdCommands.push(args);
+      return { exitCode: 0 };
+    },
+    fixedContract: (root: string, expectedBuild: string) => {
+      assert.equal(root, runtimeRoot);
+      assert.equal(expectedBuild, buildHash);
+      return {
+        buildHash,
+        manifestSha256: "a".repeat(64),
+        scriptSha256: "b".repeat(64),
+        manifest: {
+          scope: "exact owner-bound pristine unsaved scratch",
+        },
+      };
+    },
+    runFixedProgram: (
+      pinned: { buildHash: string },
+      client: string,
+      version: string,
+    ) => {
+      assert.equal(pinned.buildHash, buildHash);
+      assert.equal(client, "gm07-owned-client");
+      assert.equal(version, "fixture-fusion-version");
+      return {
+        fusionVersion: version,
+        document: { before: scratch, after: scratch },
+        designBefore: {},
+      };
+    },
+    runAssertions: () => {},
+    lifecycleScript: (script: string, dispatch: boolean) => {
+      assert.equal(dispatch, false);
+      cleanupScripts.push(script);
+      return {
+        closedCreationId: scratchId,
+        activeCreationId: originalId,
+      };
+    },
+  });
+  for (const name of ["requiredEnv", "runtimePins", "closeOwned", "main"])
+    vm.runInContext(retainedFunction("live-gm07.js", name), context);
+
+  const main = vm.runInContext("main", context) as () => Promise<void>;
+  await main();
+
+  assert.equal(stateReads, 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(createdCommands)), [
+    ["doc", "new", "--name", scratchName, "--json"],
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(context["identity"])), {
+    name: scratchName,
+    creationId: scratchId,
+  });
+  assert.deepEqual(fixtureScopes, [
+    [null, null],
+    [scratchName, scratchId],
+    [null, null],
+  ]);
+  assert.equal(context["report"].fixtureClosed, true);
+  assert.equal(context["report"].cleanup.closedCreationId, scratchId);
+  assert.match(
+    cleanupScripts[0]!,
+    /d\.name == "FMCAD_GM07_test_owned_scratch"/u,
+  );
+  assert.match(
+    cleanupScripts[0]!,
+    /d\.creationId == "12345678-1234-1234-1234-123456789abc"/u,
+  );
+  assert.match(
+    cleanupScripts[0]!,
+    /doc\.dataFile is None and not doc\.isSaved/u,
+  );
+  assert.match(cleanupScripts[0]!, /doc\.close\(False\)/u);
+  assert.match(cleanupScripts[0]!, /before_others == expected_others/u);
+  assert.match(cleanupScripts[0]!, /after_others == expected_others/u);
+  assert.match(
+    cleanupScripts[0]!,
+    /restore_id = "87654321-4321-4321-4321-cba987654321"/u,
+  );
+  assert.match(cleanupScripts[0]!, /active_id == restore_id/u);
+});
+
 for (const family of ["gm07", "gm12"] as const) {
   for (const fault of [
     "spawn-throws",
