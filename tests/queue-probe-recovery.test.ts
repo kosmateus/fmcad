@@ -788,6 +788,272 @@ test("receipt-bound instance probe passes Windows Python admission without sendi
   assert.equal(sends, 0);
 });
 
+function executeReceiptWrapper(
+  script: string,
+  receiptPath: string,
+  writesPath: string,
+) {
+  const harness = `import json, os, sys, types
+_target = ${JSON.stringify(receiptPath)}
+_events = ${JSON.stringify(writesPath)}
+_replace = os.replace
+def _record_replace(source, target):
+    if target == _target:
+        with open(source, encoding='utf-8') as stream:
+            record = json.load(stream)
+        with open(_events, 'a', encoding='utf-8') as stream:
+            stream.write(json.dumps(record) + '\\n')
+    return _replace(source, target)
+os.replace = _record_replace
+app = types.SimpleNamespace(version='fixture',
+    userInterface=types.SimpleNamespace(activeCommand='SelectCommand'))
+core = types.ModuleType('adsk.core')
+core.Application = types.SimpleNamespace(get=lambda: app)
+adsk = types.ModuleType('adsk')
+adsk.core = core
+sys.modules['adsk'] = adsk
+sys.modules['adsk.core'] = core
+`;
+  return spawnSync("python3", ["-c", harness + script + "\nrun(None)\n"], {
+    encoding: "utf8",
+  });
+}
+
+function receiptWrites(file: string): Record<string, unknown>[] {
+  return fs
+    .readFileSync(file, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+test("public Python result capture passes Windows admission and writes the exact result before terminal", async (t) => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "public-python-result-"),
+  );
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const receiptPath = path.join(directory, "public.receipt.json");
+  const writesPath = path.join(directory, "writes.jsonl");
+  const binding = {
+    jobId: "public-job-1",
+    rpcId: "public-rpc-1",
+    sourceHash: "a".repeat(64),
+    buildHash: "b".repeat(64),
+    stage: "public-smoke",
+  };
+  const code = `def run(_context: str) -> dict[str, object]:
+    return {'success': True, 'stdout': 'captured stdout', 'stderr': ''}
+`;
+  const prepared = qi.prepareReceiptScript(code, true, receiptPath, binding, {
+    mapPath: (file) => file,
+    capturePublicPythonResult: true,
+  });
+
+  const runtime = path.resolve("dist/runtime/python");
+  const admission = createPythonRpcAdmission({
+    runtime,
+    checker: createPythonChecker({
+      typingRoot: path.join(runtime, "typing"),
+      definitionsRoot: path.join(runtime, "typing"),
+      pythonPlatform: "Windows",
+    }),
+  });
+  const report = await admission.check({
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: {
+      name: "fusion_mcp_execute",
+      arguments: {
+        featureType: "script",
+        object: { script: prepared.script, readOnly: true },
+      },
+    },
+  });
+  assert.equal(report.kind, "python");
+
+  const executed = executeReceiptWrapper(
+    prepared.script,
+    receiptPath,
+    writesPath,
+  );
+  assert.equal(
+    executed.status,
+    0,
+    `offline receipt wrapper failed: ${executed.stderr}`,
+  );
+  const result = {
+    success: true,
+    stdout: "captured stdout",
+    stderr: "",
+  };
+  const publicPythonResult = {
+    schema: "fmcad-public-python-result-v1",
+    value: result,
+  };
+  const receipt = record(qi.readJson(receiptPath));
+  assert.deepEqual(
+    Object.fromEntries(Object.keys(binding).map((key) => [key, receipt[key]])),
+    binding,
+  );
+  assert.equal(receipt["stage"], binding.stage);
+  assert.equal(receipt["terminal"], true);
+  assert.equal(receipt["outcome"], "succeeded");
+  assert.deepEqual(receipt["publicPythonResult"], publicPythonResult);
+  const writes = receiptWrites(writesPath);
+  assert.equal(writes.length, 2);
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.keys(binding).map((key) => [key, writes[0]![key]]),
+    ),
+    binding,
+  );
+  assert.equal(writes[0]!["terminal"], false);
+  assert.equal(writes[0]!["stage"], binding.stage);
+  assert.deepEqual(writes[0]!["publicPythonResult"], publicPythonResult);
+  assert.equal(writes[1]!["terminal"], true);
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.keys(binding).map((key) => [key, writes[1]![key]]),
+    ),
+    binding,
+  );
+  assert.deepEqual(writes[1]!["publicPythonResult"], publicPythonResult);
+});
+
+test("public Python result capture stays off by default and is exclusive with probe observations", (t) => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "public-python-result-default-"),
+  );
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const receiptPath = path.join(directory, "default.receipt.json");
+  const writesPath = path.join(directory, "writes.jsonl");
+  const binding = { jobId: "public-default", stage: "public-smoke" };
+  const code = `def run(_context: str) -> dict[str, object]:
+    return {'success': True, 'stdout': 'ignored', 'stderr': ''}
+`;
+  const prepared = qi.prepareReceiptScript(code, true, receiptPath, binding, {
+    mapPath: (file) => file,
+  });
+  assert.equal(prepared.script.includes("publicPythonResult"), false);
+  const executed = executeReceiptWrapper(
+    prepared.script,
+    receiptPath,
+    writesPath,
+  );
+  assert.equal(executed.status, 0, executed.stderr);
+  const receipt = record(qi.readJson(receiptPath));
+  assert.equal(receipt["terminal"], true);
+  assert.equal(receipt["outcome"], "succeeded");
+  assert.equal(Object.hasOwn(receipt, "publicPythonResult"), false);
+  assert.equal(receiptWrites(writesPath).length, 1);
+  assert.throws(
+    () =>
+      qi.prepareReceiptScript(code, true, receiptPath, binding, {
+        captureProbeObservation: true,
+        capturePublicPythonResult: true,
+      }),
+    { code: "INVALID_RECEIPT_CAPTURE" },
+  );
+  assert.throws(
+    () =>
+      qi.prepareReceiptScript(code, false, receiptPath, binding, {
+        capturePublicPythonResult: true,
+      }),
+    { code: "INVALID_RECEIPT_CAPTURE" },
+  );
+  assert.throws(
+    () =>
+      qi.prepareReceiptScript(
+        code,
+        true,
+        receiptPath,
+        {},
+        {
+          capturePublicPythonResult: true,
+        },
+      ),
+    { code: "INVALID_RECEIPT_CAPTURE" },
+  );
+  assert.throws(
+    () =>
+      qi.prepareReceiptScript(
+        code,
+        true,
+        receiptPath,
+        { ...binding, publicPythonResult: "reserved" },
+        { capturePublicPythonResult: true },
+      ),
+    { code: "INVALID_RECEIPT_CAPTURE" },
+  );
+});
+
+test("public Python result capture does not overwrite a prior receipt", (t) => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "public-python-result-stale-"),
+  );
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const receiptPath = path.join(directory, "prior.receipt.json");
+  const writesPath = path.join(directory, "writes.jsonl");
+  const prior = { jobId: "prior-job", sentinel: "preserve" };
+  qi.durable(receiptPath, prior);
+  const prepared = qi.prepareReceiptScript(
+    `def run(_context: str) -> dict[str, object]:\n    return {'success': True, 'stdout': '', 'stderr': ''}\n`,
+    true,
+    receiptPath,
+    { jobId: "new-job", stage: "public-smoke" },
+    { mapPath: (file) => file, capturePublicPythonResult: true },
+  );
+  const executed = executeReceiptWrapper(
+    prepared.script,
+    receiptPath,
+    writesPath,
+  );
+  assert.notEqual(executed.status, 0);
+  assert.deepEqual(qi.readJson(receiptPath), prior);
+  assert.equal(fs.existsSync(writesPath), false);
+});
+
+for (const [name, body] of [
+  [
+    "an incomplete result",
+    "    return {'success': True, 'stdout': 'missing stderr'}",
+  ],
+  [
+    "an invalid success field",
+    "    return {'success': 1, 'stdout': '', 'stderr': ''}",
+  ],
+  ["an exception", "    raise RuntimeError('public script failed')"],
+] as const) {
+  test(`public Python result capture fails closed for ${name}`, (t) => {
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "public-python-result-failed-"),
+    );
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    const receiptPath = path.join(directory, "failed.receipt.json");
+    const writesPath = path.join(directory, "writes.jsonl");
+    const code = `def run(_context: str) -> dict[str, object]:\n${body}\n`;
+    const prepared = qi.prepareReceiptScript(
+      code,
+      true,
+      receiptPath,
+      { jobId: "public-failed", stage: "public-smoke" },
+      { mapPath: (file) => file, capturePublicPythonResult: true },
+    );
+    const executed = executeReceiptWrapper(
+      prepared.script,
+      receiptPath,
+      writesPath,
+    );
+    assert.notEqual(executed.status, 0);
+    const receipt = record(qi.readJson(receiptPath));
+    assert.equal(receipt["terminal"], true);
+    assert.equal(receipt["outcome"], "failed");
+    assert.equal(Object.hasOwn(receipt, "publicPythonResult"), false);
+    assert.equal(receiptWrites(writesPath).length, 1);
+  });
+}
+
 for (const [name, mutateReceipt] of [
   [
     "a partial identity",

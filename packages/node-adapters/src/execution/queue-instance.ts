@@ -14,6 +14,7 @@ import { durable, readJson } from "../persistence/records";
 import type { PythonArtifactManifest } from "../../../core/src/domain/python-artifact";
 
 const PROBE_OBSERVATION_SCHEMA = "fmcad-instance-probe-v1";
+const PUBLIC_PYTHON_RESULT_SCHEMA = "fmcad-public-python-result-v1";
 
 export interface ProcessIdentity {
   pid: number;
@@ -795,7 +796,34 @@ def run(_context: str) -> dict[str, object]:
     binding: unknown,
     mapPath: (file: string) => string,
     captureProbeObservation = false,
+    capturePublicPythonResult = false,
   ) {
+    if (capturePublicPythonResult) {
+      if (!isRecord(binding) || Object.keys(binding).length === 0)
+        fail(
+          "INVALID_RECEIPT_CAPTURE",
+          "Public Python result capture requires a non-empty receipt binding",
+        );
+      if (
+        ["terminal", "outcome", "instance", "publicPythonResult"].some((key) =>
+          Object.hasOwn(binding as Record<string, unknown>, key),
+        )
+      )
+        fail(
+          "INVALID_RECEIPT_CAPTURE",
+          "Public Python result binding uses a reserved receipt field",
+        );
+    }
+    if (capturePublicPythonResult && !official)
+      fail(
+        "INVALID_RECEIPT_CAPTURE",
+        "Public Python result capture requires an official run entrypoint",
+      );
+    if (captureProbeObservation && capturePublicPythonResult)
+      fail(
+        "INVALID_RECEIPT_CAPTURE",
+        "Probe observations and public Python results use separate receipt captures",
+      );
     const executeOfficialEntry = !official
       ? ""
       : captureProbeObservation
@@ -809,13 +837,30 @@ def run(_context: str) -> dict[str, object]:
             "    _qr_store(_qr_path, dict(_qr_binding, terminal=False, probeObservation=_qr_observation))",
             "",
           ].join("\n")
-        : [
-            "    _qr_run = _qr_namespace['run']",
-            "    if not callable(_qr_run):",
-            "        raise TypeError('Script run entrypoint must be callable')",
-            "    _qr_cast(_qr_Callable[[str], object], _qr_run)(_context)",
-            "",
-          ].join("\n");
+        : capturePublicPythonResult
+          ? [
+              "    _qr_run = _qr_namespace['run']",
+              "    if not callable(_qr_run):",
+              "        raise TypeError('Script run entrypoint must be callable')",
+              "    _qr_run_result = _qr_cast(_qr_Callable[[str], object], _qr_run)(_context)",
+              "    _qr_public_python_value = _qr_object(_qr_run_result)",
+              "    if (set(_qr_public_python_value) != {'success', 'stdout', 'stderr'}",
+              "            or type(_qr_public_python_value['success']) is not bool",
+              "            or not isinstance(_qr_public_python_value['stdout'], str)",
+              "            or not isinstance(_qr_public_python_value['stderr'], str)):",
+              "        raise TypeError('Public Python result must contain success, stdout and stderr')",
+              "    _qr_public_python_value = {key: _qr_public_python_value[key] for key in ('success', 'stdout', 'stderr')}",
+              `    _qr_public_python_result = {'schema':${JSON.stringify(PUBLIC_PYTHON_RESULT_SCHEMA)}, 'value':_qr_public_python_value}`,
+              "    _qr_store(_qr_path, dict(_qr_binding, terminal=False, publicPythonResult=_qr_public_python_result))",
+              "",
+            ].join("\n")
+          : [
+              "    _qr_run = _qr_namespace['run']",
+              "    if not callable(_qr_run):",
+              "        raise TypeError('Script run entrypoint must be callable')",
+              "    _qr_cast(_qr_Callable[[str], object], _qr_run)(_context)",
+              "",
+            ].join("\n");
     const body = `${identityPython}
 import json as _qr_json, uuid as _qr_uuid, traceback as _qr_traceback
 from typing import cast as _qr_cast, Callable as _qr_Callable
@@ -832,10 +877,11 @@ def _qr_object(_value: object) -> dict[str, object]:
 _qr_binding_value = _qr_cast(object, _qr_json.loads(${JSON.stringify(JSON.stringify(binding))}))
 _qr_binding = _qr_object(_qr_binding_value)
 _qr_path = ${JSON.stringify(mapPath(receiptPath))}
-${captureProbeObservation ? "if _qi_os.path.exists(_qr_path): raise RuntimeError('Probe receipt path already exists')" : ""}
+${captureProbeObservation ? "if _qi_os.path.exists(_qr_path): raise RuntimeError('Probe receipt path already exists')" : capturePublicPythonResult ? "if _qi_os.path.exists(_qr_path): raise RuntimeError('Public result receipt path already exists')" : ""}
 _qr_outcome = 'failed'
 _qr_error: dict[str, str] | None = None
 _qr_probe_observation: dict[str, object] | None = None
+${capturePublicPythonResult ? "_qr_public_python_result: dict[str, object] | None = None" : ""}
 def _qr_store(_path: str, _record: dict[str, object]) -> None:
     _temp = _path + '.' + str(_qr_uuid.uuid4()) + '.tmp'
     with open(_temp, 'x', encoding='utf-8') as _file:
@@ -964,6 +1010,7 @@ finally:
     _qr_record.update({'terminal':True, 'outcome':_qr_outcome, 'instance':_qi_identity()})
     if _qr_probe_observation is not None:
         _qr_record['probeObservation'] = {'schema':${JSON.stringify(PROBE_OBSERVATION_SCHEMA)}, 'identity':_qr_probe_observation}
+${capturePublicPythonResult ? "    if _qr_public_python_result is not None:\n        _qr_record['publicPythonResult'] = _qr_public_python_result" : ""}
     if _qr_error is not None: _qr_record['error'] = _qr_error
     _qr_store(_qr_path, _qr_record)
 `;
@@ -989,9 +1036,11 @@ finally:
     {
       mapPath = fusionPath,
       captureProbeObservation = false,
+      capturePublicPythonResult = false,
     }: {
       mapPath?: (file: string) => string;
       captureProbeObservation?: boolean;
+      capturePublicPythonResult?: boolean;
     } = {},
   ) {
     return (official ? prepareEncodedWireArtifact : prepareWireArtifact)(
@@ -1003,6 +1052,7 @@ finally:
         binding,
         mapPath,
         captureProbeObservation,
+        capturePublicPythonResult,
       ),
       {
         request: binding,
