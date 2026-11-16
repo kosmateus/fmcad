@@ -804,7 +804,7 @@ def run(_context: str) -> dict[str, object]:
             "    if not callable(_qr_run):",
             "        raise TypeError('Script run entrypoint must be callable')",
             "    _qr_run_result = _qr_cast(_qr_Callable[[str], object], _qr_run)(_context)",
-            "    _qr_probe_observation = _qr_object(_qr_cast(object, _qr_run_result))",
+            "    _qr_probe_observation = _qr_object(_qr_run_result)",
             `    _qr_observation = {'schema':${JSON.stringify(PROBE_OBSERVATION_SCHEMA)}, 'identity':_qr_probe_observation}`,
             "    _qr_store(_qr_path, dict(_qr_binding, terminal=False, probeObservation=_qr_observation))",
             "",

@@ -12,6 +12,10 @@ const load = createRequire(path.resolve("tests/queue-probe-recovery.test.js"));
 const qi = load("../src/queue-instance") as ReturnType<
   typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
 >;
+const { createPythonChecker, createPythonRpcAdmission } = load(
+  "../src/python",
+) as typeof import("../packages/node-adapters/src/python/checker") &
+  typeof import("../packages/node-adapters/src/python/admission");
 const { QueueState } = load(
   "../src/queue-state",
 ) as typeof import("../src/queue-state");
@@ -726,6 +730,62 @@ test("bound instance probe accepts wire-empty receipt observation written before
   assert.equal(diagnostic["receiptBindingVerified"], true);
   assert.equal(diagnostic["receiptOutcome"], "succeeded");
   assert.equal(fixture.calls(), 1);
+});
+
+test("receipt-bound instance probe passes Windows Python admission without sending", async (t) => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "bound-probe-checker-"),
+  );
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const runtime = path.resolve("dist/runtime/python");
+  const admission = createPythonRpcAdmission({
+    runtime,
+    checker: createPythonChecker({
+      typingRoot: path.join(runtime, "typing"),
+      definitionsRoot: path.join(runtime, "typing"),
+      pythonPlatform: "Windows",
+    }),
+  });
+  let checks = 0;
+  let sends = 0;
+  const client: ProbeClient = {
+    server: { timeoutMs: 15000 },
+    async prepareCallTool(args, tool) {
+      const report = await admission.check({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: tool, arguments: args },
+      });
+      checks++;
+      assert.equal(report.kind, "python");
+      return Object.assign(
+        async () => {
+          sends++;
+          throw new Error("The SDK send must remain uncalled");
+        },
+        { fence() {} },
+      );
+    },
+    async callTool() {
+      sends++;
+      throw new Error("The SDK send must remain uncalled");
+    },
+  };
+  await qi.prepareProbe(client, {
+    receiptPath: path.join(directory, "startup.receipt.json"),
+    binding: {
+      brokerNonce: "checker-nonce",
+      ownerPid: 42,
+      ownerBirth: "owner:42",
+      buildHash: "b".repeat(64),
+      stage: "startup",
+    },
+    mapPath: (file) => file,
+    requireIdle: false,
+  });
+  assert.equal(checks, 1);
+  assert.equal(sends, 0);
 });
 
 for (const [name, mutateReceipt] of [
