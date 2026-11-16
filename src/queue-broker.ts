@@ -459,7 +459,12 @@ function responseForCaller(
   response: P.Response,
   request: P.Rpc,
   reply: P.Reply | null,
+  publicPythonValue?: Record<string, unknown>,
 ) {
+  if (publicPythonValue && reply && !reply.error) {
+    reply = { ...reply, result: { isError: false,
+      content: [{ type: "text", text: JSON.stringify(publicPythonValue) }] } };
+  }
   if (request.method === "tools/call" && request.params?.name === "execute_python" && reply && !reply.error) {
     const result = object(reply.result);
     const content = result["content"];
@@ -484,6 +489,49 @@ function responseForCaller(
   return own(request, "id")
     ? { ...response, raw: JSON.stringify({ ...reply, id: request.id }) }
     : response;
+}
+
+function boundPublicPythonValue(
+  record: P.RecordEvidence,
+  receipt: P.RemoteReceipt,
+  request: P.Rpc,
+  reply: P.Reply | null,
+): Record<string, unknown> {
+  const schema = "fmcad-public-python-result-v1";
+  const result = object(receipt["publicPythonResult"]);
+  const value = object(result["value"]);
+  const allowed = new Set([...Object.keys(record.binding), "terminal", "outcome", "instance", "publicPythonResult"]);
+  if (
+    record.binding["publicPythonResultSchema"] !== schema ||
+    request.params?.name !== "execute_python" ||
+    typeof request.params.arguments?.code !== "string" ||
+    hash(request.params.arguments.code) !== record.binding.sourceHash ||
+    !Object.entries(record.binding).every(([key, expected]) => same(receipt[key], expected)) ||
+    Object.keys(receipt).some((key) => !allowed.has(key)) ||
+    receipt.terminal !== true || receipt.outcome !== "succeeded" ||
+    Object.keys(result).length !== 2 || result["schema"] !== schema ||
+    Object.keys(value).length !== 3 || value["success"] !== true ||
+    typeof value["stdout"] !== "string" || typeof value["stderr"] !== "string" ||
+    !reply || reply.error || object(reply.result)["isError"] === true
+  ) fail("RECEIPT_MISMATCH", "Fresh public Python result is incomplete or differs from its exact native binding");
+  const content = object(reply.result)["content"];
+  if (Object.keys(object(reply.result)).some((key) => !["content", "isError"].includes(key)))
+    fail("UNKNOWN_RPC", "Public Python native response has an unsupported result envelope");
+  if (!Array.isArray(content) || content.length !== 1 || object(content[0])["type"] !== "text")
+    fail("UNKNOWN_RPC", "Public Python native response has no canonical result envelope");
+  let outer: Record<string, unknown>;
+  try { outer = object(JSON.parse(String(object(content[0])["text"]))); }
+  catch { fail("UNKNOWN_RPC", "Public Python native response is malformed"); }
+  if (Object.keys(outer).length !== 2 || outer["success"] !== true || typeof outer["message"] !== "string")
+    fail("UNKNOWN_RPC", "Public Python native response conflicts with its terminal result");
+  if (outer["message"]) {
+    let wireValue: unknown;
+    try { wireValue = JSON.parse(outer["message"]); }
+    catch { fail("UNKNOWN_RPC", "Public Python wire result is malformed"); }
+    if (!same(wireValue, value))
+      fail("RECEIPT_MISMATCH", "Public Python wire result conflicts with its bound native result");
+  }
+  return value;
 }
 
 function privateDirectory(dir: string) {
@@ -2436,13 +2484,15 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         // prepared. No code substitution is allowed after this boundary.
         binding.sourceHash = hash(code);
         const nativePublicPython = python && cfg.backend === "mcp";
+        if (nativePublicPython)
+          binding["publicPythonResultSchema"] = "fmcad-public-python-result-v1";
         // execute_python is our public compatibility API, not a native Fusion
         // tool. Native Fusion invokes run(context) and consumes printed JSON.
         // Adapt before receipt wrapping and final-byte admission, never at send.
         const executable = nativePublicPython ? `import contextlib as _qp_contextlib
 import io as _qp_io
 import json as _qp_json
-def run(_context: str) -> None:
+def run(_context: str) -> dict[str, object]:
     _qp_out, _qp_err = _qp_io.StringIO(), _qp_io.StringIO()
     try:
         with _qp_contextlib.redirect_stdout(_qp_out), _qp_contextlib.redirect_stderr(_qp_err):
@@ -2453,14 +2503,16 @@ def run(_context: str) -> None:
         print(_qp_json.dumps({'success': False, 'stdout': _qp_out.getvalue(),
               'stderr': _qp_err.getvalue(), 'error': str(_qp_exception)}))
         raise
-    print(_qp_json.dumps({'success': True, 'stdout': _qp_out.getvalue(), 'stderr': _qp_err.getvalue()}))
+    _qp_result: dict[str, object] = {'success': True, 'stdout': _qp_out.getvalue(), 'stderr': _qp_err.getvalue()}
+    print(_qp_json.dumps(_qp_result))
+    return _qp_result
 ` : code;
         let prepared = prepareReceiptScript(
           executable,
           official || nativePublicPython,
           record.receipt,
           binding,
-          nativePaths,
+          { ...nativePaths, ...(nativePublicPython ? { capturePublicPythonResult: true } : {}) },
         );
         if (origin) prepared = retainPythonOrigin(prepared, origin);
         verifyPythonArtifact(prepared);
@@ -2768,7 +2820,6 @@ def run(_context: str) -> None:
           true,
         );
         const reply = matching(client, response, outgoing);
-        const returned = responseForCaller(response, payload, reply);
         if (
           payload.method === "tools/list" &&
           !reply?.error &&
@@ -2776,6 +2827,10 @@ def run(_context: str) -> None:
         )
           fail("UNKNOWN_RPC", "Malformed tools/list response");
         const receipt = record.receipt ? remoteReceipt(record, false) : null;
+        const publicValue = record.binding["publicPythonResultSchema"] && receipt?.outcome === "succeeded"
+          ? boundPublicPythonValue(record, receipt, payload, reply)
+          : undefined;
+        const returned = responseForCaller(response, payload, reply, publicValue);
         const declaration = nativeReceipts.start(record);
         const nativeEnd = declaration
           ? nativeReceipts.completion(record, declaration)

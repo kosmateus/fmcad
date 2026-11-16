@@ -156,7 +156,19 @@ for (const responseMode of [
   "malformed-jsonrpc",
   "http-error",
   "native-legacy-python",
+  "native-wire-empty",
+  "native-missing-result",
+  "native-partial-result",
+  "native-extra-result",
+  "native-wrong-schema",
+  "native-wrong-binding",
+  "native-wrong-instance",
+  "native-nonterminal-result",
+  "native-wire-conflict",
+  "native-structured-conflict",
+  "native-extra-receipt",
 ]) {
+  const nativePython = responseMode.startsWith("native-");
   test(`owned RPC retains returned raw before settlement failure: ${responseMode}`, async (t) => {
     if (!process.env["FMCAD_RETAINED_RPC_CHILD"]) {
       const env: NodeJS.ProcessEnv = {
@@ -173,7 +185,7 @@ for (const responseMode of [
           responseMode,
           __filename,
         ],
-        { env, encoding: "utf8", timeout: responseMode === "native-legacy-python" ? 90000 : 20000 },
+        { env, encoding: "utf8", timeout: nativePython ? 90000 : 20000 },
       );
       assert.equal(child.status, 0, child.stdout + child.stderr);
       assert.match(child.stdout, /tests 1\b/);
@@ -181,7 +193,7 @@ for (const responseMode of [
     }
     const originalAdmission = admissionModule.createProductionQueueAdmission;
     let realChecks = 0;
-    if (responseMode === "native-legacy-python") {
+    if (nativePython) {
       admissionModule.createProductionQueueAdmission = (...args) => {
         const production = originalAdmission(...args);
         return { ...production, admission: { ...production.admission,
@@ -239,7 +251,7 @@ for (const responseMode of [
     let productCalls = 0;
     let productWireId: string | undefined;
     let originalRaw = "";
-    const sourceCode = responseMode === "native-legacy-python"
+    const sourceCode = nativePython
       ? 'print("FUSION_ADDIN_STDIO_OK")'
       : "def run(context: str) -> None:\n    print('synthetic owned write result')\n";
     const sourceHash = createHash("sha256").update(sourceCode).digest("hex");
@@ -282,6 +294,7 @@ for (const responseMode of [
               terminal: true,
               outcome: "succeeded",
               instance,
+              probeObservation: { schema: "fmcad-instance-probe-v1", identity: instance },
             }),
           );
         }
@@ -302,7 +315,7 @@ for (const responseMode of [
         };
       }
       productCalls++;
-      if (responseMode === "native-legacy-python") {
+      if (nativePython) {
         assert.equal(object(payload["params"])["name"], "fusion_mcp_execute",
           "Native Fusion does not advertise the public execute_python tool");
         assert.equal(args["featureType"], "script");
@@ -319,14 +332,34 @@ for (const responseMode of [
         const filename = /_qr_path = ("(?:\\.|[^"\\])*")/.exec(code);
         const binding = /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/.exec(code);
         assert.ok(filename && binding, "The transformed native script still requires its exact SDK receipt");
-        fs.writeFileSync(JSON.parse(filename[1]!), JSON.stringify({
+        const receipt: Record<string, unknown> = {
           ...JSON.parse(JSON.parse(binding[1]!)), terminal: true, outcome: "succeeded", instance,
-        }));
-        return { status: 200, raw: JSON.stringify({ jsonrpc: "2.0", id: payload["id"],
+          publicPythonResult: { schema: "fmcad-public-python-result-v1",
+            value: { success: true, stdout: "FUSION_ADDIN_STDIO_OK\n", stderr: "" } },
+        };
+        if (responseMode === "native-missing-result") delete receipt["publicPythonResult"];
+        if (responseMode === "native-partial-result")
+          receipt["publicPythonResult"] = { schema: "fmcad-public-python-result-v1", value: { success: true } };
+        if (responseMode === "native-extra-result")
+          receipt["publicPythonResult"] = { schema: "fmcad-public-python-result-v1",
+            value: { success: true, stdout: "FUSION_ADDIN_STDIO_OK\n", stderr: "", extra: true } };
+        if (responseMode === "native-wrong-schema")
+          receipt["publicPythonResult"] = { schema: "foreign", value: { success: true, stdout: "x", stderr: "" } };
+        if (responseMode === "native-wrong-binding") receipt["publicPythonResultSchema"] = "foreign";
+        if (responseMode === "native-wrong-instance") receipt["instance"] = { ...instance, birth: "foreign" };
+        if (responseMode === "native-nonterminal-result") receipt["terminal"] = false;
+        if (responseMode === "native-extra-receipt") receipt["unexpected"] = true;
+        fs.writeFileSync(JSON.parse(filename[1]!), JSON.stringify(receipt));
+        originalRaw = JSON.stringify({ jsonrpc: "2.0", id: payload["id"],
           result: { content: [{ type: "text", text: JSON.stringify({
-            message: JSON.stringify({ success: true, stdout: "FUSION_ADDIN_STDIO_OK\n", stderr: "" }) + "\n",
+            message: responseMode === "native-legacy-python"
+              ? JSON.stringify({ success: true, stdout: "FUSION_ADDIN_STDIO_OK\n", stderr: "" }) + "\n"
+              : responseMode === "native-wire-conflict"
+                ? JSON.stringify({ success: true, stdout: "conflicting stdout", stderr: "" }) : "",
             success: true,
-          }) }] } }) };
+          }) }], ...(responseMode === "native-structured-conflict"
+            ? { structuredContent: { stdout: "conflicting stdout" } } : {}) } });
+        return { status: 200, raw: originalRaw };
       }
       const wireId = payload["id"];
       assert.ok(typeof wireId === "string");
@@ -372,7 +405,7 @@ for (const responseMode of [
       nativePath: (value: string) => value,
     });
     t.after(async () => {
-      if (responseMode === "native-legacy-python") await broker.close();
+      if (["native-legacy-python", "native-wire-empty"].includes(responseMode)) await broker.close();
       else await assert.rejects(broker.close(), { code: "RECONCILIATION_REQUIRED" });
       fs.rmSync(root, { recursive: true, force: true });
     });
@@ -394,8 +427,8 @@ for (const responseMode of [
           id: "synthetic-caller",
           method: "tools/call",
           params: {
-            name: responseMode === "native-legacy-python" ? "execute_python" : "fusion_mcp_execute",
-            arguments: responseMode === "native-legacy-python" ? { code: sourceCode, persistent: false } : {
+            name: nativePython ? "execute_python" : "fusion_mcp_execute",
+            arguments: nativePython ? { code: sourceCode, persistent: false } : {
               featureType: "script",
               object: {
                 script: sourceCode,
@@ -413,7 +446,17 @@ for (const responseMode of [
       if (["needs_reconciliation", "succeeded", "failed"].includes(result.job.state)) break;
       await new Promise((resolve) => setTimeout(resolve, 10));
     } while (Date.now() < deadline);
-    if (responseMode === "native-legacy-python") {
+    if (nativePython && !["native-legacy-python", "native-wire-empty"].includes(responseMode)) {
+      assert.equal(result.job.state, "needs_reconciliation", JSON.stringify(result));
+      assert.equal(productCalls, 1, "Never replay an untrusted public result");
+      const directory = path.join(dir, "jobs", job.id);
+      const received = fs.readdirSync(directory).filter(name => name.startsWith("received-response-"))
+        .map(name => JSON.parse(fs.readFileSync(path.join(directory, name), "utf8")))
+        .find(value => value.binding?.sourceHash === sourceHash);
+      assert.equal(received.response.raw, originalRaw, "Keep the actual native response immutable");
+      return;
+    }
+    if (nativePython) {
       assert.equal(result.job.state, "succeeded", JSON.stringify(result));
       assert.equal(productCalls, 1);
       assert.ok(realChecks >= 3,
