@@ -15,7 +15,7 @@
 
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { spawnSync } = require('node:child_process');
+const { spawnSync } = require('../helpers/live-broker');
 const path = require('node:path');
 const { docName, fmcad, clear, hasDoc, skipLive } = require('./helper');
 

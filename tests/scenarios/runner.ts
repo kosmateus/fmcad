@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
 import {
+  legacyIntents,
+  recordCliSettlement,
+  recordCliSettlementFailure,
   recoverLegacyInvocations,
   writeHandoff,
   childProcessIdentity,
@@ -521,7 +524,8 @@ export class ScenarioSession {
           this.report.scope !== "exclusive-instance"
         : !(
             source.startsWith("tests/integration/") ||
-            source === "tests/fixtures/owned-cli/handoff.test.js"
+            source === "tests/fixtures/owned-cli/handoff.test.js" ||
+            source === "tests/fixtures/owned-cli/settlement-fence.test.js"
           ) ||
           !source.endsWith(".test.js") ||
           !(
@@ -529,7 +533,12 @@ export class ScenarioSession {
               path.join(root, "tests/integration") + path.sep,
             ) ||
             filename ===
-              path.join(root, "tests/fixtures/owned-cli/handoff.test.js")
+              path.join(root, "tests/fixtures/owned-cli/handoff.test.js") ||
+            filename ===
+              path.join(
+                root,
+                "tests/fixtures/owned-cli/settlement-fence.test.js",
+              )
           ) ||
           fs.lstatSync(filename).isSymbolicLink()
     )
@@ -563,6 +572,9 @@ export class ScenarioSession {
     const stdout = fs.openSync(stdoutFile, "wx", 0o600),
       stderr = fs.openSync(stderrFile, "wx", 0o600);
     let code: number | null;
+    const settledResults = new Map<string, Execution>(),
+      attemptedSettlements = new Set<string>();
+    let childExited = false;
     try {
       const pattern =
         "^" + testCase.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&") + "$";
@@ -596,8 +608,14 @@ export class ScenarioSession {
         },
       );
       const completed = new Promise<number | null>((resolve, reject) => {
-        child.once("error", reject);
-        child.once("exit", resolve);
+        child.once("error", (error) => {
+          childExited = true;
+          reject(error);
+        });
+        child.once("exit", (exitCode) => {
+          childExited = true;
+          resolve(exitCode);
+        });
       });
       if (!child.pid) await completed;
       if (!child.pid)
@@ -609,7 +627,70 @@ export class ScenarioSession {
         birth: childProcessIdentity.processBirth(child.pid),
       };
       writeHandoff(launchFile, { state: "running", ...launched });
+      const settleCompletedCommands = async () => {
+        for (const intent of legacyIntents(this.directory, this.report.owner)) {
+          if (
+            !intent.completed ||
+            !intent.admissionRequested ||
+            intent.settlement ||
+            intent.settlementFailure ||
+            attemptedSettlements.has(intent.requestId)
+          )
+            continue;
+          attemptedSettlements.add(intent.requestId);
+          let result: Execution | null;
+          try {
+            result = await this.backend.lookup!(
+              this.report.owner,
+              intent.requestId,
+            );
+          } catch {
+            recordCliSettlementFailure(
+              text(intent.filename),
+              this.report.owner,
+              "lookup-error",
+            );
+            continue;
+          }
+          if (!result) {
+            recordCliSettlementFailure(
+              text(intent.filename),
+              this.report.owner,
+              "lookup-unavailable",
+            );
+            continue;
+          }
+          try {
+            recordCliSettlement(
+              text(intent.filename),
+              this.report.owner,
+              result,
+            );
+            settledResults.set(intent.requestId, result);
+          } catch {
+            recordCliSettlementFailure(
+              text(intent.filename),
+              this.report.owner,
+              "invalid-terminal-result",
+            );
+          }
+        }
+      };
+      let settlementMonitorError: unknown;
+      const settlementMonitor = (async () => {
+        do {
+          await settleCompletedCommands();
+          if (!childExited)
+            await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        } while (!childExited);
+        await settleCompletedCommands();
+      })().catch((error: unknown) => {
+        settlementMonitorError = error;
+      });
       code = await completed;
+      childExited = true;
+      await settlementMonitor;
+      if (settlementMonitorError) throw settlementMonitorError;
       writeHandoff(launchFile, { state: "completed", ...launched, code });
     } finally {
       fs.closeSync(stdout);
@@ -620,6 +701,7 @@ export class ScenarioSession {
       this.backend,
       this.directory,
       this.report.owner,
+      settledResults,
     );
     this.report.requests.push(...recovered);
     if (mode) {

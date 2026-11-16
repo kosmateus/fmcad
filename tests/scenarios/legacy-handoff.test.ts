@@ -6,10 +6,13 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ScenarioBackend, Owner } from "./contracts";
 import {
+  awaitCliSettlement,
   assertLegacyChildExited,
   finishCliIntent,
   observeCliIntent,
   ownedLease,
+  recordCliSettlement,
+  recordCliSettlementFailure,
   recoverLegacyInvocations,
   reserveCli,
   writeHandoff,
@@ -146,6 +149,87 @@ test("before-admission marker persists exact original request and foreign callba
     1,
   );
 });
+test("owned child refuses a successor until the parent settles the exact predecessor", (t) => {
+  const f = setup(t),
+    first = reserveCli(["document", "status"], f.env)!;
+  const value = JSON.parse(fs.readFileSync(first.filename, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  writeHandoff(first.filename, {
+    ...value,
+    admissionRequested: true,
+    completed: true,
+    pid: 2147483647,
+    birth: "test-boot:0",
+  });
+  assert.throws(
+    () => reserveCli(["document", "status"], f.env),
+    /Previous admitted command lacks terminal owner settlement/,
+  );
+  assert.throws(
+    () =>
+      recordCliSettlement(first.filename, f.owner, {
+        requestId: "foreign-request",
+        state: "succeeded",
+        sdkSettled: true,
+        mayHaveMutated: false,
+        stdout: "foreign",
+        brokerReceipt: {
+          requestId: "foreign-request",
+          jobId: "foreign-job",
+          clientId: f.owner.clientId,
+          state: "succeeded",
+          operationResult: null,
+        },
+      }),
+    /exact terminal owner receipt/,
+  );
+  recordCliSettlement(first.filename, f.owner, {
+    requestId: value["requestId"] as string,
+    state: "failed",
+    sdkSettled: true,
+    mayHaveMutated: false,
+    stdout: "original",
+    brokerReceipt: {
+      requestId: value["requestId"] as string,
+      jobId: "original-job",
+      clientId: f.owner.clientId,
+      state: "failed",
+      operationResult: null,
+    },
+  });
+  assert.equal(
+    JSON.parse(fs.readFileSync(first.filename, "utf8")).settlement.state,
+    "failed",
+  );
+  const successor = reserveCli(["document", "status"], f.env)!;
+  assert.ok(fs.existsSync(successor.filename));
+});
+test("an unavailable parent lookup fails the child wait and keeps successors fenced", (t) => {
+  const f = setup(t),
+    first = reserveCli(["document", "status"], f.env)!;
+  const value = JSON.parse(fs.readFileSync(first.filename, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  writeHandoff(first.filename, {
+    ...value,
+    admissionRequested: true,
+    completed: true,
+    pid: 2147483647,
+    birth: "test-boot:0",
+  });
+  recordCliSettlementFailure(first.filename, f.owner, "lookup-unavailable");
+  assert.throws(
+    () => awaitCliSettlement(first.filename, f.env),
+    /Parent could not prove terminal CLI settlement/,
+  );
+  assert.throws(
+    () => reserveCli(["document", "status"], f.env),
+    /Previous admitted command lacks terminal owner settlement/,
+  );
+});
 test("recovery uses original backend evidence once and never resubmits uncertain work", async (t) => {
   const f = setup(t),
     reserved = reserveCli(["document", "status"], f.env)!;
@@ -184,6 +268,13 @@ test("recovery uses original backend evidence once and never resubmits uncertain
         sdkSettled: settled,
         mayHaveMutated: true,
         stdout: "original",
+        brokerReceipt: {
+          requestId,
+          jobId: "original-job",
+          clientId: f.owner.clientId,
+          state: settled ? "succeeded" : "unknown",
+          operationResult: null,
+        },
       };
     },
   };
