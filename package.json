@@ -25,7 +25,7 @@
     "test:control-center:projects": "node --test --test-concurrency=1 dist/tests/project-history-store.test.js dist/tests/control-center-agents-projects.test.js dist/tests/control-center-project-activity.test.js",
     "test:control-center:e2e": "npm run build:code && npm run typecheck:tests && node --experimental-strip-types --test tests/browser-network-evidence.test.ts tests/control-center-browser-e2e.test.mts tests/control-center-production-browser.test.mts",
     "test:workspace": "npm run build:code && npm run typecheck:tests && node --test dist/tests/workspace-toolchain.test.js",
-    "test:python": "python3 -B -m unittest discover -s tests -p '*_test.py'",
+    "test:python": "node scripts/run-python-tests.cjs",
     "test:live": "node tests/run-live.js all",
     "test:live:legacy": "node tests/run-live.js legacy",
     "test:live:cad": "node tests/run-live.js cad",
