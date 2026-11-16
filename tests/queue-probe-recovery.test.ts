@@ -442,6 +442,12 @@ function readDiagnostic(file: string) {
   return JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
 }
 
+function recordOrEmpty(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 test("instance probe preserves raw MCP response and reads structured stdout", async (t) => {
   const identity = {
     pid: 1420,
@@ -553,4 +559,293 @@ test("instance probe retains native JSON-RPC error details and raw response", as
   const diagnostic = readDiagnostic(diagnosticPath);
   assert.equal(diagnostic["rawResponse"], raw());
   assert.deepEqual(diagnostic["nativeError"], nativeError);
+});
+
+type BoundProbeFixtureOptions = {
+  removeReceipt?: boolean;
+  mutateReceipt?: (receipt: Record<string, unknown>) => Record<string, unknown>;
+  wireText?: (identity: Record<string, unknown>) => string;
+};
+
+async function boundProbeFixture(
+  t: import("node:test").TestContext,
+  options: BoundProbeFixtureOptions = {},
+) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bound-probe-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const receiptPath = path.join(directory, "startup.receipt.json");
+  const diagnosticPath = path.join(directory, "preflight-result.json");
+  const atomicWritesPath = path.join(directory, "atomic-writes.jsonl");
+  const binding = {
+    brokerNonce: "probe-nonce-1",
+    ownerPid: 42,
+    ownerBirth: "owner:42",
+    buildHash: "a".repeat(64),
+    stage: "startup",
+  };
+  const rawResponse = JSON.stringify({
+    jsonrpc: "2.0",
+    id: 2,
+    result: {
+      content: [
+        { type: "text", text: JSON.stringify({ message: "", success: true }) },
+      ],
+    },
+  });
+  let calls = 0;
+  const client: ProbeClient = {
+    server: { timeoutMs: 1000 },
+    async callTool(args) {
+      calls++;
+      const python = `import json, os, sys, types
+_target = ${JSON.stringify(receiptPath)}
+_events = ${JSON.stringify(atomicWritesPath)}
+_replace = os.replace
+def _record_replace(source, target):
+    if target == _target:
+        with open(source, encoding='utf-8') as stream:
+            record = json.load(stream)
+        with open(_events, 'a', encoding='utf-8') as stream:
+            stream.write(json.dumps(record) + '\\n')
+    return _replace(source, target)
+os.replace = _record_replace
+class Doc:
+    creationId = 'doc-1'
+    isSaved = True
+    isModified = False
+    dataFile = types.SimpleNamespace(id='file-1')
+documents = [Doc()]
+app = types.SimpleNamespace(version='fixture', activeDocument=documents[0],
+    userInterface=types.SimpleNamespace(activeCommand='SelectCommand'),
+    documents=types.SimpleNamespace(count=1, item=lambda index: documents[index]))
+core = types.ModuleType('adsk.core')
+core.Application = types.SimpleNamespace(get=lambda: app)
+adsk = types.ModuleType('adsk')
+adsk.core = core
+sys.modules['adsk'] = adsk
+sys.modules['adsk.core'] = core
+`;
+      const executed = spawnSync(
+        "python3",
+        ["-c", python + args.object.script + "\nrun(None)\n"],
+        { encoding: "utf8" },
+      );
+      assert.equal(
+        executed.status,
+        0,
+        `offline receipt wrapper failed: ${executed.stderr}`,
+      );
+      let receipt: Record<string, unknown>;
+      if (options.removeReceipt) {
+        fs.unlinkSync(receiptPath);
+        receipt = {};
+      } else {
+        receipt = record(qi.readJson(receiptPath));
+      }
+      if (options.mutateReceipt && !options.removeReceipt)
+        receipt = options.mutateReceipt(receipt);
+      if (options.mutateReceipt && !options.removeReceipt)
+        qi.durable(receiptPath, receipt);
+      const observation = recordOrEmpty(receipt["probeObservation"]);
+      const identity = recordOrEmpty(observation["identity"]);
+      const textValue = options.wireText
+        ? options.wireText(identity)
+        : JSON.stringify({ message: "", success: true });
+      return {
+        failed: false,
+        text: textValue,
+        data: { message: "", success: true },
+        rawResponse,
+      };
+    },
+  };
+  const probe = await qi.prepareProbe(client, {
+    receiptPath,
+    binding,
+    mapPath: (file) => file,
+    diagnosticPath,
+    requireIdle: false,
+  });
+  return {
+    binding,
+    calls: () => calls,
+    receiptPath,
+    diagnosticPath,
+    atomicWritesPath,
+    probe,
+  };
+}
+
+test("bound instance probe accepts wire-empty receipt observation written before terminal", async (t) => {
+  const fixture = await boundProbeFixture(t);
+  const identity = record(await fixture.probe());
+  const receipt = record(qi.readJson(fixture.receiptPath));
+  assert.equal(typeof identity["pid"], "number");
+  assert.ok((identity["pid"] as number) > 0);
+  assert.equal(identity["version"], "fixture");
+  assert.deepEqual(identity["documents"], [
+    {
+      id: "doc-1",
+      fileId: "file-1",
+      isSaved: true,
+      isModified: false,
+    },
+  ]);
+  assert.equal(receipt["stage"], fixture.binding.stage);
+  assert.equal(receipt["terminal"], true);
+  assert.equal(receipt["outcome"], "succeeded");
+  assert.deepEqual(receipt["probeObservation"], {
+    schema: "fmcad-instance-probe-v1",
+    identity,
+  });
+  const writes = fs
+    .readFileSync(fixture.atomicWritesPath, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  assert.equal(writes.length, 2);
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.keys(fixture.binding).map((key) => [key, writes[0]![key]]),
+    ),
+    fixture.binding,
+  );
+  assert.equal(writes[0]!["terminal"], false);
+  assert.equal(writes[0]!["stage"], "startup");
+  assert.equal(
+    record(writes[0]!["probeObservation"])["schema"],
+    "fmcad-instance-probe-v1",
+  );
+  assert.equal(writes[1]!["terminal"], true);
+  const diagnostic = readDiagnostic(fixture.diagnosticPath);
+  assert.equal(typeof diagnostic["rawResponse"], "string");
+  assert.ok((diagnostic["rawResponse"] as string).length > 0);
+  assert.equal(diagnostic["wireMarkerPresent"], false);
+  assert.equal(diagnostic["wireStdoutPresent"], false);
+  assert.equal(diagnostic["observationSource"], "bound-terminal-receipt");
+  assert.equal(diagnostic["receiptBindingVerified"], true);
+  assert.equal(diagnostic["receiptOutcome"], "succeeded");
+  assert.equal(fixture.calls(), 1);
+});
+
+for (const [name, mutateReceipt] of [
+  [
+    "a partial identity",
+    (receipt: Record<string, unknown>) => {
+      const observation = record(receipt["probeObservation"]);
+      const identity = { ...record(observation["identity"]) };
+      delete identity["documents"];
+      return {
+        ...receipt,
+        probeObservation: { ...observation, identity },
+      };
+    },
+  ],
+  [
+    "a foreign stage binding",
+    (receipt: Record<string, unknown>) => ({ ...receipt, stage: "preflight" }),
+  ],
+  [
+    "an unbound receipt field",
+    (receipt: Record<string, unknown>) => ({ ...receipt, staleNonce: "old" }),
+  ],
+  [
+    "a nonterminal observation without terminal receipt",
+    (receipt: Record<string, unknown>) => ({
+      ...receipt,
+      terminal: false,
+      outcome: undefined,
+      instance: undefined,
+    }),
+  ],
+  [
+    "a failed terminal receipt",
+    (receipt: Record<string, unknown>) => ({ ...receipt, outcome: "failed" }),
+  ],
+  [
+    "a receipt for another process identity",
+    (receipt: Record<string, unknown>) => ({
+      ...receipt,
+      instance: { ...record(receipt["instance"]), pid: -1 },
+    }),
+  ],
+] as const) {
+  test(`bound instance probe rejects ${name}`, async (t) => {
+    const fixture = await boundProbeFixture(t, { mutateReceipt });
+    await assert.rejects(fixture.probe(), { code: "INSTANCE_UNAVAILABLE" });
+    const diagnostic = readDiagnostic(fixture.diagnosticPath);
+    assert.equal(diagnostic["observationSource"], null);
+  });
+}
+
+test("bound instance probe rejects a missing terminal receipt", async (t) => {
+  const fixture = await boundProbeFixture(t, { removeReceipt: true });
+  await assert.rejects(fixture.probe(), { code: "INSTANCE_UNAVAILABLE" });
+  assert.equal(
+    readDiagnostic(fixture.diagnosticPath)["receiptBindingVerified"],
+    false,
+  );
+});
+
+test("bound instance probe refuses a stale receipt path before dispatch", async (t) => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "bound-probe-stale-"),
+  );
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const receiptPath = path.join(directory, "startup.receipt.json");
+  const diagnosticPath = path.join(directory, "preflight-result.json");
+  const binding = {
+    brokerNonce: "probe-nonce-1",
+    ownerPid: 42,
+    ownerBirth: "owner:42",
+    buildHash: "a".repeat(64),
+    stage: "startup",
+  };
+  const prior = { ...binding, terminal: true, outcome: "succeeded" };
+  qi.durable(receiptPath, prior);
+  let calls = 0;
+  const client: ProbeClient = {
+    server: { timeoutMs: 1000 },
+    async callTool() {
+      calls++;
+      return { failed: false, text: "" };
+    },
+  };
+  await assert.rejects(
+    qi.prepareProbe(client, {
+      receiptPath,
+      binding,
+      diagnosticPath,
+      mapPath: (file) => file,
+    }),
+    { code: "INSTANCE_UNAVAILABLE" },
+  );
+  assert.equal(calls, 0);
+  assert.deepEqual(qi.readJson(receiptPath), prior);
+});
+
+test("bound instance probe accepts a matching optional wire marker", async (t) => {
+  const fixture = await boundProbeFixture(t, {
+    wireText: (identity) => probeMarker(identity),
+  });
+  const identity = await fixture.probe();
+  assert.equal(record(identity)["version"], "fixture");
+  assert.equal(
+    readDiagnostic(fixture.diagnosticPath)["wireMarkerPresent"],
+    true,
+  );
+});
+
+test("bound instance probe rejects a wire marker that contradicts its receipt", async (t) => {
+  const fixture = await boundProbeFixture(t, {
+    wireText: (identity) =>
+      probeMarker({ ...identity, pid: Number(identity["pid"]) + 1 }),
+  });
+  await assert.rejects(fixture.probe(), {
+    code: "INSTANCE_UNAVAILABLE",
+    message: "Wire identity conflicts with the bound receipt observation",
+  });
+  const diagnostic = readDiagnostic(fixture.diagnosticPath);
+  assert.equal(diagnostic["observationSource"], null);
+  assert.equal(diagnostic["wireIdentityConflict"], true);
 });

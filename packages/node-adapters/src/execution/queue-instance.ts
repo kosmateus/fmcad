@@ -13,6 +13,8 @@ import { queueDocumentSnapshotSource } from "../python/document-probe";
 import { durable, readJson } from "../persistence/records";
 import type { PythonArtifactManifest } from "../../../core/src/domain/python-artifact";
 
+const PROBE_OBSERVATION_SCHEMA = "fmcad-instance-probe-v1";
+
 export interface ProcessIdentity {
   pid: number;
   birth: string;
@@ -303,7 +305,7 @@ def _qi_identity() -> dict[str, object]:
 
   const probeScript = `${identityPython}
 import json as _qi_json
-def run(_context: str) -> None:
+def run(_context: str) -> dict[str, object]:
     _value = _qi_identity()
     _app = _qi_core.Application.get()
     _documents: list[dict[str, object]] = []
@@ -318,6 +320,7 @@ def run(_context: str) -> None:
             _row['dataFileError'] = _error
         _documents.append(_row)
     print('FMCAD_QUEUE_INSTANCE ' + _qi_json.dumps(_value))
+    return _value
 `;
 
   const sameInstance = (
@@ -333,6 +336,44 @@ def run(_context: str) -> None:
     );
   const idle = (identity: FusionIdentity | null | undefined) =>
     !!identity && ["", "SelectCommand"].includes(identity.activeCommand!);
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  }
+  function isProbeIdentity(value: unknown): value is FusionIdentity {
+    if (
+      !isRecord(value) ||
+      !Number.isSafeInteger(value["pid"]) ||
+      (value["pid"] as number) <= 0 ||
+      typeof value["birth"] !== "string" ||
+      !value["birth"] ||
+      typeof value["version"] !== "string" ||
+      !value["version"] ||
+      typeof value["activeCommand"] !== "string" ||
+      !Array.isArray(value["documents"])
+    )
+      return false;
+    return value["documents"].every((document) => {
+      if (
+        !isRecord(document) ||
+        typeof document["id"] !== "string" ||
+        !document["id"] ||
+        !(
+          document["fileId"] === null ||
+          (typeof document["fileId"] === "string" && document["fileId"])
+        ) ||
+        typeof document["isSaved"] !== "boolean" ||
+        typeof document["isModified"] !== "boolean"
+      )
+        return false;
+      const error = document["dataFileError"];
+      return (
+        error === undefined ||
+        (isRecord(error) &&
+          typeof error["type"] === "string" &&
+          typeof error["message"] === "string")
+      );
+    });
+  }
   function nativeWorkflowIdentity(input: unknown) {
     const value = input as WorkflowValue | null | undefined;
     if (!value || typeof value !== "object") return null;
@@ -447,6 +488,27 @@ def run(_context: str) -> None:
     client.server.timeoutMs = Math.min(previousTimeout, 15000);
     let output: ProbeOutput;
     try {
+      if (receiptPath) {
+        if (!isRecord(binding) || Object.keys(binding).length === 0)
+          fail(
+            "INSTANCE_UNAVAILABLE",
+            "A source-bound instance probe requires a non-empty receipt binding",
+          );
+        if (
+          ["terminal", "outcome", "instance", "probeObservation"].some((key) =>
+            Object.hasOwn(binding as Record<string, unknown>, key),
+          )
+        )
+          fail(
+            "INSTANCE_UNAVAILABLE",
+            "Instance probe receipt binding uses a reserved field",
+          );
+        if (fs.existsSync(receiptPath))
+          fail(
+            "INSTANCE_UNAVAILABLE",
+            "Instance probe receipt path is not fresh",
+          );
+      }
       // Canonical source already includes identity and queue-document helpers.
       // Compose once; receipt binding and final artifact preparation stay below.
       const documentCode = queueDocumentSnapshotSource(
@@ -461,7 +523,10 @@ def run(_context: str) -> None:
           : probeScript;
       const code = documentCode + "\n" + wrapper;
       const prepared = receiptPath
-        ? prepareReceiptScript(code, true, receiptPath, binding, { mapPath })
+        ? prepareReceiptScript(code, true, receiptPath, binding, {
+            mapPath,
+            captureProbeObservation: true,
+          })
         : prepareWireArtifact(
             resolveRuntimePaths({ anchor: anchor }).runtime,
             code,
@@ -550,13 +615,110 @@ def run(_context: str) -> None:
       const lines = [output.text || "", stdout].flatMap((text) =>
         text.split(/\r?\n/).filter((line) => line.startsWith(marker)),
       );
-      if (!lines.length)
+      const wireEvidence = {
+        wireMarkerPresent: lines.length > 0,
+        wireStdoutPresent: stdout.length > 0,
+      };
+      if (diagnosticPath)
+        durable(diagnosticPath, { ...diagnostic, ...wireEvidence });
+      let receiptObservation: FusionIdentity | undefined;
+      if (receiptPath) {
+        let receipt: Record<string, unknown> = {};
+        try {
+          const value: unknown = readJson(receiptPath);
+          if (!isRecord(value)) throw new Error("Receipt is not an object");
+          receipt = value;
+        } catch {
+          if (diagnosticPath)
+            durable(diagnosticPath, {
+              ...diagnostic,
+              ...wireEvidence,
+              observationSource: null,
+              receiptBindingVerified: false,
+              receiptOutcome: null,
+            });
+          fail(
+            "INSTANCE_UNAVAILABLE",
+            "Source-bound Fusion instance probe receipt is unavailable",
+          );
+        }
+        const expectedBinding = binding as Record<string, unknown>;
+        const receiptFields = [
+          "terminal",
+          "outcome",
+          "instance",
+          "probeObservation",
+        ];
+        const allowedReceiptFields = new Set([
+          ...Object.keys(expectedBinding),
+          ...receiptFields,
+        ]);
+        const bindingMatches =
+          receiptFields.every((key) => Object.hasOwn(receipt, key)) &&
+          Object.keys(receipt).every((key) => allowedReceiptFields.has(key)) &&
+          Object.entries(expectedBinding).every(([key, value]) =>
+            isDeepStrictEqual(receipt[key], value),
+          );
+        const observation = receipt["probeObservation"];
+        const identity = isRecord(observation)
+          ? observation["identity"]
+          : undefined;
+        const terminalIdentity = receipt["instance"];
+        const validObservation =
+          isRecord(observation) &&
+          Object.keys(observation).length === 2 &&
+          observation["schema"] === PROBE_OBSERVATION_SCHEMA &&
+          isProbeIdentity(identity);
+        const validTerminalIdentity = isRecord(terminalIdentity);
+        const identitiesMatch =
+          validObservation &&
+          validTerminalIdentity &&
+          terminalIdentity["pid"] === identity.pid &&
+          terminalIdentity["birth"] === identity.birth &&
+          terminalIdentity["version"] === identity.version &&
+          terminalIdentity["activeCommand"] === identity.activeCommand;
+        const receiptValid =
+          bindingMatches &&
+          receipt["terminal"] === true &&
+          receipt["outcome"] === "succeeded" &&
+          validObservation &&
+          identitiesMatch;
+        if (diagnosticPath)
+          durable(diagnosticPath, {
+            ...diagnostic,
+            ...wireEvidence,
+            observationSource: null,
+            receiptObservationValid: receiptValid,
+            receiptBindingVerified: bindingMatches,
+            receiptTerminal: receipt["terminal"] === true,
+            receiptOutcome: receipt["outcome"] ?? null,
+            receiptObservationSchema: isRecord(observation)
+              ? (observation["schema"] ?? null)
+              : null,
+          });
+        if (!receiptValid)
+          fail(
+            "INSTANCE_UNAVAILABLE",
+            "Source-bound Fusion instance probe receipt is incomplete or mismatched",
+          );
+        receiptObservation = identity as FusionIdentity;
+      }
+      if (!lines.length && !receiptObservation)
         fail(
           "INSTANCE_UNAVAILABLE",
           "Fusion instance probe returned no identity",
         );
       const results = lines.map((line) => {
-        const result = JSON.parse(line.slice(marker.length)) as FusionIdentity;
+        let value: unknown;
+        try {
+          value = JSON.parse(line.slice(marker.length));
+        } catch {
+          fail(
+            "INSTANCE_UNAVAILABLE",
+            "Malformed Fusion instance probe marker",
+          );
+        }
+        const result = value as FusionIdentity;
         if (
           !Number.isSafeInteger(result.pid) ||
           !result.birth ||
@@ -568,12 +730,45 @@ def run(_context: str) -> None:
       });
       if (results.some((result) => !isDeepStrictEqual(result, results[0])))
         fail("INSTANCE_UNAVAILABLE", "Conflicting Fusion instance identities");
-      const result = results[0]!;
+      const wireIdentityConflict =
+        !!receiptObservation &&
+        results.some(
+          (result) => !isDeepStrictEqual(result, receiptObservation),
+        );
+      if (wireIdentityConflict) {
+        if (diagnosticPath)
+          durable(diagnosticPath, {
+            ...diagnostic,
+            ...wireEvidence,
+            observationSource: null,
+            receiptObservationValid: true,
+            receiptBindingVerified: true,
+            receiptTerminal: true,
+            receiptOutcome: "succeeded",
+            receiptObservationSchema: PROBE_OBSERVATION_SCHEMA,
+            wireIdentityConflict: true,
+          });
+        fail(
+          "INSTANCE_UNAVAILABLE",
+          "Wire identity conflicts with the bound receipt observation",
+        );
+      }
+      const result = receiptObservation ?? results[0]!;
       if (diagnosticPath)
         durable(diagnosticPath, {
           ...diagnostic,
-          text: lines[0],
+          ...(lines[0] ? { text: lines[0] } : {}),
           transportText: diagnostic.text,
+          ...wireEvidence,
+          ...(receiptObservation
+            ? {
+                observationSource: "bound-terminal-receipt",
+                receiptBindingVerified: true,
+                receiptTerminal: true,
+                receiptOutcome: "succeeded",
+                receiptObservationSchema: PROBE_OBSERVATION_SCHEMA,
+              }
+            : { observationSource: "wire-marker" }),
         });
       if (onObservation) await onObservation(result);
       if (requireIdle && !idle(result))
@@ -599,7 +794,28 @@ def run(_context: str) -> None:
     receiptPath: string,
     binding: unknown,
     mapPath: (file: string) => string,
+    captureProbeObservation = false,
   ) {
+    const executeOfficialEntry = !official
+      ? ""
+      : captureProbeObservation
+        ? [
+            "    _qr_run = _qr_namespace['run']",
+            "    if not callable(_qr_run):",
+            "        raise TypeError('Script run entrypoint must be callable')",
+            "    _qr_run_result = _qr_cast(_qr_Callable[[str], object], _qr_run)(_context)",
+            "    _qr_probe_observation = _qr_object(_qr_cast(object, _qr_run_result))",
+            `    _qr_observation = {'schema':${JSON.stringify(PROBE_OBSERVATION_SCHEMA)}, 'identity':_qr_probe_observation}`,
+            "    _qr_store(_qr_path, dict(_qr_binding, terminal=False, probeObservation=_qr_observation))",
+            "",
+          ].join("\n")
+        : [
+            "    _qr_run = _qr_namespace['run']",
+            "    if not callable(_qr_run):",
+            "        raise TypeError('Script run entrypoint must be callable')",
+            "    _qr_cast(_qr_Callable[[str], object], _qr_run)(_context)",
+            "",
+          ].join("\n");
     const body = `${identityPython}
 import json as _qr_json, uuid as _qr_uuid, traceback as _qr_traceback
 from typing import cast as _qr_cast, Callable as _qr_Callable
@@ -616,8 +832,10 @@ def _qr_object(_value: object) -> dict[str, object]:
 _qr_binding_value = _qr_cast(object, _qr_json.loads(${JSON.stringify(JSON.stringify(binding))}))
 _qr_binding = _qr_object(_qr_binding_value)
 _qr_path = ${JSON.stringify(mapPath(receiptPath))}
+${captureProbeObservation ? "if _qi_os.path.exists(_qr_path): raise RuntimeError('Probe receipt path already exists')" : ""}
 _qr_outcome = 'failed'
 _qr_error: dict[str, str] | None = None
+_qr_probe_observation: dict[str, object] | None = None
 def _qr_store(_path: str, _record: dict[str, object]) -> None:
     _temp = _path + '.' + str(_qr_uuid.uuid4()) + '.tmp'
     with open(_temp, 'x', encoding='utf-8') as _file:
@@ -736,7 +954,7 @@ try:
     _qr_namespace: dict[str, object] = {'__name__':'__main__', '__file__':'<fmcad-queue>',
                      '__fmcad_native_lifecycle__':{'start':_qr_native_start,'complete':_qr_native_complete}}
     exec(compile(${JSON.stringify(code)}, '<fmcad-queue>', 'exec'), _qr_namespace, _qr_namespace)
-${official ? "    _qr_run = _qr_namespace['run']\n    if not callable(_qr_run):\n        raise TypeError('Script run entrypoint must be callable')\n    _qr_cast(_qr_Callable[[str], object], _qr_run)(_context)\n" : ""}    _qr_outcome = 'succeeded'
+${executeOfficialEntry}    _qr_outcome = 'succeeded'
 except BaseException as _qr_exception:
     _qr_error = {'type':type(_qr_exception).__name__, 'message':str(_qr_exception),
                  'traceback':_qr_traceback.format_exc()[-16384:]}
@@ -744,6 +962,8 @@ except BaseException as _qr_exception:
 finally:
     _qr_record = dict(_qr_binding)
     _qr_record.update({'terminal':True, 'outcome':_qr_outcome, 'instance':_qi_identity()})
+    if _qr_probe_observation is not None:
+        _qr_record['probeObservation'] = {'schema':${JSON.stringify(PROBE_OBSERVATION_SCHEMA)}, 'identity':_qr_probe_observation}
     if _qr_error is not None: _qr_record['error'] = _qr_error
     _qr_store(_qr_path, _qr_record)
 `;
@@ -766,11 +986,24 @@ finally:
     official: boolean,
     receiptPath: string,
     binding: unknown,
-    { mapPath = fusionPath }: { mapPath?: (file: string) => string } = {},
+    {
+      mapPath = fusionPath,
+      captureProbeObservation = false,
+    }: {
+      mapPath?: (file: string) => string;
+      captureProbeObservation?: boolean;
+    } = {},
   ) {
     return (official ? prepareEncodedWireArtifact : prepareWireArtifact)(
       resolveRuntimePaths({ anchor: anchor }).runtime,
-      receiptWrapper(code, official, receiptPath, binding, mapPath),
+      receiptWrapper(
+        code,
+        official,
+        receiptPath,
+        binding,
+        mapPath,
+        captureProbeObservation,
+      ),
       {
         request: binding,
         context: { entrypoints: official ? ["<fmcad-queue>"] : [] },
