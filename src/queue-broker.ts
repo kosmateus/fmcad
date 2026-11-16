@@ -1378,6 +1378,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     binding: startupBinding,
   };
   durable(lifecycleFile, lifecycle, true);
+  const normalRestartPort = load("./dist/node-adapters/broker-ipc/normal-restart") as typeof import("../packages/node-adapters/src/broker-ipc/normal-restart");
+  let normalRestart: ReturnType<typeof normalRestartPort.inspectSettledNormalRestart>;
+  let normalRestartReference: P.Reference | undefined;
   try {
     oldIdentity = fs.existsSync(identityFile)
       ? readJson<P.Identity>(identityFile)
@@ -1391,12 +1394,21 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "CONFIG_CHANGED",
         "Pinned backend configuration differs from the durable broker identity",
       );
+    if (state.epoch && state.admissionMode === "normal-multidocument" && oldIdentity && !successorRuntime && !backendTransition) {
+      try {
+        normalRestart = normalRestartPort.inspectSettledNormalRestart(dir, state.epoch, oldIdentity, state.data, { priorProcessAlive });
+      } catch (cause) {
+        const error = errorInfo(cause);
+        error.probeNotSubmitted = true;
+        throw error;
+      }
+    }
     if (
       !backendTransition &&
       (successorRuntime ||
         load(
           "./dist/node-adapters/broker-ipc/normal-admission",
-        ).epochStartupPinned(state, oldIdentity?.buildHash, codeHash))
+        ).epochStartupPinned(state, oldIdentity?.buildHash, codeHash, !!normalRestart))
     ) {
       // Reopening a broker never adopts another active document or replays the
       // creation operation. The immutable epoch remains tied to its live process.
@@ -1420,7 +1432,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       if (
         !oldIdentity ||
         oldIdentity.buildHash !== expectedBuild ||
-        !sameInstance(oldIdentity.instance, epoch.currentInstance)
+        !sameInstance(oldIdentity.instance, normalAdmission
+          ? normalRestartPort.normalRestartInstance(dir, epoch, oldIdentity, state.data) as P.Instance
+          : epoch.currentInstance)
       )
         fail(
           "BUILD_CHANGED",
@@ -1531,6 +1545,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             current: instance,
           }),
         );
+        if (normalRestart)
+          normalRestartReference = normalRestartPort.commitSettledNormalRestart(
+            normalRestart, state.data, instance, startupBinding, startupReceipt, { priorProcessAlive },
+          );
         const queueTransition = state.advanceInstanceEpoch(transitionId);
         durable(path.join(dir, `instance-transition-${transitionId}.json`), {
           source: versionChanged
@@ -1569,10 +1587,17 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             "Restore the exact physical backend transition runtime before reopening",
           );
       } else
-        durable(identityFile, { configHash, buildHash: codeHash, instance });
+        durable(identityFile, { configHash, buildHash: codeHash, instance,
+          ...((normalRestartReference || oldIdentity?.normalRestart)
+            ? { normalRestart: normalRestartReference || oldIdentity?.normalRestart } : {}),
+        });
     }
   } catch (cause) {
     const error = errorInfo(cause);
+    if (error.code === "NORMAL_RESTART_UNPROVEN" && error.probeNotSubmitted === true)
+      durable(lifecycleFile, { ...lifecycle, stage: "rejected", safeToRecover: !state.summary().blocked && !state.data.active && !state.data.lease && !state.data.controlBlocked && !state.data.localUnknown &&
+          Object.values(state.data.jobs).every(job => ["succeeded", "failed", "cancelled", "expired"].includes(job.state)),
+        code: error.code, message: error.message, probeNotSubmitted: true });
     // Only proven local/terminal startup rejections can release our own marker.
     // Transport uncertainty, restored unknowns and storage faults retain it.
     if (

@@ -17,6 +17,7 @@ jobs:
     timeout-minutes: 35
     env:
       npm_config_cache: /tmp/fmcad-npm-cache
+      PYTHONPATH: ${{ github.workspace }}/runtime/python
     strategy:
       fail-fast: false
       matrix:

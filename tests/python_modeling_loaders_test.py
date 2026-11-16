@@ -14,6 +14,14 @@ from python_test_support import load_legacy_core
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / 'tests/fixtures/modeling-python-history'
 MANIFEST = json.loads((FIXTURES / 'manifest.json').read_text())
+DIRECT_MEASURE_HANDLER_NAMES = {
+    'measure.diameter': 'measure_diameter',
+    'measure.radius': 'measure_radius',
+    'measure.length': 'measure_length',
+    'measure.area': 'measure_area',
+    'measure.volume': 'measure_volume',
+    'measure.mass': 'measure_mass',
+}
 
 
 class ModelingLoaderTests(unittest.TestCase):
@@ -93,7 +101,14 @@ class ModelingLoaderTests(unittest.TestCase):
                         exec(code, current)
                         self.assertEqual(set(current['CAD_HANDLERS']), set(baseline['CAD_HANDLERS']))
                         for operation, handler in current['CAD_HANDLERS'].items():
-                            self.assertEqual(handler.__name__, baseline['CAD_HANDLERS'][operation].__name__, operation)
+                            if family == 'measure' and operation in DIRECT_MEASURE_HANDLER_NAMES:
+                                # The frozen fixture predates direct handler registration and names
+                                # these factory closures "handler"; the canonical adapter binds
+                                # top-level handlers instead, without creating a closure per mode.
+                                self.assertEqual(handler.__name__, DIRECT_MEASURE_HANDLER_NAMES[operation], operation)
+                                self.assertIsNone(handler.__closure__, operation)
+                            else:
+                                self.assertEqual(handler.__name__, baseline['CAD_HANDLERS'][operation].__name__, operation)
                             if initial_handlers.get(operation) is not handler:
                                 self.assertTrue(str(handler.__code__.co_filename).startswith(str(ROOT / 'runtime/python/')),
                                                 (operation, handler.__code__.co_filename))

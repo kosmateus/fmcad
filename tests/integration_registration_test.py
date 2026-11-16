@@ -19,6 +19,41 @@ native_plan = importlib.util.module_from_spec(NATIVE_SPEC)
 NATIVE_SPEC.loader.exec_module(native_plan)
 
 
+def audit_python_wrapper(source, workflow_command='npm run test:python', script_path='scripts/run-python-tests.cjs'):
+    content = {
+        'package.json': json.dumps({'scripts': {
+            'test:python': 'node ' + script_path,
+            'build': 'node scripts/build.cjs',
+        }}),
+        '.github/workflows/ci.yml': 'jobs:\n  test:\n    steps:\n      - run: ' + workflow_command + '\n',
+        script_path: source,
+        'tests/registered_test.py': '',
+        'tests/nested/__init__.py': '',
+        'tests/nested/registered_nested_test.py': '',
+        'tests/orphan_test.py': '',
+    }
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        for path, text in content.items():
+            target = root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text)
+        return coverage.audit(root, list(content))
+
+
+def python_discovery_wrapper(start='tests', pattern='registered*_test.py'):
+    return '''const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const root = path.resolve(__dirname, '..');
+const python = process.env.PYTHON || 'python3';
+const result = spawnSync(
+  python,
+  ['-B', '-m', 'unittest', 'discover', '-s', START, '-p', PATTERN],
+  { cwd: root, stdio: 'inherit' },
+);
+'''.replace('START', repr(start)).replace('PATTERN', repr(pattern))
+
+
 class RegistrationTests(unittest.TestCase):
     def test_compilation_and_echo_do_not_count_as_execution(self):
         tests = ['tests/a.test.ts', 'tests/b.test.js']
@@ -91,6 +126,89 @@ class RegistrationTests(unittest.TestCase):
                 (root / path).write_text(text)
             report = coverage.audit(root, list(content))
             self.assertEqual(report['gaps'], ['tests/orphan.test.js'])
+
+    def test_repository_workflow_reaches_tests_through_python_wrapper(self):
+        files = coverage.tracked(coverage.ROOT)
+        tests = sorted(p for p in files if p.startswith('tests/') and coverage.TEST.search(p))
+        expected = coverage.selected(
+            "python3 -B -m unittest discover -s tests -p '*_test.py'", tests, set(files)
+        )
+        report = coverage.audit(coverage.ROOT, files)
+        reached_by_python_job = {
+            row['path'] for row in report['tests']
+            if '.github/workflows/ci-tests.yml' in row['workflows']
+        }
+        self.assertTrue(expected)
+        self.assertEqual(expected - reached_by_python_job, set())
+
+    def test_python_wrapper_registration_preserves_new_orphan_guard_and_nested_discovery(self):
+        report = audit_python_wrapper(python_discovery_wrapper())
+        by_path = {row['path']: row['workflows'] for row in report['tests']}
+        self.assertEqual(by_path['tests/registered_test.py'], ['.github/workflows/ci.yml'])
+        self.assertEqual(by_path['tests/nested/registered_nested_test.py'], ['.github/workflows/ci.yml'])
+        self.assertEqual(report['gaps'], ['tests/orphan_test.py'])
+        self.assertEqual(
+            coverage.violations(report, {'gaps': {}}),
+            ['New orphan test: tests/orphan_test.py'],
+        )
+
+    def test_python_wrapper_without_discovery_does_not_register_tests(self):
+        sources = (
+            python_discovery_wrapper().replace(
+                "['-B', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'registered*_test.py']",
+                "['-B', '-c', 'print(1)']",
+            ),
+            python_discovery_wrapper().replace(
+                "'-m', 'unittest', 'discover', '-s', 'tests', '-p', 'registered*_test.py'",
+                "'-c', \"print('python -m unittest discover -s tests -p registered*_test.py')\"",
+            ),
+        )
+        for source in sources:
+            with self.subTest(source=source):
+                report = audit_python_wrapper(source)
+                self.assertEqual(report['gaps'], [
+                    'tests/nested/registered_nested_test.py',
+                    'tests/orphan_test.py',
+                    'tests/registered_test.py',
+                ])
+
+    def test_unreachable_python_wrapper_does_not_register_tests(self):
+        report = audit_python_wrapper(python_discovery_wrapper(), workflow_command='npm run build')
+        self.assertEqual(report['gaps'], [
+            'tests/nested/registered_nested_test.py',
+            'tests/orphan_test.py',
+            'tests/registered_test.py',
+        ])
+
+    def test_python_wrapper_must_match_discovery_root_and_pattern(self):
+        for source in (
+            python_discovery_wrapper(start='other'),
+            python_discovery_wrapper(pattern='other*_test.py'),
+        ):
+            with self.subTest(source=source):
+                report = audit_python_wrapper(source)
+                self.assertEqual(report['gaps'], [
+                    'tests/nested/registered_nested_test.py',
+                    'tests/orphan_test.py',
+                    'tests/registered_test.py',
+                ])
+
+    def test_python_wrapper_source_preconditions_are_verified(self):
+        valid = python_discovery_wrapper()
+        invalid_sources = (
+            '/*\n' + valid + '\n*/',
+            valid.replace("require('node:child_process')", "require('node:fs')"),
+            valid.replace("path.resolve(__dirname, '..')", "path.resolve(__dirname, '.')"),
+            valid.replace("process.env.PYTHON || 'python3'", "'node'"),
+        )
+        for source in invalid_sources:
+            with self.subTest(source=source):
+                report = audit_python_wrapper(source)
+                self.assertEqual(report['gaps'], [
+                    'tests/nested/registered_nested_test.py',
+                    'tests/orphan_test.py',
+                    'tests/registered_test.py',
+                ])
 
     def test_new_orphan_and_removed_sources_fail_but_closed_gaps_are_allowed(self):
         baseline = {'gaps': {'tests/old.test.js': {'owner': 'G', 'reason': 'Pending registration', 'nextAction': 'Verify isolated execution'}}}

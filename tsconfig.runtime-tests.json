@@ -17,6 +17,8 @@
     "tests/queue-client-response-recovery.test.ts",
     "tests/normal-epoch-broker.test.ts",
     "tests/normal-epoch-admission.test.ts",
+    "tests/normal-settled-restart.test.ts",
+    "tests/normal-restart-public-autostart.test.ts",
     "tests/queue-runtime-stage.test.ts",
     "tests/queue-cli-recovery-parity.test.ts",
     "tests/fixtures/closed-scratch-artifacts.cts",

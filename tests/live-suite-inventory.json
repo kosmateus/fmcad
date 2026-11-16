@@ -263,7 +263,7 @@
       "runner": "standalone",
       "model": "pending",
       "scope": "Pinned native GM07 fixture and its geometric evidence",
-      "prerequisites": "Externally prepared exact document, client, runtime and Fusion version",
+      "prerequisites": "Explicitly pinned qualified runtime/build, client and Fusion version; runner creates one unique unsaved scratch and closes only its exact verified identity",
       "baseline": {
         "kind": "later"
       },

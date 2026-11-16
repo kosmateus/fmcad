@@ -2,16 +2,19 @@
 """Audit CI registration, never execute discovered test or runtime files.
 
 This is registration evidence, not assertion execution or test-result evidence.
-Only Node --test, Python unittest discovery and literal test-wrapper imports are
-recognized. Unknown command forms stay gaps; typechecking is never execution.
+Only Node --test, Python unittest discovery, source-verified Node wrappers that
+launch Python discovery, and literal test-wrapper imports are recognized.
+Unknown command forms stay gaps; typechecking is never execution.
 """
 from __future__ import annotations
 
 import argparse
+import ast
 import fnmatch
 import json
 import posixpath
 import re
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -22,6 +25,76 @@ WRAPPER = re.compile(
     r"\s*(?:(?:'use strict'|\"use strict\");?\s*)?"
     r"(?://[^\n]*\n\s*)*require\(\s*['\"]([^'\"]+)['\"]\s*\);?\s*"
 )
+NODE_SCRIPT = re.compile(r"^\s*node\s+([./\w-]+\.(?:c|m)?js)\s*$")
+SPAWN_DISCOVERY = re.compile(
+    r"(?ms)^const\s+\w+\s*=\s*spawnSync\(\s*"
+    r"(?P<program>(?:['\"]python3?['\"]|[A-Za-z_$][\w$]*))\s*,\s*"
+    r"(?P<args>\[[^\]]*\])\s*,\s*\{(?P<options>.*?)\},\s*\)"
+)
+
+
+def python_discovery_command(source: str, script: str) -> str | None:
+    """Return a static unittest invocation from a Node wrapper, if verified."""
+    code = re.sub(r"(?m)^[ \t]*//[^\n]*(?:\n|$)|/\*[\s\S]*?\*/", "", source)
+    call = SPAWN_DISCOVERY.search(code)
+    if not call:
+        return None
+    preamble = code[:call.start()]
+    if not re.search(
+        r"(?m)^[ \t]*const\s*\{\s*spawnSync\s*\}\s*=\s*"
+        r"require\(\s*['\"]node:child_process['\"]\s*\)",
+        preamble,
+    ):
+        return None
+
+    token = call['program']
+    if token[:1] in ("'", '"'):
+        if token[1:-1] not in ('python', 'python3'):
+            return None
+    else:
+        program = token
+        binding = re.search(
+            rf"(?m)^[ \t]*const\s+{re.escape(program)}\s*=\s*([^;\n]+)",
+            preamble,
+        )
+        if not binding or not re.search(r"['\"]python3?['\"]", binding[1]):
+            return None
+        if not re.search(r"\bprocess\.env\.PYTHON\b", binding[1]) and not re.fullmatch(
+            r"\s*['\"]python3?['\"]\s*", binding[1]
+        ):
+            return None
+
+    options = call['options']
+    cwd = re.match(r"\s*cwd\s*:\s*([A-Za-z_$][\w$]*)\s*,", options)
+    if not cwd:
+        return None
+    root_binding = re.search(
+        rf"(?m)^[ \t]*const\s+{re.escape(cwd[1])}\s*=\s*"
+        r"path\.resolve\(\s*__dirname\s*,\s*(['\"])([^'\"]+)\1\s*\)",
+        preamble,
+    )
+    if not root_binding or posixpath.normpath(
+        posixpath.join(posixpath.dirname(script), root_binding[2])
+    ) != '.':
+        return None
+
+    try:
+        arguments = ast.literal_eval(call['args'])
+    except (SyntaxError, ValueError):
+        return None
+    if not isinstance(arguments, list) or not all(isinstance(value, str) for value in arguments):
+        return None
+    # Only count the full discovery form; other flags can change which tests run.
+    offset = 1 if arguments[:1] == ['-B'] else 0
+    discovery = arguments[offset:]
+    if (
+        len(discovery) != 7
+        or discovery[:3] != ['-m', 'unittest', 'discover']
+        or discovery[3] != '-s'
+        or discovery[5] != '-p'
+    ):
+        return None
+    return 'python3 ' + shlex.join(arguments)
 
 
 def tracked(root: Path) -> list[str]:
@@ -85,7 +158,7 @@ def runtime_paths(source: str) -> list[str]:
     return paths
 
 
-def selected(command: str, tests: list[str], files: set[str]) -> set[str]:
+def selected(command: str, tests: list[str], files: set[str], root: Path | None = None) -> set[str]:
     result = set()
     # Examine each shell segment separately: a test filename in a later echo,
     # compiler command or documentation generator must not count as execution.
@@ -112,6 +185,14 @@ def selected(command: str, tests: list[str], files: set[str]) -> set[str]:
                     parent = parent.parent
                 else:
                     result.add(source)
+        if root:
+            wrapper = NODE_SCRIPT.fullmatch(segment)
+            if wrapper:
+                script = posixpath.normpath(wrapper[1])
+                if script in files:
+                    invocation = python_discovery_command((root / script).read_text(), script)
+                    if invocation:
+                        result.update(selected(invocation, tests, files))
     return result
 
 
@@ -125,7 +206,7 @@ def audit(root: Path, files: list[str]) -> dict:
         for command in workflow_commands((root / workflow).read_text()):
             for expanded in expand(command, scripts):
                 commands[workflow].append(expanded)
-                for source in selected(expanded, tests, set(files)):
+                for source in selected(expanded, tests, set(files), root):
                     reached[source].add(workflow)
     # Follow only literal imports into other recognized test files. This maps
     # thin compatibility wrappers to TS sources without treating imports of

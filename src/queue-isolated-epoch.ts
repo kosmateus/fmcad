@@ -426,9 +426,22 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
                 "Durable admission epoch pointer changed",
               );
             validate(pointer!);
+            const processIdentity =
+              normal && admissionMode() === "normal-multidocument"
+                ? (
+                    runtimeRequire(
+                      "./dist/node-adapters/broker-ipc/normal-restart",
+                    ) as typeof import("../packages/node-adapters/src/broker-ipc/normal-restart")
+                  ).normalRestartInstance(
+                    root,
+                    pointer!,
+                    read(path.join(pointer!.root, "instance.json")),
+                    current.data,
+                  )
+                : pointer!.currentInstance;
             if (
               priorProcessAlive(pointer!.originalInstance) !== false ||
-              priorProcessAlive(pointer!.currentInstance) !== true
+              priorProcessAlive(processIdentity) !== true
             )
               fail(
                 "INSTANCE_CHANGED",
