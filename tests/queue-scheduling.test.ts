@@ -85,6 +85,55 @@ function fixture(
   };
 }
 
+function syntheticProbe(identity: Record<string, unknown>) {
+  return {
+    async callTool(args: { object: { script?: string } }) {
+      const script = args.object.script;
+      assert.equal(typeof script, "string");
+      const { prepareWireArtifact } = load(
+        "../src/dist/python/source-units",
+      ) as {
+        prepareWireArtifact(
+          anchor: string,
+          source: string,
+        ): { units: Array<{ source: string }> };
+      };
+      const prepared = prepareWireArtifact(
+        path.resolve(__dirname, "../runtime/python"),
+        script!,
+      );
+      const code = prepared.units.map((unit) => unit.source).join("\n");
+      const receiptPath = /_qr_path = ("(?:\\.|[^"\\])*")/.exec(code);
+      const binding =
+        /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/.exec(
+          code,
+        );
+      assert.ok(receiptPath && binding, "probe must use its bound receipt");
+      const expected = JSON.parse(JSON.parse(binding[1]!)) as Record<
+        string,
+        unknown
+      >;
+      fs.writeFileSync(
+        JSON.parse(receiptPath[1]!),
+        JSON.stringify({
+          ...expected,
+          terminal: true,
+          outcome: "succeeded",
+          instance: identity,
+          probeObservation: {
+            schema: "fmcad-instance-probe-v1",
+            identity,
+          },
+        }),
+      );
+      return {
+        failed: false,
+        text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(identity),
+      };
+    },
+  };
+}
+
 test("settled history causes no idle transactions; summary stays detached and omits history", (t) => {
   const { state, submit } = fixture(t);
   for (let i = 0; i < 50; i++) {
@@ -244,12 +293,7 @@ for (const mode of ["automatic", "exclusive"])
           raw: JSON.stringify({ jsonrpc: "2.0", id: payload.id, result: {} }),
         };
       },
-      async callTool() {
-        return {
-          failed: false,
-          text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(identity),
-        };
-      },
+      ...syntheticProbe(identity),
     };
     const broker = await serve(
       { backend: "addin", timeoutMs: 1000 },
@@ -328,6 +372,132 @@ for (const mode of ["automatic", "exclusive"])
       await complete(a, continued.id);
     }
   });
+
+test("broker traces a retained RPC response through publication without logging its text", async (t) => {
+  const previousTrace = process.env["FMCAD_DEBUG_TRACE"];
+  process.env["FMCAD_DEBUG_TRACE"] = "1";
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "queue-trace-"));
+  const resources: { broker?: Awaited<ReturnType<typeof serve>> } = {};
+  t.after(async () => {
+    try {
+      await resources.broker?.close();
+    } finally {
+      if (previousTrace === undefined) delete process.env["FMCAD_DEBUG_TRACE"];
+      else process.env["FMCAD_DEBUG_TRACE"] = previousTrace;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  const identity = {
+    pid: 99,
+    birth: "mock:99",
+    version: "mock",
+    activeCommand: "SelectCommand",
+    documents: [],
+    documentState: { status: "metadata-only" },
+  };
+  const privateResponseText = "private-response-text-marker";
+  const physical = {
+    server: { timeoutMs: 1000 },
+    _parse: JSON.parse,
+    async _post(payload: import("../src/queue-broker-ports").Rpc) {
+      return {
+        status: 200,
+        raw: JSON.stringify({
+          jsonrpc: "2.0",
+          id: payload.id,
+          result: {
+            content: [{ type: "text", text: privateResponseText }],
+          },
+        }),
+      };
+    },
+    ...syntheticProbe(identity),
+  };
+  resources.broker = await serve(
+    { backend: "addin", timeoutMs: 1000 },
+    {
+      dir,
+      confirmOwnership: true,
+      createBackend: () =>
+        physical as unknown as import("../src/queue-broker-ports").Client,
+      nativePath: (file) => file,
+      pollMs: 5,
+    },
+  );
+  const auth = { clientId: "trace-client", clientToken: "private-token" };
+  await request(dir, { action: "register", ...auth });
+  const traceRuntime = load(
+    "../src/dist/node-adapters/telemetry/diagnostic-log",
+  ) as typeof import("../packages/node-adapters/src/telemetry/diagnostic-log");
+  const requestId = randomUUID();
+  const trace = traceRuntime.createDebugTraceContext(
+    requestId,
+    auth.clientId,
+    "cli",
+    true,
+  );
+  assert.ok(trace);
+  const accepted = await request<Job>(dir, {
+    action: "submit",
+    auth,
+    request: {
+      requestId,
+      kind: "rpc",
+      timeoutMs: 1000,
+      payload: { jsonrpc: "2.0", id: 1, method: "ping" },
+      debugTrace: trace,
+    },
+  });
+  let result: { job: Job } | undefined;
+  for (let attempt = 0; attempt < 200; attempt++) {
+    result = await request<{ job: Job }>(dir, {
+      action: "result",
+      auth,
+      jobId: accepted.id,
+    });
+    if (result.job.state === "succeeded") break;
+    assert.notEqual(result.job.state, "needs_reconciliation");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(result?.job.state, "succeeded");
+  await traceRuntime.flushDebugTrace();
+  const events = traceRuntime.readDebugTrace(trace.traceId);
+  const stages = events.map((event) => event["stage"]);
+  for (const stage of [
+    "request-accepted",
+    "preflight",
+    "sdk-dispatch",
+    "raw-received",
+    "parsed",
+    "native-receipt",
+    "result-published",
+  ])
+    assert(stages.includes(stage), `missing ${stage} trace stage`);
+  assert(
+    events.every(
+      (event) =>
+        event["traceId"] === trace.traceId && event["requestId"] === requestId,
+    ),
+  );
+  const retained = events.find((event) => event["stage"] === "raw-received");
+  assert.equal(retained?.["jobId"], accepted.id);
+  assert.equal(typeof retained?.["rpcId"], "string");
+  assert.equal(typeof retained?.["rawBytes"], "number");
+  assert.match(String(retained?.["rawSha256"]), /^[a-f0-9]{64}$/);
+  assert.equal(
+    retained?.["artifactRef"] && typeof retained["artifactRef"],
+    "string",
+  );
+  assert.equal(retained?.["stdoutObservation"], "not_observed");
+  assert.equal(
+    events.find((event) => event["stage"] === "result-published")?.["jobId"],
+    accepted.id,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(events),
+    /private-response-text-marker|private-token/,
+  );
+});
 
 test("automatic default yields without an agent release and protects pending work", (t) => {
   const { state, submit, advance } = fixture(t, { leaseMs: 1000 });

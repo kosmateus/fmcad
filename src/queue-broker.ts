@@ -16,6 +16,10 @@ import type {
 } from "./queue-broker-modules";
 import type { BrokerControlFence } from "../packages/core/src/application/broker-control";
 import type { DispatchFailure } from "../packages/core/src/application/execution";
+import type {
+  DebugTraceContext,
+  DebugTraceEvent,
+} from "../packages/node-adapters/src/telemetry/diagnostic-log";
 import {
   resolveBackendHead,
   prepareBackendTransition,
@@ -23,6 +27,23 @@ import {
 const runtimeRequire = createRequire(__filename);
 const load = <K extends keyof BrokerModules>(name: K): BrokerModules[K] =>
   runtimeRequire(name) as BrokerModules[K];
+type DebugTraceRuntime = {
+  validDebugTraceContext(
+    value: unknown,
+    expected: { requestId: string; clientId: string },
+  ): value is DebugTraceContext;
+  writeDebugTrace(
+    context: DebugTraceContext | undefined,
+    event: DebugTraceEvent,
+  ): void;
+  summarizeDebugTraceRaw: typeof import("../packages/node-adapters/src/telemetry/diagnostic-log").summarizeDebugTraceRaw;
+};
+let debugTraceRuntime: DebugTraceRuntime | undefined;
+function getDebugTraceRuntime(): DebugTraceRuntime {
+  return (debugTraceRuntime ||= runtimeRequire(
+    "./dist/node-adapters/telemetry/diagnostic-log",
+  ) as DebugTraceRuntime);
+}
 const { openIsolatedEpoch, epochAdmission } = load("./queue-isolated-epoch");
 const projectActivity = runtimeRequire(
   "./dist/node-adapters/persistence/project-history/activity",
@@ -276,6 +297,34 @@ function decodeRequest(value: unknown): asserts value is P.Request {
       "INVALID_INPUT_FILES",
       "Input files require path and lowercase SHA256",
     );
+}
+function debugTraceContext(
+  request: Pick<P.Request, "requestId" | "debugTrace"> | undefined,
+  clientId: string,
+): DebugTraceContext | undefined {
+  if (!request?.debugTrace) return undefined;
+  try {
+    return getDebugTraceRuntime().validDebugTraceContext(request.debugTrace, {
+      requestId: request.requestId,
+      clientId,
+    })
+      ? request.debugTrace
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function writeRequestTrace(
+  request: Pick<P.Request, "requestId" | "debugTrace"> | undefined,
+  clientId: string,
+  event: DebugTraceEvent,
+): void {
+  try {
+    const context = debugTraceContext(request, clientId);
+    if (context) getDebugTraceRuntime().writeDebugTrace(context, event);
+  } catch {
+    // Optional debug evidence must not affect queue behavior.
+  }
 }
 
 export function assertResetSubmissionOpen(dir: string) {
@@ -1288,6 +1337,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     stopping = false,
     closed = false,
     instance: P.Instance;
+  const debugDispatchStarted = new WeakMap<P.Prepared, number>();
+  const debugPreflightStarted = new WeakMap<P.Prepared, number>();
+  const debugRawReceived = new WeakSet<P.Prepared>();
+  const debugResultPublished = new Set<string>();
   const atomicObservationScope = new AsyncLocalStorage<P.ObservationScope>();
   const atomicRecoveryAuditScope = new AsyncLocalStorage<P.ScriptScope>();
   let atomicObservationOnly = false;
@@ -2696,17 +2749,54 @@ def run(_context: str) -> dict[str, object]:
     if (!context) return unownedPost(payload, sessionId, requestOptions);
     return load("./dist/core/application/execution").dispatchPrepared({
       async prepare(): Promise<P.Prepared> {
-        const prepared = preparedPosts.get(payload);
-        preparedPosts.delete(payload);
-        if (prepared && !("record" in prepared))
-          fail(
-            "PREPARED_RPC_UNAVAILABLE",
-            "Owned RPC lost its original prepared record",
-          );
-        return prepared || prepareOwnedPost(payload, context.job);
+        const tracePreflight = context.job.kind === "rpc";
+        const startedAt = Date.now();
+        if (tracePreflight)
+          writeRequestTrace(context.job.request, context.job.clientId, {
+            stage: "preflight",
+            status: "started",
+            jobId: context.job.id,
+            buildHash: codeHash,
+            stdoutObservation: "not_observed",
+          });
+        try {
+          const prepared = preparedPosts.get(payload);
+          preparedPosts.delete(payload);
+          if (prepared && !("record" in prepared))
+            fail(
+              "PREPARED_RPC_UNAVAILABLE",
+              "Owned RPC lost its original prepared record",
+            );
+          const ready =
+            prepared || (await prepareOwnedPost(payload, context.job));
+          if (tracePreflight) debugPreflightStarted.set(ready, startedAt);
+          return ready;
+        } catch (error) {
+          if (tracePreflight)
+            writeRequestTrace(context.job.request, context.job.clientId, {
+              stage: "preflight",
+              status: "failed",
+              jobId: context.job.id,
+              buildHash: codeHash,
+              stdoutObservation: "not_observed",
+            });
+          throw error;
+        }
       },
       check(prepared) {
-        prepared.pythonCertificate.fence(prepared.outgoing);
+        try {
+          prepared.pythonCertificate.fence(prepared.outgoing);
+        } catch (error) {
+          if (context.job.kind === "rpc")
+            writeRequestTrace(context.job.request, context.job.clientId, {
+              stage: "preflight",
+              status: "failed",
+              jobId: context.job.id,
+              buildHash: codeHash,
+              stdoutObservation: "not_observed",
+            });
+          throw error;
+        }
       },
       admit: (send) =>
         gate.run(send, {
@@ -2727,110 +2817,327 @@ def run(_context: str) -> dict[str, object]:
           },
         }),
       fence(prepared) {
-        assertResetSubmissionOpen(dir);
-        if (state.epoch) epochAdmission(state, context.job.request, clients);
-        if (active !== context || context.unknown || state.summary().blocked)
-          fail(
-            "RECONCILIATION_REQUIRED",
-            "Original SDK ownership changed before send",
-          );
-        if (context.contextEpoch !== (state.data.contextEpoch || 0))
-          fail(
-            "DOCUMENT_CHANGED",
-            "Context changed during local preparation or pause",
-          );
-        if (
-          !prepared.metadataOnly &&
-          prepared.contextEpoch !== context.contextEpoch
-        )
-          fail(
-            "DOCUMENT_CHANGED",
-            "Context changed after final Python analysis",
-          );
-        if (buildHash() !== codeHash)
-          fail("BUILD_CHANGED", "Pinned executable changed before dispatch");
-        for (const input of context.job.request.inputFiles || []) {
-          if (
-            hash(
-              fs.readFileSync(
-                path.resolve(required(context.job.request.cwd), input.path),
-              ),
-            ) !== input.sha256
-          )
-            fail("INPUT_CHANGED", "Pinned input changed before dispatch");
-        }
-        prepared.pythonCertificate.fence(prepared.outgoing);
-        if (prepared.pythonArtifact) {
-          verifyPythonArtifact(prepared.pythonArtifact);
-          const args = prepared.outgoing.params?.arguments;
-          const wireScript =
-            prepared.outgoing.params?.name === "execute_python"
-              ? args?.code
-              : args?.object?.script;
-          if (wireScript !== prepared.pythonArtifact.script)
+        try {
+          assertResetSubmissionOpen(dir);
+          if (state.epoch) epochAdmission(state, context.job.request, clients);
+          if (active !== context || context.unknown || state.summary().blocked)
             fail(
-              "INPUT_CHANGED",
-              "Final Python bytes changed after offline preparation",
+              "RECONCILIATION_REQUIRED",
+              "Original SDK ownership changed before send",
             );
-        }
-        const { record, rpcId } = prepared;
-        const dispatchRemaining = Math.ceil(
-          Math.min(
-            required(context.budget).remaining(),
-            context.rpcBudget?.remaining() ?? Infinity,
-          ),
-        );
-        if (dispatchRemaining <= 0)
-          fail(
-            "RUN_TIMEOUT",
-            "Active execution budget expired during Python preparation; no RPC sent",
+          if (context.contextEpoch !== (state.data.contextEpoch || 0))
+            fail(
+              "DOCUMENT_CHANGED",
+              "Context changed during local preparation or pause",
+            );
+          if (
+            !prepared.metadataOnly &&
+            prepared.contextEpoch !== context.contextEpoch
+          )
+            fail(
+              "DOCUMENT_CHANGED",
+              "Context changed after final Python analysis",
+            );
+          if (buildHash() !== codeHash)
+            fail("BUILD_CHANGED", "Pinned executable changed before dispatch");
+          for (const input of context.job.request.inputFiles || []) {
+            if (
+              hash(
+                fs.readFileSync(
+                  path.resolve(required(context.job.request.cwd), input.path),
+                ),
+              ) !== input.sha256
+            )
+              fail("INPUT_CHANGED", "Pinned input changed before dispatch");
+          }
+          prepared.pythonCertificate.fence(prepared.outgoing);
+          if (prepared.pythonArtifact) {
+            verifyPythonArtifact(prepared.pythonArtifact);
+            const args = prepared.outgoing.params?.arguments;
+            const wireScript =
+              prepared.outgoing.params?.name === "execute_python"
+                ? args?.code
+                : args?.object?.script;
+            if (wireScript !== prepared.pythonArtifact.script)
+              fail(
+                "INPUT_CHANGED",
+                "Final Python bytes changed after offline preparation",
+              );
+          }
+          const { record, rpcId } = prepared;
+          const dispatchRemaining = Math.ceil(
+            Math.min(
+              required(context.budget).remaining(),
+              context.rpcBudget?.remaining() ?? Infinity,
+            ),
           );
-        const journal = path.join(jobDir(context.job.id), `rpc-${rpcId}.json`);
-        const before = state.status(context.job.id).dispatch;
-        const count = (before?.rpcCount || 0) + 1;
-        record.dispatchIndex = count;
-        durable(journal, record, true);
-        context.turnRpcs.push({ record, journal });
-        state.markDispatch(context.job.id, {
-          rpcCount: count,
-          completedCount: before?.completedCount || 0,
-          rpcId,
-        });
-        context.dispatched = true;
-        Object.assign(prepared, { journal, dispatchRemaining });
+          if (dispatchRemaining <= 0)
+            fail(
+              "RUN_TIMEOUT",
+              "Active execution budget expired during Python preparation; no RPC sent",
+            );
+          const journal = path.join(
+            jobDir(context.job.id),
+            `rpc-${rpcId}.json`,
+          );
+          const before = state.status(context.job.id).dispatch;
+          const count = (before?.rpcCount || 0) + 1;
+          record.dispatchIndex = count;
+          durable(journal, record, true);
+          context.turnRpcs.push({ record, journal });
+          state.markDispatch(context.job.id, {
+            rpcCount: count,
+            completedCount: before?.completedCount || 0,
+            rpcId,
+          });
+          context.dispatched = true;
+          Object.assign(prepared, { journal, dispatchRemaining });
+          if (context.job.kind === "rpc") {
+            const startedAt = debugPreflightStarted.get(prepared);
+            writeRequestTrace(context.job.request, context.job.clientId, {
+              stage: "preflight",
+              status: "passed",
+              jobId: context.job.id,
+              buildHash: codeHash,
+              ...(startedAt === undefined
+                ? {}
+                : { durationMs: Date.now() - startedAt }),
+              stdoutObservation: "not_observed",
+            });
+          }
+        } catch (error) {
+          if (context.job.kind === "rpc")
+            writeRequestTrace(context.job.request, context.job.clientId, {
+              stage: "preflight",
+              status: "failed",
+              jobId: context.job.id,
+              buildHash: codeHash,
+              stdoutObservation: "not_observed",
+            });
+          throw error;
+        }
       },
-      send: (prepared) =>
-        withRequest({ timeoutMs: required(prepared.dispatchRemaining) }, () =>
-          originalPost(prepared.outgoing, sessionId, requestOptions),
-        ),
+      send: async (prepared) => {
+        const startedAt = Date.now();
+        debugDispatchStarted.set(prepared, startedAt);
+        writeRequestTrace(context.job.request, context.job.clientId, {
+          stage: "sdk-dispatch",
+          status: "started",
+          jobId: context.job.id,
+          rpcId: prepared.rpcId,
+          buildHash: prepared.record.binding.buildHash,
+          sourceHash: prepared.record.binding.sourceHash,
+          sdkPid: instance.pid,
+          sdkBirth: instance.birth,
+          sdkVersion: instance.version,
+          stdoutObservation: "not_observed",
+        });
+        try {
+          const response = await withRequest(
+            { timeoutMs: required(prepared.dispatchRemaining) },
+            () => originalPost(prepared.outgoing, sessionId, requestOptions),
+          );
+          writeRequestTrace(context.job.request, context.job.clientId, {
+            stage: "sdk-dispatch",
+            status: "passed",
+            jobId: context.job.id,
+            rpcId: prepared.rpcId,
+            buildHash: prepared.record.binding.buildHash,
+            sourceHash: prepared.record.binding.sourceHash,
+            sdkPid: instance.pid,
+            sdkBirth: instance.birth,
+            sdkVersion: instance.version,
+            durationMs: Date.now() - startedAt,
+            stdoutObservation: "not_observed",
+          });
+          return response;
+        } catch (error) {
+          writeRequestTrace(context.job.request, context.job.clientId, {
+            stage: "sdk-dispatch",
+            status: "failed",
+            jobId: context.job.id,
+            rpcId: prepared.rpcId,
+            buildHash: prepared.record.binding.buildHash,
+            sourceHash: prepared.record.binding.sourceHash,
+            sdkPid: instance.pid,
+            sdkBirth: instance.birth,
+            sdkVersion: instance.version,
+            durationMs: Date.now() - startedAt,
+            stdoutObservation: "not_observed",
+          });
+          throw error;
+        }
+      },
       settle(prepared, response: P.Response) {
         const { outgoing, record, rpcId, journal } = prepared;
+        const trace = debugTraceContext(
+          context.job.request,
+          context.job.clientId,
+        );
+        const rawSummary = trace
+          ? (() => {
+              try {
+                return getDebugTraceRuntime().summarizeDebugTraceRaw(
+                  response.raw,
+                );
+              } catch {
+                return undefined;
+              }
+            })()
+          : undefined;
+        if (trace) debugRawReceived.add(prepared);
         // A returned HTTP response is transport evidence, not SDK settlement.
         // Persist it before matching/receipt validation can throw; otherwise a
         // missing remote receipt discards the only original error response.
-        durable(
-          path.join(jobDir(context.job.id), `received-response-${rpcId}.json`),
-          {
-            version: 1,
-            kind: "owned-rpc-received-response-v1",
-            binding: record.binding,
-            wireId: outgoing.id,
-            response,
-          },
-          true,
-        );
-        const reply = matching(client, response, outgoing);
+        try {
+          durable(
+            path.join(
+              jobDir(context.job.id),
+              `received-response-${rpcId}.json`,
+            ),
+            {
+              version: 1,
+              kind: "owned-rpc-received-response-v1",
+              binding: record.binding,
+              wireId: outgoing.id,
+              response,
+            },
+            true,
+          );
+        } catch (error) {
+          if (trace)
+            writeRequestTrace(context.job.request, context.job.clientId, {
+              stage: "raw-received",
+              status: "failed",
+              jobId: context.job.id,
+              rpcId,
+              buildHash: record.binding.buildHash,
+              sourceHash: record.binding.sourceHash,
+              code: "RESPONSE_RETENTION_FAILED",
+              ...(rawSummary ?? {}),
+              stdoutObservation:
+                rawSummary?.stdoutObservation ?? "not_observed",
+            });
+          throw error;
+        }
+        if (trace)
+          writeRequestTrace(context.job.request, context.job.clientId, {
+            stage: "raw-received",
+            status:
+              response.status >= 200 && response.status < 300
+                ? "passed"
+                : "failed",
+            jobId: context.job.id,
+            rpcId,
+            buildHash: record.binding.buildHash,
+            sourceHash: record.binding.sourceHash,
+            sdkPid: instance.pid,
+            sdkBirth: instance.birth,
+            sdkVersion: instance.version,
+            artifactRef: `received-response-${rpcId}.json`,
+            httpStatus: response.status,
+            ...(debugDispatchStarted.has(prepared)
+              ? {
+                  durationMs:
+                    Date.now() - required(debugDispatchStarted.get(prepared)),
+                }
+              : {}),
+            ...(rawSummary ?? {}),
+            stdoutObservation: rawSummary?.stdoutObservation ?? "not_observed",
+          });
+        let reply: P.Reply | null;
+        try {
+          reply = matching(client, response, outgoing);
+        } catch (error) {
+          if (trace)
+            writeRequestTrace(context.job.request, context.job.clientId, {
+              stage: "parsed",
+              status: "failed",
+              jobId: context.job.id,
+              rpcId,
+              buildHash: record.binding.buildHash,
+              sourceHash: record.binding.sourceHash,
+              sdkPid: instance.pid,
+              sdkBirth: instance.birth,
+              sdkVersion: instance.version,
+              code:
+                error && typeof error === "object" && "code" in error
+                  ? String(error.code)
+                  : undefined,
+              ...(rawSummary ? rawSummary : {}),
+              ...(rawSummary
+                ? { stdoutObservation: rawSummary.stdoutObservation }
+                : { stdoutObservation: "not_observed" as const }),
+            });
+          throw error;
+        }
+        if (trace)
+          writeRequestTrace(context.job.request, context.job.clientId, {
+            stage: "parsed",
+            status: "passed",
+            jobId: context.job.id,
+            rpcId,
+            buildHash: record.binding.buildHash,
+            sourceHash: record.binding.sourceHash,
+            sdkPid: instance.pid,
+            sdkBirth: instance.birth,
+            sdkVersion: instance.version,
+            ...(rawSummary ? rawSummary : {}),
+            ...(rawSummary
+              ? { stdoutObservation: rawSummary.stdoutObservation }
+              : { stdoutObservation: "not_observed" as const }),
+          });
         if (
           payload.method === "tools/list" &&
           !reply?.error &&
           !Array.isArray(object(reply?.result)["tools"])
         )
           fail("UNKNOWN_RPC", "Malformed tools/list response");
-        const receipt = record.receipt ? remoteReceipt(record, false) : null;
-        const publicValue = record.binding["publicPythonResultSchema"] && receipt?.outcome === "succeeded"
-          ? boundPublicPythonValue(record, receipt, payload, reply)
-          : undefined;
-        const returned = responseForCaller(response, payload, reply, publicValue);
+        let receipt: P.RemoteReceipt | null;
+        try {
+          receipt = record.receipt ? remoteReceipt(record, false) : null;
+        } catch (error) {
+          writeRequestTrace(context.job.request, context.job.clientId, {
+            stage: "native-receipt",
+            status: "unknown",
+            jobId: context.job.id,
+            rpcId,
+            buildHash: record.binding.buildHash,
+            sourceHash: record.binding.sourceHash,
+            sdkPid: instance.pid,
+            sdkBirth: instance.birth,
+            sdkVersion: instance.version,
+            code:
+              error && typeof error === "object" && "code" in error
+                ? String(error.code)
+                : undefined,
+            stdoutObservation: "not_observed",
+          });
+          throw error;
+        }
+        writeRequestTrace(context.job.request, context.job.clientId, {
+          stage: "native-receipt",
+          status: receipt ? "passed" : "not_observed",
+          jobId: context.job.id,
+          rpcId,
+          buildHash: record.binding.buildHash,
+          sourceHash: record.binding.sourceHash,
+          sdkPid: instance.pid,
+          sdkBirth: instance.birth,
+          sdkVersion: instance.version,
+          stdoutObservation: "not_observed",
+        });
+        const publicValue =
+          record.binding["publicPythonResultSchema"] &&
+          receipt?.outcome === "succeeded"
+            ? boundPublicPythonValue(record, receipt, payload, reply)
+            : undefined;
+        const returned = responseForCaller(
+          response,
+          payload,
+          reply,
+          publicValue,
+        );
         const declaration = nativeReceipts.start(record);
         const nativeEnd = declaration
           ? nativeReceipts.completion(record, declaration)
@@ -2873,6 +3180,20 @@ def run(_context: str) -> dict[str, object]:
       },
       unknown(error, failure) {
         context.unknown = true;
+        const prepared = failure.prepared;
+        if (prepared && !debugRawReceived.has(prepared))
+          writeRequestTrace(context.job.request, context.job.clientId, {
+            stage: "raw-received",
+            status: "unknown",
+            jobId: context.job.id,
+            rpcId: prepared.rpcId,
+            buildHash: prepared.record.binding.buildHash,
+            sourceHash: prepared.record.binding.sourceHash,
+            sdkPid: instance.pid,
+            sdkBirth: instance.birth,
+            sdkVersion: instance.version,
+            stdoutObservation: "not_observed",
+          });
         hold(
           context.job,
           "Physical RPC outcome is unknown; observe the durable receipt without replay",
@@ -2881,6 +3202,20 @@ def run(_context: str) -> dict[str, object]:
       },
       notSubmitted(error, failure) {
         required(context.localDispatchErrors).add(error);
+        const prepared = failure.prepared;
+        if (prepared && !debugRawReceived.has(prepared))
+          writeRequestTrace(context.job.request, context.job.clientId, {
+            stage: "raw-received",
+            status: "not_observed",
+            jobId: context.job.id,
+            rpcId: prepared.rpcId,
+            buildHash: prepared.record.binding.buildHash,
+            sourceHash: prepared.record.binding.sourceHash,
+            sdkPid: instance.pid,
+            sdkBirth: instance.birth,
+            sdkVersion: instance.version,
+            stdoutObservation: "not_observed",
+          });
         retainDispatchFailure(context, error, failure);
       },
     });
@@ -5308,6 +5643,14 @@ def run(_context: str) -> dict[str, object]:
                 "./dist/node-adapters/persistence/accepted-inputs",
               ).retainAdmission(dir, request);
             const job = state.submit(request, preparedId);
+            const admitted = state.data.jobs[job.id];
+            writeRequestTrace(admitted?.request ?? request, clientId, {
+              stage: "request-accepted",
+              status: "passed",
+              jobId: job.id,
+              buildHash: codeHash,
+              stdoutObservation: "not_observed",
+            });
             if (workflowObservation) {
               workflowObservation.observerJobHash = required(
                 state.data.jobs[job.id],
@@ -5514,8 +5857,65 @@ def run(_context: str) -> dict[str, object]:
             recovery,
             buildHash: codeHash,
           };
+        const publicJob = owned(message.jobId, clientId);
+        if (
+          [
+            "succeeded",
+            "failed",
+            "cancelled",
+            "expired",
+            "needs_reconciliation",
+          ].includes(publicJob.state) &&
+          !debugResultPublished.has(publicJob.id)
+        ) {
+          const job = state.lookup(publicJob.id);
+          const trace = debugTraceContext(job.request, clientId);
+          if (trace) {
+            const artifactName =
+              job.kind === "rpc" ? "rpc-result.json" : "stdout.txt";
+            let artifactRef: string | undefined;
+            let stdoutObservation:
+              "not_observed" | "observed_empty" | "observed_nonempty" =
+              "not_observed";
+            let stdoutBytes: number | undefined;
+            try {
+              const file = load("./queue-response-files").responsePath(
+                dir,
+                job,
+                artifactName,
+              );
+              const stat = fs.lstatSync(file);
+              if (stat.isFile() && !stat.isSymbolicLink()) {
+                artifactRef = artifactName;
+                if (job.kind === "command") {
+                  stdoutBytes = stat.size;
+                  stdoutObservation =
+                    stat.size === 0 ? "observed_empty" : "observed_nonempty";
+                }
+              }
+            } catch {
+              // Trace metadata never gates retrieval of the owned result.
+            }
+            writeRequestTrace(job.request, clientId, {
+              stage: "result-published",
+              status:
+                publicJob.state === "succeeded"
+                  ? "published"
+                  : publicJob.state === "needs_reconciliation"
+                    ? "unknown"
+                    : "failed",
+              jobId: job.id,
+              buildHash: codeHash,
+              code: publicJob.code,
+              artifactRef,
+              stdoutBytes,
+              stdoutObservation,
+            });
+            debugResultPublished.add(publicJob.id);
+          }
+        }
         return {
-          job: owned(message.jobId, clientId),
+          job: publicJob,
           ...outputs(message.jobId),
         };
       }

@@ -562,6 +562,28 @@ export class QueueDomain {
         "requestId, clientId and kind (command or rpc) are required",
       );
     }
+    if (r.debugTrace !== undefined) {
+      const trace = r.debugTrace as unknown;
+      if (
+        !trace ||
+        typeof trace !== "object" ||
+        Array.isArray(trace) ||
+        Object.keys(trace).sort().join(",") !==
+          "requestId,rootSpanId,source,traceId,version" ||
+        (trace as Record<string, unknown>)["version"] !== 1 ||
+        (trace as Record<string, unknown>)["requestId"] !== r.requestId ||
+        !["cli", "mcp"].includes(
+          String((trace as Record<string, unknown>)["source"]),
+        ) ||
+        !/^[a-f0-9]{32}$/.test(
+          String((trace as Record<string, unknown>)["traceId"]),
+        ) ||
+        !/^[a-f0-9]{16}$/.test(
+          String((trace as Record<string, unknown>)["rootSpanId"]),
+        )
+      )
+        fail("INVALID_DEBUG_TRACE", "Debug trace identity is invalid");
+    }
     if (r.description !== undefined)
       r.description = normalizeDescription(r.description);
     if (

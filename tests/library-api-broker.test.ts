@@ -31,6 +31,9 @@ const { preparePythonArtifact, pythonArtifactManifest } = load(
   path.join(root, "src/python"),
 ) as typeof import("../packages/node-adapters/src/python/artifact") &
   typeof import("../packages/node-adapters/src/python/context-binding");
+const { prepareWireArtifact } = load(
+  path.join(root, "src/dist/python/source-units"),
+) as typeof import("../packages/node-adapters/src/python/source-units");
 test("public library admits status once and rejects bad typing before the physical sender", async (t) => {
   t.after(
     (
@@ -94,14 +97,29 @@ test("public library admits status once and rejects bad typing before the physic
     },
   };
   let calls = 0;
+  function sourceCode(script: string) {
+    const prepared = prepareWireArtifact(
+      path.join(root, "dist/runtime/python"),
+      script,
+    );
+    return prepared.units.map((unit) => unit.source).join("\n");
+  }
+  function isProbe(script: string) {
+    const code = sourceCode(script);
+    return (
+      code.includes("FMCAD_QUEUE_INSTANCE '") &&
+      code.includes("_qr_probe_observation")
+    );
+  }
   function receipt(script: string) {
+    const code = sourceCode(script);
     const metadata = record(
       JSON.parse(
         execFileSync(
           "python3",
           [path.join(root, "tests/fixtures/observer-python-literals.py")],
           {
-            input: script,
+            input: code,
             encoding: "utf8",
           },
         ),
@@ -111,12 +129,18 @@ test("public library admits status once and rejects bad typing before the physic
     const file = metadata["_qr_path"];
     if (!binding || typeof file !== "string") return;
     const target = file.replace(/^\\\\wsl\$\\[^\\]+/, "").replaceAll("\\", "/");
-    durable(target, {
+    const value: Record<string, unknown> = {
       ...record(binding),
       terminal: true,
       outcome: "succeeded",
       instance,
-    });
+    };
+    if (isProbe(script))
+      value["probeObservation"] = {
+        schema: "fmcad-instance-probe-v1",
+        identity: instance,
+      };
+    durable(target, value);
   }
   const physical = createBrokerTransport(
     {
@@ -147,7 +171,7 @@ test("public library admits status once and rejects bad typing before the physic
     const script = textValue(
       at(payload, "params", "arguments", "object", "script"),
     );
-    if (script.includes("FMCAD_QUEUE_INSTANCE")) {
+    if (isProbe(script)) {
       receipt(script);
       const text = "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance);
       return {
