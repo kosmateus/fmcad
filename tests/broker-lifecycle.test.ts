@@ -151,6 +151,24 @@ test(
   async (t) => {
     const f = await fixture(t, ["--production", "--paused"]);
     const initial = await f.call("control-status");
+    const owner = readJson(path.join(f.dir, "broker.lock"));
+    const startupReceipt = readJson(
+      path.join(f.dir, `broker-startup-${text(owner["nonce"])}.receipt.json`),
+    );
+    const observation = record(startupReceipt["probeObservation"]);
+    const observedIdentity = record(observation["identity"]);
+    const terminalIdentity = record(startupReceipt["instance"]);
+    assert.equal(startupReceipt["brokerNonce"], owner["nonce"]);
+    assert.equal(startupReceipt["ownerPid"], owner["pid"]);
+    assert.equal(startupReceipt["ownerBirth"], owner["birth"]);
+    assert.equal(startupReceipt["buildHash"], initial["buildHash"]);
+    assert.equal(startupReceipt["stage"], "startup");
+    assert.equal(startupReceipt["terminal"], true);
+    assert.equal(startupReceipt["outcome"], "succeeded");
+    assert.equal(observation["schema"], "fmcad-instance-probe-v1");
+    for (const key of ["pid", "birth", "version", "activeCommand"])
+      assert.equal(observedIdentity[key], terminalIdentity[key]);
+    assert.deepEqual(observedIdentity["documents"], []);
     assert.equal(initial["phase"], "PAUSED");
     assert.equal(record(initial["capabilities"])["inspect"], true);
     assert.match(text(initial["buildHash"]), /^[a-f0-9]{64}$/);

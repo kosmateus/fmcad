@@ -35,6 +35,15 @@ const { preparePythonArtifact } = runtimeRequire(
 const { prepareWireArtifact } = runtimeRequire(
   "../src/python",
 ) as typeof import("../packages/node-adapters/src/python/source-units");
+const { nativeReceipts } = runtimeRequire(
+  "./fixtures/native-source-envelope.cjs",
+) as {
+  nativeReceipts(
+    source: string,
+    root: string,
+    instance: Record<string, unknown>,
+  ): Array<{ file: string; value: Record<string, unknown> }>;
+};
 const { serve } = runtimeRequire(
   "../src/queue-broker",
 ) as typeof import("../src/queue-broker");
@@ -195,11 +204,13 @@ test("probe preparation uses actual SDK build/document assertions and loaded reg
     wrapper,
     /CAD_HANDLERS\[|doc\.activate|_document_activate_target|cad_dispatch/,
   );
+  const core = present(
+    prepared.units.find((unit) => unit.id === "core"),
+  ).source;
+  assert.match(core, /'entity\.list': _cad_entity_list/);
+  assert.match(core, /CAD_HANDLERS = HandlerRegistry\(/);
+  assert.ok(prepared.units.some((unit) => unit.id === "entity"));
   assert.ok(prepared.units.some((unit) => unit.id === "identity"));
-  assert.ok(
-    prepared.units.length > 20,
-    "probe inspects the loaded full runtime, not the local catalog only",
-  );
 });
 
 test(
@@ -253,20 +264,9 @@ require(${JSON.stringify(runtimeRequire.resolve("../src/queue-worker"))}).run(pr
     let physicalCalls = 0;
     const stages: string[] = [];
     const emitReceipt = (script: string) => {
-      const binding = script.match(
-        /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
-      );
-      const file = script.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
-      if (!binding || !file) throw new Error("broker receipt binding missing");
-      const target = JSON.parse(present(file[1]))
-        .replace(/^\\\\wsl\$\\[^\\]+/, "")
-        .replaceAll("\\", "/");
-      durable(target, {
-        ...JSON.parse(JSON.parse(present(binding[1]))),
-        terminal: true,
-        outcome: "succeeded",
-        instance,
-      });
+      const receipts = nativeReceipts(script, dir, instance);
+      assert.ok(receipts.length, "broker script must produce a bound receipt");
+      for (const receipt of receipts) durable(receipt.file, receipt.value);
     };
     const physical = {
       server: { timeoutMs: 10000 },

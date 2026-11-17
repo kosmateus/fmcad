@@ -301,19 +301,18 @@ test("typed physical instance adapter preserves historical scripts and workflow 
       before.workflowOutputNonterminal(nested),
     );
   }
-  for (const official of [false, true]) {
-    const args: Parameters<QueueInstance["prepareReceiptScript"]> = [
-      official ? "def run(context: str) -> None:\n    pass\n" : "x = 1\n",
-      official,
-      "/owned/receipt.json",
-      { jobId: "job", requestHash: "request" },
-      { mapPath: (file: string) => "Z:" + file },
-    ];
-    assert.deepEqual(
-      after.prepareReceiptScript(...args),
-      before.prepareReceiptScript(...args),
-    );
-  }
+  // The frozen snapshot predates native-source encoding for official runs.
+  const args: Parameters<QueueInstance["prepareReceiptScript"]> = [
+    "x = 1\n",
+    false,
+    "/owned/receipt.json",
+    { jobId: "job", requestHash: "request" },
+    { mapPath: (file: string) => "Z:" + file },
+  ];
+  assert.deepEqual(
+    after.prepareReceiptScript(...args),
+    before.prepareReceiptScript(...args),
+  );
   for (const api of [before, after]) {
     let calls = 0;
     const client = {

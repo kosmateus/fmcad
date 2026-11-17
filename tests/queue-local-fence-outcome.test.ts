@@ -18,6 +18,13 @@ type Result = { job: Job; stdout: string };
 const load = createRequire(
   path.join(process.cwd(), "tests", "queue-local-fence-outcome.test.js"),
 );
+const { nativeReceipts } = load("./fixtures/native-source-envelope.cjs") as {
+  nativeReceipts(
+    source: string,
+    root: string,
+    instance: unknown,
+  ): { file: string; value: Record<string, unknown> }[];
+};
 // Explicit fake physical backends require only synthetic WSL path spelling.
 test.beforeEach((t) =>
   (t as test.TestContext).after(
@@ -58,26 +65,15 @@ test(
       async callTool(value: import("../src/queue-broker-ports").ToolArguments) {
         physical++;
         const script = value.object!.script!;
-        const binding = script.match(
-          /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
+        const receipts = nativeReceipts(script, dir, identity);
+        assert.ok(
+          receipts.some((receipt) => "probeObservation" in receipt.value),
+          "startup probe source must bind its receipt",
         );
-        const file = script.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
-        assert.ok(binding && file);
-        const local = (JSON.parse(file[1]!) as string)
-          .replace(/^\\\\wsl(?:\$|\.localhost)\\[^\\]+/, "")
-          .replaceAll("\\", "/");
-        fs.writeFileSync(
-          local,
-          JSON.stringify({
-            ...(JSON.parse(JSON.parse(binding[1]!) as string) as Record<
-              string,
-              unknown
-            >),
-            terminal: true,
-            outcome: "succeeded",
-            instance: identity,
-          }),
-        );
+        for (const receipt of receipts) {
+          fs.mkdirSync(path.dirname(receipt.file), { recursive: true });
+          fs.writeFileSync(receipt.file, JSON.stringify(receipt.value));
+        }
         return {
           failed: false,
           text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(identity),

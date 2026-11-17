@@ -1,4 +1,6 @@
 # Frozen Python source oracles are byte-hashed; keep checkout bytes stable.
+/assets/native-qualification/gm07-curves-program.json text eol=lf
+/assets/native-qualification/gm07-curves.py text eol=lf
 /tests/fixtures/modeling-python-history/*.py text eol=lf
 /tests/fixtures/modeling-python-history/interference.py -text !eol
 /tests/fixtures/file-workflows/*-externalization-planning.py.txt text eol=lf

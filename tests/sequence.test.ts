@@ -7,13 +7,33 @@ const load = createRequire(path.join(process.cwd(), "tests/sequence.test.ts"));
 const { validateCad, executeCad, buildCadScript, catalog } = load(
   "../src/cad",
 ) as ModelingApi;
+const { prepareCadScript } = load("../src/cad") as Pick<
+  typeof import("../src/composition/cad-execution"),
+  "prepareCadScript"
+>;
+const { createPythonChecker } = load(
+  "../src/python",
+) as typeof import("../packages/node-adapters/src/python/checker");
 
 const operations = [
   "assembly.sequence",
   "service.path-check",
   "tool.access",
   "fixture.access",
-];
+] as const;
+type Gm27Operation = (typeof operations)[number];
+const handlers: Record<Gm27Operation, string> = {
+  "assembly.sequence": "assembly_sequence",
+  "service.path-check": "service_path_check",
+  "tool.access": "tool_access",
+  "fixture.access": "fixture_access",
+};
+const runtime = path.resolve("dist/runtime/python");
+const checker = createPythonChecker({
+  typingRoot: path.join(runtime, "typing"),
+  definitionsRoot: path.join(runtime, "typing"),
+  pythonPlatform: "Windows",
+});
 
 test("GM27 sequence/service/tool/fixture operations are catalog reachable with envelope and readOnly", () => {
   for (const operation of operations) {
@@ -62,15 +82,73 @@ test("GM27 rejects malformed payloads before SDK dispatch", async () => {
   assert.equal(dispatches, 0);
 });
 
-test("GM27 native handoff bundles the sequence module", () => {
-  const script = buildCadScript(
-    "assembly.sequence",
-    catalog["assembly.sequence"]!.example,
-    { doc: "GM27" },
+function assertSelectedHandler(script: string, selected: Gm27Operation) {
+  const handler = handlers[selected];
+  assert.ok(
+    script.includes(`def ${handler}(`),
+    `${selected} handler definition`,
   );
-  assert.ok(script.includes("def assembly_sequence"));
-  assert.ok(script.includes("'assembly.sequence': assembly_sequence"));
-  assert.ok(script.includes("'service.path-check': service_path_check"));
-  assert.ok(script.includes("'tool.access': tool_access"));
-  assert.ok(script.includes("'fixture.access': fixture_access"));
+  assert.ok(
+    script.includes(`'${selected}': ${handler}`),
+    `${selected} handler registration`,
+  );
+  assert.deepEqual(
+    operations.filter((operation) =>
+      script.includes(`'${operation}': ${handlers[operation]}`),
+    ),
+    [selected],
+    `${selected} should not restore sibling GM27 registrations`,
+  );
+  for (const operation of operations) {
+    if (operation === selected) continue;
+    assert.ok(
+      !script.includes(`def ${handlers[operation]}(`),
+      `${selected} handoff retained ${operation} handler`,
+    );
+  }
+}
+
+async function buildAndCheck(operation: Gm27Operation) {
+  const data = catalog[operation]!.example;
+  const context = { doc: "GM27" };
+  const script = buildCadScript(operation, data, context);
+  const artifact = prepareCadScript(operation, data, context);
+  assert.equal(artifact.script, script);
+  assertSelectedHandler(script, operation);
+
+  const report = await checker.check({
+    artifact,
+    context: { kind: "cad-v1" },
+  });
+  assert.equal(
+    report.status,
+    "passed",
+    `${operation}: ${JSON.stringify(report.diagnostics)}`,
+  );
+  assert.deepEqual(report.diagnostics, []);
+  assert.equal(report.provenance.artifactHash, artifact.artifactHash);
+  assert.equal(report.provenance.wireHash, artifact.sha256);
+  return artifact;
+}
+
+test("GM27 assembly.sequence handoff selects its handler and dependencies", async () => {
+  const artifact = await buildAndCheck("assembly.sequence");
+  const ids = new Set(artifact.units.map((unit) => unit.id));
+  for (const dependency of [
+    "sequence-domain",
+    "sequence-application",
+    "sequence-fusion",
+  ])
+    assert.ok(ids.has(dependency), `assembly.sequence omitted ${dependency}`);
+
+  const application = artifact.units.find(
+    (unit) => unit.id === "sequence-application",
+  );
+  assert.ok(application);
+  assert.match(application.source, /^def _sequence_plan\(/m);
 });
+
+for (const operation of operations.slice(1))
+  test(`GM27 ${operation} handoff selects its handler and passes the real checker`, async () => {
+    await buildAndCheck(operation);
+  });

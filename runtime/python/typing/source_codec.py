@@ -48,7 +48,12 @@ def envelope(payload, size, digest):
     # never compiled or evaluated to inventory submitted source.
     decoder = inspect.getsource(decode_payload).replace(
         'def decode_payload(', 'def _fmcad_decode_source_v1(', 1)
-    return (HEADER + decoder + '\nexec(compile(_fmcad_decode_source_v1('
+    # ADDIN appends run(""); expose its decoded name to static analysis only.
+    return (HEADER + decoder + '\nfrom typing import TYPE_CHECKING\n'
+            'if TYPE_CHECKING:\n'
+            '    def run(_context: str, /) -> object: ...\n'
+            'del TYPE_CHECKING\n\n'
+            'exec(compile(_fmcad_decode_source_v1('
             + repr(payload) + ', ' + repr(size) + ', ' + repr(digest)
             + '), ' + repr(FILENAME) + ", 'exec'), globals())\n")
 
@@ -66,14 +71,41 @@ def decoded_envelope(source, tree):
     """Recognize the entire known AST, not arbitrary calls to a decoder name."""
     if not source.startswith(HEADER):
         return None
+    if not any(isinstance(node, ast.FunctionDef)
+               and node.name == '_fmcad_decode_source_v1' for node in tree.body):
+        return None
+    body = tree.body
+    addin_entrypoint = False
+    if body and isinstance(body[-1], ast.Expr) and isinstance(body[-1].value, ast.Call):
+        suffix = body[-1].value
+        addin_entrypoint = (isinstance(suffix.func, ast.Name)
+                            and suffix.func.id == 'run' and len(suffix.args) == 1
+                            and not suffix.keywords
+                            and isinstance(suffix.args[0], ast.Constant)
+                            and suffix.args[0].value == '')
+        if addin_entrypoint:
+            body = body[:-1]
     try:
-        call = tree.body[-1].value.args[0].args[0]
+        call = body[-1].value.args[0].args[0]
         if not isinstance(call, ast.Call) or len(call.args) != 3:
             raise ValueError('Invalid native source envelope')
         payload, size, digest = [ast.literal_eval(arg) for arg in call.args]
-        expected = ast.parse(envelope(payload, size, digest))
+        expected_source = envelope(payload, size, digest)
+        if addin_entrypoint:
+            expected_source += '\nrun("")\n'
+        expected = ast.parse(expected_source)
         if ast.dump(tree) != ast.dump(expected):
             raise ValueError('Native source decoder AST mismatch')
     except (AttributeError, IndexError, TypeError, SyntaxError) as error:
         raise ValueError('Invalid native source envelope') from error
-    return decode_payload(payload, size, digest)
+    decoded = decode_payload(payload, size, digest)
+    if addin_entrypoint:
+        try:
+            decoded_tree = ast.parse(decoded)
+        except SyntaxError as error:
+            raise ValueError('ADDIN source envelope has no run entrypoint') from error
+        if not any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                   and node.name == 'run' for node in decoded_tree.body):
+            raise ValueError('ADDIN source envelope has no run entrypoint')
+        tree.body.pop()
+    return decoded

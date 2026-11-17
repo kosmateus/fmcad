@@ -6,6 +6,7 @@ import type {
 import { createRequire } from "node:module";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -47,6 +48,15 @@ const request = <T = unknown>(dir: string, message: Record<string, unknown>) =>
 const { invocationRouting, sequenceOptions } = load(
   "../src/queue-client",
 ) as typeof import("../src/queue-client");
+const { mcpInvocation } = load("../src/catalog/index") as {
+  mcpInvocation(
+    name: string,
+    options: Record<string, unknown>,
+  ): {
+    invocation: Record<string, unknown> & { purpose: string };
+    argv: string[];
+  };
+};
 
 function fixture(
   _t: test.TestContext,
@@ -497,6 +507,173 @@ test("broker traces a retained RPC response through publication without logging 
     JSON.stringify(events),
     /private-response-text-marker|private-token/,
   );
+});
+
+test("broker traces accepted worker IPC across the client and handler", async (t) => {
+  const previousTrace = process.env["FMCAD_DEBUG_TRACE"];
+  process.env["FMCAD_DEBUG_TRACE"] = "1";
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "queue-ipc-broker-trace-"));
+  const resources: { broker?: Awaited<ReturnType<typeof serve>> } = {};
+  t.after(async () => {
+    try {
+      await resources.broker?.close();
+    } finally {
+      if (previousTrace === undefined) delete process.env["FMCAD_DEBUG_TRACE"];
+      else process.env["FMCAD_DEBUG_TRACE"] = previousTrace;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  const identity = {
+    pid: 99,
+    birth: "mock:99",
+    version: "mock",
+    activeCommand: "SelectCommand",
+    documents: [],
+    documentState: { status: "metadata-only" },
+  };
+  const privateToken = "private-worker-token-marker";
+  const physical = {
+    server: { timeoutMs: 5000 },
+    _parse: JSON.parse,
+    _post() {
+      throw new Error("This worker-status/listTools test must stay offline");
+    },
+    async listTools() {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      return [{ name: "synthetic-tool" }];
+    },
+    ...syntheticProbe(identity),
+  };
+  const workerFixture = path.resolve(
+    "tests/fixtures/queue-ipc-broker-worker.cjs",
+  );
+  const diagnosticModule = path.resolve(
+    "src/dist/node-adapters/telemetry/diagnostic-log.js",
+  );
+  resources.broker = await serve(
+    { backend: "addin", timeoutMs: 5000 },
+    {
+      dir,
+      confirmOwnership: true,
+      createBackend: () =>
+        physical as unknown as import("../src/queue-broker-ports").Client,
+      nativePath: (file) => file,
+      pollMs: 5,
+      spawnWorker: ((
+        _executable: string,
+        args: string[],
+        options: import("node:child_process").SpawnOptions,
+      ) => {
+        const requestFile = args[1];
+        assert.equal(typeof requestFile, "string");
+        return spawn(process.execPath, [workerFixture], {
+          ...options,
+          env: {
+            ...options.env,
+            FMCAD_TEST_WORKER_REQUEST_FILE: requestFile,
+            FMCAD_TEST_CONNECTION_MODULE: path.resolve(
+              "src/queue-connection.js",
+            ),
+            FMCAD_TEST_DIAGNOSTIC_MODULE: diagnosticModule,
+          },
+        });
+      }) as typeof spawn,
+    },
+  );
+
+  const auth = { clientId: "ipc-trace-client", clientToken: privateToken };
+  await request(dir, { action: "register", ...auth });
+  const traceRuntime = load(
+    "../src/dist/node-adapters/telemetry/diagnostic-log",
+  ) as typeof import("../packages/node-adapters/src/telemetry/diagnostic-log");
+  const requestId = randomUUID();
+  const trace = traceRuntime.createDebugTraceContext(
+    requestId,
+    auth.clientId,
+    "cli",
+    true,
+  );
+  assert.ok(trace);
+  const input = mcpInvocation("fmcad_cad_entity_list", {
+    doc: "Model",
+    docId: "creation",
+    docFileId: "file",
+    data: {},
+    purpose: "Trace accepted worker IPC",
+  });
+  const accepted = await request<Job>(dir, {
+    action: "submit",
+    auth,
+    request: {
+      requestId,
+      kind: "command",
+      timeoutMs: 5000,
+      cwd: dir,
+      argv: input.argv,
+      payload: input.invocation,
+      description: input.invocation.purpose,
+      debugTrace: trace,
+    },
+  });
+
+  let result: { job: Job } | undefined;
+  for (let attempt = 0; attempt < 300; attempt++) {
+    result = await request<{ job: Job }>(dir, {
+      action: "result",
+      auth,
+      jobId: accepted.id,
+    });
+    if (
+      ["succeeded", "failed", "needs_reconciliation"].includes(result.job.state)
+    )
+      break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(result?.job.state, "succeeded", JSON.stringify(result));
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  await traceRuntime.flushDebugTrace();
+  const events = traceRuntime.readDebugTrace(trace.traceId);
+  const ipcEvents = events.filter((event) => event["stage"] === "ipc");
+  assert(ipcEvents.length > 0, "missing worker IPC trace");
+  assert(
+    ipcEvents.every(
+      (event) =>
+        event["jobId"] === accepted.id &&
+        event["requestId"] === requestId &&
+        event["source"] === "cli" &&
+        typeof event["buildHash"] === "string" &&
+        typeof event["pid"] === "number",
+    ),
+  );
+  assert.notEqual(
+    new Set(ipcEvents.map((event) => event["pid"])).size,
+    1,
+    "the worker client and broker handler must be separate processes",
+  );
+  for (const action of ["backend", "worker-status"]) {
+    const written = ipcEvents.filter(
+      (event) =>
+        event["action"] === action && event["ipcStage"] === "request-written",
+    );
+    assert(written.length >= 1, `missing ${action} request-written trace`);
+    for (const item of written) {
+      const correlated = ipcEvents.filter(
+        (event) => event["messageId"] === item["messageId"],
+      );
+      for (const stage of [
+        "handler-start",
+        "request-accepted",
+        "reply-emitted",
+        "reply-received",
+      ])
+        assert(
+          correlated.some((event) => event["ipcStage"] === stage),
+          `missing ${action} IPC stage ${stage}`,
+        );
+    }
+  }
+  assert.doesNotMatch(JSON.stringify(events), /private-worker-token-marker/);
 });
 
 test("automatic default yields without an agent release and protects pending work", (t) => {

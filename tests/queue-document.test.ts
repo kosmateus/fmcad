@@ -21,6 +21,16 @@ type Result = { job: Job; stdout: string };
 const load = createRequire(
   path.join(process.cwd(), "tests", "queue-document.test.js"),
 );
+const { decodeNativeProgram, nativeReceipts } = load(
+  "./fixtures/native-source-envelope.cjs",
+) as {
+  decodeNativeProgram(source: string): string;
+  nativeReceipts(
+    source: string,
+    root: string,
+    instance: Record<string, unknown>,
+  ): Array<{ file: string; value: Record<string, unknown> }>;
+};
 const { documentSelector, compareDocumentState } = load(
   "../src/queue-document",
 ) as typeof import("../src/queue-document");
@@ -91,31 +101,13 @@ test("broker admits unchanged A after B, and returns changed A data in the same 
     documents: [],
   };
   function execute(script: string) {
-    const bindingMatch = script.match(
-      /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
-    );
-    const receiptMatch = script.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
-    if (bindingMatch) {
-      assert.ok(
-        receiptMatch,
-        "A bound physical request must declare its receipt path",
-      );
-      const binding = JSON.parse(
-        JSON.parse(bindingMatch[1]!) as string,
-      ) as Record<string, unknown>;
-      fs.writeFileSync(
-        JSON.parse(receiptMatch[1]!) as string,
-        JSON.stringify({
-          ...binding,
-          terminal: true,
-          outcome: "succeeded",
-          instance,
-        }),
-      );
-    }
-    if (script.includes("FMCAD_QUEUE_INSTANCE")) {
-      const wrapped = script.match(/exec\(compile\(("(?:\\.|[^"\\])*")/);
-      const source = wrapped ? (JSON.parse(wrapped[1]!) as string) : script;
+    const decodedScript = decodeNativeProgram(script);
+    const wrapped = decodedScript.match(/exec\(compile\(("(?:\\.|[^"\\])*")/);
+    const source = wrapped
+      ? (JSON.parse(wrapped[1]!) as string)
+      : decodedScript;
+    let observation: Record<string, unknown> = instance;
+    if (source.includes("FMCAD_QUEUE_INSTANCE")) {
       const match = source.match(
         /_qd_capture\(_app, _qi_cast\(dict\[str, object\] \| None, _qi_json.loads\(("(?:\\.|[^"\\])*")\)\)\)/,
       );
@@ -135,14 +127,17 @@ test("broker admits unchanged A after B, and returns changed A data in the same 
         : selector
           ? states[selector.name]
           : undefined;
-      return (
-        "FMCAD_QUEUE_INSTANCE " +
-        JSON.stringify({
-          ...instance,
-          ...(documentState ? { documentState } : {}),
-        })
-      );
+      observation = {
+        ...instance,
+        ...(documentState ? { documentState } : {}),
+      };
     }
+    for (const receipt of nativeReceipts(script, dir, observation)) {
+      fs.mkdirSync(path.dirname(receipt.file), { recursive: true });
+      fs.writeFileSync(receipt.file, JSON.stringify(receipt.value));
+    }
+    if (source.includes("FMCAD_QUEUE_INSTANCE"))
+      return "FMCAD_QUEUE_INSTANCE " + JSON.stringify(observation);
     productCalls++;
     return "{}";
   }

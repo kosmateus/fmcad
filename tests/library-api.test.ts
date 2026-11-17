@@ -1492,17 +1492,34 @@ test("typed help preserves every registered English and Polish page and text lay
   const normalRecoveryReturnContracts = {
     "queue authorize-normal-successor":
       "Returns an immutable authorization reference bound to the original registered job owner, explicit normal target and unchanged currentstore. SDK0: no request bytes or raw credentials are copied, no SDK runs and unknown work is not settled. A separately authenticated epoch owner must approve the cold successor.",
+    "queue authorize-normal-currentfacts-retry":
+      "Returns a one-shot normal read-attempt reference bound to a terminal SDK-succeeded read-only observation, its separate validator failure, the exact owner and a fresh qualified candidate. SDK0: preserves all prior results and refuses unknown, active or mutating work.",
+    "queue retire-normal-currentfacts-producer":
+      "Returns an exact prior normal read metadata-producer preview or once-only pidfd retirement receipt. Requires the immutable fresh-attempt reference and matching request. Never closes Fusion, repeats a signal or settles historical work.",
     "queue record-normal-producers-retired":
       "Returns an immutable OS absence receipt after the exact old SDK and all currentstore producers have exited, before a new SDK starts. Never signals, closes or restarts processes. Missing, reused or uncertain identities refuse recovery; this is not historical SDK settlement.",
     "queue retire-normal-metadata-producer":
       "Returns a non-mutating exact metadata-owner preview, or with --apply true its one-shot pidfd retirement receipt/pending fence. Requires distinct epoch authorization, original job-owner approval, authentic old SDK death, all other producers gone and the exact predecessor runtime/interpreter/process. Never replays a signal after uncertainty and never closes/restarts Fusion or resolves an original SDK operation.",
   };
+  const normalRecoveryManualTemplate = record(
+    expectedManuals["queue authorize-normal-successor"],
+  );
   const expectedNormalRecoveryManuals = Object.fromEntries(
     Object.entries(normalRecoveryReturnContracts).map(([key, text]) => {
-      const expectedManual = record(expectedManuals[key]);
+      const hasHistoricalManual = key in expectedManuals;
+      const expectedManual = record(
+        expectedManuals[key] ?? normalRecoveryManualTemplate,
+      );
       const expectedSections = list(expectedManual["sections"]);
       const expectedReturnContract = record(expectedSections[0]);
       const expectedAudit = record(expectedManual["audit"]);
+      const expectedExamples = hasHistoricalManual
+        ? expectedManual["examples"]
+        : list(expectedManual["examples"]).map((example) => ({
+            ...record(example),
+            label: `Inspect ${key.slice("queue ".length)} usage`,
+            argv: ["help", ...key.split(" ")],
+          }));
       return [
         key,
         {
@@ -1511,6 +1528,7 @@ test("typed help preserves every registered English and Polish page and text lay
             { ...expectedReturnContract, text },
             ...expectedSections.slice(1),
           ],
+          examples: expectedExamples,
           audit: {
             ...expectedAudit,
             tests: [

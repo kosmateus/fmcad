@@ -40,6 +40,20 @@ const { serve, brokerConfigHash } = load("../src/queue-broker") as {
 const { request } = load(
   "../src/queue-connection",
 ) as typeof import("../src/entrypoints/queue-connection");
+const { runBoundInstanceProbe } = load(
+  "./fixtures/bound-instance-probe.cjs",
+) as {
+  runBoundInstanceProbe(
+    script: string,
+    identity: {
+      pid: number;
+      birth: string;
+      version: string;
+      activeCommand?: string;
+      documents?: unknown[];
+    },
+  ): { text: string; receipt: Record<string, unknown> };
+};
 
 test("failed terminal recovery probe can be replaced; unresolved, mismatched and busy probes cannot", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "qp-"));
@@ -132,20 +146,11 @@ test("failed terminal recovery probe can be replaced; unresolved, mismatched and
     _parse: JSON.parse,
     async callTool(value: { object: { script: string } }) {
       calls++;
-      const script = value.object.script;
-      assert.match(script, /FMCAD_QUEUE_INSTANCE/);
-      const match = script.match(
-        /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
-      );
-      assert.ok(match);
-      const freshBinding = record(JSON.parse(JSON.parse(match[1]!)));
-      qi.durable(
-        path.join(directory, `reconcile-${freshBinding["rpcId"]}.receipt.json`),
-        { ...freshBinding, terminal: true, outcome: "succeeded", instance },
-      );
+      const result = runBoundInstanceProbe(value.object.script, instance);
+      assert.match(result.text, /FMCAD_QUEUE_INSTANCE/);
       return {
         failed: false,
-        text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance),
+        text: result.text,
       };
     },
   };

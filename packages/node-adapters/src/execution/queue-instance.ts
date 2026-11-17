@@ -846,6 +846,21 @@ def run(_context: str) -> dict[str, object]:
         "INVALID_RECEIPT_CAPTURE",
         "Probe observations and public Python results use separate receipt captures",
       );
+    const receiptPathGuard = captureProbeObservation
+      ? "if _qi_os.path.exists(_qr_path): raise RuntimeError('Probe receipt path already exists')\n"
+      : capturePublicPythonResult
+        ? "if _qi_os.path.exists(_qr_path): raise RuntimeError('Public result receipt path already exists')\n"
+        : "";
+    const receiptCaptureDeclaration = captureProbeObservation
+      ? "\n_qr_probe_observation: dict[str, object] | None = None"
+      : capturePublicPythonResult
+        ? "\n_qr_public_python_result: dict[str, object] | None = None"
+        : "";
+    const receiptCaptureFinalWrite = captureProbeObservation
+      ? `\n    if _qr_probe_observation is not None:\n        _qr_record['probeObservation'] = {'schema':${JSON.stringify(PROBE_OBSERVATION_SCHEMA)}, 'identity':_qr_probe_observation}`
+      : capturePublicPythonResult
+        ? "\n    if _qr_public_python_result is not None:\n        _qr_record['publicPythonResult'] = _qr_public_python_result"
+        : "";
     const executeOfficialEntry = !official
       ? ""
       : captureProbeObservation
@@ -899,11 +914,8 @@ def _qr_object(_value: object) -> dict[str, object]:
 _qr_binding_value = _qr_cast(object, _qr_json.loads(${JSON.stringify(JSON.stringify(binding))}))
 _qr_binding = _qr_object(_qr_binding_value)
 _qr_path = ${JSON.stringify(mapPath(receiptPath))}
-${captureProbeObservation ? "if _qi_os.path.exists(_qr_path): raise RuntimeError('Probe receipt path already exists')" : capturePublicPythonResult ? "if _qi_os.path.exists(_qr_path): raise RuntimeError('Public result receipt path already exists')" : ""}
-_qr_outcome = 'failed'
-_qr_error: dict[str, str] | None = None
-_qr_probe_observation: dict[str, object] | None = None
-${capturePublicPythonResult ? "_qr_public_python_result: dict[str, object] | None = None" : ""}
+${receiptPathGuard}_qr_outcome = 'failed'
+_qr_error: dict[str, str] | None = None${receiptCaptureDeclaration}
 def _qr_store(_path: str, _record: dict[str, object]) -> None:
     _temp = _path + '.' + str(_qr_uuid.uuid4()) + '.tmp'
     with open(_temp, 'x', encoding='utf-8') as _file:
@@ -1029,10 +1041,7 @@ except BaseException as _qr_exception:
     raise
 finally:
     _qr_record = dict(_qr_binding)
-    _qr_record.update({'terminal':True, 'outcome':_qr_outcome, 'instance':_qi_identity()})
-    if _qr_probe_observation is not None:
-        _qr_record['probeObservation'] = {'schema':${JSON.stringify(PROBE_OBSERVATION_SCHEMA)}, 'identity':_qr_probe_observation}
-${capturePublicPythonResult ? "    if _qr_public_python_result is not None:\n        _qr_record['publicPythonResult'] = _qr_public_python_result" : ""}
+    _qr_record.update({'terminal':True, 'outcome':_qr_outcome, 'instance':_qi_identity()})${receiptCaptureFinalWrite}
     if _qr_error is not None: _qr_record['error'] = _qr_error
     _qr_store(_qr_path, _qr_record)
 `;

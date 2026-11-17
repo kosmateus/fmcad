@@ -89,6 +89,7 @@ export interface LiveReport {
   sdkIntervals?: { creationId: string; started: number; finished: number }[];
   maxOwnScriptConcurrency?: number;
   failureCleanup?: unknown[];
+  failureCleanupErrors?: { creationId: string; message: string }[];
   cleanupDeferredReason?: string;
   cleanupError?: string;
 }
