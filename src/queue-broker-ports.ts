@@ -408,6 +408,7 @@ export interface BrokerError {
 export interface WorkerMessage {
   jobId: string;
   workerToken: string;
+  debugTraceMessageId?: string;
   method: "callTool" | "listTools" | "executeUiGuardedScript";
   args: unknown[];
   rpcTimeoutMs: number;

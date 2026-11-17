@@ -165,6 +165,10 @@ export async function run(
             acceptedWorkerRequest(
               directory: string,
               request: Parameters<WorkerPorts["request"]>[0],
+              options?: {
+                debugTrace?: import("../../packages/node-adapters/src/telemetry/diagnostic-log").DebugTraceContext;
+                buildHash?: string;
+              },
             ): Promise<{
               value: unknown;
               properties?: Record<string, unknown>;
@@ -173,6 +177,10 @@ export async function run(
         ).acceptedWorkerRequest(
           process.env["FMCAD_QUEUE_DIR"] as string,
           message,
+          {
+            ...(trace ? { debugTrace: trace } : {}),
+            buildHash: job.buildHash,
+          },
         ),
       execute: async (...args) => {
         if (trace) {

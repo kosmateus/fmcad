@@ -19,6 +19,7 @@ import type { DispatchFailure } from "../packages/core/src/application/execution
 import type {
   DebugTraceContext,
   DebugTraceEvent,
+  DebugTraceIpcStage,
 } from "../packages/node-adapters/src/telemetry/diagnostic-log";
 import {
   resolveBackendHead,
@@ -38,6 +39,42 @@ type DebugTraceRuntime = {
   ): void;
   summarizeDebugTraceRaw: typeof import("../packages/node-adapters/src/telemetry/diagnostic-log").summarizeDebugTraceRaw;
 };
+
+interface BrokerIpcTrace {
+  readonly context: DebugTraceContext;
+  readonly action: "worker-status" | "backend";
+  readonly messageId: string;
+  readonly jobId: string;
+  readonly buildHash?: string;
+  readonly monotonicStartMs: number;
+  deadlineMonotonicMs?: number;
+}
+
+function writeBrokerIpcTrace(
+  trace: BrokerIpcTrace | undefined,
+  ipcStage: DebugTraceIpcStage,
+  fields: Partial<DebugTraceEvent> = {},
+): void {
+  if (!trace) return;
+  try {
+    getDebugTraceRuntime().writeDebugTrace(trace.context, {
+      stage: "ipc",
+      ipcStage,
+      action: trace.action,
+      messageId: trace.messageId,
+      jobId: trace.jobId,
+      ...(trace.buildHash ? { buildHash: trace.buildHash } : {}),
+      monotonicStartMs: trace.monotonicStartMs,
+      ...(trace.deadlineMonotonicMs === undefined
+        ? {}
+        : { deadlineMonotonicMs: trace.deadlineMonotonicMs }),
+      ...fields,
+    });
+  } catch {
+    // Optional debug evidence must never affect broker behavior.
+  }
+}
+
 let debugTraceRuntime: DebugTraceRuntime | undefined;
 function getDebugTraceRuntime(): DebugTraceRuntime {
   return (debugTraceRuntime ||= runtimeRequire(
@@ -178,6 +215,7 @@ function decodeMessage(value: unknown): P.Message {
     "clientId",
     "clientToken",
     "jobId",
+    "debugTraceMessageId",
     "requestId",
     "sequenceId",
     "observationJobId",
@@ -3299,6 +3337,58 @@ def run(_context: str) -> dict[str, object]:
       result.pythonChecks.push(result.execution.pythonCheck);
     return result;
   }
+  function brokerIpcTrace(input: unknown): BrokerIpcTrace | undefined {
+    if (!input || typeof input !== "object" || Array.isArray(input))
+      return undefined;
+    const message = input as Record<string, unknown>;
+    if (message["debugTraceMessageId"] === undefined) return undefined;
+    const action = message["action"];
+    const jobId = message["jobId"];
+    const messageId = message["debugTraceMessageId"];
+    if (
+      !["backend", "worker-status"].includes(String(action)) ||
+      typeof jobId !== "string" ||
+      typeof messageId !== "string" ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(messageId)
+    )
+      return undefined;
+    const job = state.data.jobs[jobId];
+    if (!job) return undefined;
+    const context = debugTraceContext(job.request, job.clientId);
+    if (!context) return undefined;
+    const monotonicStartMs = performance.now();
+    const deadlineBudgetMs = message["rpcTimeoutMs"];
+    return {
+      context,
+      action: action as BrokerIpcTrace["action"],
+      messageId,
+      jobId,
+      buildHash: job.request.buildHash ?? codeHash,
+      monotonicStartMs,
+      ...(action === "backend" &&
+      typeof deadlineBudgetMs === "number" &&
+      Number.isSafeInteger(deadlineBudgetMs) &&
+      deadlineBudgetMs > 0
+        ? { deadlineMonotonicMs: monotonicStartMs + deadlineBudgetMs }
+        : {}),
+    };
+  }
+  const brokerIpcTraces = new WeakMap<object, BrokerIpcTrace>();
+  function traceWorkerIpcMessage(
+    input: unknown,
+    ipcStage: DebugTraceIpcStage,
+    fields: Partial<DebugTraceEvent> = {},
+  ) {
+    const trace =
+      input && typeof input === "object"
+        ? brokerIpcTraces.get(input) || brokerIpcTrace(input)
+        : undefined;
+    if (trace)
+      writeBrokerIpcTrace(trace, ipcStage, {
+        monotonicAtMs: performance.now(),
+        ...fields,
+      });
+  }
   async function backend(
     message: P.WorkerMessage,
   ): Promise<{ value: unknown; properties: Record<string, unknown> }> {
@@ -3331,6 +3421,9 @@ def run(_context: str) -> dict[str, object]:
       Math.min(message.rpcTimeoutMs, required(context.budget).remaining()),
     );
     if (timeout <= 0) fail("RUN_TIMEOUT", "Worker execution deadline expired");
+    const ipcTrace = brokerIpcTraces.get(message);
+    if (ipcTrace) ipcTrace.deadlineMonotonicMs = performance.now() + timeout;
+    traceWorkerIpcMessage(message, "request-accepted", { status: "passed" });
     const initialRpcCount =
       state.status(context.job.id).dispatch?.rpcCount || 0;
     const operation = withRequest({ timeoutMs: timeout }, async () => {
@@ -5103,6 +5196,9 @@ def run(_context: str) -> dict[str, object]:
             job.code || "RECONCILIATION_REQUIRED",
             "SDK turn is not available for local work",
           );
+        traceWorkerIpcMessage(message, "request-accepted", {
+          status: "passed",
+        });
         return {
           remainingMs: job.sdkRemainingMs ?? job.timeoutMs,
           phase: job.state,
@@ -5112,6 +5208,7 @@ def run(_context: str) -> dict[str, object]:
       }
       if (active.unknown || state.summary().blocked)
         fail("RECONCILIATION_REQUIRED", "SDK outcome remains unresolved");
+      traceWorkerIpcMessage(message, "request-accepted", { status: "passed" });
       const snapshotHash =
         message.snapshotFence === true ? workerSnapshotHash() : undefined;
       return {
@@ -7340,17 +7437,35 @@ def run(_context: str) -> dict[str, object]:
     socket.setTimeout(30000, () => socket.destroy());
     let buffer = Buffer.alloc(0),
       consumed = false;
+    let ipcTrace: BrokerIpcTrace | undefined;
     function respond(value: unknown) {
       if (socket.destroyed) return;
-      let text = JSON.stringify(value);
-      if (Buffer.byteLength(text) > MAX)
-        text = JSON.stringify({
+      let responseValue = value;
+      let text = JSON.stringify(responseValue);
+      if (Buffer.byteLength(text) > MAX) {
+        responseValue = {
           ok: false,
           error: {
             code: "RESPONSE_TOO_LARGE",
             message: "Response exceeds 16 MiB; use output file metadata",
           },
+        };
+        text = JSON.stringify(responseValue);
+      }
+      if (ipcTrace) {
+        const response = object(responseValue);
+        const error = object(response["error"]);
+        const monotonicEndMs = performance.now();
+        const code =
+          typeof error["code"] === "string" ? error["code"] : undefined;
+        writeBrokerIpcTrace(ipcTrace, "reply-emitted", {
+          status: response["ok"] === true ? "passed" : "failed",
+          ...(code ? { code } : {}),
+          monotonicAtMs: monotonicEndMs,
+          monotonicEndMs,
+          durationMs: monotonicEndMs - ipcTrace.monotonicStartMs,
         });
+      }
       socket.end(text + "\n");
     }
     socket.on("data", (chunk) => {
@@ -7384,7 +7499,16 @@ def run(_context: str) -> dict[str, object]:
         return;
       }
       Promise.resolve()
-        .then(() => dispatch(message))
+        .then(() => {
+          ipcTrace = brokerIpcTrace(message);
+          if (ipcTrace && message && typeof message === "object") {
+            brokerIpcTraces.set(message, ipcTrace);
+            writeBrokerIpcTrace(ipcTrace, "handler-start", {
+              status: "started",
+            });
+          }
+          return dispatch(message);
+        })
         .then(
           (result) => respond({ ok: true, result }),
           (error) =>

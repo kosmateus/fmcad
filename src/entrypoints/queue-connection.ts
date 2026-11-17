@@ -1,7 +1,12 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import * as net from "node:net";
 import path from "node:path";
 import { createRequire } from "node:module";
+import type {
+  DebugTraceContext,
+  DebugTraceEvent,
+  DebugTraceIpcStage,
+} from "../../packages/node-adapters/src/telemetry/diagnostic-log";
 
 const runtimeRequire = createRequire(__filename);
 const { resolveRuntimePaths } = runtimeRequire(
@@ -15,6 +20,7 @@ const MAX_MESSAGE = 16 * 1024 * 1024;
 interface QueueRequestOptions {
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
+  readonly ipcTrace?: IpcTraceRequest;
 }
 
 interface QueueResponseError {
@@ -37,6 +43,58 @@ interface WorkerMessage extends Record<string, unknown> {
 
 interface WorkerRequestOptions {
   readonly pollMs?: number;
+  /** Test-only heartbeat deadline override; production keeps request()'s 30 s default. */
+  readonly heartbeatTimeoutMs?: number;
+  readonly debugTrace?: DebugTraceContext;
+  readonly buildHash?: string;
+}
+
+interface IpcTraceRequest {
+  readonly context: DebugTraceContext;
+  readonly action: "worker-status" | "backend";
+  readonly messageId: string;
+  readonly jobId: string;
+  readonly buildHash?: string;
+  readonly deadlineBudgetMs?: number;
+}
+
+type DebugTraceRuntime = {
+  writeDebugTrace(
+    context: DebugTraceContext | undefined,
+    event: DebugTraceEvent,
+  ): void;
+};
+
+let loadedDebugTraceRuntime: DebugTraceRuntime | undefined;
+
+function writeIpcTrace(
+  trace: IpcTraceRequest | undefined,
+  ipcStage: DebugTraceIpcStage,
+  fields: Partial<DebugTraceEvent> = {},
+): void {
+  if (!trace) return;
+  try {
+    const runtime = (loadedDebugTraceRuntime ||= runtimeRequire(
+      "../node-adapters/telemetry/diagnostic-log.js",
+    ) as DebugTraceRuntime);
+    runtime.writeDebugTrace(trace.context, {
+      stage: "ipc",
+      ipcStage,
+      action: trace.action,
+      messageId: trace.messageId,
+      jobId: trace.jobId,
+      ...(trace.buildHash ? { buildHash: trace.buildHash } : {}),
+      ...fields,
+    });
+  } catch {
+    // Optional debug evidence must never change IPC behavior.
+  }
+}
+
+function errorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object" || !("code" in error))
+    return undefined;
+  return typeof error.code === "string" ? error.code : undefined;
 }
 
 function codedError(code: string, message: string): Error & { code: string } {
@@ -64,15 +122,46 @@ export function queueSocket(dir = queueDirectory()): string {
 export function request(
   dir: string,
   message: Record<string, unknown>,
-  { timeoutMs = 30000, signal }: QueueRequestOptions = {},
+  { timeoutMs = 30000, signal, ipcTrace }: QueueRequestOptions = {},
 ): Promise<unknown> {
-  const payload = Buffer.from(JSON.stringify(message) + "\n");
+  const payload = Buffer.from(
+    JSON.stringify(
+      ipcTrace
+        ? { ...message, debugTraceMessageId: ipcTrace.messageId }
+        : message,
+    ) + "\n",
+  );
   if (payload.length > MAX_MESSAGE)
     return Promise.reject(new Error("Queue request exceeds 16 MiB"));
+  const monotonicStartMs = ipcTrace ? performance.now() : undefined;
+  const deadlineBudgetMs =
+    timeoutMs > 0 ? timeoutMs : ipcTrace?.deadlineBudgetMs;
+  const deadlineMonotonicMs =
+    ipcTrace && deadlineBudgetMs !== undefined
+      ? monotonicStartMs! + deadlineBudgetMs
+      : undefined;
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(queueSocket(dir));
     let data = Buffer.alloc(0);
     let settled = false;
+    const traceEvent = (
+      ipcStage: DebugTraceIpcStage,
+      fields: Partial<DebugTraceEvent> = {},
+    ) => {
+      if (!ipcTrace || monotonicStartMs === undefined) return;
+      writeIpcTrace(ipcTrace, ipcStage, {
+        monotonicStartMs,
+        ...(deadlineMonotonicMs === undefined ? {} : { deadlineMonotonicMs }),
+        ...fields,
+      });
+    };
+    const traceEnd = () => {
+      const monotonicEndMs = performance.now();
+      return {
+        monotonicEndMs,
+        durationMs: monotonicEndMs - (monotonicStartMs ?? monotonicEndMs),
+      };
+    };
     const finish = (error: Error | null, value?: unknown): void => {
       if (settled) return;
       settled = true;
@@ -84,33 +173,70 @@ export function request(
     };
     const timer =
       timeoutMs > 0
-        ? setTimeout(
-            () =>
-              finish(
-                codedError(
-                  "QUEUE_IPC_TIMEOUT",
-                  "Queue IPC timeout; an accepted job is not cancelled. Inspect its requestId/jobId before resubmitting.",
-                ),
+        ? setTimeout(() => {
+            if (ipcTrace)
+              traceEvent("timeout", {
+                status: "failed",
+                code: "QUEUE_IPC_TIMEOUT",
+                ...traceEnd(),
+              });
+            finish(
+              codedError(
+                "QUEUE_IPC_TIMEOUT",
+                "Queue IPC timeout; an accepted job is not cancelled. Inspect its requestId/jobId before resubmitting.",
               ),
-            timeoutMs,
-          )
+            );
+          }, timeoutMs)
         : undefined;
-    const abort = (): void =>
+    const abort = (): void => {
+      if (settled) return;
+      if (ipcTrace)
+        traceEvent("abort", {
+          status: "failed",
+          code: "WAIT_ABORTED",
+          abortReason: errorCode(signal?.reason) || "WAIT_ABORTED",
+          ...traceEnd(),
+        });
       finish(
         codedError(
           "WAIT_ABORTED",
           "Stopped waiting; the accepted request is not cancelled",
         ),
       );
+    };
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) {
       abort();
       return;
     }
-    socket.once("connect", () => socket.write(payload));
-    socket.on("error", (error) => finish(error));
+    socket.once("connect", () =>
+      socket.write(payload, () => {
+        if (settled || !ipcTrace) return;
+        traceEvent("request-written", {
+          status: "written",
+          monotonicAtMs: performance.now(),
+        });
+      }),
+    );
+    socket.on("error", (error) => {
+      if (!settled && ipcTrace) {
+        const code = errorCode(error);
+        traceEvent("response-lost", {
+          status: "unknown",
+          ...(code ? { code } : {}),
+          ...traceEnd(),
+        });
+      }
+      finish(error);
+    });
     socket.on("data", (chunk: Buffer) => {
       if (data.length + chunk.length > MAX_MESSAGE) {
+        if (ipcTrace)
+          traceEvent("response-lost", {
+            status: "unknown",
+            code: "QUEUE_IPC_RESPONSE_TOO_LARGE",
+            ...traceEnd(),
+          });
         finish(new Error("Queue response exceeds 16 MiB"));
         return;
       }
@@ -121,6 +247,17 @@ export function request(
         const response = JSON.parse(
           data.subarray(0, newline).toString("utf8"),
         ) as QueueResponse;
+        if (ipcTrace) {
+          const responseCode =
+            response.ok === true
+              ? undefined
+              : response.error?.code || "QUEUE_ERROR";
+          traceEvent("reply-received", {
+            status: response.ok === true ? "passed" : "failed",
+            ...(responseCode ? { code: responseCode } : {}),
+            ...traceEnd(),
+          });
+        }
         if (response.ok !== true) {
           const error = response.error;
           const failure = Object.assign(
@@ -136,17 +273,30 @@ export function request(
         }
         finish(null, response.result);
       } catch (error) {
+        if (ipcTrace)
+          traceEvent("reply-received", {
+            status: "failed",
+            code: "QUEUE_IPC_INVALID_RESPONSE",
+            ...traceEnd(),
+          });
         finish(error as Error);
       }
     });
     socket.once("end", () => {
-      if (!settled)
+      if (!settled) {
+        if (ipcTrace)
+          traceEvent("response-lost", {
+            status: "unknown",
+            code: "QUEUE_IPC_RESPONSE_LOST",
+            ...traceEnd(),
+          });
         finish(
           codedError(
             "QUEUE_IPC_RESPONSE_LOST",
             "Queue response ended without a receipt; inspect the existing job before retry",
           ),
         );
+      }
     });
   });
 }
@@ -154,7 +304,12 @@ export function request(
 export async function acceptedWorkerRequest(
   dir: string,
   message: WorkerMessage,
-  { pollMs = 1000 }: WorkerRequestOptions = {},
+  {
+    pollMs = 1000,
+    heartbeatTimeoutMs,
+    debugTrace,
+    buildHash,
+  }: WorkerRequestOptions = {},
 ): Promise<unknown> {
   const controller = new AbortController();
   let stopped = false;
@@ -167,15 +322,38 @@ export async function acceptedWorkerRequest(
       });
       if (stopped) break;
       try {
-        await request(dir, {
-          action: "worker-status",
-          jobId: message.jobId,
-          workerToken: message.workerToken,
-        });
+        const heartbeatTrace =
+          debugTrace && typeof message.jobId === "string"
+            ? {
+                context: debugTrace,
+                action: "worker-status" as const,
+                messageId: randomUUID(),
+                jobId: message.jobId,
+                ...(buildHash ? { buildHash } : {}),
+              }
+            : undefined;
+        const requestOptions =
+          heartbeatTimeoutMs === undefined && !heartbeatTrace
+            ? undefined
+            : {
+                ...(heartbeatTimeoutMs === undefined
+                  ? {}
+                  : { timeoutMs: heartbeatTimeoutMs }),
+                ...(heartbeatTrace ? { ipcTrace: heartbeatTrace } : {}),
+              };
+        await request(
+          dir,
+          {
+            action: "worker-status",
+            jobId: message.jobId,
+            workerToken: message.workerToken,
+          },
+          requestOptions,
+        );
       } catch (error) {
         if (!stopped) {
           heartbeatError = error as Error;
-          controller.abort();
+          controller.abort(error);
         }
         break;
       }
@@ -186,6 +364,22 @@ export async function acceptedWorkerRequest(
     return await request(dir, message, {
       timeoutMs: 0,
       signal: controller.signal,
+      ...(debugTrace && typeof message.jobId === "string"
+        ? {
+            ipcTrace: {
+              context: debugTrace,
+              action: "backend",
+              messageId: randomUUID(),
+              jobId: message.jobId,
+              ...(typeof message["rpcTimeoutMs"] === "number" &&
+              Number.isSafeInteger(message["rpcTimeoutMs"]) &&
+              message["rpcTimeoutMs"] > 0
+                ? { deadlineBudgetMs: message["rpcTimeoutMs"] }
+                : {}),
+              ...(buildHash ? { buildHash } : {}),
+            },
+          }
+        : {}),
     });
   } catch (error) {
     throw heartbeatError || error;

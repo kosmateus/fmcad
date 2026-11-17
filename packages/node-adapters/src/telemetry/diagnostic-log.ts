@@ -25,7 +25,18 @@ export type DebugTraceStage =
   | "native-receipt"
   | "result-published"
   | "caller-received"
-  | "stdout-written";
+  | "stdout-written"
+  | "ipc";
+
+export type DebugTraceIpcStage =
+  | "request-written"
+  | "request-accepted"
+  | "handler-start"
+  | "reply-emitted"
+  | "reply-received"
+  | "response-lost"
+  | "timeout"
+  | "abort";
 
 export interface DebugTraceContext {
   readonly version: 1;
@@ -36,7 +47,9 @@ export interface DebugTraceContext {
 }
 
 export interface DebugTraceEvent {
-  readonly stage: DebugTraceStage;
+  readonly stage: DebugTraceStage | "ipc";
+  readonly ipcStage?: DebugTraceIpcStage | undefined;
+  readonly action?: "worker-status" | "backend" | undefined;
   readonly status?:
     | "started"
     | "passed"
@@ -48,11 +61,17 @@ export interface DebugTraceEvent {
     | "written"
     | undefined;
   readonly jobId?: string | undefined;
+  readonly messageId?: string | undefined;
+  readonly abortReason?: string | undefined;
   readonly rpcId?: string | undefined;
   readonly buildHash?: string | undefined;
   readonly sourceHash?: string | undefined;
   readonly code?: string | undefined;
   readonly durationMs?: number | undefined;
+  readonly monotonicAtMs?: number | undefined;
+  readonly monotonicStartMs?: number | undefined;
+  readonly monotonicEndMs?: number | undefined;
+  readonly deadlineMonotonicMs?: number | undefined;
   readonly sdkPid?: number | undefined;
   readonly sdkBirth?: string | undefined;
   readonly sdkVersion?: string | undefined;
@@ -165,13 +184,21 @@ export interface DebugTraceReadOptions {
 
 const eventKeys = new Set<keyof DebugTraceEvent>([
   "stage",
+  "ipcStage",
+  "action",
   "status",
   "jobId",
+  "messageId",
+  "abortReason",
   "rpcId",
   "buildHash",
   "sourceHash",
   "code",
   "durationMs",
+  "monotonicAtMs",
+  "monotonicStartMs",
+  "monotonicEndMs",
+  "deadlineMonotonicMs",
   "sdkPid",
   "sdkBirth",
   "sdkVersion",
@@ -198,6 +225,17 @@ const traceStages = new Set<DebugTraceStage>([
   "result-published",
   "caller-received",
   "stdout-written",
+  "ipc",
+]);
+const traceIpcStages = new Set<DebugTraceIpcStage>([
+  "request-written",
+  "request-accepted",
+  "handler-start",
+  "reply-emitted",
+  "reply-received",
+  "response-lost",
+  "timeout",
+  "abort",
 ]);
 const traceStatuses = new Set([
   "started",
@@ -251,6 +289,22 @@ function safeEvent(
   )
     return null;
   if (!traceStages.has(event.stage)) return null;
+  if (
+    event.stage === "ipc"
+      ? !traceIpcStages.has(event.ipcStage!) ||
+        !["worker-status", "backend"].includes(String(event.action)) ||
+        !safeId(event.messageId) ||
+        !safeId(event.jobId)
+      : event.ipcStage !== undefined ||
+        event.action !== undefined ||
+        event.messageId !== undefined ||
+        event.abortReason !== undefined ||
+        event.monotonicAtMs !== undefined ||
+        event.monotonicStartMs !== undefined ||
+        event.monotonicEndMs !== undefined ||
+        event.deadlineMonotonicMs !== undefined
+  )
+    return null;
   if (event.status !== undefined && !traceStatuses.has(event.status))
     return null;
   if (
@@ -282,6 +336,16 @@ function safeEvent(
     const value = event[key];
     if (value !== undefined && safeId(value)) result[key] = value;
   }
+  if (event.stage === "ipc") {
+    result["ipcStage"] = event.ipcStage;
+    result["action"] = event.action;
+    result["messageId"] = event.messageId;
+  }
+  if (
+    event.abortReason !== undefined &&
+    /^[A-Z][A-Z0-9_]{0,63}$/.test(event.abortReason)
+  )
+    result["abortReason"] = event.abortReason;
   if (
     event.artifactRef !== undefined &&
     /^(?:(?:received-response|remote)-[a-f0-9-]{36}\.json|rpc-result\.json|(?:stdout|stderr)\.txt)$/.test(
@@ -319,6 +383,21 @@ function safeEvent(
     event.durationMs <= 2_147_483_647
   )
     result["durationMs"] = Math.round(event.durationMs * 1000) / 1000;
+  for (const key of [
+    "monotonicAtMs",
+    "monotonicStartMs",
+    "monotonicEndMs",
+    "deadlineMonotonicMs",
+  ] as const) {
+    const value = event[key];
+    if (
+      value !== undefined &&
+      Number.isFinite(value) &&
+      value >= 0 &&
+      value <= Number.MAX_SAFE_INTEGER
+    )
+      result[key] = Math.round(value * 1000) / 1000;
+  }
   if (event.sdkBirth !== undefined && /^\d{1,32}$/.test(event.sdkBirth))
     result["sdkBirth"] = event.sdkBirth;
   if (
