@@ -263,6 +263,17 @@ export async function main(
         ["console"],
       );
     }
+    if (argv[0] === "debug" && argv[1] === "trace")
+      return await local(
+        (words, ports) =>
+          (
+            require("../../queue-cli") as {
+              debugTraceCommand: LocalCommand;
+            }
+          ).debugTraceCommand(words, ports),
+        argv.slice(2),
+        ["debug", "trace"],
+      );
     if (argv[0] === "queue" && argv[1])
       return await local(
         (require("../../queue-cli") as { queueCommand: LocalCommand })

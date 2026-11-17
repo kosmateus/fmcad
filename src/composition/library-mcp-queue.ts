@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import {
   mcpRequestState,
@@ -10,6 +11,22 @@ import type {
   McpResponse,
   OwnedMcpArtifactReference,
 } from "./library-mcp-protocol";
+import type {
+  DebugTraceContext,
+  DebugTraceEvent,
+} from "../../packages/node-adapters/src/telemetry/diagnostic-log";
+type DebugTraceRuntime = {
+  createDebugTraceContext: typeof import("../../packages/node-adapters/src/telemetry/diagnostic-log").createDebugTraceContext;
+  writeDebugTrace(
+    context: DebugTraceContext | undefined,
+    event: DebugTraceEvent,
+  ): void;
+};
+let loadedTraceRuntime: DebugTraceRuntime | undefined;
+const traceRuntime = (): DebugTraceRuntime =>
+  (loadedTraceRuntime ||= createRequire(__filename)(
+    "../node-adapters/telemetry/diagnostic-log",
+  ) as DebugTraceRuntime);
 import { catalogResult, type McpCatalogState } from "./library-mcp-catalog";
 import { queueMetadata } from "./library-mcp-metadata";
 import { queueTools, validateQueueHelperArguments } from "./library-mcp-tools";
@@ -134,6 +151,7 @@ export function createQueuePost(
     let requestId: string = randomUUID(),
       job: QueueJob | undefined,
       clientContext: QueueRequestContext | undefined,
+      debugTrace: DebugTraceContext | undefined,
       admissionAttempted = false;
     const reply = (result: unknown) => ({
       status: 200,
@@ -150,6 +168,18 @@ export function createQueuePost(
         queueTools.find((tool) => tool.name === request.params?.["name"]);
       const { payload, options } = queueMetadata(request);
       requestId = options.requestId || requestId;
+      const traceClientId = client.auth?.clientId ?? context.clientId;
+      if (traceClientId && process.env["FMCAD_DEBUG_TRACE"] === "1") {
+        try {
+          debugTrace = traceRuntime().createDebugTraceContext(
+            requestId,
+            traceClientId,
+            "mcp",
+          );
+        } catch {
+          // Opt-in tracing is diagnostic-only if its runtime is unavailable.
+        }
+      }
       if (
         context.sessionId &&
         options.sessionId &&
@@ -362,6 +392,7 @@ export function createQueuePost(
           : {}),
         clientContext,
         requestId,
+        ...(debugTrace ? { debugTrace } : {}),
         backend: cfg.backend,
         ...queueOptions,
         ...(queueTimeoutMs !== undefined ? { queueTimeoutMs } : {}),
@@ -432,6 +463,7 @@ export function createQueuePost(
               requestStatus: mcpRequestState(current.job.state),
               context: clientContext,
             },
+            ...(debugTrace ? { debugTrace } : {}),
             queueTools: true,
           };
         }
@@ -456,6 +488,7 @@ export function createQueuePost(
             structuredContent: result,
           }),
           queueReceipt: receipt(job),
+          ...(debugTrace ? { debugTrace } : {}),
           queueTools: true,
         };
       }
@@ -503,6 +536,7 @@ export function createQueuePost(
             requestStatus: mcpRequestState(job.state),
             context: clientContext,
           },
+          ...(debugTrace ? { debugTrace } : {}),
           artifactOwner: {
             jobId: job.id,
             ...(input.cwd ? { cwd: input.cwd } : {}),
@@ -549,6 +583,7 @@ export function createQueuePost(
           requestStatus: mcpRequestState(job.state),
           context: clientContext,
         },
+        ...(debugTrace ? { debugTrace } : {}),
         artifactOwner: {
           jobId: job.id,
           ...(input.cwd ? { cwd: input.cwd } : {}),
@@ -586,6 +621,7 @@ export function createQueuePost(
         );
         return {
           ...response,
+          ...(debugTrace ? { debugTrace } : {}),
           raw:
             replies.length === 1
               ? JSON.stringify(replies[0])
@@ -613,6 +649,7 @@ export function createQueuePost(
           : "needs_reconciliation";
       return {
         status: 200,
+        ...(debugTrace ? { debugTrace } : {}),
         raw: JSON.stringify({
           jsonrpc: "2.0",
           id: request.id,

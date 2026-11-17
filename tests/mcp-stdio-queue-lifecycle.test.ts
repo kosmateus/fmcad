@@ -28,6 +28,9 @@ const { serve } = load(
 const { request: brokerRequest } = load(
   path.join(root, "src/queue-connection"),
 ) as typeof import("../src/entrypoints/queue-connection");
+const { prepareWireArtifact } = load(
+  path.join(root, "src/dist/python/source-units"),
+) as typeof import("../packages/node-adapters/src/python/source-units");
 const { startStdio } = load(
   path.join(root, "src/mcp-stdio"),
 ) as typeof import("../src/entrypoints/mcp-stdio");
@@ -433,24 +436,60 @@ test("queue-mode resources/read fails locally before admission or physical dispa
               "unsupported resource reads must never reach physical transport",
             );
           },
-          async callTool() {
+          async callTool(args: Parameters<Client["callTool"]>[0]) {
             startupProbes++;
             assert.equal(
               startupProbes,
               1,
               "only the isolated broker startup may probe the fake backend",
             );
+            const script = text(field(args, "object", "script"));
+            const prepared = prepareWireArtifact(
+              path.resolve(__dirname, "../runtime/python"),
+              script,
+            );
+            const code = prepared.units.map((unit) => unit.source).join("\n");
+            const filename = /_qr_path = ("(?:\\.|[^"\\])*")/.exec(code);
+            const binding =
+              /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/.exec(
+                code,
+              );
+            assert.ok(
+              filename && binding,
+              "startup probe must use its bound receipt",
+            );
+            const identity = {
+              pid: 999,
+              birth: "offline:999",
+              version: "fixture",
+              activeCommand: "SelectCommand",
+              documents: [],
+            };
+            const receiptPath = JSON.parse(filename[1]!)
+              .replace(/^\\\\wsl\$\\[^\\]+/, "")
+              .replaceAll("\\", "/");
+            assert(
+              path
+                .resolve(receiptPath)
+                .startsWith(path.resolve(dir) + path.sep),
+              "startup probe receipt must stay inside its broker fixture",
+            );
+            fs.writeFileSync(
+              receiptPath,
+              JSON.stringify({
+                ...JSON.parse(JSON.parse(binding[1]!)),
+                terminal: true,
+                outcome: "succeeded",
+                instance: identity,
+                probeObservation: {
+                  schema: "fmcad-instance-probe-v1",
+                  identity,
+                },
+              }),
+            );
             return {
               failed: false,
-              text:
-                "FMCAD_QUEUE_INSTANCE " +
-                JSON.stringify({
-                  pid: 999,
-                  birth: "offline:999",
-                  version: "fixture",
-                  activeCommand: "SelectCommand",
-                  documents: [],
-                }),
+              text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(identity),
             };
           },
         }),

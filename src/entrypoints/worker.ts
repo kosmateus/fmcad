@@ -23,6 +23,18 @@ const workerRuntime = runtimeRequire(
 ) as {
   runWorker(envelope: WorkerEnvelope, ports: WorkerPorts): Promise<number>;
 };
+type DebugTraceRuntime = {
+  validDebugTraceContext(
+    value: unknown,
+    expected: { requestId: string; clientId: string },
+  ): value is import("../../packages/node-adapters/src/telemetry/diagnostic-log").DebugTraceContext;
+  writeDebugTrace: typeof import("../../packages/node-adapters/src/telemetry/diagnostic-log").writeDebugTrace;
+};
+let loadedDebugTraceRuntime: DebugTraceRuntime | undefined;
+const debugTraceRuntime = (): DebugTraceRuntime =>
+  (loadedDebugTraceRuntime ||= runtimeRequire(
+    "../node-adapters/telemetry/diagnostic-log.js",
+  ) as DebugTraceRuntime);
 
 interface WorkerConfiguration {
   timeoutMs: number;
@@ -78,49 +90,119 @@ export async function run(
   const configuration = JSON.parse(
     process.env["FMCAD_QUEUE_WORKER_CONFIG"] as string,
   ) as WorkerConfiguration;
+  const traceRequest = request as unknown as {
+    requestId?: string;
+    clientId?: string;
+    debugTrace?: unknown;
+  };
+  let runtime: DebugTraceRuntime | undefined;
+  let trace:
+    | import("../../packages/node-adapters/src/telemetry/diagnostic-log").DebugTraceContext
+    | undefined;
+  try {
+    if (traceRequest.debugTrace !== undefined) runtime = debugTraceRuntime();
+    if (
+      runtime &&
+      traceRequest.requestId &&
+      traceRequest.clientId &&
+      runtime.validDebugTraceContext(traceRequest.debugTrace, {
+        requestId: traceRequest.requestId,
+        clientId: traceRequest.clientId,
+      })
+    )
+      trace = traceRequest.debugTrace;
+  } catch {
+    // Opt-in tracing is diagnostic-only if its runtime is unavailable.
+  }
+  const preflightStartedAt = trace ? Date.now() : undefined;
+  let preflightPassed = false;
+  if (trace)
+    runtime!.writeDebugTrace(trace, {
+      stage: "preflight",
+      status: "started",
+      jobId: job.id,
+      buildHash: job.buildHash,
+      stdoutObservation: "not_observed",
+    });
   const resultFile = path.join(path.dirname(file), "worker-result.json");
   const anchor = path.resolve(__dirname, "../../queue-worker.js");
-  return workerRuntime.runWorker(job, {
-    prepareSdkProbe: (probeRequest, target) => {
-      const paths = (
-        runtimeRequire("../config-platform/index.js") as {
-          resolveRuntimePaths(options: { anchor: string }): { assets: string };
+  const execute =
+    dependencies.execute ??
+    (
+      runtimeRequire("../composition/execution-worker.js") as {
+        execute: WorkerPorts["execute"];
+      }
+    ).execute;
+  try {
+    return await workerRuntime.runWorker(job, {
+      prepareSdkProbe: (probeRequest, target) => {
+        const paths = (
+          runtimeRequire("../config-platform/index.js") as {
+            resolveRuntimePaths(options: { anchor: string }): {
+              assets: string;
+            };
+          }
+        ).resolveRuntimePaths({ anchor });
+        return (
+          runtimeRequire("../node-adapters/execution/sdk-probe.js") as {
+            prepareSdkProbe(
+              assets: string,
+              request: WorkerSdkProbeRequest,
+              target: WorkerSdkProbeTarget,
+            ): PreparedPythonArtifact;
+          }
+        ).prepareSdkProbe(path.dirname(paths.assets), probeRequest, target);
+      },
+      jobId: process.env["FMCAD_QUEUE_WORKER_JOB"],
+      token: process.env["FMCAD_QUEUE_WORKER_TOKEN"],
+      buildHash: queueInstance.buildHash,
+      configuration,
+      nonterminal: queueInstance.workflowNonterminal,
+      persist: (result) => queueInstance.durable(resultFile, result),
+      request: (message) =>
+        (
+          runtimeRequire("../../queue-connection.js") as {
+            acceptedWorkerRequest(
+              directory: string,
+              request: Parameters<WorkerPorts["request"]>[0],
+            ): Promise<{
+              value: unknown;
+              properties?: Record<string, unknown>;
+            }>;
+          }
+        ).acceptedWorkerRequest(
+          process.env["FMCAD_QUEUE_DIR"] as string,
+          message,
+        ),
+      execute: async (...args) => {
+        if (trace) {
+          preflightPassed = true;
+          runtime!.writeDebugTrace(trace, {
+            stage: "preflight",
+            status: "passed",
+            jobId: job.id,
+            buildHash: job.buildHash,
+            durationMs: Date.now() - (preflightStartedAt ?? Date.now()),
+            stdoutObservation: "not_observed",
+          });
         }
-      ).resolveRuntimePaths({ anchor });
-      return (
-        runtimeRequire("../node-adapters/execution/sdk-probe.js") as {
-          prepareSdkProbe(
-            assets: string,
-            request: WorkerSdkProbeRequest,
-            target: WorkerSdkProbeTarget,
-          ): PreparedPythonArtifact;
-        }
-      ).prepareSdkProbe(path.dirname(paths.assets), probeRequest, target);
-    },
-    jobId: process.env["FMCAD_QUEUE_WORKER_JOB"],
-    token: process.env["FMCAD_QUEUE_WORKER_TOKEN"],
-    buildHash: queueInstance.buildHash,
-    configuration,
-    nonterminal: queueInstance.workflowNonterminal,
-    persist: (result) => queueInstance.durable(resultFile, result),
-    request: (message) =>
-      (
-        runtimeRequire("../../queue-connection.js") as {
-          acceptedWorkerRequest(
-            directory: string,
-            request: Parameters<WorkerPorts["request"]>[0],
-          ): Promise<{ value: unknown; properties?: Record<string, unknown> }>;
-        }
-      ).acceptedWorkerRequest(
-        process.env["FMCAD_QUEUE_DIR"] as string,
-        message,
-      ),
-    execute:
-      dependencies.execute ??
-      (
-        runtimeRequire("../composition/execution-worker.js") as {
-          execute: WorkerPorts["execute"];
-        }
-      ).execute,
-  });
+        return execute(...args);
+      },
+    });
+  } catch (error) {
+    if (trace && !preflightPassed)
+      runtime!.writeDebugTrace(trace, {
+        stage: "preflight",
+        status: "failed",
+        jobId: job.id,
+        buildHash: job.buildHash,
+        code:
+          error && typeof error === "object" && "code" in error
+            ? String(error.code)
+            : undefined,
+        durationMs: Date.now() - (preflightStartedAt ?? Date.now()),
+        stdoutObservation: "not_observed",
+      });
+    throw error;
+  }
 }

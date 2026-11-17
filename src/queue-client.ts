@@ -42,6 +42,10 @@ interface Input extends Record<string, unknown> {
   requestId?: string;
   cwd?: string;
 }
+interface DebugTraceRuntime {
+  createDebugTraceContext: typeof import("../packages/node-adapters/src/telemetry/diagnostic-log").createDebugTraceContext;
+  writeDebugTrace: typeof import("../packages/node-adapters/src/telemetry/diagnostic-log").writeDebugTrace;
+}
 interface Command {
   key: string;
   target?: string;
@@ -797,6 +801,27 @@ async function runQueued(
       inputFiles: inputFiles(pinned, process.cwd(), { config: opts["config"] }),
       buildHash: instance().buildHash(),
     };
+    let debugTraceRuntime: DebugTraceRuntime | undefined;
+    let debugTrace: ReturnType<DebugTraceRuntime["createDebugTraceContext"]> =
+      undefined;
+    if (process.env["FMCAD_DEBUG_TRACE"] === "1") {
+      try {
+        debugTraceRuntime = runtimeRequire(
+          "./dist/node-adapters/telemetry/diagnostic-log",
+        ) as DebugTraceRuntime;
+        debugTrace = debugTraceRuntime.createDebugTraceContext(
+          requestId,
+          client.auth.clientId,
+          "cli",
+        );
+      } catch {
+        // Opt-in tracing is diagnostic-only if its runtime is unavailable.
+      }
+    }
+    if (debugTrace) {
+      input["debugTrace"] = debugTrace;
+      streams.stderr.write(`FMCAD_DEBUG_TRACE_ID ${debugTrace.traceId}\n`);
+    }
     const invocation = runtimeRequire("./invocation") as {
       context: { getStore(): { description?: string } | undefined };
     };
@@ -843,11 +868,81 @@ async function runQueued(
     streams.stderr.write(
       "FMCAD_QUEUE_JOB " + JSON.stringify({ jobId: job.id, requestId }) + "\n",
     );
-    const result = await client.wait(job.id, {
-      progress: (value) =>
-        streams.stderr.write(`QUEUE ${value.id} ${value.state}\n`),
+    let result: Result;
+    try {
+      result = await client.wait(job.id, {
+        progress: (value) =>
+          streams.stderr.write(`QUEUE ${value.id} ${value.state}\n`),
+      });
+    } catch (error) {
+      debugTraceRuntime?.writeDebugTrace(debugTrace, {
+        stage: "caller-received",
+        status: "failed",
+        jobId: job.id,
+        buildHash: String(input["buildHash"]),
+        code: (error as NodeJS.ErrnoException).code,
+        stdoutObservation: "not_observed",
+      });
+      throw error;
+    }
+    const stdoutObservation =
+      typeof result.stdout !== "string"
+        ? "not_observed"
+        : result.stdout.length === 0
+          ? "observed_empty"
+          : "observed_nonempty";
+    debugTraceRuntime?.writeDebugTrace(debugTrace, {
+      stage: "caller-received",
+      status:
+        result.job.state === "succeeded"
+          ? "passed"
+          : result.job.state === "needs_reconciliation"
+            ? "unknown"
+            : "failed",
+      jobId: job.id,
+      buildHash: String(input["buildHash"]),
+      stdoutBytes:
+        typeof result.stdout === "string"
+          ? Buffer.byteLength(result.stdout, "utf8")
+          : undefined,
+      stdoutObservation,
     });
-    if (result.stdout) streams.stdout.write(result.stdout);
+    try {
+      if (result.stdout) streams.stdout.write(result.stdout);
+    } catch (error) {
+      debugTraceRuntime?.writeDebugTrace(debugTrace, {
+        stage: "stdout-written",
+        status: "failed",
+        jobId: job.id,
+        buildHash: String(input["buildHash"]),
+        code:
+          error && typeof error === "object" && "code" in error
+            ? String(error.code)
+            : "STDOUT_WRITE_FAILED",
+        stdoutBytes:
+          typeof result.stdout === "string"
+            ? Buffer.byteLength(result.stdout, "utf8")
+            : undefined,
+        stdoutObservation,
+      });
+      throw error;
+    }
+    debugTraceRuntime?.writeDebugTrace(debugTrace, {
+      stage: "stdout-written",
+      status:
+        typeof result.stdout !== "string"
+          ? "not_observed"
+          : result.stdout.length === 0
+            ? "passed"
+            : "written",
+      jobId: job.id,
+      buildHash: String(input["buildHash"]),
+      stdoutBytes:
+        typeof result.stdout === "string"
+          ? Buffer.byteLength(result.stdout, "utf8")
+          : undefined,
+      stdoutObservation,
+    });
     if (result.stderr) streams.stderr.write(result.stderr);
     for (const report of result.pythonChecks ||
       (result.execution?.pythonCheck ? [result.execution.pythonCheck] : []))

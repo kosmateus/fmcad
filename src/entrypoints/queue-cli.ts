@@ -478,6 +478,42 @@ function parse(argv: string[]): { opts: QueueOptions; rest: string[] } {
   return { opts, rest };
 }
 
+interface DebugTraceReader {
+  flushDebugTrace(): Promise<void>;
+  readDebugTrace(traceId: string): Array<Record<string, unknown>>;
+}
+
+export async function debugTraceCommand(
+  argv: string[],
+  deps: {
+    stdout?: { write(text: string): unknown };
+    stderr?: { write(text: string): unknown };
+  },
+): Promise<number> {
+  const stdout = deps.stdout ?? process.stdout;
+  const stderr = deps.stderr ?? process.stderr;
+  if (argv.length !== 1 || !/^[a-f0-9]{32}$/.test(argv[0] ?? "")) {
+    stderr.write("Usage: fmcad debug trace <trace-id>\n");
+    return 2;
+  }
+  try {
+    const reader = runtimeRequire(
+      "../node-adapters/telemetry/diagnostic-log.js",
+    ) as DebugTraceReader;
+    await reader.flushDebugTrace();
+    const events = reader.readDebugTrace(argv[0]!);
+    if (events.length === 0) {
+      stderr.write("No retained events found for that trace ID.\n");
+      return 1;
+    }
+    for (const event of events) stdout.write(JSON.stringify(event) + "\n");
+    return 0;
+  } catch {
+    stderr.write("Could not safely read retained debug trace events.\n");
+    return 1;
+  }
+}
+
 export async function queueCommand(
   argv: string[],
   deps: QueueCliDependencies,

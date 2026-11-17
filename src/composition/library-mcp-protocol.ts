@@ -1,4 +1,5 @@
 import type { OwnedResultReference } from "../../packages/core/src/ports/execution-store";
+import type { DebugTraceContext } from "../../packages/node-adapters/src/telemetry/diagnostic-log";
 
 export type JsonRpcId = string | number | null;
 export type JsonObject = Record<string, unknown>;
@@ -26,4 +27,6 @@ export interface McpResponse {
   artifactOwner?: { jobId: string; cwd?: string };
   /** Existing broker-owned rpc-result.json, when the queue already externalized it. */
   ownedArtifact?: OwnedMcpArtifactReference;
+  /** Private to the local framing path; never serialized into the MCP payload. */
+  debugTrace?: DebugTraceContext;
 }

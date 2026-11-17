@@ -3,7 +3,13 @@ export function requestIdentity(
   request: Record<string, unknown>,
 ): Record<string, unknown> {
   const value: Record<string, unknown> = { ...request };
-  for (const key of ["clientId", "ownerToken", "isolatedEpoch", "description"])
+  for (const key of [
+    "clientId",
+    "ownerToken",
+    "isolatedEpoch",
+    "description",
+    "debugTrace",
+  ])
     delete value[key];
   if (value["kind"] === "command" && Array.isArray(value["argv"]))
     delete value["phased"];
