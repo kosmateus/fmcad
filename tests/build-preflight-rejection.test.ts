@@ -7,17 +7,21 @@ import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { createRequire } from "node:module";
 
-import {
-  object,
-  array,
-  field,
-  string,
-  present,
-} from "./modeling-unit-test-support.js";
+import { array, field, string, present } from "./modeling-unit-test-support.js";
 const fixtureDirectory = path.join(process.cwd(), "tests");
 const load = createRequire(
   path.join(fixtureDirectory, "build-preflight-rejection.test.ts"),
 );
+const { decodeNativeProgram, nativeReceipts } = load(
+  "./fixtures/native-source-envelope.cjs",
+) as {
+  decodeNativeProgram(source: string): string;
+  nativeReceipts(
+    source: string,
+    root: string,
+    instance: Record<string, unknown>,
+  ): Array<{ file: string; value: Record<string, unknown> }>;
+};
 const restorePlatform = (
   load("./fixtures/fake-wsl-platform.cjs") as () => () => void
 )();
@@ -65,8 +69,18 @@ test("a local build mismatch before sending preflight is terminal not_started, n
       sdk++;
       throw Error("No SDK operation may be dispatched");
     },
-    async callTool() {
+    async callTool(value) {
       probes++;
+      const script = string(field(value, "object", "script"));
+      const receipts = nativeReceipts(script, dir, instance);
+      assert.ok(
+        receipts.some((receipt) => "probeObservation" in receipt.value),
+        "startup probe source must bind its receipt",
+      );
+      for (const receipt of receipts) {
+        fs.mkdirSync(path.dirname(receipt.file), { recursive: true });
+        fs.writeFileSync(receipt.file, JSON.stringify(receipt.value));
+      }
       return {
         failed: false,
         text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance),
@@ -195,34 +209,12 @@ test("a build change after fully receipted idle SDK completion does not invent a
         field(payload, "params", "arguments", "object", "script"),
       );
       lastScript = script;
-      const binding = object(
-        JSON.parse(
-          string(
-            JSON.parse(
-              present(
-                present(
-                  script.match(
-                    /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
-                  ),
-                )[1],
-              ),
-            ),
-          ),
-        ),
-      );
-      const receipt = string(
-        JSON.parse(
-          present(present(script.match(/_qr_path = ("(?:\\.|[^"\\])*")/))[1]),
-        ),
-      )
-        .replace(/^\\\\wsl\$\\[^\\]+/, "")
-        .replaceAll("\\", "/");
-      qi.durable(receipt, {
-        ...binding,
-        terminal: true,
-        outcome: "succeeded",
-        instance: identity,
-      });
+      const receipts = nativeReceipts(script, dir, identity);
+      assert.ok(receipts.length, "SDK source must bind its receipt");
+      for (const receipt of receipts) {
+        fs.mkdirSync(path.dirname(receipt.file), { recursive: true });
+        fs.writeFileSync(receipt.file, JSON.stringify(receipt.value));
+      }
       fs.appendFileSync(
         path.join(runtime, "src/help.js"),
         "\n// controlled change after SDK receipt\n",
@@ -237,12 +229,19 @@ test("a build change after fully receipted idle SDK completion does not invent a
       };
     },
     async callTool(value) {
-      if (
-        string(field(value, "object", "script")).includes(
-          "FMCAD_QUEUE_INSTANCE",
-        )
-      ) {
+      const script = string(field(value, "object", "script"));
+      const source = decodeNativeProgram(script);
+      if (source.includes("FMCAD_QUEUE_INSTANCE")) {
         probes++;
+        const receipts = nativeReceipts(script, dir, identity);
+        assert.ok(
+          receipts.some((receipt) => "probeObservation" in receipt.value),
+          "startup probe source must bind its receipt",
+        );
+        for (const receipt of receipts) {
+          fs.mkdirSync(path.dirname(receipt.file), { recursive: true });
+          fs.writeFileSync(receipt.file, JSON.stringify(receipt.value));
+        }
         return {
           failed: false,
           text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(identity),
