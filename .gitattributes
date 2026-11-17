@@ -1,0 +1,9 @@
+# Frozen Python source oracles are byte-hashed; keep checkout bytes stable.
+/tests/fixtures/modeling-python-history/*.py text eol=lf
+/tests/fixtures/modeling-python-history/interference.py -text !eol
+/tests/fixtures/file-workflows/*-externalization-planning.py.txt text eol=lf
+/tests/fixtures/file-workflows/*-reference-occurrence.py.txt text eol=lf
+/tests/fixtures/history/cloud-9dc58fd.py.txt text eol=lf
+/tests/fixtures/history/inspect-a262.py.txt text eol=lf
+/tests/native/iw7.4_parameter_test.py text eol=lf
+/tests/native/iw7.4_parameter_failures.py text eol=lf
