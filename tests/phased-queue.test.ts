@@ -292,11 +292,15 @@ async function fixture(t: TestContext, brokerOptions: BrokerOptions = {}) {
   const physical: {
     server: { timeoutMs: number };
     _parse: typeof JSON.parse;
+    _openSession(): Promise<string>;
     _post(payload: PhysicalRequest): Promise<PhysicalResult>;
     callTool(value: ToolValue, toolName?: string): Promise<ToolResult>;
   } = {
     server: { timeoutMs: 5000 },
     _parse: JSON.parse,
+    async _openSession() {
+      return "fixture-session";
+    },
     async _post(payload) {
       wireIds.push(payload.id);
       const script = payload.params?.arguments?.object?.script || "";
