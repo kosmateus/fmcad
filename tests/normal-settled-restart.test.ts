@@ -4,7 +4,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { createRequire } from "node:module";
-const load = createRequire(__filename);
+const load = createRequire(
+  process.env["FMCAD_TEST_RUNTIME"]
+    ? path.join(
+        process.env["FMCAD_TEST_RUNTIME"],
+        "tests/normal-settled-restart.test.js",
+      )
+    : __filename,
+);
 const restart = load(
   "../src/dist/node-adapters/broker-ipc/normal-restart",
 ) as typeof import("../packages/node-adapters/src/broker-ipc/normal-restart");
