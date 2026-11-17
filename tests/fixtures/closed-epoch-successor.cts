@@ -6,7 +6,13 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import syntheticClosedScratch from "./closed-scratch-artifacts.cjs";
 type Epoch = Parameters<typeof syntheticClosedScratch>[1];
-function fixture(root: string, repo: string, admissionMode?: string) {
+function fixture(
+  root: string,
+  repo: string,
+  admissionMode?: string,
+  currentInstance?: { pid: number; birth: string; version: string },
+  sourceConfig?: Record<string, unknown>,
+) {
   const runtimeRequire = createRequire(__filename);
   const api = runtimeRequire(repo + "/src/queue-instance") as {
     buildHash(): string;
@@ -36,7 +42,11 @@ function fixture(root: string, repo: string, admissionMode?: string) {
   const original = runtimeRequire("./dead-epoch-successor.cjs") as (
     root: string,
     repo: string,
-    options: { oldProcessAlive: boolean },
+    options: {
+      oldProcessAlive: boolean;
+      currentInstance?: { pid: number; birth: string; version: string };
+      sourceConfig?: Record<string, unknown>;
+    },
   ) => Record<string, unknown> & {
     authorityEntry: { path: string };
     audit: string;
@@ -46,7 +56,11 @@ function fixture(root: string, repo: string, admissionMode?: string) {
     clientId: string;
     token: string;
   };
-  const f = original(root, repo, { oldProcessAlive: true });
+  const f = original(root, repo, {
+    oldProcessAlive: true,
+    ...(currentInstance ? { currentInstance } : {}),
+    ...(sourceConfig ? { sourceConfig } : {}),
+  });
   fs.unlinkSync(f.authorityEntry.path);
   fs.unlinkSync(path.join(f.audit, "installed-qualification.json"));
   fs.rmSync(path.join(f.audit, "isolated-scratch-qualification"), {

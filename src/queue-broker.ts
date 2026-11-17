@@ -732,13 +732,64 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       "CONFIG_CHANGED",
       "Pinned backend configuration differs from the durable broker identity",
     );
-  if (options.backendTransition)
+  const restartPort = runtimeRequire(
+    "./dist/node-adapters/broker-ipc/normal-restart",
+  ) as typeof import("../packages/node-adapters/src/broker-ipc/normal-restart");
+  function deadPredecessorProof(
+    current: P.State,
+    sourceFile: string,
+  ): import("./queue-backend-transition").DeadPredecessorProof | undefined {
+    if (!options.backendTransition || !current.epoch) return undefined;
+    const sourceIdentity = readJson<P.Identity>(sourceFile);
+    if (priorProcessAlive(sourceIdentity.instance) !== false) return undefined;
+    const stopRequestId = options.backendTransition.stopRequestId;
+    if (!stopRequestId)
+      fail(
+        "BACKEND_TRANSITION_UNPROVEN",
+        "A dead SDK transition requires the exact completed owner stop request",
+      );
+    const proof = restartPort.inspectSettledNormalRestart(
+      dir,
+      current.epoch,
+      sourceIdentity,
+      current.data,
+      { priorProcessAlive },
+      stopRequestId,
+      sourceFile,
+    );
+    if (!proof?.deadPredecessorRecord)
+      fail(
+        "BACKEND_TRANSITION_UNPROVEN",
+        "Settled owner-stop evidence for this exact dead SDK is required",
+      );
+    return {
+      identity: sourceIdentity,
+      references: proof.evidence,
+      record: proof.deadPredecessorRecord,
+      assertValid: () =>
+        restartPort.assertSettledNormalRestartPredecessor(
+          proof,
+          current.data,
+          { priorProcessAlive },
+        ),
+    };
+  }
+  if (options.backendTransition) {
+    const preflightState = openIsolatedEpoch(dir, { recover: false });
+    const preflightIdentityFile =
+      backendScope.current?.identityFile ||
+      backendScope.retired?.identityFile ||
+      (preflightState.epoch
+        ? path.join(preflightState.epoch.root, "instance.json")
+        : path.join(dir, "instance.json"));
     prepareBackendTransition(
       dir,
-      openIsolatedEpoch(dir, { recover: false }),
+      preflightState,
       pinned,
       options.backendTransition,
+      deadPredecessorProof(preflightState, preflightIdentityFile),
     );
+  }
   function assertBackendHeadOwner(
     current: P.State,
     permittedBuildHash = codeHash,
@@ -861,8 +912,17 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   }
   // Metadata-only preflight happens before constructing a physical client. A
   // foreign owner, altered config or unfinished current job sends zero SDK work.
+  const deadPredecessor = options.backendTransition
+    ? deadPredecessorProof(state, identityFile)
+    : undefined;
   const backendTransition = options.backendTransition
-    ? prepareBackendTransition(dir, state, pinned, options.backendTransition)
+    ? prepareBackendTransition(
+        dir,
+        state,
+        pinned,
+        options.backendTransition,
+        deadPredecessor,
+      )
     : null;
   if (options.startPaused === true)
     state.pause(true, "startup:" + marker.nonce);
@@ -1401,11 +1461,15 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     ownerBirth: marker.birth,
     buildHash: codeHash,
     stage: "startup",
-    ...(backendTransition ? { auditExpectedInstance: {
-      pid: backendTransition.identity.instance.pid,
-      birth: backendTransition.identity.instance.birth,
-      version: backendTransition.identity.instance.version,
-    } } : {}),
+    ...(backendTransition && !backendTransition.deadPredecessor
+      ? {
+          auditExpectedInstance: {
+            pid: backendTransition.identity.instance.pid,
+            birth: backendTransition.identity.instance.birth,
+            version: backendTransition.identity.instance.version,
+          },
+        }
+      : {}),
   };
   const lifecycle = {
     owner: marker,
@@ -1605,14 +1669,18 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       if (backendTransition) {
         const diagnosticPath = path.join(dir, `broker-startup-${marker.nonce}.result.json`);
         const observationFiles = [diagnosticPath];
-        if (!options.createBackend) {
-          const receipt = readJson<Record<string, unknown>>(startupReceipt);
-          if (receipt["terminal"] !== true || receipt["outcome"] !== "succeeded" ||
-              !sameInstance(receipt["instance"] as P.Instance, instance) ||
-              Object.entries(startupBinding).some(([key, value]) => !same(receipt[key], value)))
-            fail("BACKEND_TRANSITION_UNPROVEN", "Exact target startup receipt is required; ownership is retained without replay");
+        const receipt = fs.existsSync(startupReceipt)
+          ? readJson<Record<string, unknown>>(startupReceipt)
+          : null;
+        const exactReceipt = !!receipt &&
+          receipt["terminal"] === true &&
+          receipt["outcome"] === "succeeded" &&
+          sameInstance(receipt["instance"] as P.Instance, instance) &&
+          !Object.entries(startupBinding).some(([key, value]) => !same(receipt[key], value));
+        if (!options.createBackend && !exactReceipt)
+          fail("BACKEND_TRANSITION_UNPROVEN", "Exact target startup receipt is required; ownership is retained without replay");
+        if (exactReceipt)
           observationFiles.push(startupReceipt);
-        }
         identityFile = backendTransition.commit(instance, codeHash, observationFiles);
       } else if (effectiveBackend) {
         // A reopen must not rewrite the immutable transition or predecessor.

@@ -4,6 +4,8 @@ import * as fs from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import type * as P from "../src/queue-broker-ports";
 import type { BackendTransitionApproval } from "../src/queue-backend-transition";
 import type { TestContext } from "node:test";
@@ -26,6 +28,8 @@ const fixture = createRequire(
   root: string,
   repo: string,
   mode: string,
+  currentInstance?: P.Instance,
+  sourceConfig?: P.Config,
 ) => {
   dir: string;
   cfg: P.Config;
@@ -43,19 +47,65 @@ const { runBoundInstanceProbe } = createRequire(
   ): { text: string; receipt: Record<string, unknown> };
 };
 
-function setup() {
+function setup(
+  currentInstance?: P.Instance,
+  sourceBackend: "addin" | "mcp" = "addin",
+  sourceUrl?: string,
+  forPublicCli = false,
+) {
   const root = fs.mkdtempSync(path.join(tmpdir(), "fmcad-backend-transition-"));
-  const f = fixture(root, runtimeRoot, "normal-multidocument");
+  if (forPublicCli) fs.mkdirSync(path.join(root, "fmcad"));
+  const sourceConfig: P.Config =
+    sourceBackend === "mcp"
+      ? {
+          backend: "mcp",
+          url: "http://127.0.0.1:1/never-called",
+          headers: {},
+          tool: "fusion_mcp_execute",
+          transport: "node",
+          protocolVersion: "2025-06-18",
+          timeoutMs: 180000,
+          routing: "queue",
+          queue: {},
+        }
+      : {
+          backend: "addin",
+          url: sourceUrl || "http://never-send.invalid",
+          headers: {},
+          tool: "execute_python",
+          transport: "node",
+          protocolVersion: "2025-06-18",
+          timeoutMs: 180000,
+          routing: "queue",
+          queue: {},
+        };
+  const f = fixture(
+    forPublicCli ? path.join(root, "fmcad") : root,
+    runtimeRoot,
+    "normal-multidocument",
+    currentInstance,
+    sourceConfig,
+  );
   fs.unlinkSync(path.join(f.dir, "broker.lock")); // This test's synthetic owner only.
   if (f.state.data.paused) f.state.pause(false, "synthetic-transition-test");
-  const next = {
-    ...f.cfg,
-    backend: "mcp",
-    url: "http://127.0.0.1:27182/mcp",
-    headers: { "X-Synthetic-Endpoint": "mcp" },
-    tool: "fusion_mcp_execute",
-    protocolVersion: "2024-11-05",
-  };
+  const next =
+    sourceBackend === "mcp"
+      ? {
+          ...f.cfg,
+          backend: "addin",
+          url: "http://127.0.0.1:8765/mcp",
+          headers: {},
+          tool: "execute_python",
+          protocolVersion: "2025-06-18",
+        }
+      : {
+          ...f.cfg,
+          backend: "mcp",
+          url: "http://127.0.0.1:1/never-called",
+          headers: { "X-Synthetic-Endpoint": "mcp" },
+          tool: "fusion_mcp_execute",
+          protocolVersion: "2024-11-05",
+        };
   const approval: BackendTransitionApproval = {
     requestId: "to-mcp",
     clientId: f.clientId,
@@ -65,6 +115,378 @@ function setup() {
   };
   return { ...f, root, next, approval };
 }
+
+test(
+  "owner stop composes a settled dead MCP SDK restart with one ADDIN probe and separate resume",
+  { timeout: 30000 },
+  async (t) => {
+    const processBirth = (
+      load("./queue-instance") as {
+        processBirth(pid?: number): string;
+      }
+    ).processBirth;
+    const sdk = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      stdio: "ignore",
+    });
+    await once(sdk, "spawn");
+    t.after(() => {
+      if (sdk.exitCode === null && sdk.signalCode === null) sdk.kill("SIGKILL");
+    });
+    assert.ok(sdk.pid);
+    const oldSdk: P.Instance = {
+      pid: sdk.pid,
+      birth: processBirth(sdk.pid),
+      version: "fixture",
+    };
+    const f = setup(oldSdk, "mcp", undefined, true);
+    const originalStateHome = process.env["XDG_STATE_HOME"];
+    process.env["XDG_STATE_HOME"] = f.root;
+    t.after(() => {
+      if (originalStateHome === undefined) delete process.env["XDG_STATE_HOME"];
+      else process.env["XDG_STATE_HOME"] = originalStateHome;
+    });
+    const { hash } = load("./queue-instance") as {
+      hash(value: string | Uint8Array): string;
+    };
+    const credentialsDir = path.join(f.dir, "client-credentials");
+    fs.mkdirSync(credentialsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(credentialsDir, `${hash(f.clientId)}.json`),
+      JSON.stringify({ clientId: f.clientId, clientToken: f.token }),
+      { mode: 0o600 },
+    );
+    const originalEpochIdentity = fs.readFileSync(
+      path.join(f.epoch.root, "instance.json"),
+    );
+    const originalPointer = fs.readFileSync(
+      path.join(f.dir, "isolated-admission-epoch.json"),
+    );
+    const originalHistory = fs.readFileSync(
+      path.join(f.dir, "queue-state.json"),
+    );
+    const ownerScript = path.join(
+      process.cwd(),
+      "tests/fixtures/backend-transition-owner.cjs",
+    );
+    const repoRoot = path.resolve(__dirname, "..", "..");
+    const owner = spawn(
+      process.execPath,
+      [
+        ownerScript,
+        runtimeRoot,
+        repoRoot,
+        f.dir,
+        JSON.stringify(f.cfg),
+        JSON.stringify({
+          ...oldSdk,
+          activeCommand: "SelectCommand",
+          documents: [],
+        }),
+      ],
+      { stdio: ["ignore", "ignore", "pipe", "ipc"] },
+    );
+    const children: ReturnType<typeof spawn>[] = [owner, sdk];
+    const resources: { handle?: Awaited<ReturnType<typeof serve>> } = {};
+    t.after(async () => {
+      for (const child of children)
+        if (child && child.exitCode === null && child.signalCode === null)
+          child.kill("SIGKILL");
+      await Promise.all(
+        children
+          .filter(
+            (child) => child.exitCode === null && child.signalCode === null,
+          )
+          .map((child) => once(child, "exit").catch(() => [])),
+      );
+      if (resources.handle) await resources.handle.close().catch(() => {});
+      fs.rmSync(f.root, { recursive: true, force: true });
+    });
+    function waitForMessage(
+      child: ReturnType<typeof spawn>,
+      kind: string,
+    ): Promise<Record<string, unknown>> {
+      return new Promise((resolve, reject) => {
+        const onMessage = (value: unknown) => {
+          const message = value as Record<string, unknown>;
+          if (message["kind"] === "error") {
+            child.off("message", onMessage);
+            reject(
+              Object.assign(new Error(String(message["message"])), message),
+            );
+          } else if (message["kind"] === kind) {
+            child.off("message", onMessage);
+            resolve(message);
+          }
+        };
+        child.on("message", onMessage);
+        child.once("exit", (code) => {
+          child.off("message", onMessage);
+          reject(new Error(`Owner exited before ${kind} (code ${code})`));
+        });
+      });
+    }
+    async function waitForFile(file: string) {
+      const deadline = Date.now() + 5000;
+      while (!fs.existsSync(file) && Date.now() < deadline)
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      assert.ok(
+        fs.existsSync(file),
+        `Timed out waiting for ${path.basename(file)}`,
+      );
+    }
+
+    const ready = waitForMessage(owner, "ready");
+    assert.equal((await ready)["kind"], "ready");
+    const sourceOwner = JSON.parse(
+      fs.readFileSync(path.join(f.dir, "broker.lock"), "utf8"),
+    ) as { nonce: string };
+    const sourceStartupReceipt = path.join(
+      f.dir,
+      `broker-startup-${sourceOwner.nonce}.receipt.json`,
+    );
+    assert.ok(
+      fs.existsSync(sourceStartupReceipt),
+      JSON.stringify(
+        fs.readdirSync(f.dir).filter((name) => name.startsWith("broker-")),
+      ),
+    );
+
+    let stdout = "";
+    const cliDeps = {
+      loadConfig: () => ({ cfg: f.cfg }),
+      stdout: {
+        write(text: string) {
+          stdout += text;
+        },
+      },
+      stderr: { write() {} },
+    };
+    const { queueCommand } = load("./dist/entrypoints/queue-cli") as {
+      queueCommand(argv: string[], deps: typeof cliDeps): Promise<number>;
+    };
+    const stopRequestId = "dead-sdk-owner-stop";
+    assert.equal(
+      await queueCommand(
+        ["stop", "--client", f.clientId, "--request-id", stopRequestId],
+        cliDeps,
+      ),
+      0,
+    );
+    const releaseFile = String(JSON.parse(stdout)["releaseFile"]);
+    await waitForFile(releaseFile);
+    const ownerExit = once(owner, "exit");
+    owner.send({ action: "exit" });
+    await ownerExit;
+    assert.ok(fs.existsSync(sourceStartupReceipt));
+    const sdkExit = once(sdk, "exit");
+    sdk.kill("SIGKILL");
+    await sdkExit;
+    const sourceState = (
+      load("./queue-isolated-epoch") as {
+        openIsolatedEpoch(dir: string, options: { recover: false }): P.State;
+      }
+    ).openIsolatedEpoch(f.dir, { recover: false });
+    const jobsAtTransition = Object.fromEntries(
+      Object.entries(sourceState.data.jobs).map(([id, job]) => [id, job.state]),
+    );
+
+    const targetProcess = spawn(
+      process.execPath,
+      ["-e", "setInterval(() => {}, 1000)"],
+      {
+        stdio: "ignore",
+      },
+    );
+    children.push(targetProcess);
+    await once(targetProcess, "spawn");
+    assert.ok(targetProcess.pid);
+    const targetIdentity = {
+      pid: targetProcess.pid,
+      birth: processBirth(targetProcess.pid),
+      version: "fixture",
+    };
+    const targetObservation = {
+      ...targetIdentity,
+      activeCommand: "SelectCommand",
+      documents: [],
+    };
+    let targetProbes = 0;
+    let probeStarted!: () => void;
+    let continueProbe!: () => void;
+    const firstProbeStarted = new Promise<void>((resolve) => {
+      probeStarted = resolve;
+    });
+    const firstProbeAllowed = new Promise<void>((resolve) => {
+      continueProbe = resolve;
+    });
+    const approval: BackendTransitionApproval = {
+      ...f.approval,
+      requestId: "dead-sdk-mcp-to-addin",
+      stopRequestId,
+    };
+    const approvalFile = path.join(f.root, "backend-approval.json");
+    fs.writeFileSync(approvalFile, JSON.stringify(approval), { mode: 0o600 });
+    const broker = load("./queue-broker") as {
+      serve: typeof serve;
+    };
+    const productionServe = broker.serve;
+    const createBackend = (): P.Client => ({
+      server: { timeoutMs: 1000 },
+      _parse: (raw) => JSON.parse(raw) as P.Reply,
+      _openSession: () => {
+        throw new Error("Unexpected session");
+      },
+      listTools: () => {
+        throw new Error("Unexpected catalog");
+      },
+      executeUiGuardedScript: () => {
+        throw new Error("Unexpected script");
+      },
+      _post: () => {
+        throw new Error("Original job replay forbidden");
+      },
+      callTool: async (args) => {
+        targetProbes++;
+        if (targetProbes === 1) {
+          probeStarted();
+          await firstProbeAllowed;
+        }
+        assert.ok(args.object?.script);
+        return {
+          failed: false,
+          text: runBoundInstanceProbe(args.object.script, targetObservation)
+            .text,
+        };
+      },
+    });
+    const transitionOptions: P.Options = {
+      dir: f.dir,
+      confirmOwnership: true,
+      autoReconcile: false,
+      nativePath: (file) => file,
+      backendTransition: approval,
+      createBackend,
+    };
+    broker.serve = async (config, options) => {
+      const handle = await productionServe(config, {
+        ...options,
+        dir: f.dir,
+        nativePath: (file) => file,
+        createBackend,
+      });
+      resources.handle = handle;
+      return handle;
+    };
+    t.after(() => {
+      broker.serve = productionServe;
+    });
+    stdout = "";
+    const winner = queueCommand(
+      [
+        "transition-backend",
+        "--backend-approval",
+        approvalFile,
+        "--confirm-ownership",
+        "true",
+      ],
+      { ...cliDeps, loadConfig: () => ({ cfg: f.next }) },
+    );
+    await Promise.race([
+      firstProbeStarted,
+      winner.then(() => {
+        throw new Error(
+          "Transition completed without reaching its target probe",
+        );
+      }),
+    ]);
+    try {
+      await assert.rejects(serve(f.next, transitionOptions));
+      assert.equal(targetProbes, 1, "the competing startup never probes ADDIN");
+    } finally {
+      continueProbe();
+    }
+    assert.equal(await winner, 0);
+    const handle = resources.handle;
+    assert.ok(handle);
+    assert.equal(
+      targetProbes,
+      1,
+      "transition performs one ADDIN startup probe",
+    );
+    assert.equal(
+      handle.status().paused,
+      true,
+      "owner stop pause remains closed",
+    );
+    const head = JSON.parse(
+      fs.readFileSync(path.join(f.dir, "physical-backend-head.json"), "utf8"),
+    ) as { identity: { path: string } };
+    const activeIdentity = JSON.parse(
+      fs.readFileSync(head.identity.path, "utf8"),
+    ) as P.Identity;
+    assert.deepEqual(
+      {
+        pid: activeIdentity.instance.pid,
+        birth: activeIdentity.instance.birth,
+        version: activeIdentity.instance.version,
+      },
+      targetIdentity,
+    );
+    assert.equal(activeIdentity.instance.activeCommand, "SelectCommand");
+    assert.deepEqual(activeIdentity.instance.documents, []);
+    assert.deepEqual(
+      fs.readFileSync(path.join(f.epoch.root, "instance.json")),
+      originalEpochIdentity,
+    );
+    assert.deepEqual(
+      fs.readFileSync(path.join(f.dir, "isolated-admission-epoch.json")),
+      originalPointer,
+    );
+    assert.deepEqual(
+      fs.readFileSync(path.join(f.dir, "queue-state.json")),
+      originalHistory,
+    );
+    assert.deepEqual(
+      Object.fromEntries(
+        Object.entries(handle.status().jobs).map(([id, job]) => [
+          id,
+          job.state,
+        ]),
+      ),
+      jobsAtTransition,
+    );
+
+    stdout = "";
+    assert.equal(
+      await queueCommand(
+        [
+          "resume",
+          "--client",
+          f.clientId,
+          "--request-id",
+          "resume-after-dead-sdk-transition",
+        ],
+        { ...cliDeps, loadConfig: () => ({ cfg: f.next }) },
+      ),
+      0,
+    );
+    assert.equal(handle.status().paused, false);
+    assert.equal(
+      targetProbes,
+      2,
+      "resume is a separate fresh ADDIN observation",
+    );
+    assert.deepEqual(
+      Object.fromEntries(
+        Object.entries(handle.status().jobs).map(([id, job]) => [
+          id,
+          job.state,
+        ]),
+      ),
+      jobsAtTransition,
+    );
+  },
+);
 
 function publishedSetup(t: TestContext) {
   const fixtureLoad = createRequire(

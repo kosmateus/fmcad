@@ -18,14 +18,18 @@ interface Identity {
 interface Epoch {
   root: string;
   currentInstance: object;
+  ownerClientId?: string;
 }
 interface State {
   jobs: Record<string, unknown>;
-  active?: unknown;
-  blocked?: unknown;
-  lease?: unknown;
-  localUnknown?: unknown;
-  controlBlocked?: unknown;
+  active?: unknown | undefined;
+  blocked?: unknown | undefined;
+  lease?: unknown | undefined;
+  localUnknown?: unknown | undefined;
+  controlBlocked?: unknown | undefined;
+  paused?: boolean | undefined;
+  controlGeneration?: number | undefined;
+  controlRequests?: Record<string, unknown> | undefined;
 }
 export interface RestartPorts {
   priorProcessAlive(value: object): boolean | null;
@@ -35,11 +39,19 @@ export interface SettledNormalRestart {
   epoch: Epoch;
   previous: Identity;
   previousOwner: Data;
-  ownerReference: RestartReference;
+  ownerReference?: RestartReference;
+  stopRequestId?: string;
+  stopAdminReference?: RestartReference;
+  stopReleaseReference?: RestartReference;
+  sourceIdentityReference?: RestartReference;
+  workerEvidence: RestartReference[];
   lifecycleReference: RestartReference;
+  startupReceiptReference: RestartReference;
   pointerReference: RestartReference;
   closedReference: RestartReference;
   jobs: Record<string, unknown>;
+  evidence: RestartReference[];
+  deadPredecessorRecord?: Data;
 }
 const hash = (bytes: Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
@@ -112,12 +124,17 @@ function workersGone(
   root: string,
   jobs: Record<string, unknown>,
   ports: RestartPorts,
-): void {
+): RestartReference[] {
+  const evidence: RestartReference[] = [];
   for (const id of Object.keys(jobs)) {
     const file = path.join(root, "jobs", id, "worker-identity.json");
-    if (fs.existsSync(file) && ports.priorProcessAlive(read(file)) !== false)
-      fail("A prior normal worker is alive or its death is unproven");
+    if (fs.existsSync(file)) {
+      if (ports.priorProcessAlive(read(file)) !== false)
+        fail("A prior normal worker is alive or its death is unproven");
+      evidence.push(reference(file));
+    }
   }
+  return evidence;
 }
 /** Resolves only a released normal epoch's authenticated process continuation.
  * The original pointer, qualification, closed scratch and old jobs never change. */
@@ -238,6 +255,8 @@ export function inspectSettledNormalRestart(
   previous: Identity,
   state: State,
   ports: RestartPorts,
+  stopRequestId?: string,
+  sourceIdentityFile?: string,
 ): SettledNormalRestart | undefined {
   normalRestartInstance(root, epoch, previous, state);
   const alive = ports.priorProcessAlive(previous.instance);
@@ -248,26 +267,93 @@ export function inspectSettledNormalRestart(
   } catch {
     return undefined;
   } // Preserve existing metadata-only pending/UNKNOWN recovery.
-  workersGone(root, state.jobs, ports);
-  const head = read(path.join(root, "broker-reclaimed-head.json"));
-  const ownerRef = object(head["ownerReference"]);
-  const file = ownerRef["path"];
+  const workerEvidence = workersGone(root, state.jobs, ports);
+  const sourceIdentityReference = sourceIdentityFile
+    ? reference(sourceIdentityFile)
+    : undefined;
   if (
-    typeof file !== "string" ||
-    path.dirname(file) !== root ||
-    !/^reclaimed-[a-f0-9-]{36}\.json$/.test(path.basename(file))
+    stopRequestId !== undefined &&
+    (!sourceIdentityReference ||
+      !same(read(sourceIdentityReference.path), previous))
   )
-    fail("Exact reclaimed normal owner evidence required");
-  const owner = checked(ownerRef, file);
-  if (
-    ports.priorProcessAlive(owner) !== false ||
-    typeof owner["nonce"] !== "string"
-  )
-    fail("Previous normal owner is alive or unproven");
-  const lifecycleFile = path.join(
-    root,
-    `broker-lifecycle-${String(owner["nonce"])}.json`,
-  );
+    fail("Exact source identity is required for a dead-SDK owner-stop proof");
+  const stopEvidence: RestartReference[] = [];
+  let owner: Data;
+  let ownerReference: RestartReference | undefined;
+  let stopAdminReference: RestartReference | undefined;
+  let stopReleaseReference: RestartReference | undefined;
+  let lifecycleFile: string;
+  if (stopRequestId !== undefined) {
+    if (
+      typeof stopRequestId !== "string" ||
+      stopRequestId.length === 0 ||
+      stopRequestId.length > 256
+    )
+      fail("Exact completed owner stop request required");
+    const digest = createHash("sha256").update(stopRequestId).digest("hex");
+    const adminFile = path.join(root, `console-admin-${digest}.json`);
+    const releaseFile = path.join(root, `console-release-${digest}.json`);
+    const admin = read(adminFile);
+    const release = read(releaseFile);
+    const ownerNonce = admin["instanceId"];
+    if (
+      admin["action"] !== "console-stop" ||
+      admin["clientId"] !== epoch.ownerClientId ||
+      admin["requestId"] !== stopRequestId ||
+      admin["status"] !== "accepted" ||
+      typeof ownerNonce !== "string" ||
+      !/^[a-f0-9-]{36}$/.test(ownerNonce) ||
+      object(admin["result"])["releaseFile"] !== releaseFile ||
+      release["terminal"] !== true ||
+      release["outcome"] !== "released" ||
+      release["requestId"] !== stopRequestId ||
+      release["instanceId"] !== ownerNonce ||
+      release["buildHash"] !== previous.buildHash
+    )
+      fail("Owner stop/release evidence differs from the predecessor");
+    const pause = object(state.controlRequests?.[stopRequestId]);
+    if (
+      state.paused !== true ||
+      pause["paused"] !== true ||
+      pause["generation"] !== state.controlGeneration ||
+      (admin["expectedGeneration"] !== state.controlGeneration &&
+        (admin["expectedGeneration"] as number) + 1 !== state.controlGeneration)
+    )
+      fail("Owner stop pause changed before the dead-SDK transition");
+    lifecycleFile = path.join(root, `broker-lifecycle-${ownerNonce}.json`);
+    const lifecycle = read(lifecycleFile);
+    owner = object(lifecycle["owner"]);
+    if (
+      owner["nonce"] !== ownerNonce ||
+      admin["buildHash"] !== previous.buildHash ||
+      ports.priorProcessAlive(owner) !== false
+    )
+      fail("Exact stopped broker owner is alive or unproven");
+    stopEvidence.push(reference(adminFile), reference(releaseFile));
+    stopAdminReference = reference(adminFile);
+    stopReleaseReference = reference(releaseFile);
+  } else {
+    const head = read(path.join(root, "broker-reclaimed-head.json"));
+    const ownerRef = object(head["ownerReference"]);
+    const file = ownerRef["path"];
+    if (
+      typeof file !== "string" ||
+      path.dirname(file) !== root ||
+      !/^reclaimed-[a-f0-9-]{36}\.json$/.test(path.basename(file))
+    )
+      fail("Exact reclaimed normal owner evidence required");
+    owner = checked(ownerRef, file);
+    ownerReference = reference(file);
+    if (
+      ports.priorProcessAlive(owner) !== false ||
+      typeof owner["nonce"] !== "string"
+    )
+      fail("Previous normal owner is alive or unproven");
+    lifecycleFile = path.join(
+      root,
+      `broker-lifecycle-${String(owner["nonce"])}.json`,
+    );
+  }
   const lifecycle = read(lifecycleFile);
   if (
     !same(lifecycle["owner"], owner) ||
@@ -297,19 +383,196 @@ export function inspectSettledNormalRestart(
     !sameProcess(object(receipt["instance"]), previous.instance)
   )
     fail("Previous normal startup receipt is unproven");
+  const lifecycleReference = reference(lifecycleFile);
+  const startupReceiptReference = reference(receiptFile);
+  const pointerReference = reference(
+    path.join(root, "isolated-admission-epoch.json"),
+  );
+  const closedReference = reference(path.join(epoch.root, "closed.json"));
+  const evidence = [
+    ...(ownerReference ? [ownerReference] : []),
+    ...(sourceIdentityReference ? [sourceIdentityReference] : []),
+    lifecycleReference,
+    startupReceiptReference,
+    pointerReference,
+    closedReference,
+    ...workerEvidence,
+    ...stopEvidence,
+  ];
+  const deadPredecessorRecord: Data | undefined =
+    stopRequestId === undefined
+      ? undefined
+      : {
+          kind: "settled-normal-dead-predecessor-v1",
+          previous,
+          previousOwner: owner,
+          sourceIdentityReference,
+          stopRequestId,
+          epoch: {
+            root: epoch.root,
+            epochId: read(path.join(root, "isolated-admission-epoch.json"))[
+              "epochId"
+            ],
+            currentInstance: epoch.currentInstance,
+            ownerClientId: epoch.ownerClientId,
+          },
+          evidence,
+          jobs: structuredClone(state.jobs),
+          workerEvidence,
+          queue: {
+            active: state.active ?? null,
+            blocked: state.blocked ?? null,
+            lease: state.lease ?? null,
+            localUnknown: state.localUnknown ?? null,
+            controlBlocked: state.controlBlocked ?? null,
+            paused: state.paused,
+            controlGeneration: state.controlGeneration,
+            controlRequest: state.controlRequests?.[stopRequestId] ?? null,
+          },
+        };
   return {
     root,
     epoch,
     previous,
     previousOwner: owner,
-    ownerReference: reference(file),
-    lifecycleReference: reference(lifecycleFile),
-    pointerReference: reference(
-      path.join(root, "isolated-admission-epoch.json"),
-    ),
-    closedReference: reference(path.join(epoch.root, "closed.json")),
+    ...(ownerReference ? { ownerReference } : {}),
+    ...(stopRequestId !== undefined
+      ? {
+          stopRequestId,
+          stopAdminReference: stopAdminReference!,
+          stopReleaseReference: stopReleaseReference!,
+          sourceIdentityReference: sourceIdentityReference!,
+          deadPredecessorRecord: deadPredecessorRecord!,
+        }
+      : {}),
+    workerEvidence,
+    lifecycleReference,
+    startupReceiptReference,
+    pointerReference,
+    closedReference,
     jobs: structuredClone(state.jobs),
+    evidence,
   };
+}
+
+/** Revalidates the exact dead predecessor at each transition fence. This is a
+ * proof-specific exception, not general permission to ignore epoch liveness. */
+export function assertSettledNormalRestartPredecessor(
+  proof: SettledNormalRestart,
+  state: State,
+  ports: RestartPorts,
+): void {
+  const { root, epoch } = proof;
+  settled(state);
+  if (
+    !same(proof.jobs, state.jobs) ||
+    ports.priorProcessAlive(proof.previous.instance) !== false ||
+    ports.priorProcessAlive(proof.previousOwner) !== false
+  )
+    fail("Normal restart predecessor changed or is not dead");
+  const pointer = checked(
+    proof.pointerReference,
+    path.join(root, "isolated-admission-epoch.json"),
+  );
+  if (
+    pointer["root"] !== epoch.root ||
+    !same(pointer["currentInstance"], epoch.currentInstance)
+  )
+    fail("Normal restart epoch pointer changed");
+  checked(proof.closedReference, path.join(epoch.root, "closed.json"));
+  const lifecycle = checked(
+    proof.lifecycleReference,
+    proof.lifecycleReference.path,
+  );
+  if (
+    !same(lifecycle["owner"], proof.previousOwner) ||
+    lifecycle["stage"] !== "ready" ||
+    lifecycle["buildHash"] !== proof.previous.buildHash ||
+    lifecycle["configHash"] !== proof.previous.configHash
+  )
+    fail("Normal restart predecessor owner or source changed");
+  if (proof.sourceIdentityReference) {
+    if (
+      !same(
+        checked(
+          proof.sourceIdentityReference,
+          proof.sourceIdentityReference.path,
+        ),
+        proof.previous,
+      )
+    )
+      fail("Normal restart source identity changed");
+  }
+  if (proof.ownerReference) {
+    const ownerFile = proof.ownerReference.path;
+    if (
+      path.dirname(ownerFile) !== root ||
+      !/^reclaimed-[a-f0-9-]{36}\.json$/.test(path.basename(ownerFile))
+    )
+      fail("Invalid reclaimed predecessor owner reference");
+    if (!same(checked(proof.ownerReference, ownerFile), proof.previousOwner))
+      fail("Reclaimed predecessor owner changed");
+  }
+  const startupReceiptFile = path.join(
+    root,
+    `broker-startup-${String(proof.previousOwner["nonce"])}.receipt.json`,
+  );
+  const startupReceipt = checked(
+    proof.startupReceiptReference,
+    startupReceiptFile,
+  );
+  const binding = object(lifecycle["binding"]);
+  if (
+    lifecycle["receipt"] !== startupReceiptFile ||
+    startupReceipt["terminal"] !== true ||
+    startupReceipt["outcome"] !== "succeeded" ||
+    !Object.entries(binding).every(([key, value]) =>
+      same(startupReceipt[key], value),
+    ) ||
+    !sameProcess(object(startupReceipt["instance"]), proof.previous.instance)
+  )
+    fail("Previous normal startup receipt changed");
+  const currentWorkers = workersGone(root, proof.jobs, ports);
+  if (!same(currentWorkers, proof.workerEvidence))
+    fail("Previous normal worker evidence changed");
+  for (const ref of proof.evidence) checked(ref, ref.path);
+  if (proof.stopRequestId !== undefined) {
+    const digest = createHash("sha256")
+      .update(proof.stopRequestId)
+      .digest("hex");
+    const adminFile = path.join(root, `console-admin-${digest}.json`);
+    const releaseFile = path.join(root, `console-release-${digest}.json`);
+    if (
+      !proof.stopAdminReference ||
+      !proof.stopReleaseReference ||
+      proof.stopAdminReference.path !== adminFile ||
+      proof.stopReleaseReference.path !== releaseFile
+    )
+      fail("Exact owner stop evidence is unavailable");
+    const admin = checked(proof.stopAdminReference, adminFile);
+    const release = checked(proof.stopReleaseReference, releaseFile);
+    const pause = object(state.controlRequests?.[proof.stopRequestId]);
+    if (
+      admin["action"] !== "console-stop" ||
+      admin["clientId"] !== epoch.ownerClientId ||
+      admin["requestId"] !== proof.stopRequestId ||
+      admin["instanceId"] !== proof.previousOwner["nonce"] ||
+      admin["buildHash"] !== proof.previous.buildHash ||
+      admin["status"] !== "accepted" ||
+      object(admin["result"])["releaseFile"] !== releaseFile ||
+      release["terminal"] !== true ||
+      release["outcome"] !== "released" ||
+      release["requestId"] !== proof.stopRequestId ||
+      release["instanceId"] !== proof.previousOwner["nonce"] ||
+      release["buildHash"] !== proof.previous.buildHash ||
+      state.paused !== true ||
+      pause["paused"] !== true ||
+      pause["generation"] !== state.controlGeneration ||
+      (admin["expectedGeneration"] !== state.controlGeneration &&
+        (admin["expectedGeneration"] as number) + 1 !== state.controlGeneration)
+    )
+      fail("Exact completed owner stop or durable pause changed");
+  }
 }
 
 export function commitSettledNormalRestart(
@@ -320,12 +583,9 @@ export function commitSettledNormalRestart(
   receiptFile: string,
   ports: RestartPorts,
 ): RestartReference {
-  const { root, epoch } = proof;
-  settled(state);
+  const { root } = proof;
+  assertSettledNormalRestartPredecessor(proof, state, ports);
   if (
-    !same(proof.jobs, state.jobs) ||
-    ports.priorProcessAlive(proof.previous.instance) !== false ||
-    ports.priorProcessAlive(proof.previousOwner) !== false ||
     ports.priorProcessAlive(current) !== true ||
     sameProcess(proof.previous.instance, current)
   )
@@ -352,14 +612,8 @@ export function commitSettledNormalRestart(
     fail(
       "Normal restart requires a complete idle observation and unmodified user documents",
     );
-  workersGone(root, proof.jobs, ports);
-  checked(proof.ownerReference, proof.ownerReference.path);
-  checked(proof.lifecycleReference, proof.lifecycleReference.path);
-  checked(
-    proof.pointerReference,
-    path.join(root, "isolated-admission-epoch.json"),
-  );
-  checked(proof.closedReference, path.join(epoch.root, "closed.json"));
+  if (!proof.ownerReference)
+    fail("Reclaimed owner evidence is required for a normal restart receipt");
   const nonce = binding["brokerNonce"];
   if (
     typeof nonce !== "string" ||

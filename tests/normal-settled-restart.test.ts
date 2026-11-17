@@ -22,6 +22,7 @@ function fixture(t: { after(fn: () => void): void }, reusedPid = false) {
   const epoch = {
     root: path.join(root, "epoch"),
     currentInstance: { pid: 100, birth: "old-sdk", version: "test" },
+    ownerClientId: "normal-owner-client",
   };
   fs.mkdirSync(epoch.root);
   const old = {
@@ -48,7 +49,13 @@ function fixture(t: { after(fn: () => void): void }, reusedPid = false) {
       { id: "job-" + index, state: "succeeded", immutable: index },
     ]),
   );
-  const state = { jobs, active: null as unknown };
+  const state = {
+    jobs,
+    active: null as unknown,
+    paused: false,
+    controlGeneration: 0,
+    controlRequests: {} as Record<string, unknown>,
+  };
   const write = (file: string, value: unknown) =>
     fs.writeFileSync(file, JSON.stringify(value));
   const ref = (file: string) => ({
@@ -120,6 +127,153 @@ function fixture(t: { after(fn: () => void): void }, reusedPid = false) {
     current,
     ports,
   };
+}
+
+function ownerStoppedFixture(t: { after(fn: () => void): void }) {
+  const f = fixture(t);
+  const stopRequestId = "owner-stop-after-dead-sdk";
+  const sourceIdentity = path.join(f.epoch.root, "instance.json");
+  f.write(sourceIdentity, f.old);
+  const currentEpoch = {
+    ...f.epoch,
+    ownerClientId: "normal-owner-client",
+  };
+  f.write(path.join(f.root, "isolated-admission-epoch.json"), currentEpoch);
+  f.state.paused = true;
+  f.state.controlGeneration = 8;
+  f.state.controlRequests[stopRequestId] = { paused: true, generation: 8 };
+  const digest = qi.hash(stopRequestId);
+  const adminFile = path.join(f.root, `console-admin-${digest}.json`);
+  const releaseFile = path.join(f.root, `console-release-${digest}.json`);
+  f.write(adminFile, {
+    action: "console-stop",
+    clientId: currentEpoch.ownerClientId,
+    requestId: stopRequestId,
+    instanceId: f.owner.nonce,
+    expectedGeneration: 7,
+    buildHash: f.old.buildHash,
+    status: "accepted",
+    result: { releaseFile },
+  });
+  f.write(releaseFile, {
+    terminal: true,
+    outcome: "released",
+    requestId: stopRequestId,
+    instanceId: f.owner.nonce,
+    buildHash: f.old.buildHash,
+  });
+  const ports = {
+    priorProcessAlive(value: object) {
+      return object(value)["birth"] === "new-sdk";
+    },
+  };
+  return { ...f, stopRequestId, sourceIdentity, adminFile, releaseFile, ports };
+}
+
+test("owner stop proof binds the dead SDK source and revalidates without writing normal-restart authority", (t) => {
+  const f = ownerStoppedFixture(t);
+  const proof = restart.inspectSettledNormalRestart(
+    f.root,
+    f.epoch,
+    f.old,
+    f.state,
+    f.ports,
+    f.stopRequestId,
+    f.sourceIdentity,
+  );
+  assert.ok(proof?.deadPredecessorRecord);
+  assert.equal(
+    object(proof.deadPredecessorRecord)["kind"],
+    "settled-normal-dead-predecessor-v1",
+  );
+  assert.doesNotThrow(() =>
+    restart.assertSettledNormalRestartPredecessor(proof, f.state, f.ports),
+  );
+  assert.equal(fs.existsSync(path.join(f.root, "normal-restarts")), false);
+});
+
+test("owner stop proof is invalidated by a changed pause generation or source identity", (t) => {
+  const f = ownerStoppedFixture(t);
+  const proof = restart.inspectSettledNormalRestart(
+    f.root,
+    f.epoch,
+    f.old,
+    f.state,
+    f.ports,
+    f.stopRequestId,
+    f.sourceIdentity,
+  );
+  assert.ok(proof);
+  f.state.controlGeneration++;
+  assert.throws(() =>
+    restart.assertSettledNormalRestartPredecessor(proof, f.state, f.ports),
+  );
+  f.state.controlGeneration--;
+  f.write(f.sourceIdentity, { ...f.old, buildHash: "different-source" });
+  assert.throws(() =>
+    restart.assertSettledNormalRestartPredecessor(proof, f.state, f.ports),
+  );
+});
+
+for (const mode of [
+  "sdk-alive",
+  "pending",
+  "unknown",
+  "broker-alive",
+  "wrong-stop",
+  "retained-release",
+]) {
+  test("owner stop dead-SDK proof refuses unsafe predecessor: " + mode, (t) => {
+    const f = ownerStoppedFixture(t);
+    if (mode === "pending") f.state.jobs["job-0"]!.state = "queued";
+    if (mode === "unknown")
+      f.state.jobs["job-0"]!.state = "needs_reconciliation";
+    if (mode === "retained-release")
+      f.write(f.releaseFile, {
+        terminal: true,
+        outcome: "retained",
+        requestId: f.stopRequestId,
+        instanceId: f.owner.nonce,
+        buildHash: f.old.buildHash,
+      });
+    const ports = {
+      priorProcessAlive(value: object) {
+        const birth = object(value)["birth"];
+        return (
+          (mode === "sdk-alive" && birth === "old-sdk") ||
+          (mode === "broker-alive" && birth === "old-owner") ||
+          birth === "new-sdk"
+        );
+      },
+    };
+    if (["sdk-alive", "pending", "unknown"].includes(mode)) {
+      assert.equal(
+        restart.inspectSettledNormalRestart(
+          f.root,
+          f.epoch,
+          f.old,
+          f.state,
+          ports,
+          f.stopRequestId,
+          f.sourceIdentity,
+        ),
+        undefined,
+      );
+    } else {
+      assert.throws(() =>
+        restart.inspectSettledNormalRestart(
+          f.root,
+          f.epoch,
+          f.old,
+          f.state,
+          ports,
+          mode === "wrong-stop" ? "other-owner-stop" : f.stopRequestId,
+          f.sourceIdentity,
+        ),
+      );
+    }
+    assert.equal(fs.existsSync(path.join(f.root, "normal-restarts")), false);
+  });
 }
 
 test("bounded local restart rejection preserves the actual reclaimed SDK owner", (t) => {

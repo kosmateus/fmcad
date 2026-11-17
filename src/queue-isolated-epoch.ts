@@ -426,19 +426,30 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
                 "Durable admission epoch pointer changed",
               );
             validate(pointer!);
-            const processIdentity =
-              normal && admissionMode() === "normal-multidocument"
-                ? (
-                    runtimeRequire(
-                      "./dist/node-adapters/broker-ipc/normal-restart",
-                    ) as typeof import("../packages/node-adapters/src/broker-ipc/normal-restart")
-                  ).normalRestartInstance(
-                    root,
-                    pointer!,
-                    read(path.join(pointer!.root, "instance.json")),
-                    current.data,
-                  )
-                : pointer!.currentInstance;
+            let processIdentity = pointer!.currentInstance;
+            if (normal && admissionMode() === "normal-multidocument") {
+              const backendScope = (
+                runtimeRequire("./queue-backend-transition") as {
+                  resolveBackendHead(
+                    root: string,
+                    readState: () => { epoch: Pointer | null },
+                  ): {
+                    current: { identity: Identity } | null;
+                  };
+                }
+              ).resolveBackendHead(root, () => ({ epoch: pointer }));
+              processIdentity = (backendScope.current?.identity.instance ??
+                (
+                  runtimeRequire(
+                    "./dist/node-adapters/broker-ipc/normal-restart",
+                  ) as typeof import("../packages/node-adapters/src/broker-ipc/normal-restart")
+                ).normalRestartInstance(
+                  root,
+                  pointer!,
+                  read(path.join(pointer!.root, "instance.json")),
+                  current.data,
+                )) as ProcessIdentity;
+            }
             if (
               priorProcessAlive(pointer!.originalInstance) !== false ||
               priorProcessAlive(processIdentity) !== true

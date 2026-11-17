@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { isDeepStrictEqual } from "node:util";
 const load = createRequire(__filename);
-const { hash } = load("./queue-instance") as {
+const { hash, priorProcessAlive } = load("./queue-instance") as {
   hash(value: string | Uint8Array): string;
+  priorProcessAlive(value: unknown): boolean | null;
 };
 const { readBytes } = load(
   "./dist/node-adapters/persistence/records",
@@ -557,6 +559,188 @@ export function successorBackendIdentity(
       (key) => process[key] === record(pointer.currentInstance)[key],
     );
   };
+  const validInstance = (value: unknown) => {
+    const process = record(value);
+    return (
+      Number.isSafeInteger(process["pid"]) &&
+      (process["pid"] as number) > 0 &&
+      typeof process["birth"] === "string" &&
+      !!process["birth"] &&
+      typeof process["version"] === "string" &&
+      !!process["version"]
+    );
+  };
+  const sameIdentity = (left: unknown, right: unknown) =>
+    ["pid", "birth", "version"].every(
+      (key) => record(left)[key] === record(right)[key],
+    );
+  const verifyDeadPredecessor = (
+    head: Record<string, unknown>,
+    destination: string,
+    refs: Reference[],
+  ): boolean => {
+    if (head["deadPredecessor"] === undefined) return false;
+    const proofRef = head["deadPredecessor"];
+    const proofFile = path.join(destination, "dead-predecessor.json");
+    if (
+      !referenceValue(proofRef) ||
+      proofRef.path !== proofFile ||
+      !refs.some(
+        (ref) => ref.path === proofFile && ref.sha256 === proofRef.sha256,
+      )
+    )
+      fail("Dead-SDK proof is not anchored by its backend transition");
+    const dead = record(read(proofRef, proofFile));
+    const previous = record(dead["previous"]);
+    const owner = record(dead["previousOwner"]);
+    const epoch = record(dead["epoch"]);
+    const queue = record(dead["queue"]);
+    const jobs = record(dead["jobs"]);
+    const evidence = dead["evidence"];
+    const sourceRef = dead["sourceIdentityReference"];
+    const requestId = dead["stopRequestId"];
+    if (
+      dead["kind"] !== "settled-normal-dead-predecessor-v1" ||
+      typeof requestId !== "string" ||
+      !requestId ||
+      !referenceValue(sourceRef) ||
+      !references(evidence) ||
+      !refs.some(
+        (ref) => ref.path === sourceRef.path && ref.sha256 === sourceRef.sha256,
+      ) ||
+      epoch["root"] !== pointer.root ||
+      epoch["epochId"] !== pointer.epochId ||
+      epoch["ownerClientId"] !== pointer.ownerClientId ||
+      !isDeepStrictEqual(epoch["currentInstance"], pointer.currentInstance) ||
+      previous["configHash"] !== head["previousConfigHash"] ||
+      typeof previous["buildHash"] !== "string" ||
+      !validInstance(previous["instance"]) ||
+      !sameProcess(previous["instance"]) ||
+      !isDeepStrictEqual(read(sourceRef, sourceRef.path), previous) ||
+      priorProcessAlive(previous["instance"]) !== false ||
+      priorProcessAlive(owner) !== false ||
+      typeof owner["nonce"] !== "string" ||
+      !/^[a-f0-9-]{36}$/.test(owner["nonce"])
+    )
+      fail("Dead-SDK source or epoch binding is invalid");
+    if (
+      queue["active"] !== null ||
+      queue["blocked"] !== null ||
+      queue["lease"] !== null ||
+      queue["localUnknown"] !== null ||
+      queue["controlBlocked"] !== null ||
+      queue["paused"] !== true ||
+      !Number.isSafeInteger(queue["controlGeneration"])
+    )
+      fail("Dead-SDK predecessor was not settled under an owner stop");
+    const controlRequest = record(queue["controlRequest"]);
+    if (
+      controlRequest["paused"] !== true ||
+      controlRequest["generation"] !== queue["controlGeneration"]
+    )
+      fail("Owner stop pause generation is invalid");
+    for (const job of Object.values(jobs))
+      if (
+        !["succeeded", "failed", "cancelled", "expired"].includes(
+          String(record(job)["state"]),
+        )
+      )
+        fail("Dead-SDK predecessor contains unfinished or UNKNOWN work");
+    const digest = hash(requestId);
+    const adminFile = path.join(root, `console-admin-${digest}.json`);
+    const releaseFile = path.join(root, `console-release-${digest}.json`);
+    const lifecycleFile = path.join(
+      root,
+      `broker-lifecycle-${String(owner["nonce"])}.json`,
+    );
+    const startupFile = path.join(
+      root,
+      `broker-startup-${String(owner["nonce"])}.receipt.json`,
+    );
+    const pointerFile = path.join(root, "isolated-admission-epoch.json");
+    const closedFile = path.join(pointer.root, "closed.json");
+    const admin = record(read(findEvidence(evidence, adminFile), adminFile));
+    const release = record(
+      read(findEvidence(evidence, releaseFile), releaseFile),
+    );
+    const lifecycle = record(
+      read(findEvidence(evidence, lifecycleFile), lifecycleFile),
+    );
+    const startup = record(
+      read(findEvidence(evidence, startupFile), startupFile),
+    );
+    read(findEvidence(evidence, pointerFile), pointerFile);
+    read(findEvidence(evidence, closedFile), closedFile);
+    const lifecycleOwner = record(lifecycle["owner"]);
+    const binding = record(lifecycle["binding"]);
+    const expectedGeneration = admin["expectedGeneration"];
+    const controlGeneration = queue["controlGeneration"];
+    if (
+      lifecycle["stage"] !== "ready" ||
+      lifecycle["buildHash"] !== previous["buildHash"] ||
+      lifecycle["configHash"] !== previous["configHash"] ||
+      lifecycleOwner["nonce"] !== owner["nonce"] ||
+      lifecycleOwner["pid"] !== owner["pid"] ||
+      lifecycleOwner["birth"] !== owner["birth"] ||
+      binding["brokerNonce"] !== owner["nonce"] ||
+      binding["ownerPid"] !== owner["pid"] ||
+      binding["ownerBirth"] !== owner["birth"] ||
+      binding["buildHash"] !== previous["buildHash"] ||
+      binding["stage"] !== "startup" ||
+      lifecycle["receipt"] !== startupFile ||
+      startup["terminal"] !== true ||
+      startup["outcome"] !== "succeeded" ||
+      !Object.entries(binding).every(([key, value]) =>
+        isDeepStrictEqual(startup[key], value),
+      ) ||
+      !sameIdentity(startup["instance"], previous["instance"]) ||
+      admin["action"] !== "console-stop" ||
+      admin["clientId"] !== pointer.ownerClientId ||
+      admin["requestId"] !== requestId ||
+      admin["instanceId"] !== owner["nonce"] ||
+      admin["buildHash"] !== previous["buildHash"] ||
+      admin["status"] !== "accepted" ||
+      record(admin["result"])["releaseFile"] !== releaseFile ||
+      release["terminal"] !== true ||
+      release["outcome"] !== "released" ||
+      release["requestId"] !== requestId ||
+      release["instanceId"] !== owner["nonce"] ||
+      release["buildHash"] !== previous["buildHash"] ||
+      (expectedGeneration !== controlGeneration &&
+        (expectedGeneration as number) + 1 !== controlGeneration)
+    )
+      fail("Owner stop, predecessor lifecycle or startup receipt is invalid");
+    const workerEvidence = dead["workerEvidence"];
+    if (!references(workerEvidence))
+      fail("Dead-SDK worker evidence is invalid");
+    for (const [id] of Object.entries(jobs)) {
+      const workerFile = path.join(root, "jobs", id, "worker-identity.json");
+      const ref = workerEvidence.find((entry) => entry.path === workerFile);
+      if (fs.existsSync(workerFile)) {
+        if (!ref || priorProcessAlive(read(ref, workerFile)) !== false)
+          fail("A predecessor worker is alive or its death is unproven");
+      } else if (ref) fail("Predecessor worker evidence disappeared");
+    }
+    for (const ref of evidence) read(ref, ref.path);
+    const transitionIdentity = record(
+      read(
+        head["identity"] as Reference,
+        path.join(destination, "instance.json"),
+      ),
+    );
+    if (
+      !validInstance(transitionIdentity["instance"]) ||
+      isDeepStrictEqual(transitionIdentity["instance"], previous["instance"])
+    )
+      fail("Dead-SDK transition did not bind a fresh target process");
+    return true;
+  };
+  const findEvidence = (value: unknown, expectedPath: string): Reference => {
+    if (!references(value)) fail("Dead-SDK source evidence list is invalid");
+    const entry = value.find((ref) => ref.path === expectedPath);
+    if (!entry) fail("Dead-SDK proof omits required source evidence");
+    return entry;
+  };
   const visit = (
     entry: Reference,
     depth: number,
@@ -606,6 +790,7 @@ export function successorBackendIdentity(
     const effective = record(
       read(head["identity"], path.join(destination, "instance.json")),
     );
+    const deadPredecessor = verifyDeadPredecessor(head, destination, refs);
     const previousConfig = record(head["previousConfig"]),
       nextConfig = record(head["nextConfig"]);
     if (
@@ -613,7 +798,8 @@ export function successorBackendIdentity(
       brokerConfigHash(nextConfig) !== head["nextConfigHash"] ||
       effective["configHash"] !== head["nextConfigHash"] ||
       !/^[a-f0-9]{64}$/.test(String(effective["buildHash"])) ||
-      !sameProcess(effective["instance"]) ||
+      !validInstance(effective["instance"]) ||
+      (!deadPredecessor && !sameProcess(effective["instance"])) ||
       !["addin", "mcp"].includes(String(previousConfig["backend"])) ||
       !["addin", "mcp"].includes(String(nextConfig["backend"])) ||
       previousConfig["backend"] === nextConfig["backend"] ||
@@ -686,8 +872,10 @@ export function successorBackendIdentity(
               root,
               `broker-startup-${String(receipt["brokerNonce"])}.receipt.json`,
             ) &&
-          sameProcess(receipt["instance"]) &&
-          sameProcess(receipt["auditExpectedInstance"])
+          sameIdentity(receipt["instance"], effective["instance"]) &&
+          (deadPredecessor
+            ? !Object.hasOwn(receipt, "auditExpectedInstance")
+            : sameProcess(receipt["auditExpectedInstance"]))
         );
       })
     )

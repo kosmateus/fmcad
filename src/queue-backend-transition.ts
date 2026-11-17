@@ -37,6 +37,13 @@ interface Head {
   predecessor: Reference[];
   observation: Reference[];
   identity: Reference;
+  deadPredecessor?: Reference;
+}
+export interface DeadPredecessorProof {
+  identity: P.Identity;
+  references: Reference[];
+  record: Record<string, unknown>;
+  assertValid(): void;
 }
 function fail(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
@@ -97,6 +104,32 @@ export function backendHead(
       "Transition head differs from immutable owner approval evidence",
     );
   for (const ref of head.predecessor) verify(ref);
+  if (head.deadPredecessor) {
+    const expected = path.join(destination, "dead-predecessor.json");
+    if (
+      head.deadPredecessor.path !== expected ||
+      !head.predecessor.some((ref) =>
+        isDeepStrictEqual(ref, head.deadPredecessor),
+      )
+    )
+      fail(
+        "BACKEND_TRANSITION_CHANGED",
+        "Dead predecessor proof is not anchored by the transition head",
+      );
+    const proof = readJson<Record<string, unknown>>(expected);
+    if (
+      proof["kind"] !== "settled-normal-dead-predecessor-v1" ||
+      !Array.isArray(proof["evidence"])
+    )
+      fail("BACKEND_TRANSITION_CHANGED", "Dead predecessor proof is invalid");
+    for (const ref of proof["evidence"] as Reference[]) {
+      if (!head.predecessor.some((entry) => isDeepStrictEqual(entry, ref)))
+        fail(
+          "BACKEND_TRANSITION_CHANGED",
+          "Dead predecessor source evidence is not anchored by the transition head",
+        );
+    }
+  }
   for (const ref of head.observation) verify(ref);
   verify(head.identity);
   const identity = readJson<P.Identity>(head.identity.path);
@@ -169,8 +202,11 @@ export function resolveBackendHead(
     );
   const head = readJson<Head>(file);
   const epoch = currentEpoch();
-  if (!epoch || head.epochId === epoch.epochId)
-    return { current: backendHead(dir), retired: null };
+  if (!epoch || head.epochId === epoch.epochId) {
+    const current = backendHead(dir);
+    if (epoch && current?.head.deadPredecessor) epochLineage(dir, epoch);
+    return { current, retired: null };
+  }
   const entry = reference(file);
   const previous = epochLineage(dir, epoch).find(
     (value) =>
@@ -206,6 +242,7 @@ export function resolveBackendHead(
 export function assertTransitionIdle(
   state: P.State,
   allowPaused = false,
+  deadPredecessor?: DeadPredecessorProof,
 ): void {
   const data = state.data;
   if (!state.epoch || state.admissionMode !== "normal-multidocument")
@@ -213,7 +250,8 @@ export function assertTransitionIdle(
       "BACKEND_TRANSITION_SCOPE",
       "Only a released normal multidocument epoch supports backend transition",
     );
-  state.assertEpoch(true);
+  if (deadPredecessor) deadPredecessor.assertValid();
+  else state.assertEpoch(true);
   if (
     (data.paused && !allowPaused) ||
     data.active ||
@@ -237,8 +275,10 @@ export function prepareBackendTransition(
   state: P.State,
   cfg: P.Config,
   approval: BackendTransitionApproval,
+  deadPredecessor?: DeadPredecessorProof,
 ): {
   identity: P.Identity;
+  deadPredecessor: boolean;
   assertEvidence(): void;
   commit(
     instance: P.Instance,
@@ -246,7 +286,7 @@ export function prepareBackendTransition(
     observationFiles?: string[],
   ): string;
 } {
-  assertTransitionIdle(state, true);
+  assertTransitionIdle(state, true, deadPredecessor);
   const epoch = state.epoch!;
   const clients = readJson<Record<string, string>>(
     path.join(dir, "clients.json"),
@@ -357,6 +397,11 @@ export function prepareBackendTransition(
   const identityFile =
     prior?.identityFile || path.join(epoch.root, "instance.json");
   const identity = readJson<P.Identity>(identityFile);
+  if (deadPredecessor && !isDeepStrictEqual(identity, deadPredecessor.identity))
+    fail(
+      "BACKEND_TRANSITION_UNPROVEN",
+      "Dead predecessor proof does not bind the exact durable source identity",
+    );
   if (
     stopEvidence.length &&
     (stopBuildHash !== identity.buildHash ||
@@ -403,11 +448,15 @@ export function prepareBackendTransition(
       : []),
   ].map(reference);
   predecessor.push(...stopEvidence);
+  if (deadPredecessor)
+    for (const ref of deadPredecessor.references)
+      if (!predecessor.some((entry) => isDeepStrictEqual(entry, ref)))
+        predecessor.push(ref);
   // The mutable head is escrowed under this transition before replacing it.
   const stable = predecessor.filter((ref) => ref.path !== headFile(dir));
   const ownerProof = reference(path.join(dir, "clients.json"));
   function assertEvidence() {
-    assertTransitionIdle(state, paused);
+    assertTransitionIdle(state, paused, deadPredecessor);
     if (
       state.data.paused !== paused ||
       state.data.controlGeneration !== generation
@@ -422,11 +471,14 @@ export function prepareBackendTransition(
   assertEvidence();
   return {
     identity,
+    deadPredecessor: !!deadPredecessor,
     assertEvidence,
     commit(instance, buildHash, observationFiles = []) {
       assertEvidence();
       if (
-        !sameInstance(identity.instance, instance) ||
+        (deadPredecessor
+          ? sameInstance(identity.instance, instance)
+          : !sameInstance(identity.instance, instance)) ||
         !idle(instance) ||
         !Array.isArray(instance.documents) ||
         instance.documents.some((document) => document.isModified !== false)
@@ -446,6 +498,13 @@ export function prepareBackendTransition(
         );
       }
       const nextIdentityFile = path.join(destination, "instance.json");
+      let deadPredecessorReference: Reference | undefined;
+      if (deadPredecessor) {
+        const proofFile = path.join(destination, "dead-predecessor.json");
+        durable(proofFile, deadPredecessor.record, true);
+        deadPredecessorReference = reference(proofFile);
+        stable.push(deadPredecessorReference);
+      }
       durable(
         nextIdentityFile,
         { configHash: brokerConfigHash(cfg), buildHash, instance },
@@ -465,6 +524,9 @@ export function prepareBackendTransition(
         previousConfig: previous,
         nextConfig: cfg,
         identity: reference(nextIdentityFile),
+        ...(deadPredecessorReference
+          ? { deadPredecessor: deadPredecessorReference }
+          : {}),
       };
       durable(path.join(destination, "transition.json"), head, true);
       durable(headFile(dir), head);

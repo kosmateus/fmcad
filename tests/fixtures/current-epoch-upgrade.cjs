@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-module.exports = function fixture(base, root) {
+module.exports = function fixture(base, root, { currentInstance, sourceConfig } = {}) {
   const api = require(root + '/src/queue-instance'), { QueueState } = require(root + '/src/queue-state');
   const { fileHash } = require(root + '/src/queue-atomic-migration-files');
   const dir = path.join(base, 'queue'); fs.mkdirSync(dir);
@@ -22,9 +22,9 @@ module.exports = function fixture(base, root) {
     reportPath: path.join(base, 'report'), reportFingerprint: 'd'.repeat(64), commandId: observation.payload.data.commandId,
     sessionNonce: observation.payload.data.sessionNonce, docId: 'old-doc-id' });
   q.next(); q._commit(d => { d.jobs[observer.id].state = 'needs_reconciliation'; d.paused = true; return null; });
-  const cfg = { backend: 'addin', url: 'http://never-send.invalid', headers: {}, tool: 'execute_python', transport: 'node',
+  const cfg = sourceConfig || { backend: 'addin', url: 'http://never-send.invalid', headers: {}, tool: 'execute_python', transport: 'node',
     protocolVersion: '2025-06-18', timeoutMs: 180000, routing: 'queue', queue: {} };
-  const current = { pid: process.pid, birth: api.processBirth(), version: 'fixture' }, historical = { pid: 2147483646, birth: 'dead:fixture', version: 'fixture' };
+  const current = currentInstance || { pid: process.pid, birth: api.processBirth(), version: 'fixture' }, historical = { pid: 2147483646, birth: 'dead:fixture', version: 'fixture' };
   api.durable(path.join(dir, 'instance.json'), { buildHash: 'historical', configHash: api.brokerConfigHash(cfg), instance: historical }, true);
   api.durable(path.join(dir, 'clients.json'), { [clientId]: tokenHash }, true);
   const epochId = randomUUID(), epochDir = path.join(dir, 'admission-epochs', epochId);

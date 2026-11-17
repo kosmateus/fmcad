@@ -4,10 +4,10 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
 // Synthetic metadata only. No broker/backend/SDK is constructed by this fixture.
-module.exports = function fixture(base, repo, { oldProcessAlive = false, inFlight = false } = {}) {
+module.exports = function fixture(base, repo, { oldProcessAlive = false, inFlight = false, currentInstance, sourceConfig } = {}) {
   const api = require(repo + '/src/queue-instance');
   const lineage = require(repo + '/src/queue-epoch-lineage');
-  const f = require('./current-epoch-upgrade.cjs')(base, repo);
+  const f = require('./current-epoch-upgrade.cjs')(base, repo, { currentInstance, sourceConfig });
   for (const name of ['recovery.lock', 'atomic-migration.lock']) fs.unlinkSync(path.join(f.dir, name));
   const previousState = require(repo + '/src/queue-isolated-epoch').openIsolatedEpoch(f.dir, { recover: false });
   previousState.pause(false, 'synthetic-before-process-loss');
