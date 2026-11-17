@@ -117,6 +117,242 @@ function setup(
 }
 
 test(
+  "public owner stop upgrades a settled ADDIN backend head without changing SDK or history",
+  { timeout: 30000 },
+  async (t) => {
+    const f = setup(undefined, "mcp", undefined, true);
+    const qi = load("./queue-instance") as {
+      hash(value: string): string;
+      buildHash(): string;
+    };
+    const home = process.env["XDG_STATE_HOME"];
+    process.env["XDG_STATE_HOME"] = f.root;
+    t.after(() => {
+      if (home === undefined) delete process.env["XDG_STATE_HOME"];
+      else process.env["XDG_STATE_HOME"] = home;
+    });
+    fs.mkdirSync(path.join(f.dir, "client-credentials"), { recursive: true });
+    fs.writeFileSync(
+      path.join(f.dir, "client-credentials", `${qi.hash(f.clientId)}.json`),
+      JSON.stringify({ clientId: f.clientId, clientToken: f.token }),
+      { mode: 0o600 },
+    );
+    const retained = [
+      path.join(f.dir, "instance.json"),
+      path.join(f.epoch.root, "instance.json"),
+      path.join(f.dir, "isolated-admission-epoch.json"),
+      path.join(f.dir, "queue-state.json"),
+    ].map((file) => ({ file, bytes: fs.readFileSync(file) }));
+    const observation = {
+      ...f.epoch.currentInstance,
+      activeCommand: "SelectCommand",
+      documents: [],
+    };
+    const owner = spawn(
+      process.execPath,
+      [
+        path.join(process.cwd(), "tests/fixtures/backend-transition-owner.cjs"),
+        runtimeRoot,
+        process.cwd(),
+        f.dir,
+        JSON.stringify(f.next),
+        JSON.stringify(observation),
+        JSON.stringify(f.approval),
+        "a".repeat(64),
+      ],
+      { stdio: ["ignore", "ignore", "pipe", "ipc"] },
+    );
+    let handle: Awaited<ReturnType<typeof serve>> | undefined;
+    t.after(async () => {
+      if (owner.exitCode === null && owner.signalCode === null) {
+        const exited = once(owner, "exit");
+        owner.kill("SIGKILL");
+        await exited;
+      }
+      if (handle) await handle.close();
+      fs.rmSync(f.root, { recursive: true, force: true });
+    });
+    await new Promise<void>((resolve, reject) => {
+      owner.on("message", (raw: unknown) => {
+        const m = raw as { kind: string; message?: string };
+        if (m.kind === "ready") resolve();
+        if (m.kind === "error") reject(new Error(m.message));
+      });
+      owner.once("exit", () => reject(new Error("Owner exited before ready")));
+    });
+    const originalHead = lifecycle.backendHead(f.dir)!;
+    const originalHeadBytes = fs.readFileSync(
+      path.join(f.dir, "physical-backend-head.json"),
+    );
+    const { queueCommand } = load("./dist/entrypoints/queue-cli") as {
+      queueCommand(argv: string[], deps: object): Promise<number>;
+    };
+    let stdout = "";
+    const deps = {
+      loadConfig: () => ({ cfg: f.next }),
+      stdout: {
+        write(text: string) {
+          stdout += text;
+        },
+      },
+      stderr: { write() {} },
+    };
+    const stopRequestId = "addin-runtime-owner-stop";
+    assert.equal(
+      await queueCommand(
+        ["stop", "--client", f.clientId, "--request-id", stopRequestId],
+        deps,
+      ),
+      0,
+    );
+    const releaseFile = String(JSON.parse(stdout)["releaseFile"]);
+    const deadline = Date.now() + 5000;
+    while (!fs.existsSync(releaseFile) && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.ok(fs.existsSync(releaseFile));
+    const exited = once(owner, "exit");
+    owner.send({ action: "exit" });
+    await exited;
+    const approval = {
+      ...f.approval,
+      requestId: "addin-runtime-upgrade",
+      previousConfig: f.next,
+      nextConfig: f.next,
+      stopRequestId,
+      nextBuildHash: qi.buildHash(),
+    };
+    const approvalFile = path.join(f.root, "runtime-approval.json");
+    fs.writeFileSync(approvalFile, JSON.stringify(approval), { mode: 0o600 });
+    let probes = 0;
+    const broker = load("./queue-broker") as { serve: typeof serve };
+    const originalServe = broker.serve;
+    t.after(() => {
+      broker.serve = originalServe;
+    });
+    broker.serve = async (config, options) => {
+      handle = await originalServe(config, {
+        ...options,
+        dir: f.dir,
+        nativePath: (file) => file,
+        createBackend: () => ({
+          server: { timeoutMs: 1000 },
+          _parse: (raw) => JSON.parse(raw) as P.Reply,
+          _openSession() {
+            throw new Error("Unexpected session");
+          },
+          listTools() {
+            throw new Error("Unexpected catalog");
+          },
+          executeUiGuardedScript() {
+            throw new Error("Unexpected script");
+          },
+          _post() {
+            throw new Error("Replay forbidden");
+          },
+          async callTool(args) {
+            probes++;
+            await assert.rejects(
+              originalServe(f.next, {
+                dir: f.dir,
+                confirmOwnership: true,
+                autoReconcile: false,
+                backendTransition: approval,
+                createBackend() {
+                  throw new Error(
+                    "Competing upgrade must not construct a physical client",
+                  );
+                },
+              }),
+            );
+            assert.ok(args.object?.script);
+            return {
+              failed: false,
+              text: runBoundInstanceProbe(args.object.script, observation).text,
+            };
+          },
+        }),
+      });
+      return handle;
+    };
+    for (const invalid of [
+      { ...approval, clientToken: "foreign" },
+      { ...approval, nextBuildHash: "b".repeat(64) },
+      { ...approval, nextBuildHash: undefined },
+      { ...approval, stopRequestId: undefined },
+      {
+        ...approval,
+        previousConfig: { ...f.next, url: "http://changed.invalid" },
+      },
+    ]) {
+      fs.writeFileSync(approvalFile, JSON.stringify(invalid));
+      await assert.rejects(
+        queueCommand(
+          [
+            "transition-backend",
+            "--backend-approval",
+            approvalFile,
+            "--confirm-ownership",
+            "true",
+          ],
+          deps,
+        ),
+      );
+      assert.equal(probes, 0, "invalid upgrade sends no SDK work");
+      assert.deepEqual(
+        fs.readFileSync(path.join(f.dir, "physical-backend-head.json")),
+        originalHeadBytes,
+      );
+    }
+    fs.writeFileSync(approvalFile, JSON.stringify(approval));
+    assert.equal(
+      await queueCommand(
+        [
+          "transition-backend",
+          "--backend-approval",
+          approvalFile,
+          "--confirm-ownership",
+          "true",
+        ],
+        deps,
+      ),
+      0,
+    );
+    assert.equal(probes, 1);
+    assert.ok(handle);
+    assert.equal(handle.status().paused, true);
+    const next = lifecycle.backendHead(f.dir)!;
+    assert.equal(next.identity.buildHash, qi.buildHash());
+    assert.equal(next.identity.configHash, originalHead.identity.configHash);
+    assert.deepEqual(next.identity.instance, originalHead.identity.instance);
+    for (const entry of retained)
+      assert.deepEqual(fs.readFileSync(entry.file), entry.bytes);
+    assert.deepEqual(
+      fs.readFileSync(
+        path.join(
+          f.dir,
+          "physical-backend-transitions",
+          approval.requestId,
+          "predecessor-head.json",
+        ),
+      ),
+      originalHeadBytes,
+    );
+    await handle.close();
+    handle = undefined;
+    await broker.serve(f.next, {
+      dir: f.dir,
+      confirmOwnership: true,
+      autoReconcile: false,
+    });
+    assert.equal(
+      probes,
+      1,
+      "matching upgraded head reopens without a new SDK probe",
+    );
+  },
+);
+
+test(
   "owner stop composes a settled dead MCP SDK restart with one ADDIN probe and separate resume",
   { timeout: 30000 },
   async (t) => {

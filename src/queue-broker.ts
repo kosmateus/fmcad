@@ -774,6 +774,22 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ),
     };
   }
+  function runtimeUpgradeProof(current: P.State, sourceFile: string): import("./queue-backend-transition").DeadPredecessorProof | undefined {
+    const approval = options.backendTransition;
+    if (!approval || approval.previousConfig.backend !== approval.nextConfig.backend) return undefined;
+    if (!effectiveBackend || !current.epoch || !approval.stopRequestId ||
+        approval.nextBuildHash !== codeHash || codeHash === effectiveBackend.identity.buildHash)
+      fail("BACKEND_TRANSITION_UNPROVEN", "Same-backend runtime upgrade requires the active head, owner stop and exact distinct target build");
+    const sourceIdentity = readJson<P.Identity>(sourceFile);
+    if (!same(sourceIdentity, effectiveBackend.identity))
+      fail("BACKEND_TRANSITION_CHANGED", "Runtime upgrade source differs from the verified backend head");
+    const proof = restartPort.inspectSettledRuntimeUpgrade(dir, current.epoch, sourceIdentity, current.data,
+      { priorProcessAlive }, approval.stopRequestId, sourceFile);
+    if (!proof?.runtimeUpgradeRecord)
+      fail("BACKEND_TRANSITION_UNPROVEN", "Runtime upgrade requires settled work and a proven stopped owner");
+    return { identity: sourceIdentity, references: proof.evidence, record: proof.runtimeUpgradeRecord,
+      assertValid: () => restartPort.assertSettledNormalRestartPredecessor(proof, current.data, { priorProcessAlive }) };
+  }
   if (options.backendTransition) {
     const preflightState = openIsolatedEpoch(dir, { recover: false });
     const preflightIdentityFile =
@@ -788,6 +804,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       pinned,
       options.backendTransition,
       deadPredecessorProof(preflightState, preflightIdentityFile),
+      runtimeUpgradeProof(preflightState, preflightIdentityFile),
     );
   }
   function assertBackendHeadOwner(
@@ -922,6 +939,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         pinned,
         options.backendTransition,
         deadPredecessor,
+        runtimeUpgradeProof(state, identityFile),
       )
     : null;
   if (options.startPaused === true)
@@ -1481,7 +1499,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "CONFIG_CHANGED",
         "Pinned backend configuration differs from the durable broker identity",
       );
-    if (state.epoch && state.admissionMode === "normal-multidocument" && oldIdentity && !successorRuntime && !backendTransition) {
+    if (state.epoch && state.admissionMode === "normal-multidocument" && oldIdentity && !successorRuntime && !backendTransition && !effectiveBackend) {
       try {
         normalRestart = normalRestartPort.inspectSettledNormalRestart(dir, state.epoch, oldIdentity, state.data, { priorProcessAlive });
       } catch (cause) {
@@ -1520,7 +1538,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         !oldIdentity ||
         oldIdentity.buildHash !== expectedBuild ||
         !sameInstance(oldIdentity.instance, normalAdmission
-          ? normalRestartPort.normalRestartInstance(dir, epoch, oldIdentity, state.data) as P.Instance
+          ? effectiveBackend?.identity.instance || normalRestartPort.normalRestartInstance(dir, epoch, oldIdentity, state.data) as P.Instance
           : epoch.currentInstance)
       )
         fail(

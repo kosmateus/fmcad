@@ -4,7 +4,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { createRequire } from "node:module";
-const load = createRequire(__filename);
+const load = createRequire(
+  process.env["FMCAD_TEST_RUNTIME"]
+    ? path.join(
+        process.env["FMCAD_TEST_RUNTIME"],
+        "tests/normal-settled-restart.test.js",
+      )
+    : __filename,
+);
 const restart = load(
   "../src/dist/node-adapters/broker-ipc/normal-restart",
 ) as typeof import("../packages/node-adapters/src/broker-ipc/normal-restart");
@@ -168,6 +175,120 @@ function ownerStoppedFixture(t: { after(fn: () => void): void }) {
     },
   };
   return { ...f, stopRequestId, sourceIdentity, adminFile, releaseFile, ports };
+}
+
+test("runtime upgrade binds live SDK, dead owner and settled source without restart authority", (t) => {
+  const f = ownerStoppedFixture(t);
+  const ports = {
+    priorProcessAlive: (value: object) => object(value)["birth"] === "old-sdk",
+  };
+  const proof = restart.inspectSettledRuntimeUpgrade(
+    f.root,
+    f.epoch,
+    f.old,
+    f.state,
+    ports,
+    f.stopRequestId,
+    f.sourceIdentity,
+  );
+  assert.ok(proof?.runtimeUpgradeRecord);
+  assert.equal(proof.deadPredecessorRecord, undefined);
+  assert.doesNotThrow(() =>
+    restart.assertSettledNormalRestartPredecessor(proof, f.state, ports),
+  );
+  assert.throws(
+    () =>
+      restart.assertSettledNormalRestartPredecessor(proof, f.state, {
+        priorProcessAlive: () => false,
+      }),
+    /not dead|changed/,
+  );
+  assert.throws(
+    () =>
+      restart.assertSettledNormalRestartPredecessor(proof, f.state, {
+        priorProcessAlive: () => true,
+      }),
+    /not dead|changed/,
+  );
+  f.state.controlGeneration++;
+  assert.throws(() =>
+    restart.assertSettledNormalRestartPredecessor(proof, f.state, ports),
+  );
+  f.state.controlGeneration--;
+  f.state.active = { id: "pending" };
+  assert.throws(() =>
+    restart.assertSettledNormalRestartPredecessor(proof, f.state, ports),
+  );
+  f.state.active = null;
+  f.write(f.sourceIdentity, { ...f.old, buildHash: "changed" });
+  assert.throws(() =>
+    restart.assertSettledNormalRestartPredecessor(proof, f.state, ports),
+  );
+  assert.equal(fs.existsSync(path.join(f.root, "normal-restarts")), false);
+});
+
+for (const mode of [
+  "unknown",
+  "worker-alive",
+  "sdk-dead",
+  "owner-alive",
+  "receipt-changed",
+] as const) {
+  test(`runtime upgrade rejects ${mode}`, (t) => {
+    const f = ownerStoppedFixture(t);
+    if (mode === "unknown")
+      Object.assign(f.state.jobs["job-0"]!, { state: "unknown" });
+    if (mode === "worker-alive") {
+      const directory = path.join(f.root, "jobs", "job-0");
+      fs.mkdirSync(directory, { recursive: true });
+      f.write(path.join(directory, "worker-identity.json"), {
+        pid: 400,
+        birth: "worker",
+      });
+    }
+    if (mode === "receipt-changed")
+      f.write(f.receipt, {
+        ...f.binding,
+        terminal: true,
+        outcome: "succeeded",
+        instance: { ...f.old.instance, birth: "foreign" },
+      });
+    const ports = {
+      priorProcessAlive(value: object) {
+        const birth = object(value)["birth"];
+        return (
+          (birth === "old-sdk" && mode !== "sdk-dead") ||
+          (birth === "old-owner" && mode === "owner-alive") ||
+          (birth === "worker" && mode === "worker-alive")
+        );
+      },
+    };
+    if (mode === "unknown")
+      assert.equal(
+        restart.inspectSettledRuntimeUpgrade(
+          f.root,
+          f.epoch,
+          f.old,
+          f.state,
+          ports,
+          f.stopRequestId,
+          f.sourceIdentity,
+        ),
+        undefined,
+      );
+    else
+      assert.throws(() =>
+        restart.inspectSettledRuntimeUpgrade(
+          f.root,
+          f.epoch,
+          f.old,
+          f.state,
+          ports,
+          f.stopRequestId,
+          f.sourceIdentity,
+        ),
+      );
+  });
 }
 
 test("owner stop proof binds the dead SDK source and revalidates without writing normal-restart authority", (t) => {

@@ -35,6 +35,8 @@ export interface RestartPorts {
   priorProcessAlive(value: object): boolean | null;
 }
 export interface SettledNormalRestart {
+  sameLiveInstance?: true;
+  runtimeUpgradeRecord?: Data;
   root: string;
   epoch: Epoch;
   previous: Identity;
@@ -258,10 +260,69 @@ export function inspectSettledNormalRestart(
   stopRequestId?: string,
   sourceIdentityFile?: string,
 ): SettledNormalRestart | undefined {
-  normalRestartInstance(root, epoch, previous, state);
+  return inspectSettledOwner(
+    root,
+    epoch,
+    previous,
+    state,
+    ports,
+    stopRequestId,
+    sourceIdentityFile,
+    false,
+  );
+}
+
+/** The caller must bind this source to the verified active backend head. This
+ * proof releases only the stopped broker, never the still-live SDK identity. */
+export function inspectSettledRuntimeUpgrade(
+  root: string,
+  epoch: Epoch,
+  previous: Identity,
+  state: State,
+  ports: RestartPorts,
+  stopRequestId: string,
+  sourceIdentityFile: string,
+): SettledNormalRestart | undefined {
+  return inspectSettledOwner(
+    root,
+    epoch,
+    previous,
+    state,
+    ports,
+    stopRequestId,
+    sourceIdentityFile,
+    true,
+  );
+}
+
+function inspectSettledOwner(
+  root: string,
+  epoch: Epoch,
+  previous: Identity,
+  state: State,
+  ports: RestartPorts,
+  stopRequestId: string | undefined,
+  sourceIdentityFile: string | undefined,
+  sameLiveInstance: boolean,
+): SettledNormalRestart | undefined {
+  if (!sameLiveInstance) normalRestartInstance(root, epoch, previous, state);
+  else {
+    const pointer = read(path.join(root, "isolated-admission-epoch.json"));
+    if (
+      !stopRequestId ||
+      !sourceIdentityFile ||
+      pointer["root"] !== epoch.root ||
+      !same(pointer["currentInstance"], epoch.currentInstance) ||
+      read(path.join(epoch.root, "closed.json"))["admissionMode"] !==
+        "normal-multidocument"
+    )
+      fail(
+        "Runtime upgrade requires the exact released normal epoch and owner stop",
+      );
+  }
   const alive = ports.priorProcessAlive(previous.instance);
-  if (alive === true) return undefined;
-  if (alive !== false) fail("Previous Fusion death is unproven");
+  if (!sameLiveInstance && alive === true) return undefined;
+  if (alive !== sameLiveInstance) fail("Previous Fusion lifecycle is unproven");
   try {
     settled(state);
   } catch {
@@ -403,7 +464,9 @@ export function inspectSettledNormalRestart(
     stopRequestId === undefined
       ? undefined
       : {
-          kind: "settled-normal-dead-predecessor-v1",
+          kind: sameLiveInstance
+            ? "settled-normal-runtime-upgrade-v1"
+            : "settled-normal-dead-predecessor-v1",
           previous,
           previousOwner: owner,
           sourceIdentityReference,
@@ -431,6 +494,12 @@ export function inspectSettledNormalRestart(
           },
         };
   return {
+    ...(sameLiveInstance
+      ? {
+          sameLiveInstance: true as const,
+          runtimeUpgradeRecord: deadPredecessorRecord!,
+        }
+      : {}),
     root,
     epoch,
     previous,
@@ -442,7 +511,9 @@ export function inspectSettledNormalRestart(
           stopAdminReference: stopAdminReference!,
           stopReleaseReference: stopReleaseReference!,
           sourceIdentityReference: sourceIdentityReference!,
-          deadPredecessorRecord: deadPredecessorRecord!,
+          ...(!sameLiveInstance
+            ? { deadPredecessorRecord: deadPredecessorRecord! }
+            : {}),
         }
       : {}),
     workerEvidence,
@@ -466,7 +537,8 @@ export function assertSettledNormalRestartPredecessor(
   settled(state);
   if (
     !same(proof.jobs, state.jobs) ||
-    ports.priorProcessAlive(proof.previous.instance) !== false ||
+    ports.priorProcessAlive(proof.previous.instance) !==
+      (proof.sameLiveInstance === true) ||
     ports.priorProcessAlive(proof.previousOwner) !== false
   )
     fail("Normal restart predecessor changed or is not dead");
@@ -583,6 +655,8 @@ export function commitSettledNormalRestart(
   receiptFile: string,
   ports: RestartPorts,
 ): RestartReference {
+  if (proof.sameLiveInstance)
+    fail("Runtime upgrade cannot authorize a replacement SDK");
   const { root } = proof;
   assertSettledNormalRestartPredecessor(proof, state, ports);
   if (

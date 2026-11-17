@@ -18,6 +18,7 @@ export interface BackendTransitionApproval {
   previousConfig: P.Config;
   nextConfig: P.Config;
   stopRequestId?: string;
+  nextBuildHash?: string;
 }
 interface Reference {
   path: string;
@@ -38,6 +39,7 @@ interface Head {
   observation: Reference[];
   identity: Reference;
   deadPredecessor?: Reference;
+  runtimeUpgrade?: Reference;
 }
 export interface DeadPredecessorProof {
   identity: P.Identity;
@@ -276,6 +278,7 @@ export function prepareBackendTransition(
   cfg: P.Config,
   approval: BackendTransitionApproval,
   deadPredecessor?: DeadPredecessorProof,
+  runtimeUpgrade?: DeadPredecessorProof,
 ): {
   identity: P.Identity;
   deadPredecessor: boolean;
@@ -287,6 +290,7 @@ export function prepareBackendTransition(
   ): string;
 } {
   assertTransitionIdle(state, true, deadPredecessor);
+  runtimeUpgrade?.assertValid();
   const epoch = state.epoch!;
   const clients = readJson<Record<string, string>>(
     path.join(dir, "clients.json"),
@@ -385,7 +389,13 @@ export function prepareBackendTransition(
     !previous ||
     !["addin", "mcp"].includes(String(previous.backend)) ||
     !["addin", "mcp"].includes(String(cfg.backend)) ||
-    previous.backend === cfg.backend ||
+    (previous.backend === cfg.backend &&
+      (!runtimeUpgrade ||
+        !paused ||
+        !isDeepStrictEqual(previous, cfg) ||
+        !/^[a-f0-9]{64}$/.test(approval.nextBuildHash || ""))) ||
+    (previous.backend !== cfg.backend &&
+      approval.nextBuildHash !== undefined) ||
     !isDeepStrictEqual(stripEndpoint(previous), stripEndpoint(cfg))
   )
     fail(
@@ -397,6 +407,18 @@ export function prepareBackendTransition(
   const identityFile =
     prior?.identityFile || path.join(epoch.root, "instance.json");
   const identity = readJson<P.Identity>(identityFile);
+  if (
+    runtimeUpgrade &&
+    (!prior ||
+      deadPredecessor ||
+      previous.backend !== cfg.backend ||
+      !isDeepStrictEqual(identity, runtimeUpgrade.identity) ||
+      approval.nextBuildHash === identity.buildHash)
+  )
+    fail(
+      "BACKEND_TRANSITION_UNPROVEN",
+      "Runtime upgrade requires the exact verified active head and a distinct approved build",
+    );
   if (deadPredecessor && !isDeepStrictEqual(identity, deadPredecessor.identity))
     fail(
       "BACKEND_TRANSITION_UNPROVEN",
@@ -448,6 +470,10 @@ export function prepareBackendTransition(
       : []),
   ].map(reference);
   predecessor.push(...stopEvidence);
+  if (runtimeUpgrade)
+    for (const ref of runtimeUpgrade.references)
+      if (!predecessor.some((entry) => isDeepStrictEqual(entry, ref)))
+        predecessor.push(ref);
   if (deadPredecessor)
     for (const ref of deadPredecessor.references)
       if (!predecessor.some((entry) => isDeepStrictEqual(entry, ref)))
@@ -456,6 +482,7 @@ export function prepareBackendTransition(
   const stable = predecessor.filter((ref) => ref.path !== headFile(dir));
   const ownerProof = reference(path.join(dir, "clients.json"));
   function assertEvidence() {
+    runtimeUpgrade?.assertValid();
     assertTransitionIdle(state, paused, deadPredecessor);
     if (
       state.data.paused !== paused ||
@@ -475,6 +502,11 @@ export function prepareBackendTransition(
     assertEvidence,
     commit(instance, buildHash, observationFiles = []) {
       assertEvidence();
+      if (runtimeUpgrade && buildHash !== approval.nextBuildHash)
+        fail(
+          "BUILD_CHANGED",
+          "Runtime upgrade build differs from the explicit approval",
+        );
       if (
         (deadPredecessor
           ? sameInstance(identity.instance, instance)
@@ -499,6 +531,13 @@ export function prepareBackendTransition(
       }
       const nextIdentityFile = path.join(destination, "instance.json");
       let deadPredecessorReference: Reference | undefined;
+      let runtimeUpgradeReference: Reference | undefined;
+      if (runtimeUpgrade) {
+        const proofFile = path.join(destination, "runtime-upgrade.json");
+        durable(proofFile, runtimeUpgrade.record, true);
+        runtimeUpgradeReference = reference(proofFile);
+        stable.push(runtimeUpgradeReference);
+      }
       if (deadPredecessor) {
         const proofFile = path.join(destination, "dead-predecessor.json");
         durable(proofFile, deadPredecessor.record, true);
@@ -524,6 +563,9 @@ export function prepareBackendTransition(
         previousConfig: previous,
         nextConfig: cfg,
         identity: reference(nextIdentityFile),
+        ...(runtimeUpgradeReference
+          ? { runtimeUpgrade: runtimeUpgradeReference }
+          : {}),
         ...(deadPredecessorReference
           ? { deadPredecessor: deadPredecessorReference }
           : {}),

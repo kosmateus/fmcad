@@ -108,6 +108,24 @@ and repeat the explicit lifecycle with a **new** request ID and reversed exact
 configurations. Do not restart Fusion, create a second queue directory, remove
 locks, or manually rewrite the head to change backends.
 
+### Upgrading the runtime while retaining the backend
+
+After a committed backend transition, use the same owner-stop and
+`queue transition-backend` lifecycle to install a separately qualified runtime.
+Set `previousConfig` and `nextConfig` to the **identical** fully loaded current
+configuration and add `nextBuildHash`, the exact new runtime fingerprint, to the
+private approval. Run the command from that new runtime with the existing
+backend. The target build must differ from the verified active head.
+
+This path requires the exact completed owner stop, a proven-dead predecessor
+broker and workers, settled current jobs, and the same still-live Fusion
+PID/birth/version. The normal-restart evidence reader checks the predecessor's
+bound startup receipt and lifecycle. A fresh target probe verifies the idle,
+clean SDK before publication. The old head is escrowed with its immutable
+identity and receipts; only the current head pointer advances. The owner must
+resume separately. No backend switch, SDK restart, historical job replay or
+ordinary-start build override is authorized by this procedure.
+
 ## One standalone MCP server
 
 Add one stdio MCP server named **`fmcad`** to the MCP client you use. This is
