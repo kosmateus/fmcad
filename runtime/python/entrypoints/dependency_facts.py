@@ -547,13 +547,23 @@ def removable_registration(node, functions):
     return None
 
 
-def inert_typeddict(node, aliases, shadowed):
+def inert_typeddict(node, aliases, shadowed, field_qualifiers=()):
     """Standard TypedDict fields without evaluated user-defined type operators."""
     def annotation(value, union=False):
         if isinstance(value, ast.Constant):
             return value.value is None or (not union and isinstance(value.value, str))
         if isinstance(value, ast.Name):
             return value.id in {'str', 'int', 'float', 'bool', 'bytes', 'object'} - shadowed
+        if isinstance(value, ast.Subscript) and isinstance(value.value, ast.Name):
+            name = value.value.id
+            if name in shadowed:
+                return False
+            if name in field_qualifiers:
+                return not union and annotation(value.slice)
+            if name in {'list', 'dict', 'tuple', 'set', 'frozenset', 'type'}:
+                arguments = value.slice.elts if isinstance(value.slice, ast.Tuple) else [value.slice]
+                return all(annotation(arg) or (isinstance(arg, ast.Constant) and arg.value is Ellipsis)
+                           for arg in arguments)
         if isinstance(value, ast.BinOp) and isinstance(value.op, ast.BitOr):
             return (annotation(value.left, True) and annotation(value.right, True)
                     and any(isinstance(part, ast.Name) for part in ast.walk(value)))
@@ -580,7 +590,7 @@ def shadowed_names(parsed):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 for alias in node.names:
                     if not (isinstance(node, ast.ImportFrom) and node.module == 'typing'
-                            and alias.name in ('TYPE_CHECKING', 'Protocol', 'TypedDict')):
+                            and alias.name in ('TYPE_CHECKING', 'Protocol', 'TypedDict', 'Required', 'NotRequired')):
                         names.add(alias.asname or alias.name.split('.')[0])
     return names
 
@@ -1105,6 +1115,9 @@ def analyse(request):
     typed_dicts = {alias.asname or alias.name for _, tree in parsed for node in tree.body
                   if isinstance(node, ast.ImportFrom) and node.module == 'typing'
                   for alias in node.names if alias.name == 'TypedDict'} - shadowed
+    field_qualifiers = {alias.asname or alias.name for _, tree in parsed for node in tree.body
+                        if isinstance(node, ast.ImportFrom) and node.module == 'typing'
+                        for alias in node.names if alias.name in ('Required', 'NotRequired')} - shadowed
     if shadowed.intersection(('property', 'staticmethod', 'classmethod')):
         protocols.clear()
     functions = {}
@@ -1200,7 +1213,7 @@ def analyse(request):
                                     start=min([node.lineno] + [d.lineno for d in getattr(node, 'decorator_list', [])]),
                                     end=node.end_lineno, column=node.col_offset,
                                     removable=typing_only or inert_binding(node, protocols, shadowed)
-                                    or inert_typeddict(node, typed_dicts, shadowed)
+                                    or inert_typeddict(node, typed_dicts, shadowed, field_qualifiers)
                                     or ('setattr' not in shadowed and inert_decorated_function(node, functions, wraps)))
             if registration is not None:
                 definition['registration'] = registration

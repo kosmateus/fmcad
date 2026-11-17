@@ -21,7 +21,7 @@ const { preparePythonArtifact, verifyPythonArtifact } = load(
 ) as typeof import("../packages/node-adapters/src/python/artifact");
 
 test("declaration selection preserves eager effects, captured predecessors and checked type dependencies", () => {
-  const source = `from typing import TYPE_CHECKING, TypedDict, Protocol
+  const source = `from typing import TYPE_CHECKING, TypedDict, Protocol, NotRequired as OptionalField, cast
 from functools import wraps
 events = []
 class CadContext:
@@ -32,6 +32,15 @@ class Unused:
     pass
 class UnusedRecord(TypedDict):
     value: float | None
+class UnusedCollectionRecord(TypedDict):
+    origin: list[float]
+    direction: list[float] | None
+    connects: list['ResultType'] | tuple['ResultType', ...]
+    rigid: OptionalField['ResultType']
+class ReferencedRecord(TypedDict):
+    values: list[float]
+class CastRecord(TypedDict):
+    values: list[float]
 class UnusedProtocol(Protocol):
     values: list['ResultType']
 if TYPE_CHECKING:
@@ -67,12 +76,19 @@ class Meta(type):
         return super().__new__(mcls, name, bases, namespace)
 class InitializedClass(metaclass=Meta):
     pass
+class FieldType:
+    def __class_getitem__(cls, item):
+        events.append('subscription')
+        return str
+class InitializedRecord(TypedDict):
+    value: FieldType[str]
 def previous():
     return 40
 captured = previous
 def previous():
     return 99
-def needed() -> 'ResultType':
+def needed(record: 'ReferencedRecord' = None) -> 'ResultType':
+    cast(CastRecord, record)
     return captured() + 2
 def unused():
     return 0
@@ -135,6 +151,8 @@ CAD_HANDLERS.update({'unused.🧪': unused, 'demo.op': needed,
     /class Unused|def unused\(|def unused_decorated\(/,
   );
   assert.match(selected, /class ResultType/);
+  assert.match(selected, /class ReferencedRecord/);
+  assert.match(selected, /class CastRecord/);
   assert.match(selected, /@decorate/);
   assert.match(selected, /value=default\(\)/);
   const executed = spawnSync(
@@ -145,11 +163,59 @@ CAD_HANDLERS.update({'unused.🧪': unused, 'demo.op': needed,
       "-B",
       "-c",
       selected +
-        "\nassert needed() == 42\nassert events == ['decorator', 'default', 'metaclass']\nassert set(CAD_HANDLERS) == {'demo.op'}\n",
+        "\nassert needed() == 42\nassert events == ['decorator', 'default', 'metaclass', 'subscription']\nassert set(CAD_HANDLERS) == {'demo.op'}\n",
     ],
     { encoding: "utf8" },
   );
   assert.equal(executed.status, 0, executed.stderr);
+});
+
+test("TypedDict annotation selection retains shadowed providers and evaluated type operators", () => {
+  for (const [setup, annotation] of [
+    ["list = factory()", "list[float]"],
+    ["from other import list", "list[float]"],
+    ["OptionalField = factory()", "OptionalField[str]"],
+    ["from other import NotRequired as OptionalField", "OptionalField[str]"],
+    ["", "list[UserType]"],
+    ["", "list[UserType | None]"],
+    ["", "list[make_type()]"],
+    ["", "'Forward' | None"],
+    ["", "OptionalField['Forward'] | None"],
+  ]) {
+    const source = `from typing import TypedDict, NotRequired as OptionalField
+${setup}
+class Record(TypedDict):
+    field: ${annotation}
+`;
+    const parsed = spawnSync(
+      "python3",
+      [
+        "-I",
+        "-S",
+        "-B",
+        path.join(root, "runtime/python/entrypoints/dependency_facts.py"),
+      ],
+      {
+        input: JSON.stringify({
+          source: "def run(context): pass",
+          generated: true,
+          units: [
+            { id: "core", filename: "core.py", source, dependencies: [] },
+          ],
+        }),
+        encoding: "utf8",
+      },
+    );
+    assert.equal(parsed.status, 0, parsed.stderr);
+    const result = JSON.parse(parsed.stdout) as {
+      facts: PythonSelectionFacts;
+    };
+    const record = result.facts.definitions?.find((entry) =>
+      entry.defines.includes("Record"),
+    );
+    assert.ok(record, source);
+    assert.equal(record.removable, false, source);
+  }
 });
 test("literal facade dispatch automatically closes transitive operation and source dependencies", () => {
   const units = selectRunBundle(
