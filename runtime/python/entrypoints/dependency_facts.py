@@ -1093,6 +1093,30 @@ def receiver_method_facts(parsed, user_tree, functions):
     return result
 
 
+def typing_guard_modules(parsed):
+    """Recognize qualified flags only while their module namespace cannot escape."""
+    aliases = {alias.asname or alias.name for _, tree in parsed for node in tree.body
+               if isinstance(node, ast.Import) for alias in node.names if alias.name == 'typing'}
+    for _, tree in parsed:
+        parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id in aliases:
+                parent = parents.get(node)
+                if not (isinstance(node.ctx, ast.Load) and isinstance(parent, ast.Attribute)
+                        and parent.value is node and parent.attr == 'TYPE_CHECKING'
+                        and isinstance(parent.ctx, ast.Load)):
+                    aliases.discard(node.id)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                aliases.discard(node.name)
+            if isinstance(node, ast.arg):
+                aliases.discard(node.arg)
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                for alias in node.names:
+                    if not (isinstance(node, ast.Import) and alias.name == 'typing'):
+                        aliases.discard(alias.asname or alias.name.split('.')[0])
+    return aliases
+
+
 def analyse(request):
     units, facade, spans, symbols, definitions, expansions = [], {}, {}, {}, [], []
     try:
@@ -1117,6 +1141,7 @@ def analyse(request):
                    for alias in node.names if alias.name == 'TYPE_CHECKING'}
     shadowed = shadowed_names(parsed)
     type_guards.difference_update(shadowed)
+    guard_modules = typing_guard_modules(parsed)
     protocols = {alias.asname or alias.name for _, tree in parsed for node in tree.body
                  if isinstance(node, ast.ImportFrom) and node.module == 'typing'
                  for alias in node.names if alias.name == 'Protocol'}
@@ -1185,7 +1210,9 @@ def analyse(request):
                 shell = copy.copy(node)
                 shell.body = [ast.Pass()]
                 statements.append((shell, False))
-                typing_only = isinstance(node.test, ast.Name) and node.test.id in type_guards
+                typing_only = ((isinstance(node.test, ast.Name) and node.test.id in type_guards)
+                               or (isinstance(node.test, ast.Attribute) and node.test.attr == 'TYPE_CHECKING'
+                                   and isinstance(node.test.value, ast.Name) and node.test.value.id in guard_modules))
                 statements.extend((child, typing_only) for child in node.body)
             else:
                 statements.append((node, False))

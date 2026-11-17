@@ -90,6 +90,25 @@ for (const [index, row] of direct.entries()) {
   );
 }
 
+test("public external insertion prunes unused qualified-guard types and retains its pin contract", () => {
+  const artifact = prepareCadScript(
+    "occurrence.insert_external",
+    catalog["occurrence.insert_external"]!.example,
+    admissionContext,
+  );
+  const rules = artifact.units.find(
+    (unit) => unit.id === "docio-externalization-rules",
+  );
+  assert.ok(rules);
+  for (const name of [
+    "_ExternalCopyIntent",
+    "_ExternalCopyEvent",
+    "_ExternalAttributeCollection",
+  ])
+    assert.doesNotMatch(rules.source, new RegExp(`class ${name}\\b`));
+  assert.match(rules.source, /class _ExternalPin\b/);
+});
+
 test(
   "public section.inspect prunes an unused exception while visibility.finalize retains its behavior",
   { timeout: 300_000 },

@@ -170,6 +170,59 @@ CAD_HANDLERS.update({'unused.🧪': unused, 'demo.op': needed,
   assert.equal(executed.status, 0, executed.stderr);
 });
 
+test("qualified typing guards require an unshadowed, unescaped module import", () => {
+  for (const [setup, guard, removable] of [
+    ["import typing", "typing.TYPE_CHECKING", true],
+    ["import typing as types", "types.TYPE_CHECKING", true],
+    ["import other as types", "types.TYPE_CHECKING", false],
+    ["import typing as types\ntypes = custom", "types.TYPE_CHECKING", false],
+    [
+      "import typing as types\ntypes.TYPE_CHECKING = True",
+      "types.TYPE_CHECKING",
+      false,
+    ],
+    ["import typing as types\nmutate(types)", "types.TYPE_CHECKING", false],
+    [
+      "import typing as types\nnamespace = types.__dict__",
+      "types.TYPE_CHECKING",
+      false,
+    ],
+    [
+      "import typing as types\nfrom other import value as types",
+      "types.TYPE_CHECKING",
+      false,
+    ],
+  ] as const) {
+    const source = `${setup}\nif ${guard}:\n    class Guarded(effect()):\n        pass\n`;
+    const parsed = spawnSync(
+      "python3",
+      [
+        "-I",
+        "-S",
+        "-B",
+        path.join(root, "runtime/python/entrypoints/dependency_facts.py"),
+      ],
+      {
+        input: JSON.stringify({
+          source: "def run(context): pass",
+          generated: true,
+          units: [
+            { id: "core", filename: "core.py", source, dependencies: [] },
+          ],
+        }),
+        encoding: "utf8",
+      },
+    );
+    assert.equal(parsed.status, 0, parsed.stderr);
+    const result = JSON.parse(parsed.stdout) as { facts: PythonSelectionFacts };
+    const declaration = result.facts.definitions?.find((entry) =>
+      entry.defines.includes("Guarded"),
+    );
+    assert.ok(declaration, source);
+    assert.equal(declaration.removable, removable, source);
+  }
+});
+
 test("TypedDict annotation selection retains shadowed providers and evaluated type operators", () => {
   for (const [setup, annotation] of [
     ["list = factory()", "list[float]"],
