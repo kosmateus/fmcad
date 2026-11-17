@@ -19,6 +19,13 @@ interface FixtureOptions {
 const load = createRequire(
   path.join(process.cwd(), "tests", "queue-version-transition.test.js"),
 );
+const { nativeReceipts } = load("./fixtures/native-source-envelope.cjs") as {
+  nativeReceipts(
+    source: string,
+    root: string,
+    instance: Record<string, unknown>,
+  ): Array<{ file: string; value: Record<string, unknown> }>;
+};
 
 // Explicit fake physical backends require only synthetic WSL path spelling.
 test.beforeEach((t) =>
@@ -116,8 +123,21 @@ function fixture(
       throw Error("No product RPC expected");
     },
     _parse: JSON.parse,
-    async callTool() {
+    async callTool(args: import("../src/queue-broker-ports").ToolArguments) {
       probes++;
+      assert.equal(args.featureType, "script");
+      assert.equal(args.object?.readOnly, true);
+      const script = args.object?.script;
+      assert.ok(typeof script === "string");
+      const receipts = nativeReceipts(script, dir, current);
+      assert.ok(
+        receipts.length > 0,
+        "probe must include a source-bound receipt",
+      );
+      for (const receipt of receipts) {
+        fs.mkdirSync(path.dirname(receipt.file), { recursive: true });
+        fs.writeFileSync(receipt.file, JSON.stringify(receipt.value));
+      }
       return {
         failed: false,
         text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(current),
@@ -148,10 +168,10 @@ test("explicit quiescent Fusion version transition records both identities befor
   try {
     assert.equal(f.probes(), 1);
     const identity = qi.readJson(path.join(f.dir, "instance.json")) as {
-      instance: { version: string };
+      instance: typeof f.current;
       configHash: string;
     };
-    assert.equal(identity.instance.version, "2706.1.14");
+    assert.deepEqual(identity.instance, f.current);
     assert.equal(identity.configHash, f.oldIdentity.configHash);
     const files = fs
       .readdirSync(f.dir)
@@ -179,7 +199,12 @@ test("version transition stays fenced without explicit confirmation or clean, qu
       options: { confirmVersionTransition: true },
       fixture: {
         currentDocuments: [
-          { id: "current-document", isSaved: false, isModified: true },
+          {
+            id: "current-document",
+            fileId: null,
+            isSaved: false,
+            isModified: true,
+          },
         ],
       },
     },
