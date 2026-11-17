@@ -9,7 +9,7 @@ import type { PreparedPythonArtifact } from "@fmcad/core";
 const load = createRequire(
   path.resolve("tests/python-public-source-selection.test.js"),
 );
-const { prepareCadScript } = load(
+const { prepareCadScript, catalog } = load(
   "../src/cad",
 ) as typeof import("../src/composition/cad-execution.js");
 const { prepareRunScript } = load(
@@ -110,6 +110,11 @@ const dynamicFallbackEncodedBytes = Buffer.byteLength(
 );
 
 const operations = [
+  {
+    operation: "assembly.sequence",
+    data: catalog["assembly.sequence"]!.example,
+    dependencies: ["sequence-application", "sequence-fusion"],
+  },
   {
     operation: "shape.box",
     data: { name: "Block 😀", width: "40 mm", depth: "20 mm", height: "10 mm" },
