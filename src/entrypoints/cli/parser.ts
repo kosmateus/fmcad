@@ -29,15 +29,17 @@ export function executionOptions(
     name: string,
     maximum: number,
     minimum: number,
+    flag = "--" + name,
   ): number | undefined => {
     const raw = opts[name];
     if (raw === undefined) return undefined;
     const value = Number(raw);
     if (!Number.isSafeInteger(value) || value < minimum || value > maximum)
-      throw new CliError("invalidOption", { flag: "--" + name });
+      throw new CliError("invalidOption", { flag });
     return value;
   };
   const queueTimeoutMs = number("queue-timeout", 2147483647, 1);
+  const executionTimeoutMs = number("timeoutMs", 2147483647, 1, "--timeout");
   const expectedRevision = number(
     "expected-revision",
     Number.MAX_SAFE_INTEGER,
@@ -75,6 +77,7 @@ export function executionOptions(
     throw new CliError("invalidOption", { flag: "--request-id" });
   return {
     ...(sequence ? { sequence } : {}),
+    ...(executionTimeoutMs === undefined ? {} : { executionTimeoutMs }),
     ...(queueTimeoutMs === undefined ? {} : { queueTimeoutMs }),
     ...(expectedRevision === undefined ? {} : { expectedRevision }),
   };

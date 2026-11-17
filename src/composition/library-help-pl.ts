@@ -282,7 +282,7 @@ export function detail(entry: RegisteredCommand): string {
     ? "\nTo wyszukiwanie jest lokalne: nie ładuje konfiguracji, nie używa backendu i nie odpytuje Fusion.\n\nOpcje wspólne:\n  --purpose TEXT  Opcjonalny cel polecenia; do 1000 znaków Unicode, bez znaków sterujących.\n"
     : "\nOpcje wspólne:\n  --purpose TEXT  Opcjonalny cel polecenia; do 1000 znaków Unicode, bez znaków sterujących.\n" +
       "  --config PATH  Plik konfiguracji. --backend mcp|addin  Jawny wybór serwera.\n" +
-      "  --timeout MS  Limit wykonania; w kolejce nie obejmuje oczekiwania.\n" +
+      "  --timeout MS  Dodatni całkowity limit aktywnego wykonania żądania; nie obejmuje oczekiwania w kolejce, nie zmienia konfiguracji brokera ani nie gwarantuje anulowania mutacji.\n" +
       "Brak automatycznego ponawiania ani przełączania backendu. Niepewny wynik uzgodnij przed kolejną operacją.\n";
   if (entry.kind === "queue")
     result +=

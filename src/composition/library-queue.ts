@@ -43,6 +43,13 @@ interface QueueClientPort {
 /** Pure admission metadata validation, shared by public execute and adapters. */
 export function validateExecuteOptions(options: ExecuteOptions): void {
   if (
+    options.executionTimeoutMs !== undefined &&
+    (!Number.isSafeInteger(options.executionTimeoutMs) ||
+      options.executionTimeoutMs < 1 ||
+      options.executionTimeoutMs > 2147483647)
+  )
+    throw new Error("Invalid execution timeout");
+  if (
     options.queueTimeoutMs !== undefined &&
     (!Number.isSafeInteger(options.queueTimeoutMs) ||
       options.queueTimeoutMs < 1 ||
@@ -126,6 +133,11 @@ export function createQueueSession(
         "configuration",
         identity.configHash,
         configHash,
+        {
+          backend: config.backend,
+          transport: config.transport,
+          tool: config.tool,
+        },
       );
     if (identity.buildHash !== current)
       throw new CompatibilityError("build", identity.buildHash, current);
@@ -375,7 +387,7 @@ export function createQueueSession(
         clientContext,
         backend: config.backend,
         inputFiles,
-        timeoutMs: config.timeoutMs,
+        timeoutMs: options.executionTimeoutMs ?? config.timeoutMs,
         buildHash: build,
       };
       const job = await (client.submitAdmitted

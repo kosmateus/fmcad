@@ -206,6 +206,8 @@ test("run duplicate pins, args conflicts and invalid outputs reject before confi
     ["file.py", "--out", "target", "--pretty", "TRUE"],
     ["--list", "--doc-id", "pin"],
     ["file.py", "--args", "{bad"],
+    ["file.py", "--timeout", "0"],
+    ["file.py", "--timeout", "1.5"],
   ]) {
     const h = harness();
     assert.equal(await main(["run", ...words], h.deps), 1, words.join(" "));
@@ -535,6 +537,8 @@ test("run preserves pinned typed request, input hashes, broker controls and exac
       "stable-run",
       "--client",
       "cli-test",
+      "--timeout",
+      "60000",
       "--sequence-action",
       "begin",
       "--sequence-mode",
@@ -590,6 +594,7 @@ test("run preserves pinned typed request, input hashes, broker controls and exac
   assert.equal(payload.purpose, "Inspect");
   assert.deepEqual(payload.request.args, { text: "Zażółć 🧩" });
   assert.equal(options.requestId, "stable-run");
+  assert.equal(options.executionTimeoutMs, 60000);
   assert.equal(options.sequence?.mode, "exclusive");
   assert.equal(options.queueTimeoutMs, 2500);
   assert.equal(options.expectedRevision, 0);
@@ -603,6 +608,14 @@ test("run preserves pinned typed request, input hashes, broker controls and exac
   const factory = captured[0];
   assert(factory && factory[0] === "factory");
   assert.equal(factory[1].context.documentId, "creation-id");
+  const configCall = h.calls.find((value) => value[0] === "config");
+  assert(configCall && configCall[0] === "config");
+  assert.equal(
+    typeof configCall[1] === "object" &&
+      configCall[1] !== null &&
+      Object.hasOwn(configCall[1], "timeoutMs"),
+    false,
+  );
   assert.ok(captured.some((value) => value[0] === "dispose"));
 });
 test("accepted receipt is observed until settled and session disposed once; lost admission is not retried", async () => {

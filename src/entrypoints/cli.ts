@@ -476,9 +476,11 @@ export async function main(
         }
       }
     }
+    const configOptions = { ...opts };
+    delete configOptions.timeoutMs;
     cfg = localOnly
       ? localConfig()
-      : (deps.loadConfig ?? configuration.loadConfig)(opts).cfg;
+      : (deps.loadConfig ?? configuration.loadConfig)(configOptions).cfg;
     assertBrokerRouting(cfg);
     const runContext = context(opts, payload);
     return await invocation.context.run(

@@ -255,6 +255,130 @@ test("unsupported public versions and direct routing reject before effects", asy
   await api.dispose();
 });
 
+test("public CLI document status requires an explicit config matching the broker", () => {
+  const directory = fs.mkdtempSync(
+    path.join(tmpdir(), "fmcad-public-status-config-"),
+  );
+  try {
+    child(`
+      const assert = require('node:assert/strict');
+      const fs = require('node:fs');
+      const path = require('node:path');
+      const directory = ${JSON.stringify(directory)};
+      const file = {
+        backend: 'addin',
+        backends: {
+          addin: {
+            url: 'http://127.0.0.1:8765/mcp',
+            headers: { Authorization: 'test-only-secret' },
+            timeoutMs: 180000,
+            tool: 'execute_python',
+            transport: 'windows-curl',
+            curlPath: '/mnt/c/Windows/System32/curl.exe',
+            protocolVersion: '2025-06-18',
+          },
+          mcp: {
+            url: 'http://127.0.0.1:27182/mcp',
+            headers: { Host: '127.0.0.1' },
+            timeoutMs: 180000,
+            tool: 'fusion_mcp_execute',
+            transport: 'windows-curl',
+            curlPath: '/mnt/c/Windows/System32/curl.exe',
+            protocolVersion: '2024-11-05',
+          },
+        },
+      };
+      fs.mkdirSync(directory, { recursive: true });
+      const configPath = path.join(directory, 'fmcad.json');
+      fs.writeFileSync(configPath, JSON.stringify(file));
+      for (const key of Object.keys(process.env))
+        if (key.startsWith('FMCAD_')) delete process.env[key];
+      process.env.HOME = path.join(directory, 'home');
+      process.env.XDG_CONFIG_HOME = path.join(directory, 'xdg-config');
+      process.env.XDG_STATE_HOME = path.join(directory, 'xdg-state');
+      process.env.FMCAD_BACKEND = 'mcp';
+      const { loadConfig } = require('./src/dist/composition/library-configuration');
+      const mcpConfig = loadConfig({ config: configPath }).cfg;
+      const { brokerConfigHash } = require('./src/queue-instance');
+      const configHash = brokerConfigHash(mcpConfig);
+      delete process.env.FMCAD_BACKEND;
+      const addinConfig = loadConfig({ config: configPath }).cfg;
+      process.env.FMCAD_BACKEND = 'mcp';
+      const otherConfigHash = brokerConfigHash(addinConfig);
+      assert.notEqual(configHash, otherConfigHash);
+
+      fs.writeFileSync(path.join(directory, 'broker.lock'), JSON.stringify({ protocol: 2 }));
+      fs.writeFileSync(path.join(directory, 'queue-state.json'), JSON.stringify({ version: 1 }));
+      fs.writeFileSync(path.join(directory, 'instance.json'), JSON.stringify({ buildHash: 'fixture-build', configHash }));
+
+      let registrations = 0;
+      const submissions = [];
+      class QueueClient {
+        async register(options) {
+          assert.equal(options.autoStart, false);
+          registrations++;
+        }
+        async call(action) {
+          assert.equal(action, 'control-status');
+          return { buildHash: 'fixture-build', unresolved: false, activeOperations: 0 };
+        }
+        async submitAdmitted(request) {
+          submissions.push(request);
+          return { id: 'status-job', requestId: request.requestId, state: 'succeeded' };
+        }
+        dispose() {}
+      }
+      const Module = require('node:module');
+      const originalLoad = Module._load;
+      Module._load = function(name, parent, ...args) {
+        if (name.endsWith('/queue-connection')) return { queueDirectory: () => directory };
+        if (name.endsWith('/queue-instance')) return { buildHash: () => 'fixture-build', brokerConfigHash };
+        if (name.endsWith('/queue-client')) return { QueueClient };
+        return originalLoad.call(this, name, parent, ...args);
+      };
+
+      const { main } = require('./dist/src/dist/entrypoints/cli');
+      async function invoke(backend, timeoutMs) {
+        if (backend) process.env.FMCAD_BACKEND = backend;
+        else delete process.env.FMCAD_BACKEND;
+        let stdout = '', stderr = '';
+        const args = ['doc', 'status', '--doc', 'Bez nazwy', '--config', configPath, '--json'];
+        if (timeoutMs !== undefined) args.push('--timeout', String(timeoutMs));
+        const code = await main(args, {
+          cwd: process.cwd(),
+          stdout: { write(text) { stdout += text; } },
+          stderr: { write(text) { stderr += text; } },
+          setExitCode() {},
+        });
+        return { code, stdout, stderr };
+      }
+
+      (async () => {
+        const accepted = await invoke('mcp', 60000);
+        assert.equal(accepted.code, 0, accepted.stderr);
+        assert.equal(registrations, 1);
+        assert.equal(submissions.length, 1);
+        assert.equal(submissions[0].backend, 'mcp');
+        assert.equal(submissions[0].timeoutMs, 60000);
+        assert.equal(submissions[0].payload.invocation.operation, 'document.status');
+
+        const rejected = await invoke(undefined, undefined);
+        assert.equal(rejected.code, 1);
+        assert.ok(rejected.stderr.includes('Unsupported fmcad configuration contract (FMCAD_CONFIGURATION_MISMATCH)'));
+        assert.match(rejected.stderr, new RegExp('broker configHash=' + configHash));
+        assert.match(rejected.stderr, new RegExp('client configHash=' + otherConfigHash));
+        assert.match(rejected.stderr, /client backend=addin, transport=windows-curl, tool=execute_python/);
+        assert.doesNotMatch(rejected.stderr, /test-only-secret/);
+        assert.doesNotMatch(rejected.stderr, /FMCAD_QUEUE_REQUEST|FMCAD_QUEUE_RESULT/);
+        assert.equal(registrations, 1, 'mismatched config is rejected before client registration');
+        assert.equal(submissions.length, 1, 'mismatched config creates no admission or receipt');
+      })().catch(error => { console.error(error); process.exitCode = 1; });
+    `);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("broker composition fences compatibility before credentials, submits typed DTO once and never retries", () => {
   const directory = fs.mkdtempSync(path.join(tmpdir(), "fmcad-api-"));
   try {

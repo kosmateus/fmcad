@@ -796,7 +796,7 @@ async function runQueued(
       kind: "command",
       argv: pinned,
       cwd: process.cwd(),
-      timeoutMs: cfg.timeoutMs,
+      timeoutMs: Number(opts["timeoutMs"] ?? cfg.timeoutMs),
       backend: cfg.backend,
       inputFiles: inputFiles(pinned, process.cwd(), { config: opts["config"] }),
       buildHash: instance().buildHash(),

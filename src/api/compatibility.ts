@@ -9,16 +9,35 @@ export const contractVersions: ContractVersions = Object.freeze({
   controlApi: 1,
 });
 
+interface ConfigurationMismatchDetails {
+  readonly backend: string;
+  readonly transport: string;
+  readonly tool: string;
+}
+
+function safeHash(value: unknown): string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value)
+    ? value
+    : "<unavailable>";
+}
+
+function safeLabel(value: string): string {
+  return /^[A-Za-z0-9_.-]{1,128}$/.test(value) ? value : "<redacted>";
+}
+
 export class CompatibilityError extends Error {
   readonly code = "FMCAD_INCOMPATIBLE_CONTRACT";
   constructor(
     readonly boundary: string,
     readonly received: unknown,
     readonly supported: unknown,
+    configuration?: ConfigurationMismatchDetails,
   ) {
-    super(
-      `Unsupported fmcad ${boundary} contract; upgrade client and broker together before retrying`,
-    );
+    const message =
+      boundary === "configuration" && configuration
+        ? `Unsupported fmcad configuration contract (FMCAD_CONFIGURATION_MISMATCH): broker configHash=${safeHash(received)} does not match client configHash=${safeHash(supported)}; client backend=${safeLabel(configuration.backend)}, transport=${safeLabel(configuration.transport)}, tool=${safeLabel(configuration.tool)}. Broker backend, transport and tool are not stored in its identity; use the same connection settings as the running broker.`
+        : `Unsupported fmcad ${boundary} contract; upgrade client and broker together before retrying`;
+    super(message);
     this.name = "CompatibilityError";
   }
 }
