@@ -223,6 +223,7 @@
     "tests/sketch-geometry-proof-bundle.test.ts",
     "tests/reference.test.ts",
     "tests/library-api-broker.test.ts",
+    "tests/library-mcp-queue-lookup.test.ts",
     "tests/engineering-fit.test.ts",
     "tests/engineering-thermal.test.ts",
     "tests/engineering-mass.test.ts",
