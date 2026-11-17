@@ -4,11 +4,20 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { createRequire } = require("node:module");
 
-const [runtimeRoot, repoRoot, dir, sourceJson, observationJson] =
-  process.argv.slice(2);
+const [
+  runtimeRoot,
+  repoRoot,
+  dir,
+  sourceJson,
+  observationJson,
+  approvalJson,
+  fixtureBuild,
+] = process.argv.slice(2);
 const runtimeRequire = createRequire(
   path.join(runtimeRoot, "src/queue-broker.js"),
 );
+if (fixtureBuild)
+  runtimeRequire("./queue-instance").buildHash = () => fixtureBuild;
 const { serve } = runtimeRequire("./queue-broker");
 const { probe } = runtimeRequire("./queue-instance");
 const { runBoundInstanceProbe } = require(
@@ -59,7 +68,7 @@ async function start(config, backendTransition, kind) {
     ...options,
     ...(backendTransition ? { backendTransition } : {}),
   });
-  if (kind === "ready") {
+  if (kind === "ready" && !backendTransition) {
     const marker = JSON.parse(
       fs.readFileSync(path.join(dir, "broker.lock"), "utf8"),
     );
@@ -100,4 +109,8 @@ function report(error) {
   if (process.connected) process.disconnect();
 }
 
-void start(source, undefined, "ready").catch(report);
+void start(
+  source,
+  approvalJson ? JSON.parse(approvalJson) : undefined,
+  "ready",
+).catch(report);
