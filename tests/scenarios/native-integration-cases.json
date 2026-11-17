@@ -19,37 +19,37 @@
       "id": "atomic-isolation-0",
       "source": "tests/integration/atomic-isolation.test.js",
       "title": "S6 wrong/absent document is rejected with no wrong-target mutation",
-      "sourceSha256": "8942db7fdc586319f5c0def1067ed999925c8373bae7c72bc171bf6a5d3a2b1a"
+      "sourceSha256": "057d1e7373b59567c190287ae448e2105da9fc71d9190fa823238f37c0e990af"
     },
     {
       "id": "atomic-isolation-1",
       "source": "tests/integration/atomic-isolation.test.js",
       "title": "S6 active open command: atomic batch is refused without mutating the document",
-      "sourceSha256": "8942db7fdc586319f5c0def1067ed999925c8373bae7c72bc171bf6a5d3a2b1a"
+      "sourceSha256": "057d1e7373b59567c190287ae448e2105da9fc71d9190fa823238f37c0e990af"
     },
     {
       "id": "atomic-isolation-2",
       "source": "tests/integration/atomic-isolation.test.js",
       "title": "S7 transport timeout stays unknown with no replay and no second mutation",
-      "sourceSha256": "8942db7fdc586319f5c0def1067ed999925c8373bae7c72bc171bf6a5d3a2b1a"
+      "sourceSha256": "057d1e7373b59567c190287ae448e2105da9fc71d9190fa823238f37c0e990af"
     },
     {
       "id": "atomic-isolation-3",
       "source": "tests/integration/atomic-isolation.test.js",
       "title": "S8 pre-existing run.lock blocks a mutating batch (queue/conflict)",
-      "sourceSha256": "8942db7fdc586319f5c0def1067ed999925c8373bae7c72bc171bf6a5d3a2b1a"
+      "sourceSha256": "057d1e7373b59567c190287ae448e2105da9fc71d9190fa823238f37c0e990af"
     },
     {
       "id": "atomic-isolation-4",
       "source": "tests/integration/atomic-isolation.test.js",
       "title": "S8 same runId run twice is refused (no mix, no replay)",
-      "sourceSha256": "8942db7fdc586319f5c0def1067ed999925c8373bae7c72bc171bf6a5d3a2b1a"
+      "sourceSha256": "057d1e7373b59567c190287ae448e2105da9fc71d9190fa823238f37c0e990af"
     },
     {
       "id": "atomic-isolation-5",
       "source": "tests/integration/atomic-isolation.test.js",
       "title": "S9 external-effect operations are rejected before any mutation",
-      "sourceSha256": "8942db7fdc586319f5c0def1067ed999925c8373bae7c72bc171bf6a5d3a2b1a"
+      "sourceSha256": "057d1e7373b59567c190287ae448e2105da9fc71d9190fa823238f37c0e990af"
     },
     {
       "id": "atomic-transaction-0",
@@ -1345,109 +1345,109 @@
       "id": "gm36-explode-animation-0",
       "source": "tests/integration/gm36-explode-animation.test.js",
       "title": "G36-01: explode.plan yields a deterministic cock/release/return schedule over instances",
-      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+      "sourceSha256": "09ba5e867be6b8547312aa9e33849e8286ddf9e8fe7bd3502208db9d524e90b4"
     },
     {
       "id": "gm36-explode-animation-1",
       "source": "tests/integration/gm36-explode-animation.test.js",
       "title": "G36-02: explode.render moves and restores occurrence transforms with trails/balloons",
-      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+      "sourceSha256": "09ba5e867be6b8547312aa9e33849e8286ddf9e8fe7bd3502208db9d524e90b4"
     },
     {
       "id": "gm36-explode-animation-2",
       "source": "tests/integration/gm36-explode-animation.test.js",
       "title": "G36-03: animation.sequence plans camera/visibility/section tracks into a manifest",
-      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+      "sourceSha256": "09ba5e867be6b8547312aa9e33849e8286ddf9e8fe7bd3502208db9d524e90b4"
     },
     {
       "id": "gm36-explode-animation-3",
       "source": "tests/integration/gm36-explode-animation.test.js",
       "title": "G36-04: animation.sequence samples a joint track without authoring native actions",
-      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+      "sourceSha256": "09ba5e867be6b8547312aa9e33849e8286ddf9e8fe7bd3502208db9d524e90b4"
     },
     {
       "id": "gm36-explode-animation-4",
       "source": "tests/integration/gm36-explode-animation.test.js",
       "title": "G36-05: animation.capabilities reports no native action/video authoring",
-      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+      "sourceSha256": "09ba5e867be6b8547312aa9e33849e8286ddf9e8fe7bd3502208db9d524e90b4"
     },
     {
       "id": "gm36-explode-animation-5",
       "source": "tests/integration/gm36-explode-animation.test.js",
       "title": "G36-06: animation.export without a declared encoder is blocked, not a fake film",
-      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+      "sourceSha256": "09ba5e867be6b8547312aa9e33849e8286ddf9e8fe7bd3502208db9d524e90b4"
     },
     {
       "id": "gm36-explode-animation-6",
       "source": "tests/integration/gm36-explode-animation.test.js",
       "title": "G36-07: explode.plan timing and easing are deterministic (frameCount and phase slices)",
-      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+      "sourceSha256": "09ba5e867be6b8547312aa9e33849e8286ddf9e8fe7bd3502208db9d524e90b4"
     },
     {
       "id": "gm36-explode-animation-7",
       "source": "tests/integration/gm36-explode-animation.test.js",
       "title": "G36-08: explode.render restore:false leaves the final exploded pose",
-      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441"
+      "sourceSha256": "09ba5e867be6b8547312aa9e33849e8286ddf9e8fe7bd3502208db9d524e90b4"
     },
     {
       "id": "gm37-checking-evidence-0",
       "source": "tests/integration/gm37-checking-evidence.test.js",
       "title": "G37-01: check.set evaluates scalar/vector/count/boolean predicates distinctly",
-      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+      "sourceSha256": "edda8c4740259236a2f638e10ea7e0550e2799dd0ada00f7dbd0dfde352ccfa6"
     },
     {
       "id": "gm37-checking-evidence-1",
       "source": "tests/integration/gm37-checking-evidence.test.js",
       "title": "G37-02: check.set scalar predicate reuses declared-value comparison with tolerance",
-      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+      "sourceSha256": "edda8c4740259236a2f638e10ea7e0550e2799dd0ada00f7dbd0dfde352ccfa6"
     },
     {
       "id": "gm37-checking-evidence-2",
       "source": "tests/integration/gm37-checking-evidence.test.js",
       "title": "G37-03: check.set continues after an ordinary fail and skips dependents of an error",
-      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+      "sourceSha256": "edda8c4740259236a2f638e10ea7e0550e2799dd0ada00f7dbd0dfde352ccfa6"
     },
     {
       "id": "gm37-checking-evidence-3",
       "source": "tests/integration/gm37-checking-evidence.test.js",
       "title": "G37-04: missing data and stale evidence are distinct from fail",
-      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+      "sourceSha256": "edda8c4740259236a2f638e10ea7e0550e2799dd0ada00f7dbd0dfde352ccfa6"
     },
     {
       "id": "gm37-checking-evidence-4",
       "source": "tests/integration/gm37-checking-evidence.test.js",
       "title": "G37-05: evidence.package reports manifest, completeness and stale items",
-      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+      "sourceSha256": "edda8c4740259236a2f638e10ea7e0550e2799dd0ada00f7dbd0dfde352ccfa6"
     },
     {
       "id": "gm37-checking-evidence-5",
       "source": "tests/integration/gm37-checking-evidence.test.js",
       "title": "G37-06: evidence.check marks missing required evidence unresolved, not failed",
-      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+      "sourceSha256": "edda8c4740259236a2f638e10ea7e0550e2799dd0ada00f7dbd0dfde352ccfa6"
     },
     {
       "id": "gm37-checking-evidence-6",
       "source": "tests/integration/gm37-checking-evidence.test.js",
       "title": "G37-07: deliver composes checks and evidence into an acceptance manifest",
-      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+      "sourceSha256": "edda8c4740259236a2f638e10ea7e0550e2799dd0ada00f7dbd0dfde352ccfa6"
     },
     {
       "id": "gm37-checking-evidence-7",
       "source": "tests/integration/gm37-checking-evidence.test.js",
       "title": "G37-08: an empty required checklist is an error, never acceptance",
-      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+      "sourceSha256": "edda8c4740259236a2f638e10ea7e0550e2799dd0ada00f7dbd0dfde352ccfa6"
     },
     {
       "id": "gm37-checking-evidence-8",
       "source": "tests/integration/gm37-checking-evidence.test.js",
       "title": "G37-09: a stale supplier approval blocks delivery (G7/G8 evidence required)",
-      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+      "sourceSha256": "edda8c4740259236a2f638e10ea7e0550e2799dd0ada00f7dbd0dfde352ccfa6"
     },
     {
       "id": "gm37-checking-evidence-9",
       "source": "tests/integration/gm37-checking-evidence.test.js",
       "title": "G37-10: deliver does not accept a document marked valid but unverified",
-      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e"
+      "sourceSha256": "edda8c4740259236a2f638e10ea7e0550e2799dd0ada00f7dbd0dfde352ccfa6"
     },
     {
       "id": "recipes-0",

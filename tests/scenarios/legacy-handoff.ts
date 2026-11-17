@@ -1,8 +1,9 @@
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { createHash, randomUUID } from "node:crypto";
-import type { Document, Owner, ScenarioBackend } from "./contracts";
+import type { Document, Execution, Owner, ScenarioBackend } from "./contracts";
 import { number, record, text } from "./contracts";
 
 export interface LegacyLease {
@@ -17,6 +18,7 @@ export interface LegacyLease {
 }
 interface Invocation {
   version: 1;
+  filename?: string;
   owner: Owner;
   requestId: string;
   argvHash: string;
@@ -26,7 +28,27 @@ interface Invocation {
   jobId?: string;
   pid?: number;
   birth?: string;
+  settlement?: CliSettlement;
+  settlementFailure?: CliSettlementFailure;
 }
+interface CliSettlement {
+  requestId: string;
+  clientId: string;
+  jobId: string;
+  state: "succeeded" | "failed";
+  sdkSettled: true;
+}
+interface CliSettlementFailure {
+  requestId: string;
+  clientId: string;
+  reason: "lookup-unavailable" | "lookup-error" | "invalid-terminal-result";
+}
+export const cliSettlementTimeoutMs = 240_000;
+type TerminalExecution = Execution & {
+  state: "succeeded" | "failed";
+  sdkSettled: true;
+  brokerReceipt: NonNullable<Execution["brokerReceipt"]>;
+};
 export function writeHandoff(
   filename: string,
   value: unknown,
@@ -176,6 +198,13 @@ export function reserveCli(
 ) {
   const lease = ownedLease(env);
   if (!lease) return undefined;
+  const predecessor = legacyIntents(lease.directory, lease.owner).find(
+    (intent) => intent.admissionRequested && !intent.settlement,
+  );
+  if (predecessor)
+    throw new Error(
+      "Previous admitted command lacks terminal owner settlement",
+    );
   const words = [...args];
   const pin = (flag: string, value: string) => {
     const positions = words.flatMap((word, index) =>
@@ -279,12 +308,32 @@ export function legacyIntents(directory: string, owner: Owner) {
         throw new Error("Invalid original CLI admission intent");
       const result: Invocation = {
         version: 1,
+        filename: path.join(folder, name),
         owner,
         requestId: text(value["requestId"]),
         argvHash: text(value["argvHash"]),
         admissionRequested: value["admissionRequested"],
         completed: value["completed"],
       };
+      if (value["settlement"] !== undefined)
+        result.settlement = cliSettlement(
+          value["settlement"],
+          result.requestId,
+          owner.clientId,
+        );
+      if (value["settlementFailure"] !== undefined)
+        result.settlementFailure = cliSettlementFailure(
+          value["settlementFailure"],
+          result.requestId,
+          owner.clientId,
+        );
+      if (
+        (result.settlement !== undefined &&
+          result.settlementFailure !== undefined) ||
+        ((result.settlement || result.settlementFailure) &&
+          (!result.completed || !result.admissionRequested))
+      )
+        throw new Error("Invalid parent-owned CLI settlement state");
       if (value["pid"] !== undefined) result.pid = number(value["pid"]);
       if (value["birth"] !== undefined) result.birth = text(value["birth"]);
       if (value["exitCode"] !== undefined)
@@ -292,10 +341,186 @@ export function legacyIntents(directory: string, owner: Owner) {
       return result;
     });
 }
+function cliSettlement(
+  value: unknown,
+  requestId: string,
+  clientId: string,
+): CliSettlement {
+  const settlement = record(value),
+    state = settlement["state"];
+  if (
+    settlement["requestId"] !== requestId ||
+    settlement["clientId"] !== clientId ||
+    typeof settlement["jobId"] !== "string" ||
+    !settlement["jobId"] ||
+    (state !== "succeeded" && state !== "failed") ||
+    settlement["sdkSettled"] !== true
+  )
+    throw new Error("Invalid parent-owned CLI settlement");
+  return {
+    requestId,
+    clientId,
+    jobId: text(settlement["jobId"]),
+    state,
+    sdkSettled: true,
+  };
+}
+function cliSettlementFailure(
+  value: unknown,
+  requestId: string,
+  clientId: string,
+): CliSettlementFailure {
+  const failure = record(value),
+    reason = failure["reason"];
+  if (
+    failure["requestId"] !== requestId ||
+    failure["clientId"] !== clientId ||
+    (reason !== "lookup-unavailable" &&
+      reason !== "lookup-error" &&
+      reason !== "invalid-terminal-result")
+  )
+    throw new Error("Invalid parent CLI settlement disposition");
+  return { requestId, clientId, reason };
+}
+function exactTerminalExecution(
+  execution: Execution | null,
+  owner: Owner,
+  requestId: string,
+): execution is TerminalExecution {
+  const receipt = execution?.brokerReceipt;
+  return Boolean(
+    execution &&
+    execution.requestId === requestId &&
+    execution.sdkSettled &&
+    (execution.state === "succeeded" || execution.state === "failed") &&
+    receipt?.requestId === requestId &&
+    receipt.clientId === owner.clientId &&
+    receipt.state === execution.state &&
+    typeof receipt.jobId === "string" &&
+    receipt.jobId,
+  );
+}
+function ownedIntent(filename: string, owner: Owner) {
+  const target = path.resolve(filename),
+    intentsDirectory = path.dirname(target),
+    directory = path.dirname(path.dirname(intentsDirectory));
+  if (
+    intentsDirectory !== path.join(directory, "legacy", "intents") ||
+    !/^[a-f0-9-]{36}\.json$/u.test(path.basename(target))
+  )
+    throw new Error("Foreign parent-owned CLI intent path");
+  const intent = legacyIntents(directory, owner).find(
+    (value) =>
+      value.requestId ===
+      owner.clientId + ":legacy:" + path.basename(target, ".json"),
+  );
+  if (!intent) throw new Error("Missing parent-owned CLI intent");
+  return { filename: target, intent, current: regular(target) };
+}
+export function recordCliSettlement(
+  filename: string,
+  owner: Owner,
+  execution: Execution,
+) {
+  const value = ownedIntent(filename, owner);
+  if (
+    !value.intent.completed ||
+    !value.intent.admissionRequested ||
+    !exactTerminalExecution(execution, owner, value.intent.requestId)
+  )
+    throw new Error(
+      "Original CLI request lacks an exact terminal owner receipt",
+    );
+  const receipt = execution.brokerReceipt;
+  const settlement: CliSettlement = {
+    requestId: value.intent.requestId,
+    clientId: owner.clientId,
+    jobId: receipt.jobId,
+    state: execution.state,
+    sdkSettled: true,
+  };
+  if (value.intent.settlement) {
+    assert.deepEqual(value.intent.settlement, settlement);
+    return;
+  }
+  if (value.intent.settlementFailure)
+    throw new Error(
+      "Original CLI request already has a failed settlement disposition",
+    );
+  value.current["settlement"] = settlement;
+  writeHandoff(value.filename, value.current);
+}
+export function recordCliSettlementFailure(
+  filename: string,
+  owner: Owner,
+  reason: CliSettlementFailure["reason"],
+) {
+  const value = ownedIntent(filename, owner);
+  if (!value.intent.completed || !value.intent.admissionRequested)
+    throw new Error("Cannot classify an unadmitted or active CLI request");
+  if (value.intent.settlement) return;
+  const failure = {
+    requestId: value.intent.requestId,
+    clientId: owner.clientId,
+    reason,
+  };
+  if (value.intent.settlementFailure) {
+    assert.deepEqual(value.intent.settlementFailure, failure);
+    return;
+  }
+  value.current["settlementFailure"] = failure;
+  writeHandoff(value.filename, value.current);
+}
+export function awaitCliSettlement(
+  filename: string,
+  env: NodeJS.ProcessEnv = process.env,
+  timeoutMs = cliSettlementTimeoutMs,
+) {
+  const invocation = ownedInvocation({
+    ...env,
+    FMCAD_LIVE_COMMAND_INTENT: filename,
+  });
+  if (!invocation || !invocation.current["completed"])
+    throw new Error("Original CLI process did not persist completion");
+  if (!invocation.current["admissionRequested"]) return;
+  const wait = new Int32Array(
+    new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT),
+  );
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    const current = ownedInvocation({
+      ...env,
+      FMCAD_LIVE_COMMAND_INTENT: filename,
+    });
+    if (!current)
+      throw new Error("Original CLI intent disappeared before settlement");
+    if (current.current["settlementFailure"] !== undefined) {
+      cliSettlementFailure(
+        current.current["settlementFailure"],
+        text(current.current["requestId"]),
+        current.lease.owner.clientId,
+      );
+      throw new Error(
+        "Parent could not prove terminal CLI settlement; successor dispatch is fenced",
+      );
+    }
+    if (current.current["settlement"] !== undefined) {
+      cliSettlement(
+        current.current["settlement"],
+        text(current.current["requestId"]),
+        current.lease.owner.clientId,
+      );
+      return;
+    }
+    Atomics.wait(wait, 0, 0, 10);
+  }
+  throw new Error("Timed out waiting for parent-owned terminal CLI settlement");
+}
 export async function recoverLegacyInvocations(
   backend: ScenarioBackend,
   directory: string,
   owner: Owner,
+  settledResults: ReadonlyMap<string, Execution> = new Map(),
 ) {
   if (!backend.lookup)
     throw new Error("Owned child CLI requires original request lookup");
@@ -314,13 +539,10 @@ export async function recoverLegacyInvocations(
         "Original legacy CLI process may still submit work; cleanup deferred",
       );
     if (intent.completed && !intent.admissionRequested) continue; // Real CLI returned before its before-admission callback.
-    const result = await backend.lookup(owner, intent.requestId);
-    if (
-      !result ||
-      result.requestId !== intent.requestId ||
-      !result.sdkSettled ||
-      result.state === "unknown"
-    )
+    const result =
+      settledResults.get(intent.requestId) ??
+      (await backend.lookup(owner, intent.requestId));
+    if (!exactTerminalExecution(result, owner, intent.requestId))
       throw new Error(
         "Original legacy request remains unsettled; cleanup deferred: " +
           intent.requestId,

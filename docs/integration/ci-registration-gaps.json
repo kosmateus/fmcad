@@ -4,7 +4,7 @@
   "meaning": "Explicit dispositions for sources not selected as standalone offline tests. All 251 retained integration callbacks remain required through the existing owned native handoff; native execution is NOT RUN. Shared offline extraction, indirect CI registration and source validation are separate from passing execution.",
   "nativeIntegrationEvidence": {
     "manifest": "tests/scenarios/native-integration-cases.json",
-    "manifestSha256": "341f56c5c4745ad76d69736cc0022b5b3774eab7c6953b9f9b5504ffacd069a3",
+    "manifestSha256": "a2ee5cf43a5434903ceb15ec0b08af8acf1a3dd1ce6a27a0d944a5ef9db2e72e",
     "sourceCount": 34,
     "caseCount": 251,
     "requiredProfile": "native-fixtures/native-integration",
@@ -33,22 +33,23 @@
     "handoffBlockers": [
       {
         "id": "per-command-settlement",
-        "status": "repair-in-progress",
+        "status": "verified-offline",
         "sources": [
-          "tests/helpers/live-cli.js",
-          "tests/scenarios/legacy-handoff.ts"
+          "tests/scenarios/legacy-handoff.ts",
+          "tests/scenarios/runner.ts",
+          "tests/helpers/live-broker.js"
         ],
-        "reason": "Original receipts were reconciled only after the full child exit; the next in-child dispatch must be fenced until the immediately preceding admitted request is independently SDK-settled. No native qualification is claimed."
+        "reason": "Parent lookup now waits for the exact original terminal owner receipt and persists an acknowledgement bound to request, client, job, and state before the child can dispatch its successor. Offline guard coverage is in `legacy-handoff.test.ts` and `native-integration-child-fence.test.ts`; native qualification is not claimed."
       },
       {
         "id": "direct-child-dispatch",
-        "status": "repair-and-rehash-in-progress",
+        "status": "verified-offline",
         "sources": [
           "tests/integration/atomic-isolation.test.js",
           "tests/integration/gm36-explode-animation.test.js",
           "tests/integration/gm37-checking-evidence.test.js"
         ],
-        "reason": "Direct child_process.spawnSync calls bypass the owned per-command intent wrapper. Route them through the existing live-broker helper, preserve rejection observations, then recheck source pins and fault tests."
+        "reason": "Atomic-isolation, GM36, and GM37 child CLI calls use the existing owned wrapper; source pins and the exact 251-case manifest are checked by the offline provenance test. Original assertions are preserved; native execution remains NOTRUN."
       }
     ]
   },
@@ -66,21 +67,19 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "manifestSourceSha256": "929b28eec5df6f6d5cdc7d5b2dc2b9820f2bbbde96026430a925dcc2036359c3",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "2 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "2 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/atomic-isolation.test.js": {
       "owner": "B",
-      "status": "owned-native-registered-handoff-blocked",
-      "sourceSha256": "8942db7fdc586319f5c0def1067ed999925c8373bae7c72bc171bf6a5d3a2b1a",
+      "status": "owned-native-registered-execution-pending",
+      "sourceSha256": "057d1e7373b59567c190287ae448e2105da9fc71d9190fa823238f37c0e990af",
       "caseManifest": "tests/scenarios/native-integration-cases.json",
       "caseIds": [
         "atomic-isolation-0",
@@ -94,17 +93,14 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "Finish the existing wrapper/per-command settlement seam, preserve all callback assertions and explicit rejection intent, refresh reviewed source hashes and pass the offline fault proof before native execution. Native execution remains NOTRUN.",
-      "manifestSourceSha256": "8942db7fdc586319f5c0def1067ed999925c8373bae7c72bc171bf6a5d3a2b1a",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
+      "manifestSourceSha256": "057d1e7373b59567c190287ae448e2105da9fc71d9190fa823238f37c0e990af",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/direct-child-dispatch",
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/atomic-transaction.test.js": {
       "owner": "B",
@@ -126,16 +122,14 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "manifestSourceSha256": "7cdee2e494abe24041ea7ea89ffc0fc9be4ff22137ca3778eae639dd1453e435",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "9 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "9 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm01-definition.test.js": {
       "owner": "B",
@@ -152,10 +146,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "offlineExtraction": {
         "source": "tests/integration/gm01-definition-offline.test.ts",
         "sourceSha256": "5d2de40e5cef3581e844d28781f8582130262eed98e53be0cccaa45eb41ce86b",
@@ -165,10 +159,8 @@
       },
       "manifestSourceSha256": "f7e6e7425f01e7ecdcedc28eafa21e58c14d9dbbe0db9f7c15675496489886b3",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "4 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "4 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm02-data-import.test.js": {
       "owner": "B",
@@ -184,10 +176,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "offlineExtraction": {
         "source": "tests/integration/gm02-data-import-offline.test.ts",
         "sourceSha256": "79632955de88048f75cfa1cc3f708675b01f8f729b1d4621e9cbdf64ca69249a",
@@ -197,10 +189,8 @@
       },
       "manifestSourceSha256": "0ba08bbc33a8a55df3edaa332f0474b13c8524a8da49b95c2605e27471f30e73",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "3 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "3 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm03-entity.test.js": {
       "owner": "B",
@@ -220,16 +210,14 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "manifestSourceSha256": "286973348276a85116ab50a5c84fd59ace8a3125a142bac3da391e0aeb377048",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm04-datum.test.js": {
       "owner": "B",
@@ -249,16 +237,14 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "manifestSourceSha256": "8c266dc5e0bf3f2875792700d07c1dab4a4b02581a57fb6a23659f83992df939",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm06-sketch.test.js": {
       "owner": "B",
@@ -282,16 +268,14 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "manifestSourceSha256": "b924faaaba4ef9a607410bfbd3bd5baafa0e5035ab110d107143e83d19faf527",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "11 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "11 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm07-profile-curve.test.js": {
       "owner": "B",
@@ -310,16 +294,14 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "manifestSourceSha256": "635aaca1fc457c6b3d1f67d4a230958c3c6f39d9d6132b72d746772ec0c0a75b",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm08-surface.test.js": {
       "owner": "B",
@@ -340,16 +322,14 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "manifestSourceSha256": "c1d0b7a3161ba3652e4020e9e23baa40d41f7c7826d95d303e1b3a8e55dfd0f2",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm09-feature.test.js": {
       "owner": "B",
@@ -369,16 +349,14 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "manifestSourceSha256": "d6de1322919a8f489878dc42f431a6ed5d335898689d866ddc9c86d2dae6ee8b",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm10-shapes.test.js": {
       "owner": "B",
@@ -399,16 +377,14 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "manifestSourceSha256": "7a6e24b7a3a5417faf1f1d6ca2eb431ff9d8ed2e0f8d7822ec9c3635b0e24e5d",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm11-gear.test.js": {
       "owner": "B",
@@ -428,16 +404,14 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "manifestSourceSha256": "5832a88d0b8db29d8cb9bf0b479ad8650859e87b55b16d02b9f94b63a0b10872",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm12-spring.test.js": {
       "owner": "B",
@@ -458,16 +432,14 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "manifestSourceSha256": "af712e14c2a179b22c1650f961a8132d42a561228d8ab155314ebb70e0d944af",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm13-thread.test.js": {
       "owner": "B",
@@ -486,10 +458,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-thread",
         "source": "tests/scenarios/gm13-thread-declarations.ts",
@@ -500,10 +472,8 @@
       },
       "manifestSourceSha256": "83c64bf21e8c854a3c3638b99ebffbb864a600c68a0854c876bae7ee677fa375",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm14-cam.test.js": {
       "owner": "B",
@@ -523,16 +493,14 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "manifestSourceSha256": "7e41ecb022220e933f696459715b2d384912991895ffd47a2ec3abf956b57689",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm15-seal.test.js": {
       "owner": "B",
@@ -553,10 +521,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-seal",
         "source": "tests/scenarios/gm15-seal-declarations.ts",
@@ -567,10 +535,8 @@
       },
       "manifestSourceSha256": "323eda7a316955f57ae8cbf4250f8a4ff492e0a52f7793ed5987d45b7593cb85",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm16-fasteners.test.js": {
       "owner": "B",
@@ -595,10 +561,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-fasteners",
         "source": "tests/scenarios/gm16-fasteners-declarations.ts",
@@ -609,10 +575,8 @@
       },
       "manifestSourceSha256": "008c427f462967c3d4dde84bb1e811aeb67a0a4a39c3f3d00db04f4ceaa0c332",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "12 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "12 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm17-mechanism.test.js": {
       "owner": "B",
@@ -631,10 +595,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-mechanism",
         "source": "tests/scenarios/gm17-mechanism-declarations.ts",
@@ -645,10 +609,8 @@
       },
       "manifestSourceSha256": "3fd248612acf2b36644dce1c5b1c69393601d6348e9b60e274d7b3d08f70276f",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm18-pose.test.js": {
       "owner": "B",
@@ -667,10 +629,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-pose",
         "source": "tests/scenarios/gm18-pose-declarations.ts",
@@ -681,10 +643,8 @@
       },
       "manifestSourceSha256": "417d25425cec3d81df400f4642d84bef0f1c1c9cab3bbe107692c71725830b0b",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm19-interference.test.js": {
       "owner": "B",
@@ -705,10 +665,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-interference",
         "source": "tests/scenarios/gm19-interference-declarations.ts",
@@ -719,10 +679,8 @@
       },
       "manifestSourceSha256": "dfa6de372537102fe8c7cb88e1feed7834bdb1a72714ff8827c73f555dfb3d1a",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm20-containment.test.js": {
       "owner": "B",
@@ -741,10 +699,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-containment",
         "source": "tests/scenarios/gm20-containment-declarations.ts",
@@ -755,10 +713,8 @@
       },
       "manifestSourceSha256": "b159fe6bf383e82da3dffed790eb6f3c0110738fb5e8ccaeaf244bdf9b544425",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm25-routing.test.js": {
       "owner": "B",
@@ -779,10 +735,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-gm-contracts",
         "source": "tests/scenarios/gm25-cases.ts",
@@ -803,10 +759,8 @@
       },
       "manifestSourceSha256": "6fe9df7ccdab3f6952f60c15c02fef8d3788e87f1ba0a0b9999da68b33bb0243",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm26-fpc-pcb.test.js": {
       "owner": "B",
@@ -831,10 +785,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-gm-contracts",
         "source": "tests/scenarios/gm26-cases.ts",
@@ -859,10 +813,8 @@
       },
       "manifestSourceSha256": "73458dd1ef53900205dd4bcb4451ef3f201c82f91e2f7a42eb50fabb14430af0",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "12 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "12 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm27-assembly.test.js": {
       "owner": "B",
@@ -881,10 +833,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-gm-contracts",
         "source": "tests/scenarios/gm27-cases.ts",
@@ -903,10 +855,8 @@
       },
       "manifestSourceSha256": "f421dd6360722093c04b93a5d9d5a204c7e49ab149d6373523ef61c2b69db085",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm28-optics.test.js": {
       "owner": "B",
@@ -925,10 +875,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-gm-contracts",
         "source": "tests/scenarios/gm28-cases.ts",
@@ -947,10 +897,8 @@
       },
       "manifestSourceSha256": "89c6baf22fb3680234a4cd943bce291c1c295ba5075ec928d1715efb5d89b3ae",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm29-appearance.test.js": {
       "owner": "B",
@@ -975,10 +923,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-gm-contracts",
         "source": "tests/scenarios/gm29-cases.ts",
@@ -1003,10 +951,8 @@
       },
       "manifestSourceSha256": "d6d737655f3605a9ef6308fc2e38e7eeb52010e202b3274a2861f316b3f8c8ff",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "12 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "12 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm30-presentation.test.js": {
       "owner": "B",
@@ -1028,10 +974,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-gm-contracts",
         "source": "tests/scenarios/gm30-cases.ts",
@@ -1047,10 +993,8 @@
       },
       "manifestSourceSha256": "c363874a2d788b5a2c7ca92190e21779220137d92ddeb507fb60521fd6db7a69",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "9 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "9 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm31-dfm.test.js": {
       "owner": "B",
@@ -1070,10 +1014,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-gm-contracts",
         "source": "tests/scenarios/gm31-cases.ts",
@@ -1093,10 +1037,8 @@
       },
       "manifestSourceSha256": "b673f6efc6ea70e4ec1ce5397065c52c35195e060138d1fc44f9290da0f635ae",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "7 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm32-sheetmetal.test.js": {
       "owner": "B",
@@ -1115,10 +1057,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-gm-contracts",
         "source": "tests/scenarios/gm32-cases.ts",
@@ -1137,10 +1079,8 @@
       },
       "manifestSourceSha256": "19c524fefec0e5ccbe6a4aebcaea0743be99a38bf3c5684be507cf5f011a9398",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "6 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm34-marking.test.js": {
       "owner": "B",
@@ -1158,10 +1098,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-gm-contracts",
         "source": "tests/scenarios/gm34-cases.ts",
@@ -1179,15 +1119,13 @@
       },
       "manifestSourceSha256": "d4a3c9dbea8ae30944e2ed414a7560020c3c82e04bb312339a62536fef67d0aa",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "5 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "5 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm36-explode-animation.test.js": {
       "owner": "B",
-      "status": "owned-native-registered-handoff-blocked",
-      "sourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441",
+      "status": "owned-native-registered-execution-pending",
+      "sourceSha256": "09ba5e867be6b8547312aa9e33849e8286ddf9e8fe7bd3502208db9d524e90b4",
       "caseManifest": "tests/scenarios/native-integration-cases.json",
       "caseIds": [
         "gm36-explode-animation-0",
@@ -1203,10 +1141,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "Finish the existing wrapper/per-command settlement seam, preserve all callback assertions and explicit rejection intent, refresh reviewed source hashes and pass the offline fault proof before native execution. Native execution remains NOTRUN.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-gm-contracts",
         "source": "tests/scenarios/gm36-cases.ts",
@@ -1225,18 +1163,15 @@
         "executionEvidence": "pending-exact-head-component-and-broker-grid",
         "meaning": "Same owned declaration assertions execute on both backends. Native SDK/property branches, real CLI exit diagnostics and six GM30 presentation callbacks remain the listed native obligations."
       },
-      "manifestSourceSha256": "69bd5ed9112a082c9f92af63857f778a79e76f2e8baae5d4f71b496618967441",
+      "manifestSourceSha256": "09ba5e867be6b8547312aa9e33849e8286ddf9e8fe7bd3502208db9d524e90b4",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/direct-child-dispatch",
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "8 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/gm37-checking-evidence.test.js": {
       "owner": "B",
-      "status": "owned-native-registered-handoff-blocked",
-      "sourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e",
+      "status": "owned-native-registered-execution-pending",
+      "sourceSha256": "edda8c4740259236a2f638e10ea7e0550e2799dd0ada00f7dbd0dfde352ccfa6",
       "caseManifest": "tests/scenarios/native-integration-cases.json",
       "caseIds": [
         "gm37-checking-evidence-0",
@@ -1254,10 +1189,10 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "Finish the existing wrapper/per-command settlement seam, preserve all callback assertions and explicit rejection intent, refresh reviewed source hashes and pass the offline fault proof before native execution. Native execution remains NOTRUN.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "sharedExtraction": {
         "suite": "retained-gm-contracts",
         "source": "tests/scenarios/gm37-cases.ts",
@@ -1278,13 +1213,10 @@
         "executionEvidence": "pending-exact-head-component-and-broker-grid",
         "meaning": "Same owned declaration assertions execute on both backends. Native SDK/property branches, real CLI exit diagnostics and six GM30 presentation callbacks remain the listed native obligations."
       },
-      "manifestSourceSha256": "013ccac5b1b64badb3b727dc6ca50399595cf7fb874364df6a4156a6cca18d9e",
+      "manifestSourceSha256": "edda8c4740259236a2f638e10ea7e0550e2799dd0ada00f7dbd0dfde352ccfa6",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/direct-child-dispatch",
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "10 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "10 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/integration/recipes.test.js": {
       "owner": "B",
@@ -1307,16 +1239,14 @@
       "scenarioIdPattern": "native-integration-CASE_ID-0",
       "requiredProfile": "native-fixtures/native-integration",
       "command": "node dist/tests/scenarios/cli.js --backend fusion --profile broker --suite native-integration --project-id PROJECT --folder-id FOLDER --protocol PROTOCOL --concurrency CONCURRENCY --owners 1 --run",
-      "runnerStatus": "owned-handoff-settlement-hardening-pending",
+      "runnerStatus": "owned-handoff-source-ready",
       "nativeExecution": "NOTRUN",
       "evidenceContract": "nativeIntegrationEvidence",
-      "nextAction": "After offline closure, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Shared model results do not qualify these retained CLI/native observations.",
+      "nextAction": "After qualified READY and explicit authorization for a dedicated project/folder, run every listed callback in both protocols and the 1/2/10 concurrency grid on the exact final installed build; collect all nativeIntegrationEvidence records. Native execution remains NOTRUN.",
       "manifestSourceSha256": "31f86daf8c7affe725326f200b276ade0c5204acc401d5728802b72221559a51",
       "sourcePinStatus": "matched",
-      "blockers": [
-        "nativeIntegrationEvidence.handoffBlockers/per-command-settlement"
-      ],
-      "reason": "10 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Current in-child settlement hardening remains a blocker; original CLI/native assertions still require real Fusion execution and receipts. Shared offline assertions are accounted separately where present."
+      "blockers": [],
+      "reason": "10 exact source-pinned callbacks are registered in native-integration through fresh owned saved fixtures. Offline owned-wrapper dispatch and parent-owned per-command settlement guards are verified; original CLI/native assertions still require real Fusion execution and exact receipts. Native execution remains NOTRUN."
     },
     "tests/native/iw7.4_parameter_test.py": {
       "owner": "B",

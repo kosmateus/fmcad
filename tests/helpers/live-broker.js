@@ -82,13 +82,15 @@ function commandFlags(env = process.env) {
 }
 
 function spawnSync(command, args, options) {
+  let owned;
   if (path.basename(args?.[0] || '') === 'fmcad.js') {
     const cliPath = path.resolve(options?.cwd || process.cwd(), args[0]);
-    const installedRoot = (options?.env || process.env).FMCAD_LIVE_RUNTIME_ROOT;
+    const env = options?.env || process.env;
+    const installedRoot = env.FMCAD_LIVE_RUNTIME_ROOT;
     const realCli = cliPath === path.resolve(__dirname, '../../bin/fmcad.js') ||
       installedRoot && cliPath === path.resolve(installedRoot, 'dist/bin/fmcad.js');
-    const owned = realCli && process.env.FMCAD_LIVE_OWNED_SCOPE
-      ? require('../../dist/tests/scenarios/legacy-handoff').reserveCli(args.slice(1), options?.env || process.env) : null;
+    owned = realCli && env.FMCAD_LIVE_OWNED_SCOPE
+      ? require('../../dist/tests/scenarios/legacy-handoff').reserveCli(args.slice(1), env) : null;
     args = owned ? [args[0], ...owned.words] : [args[0], ...commandFlags(), ...args.slice(1)];
     if (realCli) args[0] = path.join(__dirname, 'live-cli.js');
     options = { ...options, env: { ...(options?.env || process.env), ...scope.environment(),
@@ -97,7 +99,13 @@ function spawnSync(command, args, options) {
     // timeout would also count queue waiting and could kill an admitted caller.
     if (context()) options = { ...options, timeout: 0 };
   }
-  return childProcess.spawnSync(command, args, options);
+  const result = childProcess.spawnSync(command, args, options);
+  if (owned && !result.error && result.status !== null)
+    require('../../dist/tests/scenarios/legacy-handoff').awaitCliSettlement(
+      owned.filename,
+      options?.env || process.env,
+    );
+  return result;
 }
 
 function rpcResponse(value, client) {

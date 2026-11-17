@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawnSync } = require('../helpers/live-broker');
 const { docName, fmcad, cad, resetDoc, hasDoc, skipLive } = require('./helper');
 
 const ROOT = path.resolve(__dirname, '..', '..');
