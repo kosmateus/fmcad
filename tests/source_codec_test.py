@@ -39,6 +39,36 @@ class SourceCodecTest(unittest.TestCase):
         self.assertEqual(codec.encode_source(source), source)
         self.assertIsNone(codec.decoded_envelope(source, ast.parse(source)))
 
+    def test_source_units_accepts_header_like_embedded_python(self):
+        source = codec.HEADER + "exec('pass')\n" + '# padding\n' * 200
+        result = subprocess.run(
+            [sys.executable, '-I', '-S', '-B', str(ROOT / 'runtime/python/entrypoints/source_units.py')],
+            input=json.dumps({'source': source, 'encodeNative': True}),
+            text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        extracted = json.loads(result.stdout)
+        self.assertNotEqual(extracted['source'], source)
+        self.assertEqual(extracted['units'][0]['filename'], codec.FILENAME)
+        self.assertEqual(extracted['units'][0]['source'], source)
+
+    def test_source_units_extracts_native_envelope_with_addin_entrypoint(self):
+        source = "def run(_context: str) -> None:\n    pass\n" + '# padding\n' * 200
+        entrypoint = ROOT / 'runtime/python/entrypoints/source_units.py'
+        encoded_result = subprocess.run(
+            [sys.executable, '-I', '-S', '-B', str(entrypoint)],
+            input=json.dumps({'source': source, 'encodeNative': True}),
+            text=True, capture_output=True, check=True)
+        encoded = json.loads(encoded_result.stdout)['source']
+        script = encoded + '\n\nrun("")\n'
+        result = subprocess.run(
+            [sys.executable, '-I', '-S', '-B', str(entrypoint)],
+            input=json.dumps({'source': script}), text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        extracted = json.loads(result.stdout)
+        self.assertEqual(extracted['source'], script)
+        self.assertEqual(extracted['units'][0]['filename'], codec.FILENAME)
+        self.assertEqual(extracted['units'][0]['source'], source)
+
     def test_compressible_source_below_previous_threshold_uses_smaller_json(self):
         source = '# padding\n' * 25999 + '# padding'
         self.assertEqual(len(source.encode('utf-8')), 259999)

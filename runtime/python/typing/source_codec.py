@@ -66,14 +66,34 @@ def decoded_envelope(source, tree):
     """Recognize the entire known AST, not arbitrary calls to a decoder name."""
     if not source.startswith(HEADER):
         return None
+    if not any(isinstance(node, ast.FunctionDef)
+               and node.name == '_fmcad_decode_source_v1' for node in tree.body):
+        return None
+    body = tree.body
+    addin_entrypoint = False
+    if body and isinstance(body[-1], ast.Expr) and isinstance(body[-1].value, ast.Call):
+        suffix = body[-1].value
+        addin_entrypoint = (isinstance(suffix.func, ast.Name)
+                            and suffix.func.id == 'run' and len(suffix.args) == 1
+                            and not suffix.keywords
+                            and isinstance(suffix.args[0], ast.Constant)
+                            and suffix.args[0].value == '')
+        if addin_entrypoint:
+            body = body[:-1]
     try:
-        call = tree.body[-1].value.args[0].args[0]
+        call = body[-1].value.args[0].args[0]
         if not isinstance(call, ast.Call) or len(call.args) != 3:
             raise ValueError('Invalid native source envelope')
         payload, size, digest = [ast.literal_eval(arg) for arg in call.args]
-        expected = ast.parse(envelope(payload, size, digest))
+        expected_source = envelope(payload, size, digest)
+        if addin_entrypoint:
+            expected_source += '\nrun("")\n'
+        expected = ast.parse(expected_source)
         if ast.dump(tree) != ast.dump(expected):
             raise ValueError('Native source decoder AST mismatch')
     except (AttributeError, IndexError, TypeError, SyntaxError) as error:
         raise ValueError('Invalid native source envelope') from error
-    return decode_payload(payload, size, digest)
+    decoded = decode_payload(payload, size, digest)
+    if addin_entrypoint:
+        tree.body.pop()
+    return decoded
