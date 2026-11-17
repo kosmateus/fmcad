@@ -592,7 +592,7 @@ print('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.ac
   } catch (error) {
     report.status = "failed";
     report.error = String(error instanceof Error ? error.stack : error);
-    if (report.documents.length && report.before) {
+    if (report.before) {
       const allSettled = knownSettlement(
         report.receipts.map((receipt) => receipt.result),
       );
@@ -600,36 +600,121 @@ print('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.ac
         report.cleanupDeferredReason =
           "Original work has no known settled result; retain exact fixture, never replay or close uncertain work";
       else {
-        try {
-          const first = clients[0];
-          assert.ok(first);
-          const status = object(await first.call("queue-summary")),
-            control = object(status["control"]);
-          if (status["blocked"] || status["held"] || control["unresolved"])
-            report.cleanupDeferredReason =
-              "Shared executor is uncertain; no cleanup submitted";
-          else {
-            report.failureCleanup = [];
-            for (let index = 0; index < report.documents.length; index++) {
-              const document = report.documents[index];
-              assert.ok(document);
-              report.failureCleanup.push(
-                await script(
-                  index,
-                  "failure-close",
-                  ownedCleanupSource(
-                    document,
-                    report.before.active,
-                    "FMCAD_RESULT ",
-                  ),
-                ),
+        const missingSlots = Array.from(
+            { length: ownerCount },
+            (_, index) => index,
+          ).filter((index) => !report.documents[index]),
+          provenUncreated = (index: number): boolean => {
+            const queue = clients[index],
+              requestId = runId + ":" + index + ":create",
+              matches = report.receipts.filter(
+                (receipt) => receipt.requestId === requestId,
               );
+            if (!queue || matches.length !== 1) return false;
+            const receipt = matches[0],
+              failed = receipt?.result;
+            return !!(
+              receipt &&
+              receipt.phase === "create" &&
+              receipt.clientId === queue.auth.clientId &&
+              receipt.job &&
+              receipt.job.id === failed?.job.id &&
+              receipt.job.requestId === requestId &&
+              receipt.job.clientId === queue.auth.clientId &&
+              failed &&
+              failed.job.state === "failed" &&
+              failed.job.requestId === requestId &&
+              failed.job.clientId === queue.auth.clientId &&
+              failed.execution.sdkSettled === true &&
+              failed.execution.mayHaveMutated === false
+            );
+          };
+        const uncertainSlots = missingSlots.filter(
+          (index) => !provenUncreated(index),
+        );
+        if (uncertainSlots.length)
+          report.cleanupDeferredReason =
+            "Create slot(s) " +
+            uncertainSlots.join(", ") +
+            " lack an exact terminal no-mutation receipt; retain unknown products and skip failure cleanup";
+        else {
+          try {
+            const first = clients[0];
+            assert.ok(first);
+            const status = object(await first.call("queue-summary")),
+              control = object(status["control"]);
+            if (status["blocked"] || status["held"] || control["unresolved"])
+              report.cleanupDeferredReason =
+                "Shared executor is uncertain; no cleanup submitted";
+            else {
+              report.failureCleanup = [];
+              report.failureCleanupErrors = [];
+              for (let index = 0; index < ownerCount; index++) {
+                const document = report.documents[index];
+                if (!document) continue;
+                try {
+                  report.failureCleanup.push(
+                    await script(
+                      index,
+                      "failure-close",
+                      ownedCleanupSource(
+                        document,
+                        report.before.active,
+                        "FMCAD_RESULT ",
+                      ),
+                    ),
+                  );
+                } catch (cleanupError) {
+                  const message = String(
+                    cleanupError instanceof Error
+                      ? cleanupError.stack
+                      : cleanupError,
+                  );
+                  report.failureCleanupErrors.push({
+                    creationId: document.creationId,
+                    message,
+                  });
+                  const requestId = runId + ":" + index + ":failure-close",
+                    receipts = report.receipts.filter(
+                      (receipt) => receipt.requestId === requestId,
+                    ),
+                    receipt = receipts[0],
+                    queue = clients[index],
+                    submittedJob = receipt?.job,
+                    closeResult = receipt?.result;
+                  const settledClose =
+                    receipts.length === 1 &&
+                    !!receipt &&
+                    receipt.phase === "failure-close" &&
+                    !!queue &&
+                    receipt.clientId === queue.auth.clientId &&
+                    !!submittedJob &&
+                    submittedJob.id === closeResult?.job.id &&
+                    submittedJob.requestId === requestId &&
+                    submittedJob.clientId === queue.auth.clientId &&
+                    !!closeResult &&
+                    closeResult.job.requestId === requestId &&
+                    closeResult.job.clientId === queue.auth.clientId &&
+                    knownSettlement([closeResult]);
+                  if (!settledClose) {
+                    report.cleanupDeferredReason =
+                      "Failure cleanup result for creation ID " +
+                      document.creationId +
+                      " is uncertain; later owned documents were retained";
+                    break;
+                  }
+                }
+              }
+              if (report.failureCleanupErrors.length)
+                report.cleanupError = report.failureCleanupErrors
+                  .map((entry) => entry.creationId + ": " + entry.message)
+                  .join("\n");
             }
+          } catch (cleanupError) {
+            report.cleanupError = String(
+              cleanupError instanceof Error ? cleanupError.stack : cleanupError,
+            );
           }
-        } catch (cleanupError) {
-          report.cleanupError = String(
-            cleanupError instanceof Error ? cleanupError.stack : cleanupError,
-          );
         }
       }
     }
