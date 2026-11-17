@@ -1562,6 +1562,10 @@ test("typed help preserves every registered English and Polish page and text lay
     polish = runtimeRequire(
       "../src/help-pl",
     ) as typeof import("../src/composition/library-help-pl");
+  const previousPolishTimeout =
+      "  --timeout MS  Limit wykonania; w kolejce nie obejmuje oczekiwania.",
+    currentPolishTimeout =
+      "  --timeout MS  Dodatni całkowity limit aktywnego wykonania żądania; nie obejmuje oczekiwania w kolejce, nie zmienia konfiguracji brokera ani nie gwarantuje anulowania mutacji.";
   const oldDetails = historicalPublicBoundary("help-details"),
     details = runtimeRequire(
       "../src/help-details",
@@ -1620,6 +1624,14 @@ test("typed help preserves every registered English and Polish page and text lay
         );
         assert.match(polish.detail(entry), /Control Center/);
       } else {
+        const expectedPolishDetail = relocateHistoricalTestEvidence(
+          oldPolish.detail(entry),
+        ) as string;
+        if (entry.key === "projects")
+          assert.equal(
+            expectedPolishDetail.split(previousPolishTimeout).length - 1,
+            1,
+          );
         assert.equal(
           polish.description(entry),
           relocateHistoricalTestEvidence(oldPolish.description(entry)),
@@ -1627,7 +1639,10 @@ test("typed help preserves every registered English and Polish page and text lay
         );
         assert.equal(
           polish.detail(entry),
-          relocateHistoricalTestEvidence(oldPolish.detail(entry)),
+          expectedPolishDetail.replace(
+            previousPolishTimeout,
+            currentPolishTimeout,
+          ),
           entry.key,
         );
       }
@@ -1675,10 +1690,19 @@ test("typed help preserves every registered English and Polish page and text lay
     relocateHistoricalTestEvidence(guide);
     guide.sections = guide.sections.map((section) => ({
       ...section,
-      text: section.text.replace(
-        "Legacy --doc operations activate the FIRST case-insensitive document match, not a uniqueness-safe selector.",
-        "Legacy --doc operations require one case-insensitive open-document name match; ambiguous names fail before activation.",
-      ),
+      text: section.text
+        .replace(
+          "Legacy --doc operations activate the FIRST case-insensitive document match, not a uniqueness-safe selector.",
+          "Legacy --doc operations require one case-insensitive open-document name match; ambiguous names fail before activation.",
+        )
+        .replace(
+          "--timeout <milliseconds>: finite positive number when connecting, default 180000; represents a timeout, not a mutation cancellation guarantee.",
+          "--timeout <milliseconds>: positive integer active execution deadline, default 180000; it is per request and does not change the broker's physical configuration or guarantee mutation cancellation.",
+        )
+        .replace(
+          "Timeout applies to each HTTP request, not the whole batch; a timeout does not cancel work already started in Fusion.",
+          "The configured physical timeoutMs remains part of the broker's identity; --timeout is per-request and does not reconfigure it.\nFor queued commands, --timeout bounds that request's active execution and excludes queue waiting. It does not reconfigure the broker's physical transport or cancel work already started in Fusion.",
+        ),
     }));
     assert.deepEqual(runtimeRequire("../src/help-guide"), guide);
   } finally {
