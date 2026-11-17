@@ -106,7 +106,7 @@ export function createQueueSession(
   let client: QueueClientPort;
   let build: string;
   let ready = false;
-  function fence() {
+  function readFence() {
     const marker = JSON.parse(
       fs.readFileSync(path.join(directory, "broker.lock"), "utf8"),
     );
@@ -150,7 +150,92 @@ export function createQueueSession(
       );
     if (identity.buildHash !== current)
       throw new CompatibilityError("build", identity.buildHash, current);
-    build = current;
+    return current;
+  }
+  // Snapshot commits synchronously publish pending -> atomic snapshot -> remove
+  // pending. A client in another process can observe the middle of that write.
+  // Retry only this read; never recover storage, register, or resubmit a job here.
+  function metadataSample() {
+    const pointerFile = path.join(directory, "isolated-admission-epoch.json");
+    const pointer = fs.existsSync(pointerFile)
+      ? (JSON.parse(fs.readFileSync(pointerFile, "utf8")) as {
+          epochId?: string;
+        })
+      : null;
+    const stores = [directory];
+    if (pointer?.epochId && /^[a-f0-9-]{36}$/.test(pointer.epochId))
+      stores.push(path.join(directory, "admission-epochs", pointer.epochId));
+    const stamp = (file: string): string => {
+      try {
+        const stat = fs.lstatSync(file, { bigint: true });
+        return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent";
+        throw error;
+      }
+    };
+    const pending = stores.some((store) => {
+      const file = path.join(store, "queue-state.pending.json");
+      try {
+        if (!fs.lstatSync(file).isFile())
+          throw Object.assign(new Error("Invalid pending snapshot marker"), {
+            code: "EPOCH_PROOF_INVALID",
+          });
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+        throw error;
+      }
+    });
+    const files = [
+      path.join(directory, "broker.lock"),
+      pointerFile,
+      path.join(directory, "physical-backend-head.json"),
+      ...stores.flatMap((store) => [
+        path.join(store, "queue-state.json"),
+        path.join(store, "instance.json"),
+      ]),
+    ];
+    return {
+      pending,
+      signature: files.map((file) => `${file}:${stamp(file)}`).join("\n"),
+    };
+  }
+  async function fence() {
+    const deadline = Date.now() + config.timeoutMs;
+    for (;;) {
+      const before = metadataSample();
+      let current: string | undefined;
+      let error: unknown;
+      if (!before.pending) {
+        try {
+          current = readFence();
+        } catch (cause) {
+          error = cause;
+        }
+      }
+      const after = metadataSample();
+      if (
+        !before.pending &&
+        !after.pending &&
+        before.signature === after.signature
+      ) {
+        if (current === undefined) throw error;
+        build = current;
+        return;
+      }
+      if (Date.now() >= deadline)
+        throw (
+          error ??
+          Object.assign(
+            new Error(
+              "Queue metadata did not reach a stable committed snapshot; pending storage requires inspection",
+            ),
+            { code: "EPOCH_PROOF_INVALID" },
+          )
+        );
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
   }
   function receipt(job: JobProjection): ExecutionReceipt {
     return {
@@ -169,7 +254,7 @@ export function createQueueSession(
     };
   }
   async function rawResult(jobId: string) {
-    fence();
+    await fence();
     const value = (await (client.readResult
       ? client.readResult("result", { jobId })
       : client.call("result", { jobId }))) as ResultProjection;
@@ -212,7 +297,7 @@ export function createQueueSession(
     },
     async start() {
       // All compatibility checks precede credentials, registration and admission.
-      fence();
+      await fence();
       const { QueueClient } = require("../queue-client");
       client = new QueueClient(clientId, { cfg: config, instanceId });
       await client.register({ autoStart: false });
@@ -224,7 +309,7 @@ export function createQueueSession(
       ready = true;
     },
     async status() {
-      fence();
+      await fence();
       const value = (await client.call("control-status")) as {
         buildHash?: string;
         unresolved?: boolean;
@@ -293,7 +378,7 @@ export function createQueueSession(
     },
     result: rawResult,
     async request(requestId: string) {
-      fence();
+      await fence();
       const found = (await (client.readResult
         ? client.readResult("find-request", { requestId })
         : client.call("find-request", { requestId }))) as {
@@ -325,7 +410,7 @@ export function createQueueSession(
       return stages.stage as StageServices;
     },
     async execute(payload: CadWorkerInvocation, options: ExecuteOptions) {
-      fence();
+      await fence();
       validateExecuteOptions(options);
       const purpose =
         payload.kind === "cad-command"
@@ -405,7 +490,7 @@ export function createQueueSession(
       return receipt(job as JobProjection);
     },
     async control(action: "cancel" | "reconcile", jobId: string) {
-      fence();
+      await fence();
       return receipt((await client.call(action, { jobId })) as JobProjection);
     },
     dispose() {

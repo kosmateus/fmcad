@@ -1202,6 +1202,207 @@ test("changed Fusion or predecessor bytes cannot commit and original request is 
   }
 });
 
+test(
+  "public result reader waits for the actual snapshot writer without replay or pending recovery",
+  { timeout: 20000 },
+  async (t) => {
+    const f = setup(undefined, "mcp", undefined, true);
+    const home = process.env["XDG_STATE_HOME"];
+    process.env["XDG_STATE_HOME"] = f.root;
+    t.after(() => {
+      if (home === undefined) delete process.env["XDG_STATE_HOME"];
+      else process.env["XDG_STATE_HOME"] = home;
+    });
+    const qi = load("./queue-instance") as { hash(value: string): string };
+    fs.mkdirSync(path.join(f.dir, "client-credentials"), { recursive: true });
+    fs.writeFileSync(
+      path.join(f.dir, "client-credentials", `${qi.hash(f.clientId)}.json`),
+      JSON.stringify({ clientId: f.clientId, clientToken: f.token }),
+      { mode: 0o600 },
+    );
+    let probes = 0;
+    const observation = {
+      ...f.epoch.currentInstance,
+      activeCommand: "SelectCommand",
+      documents: [],
+    };
+    const handle = await serve(f.next, {
+      dir: f.dir,
+      confirmOwnership: true,
+      autoReconcile: false,
+      nativePath: (file) => file,
+      backendTransition: f.approval,
+      createBackend: () => ({
+        server: { timeoutMs: 1000 },
+        _parse: (raw) => JSON.parse(raw) as P.Reply,
+        _openSession() {
+          throw new Error("Unexpected session");
+        },
+        listTools() {
+          throw new Error("Unexpected catalog");
+        },
+        executeUiGuardedScript() {
+          throw new Error("Unexpected script");
+        },
+        _post() {
+          throw new Error("Replay forbidden");
+        },
+        async callTool(args) {
+          probes++;
+          assert.ok(args.object?.script);
+          return {
+            failed: false,
+            text: runBoundInstanceProbe(args.object.script, observation).text,
+          };
+        },
+      }),
+    });
+    t.after(async () => {
+      await handle.close();
+      fs.rmSync(f.root, { recursive: true, force: true });
+    });
+    const { createQueueSession } = load("./dist/composition/library-queue") as {
+      createQueueSession(
+        config: P.Config,
+        clientId: string,
+        cwd: string,
+        instanceId: string,
+      ): {
+        start(): Promise<void>;
+        result(jobId: string): Promise<unknown>;
+        dispose(): void;
+      };
+    };
+    const session = createQueueSession(
+      f.next,
+      f.clientId,
+      f.root,
+      "snapshot-reader",
+    );
+    t.after(() => session.dispose());
+    await session.start();
+    const job = Object.values(handle.status().jobs).find(
+      (job) => job.state === "succeeded",
+    )!;
+    assert.ok(job);
+    const original = await session.result(job.id);
+    const foreign = createQueueSession(
+      f.next,
+      "foreign-result-reader",
+      f.root,
+      "foreign-reader",
+    );
+    try {
+      await foreign.start();
+      await assert.rejects(foreign.result(job.id), { code: "NOT_OWNER" });
+    } finally {
+      foreign.dispose();
+    }
+    const stateFile = path.join(f.epoch.root, "queue-state.json");
+    const bytes = fs.readFileSync(stateFile);
+    const releaseFile = path.join(f.root, "release-writer");
+    const writer = spawn(
+      process.execPath,
+      [
+        path.join(process.cwd(), "tests/fixtures/held-snapshot-commit.cjs"),
+        runtimeRoot,
+        f.epoch.root,
+        releaseFile,
+      ],
+      { stdio: ["ignore", "ignore", "pipe", "ipc"] },
+    );
+    t.after(async () => {
+      if (writer.exitCode === null && writer.signalCode === null) {
+        const exit = once(writer, "exit");
+        writer.kill("SIGKILL");
+        await exit;
+      }
+    });
+    await new Promise<void>((resolve, reject) => {
+      writer.on("message", (message: { kind: string; message?: string }) => {
+        if (message.kind === "pending") resolve();
+        if (message.kind === "error") reject(new Error(message.message));
+      });
+      writer.once("exit", () =>
+        reject(new Error("Writer exited before pending")),
+      );
+    });
+    assert.ok(
+      fs.existsSync(path.join(f.epoch.root, "queue-state.pending.json")),
+    );
+    const exit = once(writer, "exit");
+    const release = setTimeout(
+      () => fs.writeFileSync(releaseFile, "release"),
+      50,
+    );
+    try {
+      assert.deepEqual(await session.result(job.id), original);
+    } finally {
+      clearTimeout(release);
+      fs.writeFileSync(releaseFile, "release");
+      await exit;
+    }
+    assert.deepEqual(fs.readFileSync(stateFile), bytes);
+    assert.equal(
+      fs.existsSync(path.join(f.epoch.root, "queue-state.pending.json")),
+      false,
+    );
+    assert.equal(probes, 1, "result read never replays an SDK request");
+    const headFile = path.join(f.dir, "physical-backend-head.json");
+    const headBytes = fs.readFileSync(headFile);
+    try {
+      const changed = JSON.parse(headBytes.toString()) as {
+        identity: { sha256: string };
+      };
+      changed.identity.sha256 = "0".repeat(64);
+      fs.writeFileSync(headFile, JSON.stringify(changed));
+      await assert.rejects(session.result(job.id), {
+        code: "BACKEND_TRANSITION_CHANGED",
+      });
+    } finally {
+      fs.writeFileSync(headFile, headBytes);
+    }
+    const { createSnapshotStore } = load(
+      "./dist/node-adapters/persistence/records",
+    ) as typeof import("../packages/node-adapters/src/persistence/records");
+    const pendingFile = path.join(f.epoch.root, "queue-state.pending.json");
+    const broken = createSnapshotStore(f.epoch.root, {
+      ...fs,
+      unlinkSync(file) {
+        if (file === pendingFile) throw new Error("fixture ambiguous unlink");
+        fs.unlinkSync(file);
+      },
+    });
+    assert.throws(() => broken.commit(bytes.toString()), {
+      code: "STORAGE_UNAVAILABLE",
+    });
+    const pendingBytes = fs.readFileSync(pendingFile);
+    const clients = fs.readFileSync(path.join(f.dir, "clients.json"));
+    const stalled = createQueueSession(
+      { ...f.next, timeoutMs: 30 },
+      "never-register-unresolved",
+      f.root,
+      "stalled-reader",
+    );
+    try {
+      await assert.rejects(stalled.start(), { code: "EPOCH_PROOF_INVALID" });
+      assert.deepEqual(
+        fs.readFileSync(pendingFile),
+        pendingBytes,
+        "reader never recovers or removes the unresolved marker",
+      );
+      assert.deepEqual(
+        fs.readFileSync(path.join(f.dir, "clients.json")),
+        clients,
+        "unresolved fence precedes registration",
+      );
+    } finally {
+      stalled.dispose();
+      fs.unlinkSync(pendingFile); // Explicit cleanup of this synthetic fault fixture only.
+    }
+  },
+);
+
 test("sole broker probes target once, reopens matching head without SDK, and returns to addin", async () => {
   const f = setup();
   let probes = 0;
