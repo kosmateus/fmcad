@@ -1,5 +1,6 @@
 """Parse dependency facts offline. Never import or execute submitted Python."""
 import ast
+import builtins
 import copy
 import inspect
 import json
@@ -506,6 +507,13 @@ def inert_builtin_annotation(node, shadowed=()):
     return False
 
 
+def inert_exception_base(node, shadowed):
+    if not isinstance(node, ast.Name) or node.id in shadowed:
+        return False
+    base = getattr(builtins, node.id, None)
+    return isinstance(base, type) and issubclass(base, BaseException)
+
+
 def inert_binding(node, protocols=(), shadowed=()):
     if inert_function(node):
         return True
@@ -516,6 +524,7 @@ def inert_binding(node, protocols=(), shadowed=()):
                 and (node.value is None or inert_value(node.value)))
     if isinstance(node, ast.ClassDef):
         protocol = len(node.bases) == 1 and isinstance(node.bases[0], ast.Name) and node.bases[0].id in protocols
+        exception = len(node.bases) == 1 and inert_exception_base(node.bases[0], shadowed)
         body = copy.deepcopy(node.body)
         if protocol:
             for member in body:
@@ -523,7 +532,7 @@ def inert_binding(node, protocols=(), shadowed=()):
                         isinstance(decorator, ast.Name) and decorator.id in ('property', 'staticmethod', 'classmethod')
                         for decorator in member.decorator_list):
                     member.decorator_list = []
-        return ((not node.bases or protocol) and not node.keywords and not node.decorator_list
+        return ((not node.bases or protocol or exception) and not node.keywords and not node.decorator_list
                 and not getattr(node, 'type_params', []) and all(
                     inert_binding(child, shadowed=shadowed) or isinstance(child, ast.Pass)
                     or (isinstance(child, ast.Expr) and isinstance(child.value, ast.Constant))

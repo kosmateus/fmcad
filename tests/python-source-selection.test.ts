@@ -217,6 +217,94 @@ class Record(TypedDict):
     assert.equal(record.removable, false, source);
   }
 });
+
+test("unused builtin exception subclasses are prunable only when declaration creation is inert", () => {
+  const analyse = (
+    runtime: string,
+    user = "def run(context):\n    pass\n",
+  ): PythonSelectionFacts => {
+    const parsed = spawnSync(
+      "python3",
+      [
+        "-I",
+        "-S",
+        "-B",
+        path.join(root, "runtime/python/entrypoints/dependency_facts.py"),
+      ],
+      {
+        input: JSON.stringify({
+          source: user,
+          generated: true,
+          units: [
+            {
+              id: "core",
+              filename: "core.py",
+              source: runtime,
+              dependencies: [],
+            },
+          ],
+        }),
+        encoding: "utf8",
+      },
+    );
+    assert.equal(parsed.status, 0, parsed.stderr);
+    const result = JSON.parse(parsed.stdout) as {
+      unsupported: boolean;
+      facts: PythonSelectionFacts;
+    };
+    assert.equal(result.unsupported, false);
+    return result.facts;
+  };
+  const removable = (runtime: string, name = "Candidate") => {
+    const definition = analyse(runtime).definitions?.find((entry) =>
+      entry.defines.includes(name),
+    );
+    assert.ok(definition, name);
+    return definition.removable;
+  };
+
+  assert.equal(removable("class Candidate(Exception):\n    pass\n"), true);
+  for (const [name, runtime] of [
+    [
+      "decorator",
+      "def decorate(cls): return cls\n@decorate\nclass Candidate(Exception):\n    pass\n",
+    ],
+    [
+      "effectful base",
+      "def make_base(): return Exception\nclass Candidate(make_base()):\n    pass\n",
+    ],
+    [
+      "class-body call",
+      "def initialize(): return 1\nclass Candidate(Exception):\n    value = initialize()\n",
+    ],
+    [
+      "class-body subscription",
+      "events = []\nclass TypeFactory:\n    def __class_getitem__(cls, item):\n        events.append(item)\n        return item\nclass Candidate(Exception):\n    value: TypeFactory[str]\n",
+    ],
+    ["metaclass", "class Candidate(Exception, metaclass=type):\n    pass\n"],
+    [
+      "shadowed builtin base",
+      "Exception = type('LocalException', (), {})\nclass Candidate(Exception):\n    pass\n",
+    ],
+  ] as const)
+    assert.equal(removable(runtime), false, name);
+
+  const facts = analyse(
+    "def _error_message(): return 'unhealthy'\nclass UsedError(Exception):\n    def __init__(self): super().__init__(_error_message())\nclass UnusedError(Exception):\n    pass\n",
+    "def run(context):\n    raise UsedError()\n",
+  );
+  const unused = unusedPythonDefinitions(facts, {
+    units: ["core"],
+    methods: [],
+    mode: "static",
+    operations: [],
+  });
+  const unusedNames = new Set(unused.flatMap((entry) => entry.defines));
+  assert.ok(!unusedNames.has("UsedError"));
+  assert.ok(!unusedNames.has("_error_message"));
+  assert.ok(unusedNames.has("UnusedError"));
+});
+
 test("literal facade dispatch automatically closes transitive operation and source dependencies", () => {
   const units = selectRunBundle(
     root,
