@@ -283,7 +283,7 @@ def _measure_scalar(ctx: "CadContext", data: "JsonObject", mode: "Literal['diame
     _cad_fields(data, ('ref',), ('units',))
     entity = ctx.resolve(data['ref'])
     context = _measure_space(ctx, [entity])
-    dimension = 'area' if mode == 'area' else 'volume' if mode == 'volume' else 'mass' if mode == 'mass' else 'length'
+    dimension = mode if mode in ('area', 'volume', 'mass') else 'length'
     _measure_value(0, dimension, data)
     method = mode
     if mode in ('radius', 'diameter'):
