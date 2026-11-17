@@ -12,7 +12,7 @@ FIXTURES = ROOT / 'tests/fixtures/modeling-history'
 
 
 def load(source, filename):
-    namespace = {'_cad_cast': lambda expected, value: value}
+    namespace = {'__name__': filename, '_cad_cast': lambda expected, value: value}
     exec(compile(source, filename, 'exec'), namespace)
     return namespace
 
@@ -49,10 +49,11 @@ class MeasurementPolicyContracts(unittest.TestCase):
     def test_measurement_policy_import_has_no_sdk_or_host_dependency(self):
         source = (ROOT / 'runtime/python/fmcad/domain/measure.py').read_text()
         original = builtins.__import__
-        def pure_import(name, *args, **kwargs):
-            if name != 'math':
+        pure_dependencies = {'math', 'typing', 'fmcad.domain.values'}
+        def pure_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if globals and globals.get('__name__') == 'measure-domain' and name not in pure_dependencies:
                 raise AssertionError('Unexpected measurement policy dependency: ' + name)
-            return original(name, *args, **kwargs)
+            return original(name, globals, locals, fromlist, level)
         with patch('builtins.__import__', pure_import):
             namespace = load(source, 'measure-domain')
             self.assertEqual(namespace['_measure_value'](1, 'mass', {'units': 'g'})['value'], 1000)

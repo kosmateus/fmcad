@@ -62,6 +62,9 @@ PRIVATE_HELPER_RENAMES = {
         '_ZONE_KINDS': '_MARKING_ZONE_KINDS',
     },
 }
+RUNTIME_IDENTITY_CASTS = {
+    '_cad_cast', '_measure_cast', '_checking_cast', '_interference_cast', '_references_cast',
+}
 
 
 def family_source(family):
@@ -172,6 +175,8 @@ data = _cad_cast("_ReferencesInput", payload)
                             '_anim2_os': 'os', '_anim2_shutil': 'shutil',
                             '_anim2_subprocess': 'subprocess', '_anim2_tempfile': 'tempfile',
                             '_marking_domain_math': 'math', '_marking_adapter_math': 'math',
+                            '_containment_math': 'math', '_dfm_math': 'math',
+                            '_interference_json': 'json', '_interference_math': 'math',
                             '_cam_domain_math': 'math', '_cam_adapter_math': 'math',
                             '_texture_domain_math': 'math', '_texture_math': 'math',
                             '_texture_hashlib': 'hashlib', '_texture_struct': 'struct',
@@ -225,7 +230,7 @@ data = _cad_cast("_ReferencesInput", payload)
                             call.func = ast.Attribute(value=ast.Name(id='ctx', ctx=ast.Load()),
                                                       attr='_proxy', ctx=ast.Load())
                         self.generic_visit(call)
-                        if isinstance(call.func, ast.Name) and call.func.id == '_cad_cast':
+                        if isinstance(call.func, ast.Name) and call.func.id in RUNTIME_IDENTITY_CASTS:
                             return call.args[1]
                         if isinstance(call.func, ast.Name) and call.func.id == '_measure_expression':
                             return ast.copy_location(ast.Call(
@@ -243,7 +248,7 @@ data = _cad_cast("_ReferencesInput", payload)
                     def visit_Assign(self, statement):
                         if (isinstance(statement.value, ast.Call) and
                                 isinstance(statement.value.func, ast.Name) and
-                                statement.value.func.id == '_cad_cast'):
+                                statement.value.func.id in RUNTIME_IDENTITY_CASTS):
                             statement.value = self.visit(statement.value.args[1])
                             if (len(statement.targets) == 1 and
                                     isinstance(statement.targets[0], ast.Name) and
@@ -464,7 +469,10 @@ data = _cad_cast("_ReferencesInput", payload)
     def test_clean_rules_import_without_sdk_filesystem_or_processes(self):
         paths = {unit['path'] for family in FAMILIES.values() for unit in family['units']
                  if '/domain/' in unit['path'] or '/application/' in unit['path']}
-        allowed = {'math', 'json', 'hashlib', 'binascii', 'struct', 'zlib', 're', 'typing', 'collections.abc'}
+        allowed = {
+            'math', 'json', 'hashlib', 'binascii', 'struct', 'zlib', 're', 'enum', 'typing',
+            'collections.abc', 'fmcad.domain.values',
+        }
         for module in allowed:
             __import__(module)
         original_import = builtins.__import__
