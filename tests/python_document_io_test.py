@@ -65,6 +65,11 @@ PRIVATE_HELPER_RENAMES = {
 RUNTIME_IDENTITY_CASTS = {
     '_cad_cast', '_measure_cast', '_checking_cast', '_interference_cast', '_references_cast',
 }
+DIRECT_MEASURE_HANDLER_NAMES = {
+    'measure.diameter': 'measure_diameter', 'measure.radius': 'measure_radius',
+    'measure.length': 'measure_length', 'measure.area': 'measure_area',
+    'measure.volume': 'measure_volume', 'measure.mass': 'measure_mass',
+}
 
 
 def family_source(family):
@@ -101,7 +106,11 @@ class RuntimeInventoryTests(unittest.TestCase):
         self.assertEqual(set(migrated), set(baseline))
         self.assertEqual(migrated_owners, baseline_owners)
         for operation in baseline:
-            self.assertEqual(migrated[operation].__name__, baseline[operation].__name__, operation)
+            expected_name = DIRECT_MEASURE_HANDLER_NAMES.get(operation, baseline[operation].__name__)
+            self.assertEqual(migrated[operation].__name__, expected_name, operation)
+            if operation in DIRECT_MEASURE_HANDLER_NAMES:
+                self.assertEqual(baseline_owners[operation], 'measure', operation)
+                self.assertIsNone(migrated[operation].__closure__, operation)
 
     def test_every_retained_definition_has_exactly_its_previous_count(self):
         for family, entry in FAMILIES.items():
