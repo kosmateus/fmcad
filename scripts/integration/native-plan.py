@@ -10,6 +10,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def normalized_text_sha256(source):
+    # Match nativeIntegrationSourceHash; checkout CRLF is not a source change.
+    return hashlib.sha256(source.replace(b'\r\n', b'\n')).hexdigest()
+
+
 def native_obligations(profile, inventory_ids):
     if profile.get('required') is not True or profile.get('qualification') != 'pending':
         raise ValueError('Native qualification profile must remain required and pending')
@@ -53,9 +58,9 @@ def integration_manifest():
             raise ValueError(f"Duplicate retained integration case: {case['id']}")
         ids.add(case['id'])
         source = (ROOT / case['source']).resolve()
-        if not source.is_relative_to(ROOT) or hashlib.sha256(source.read_bytes()).hexdigest() != case['sourceSha256']:
+        if not source.is_relative_to(ROOT) or normalized_text_sha256(source.read_bytes()) != case['sourceSha256']:
             raise ValueError(f"Retained integration assertions changed after review: {case['source']}")
-    return {'path': str(path.relative_to(ROOT)), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+    return {'path': str(path.relative_to(ROOT)), 'sha256': normalized_text_sha256(path.read_bytes()),
             'caseCount': len(ids), 'qualification': 'NOTRUN', 'cases': manifest['cases']}
 
 
@@ -77,7 +82,13 @@ def native_fixture_obligations(profile):
             sources.append(('continuationSource', 'continuationSourceSha256'))
         for path_key, hash_key in sources:
             source = (ROOT / case[path_key]).resolve()
-            if not source.is_relative_to(ROOT) or hashlib.sha256(source.read_bytes()).hexdigest() != case.get(hash_key):
+            source_bytes = source.read_bytes()
+            actual_sha256 = (
+                normalized_text_sha256(source_bytes)
+                if case['id'] == 'native-integration'
+                else hashlib.sha256(source_bytes).hexdigest()
+            )
+            if not source.is_relative_to(ROOT) or actual_sha256 != case.get(hash_key):
                 raise ValueError(f"Native fixture changed after review: {case[path_key]}")
     obligations = native_obligations(profile, set(expected))
     for obligation, case in zip(obligations, cases):

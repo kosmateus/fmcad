@@ -261,6 +261,27 @@ class RegistrationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             native_plan.native_obligations(profile, {'owned'})
 
+    def test_native_integration_source_pins_normalize_checkout_line_endings(self):
+        lf = b'first line\nsecond line\n'
+        crlf = b'first line\r\nsecond line\r\n'
+        changed = b'first line\r\nchanged line\r\n'
+        self.assertEqual(
+            native_plan.normalized_text_sha256(lf),
+            native_plan.normalized_text_sha256(crlf),
+        )
+        self.assertNotEqual(
+            native_plan.normalized_text_sha256(lf),
+            native_plan.normalized_text_sha256(changed),
+        )
+        manifest = native_plan.integration_manifest()
+        profiles = json.loads((coverage.ROOT / 'tests/live-required-profiles.json').read_text())
+        binding = next(
+            row for row in profiles['profiles']['native-fixtures']['cases']
+            if row['id'] == 'native-integration'
+        )
+        self.assertEqual(manifest['caseCount'], 251)
+        self.assertEqual(manifest['sha256'], binding['sourceSha256'])
+
     def test_native_fixture_profile_retains_sources_and_restoration_continuation(self):
         profiles = json.loads((coverage.ROOT / 'tests/live-required-profiles.json').read_text())
         profile = profiles['profiles']['native-fixtures']
