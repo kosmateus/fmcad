@@ -109,6 +109,7 @@ test("installed consumer retains real CLI, worker, MCP and public API admission 
   // tarball; no checkout source or private workspace package is used.
   const copied = path.join(directory, "tests");
   fs.mkdirSync(path.join(copied, "fixtures"), { recursive: true });
+  const consumerPackage = path.join(directory, "node_modules/fmcad");
   fs.copyFileSync(
     path.join(__dirname, "python-admission-ports.test.js"),
     path.join(copied, "python-admission-ports.test.js"),
@@ -116,6 +117,25 @@ test("installed consumer retains real CLI, worker, MCP and public API admission 
   fs.copyFileSync(
     path.resolve("tests/fixtures/python-admission-broker.cjs"),
     path.join(copied, "fixtures/python-admission-broker.cjs"),
+  );
+  fs.copyFileSync(
+    path.resolve("tests/fixtures/native-source-envelope.cjs"),
+    path.join(copied, "fixtures/native-source-envelope.cjs"),
+  );
+  const decoderDirectory = path.join(directory, "runtime/python/entrypoints");
+  const decoderTypingDirectory = path.join(directory, "runtime/python/typing");
+  fs.mkdirSync(decoderDirectory, { recursive: true });
+  fs.mkdirSync(decoderTypingDirectory, { recursive: true });
+  fs.copyFileSync(
+    path.join(
+      consumerPackage,
+      "dist/runtime/python/entrypoints/source_units.py",
+    ),
+    path.join(decoderDirectory, "source_units.py"),
+  );
+  fs.copyFileSync(
+    path.join(consumerPackage, "dist/runtime/python/typing/source_codec.py"),
+    path.join(decoderTypingDirectory, "source_codec.py"),
   );
   const integration = execFileSync(
     process.execPath,
@@ -132,10 +152,7 @@ test("installed consumer retains real CLI, worker, MCP and public API admission 
       env: {
         PATH: process.env["PATH"],
         HOME: directory,
-        FMCAD_ADMISSION_CONSUMER_PACKAGE: path.join(
-          directory,
-          "node_modules/fmcad",
-        ),
+        FMCAD_ADMISSION_CONSUMER_PACKAGE: consumerPackage,
         ...(process.env["WSL_DISTRO_NAME"]
           ? { WSL_DISTRO_NAME: process.env["WSL_DISTRO_NAME"] }
           : {}),

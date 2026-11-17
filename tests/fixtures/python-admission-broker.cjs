@@ -4,6 +4,7 @@ const path = require('node:path');
 const {spawn} = require('node:child_process');
 const packageRoot=process.env.FMCAD_ADMISSION_CONSUMER_PACKAGE || path.resolve(__dirname,'../..');
 const load=name=>require(path.join(packageRoot,'dist/src',name));
+const {nativeReceipts}=require(path.join(__dirname,'native-source-envelope.cjs'));
 const {createBrokerTransport} = load('dist/fusion-transport/broker');
 const {serve} = load('queue-broker');
 const {QueueClient} = load('queue-client');
@@ -34,16 +35,14 @@ module.exports = async function fixture(t, {typedService = false} = {}) {
       const script=payload.params?.arguments?.object?.script || payload.params?.arguments?.code;
       let text='{}';
       if(script) {
-        if(!script.includes('FMCAD_QUEUE_INSTANCE')) {products++;await observeProduct(script);}
-        const binding=script.match(/_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/);
-        const filename=script.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
-        if(binding&&filename) {
-          const file=JSON.parse(filename[1]).replace(/^\\\\wsl\$\\[^\\]+/,'').replaceAll('\\','/');
-          if(!file.startsWith(home+'/')) throw Error('Foreign synthetic receipt path');
-          fs.writeFileSync(file,JSON.stringify({...JSON.parse(JSON.parse(binding[1])),terminal:true,outcome:'succeeded',instance}));
-        }
-        if(script.includes('FMCAD_QUEUE_INSTANCE')) text='FMCAD_QUEUE_INSTANCE '+JSON.stringify({...instance,
-          documentState:{status:'complete',fingerprint,state:{identity:{creationId:'A'},references:[]}}});
+        const observation={...instance,
+          documentState:{status:'complete',fingerprint,state:{identity:{creationId:'A'},references:[]}}};
+        const receipts=nativeReceipts(script,home,observation);
+        const probe=receipts.some(receipt=>receipt.value.probeObservation);
+        if(!probe) {products++;await observeProduct(script);}
+        for(const receipt of receipts)
+          fs.writeFileSync(receipt.file,JSON.stringify(receipt.value));
+        if(probe) text='FMCAD_QUEUE_INSTANCE '+JSON.stringify(observation);
         else text='typed-result';
       }
       return {status:200,raw:JSON.stringify({jsonrpc:'2.0',id:payload.id,result:{content:[{type:'text',text}]}})};

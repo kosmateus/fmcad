@@ -14,6 +14,9 @@ const fixture = load(
   t: import("node:test").TestContext,
   options?: { typedService?: boolean },
 ) => Promise<AdmissionFixture>;
+const { decodeNativeProgram } = load(
+  path.join(fixtureRoot, "fixtures/native-source-envelope.cjs"),
+) as { decodeNativeProgram(source: string): string };
 const packageRoot =
   process.env["FMCAD_ADMISSION_CONSUMER_PACKAGE"] ||
   path.resolve(__dirname, "../..");
@@ -421,7 +424,12 @@ test("actual prepared typed service keeps input/reset/document drift fences and 
         release = resolve;
       });
     f.observe(async (prepared) => {
-      if (prepared.pythonArtifact?.script.includes("TYPED_SERVICE")) {
+      if (
+        prepared.pythonArtifact &&
+        decodeNativeProgram(prepared.pythonArtifact.script).includes(
+          "TYPED_SERVICE",
+        )
+      ) {
         reached();
         await proceed;
       }
@@ -506,7 +514,12 @@ test("offline raw preparation cannot publish accepted work after broker ownershi
       release = resolve;
     });
   f.observe(async (prepared) => {
-    if (prepared.pythonArtifact?.script.includes("RAW_STOP_GUARD")) {
+    if (
+      prepared.pythonArtifact &&
+      decodeNativeProgram(prepared.pythonArtifact.script).includes(
+        "RAW_STOP_GUARD",
+      )
+    ) {
       reached();
       await proceed;
     }
