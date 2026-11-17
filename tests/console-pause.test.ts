@@ -4,6 +4,16 @@ import { at, record, text, number } from "./integration/offline-cli";
 const runtimeRequire = createRequire(
   process.cwd() + "/tests/console-pause.test.js",
 );
+const { decodeNativeProgram, nativeReceipts } = runtimeRequire(
+  "./fixtures/native-source-envelope.cjs",
+) as {
+  decodeNativeProgram(source: string): string;
+  nativeReceipts(
+    source: string,
+    root: string,
+    instance: Record<string, unknown>,
+  ): Array<{ file: string; value: Record<string, unknown> }>;
+};
 function present<T>(value: T | null | undefined): T {
   assert(value != null);
   return value;
@@ -225,7 +235,8 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
   };
   let finishPing: (() => void) | undefined,
     sent = 0,
-    productScripts = 0;
+    productScripts = 0,
+    boundProbeReceipts = 0;
   const { createBrokerTransport } = runtimeRequire(
     "../src/dist/fusion-transport/broker",
   ) as typeof import("../packages/node-adapters/src/fusion-transport/broker");
@@ -267,34 +278,29 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
         script && typeof script === "object"
           ? Reflect.get(script, key)
           : undefined;
-    if (typeof script === "string" && !script.includes("FMCAD_QUEUE_INSTANCE"))
+    const decodedScript =
+      typeof script === "string" ? decodeNativeProgram(script) : "";
+    if (
+      typeof script === "string" &&
+      !decodedScript.includes("FMCAD_QUEUE_INSTANCE")
+    )
       productScripts++;
-    if (typeof script === "string") {
-      const binding = script.match(
-        /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
-      );
-      const file = script.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
-      if (binding && file) {
-        const local = JSON.parse(text(file[1]))
-          .replace(/^\\\\wsl\$\\[^\\]+/, "")
-          .replaceAll("\\", "/");
-        fs.writeFileSync(
-          local,
-          JSON.stringify({
-            ...JSON.parse(JSON.parse(text(binding[1]))),
-            terminal: true,
-            outcome: "succeeded",
-            instance: identity,
-          }),
-        );
-      }
+    const receipts =
+      typeof script === "string" ? nativeReceipts(script, dir, identity) : [];
+    for (const receipt of receipts) {
+      fs.mkdirSync(path.dirname(receipt.file), { recursive: true });
+      fs.writeFileSync(receipt.file, JSON.stringify(receipt.value));
+      if (receipt.value["probeObservation"] !== undefined) boundProbeReceipts++;
     }
+    const boundProbe = receipts.some(
+      (receipt) => receipt.value["probeObservation"] !== undefined,
+    );
     return {
       status: 200,
       raw: JSON.stringify({
         jsonrpc: "2.0",
         id: payload["id"],
-        result: script
+        result: boundProbe
           ? {
               content: [
                 {
@@ -303,7 +309,16 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
                 },
               ],
             }
-          : {},
+          : script
+            ? {
+                content: [
+                  {
+                    type: "text",
+                    text: JSON.stringify({ tag: "fixture" }),
+                  },
+                ],
+              }
+            : {},
       }),
     };
   };
@@ -322,6 +337,10 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
     await broker.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });
+  assert.ok(
+    boundProbeReceipts > 0,
+    "readiness must consume a source-bound Fusion instance receipt",
+  );
   const auth = { clientId: "control-test", clientToken: "private-control" };
   await request(dir, { action: "register", ...auth });
   const call = async (action: string, rest = {}) =>

@@ -124,6 +124,16 @@ type MutableModuleLoader = {
 
 const projectRoot = path.resolve(__dirname, "..", "..");
 const runtimeRequire = createRequire(__filename);
+const { decodeNativeProgram, nativeReceipts } = runtimeRequire(
+  path.join(projectRoot, "tests/fixtures/native-source-envelope.cjs"),
+) as {
+  decodeNativeProgram(source: string): string;
+  nativeReceipts(
+    source: string,
+    root: string,
+    instance: Record<string, unknown>,
+  ): Array<{ file: string; value: Record<string, unknown> }>;
+};
 const mutableModule = Module as unknown as MutableModuleLoader;
 const loadModule = mutableModule._load;
 mutableModule._load = function (request, parent, ...args) {
@@ -165,7 +175,10 @@ queueAdmission.createProductionQueueAdmission = () => ({
       const script = (
         payload as { params?: { arguments?: { object?: { script?: string } } } }
       ).params?.arguments?.object?.script;
-      if (script && !script.includes("FMCAD_QUEUE_INSTANCE"))
+      if (
+        script &&
+        !decodeNativeProgram(script).includes("FMCAD_QUEUE_INSTANCE")
+      )
         await fakeAdmissionCheck?.(payload, options);
       return { kind: "python", fence() {} };
     },
@@ -263,23 +276,18 @@ async function fixture(t: TestContext, brokerOptions: BrokerOptions = {}) {
     backend: "mcp",
     resolvedIdentity: { creationId: "native-document" },
   };
-  function receipt(script: string): NativeBinding | undefined {
-    const binding = script.match(
-      /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
-    );
-    const file = script.match(/_qr_path = ("(?:\\.|[^"\\])*")/);
-    if (!binding || !file || !binding[1] || !file[1]) return;
-    const record = JSON.parse(JSON.parse(binding[1]));
-    const target = JSON.parse(file[1])
-      .replace(/^\\\\wsl\$\\[^\\]+/, "")
-      .replaceAll("\\", "/");
-    durable(target, {
-      ...record,
-      terminal: true,
-      outcome: "succeeded",
-      instance,
-    });
-    return { binding: record, receipt: target };
+  function receipt(
+    script: string,
+    observation: Record<string, unknown> = instance,
+  ): NativeBinding | undefined {
+    const receipts = nativeReceipts(script, dir, observation);
+    for (const item of receipts) durable(item.file, item.value);
+    const emitted =
+      receipts.find((item) => item.value["probeObservation"] !== undefined) ??
+      receipts[0];
+    return emitted
+      ? { binding: emitted.value, receipt: emitted.file }
+      : undefined;
   }
   const physical: {
     server: { timeoutMs: number };
@@ -292,7 +300,8 @@ async function fixture(t: TestContext, brokerOptions: BrokerOptions = {}) {
     async _post(payload) {
       wireIds.push(payload.id);
       const script = payload.params?.arguments?.object?.script || "";
-      const tag = script.includes("SDK_A") ? "A" : "B";
+      const decodedScript = decodeNativeProgram(script);
+      const tag = decodedScript.includes("SDK_A") ? "A" : "B";
       count++;
       maximum = Math.max(maximum, count);
       trace.push("sdk-start-" + tag);
@@ -351,35 +360,46 @@ async function fixture(t: TestContext, brokerOptions: BrokerOptions = {}) {
     },
     async callTool(value, toolName) {
       const script = value.object?.script || "";
-      if (script.includes("FMCAD_QUEUE_INSTANCE")) {
+      const decodedScript = decodeNativeProgram(script);
+      if (decodedScript.includes("FMCAD_QUEUE_INSTANCE")) {
         probes++;
-        if (script.includes("preflight-") && preflightDelay)
+        if (decodedScript.includes("preflight-") && preflightDelay)
           await sleep(preflightDelay);
-        if (script.includes("postflight-") && postflightDelay) {
+        if (decodedScript.includes("postflight-") && postflightDelay) {
           postflightStarted = true;
           await sleep(postflightDelay);
         }
-        if (losePostflight && script.includes("postflight-")) {
+        if (losePostflight && decodedScript.includes("postflight-")) {
           losePostflight = false;
-          finishPostflight = () => receipt(script);
+          const observation = {
+            ...instance,
+            documentState: {
+              status: "complete",
+              fingerprint,
+              state: { identity: { creationId: "A" }, references: [] },
+            },
+          };
+          finishPostflight = () => receipt(script, observation);
           throw Object.assign(
             new Error("Lost postflight reply; remote probe has not finished"),
             { code: "ECONNRESET" },
           );
         }
-        receipt(script);
+        const observation = {
+          ...instance,
+          documentState: {
+            status: "complete",
+            fingerprint,
+            state: { identity: { creationId: "A" }, references: [] },
+          },
+        };
+        const emitted = receipt(script, observation);
+        const boundProbe = emitted?.binding["probeObservation"] !== undefined;
         return {
-          failed: false,
-          text:
-            "FMCAD_QUEUE_INSTANCE " +
-            JSON.stringify({
-              ...instance,
-              documentState: {
-                status: "complete",
-                fingerprint,
-                state: { identity: { creationId: "A" }, references: [] },
-              },
-            }),
+          failed: !boundProbe,
+          text: boundProbe
+            ? "FMCAD_QUEUE_INSTANCE " + JSON.stringify(observation)
+            : "Source-bound probe receipt was not emitted",
         };
       }
       const response = await this._post({
@@ -388,7 +408,7 @@ async function fixture(t: TestContext, brokerOptions: BrokerOptions = {}) {
         method: "tools/call",
         params: { name: toolName || "fusion_mcp_execute", arguments: value },
       });
-      if (acceptedCloudSave && script.includes("SDK_A")) {
+      if (acceptedCloudSave && decodedScript.includes("SDK_A")) {
         acceptedCloudSave = false;
         return {
           failed: false,
@@ -421,13 +441,13 @@ async function fixture(t: TestContext, brokerOptions: BrokerOptions = {}) {
             }),
         };
       }
-      if (malformedNative && script.includes("SDK_A")) {
+      if (malformedNative && decodedScript.includes("SDK_A")) {
         malformedNative = false;
         return {
           text: "malformed adapted native reply",
         } as unknown as ToolResult; // Deliberately missing failed:boolean.
       }
-      if (lateNative && script.includes("SDK_A")) {
+      if (lateNative && decodedScript.includes("SDK_A")) {
         lateNative = false;
         return {
           failed: false,
