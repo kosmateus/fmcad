@@ -152,7 +152,8 @@ export function createQueuePost(
       job: QueueJob | undefined,
       clientContext: QueueRequestContext | undefined,
       debugTrace: DebugTraceContext | undefined,
-      admissionAttempted = false;
+      admissionAttempted = false,
+      sourceRejectedBeforeAdmission = false;
     const reply = (result: unknown) => ({
       status: 200,
       raw: JSON.stringify({ jsonrpc: "2.0", id: request.id, result }),
@@ -236,6 +237,24 @@ export function createQueuePost(
           }
           case "fmcad_queue_request": {
             const value = await client.findRequest(args["requestId"]!);
+            const diagnostics = value?.job
+              ? {
+                  lookupState: "job_found",
+                  acceptanceState: "accepted",
+                  jobState: value.job.state,
+                  globalQueueState: "not_read",
+                  reason:
+                    value.job.state === "needs_reconciliation"
+                      ? "accepted_job_needs_reconciliation"
+                      : "owned_job_found",
+                }
+              : {
+                  lookupState: "no_owned_job",
+                  acceptanceState: "unknown",
+                  jobState: null,
+                  globalQueueState: "not_read",
+                  reason: "no_owned_job_record",
+                };
             const result = value?.job
               ? Object.assign(
                   {
@@ -246,14 +265,16 @@ export function createQueuePost(
                     context: value.context,
                   },
                   value,
+                  diagnostics,
                 )
               : {
                   requestId: args["requestId"]!,
                   jobId: null,
                   status: "needs_reconciliation",
                   context: value?.context ?? null,
+                  ...diagnostics,
                   instruction:
-                    "No owned receipt is visible in this broker snapshot. Do not resubmit an uncertain request; inspect again after reconnecting.",
+                    "No owned job record is visible. Acceptance is unknown; global queue state was not read. Do not resubmit an uncertain request; inspect again after reconnecting.",
                 };
             const response = helperResult(result);
             return {
@@ -404,6 +425,8 @@ export function createQueuePost(
         admissionAttempted = !begin;
         job = await client.submit(input);
       } catch (error) {
+        sourceRejectedBeforeAdmission =
+          (error as QueueError).code === "BACKEND_MISMATCH";
         try {
           recovered = await client.findRequest(requestId);
         } catch {
@@ -642,9 +665,13 @@ export function createQueuePost(
           "unsupported_queue_route",
           "REQUEST_CONTEXT_CONFLICT",
         ].includes(error.code!);
+      const rejectedBeforeAdmission =
+        error.notStarted === true ||
+        !admissionAttempted ||
+        sourceRejectedBeforeAdmission;
       const requestStatus = job
         ? mcpRequestState(job.state)
-        : validationRequired || !admissionAttempted
+        : rejectedBeforeAdmission
           ? "rejected-before-admission"
           : "needs_reconciliation";
       return {
@@ -665,6 +692,12 @@ export function createQueuePost(
             data: {
               requestId,
               requestStatus,
+              acceptanceState: job
+                ? "accepted"
+                : rejectedBeforeAdmission
+                  ? "rejected-before-admission"
+                  : "unknown",
+              globalQueueState: "not_read",
               ...(validationRequired
                 ? {
                     validation: {

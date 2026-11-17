@@ -6,8 +6,9 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import readline from "node:readline";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
+import { inflateSync } from "node:zlib";
 import type { TestContext } from "node:test";
 import type { McpRequest } from "../src/entrypoints/mcp";
 import type {
@@ -123,6 +124,20 @@ function receiptFromPreparedScript(script: string) {
   assert.fail(
     "The physical test backend requires an exact prepared receipt binding and path",
   );
+}
+
+function decodeNativeSourceEnvelope(script: string) {
+  const envelope = script.match(
+    /_fmcad_decode_source_v1\('([^']+)', (\d+), '([a-f0-9]{64})'\)/,
+  );
+  if (!envelope) return script;
+  const decoded = inflateSync(Buffer.from(envelope[1]!, "base64"));
+  assert.equal(decoded.length, Number(envelope[2]));
+  assert.equal(
+    createHash("sha256").update(decoded).digest("hex"),
+    envelope[3],
+  );
+  return decoded.toString("utf8");
 }
 
 test("MCP physical fixture reads current prepared receipt wrappers and rejects missing bindings", () => {
@@ -1021,12 +1036,26 @@ test(
       releaseFirstCall = resolve;
     });
     function settle(script: string) {
+      const source = decodeNativeSourceEnvelope(script);
+      const { record, target } = receiptFromPreparedScript(source);
+      durable(target, {
+        ...record,
+        terminal: true,
+        outcome: "succeeded",
+        instance,
+      });
+    }
+    function settleProbe(script: string) {
       const { record, target } = receiptFromPreparedScript(script);
       durable(target, {
         ...record,
         terminal: true,
         outcome: "succeeded",
         instance,
+        probeObservation: {
+          schema: "fmcad-instance-probe-v1",
+          identity: instance,
+        },
       });
     }
     const physical: Client = partial<Client>({
@@ -1069,8 +1098,16 @@ test(
       },
       async callTool(value) {
         const script = text(optional(value, "object", "script") ?? "");
-        if (script.includes("FMCAD_QUEUE_INSTANCE")) {
-          settle(script);
+        const source = decodeNativeSourceEnvelope(script);
+        if (source.includes("FMCAD_QUEUE_INSTANCE")) {
+          let boundProbe = false;
+          try {
+            receiptFromPreparedScript(source);
+            boundProbe = true;
+          } catch {
+            /* Unbound instance probes have no terminal receipt to settle. */
+          }
+          if (boundProbe) settleProbe(source);
           return {
             failed: false,
             text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance),
@@ -1250,6 +1287,32 @@ test(
     assert.equal(
       field(hiddenRequest, "result", "structuredContent", "context"),
       null,
+    );
+    assert.equal(
+      field(hiddenRequest, "result", "structuredContent", "lookupState"),
+      "no_owned_job",
+    );
+    assert.equal(
+      field(
+        hiddenRequest,
+        "result",
+        "structuredContent",
+        "acceptanceState",
+      ),
+      "unknown",
+    );
+    assert.equal(
+      field(
+        hiddenRequest,
+        "result",
+        "structuredContent",
+        "globalQueueState",
+      ),
+      "not_read",
+    );
+    assert.equal(
+      field(hiddenRequest, "result", "structuredContent", "queueBlocked"),
+      undefined,
     );
 
     const restarted = processClient(t, entrypoint, directory, ownerAEnv);

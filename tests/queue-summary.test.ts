@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -87,18 +88,35 @@ test("queue summary and owned request lookup do not serialize retained job histo
       throw new Error("No physical command expected");
     },
     _parse: JSON.parse,
-    async callTool() {
+    async callTool(args: { object: { script: string } }) {
+      const harness = `import sys, types
+app = types.SimpleNamespace(version='test-version',
+    userInterface=types.SimpleNamespace(activeCommand='SelectCommand'),
+    documents=types.SimpleNamespace(count=0, item=lambda index: None))
+core = types.ModuleType('adsk.core')
+core.Application = types.SimpleNamespace(get=lambda: app)
+adsk = types.ModuleType('adsk')
+adsk.core = core
+sys.modules['adsk'] = adsk
+sys.modules['adsk.core'] = core
+`;
+      const executed = spawnSync(
+        "python3",
+        ["-c", harness + args.object.script + "\nrun(None)\n"],
+        { encoding: "utf8" },
+      );
+      assert.equal(
+        executed.status,
+        0,
+        `offline bound-probe wrapper failed: ${executed.stderr}`,
+      );
+      const markers = executed.stdout
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("FMCAD_QUEUE_INSTANCE "));
+      assert.equal(markers.length, 1);
       return {
         failed: false,
-        text:
-          "FMCAD_QUEUE_INSTANCE " +
-          JSON.stringify({
-            pid: 99,
-            birth: "test:99",
-            version: "test-version",
-            activeCommand: "SelectCommand",
-            documents: [],
-          }),
+        text: markers[0],
       };
     },
   };
@@ -113,6 +131,7 @@ test("queue summary and owned request lookup do not serialize retained job histo
   broker = await serve(config, {
     dir,
     confirmOwnership: true,
+    nativePath: (file) => file,
     createBackend: () =>
       physical as unknown as import("../src/queue-broker-ports").Client,
   });
