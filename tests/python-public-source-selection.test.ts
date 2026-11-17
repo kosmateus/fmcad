@@ -9,7 +9,7 @@ import type { PreparedPythonArtifact } from "@fmcad/core";
 const load = createRequire(
   path.resolve("tests/python-public-source-selection.test.js"),
 );
-const { prepareCadScript, catalog } = load(
+const { buildCadScript, prepareCadScript, catalog } = load(
   "../src/cad",
 ) as typeof import("../src/composition/cad-execution.js");
 const { prepareRunScript } = load(
@@ -289,6 +289,69 @@ for (const { operation, data, dependencies, ...selection } of operations) {
     assert.throws(() => certificate.fence(tampered));
   });
 }
+
+test("six public scalar measurement builders pass the pinned Fusion checker", async (t) => {
+  const body = {
+    // Resolved body reference from definition-transaction-0's rejected volume step.
+    kind: "body",
+    name: "Body1",
+    token: "model-body:d29876a4-690c-4b55-a58c-44a1c885cf4b",
+    component: { kind: "component", name: "root" },
+  };
+  const measurements = [
+    {
+      operation: "measure.diameter",
+      data: { ref: { kind: "face", name: "CylinderFace" }, units: "mm" },
+    },
+    {
+      operation: "measure.radius",
+      data: { ref: { kind: "face", name: "CylinderFace" }, units: "mm" },
+    },
+    {
+      operation: "measure.length",
+      data: { ref: { kind: "edge", name: "BoxEdge" }, units: "mm" },
+    },
+    { operation: "measure.area", data: { ref: body, units: "mm2" } },
+    { operation: "measure.volume", data: { ref: body, units: "mm3" } },
+    { operation: "measure.mass", data: { ref: body, units: "kg" } },
+  ];
+  const admission = python.createPythonRpcAdmission({
+    runtime,
+    checker: createChecker(),
+  });
+
+  for (const { operation, data } of measurements) {
+    await t.test(operation, async () => {
+      const context = {
+        doc: "PublicMeasureScalarFixture",
+        docId: `public-${operation}`,
+      };
+      const built = buildCadScript(operation, data, context);
+      const original = prepareCadScript(operation, data, context);
+      assert.equal(built, original.script);
+      const wire = prepareWire(original, `public-${operation}`);
+      const certificate = await admission
+        .check(wire.request, wire.artifact)
+        .catch((error: unknown) => {
+          const report =
+            error !== null &&
+            typeof error === "object" &&
+            "pythonCheck" in error
+              ? error.pythonCheck
+              : error;
+          assert.fail(JSON.stringify(report));
+        });
+
+      assert.equal(certificate.kind, "python");
+      assert.equal(
+        certificate.report?.status,
+        "passed",
+        JSON.stringify(certificate.report?.diagnostics),
+      );
+      assert.deepEqual(certificate.report?.diagnostics, []);
+    });
+  }
+});
 
 test("public measure.baseline.capture preserves BRepBody through the real Fusion checker", async () => {
   const original = prepareCadScript(

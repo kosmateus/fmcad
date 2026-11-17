@@ -384,6 +384,25 @@ class MeasureTests(unittest.TestCase):
             value = NS['_measure_value'](scale ** 3, 'volume', {})['value']
             self.assertAlmostEqual(value, (10 * scale) ** 3)
 
+    def test_scalar_measurements_keep_their_dimensions_and_reject_mismatched_units(self):
+        cylinder = self.face('ScalarCylinder', Entity('Cylinder', 'cylinder', radius=1.25))
+        edge = self.add(Entity('BRepEdge', 'ScalarEdge', body=self.body, length=math.pi))
+        measurements = (
+            ('measure.diameter', {'ref': {'token': cylinder.entityToken}}, 'mm', 25, 'mm2'),
+            ('measure.radius', {'ref': {'token': cylinder.entityToken}}, 'mm', 12.5, 'mm2'),
+            ('measure.length', {'ref': edge}, 'mm', 10 * math.pi, 'mm2'),
+            ('measure.area', {'ref': 'BodyA'}, 'mm2', 600, 'mm3'),
+            ('measure.volume', {'ref': 'BodyA'}, 'mm3', 1000, 'mm2'),
+            ('measure.mass', {'ref': 'BodyA'}, 'kg', 0.00785, 'mm'),
+        )
+        for operation, data, units, value, invalid_units in measurements:
+            with self.subTest(operation=operation):
+                result = self.call(operation, data)
+                self.assertEqual(result['units'], units)
+                self.assertAlmostEqual(result['value'], value)
+                with self.assertRaisesRegex(ValueError, 'Unsupported .* units:'):
+                    self.call(operation, dict(data, units=invalid_units))
+
     def test_nonfinite_wrong_units_and_unknown_inputs_rejected(self):
         with self.assertRaisesRegex(ValueError, 'units'):
             self.call('measure.volume', {'ref': 'BodyA', 'units': 'mm'})

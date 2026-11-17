@@ -16,13 +16,36 @@ def dimension_expression(path):
     assignment = next(node for node in function.body
                       if isinstance(node, ast.Assign) and
                       any(isinstance(target, ast.Name) and target.id == 'dimension'
-                          for target in node.targets))
-    return ast.dump(assignment.value, include_attributes=False)
+                           for target in node.targets))
+    return assignment.value
+
+
+def dimension_value(expression, mode):
+    return eval(compile(ast.Expression(expression), '<dimension-expression>', 'eval'),
+                {'__builtins__': {}, 'mode': mode, '_cad_cast': lambda unused_type, value: value})
+
+
+def without_static_cast(expression):
+    class StripCast(ast.NodeTransformer):
+        def visit_Call(self, call):
+            if isinstance(call.func, ast.Name) and call.func.id == '_cad_cast':
+                return self.visit(call.args[1])
+            return self.generic_visit(call)
+
+    return ast.dump(StripCast().visit(expression), include_attributes=False)
 
 
 class MeasureScalarParityTests(unittest.TestCase):
-    def test_dimension_selection_matches_frozen_python_source(self):
-        self.assertEqual(dimension_expression(ADAPTER), dimension_expression(HISTORICAL))
+    def test_dimension_selection_preserves_frozen_mapping_with_static_narrowing(self):
+        current = dimension_expression(ADAPTER)
+        historical = dimension_expression(HISTORICAL)
+        self.assertEqual(
+            without_static_cast(current),
+            ast.dump(historical, include_attributes=False),
+        )
+        for mode in ('diameter', 'radius', 'distance', 'angle', 'length', 'area',
+                     'volume', 'mass', 'thickness'):
+            self.assertEqual(dimension_value(current, mode), dimension_value(historical, mode), mode)
 
 
 if __name__ == '__main__':

@@ -456,9 +456,11 @@ data = _cad_cast("_ReferencesInput", payload)
                     # Metadata-only SDK discovery now types the optional imported
                     # module/classes; simulation_test.py remains its behavior oracle.
                     continue
-                if family == 'measure' and name in {'_measure_compare_bodies', '_measure_frame_context'}:
+                if family == 'measure' and name in {
+                        '_measure_compare_bodies', '_measure_frame_context', '_measure_scalar'}:
                     # Master requires explicit frame validation for temporary
-                    # baselines and reconciles serialized space-only frames.
+                    # baselines and reconciles serialized space-only frames;
+                    # scalar dimensions retain their mapping with static narrowing.
                     continue
                 if family == 'legacy-queue_document' and name == '_qd_design_state':
                     # Master now sorts retained component/parameter/reference
