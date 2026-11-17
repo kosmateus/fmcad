@@ -31,6 +31,26 @@ const { request } = load(
 ) as typeof import("../src/entrypoints/queue-connection.js");
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+async function waitFor(promise: Promise<void>, message: string) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      promise,
+      new Promise<void>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), 5000);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 test("a local build mismatch before sending preflight is terminal not_started, never a false unknown hold", async (t) => {
   const parent = path.join(fixtureDirectory, "..", ".test-artifacts");
@@ -50,6 +70,9 @@ test("a local build mismatch before sending preflight is terminal not_started, n
     { recursive: true },
   );
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "qlocal-"));
+  const prepared = deferred();
+  const releasePreparation = deferred();
+  let preparationHeld = false;
   let probes = 0,
     sdk = 0;
   const instance = {
@@ -68,6 +91,36 @@ test("a local build mismatch before sending preflight is terminal not_started, n
     async _post() {
       sdk++;
       throw Error("No SDK operation may be dispatched");
+    },
+    async prepareCallTool(...args: unknown[]) {
+      const argumentsObj = args[0];
+      assert.ok(
+        argumentsObj &&
+          typeof argumentsObj === "object" &&
+          !Array.isArray(argumentsObj),
+      );
+      const toolArguments = argumentsObj as Record<string, unknown>;
+      const name = typeof args[1] === "string" ? args[1] : "fusion_mcp_execute";
+      const check = await this.preparePost!({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: {
+          name,
+          arguments: toolArguments,
+        },
+      });
+      if (field(toolArguments, "object", "readOnly") === true)
+        return Object.assign(async () => this.callTool(toolArguments, name), {
+          fence: check.fence,
+        });
+      return Object.assign(
+        async () => {
+          sdk++;
+          throw Error("No SDK operation may be dispatched");
+        },
+        { fence: check.fence },
+      );
     },
     async callTool(value) {
       probes++;
@@ -96,10 +149,17 @@ test("a local build mismatch before sending preflight is terminal not_started, n
       dir,
       confirmOwnership: true,
       createBackend: () => physical,
-      pollMs: 3000,
+      pollMs: 5,
+      testCheckPrepared: async (value) => {
+        if (value.metadataOnly || preparationHeld) return;
+        preparationHeld = true;
+        prepared.resolve();
+        await releasePreparation.promise;
+      },
     },
   );
   t.after(async () => {
+    releasePreparation.resolve();
     await broker.close();
     fs.rmSync(dir, { recursive: true, force: true });
     fs.rmSync(work, { recursive: true, force: true });
@@ -129,23 +189,17 @@ test("a local build mismatch before sending preflight is terminal not_started, n
   });
   const read = () =>
     request(dir, { action: "result", auth, jobId: field(job, "id") });
-  let ready = false;
-  for (let i = 0; i < 200; i++) {
-    if (field(await read(), "job", "state") === "queued") {
-      ready = true;
-      break;
-    }
-    await sleep(10);
-  }
-  assert.equal(
-    ready,
-    true,
-    "Worker finished preparation before the first scheduler turn",
+  await waitFor(
+    prepared.promise,
+    "Preflight preparation did not reach its barrier",
   );
+  assert.equal(field(await read(), "job", "state"), "preparing");
+  assert.equal(sdk, 0);
   fs.appendFileSync(
     path.join(runtime, "src/help.js"),
     "\n// Controlled local build change; no product files.\n",
   );
+  releasePreparation.resolve();
   let result: unknown;
   for (let i = 0; i < 300; i++) {
     result = await read();
@@ -153,7 +207,7 @@ test("a local build mismatch before sending preflight is terminal not_started, n
     await sleep(10);
   }
   assert.equal(field(result, "job", "state"), "failed");
-  assert.equal(field(result, "job", "code"), "BUILD_CHANGED_BEFORE_EXECUTION");
+  assert.equal(field(result, "job", "code"), "BUILD_CHANGED");
   assert.equal(field(result, "job", "executionOutcome"), "not_started");
   assert.equal(field(result, "job", "mayHaveMutated"), false);
   assert.equal(broker.status().blocked, null);
