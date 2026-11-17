@@ -87,6 +87,34 @@ test("typed document service dispatches actual commands without CLI imports or s
     !Object.keys(load.cache).some((file) => /\/src\/cli\.js$/.test(file)),
   );
 });
+
+test("newDocument casts Fusion's numeric enum to DocumentTypes for Python admission", async () => {
+  const calls: {
+    data: { queryType?: string; object: { script: string } };
+    tool: string;
+  }[] = [];
+  const service = createDocumentService({
+    callTool: async (data, tool) => {
+      calls.push({ data, tool });
+      return { text: "CREATED_DOC name=Part" };
+    },
+  });
+
+  const result = await service.execute({ kind: "new", name: "Part" });
+  const script = calls[0]?.data.object.script ?? "";
+  assert.deepEqual(result, {
+    code: 0,
+    stdout: "CREATED_DOC name=Part\n",
+    stderr: "",
+  });
+  assert.equal(calls[0]?.tool, "fusion_mcp_execute");
+  assert.match(script, /from typing import cast as _doc_cast/);
+  assert.match(
+    script,
+    /doc = app\.documents\.add\(_doc_cast\("adsk\.core\.DocumentTypes", adsk\.core\.DocumentTypes\.FusionDesignDocumentType\)\)/,
+  );
+});
+
 test("typed document service never retries rejected or unknown SDK mutations", async () => {
   let calls = 0;
   const failed = createDocumentService({
