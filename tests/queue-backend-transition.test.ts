@@ -34,6 +34,14 @@ const fixture = createRequire(
   state: P.State;
   epoch: P.Epoch;
 };
+const { runBoundInstanceProbe } = createRequire(
+  path.join(process.cwd(), "tests/queue-backend-transition.test.js"),
+)("./fixtures/bound-instance-probe.cjs") as {
+  runBoundInstanceProbe(
+    script: string,
+    identity: P.Instance,
+  ): { text: string; receipt: Record<string, unknown> };
+};
 
 function setup() {
   const root = fs.mkdtempSync(path.join(tmpdir(), "fmcad-backend-transition-"));
@@ -83,9 +91,9 @@ function publishedSetup(t: TestContext) {
     }
   )(root, runtimeRoot);
   const published = f.publish();
-  const { openIsolatedEpoch } = load(
-    "./queue-isolated-epoch",
-  ) as { openIsolatedEpoch(dir: string, options: { recover: false }): P.State };
+  const { openIsolatedEpoch } = load("./queue-isolated-epoch") as {
+    openIsolatedEpoch(dir: string, options: { recover: false }): P.State;
+  };
   return {
     ...f,
     root,
@@ -530,11 +538,12 @@ test("sole broker probes target once, reopens matching head without SDK, and ret
       _post: () => {
         throw new Error("Original job replay forbidden");
       },
-      callTool: async () => {
+      callTool: async (args) => {
         probes++;
+        assert.ok(args.object?.script);
         return {
           failed: false,
-          text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(observation),
+          text: runBoundInstanceProbe(args.object.script, observation).text,
         };
       },
     }),
@@ -672,6 +681,11 @@ test("supported owner stop authorizes one paused transition without implicitly r
   const f = setup();
   let handle: Awaited<ReturnType<typeof serve>> | undefined;
   let probes = 0;
+  const observation = {
+    ...f.epoch.currentInstance,
+    activeCommand: "SelectCommand",
+    documents: [],
+  };
   const { request } = load("./queue-connection") as {
     request(
       dir: string,
@@ -701,17 +715,12 @@ test("supported owner stop authorizes one paused transition without implicitly r
       _post: () => {
         throw new Error("Replay forbidden");
       },
-      callTool: async () => {
+      callTool: async (args) => {
         probes++;
+        assert.ok(args.object?.script);
         return {
           failed: false,
-          text:
-            "FMCAD_QUEUE_INSTANCE " +
-            JSON.stringify({
-              ...f.epoch.currentInstance,
-              activeCommand: "SelectCommand",
-              documents: [],
-            }),
+          text: runBoundInstanceProbe(args.object.script, observation).text,
         };
       },
     }),
