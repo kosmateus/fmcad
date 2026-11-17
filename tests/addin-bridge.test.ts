@@ -6,6 +6,32 @@ import path from "node:path";
 const { buildBridgeScript } = createRequire(__filename)(
   path.join(process.cwd(), "src/addin-bridge"),
 ) as typeof import("../src/composition/library-addin-bridge");
+
+test("public ADDIN document-list bridge passes the pinned production checker", async () => {
+  const load = createRequire(__filename);
+  const { preparePythonArtifact } = load(
+    path.join(process.cwd(), "packages/node-adapters/dist/python/artifact"),
+  ) as typeof import("../packages/node-adapters/src/python/artifact");
+  const { createPythonChecker } = load(
+    path.join(process.cwd(), "packages/node-adapters/dist/python/checker"),
+  ) as typeof import("../packages/node-adapters/src/python/checker");
+  const source = buildBridgeScript("fusion_mcp_read", {
+    queryType: "document",
+    operation: "open",
+  });
+  const artifact = preparePythonArtifact([
+    { id: "bridge", filename: "<fmcad-queue>", source, role: "wrapper" },
+  ]);
+  const typingRoot = path.join(process.cwd(), "dist/runtime/python/typing");
+  const report = await createPythonChecker({
+    typingRoot,
+    definitionsRoot: typingRoot,
+    pythonPlatform: "Windows",
+  }).check({ artifact, context: { kind: "bundle" } });
+  assert.equal(report.status, "passed", JSON.stringify(report));
+  assert.deepEqual(report.diagnostics, []);
+});
+
 function object(value: unknown): Record<string, unknown> {
   assert(value !== null && typeof value === "object" && !Array.isArray(value));
   return value as Record<string, unknown>;
@@ -138,8 +164,9 @@ test("builder emits ASCII, JSON-safe Python and preserves replacement metacharac
     extra: [true, false, null],
   };
   const source = read(request);
-  assert.match(source, /def run\(_context: str\):/);
-  assert.match(source, /__import__\('json'\).loads/);
+  assert.match(source, /def run\(_context: str\) -> None:/);
+  assert.match(source, /_BRIDGE_REQUEST = \{"toolName":/);
+  assert.doesNotMatch(source, /__import__\('json'\).loads/);
   assert.doesNotMatch(source, /[^\x00-\x7f]/);
   const result = invoke("fusion_mcp_read", request, { fileName: name });
   assert.deepEqual(payload(result)["results"], [{ name, id: "file-1" }]);

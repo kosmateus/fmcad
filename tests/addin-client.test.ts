@@ -16,21 +16,13 @@ import assert from "node:assert/strict";
 const { BrokerAddinClient } = runtimeRequire(
   "../packages/node-adapters/dist/fusion-transport/addin",
 ) as typeof import("../packages/node-adapters/src/fusion-transport/addin");
-import fs from "node:fs";
-import path from "node:path";
+const { addinBridgeSource } = runtimeRequire(
+  "../src/addin-bridge",
+) as typeof import("../src/composition/library-addin-bridge");
 const dependencies: Dependencies = {
   version: "test",
   requestTimeout: (server) => present(server.timeoutMs),
-  bridgeSource: () =>
-    fs.readFileSync(
-      path.join(testRoot + "/tests", "../assets/cad/identity.py"),
-      "utf8",
-    ) +
-    "\n" +
-    fs.readFileSync(
-      path.join(testRoot + "/tests", "../assets/addin-bridge.py"),
-      "utf8",
-    ),
+  bridgeSource: addinBridgeSource,
 };
 
 const script = 'def run(context):\n    print("hello")';

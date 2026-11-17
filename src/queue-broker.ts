@@ -969,22 +969,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         {
           version: load("../package.json").version,
           requestTimeout: load("./request-timeout").requestTimeout,
-          bridgeSource: () =>
-            fs.readFileSync(
-              path.join(
-                resolveRuntimePaths({ anchor: __filename }).assets,
-                "cad/identity.py",
-              ),
-              "utf8",
-            ) +
-            "\n" +
-            fs.readFileSync(
-              path.join(
-                resolveRuntimePaths({ anchor: __filename }).assets,
-                "addin-bridge.py",
-              ),
-              "utf8",
-            ),
+          bridgeSource: load("./addin-bridge").addinBridgeSource,
         },
       );
     });

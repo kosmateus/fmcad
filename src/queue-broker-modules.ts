@@ -298,6 +298,7 @@ export interface BrokerModules {
     ): P.Client;
   };
   "../package.json": { version: string };
+  "./addin-bridge": { addinBridgeSource(): string };
   "./request-timeout": { requestTimeout(config: P.Config): number };
   "./dist/node-adapters/broker-ipc/normal-admission": typeof import("../packages/node-adapters/dist/broker-ipc/normal-admission");
   "./dist/node-adapters/broker-ipc/normal-restart": typeof import("../packages/node-adapters/dist/broker-ipc/normal-restart");
