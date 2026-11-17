@@ -549,13 +549,27 @@ function responseForCaller(
   publicPythonValue?: Record<string, unknown>,
 ) {
   if (publicPythonValue && reply && !reply.error) {
-    reply = { ...reply, result: { isError: false,
-      content: [{ type: "text", text: JSON.stringify(publicPythonValue) }] } };
+    reply = {
+      ...reply,
+      result: {
+        isError: false,
+        content: [{ type: "text", text: JSON.stringify(publicPythonValue) }],
+      },
+    };
   }
-  if (request.method === "tools/call" && request.params?.name === "execute_python" && reply && !reply.error) {
+  if (
+    request.method === "tools/call" &&
+    request.params?.name === "execute_python" &&
+    reply &&
+    !reply.error
+  ) {
     const result = object(reply.result);
     const content = result["content"];
-    if (Array.isArray(content) && content.length === 1 && object(content[0])["type"] === "text") {
+    if (
+      Array.isArray(content) &&
+      content.length === 1 &&
+      object(content[0])["type"] === "text"
+    ) {
       // Native Fusion wraps printed JSON in {success,message}; our public
       // execute_python contract exposes the captured stdout/stderr directly.
       // Keep received-response and native receipts untouched. Only the caller's
@@ -564,13 +578,24 @@ function responseForCaller(
         const outer = object(JSON.parse(String(object(content[0])["text"])));
         if (outer["success"] === true && typeof outer["message"] === "string") {
           const value = object(JSON.parse(outer["message"]));
-          if (typeof value["success"] === "boolean" && typeof value["stdout"] === "string" &&
-              typeof value["stderr"] === "string") {
-            reply = { ...reply, result: { ...result, isError: value["success"] !== true,
-              content: [{ type: "text", text: JSON.stringify(value) }] } };
+          if (
+            typeof value["success"] === "boolean" &&
+            typeof value["stdout"] === "string" &&
+            typeof value["stderr"] === "string"
+          ) {
+            reply = {
+              ...reply,
+              result: {
+                ...result,
+                isError: value["success"] !== true,
+                content: [{ type: "text", text: JSON.stringify(value) }],
+              },
+            };
           }
         }
-      } catch { /* Not the native compatibility envelope; preserve the reply. */ }
+      } catch {
+        /* Not the native compatibility envelope; preserve the reply. */
+      }
     }
   }
   return own(request, "id")
@@ -587,36 +612,84 @@ function boundPublicPythonValue(
   const schema = "fmcad-public-python-result-v1";
   const result = object(receipt["publicPythonResult"]);
   const value = object(result["value"]);
-  const allowed = new Set([...Object.keys(record.binding), "terminal", "outcome", "instance", "publicPythonResult"]);
+  const allowed = new Set([
+    ...Object.keys(record.binding),
+    "terminal",
+    "outcome",
+    "instance",
+    "publicPythonResult",
+  ]);
   if (
     record.binding["publicPythonResultSchema"] !== schema ||
     request.params?.name !== "execute_python" ||
     typeof request.params.arguments?.code !== "string" ||
     hash(request.params.arguments.code) !== record.binding.sourceHash ||
-    !Object.entries(record.binding).every(([key, expected]) => same(receipt[key], expected)) ||
+    !Object.entries(record.binding).every(([key, expected]) =>
+      same(receipt[key], expected),
+    ) ||
     Object.keys(receipt).some((key) => !allowed.has(key)) ||
-    receipt.terminal !== true || receipt.outcome !== "succeeded" ||
-    Object.keys(result).length !== 2 || result["schema"] !== schema ||
-    Object.keys(value).length !== 3 || value["success"] !== true ||
-    typeof value["stdout"] !== "string" || typeof value["stderr"] !== "string" ||
-    !reply || reply.error || object(reply.result)["isError"] === true
-  ) fail("RECEIPT_MISMATCH", "Fresh public Python result is incomplete or differs from its exact native binding");
+    receipt.terminal !== true ||
+    receipt.outcome !== "succeeded" ||
+    Object.keys(result).length !== 2 ||
+    result["schema"] !== schema ||
+    Object.keys(value).length !== 3 ||
+    value["success"] !== true ||
+    typeof value["stdout"] !== "string" ||
+    typeof value["stderr"] !== "string" ||
+    !reply ||
+    reply.error ||
+    object(reply.result)["isError"] === true
+  )
+    fail(
+      "RECEIPT_MISMATCH",
+      "Fresh public Python result is incomplete or differs from its exact native binding",
+    );
   const content = object(reply.result)["content"];
-  if (Object.keys(object(reply.result)).some((key) => !["content", "isError"].includes(key)))
-    fail("UNKNOWN_RPC", "Public Python native response has an unsupported result envelope");
-  if (!Array.isArray(content) || content.length !== 1 || object(content[0])["type"] !== "text")
-    fail("UNKNOWN_RPC", "Public Python native response has no canonical result envelope");
+  if (
+    Object.keys(object(reply.result)).some(
+      (key) => !["content", "isError"].includes(key),
+    )
+  )
+    fail(
+      "UNKNOWN_RPC",
+      "Public Python native response has an unsupported result envelope",
+    );
+  if (
+    !Array.isArray(content) ||
+    content.length !== 1 ||
+    object(content[0])["type"] !== "text"
+  )
+    fail(
+      "UNKNOWN_RPC",
+      "Public Python native response has no canonical result envelope",
+    );
   let outer: Record<string, unknown>;
-  try { outer = object(JSON.parse(String(object(content[0])["text"]))); }
-  catch { fail("UNKNOWN_RPC", "Public Python native response is malformed"); }
-  if (Object.keys(outer).length !== 2 || outer["success"] !== true || typeof outer["message"] !== "string")
-    fail("UNKNOWN_RPC", "Public Python native response conflicts with its terminal result");
+  try {
+    outer = object(JSON.parse(String(object(content[0])["text"])));
+  } catch {
+    fail("UNKNOWN_RPC", "Public Python native response is malformed");
+  }
+  if (
+    Object.keys(outer).length !== 2 ||
+    outer["success"] !== true ||
+    typeof outer["message"] !== "string"
+  )
+    fail(
+      "UNKNOWN_RPC",
+      "Public Python native response conflicts with its terminal result",
+    );
   if (outer["message"]) {
     let wireValue: unknown;
-    try { wireValue = JSON.parse(outer["message"]); }
-    catch { fail("UNKNOWN_RPC", "Public Python wire result is malformed"); }
+    try {
+      wireValue = JSON.parse(outer["message"]);
+    } catch {
+      fail("UNKNOWN_RPC", "Public Python wire result is malformed");
+    }
     if (!same(wireValue, value))
-      fail("RECEIPT_MISMATCH", "Public Python wire result conflicts with its bound native result");
+      fail(
+        "RECEIPT_MISMATCH",
+        "Public Python wire result conflicts with its bound native result",
+      );
   }
   return value;
 }
@@ -706,10 +779,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       ? options.testAtomicWorkflowScope
       : fastenersScope;
   const pinned: P.Config = JSON.parse(JSON.stringify(cfg)) as P.Config;
-  const preparationConcurrency = (runtimeRequire(
-    "./dist/node-adapters/execution/phased-workers",
-  ) as Pick<typeof import("../packages/node-adapters/src/execution/phased-workers"),"resolvePreparationConcurrency">).resolvePreparationConcurrency(
-    (pinned["queue"] as {preparationConcurrency?:unknown}|undefined)?.preparationConcurrency,
+  const preparationConcurrency = (
+    runtimeRequire("./dist/node-adapters/execution/phased-workers") as Pick<
+      typeof import("../packages/node-adapters/src/execution/phased-workers"),
+      "resolvePreparationConcurrency"
+    >
+  ).resolvePreparationConcurrency(
+    (pinned["queue"] as { preparationConcurrency?: unknown } | undefined)
+      ?.preparationConcurrency,
   );
   const configHash = brokerConfigHash(pinned);
   const backendScope = resolveBackendHead(dir, () =>
@@ -767,28 +844,61 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       references: proof.evidence,
       record: proof.deadPredecessorRecord,
       assertValid: () =>
-        restartPort.assertSettledNormalRestartPredecessor(
-          proof,
-          current.data,
-          { priorProcessAlive },
-        ),
+        restartPort.assertSettledNormalRestartPredecessor(proof, current.data, {
+          priorProcessAlive,
+        }),
     };
   }
-  function runtimeUpgradeProof(current: P.State, sourceFile: string): import("./queue-backend-transition").DeadPredecessorProof | undefined {
+  function runtimeUpgradeProof(
+    current: P.State,
+    sourceFile: string,
+  ): import("./queue-backend-transition").DeadPredecessorProof | undefined {
     const approval = options.backendTransition;
-    if (!approval || approval.previousConfig.backend !== approval.nextConfig.backend) return undefined;
-    if (!effectiveBackend || !current.epoch || !approval.stopRequestId ||
-        approval.nextBuildHash !== codeHash || codeHash === effectiveBackend.identity.buildHash)
-      fail("BACKEND_TRANSITION_UNPROVEN", "Same-backend runtime upgrade requires the active head, owner stop and exact distinct target build");
+    if (
+      !approval ||
+      approval.previousConfig.backend !== approval.nextConfig.backend
+    )
+      return undefined;
+    if (
+      !effectiveBackend ||
+      !current.epoch ||
+      !approval.stopRequestId ||
+      approval.nextBuildHash !== codeHash ||
+      codeHash === effectiveBackend.identity.buildHash
+    )
+      fail(
+        "BACKEND_TRANSITION_UNPROVEN",
+        "Same-backend runtime upgrade requires the active head, owner stop and exact distinct target build",
+      );
     const sourceIdentity = readJson<P.Identity>(sourceFile);
     if (!same(sourceIdentity, effectiveBackend.identity))
-      fail("BACKEND_TRANSITION_CHANGED", "Runtime upgrade source differs from the verified backend head");
-    const proof = restartPort.inspectSettledRuntimeUpgrade(dir, current.epoch, sourceIdentity, current.data,
-      { priorProcessAlive }, approval.stopRequestId, sourceFile);
+      fail(
+        "BACKEND_TRANSITION_CHANGED",
+        "Runtime upgrade source differs from the verified backend head",
+      );
+    const proof = restartPort.inspectSettledRuntimeUpgrade(
+      dir,
+      current.epoch,
+      sourceIdentity,
+      current.data,
+      { priorProcessAlive },
+      approval.stopRequestId,
+      sourceFile,
+    );
     if (!proof?.runtimeUpgradeRecord)
-      fail("BACKEND_TRANSITION_UNPROVEN", "Runtime upgrade requires settled work and a proven stopped owner");
-    return { identity: sourceIdentity, references: proof.evidence, record: proof.runtimeUpgradeRecord,
-      assertValid: () => restartPort.assertSettledNormalRestartPredecessor(proof, current.data, { priorProcessAlive }) };
+      fail(
+        "BACKEND_TRANSITION_UNPROVEN",
+        "Runtime upgrade requires settled work and a proven stopped owner",
+      );
+    return {
+      identity: sourceIdentity,
+      references: proof.evidence,
+      record: proof.runtimeUpgradeRecord,
+      assertValid: () =>
+        restartPort.assertSettledNormalRestartPredecessor(proof, current.data, {
+          priorProcessAlive,
+        }),
+    };
   }
   if (options.backendTransition) {
     const preflightState = openIsolatedEpoch(dir, { recover: false });
@@ -820,13 +930,20 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "BACKEND_TRANSITION_CHANGED",
         "Physical backend head changed before startup",
       );
-    if (effectiveBackend && (!current.epoch ||
+    if (
+      effectiveBackend &&
+      (!current.epoch ||
         current.epoch.epochId !== effectiveBackend.head.epochId ||
         current.epoch.ownerClientId !== effectiveBackend.head.ownerClientId ||
-        current.epoch.ownerTokenHash !== effectiveBackend.head.ownerTokenHash))
-      fail("BACKEND_TRANSITION_CHANGED", "Backend transition no longer belongs to the exact active epoch owner");
+        current.epoch.ownerTokenHash !== effectiveBackend.head.ownerTokenHash)
+    )
+      fail(
+        "BACKEND_TRANSITION_CHANGED",
+        "Backend transition no longer belongs to the exact active epoch owner",
+      );
     if (
-      effectiveBackend && !options.backendTransition &&
+      effectiveBackend &&
+      !options.backendTransition &&
       effectiveBackend.identity.buildHash !== permittedBuildHash
     )
       fail(
@@ -908,8 +1025,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const expectedIdentity =
       effectiveBackend?.identity || readJson<P.Identity>(identityFile);
     if (
-      successorRuntime.effectiveIdentity.buildHash !== expectedIdentity.buildHash ||
-      successorRuntime.effectiveIdentity.configHash !== expectedIdentity.configHash ||
+      successorRuntime.effectiveIdentity.buildHash !==
+        expectedIdentity.buildHash ||
+      successorRuntime.effectiveIdentity.configHash !==
+        expectedIdentity.configHash ||
       !sameInstance(
         successorRuntime.effectiveIdentity.instance,
         expectedIdentity.instance,
@@ -1483,8 +1602,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     binding: startupBinding,
   };
   durable(lifecycleFile, lifecycle, true);
-  const normalRestartPort = load("./dist/node-adapters/broker-ipc/normal-restart") as typeof import("../packages/node-adapters/src/broker-ipc/normal-restart");
-  let normalRestart: ReturnType<typeof normalRestartPort.inspectSettledNormalRestart>;
+  const normalRestartPort = load(
+    "./dist/node-adapters/broker-ipc/normal-restart",
+  ) as typeof import("../packages/node-adapters/src/broker-ipc/normal-restart");
+  let normalRestart: ReturnType<
+    typeof normalRestartPort.inspectSettledNormalRestart
+  >;
   let normalRestartReference: P.Reference | undefined;
   try {
     oldIdentity = fs.existsSync(identityFile)
@@ -1499,9 +1622,22 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "CONFIG_CHANGED",
         "Pinned backend configuration differs from the durable broker identity",
       );
-    if (state.epoch && state.admissionMode === "normal-multidocument" && oldIdentity && !successorRuntime && !backendTransition && !effectiveBackend) {
+    if (
+      state.epoch &&
+      state.admissionMode === "normal-multidocument" &&
+      oldIdentity &&
+      !successorRuntime &&
+      !backendTransition &&
+      !effectiveBackend
+    ) {
       try {
-        normalRestart = normalRestartPort.inspectSettledNormalRestart(dir, state.epoch, oldIdentity, state.data, { priorProcessAlive });
+        normalRestart = normalRestartPort.inspectSettledNormalRestart(
+          dir,
+          state.epoch,
+          oldIdentity,
+          state.data,
+          { priorProcessAlive },
+        );
       } catch (cause) {
         const error = errorInfo(cause);
         error.probeNotSubmitted = true;
@@ -1513,7 +1649,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       (successorRuntime ||
         load(
           "./dist/node-adapters/broker-ipc/normal-admission",
-        ).epochStartupPinned(state, oldIdentity?.buildHash, codeHash, !!normalRestart))
+        ).epochStartupPinned(
+          state,
+          oldIdentity?.buildHash,
+          codeHash,
+          !!normalRestart,
+        ))
     ) {
       // Reopening a broker never adopts another active document or replays the
       // creation operation. The immutable epoch remains tied to its live process.
@@ -1533,13 +1674,23 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       }
       const expectedBuild =
         successorRuntime?.effectiveIdentity?.buildHash ||
-        successorRuntime?.authority.previousBuildHash || codeHash;
+        successorRuntime?.authority.previousBuildHash ||
+        codeHash;
       if (
         !oldIdentity ||
         oldIdentity.buildHash !== expectedBuild ||
-        !sameInstance(oldIdentity.instance, normalAdmission
-          ? effectiveBackend?.identity.instance || normalRestartPort.normalRestartInstance(dir, epoch, oldIdentity, state.data) as P.Instance
-          : epoch.currentInstance)
+        !sameInstance(
+          oldIdentity.instance,
+          normalAdmission
+            ? effectiveBackend?.identity.instance ||
+                (normalRestartPort.normalRestartInstance(
+                  dir,
+                  epoch,
+                  oldIdentity,
+                  state.data,
+                ) as P.Instance)
+            : epoch.currentInstance,
+        )
       )
         fail(
           "BUILD_CHANGED",
@@ -1652,7 +1803,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         );
         if (normalRestart)
           normalRestartReference = normalRestartPort.commitSettledNormalRestart(
-            normalRestart, state.data, instance, startupBinding, startupReceipt, { priorProcessAlive },
+            normalRestart,
+            state.data,
+            instance,
+            startupBinding,
+            startupReceipt,
+            { priorProcessAlive },
           );
         const queueTransition = state.advanceInstanceEpoch(transitionId);
         durable(path.join(dir, `instance-transition-${transitionId}.json`), {
@@ -1670,21 +1826,33 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         });
       }
       if (backendTransition) {
-        const diagnosticPath = path.join(dir, `broker-startup-${marker.nonce}.result.json`);
+        const diagnosticPath = path.join(
+          dir,
+          `broker-startup-${marker.nonce}.result.json`,
+        );
         const observationFiles = [diagnosticPath];
         const receipt = fs.existsSync(startupReceipt)
           ? readJson<Record<string, unknown>>(startupReceipt)
           : null;
-        const exactReceipt = !!receipt &&
+        const exactReceipt =
+          !!receipt &&
           receipt["terminal"] === true &&
           receipt["outcome"] === "succeeded" &&
           sameInstance(receipt["instance"] as P.Instance, instance) &&
-          !Object.entries(startupBinding).some(([key, value]) => !same(receipt[key], value));
+          !Object.entries(startupBinding).some(
+            ([key, value]) => !same(receipt[key], value),
+          );
         if (!options.createBackend && !exactReceipt)
-          fail("BACKEND_TRANSITION_UNPROVEN", "Exact target startup receipt is required; ownership is retained without replay");
-        if (exactReceipt)
-          observationFiles.push(startupReceipt);
-        identityFile = backendTransition.commit(instance, codeHash, observationFiles);
+          fail(
+            "BACKEND_TRANSITION_UNPROVEN",
+            "Exact target startup receipt is required; ownership is retained without replay",
+          );
+        if (exactReceipt) observationFiles.push(startupReceipt);
+        identityFile = backendTransition.commit(
+          instance,
+          codeHash,
+          observationFiles,
+        );
       } else if (effectiveBackend) {
         // A reopen must not rewrite the immutable transition or predecessor.
         if (
@@ -1696,17 +1864,40 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             "Restore the exact physical backend transition runtime before reopening",
           );
       } else
-        durable(identityFile, { configHash, buildHash: codeHash, instance,
-          ...((normalRestartReference || oldIdentity?.normalRestart)
-            ? { normalRestart: normalRestartReference || oldIdentity?.normalRestart } : {}),
+        durable(identityFile, {
+          configHash,
+          buildHash: codeHash,
+          instance,
+          ...(normalRestartReference || oldIdentity?.normalRestart
+            ? {
+                normalRestart:
+                  normalRestartReference || oldIdentity?.normalRestart,
+              }
+            : {}),
         });
     }
   } catch (cause) {
     const error = errorInfo(cause);
-    if (error.code === "NORMAL_RESTART_UNPROVEN" && error.probeNotSubmitted === true)
-      durable(lifecycleFile, { ...lifecycle, stage: "rejected", safeToRecover: !state.summary().blocked && !state.data.active && !state.data.lease && !state.data.controlBlocked && !state.data.localUnknown &&
-          Object.values(state.data.jobs).every(job => ["succeeded", "failed", "cancelled", "expired"].includes(job.state)),
-        code: error.code, message: error.message, probeNotSubmitted: true });
+    if (
+      error.code === "NORMAL_RESTART_UNPROVEN" &&
+      error.probeNotSubmitted === true
+    )
+      durable(lifecycleFile, {
+        ...lifecycle,
+        stage: "rejected",
+        safeToRecover:
+          !state.summary().blocked &&
+          !state.data.active &&
+          !state.data.lease &&
+          !state.data.controlBlocked &&
+          !state.data.localUnknown &&
+          Object.values(state.data.jobs).every((job) =>
+            ["succeeded", "failed", "cancelled", "expired"].includes(job.state),
+          ),
+        code: error.code,
+        message: error.message,
+        probeNotSubmitted: true,
+      });
     // Only proven local/terminal startup rejections can release our own marker.
     // Transport uncertainty, restored unknowns and storage faults retain it.
     if (
@@ -2676,7 +2867,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         // execute_python is our public compatibility API, not a native Fusion
         // tool. Native Fusion invokes run(context) and consumes printed JSON.
         // Adapt before receipt wrapping and final-byte admission, never at send.
-        const executable = nativePublicPython ? `import contextlib as _qp_contextlib
+        const executable = nativePublicPython
+          ? `import contextlib as _qp_contextlib
 import io as _qp_io
 import json as _qp_json
 def run(_context: str) -> dict[str, object]:
@@ -2693,13 +2885,17 @@ def run(_context: str) -> dict[str, object]:
     _qp_result: dict[str, object] = {'success': True, 'stdout': _qp_out.getvalue(), 'stderr': _qp_err.getvalue()}
     print(_qp_json.dumps(_qp_result))
     return _qp_result
-` : code;
+`
+          : code;
         let prepared = prepareReceiptScript(
           executable,
           official || nativePublicPython,
           record.receipt,
           binding,
-          { ...nativePaths, ...(nativePublicPython ? { capturePublicPythonResult: true } : {}) },
+          {
+            ...nativePaths,
+            ...(nativePublicPython ? { capturePublicPythonResult: true } : {}),
+          },
         );
         if (origin) prepared = retainPythonOrigin(prepared, origin);
         verifyPythonArtifact(prepared);
@@ -2716,10 +2912,13 @@ def run(_context: str) -> dict[str, object]:
             sha256,
           })),
         };
-        if (nativePublicPython) required(outgoing.params).name = "fusion_mcp_execute";
-        if (nativePublicPython) required(outgoing.params).arguments = {
-          featureType: "script", object: { script: prepared.script, readOnly: false },
-        };
+        if (nativePublicPython)
+          required(outgoing.params).name = "fusion_mcp_execute";
+        if (nativePublicPython)
+          required(outgoing.params).arguments = {
+            featureType: "script",
+            object: { script: prepared.script, readOnly: false },
+          };
         else if (python) scriptArgs.code = prepared.script;
         else required(scriptArgs.object).script = prepared.script;
       }
@@ -3751,7 +3950,9 @@ def run(_context: str) -> dict[str, object]:
     });
   }
   const recoveryAuditPorts: AuditPorts = {
-    ...(pinned.backend === "mcp" ? { scriptFormat: "fusion-mcp" as const } : {}),
+    ...(pinned.backend === "mcp"
+      ? { scriptFormat: "fusion-mcp" as const }
+      : {}),
     installation: resolveRuntimePaths({ anchor: __filename }).installation,
     buildHash: codeHash,
     jobDirectory: (id) => privateDirectory(jobDir(id)),
@@ -4046,7 +4247,11 @@ def run(_context: str) -> dict[str, object]:
       // broker-private guarded-script port; do NOT lie that mutation is read-only,
       // or accept an arbitrary caller prefix/random guard as the authorized body.
       if (pinned.backend === "mcp" && client.executeBrokerScript)
-        return client.executeBrokerScript(script, required(scope.origin), false);
+        return client.executeBrokerScript(
+          script,
+          required(scope.origin),
+          false,
+        );
       if (typeof client.executeUiGuardedScript === "function")
         return client.executeUiGuardedScript(script, scope.origin);
       if (options.createBackend)
