@@ -123,9 +123,18 @@ export function createQueueSession(
     if (state.version !== 1)
       throw new CompatibilityError("persistedState", state.version, 1);
     const current: string = require("../queue-instance").buildHash();
-    const identity = JSON.parse(
-      fs.readFileSync(path.join(admissionDirectory, "instance.json"), "utf8"),
+    const backend = require("../queue-backend-transition").resolveBackendHead(
+      directory,
+      () =>
+        require("../queue-isolated-epoch").openIsolatedEpoch(directory, {
+          recover: false,
+        }),
     );
+    const identity =
+      backend.current?.identity ??
+      JSON.parse(
+        fs.readFileSync(path.join(admissionDirectory, "instance.json"), "utf8"),
+      );
     const configHash: string =
       require("../queue-instance").brokerConfigHash(config);
     if (identity.configHash !== configHash)

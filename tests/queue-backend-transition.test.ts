@@ -476,6 +476,44 @@ test(
       2,
       "resume is a separate fresh ADDIN observation",
     );
+    const { createQueueSession } = load("./dist/composition/library-queue") as {
+      createQueueSession(
+        config: P.Config,
+        clientId: string,
+        cwd: string,
+        instanceId: string,
+      ): {
+        start(): Promise<void>;
+        status(): Promise<{ blocked: boolean }>;
+        dispose(): void;
+      };
+    };
+    const session = createQueueSession(
+      f.next,
+      f.clientId,
+      f.root,
+      "transition-public-client",
+    );
+    try {
+      await session.start();
+      assert.equal((await session.status()).blocked, false);
+      const headFile = path.join(f.dir, "physical-backend-head.json");
+      const retainedHead = fs.readFileSync(headFile);
+      try {
+        const altered = JSON.parse(retainedHead.toString()) as {
+          identity: { sha256: string };
+        };
+        altered.identity.sha256 = "0".repeat(64);
+        fs.writeFileSync(headFile, JSON.stringify(altered));
+        await assert.rejects(session.status(), {
+          code: "BACKEND_TRANSITION_CHANGED",
+        });
+      } finally {
+        fs.writeFileSync(headFile, retainedHead);
+      }
+    } finally {
+      session.dispose();
+    }
     assert.deepEqual(
       Object.fromEntries(
         Object.entries(handle.status().jobs).map(([id, job]) => [
