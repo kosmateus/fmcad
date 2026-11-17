@@ -48,7 +48,12 @@ def envelope(payload, size, digest):
     # never compiled or evaluated to inventory submitted source.
     decoder = inspect.getsource(decode_payload).replace(
         'def decode_payload(', 'def _fmcad_decode_source_v1(', 1)
-    return (HEADER + decoder + '\nexec(compile(_fmcad_decode_source_v1('
+    # ADDIN appends run(""); expose its decoded name to static analysis only.
+    return (HEADER + decoder + '\nfrom typing import TYPE_CHECKING\n'
+            'if TYPE_CHECKING:\n'
+            '    def run(_context: str, /) -> object: ...\n'
+            'del TYPE_CHECKING\n\n'
+            'exec(compile(_fmcad_decode_source_v1('
             + repr(payload) + ', ' + repr(size) + ', ' + repr(digest)
             + '), ' + repr(FILENAME) + ", 'exec'), globals())\n")
 
@@ -95,5 +100,12 @@ def decoded_envelope(source, tree):
         raise ValueError('Invalid native source envelope') from error
     decoded = decode_payload(payload, size, digest)
     if addin_entrypoint:
+        try:
+            decoded_tree = ast.parse(decoded)
+        except SyntaxError as error:
+            raise ValueError('ADDIN source envelope has no run entrypoint') from error
+        if not any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                   and node.name == 'run' for node in decoded_tree.body):
+            raise ValueError('ADDIN source envelope has no run entrypoint')
         tree.body.pop()
     return decoded

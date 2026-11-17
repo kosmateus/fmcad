@@ -69,6 +69,22 @@ class SourceCodecTest(unittest.TestCase):
         self.assertEqual(extracted['units'][0]['filename'], codec.FILENAME)
         self.assertEqual(extracted['units'][0]['source'], source)
 
+    def test_source_units_rejects_addin_entrypoint_missing_from_decoded_source(self):
+        source = 'pass\n' + '# padding\n' * 500
+        entrypoint = ROOT / 'runtime/python/entrypoints/source_units.py'
+        encoded_result = subprocess.run(
+            [sys.executable, '-I', '-S', '-B', str(entrypoint)],
+            input=json.dumps({'source': source, 'encodeNative': True}),
+            text=True, capture_output=True, check=True)
+        encoded = json.loads(encoded_result.stdout)['source']
+        self.assertNotEqual(encoded, source)
+        result = subprocess.run(
+            [sys.executable, '-I', '-S', '-B', str(entrypoint)],
+            input=json.dumps({'source': encoded + '\nrun("")\n'}),
+            text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('ADDIN source envelope has no run entrypoint', result.stderr)
+
     def test_compressible_source_below_previous_threshold_uses_smaller_json(self):
         source = '# padding\n' * 25999 + '# padding'
         self.assertEqual(len(source.encode('utf-8')), 259999)
@@ -82,8 +98,8 @@ class SourceCodecTest(unittest.TestCase):
     def test_equal_json_cost_keeps_plain_source(self):
         randomizer = random.Random(731)
         filler = ''.join(randomizer.choices(
-            'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', k=530000))
-        source = '# repeated padding\n' * 158 + '# ' + filler
+            'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', k=529996))
+        source = '# repeated padding\n' * 164 + '# ' + filler
         data = source.encode('utf-8')
         candidate = codec.envelope(
             base64.b64encode(zlib.compress(data, 9)).decode('ascii'),
