@@ -6,6 +6,18 @@
     "sha256": "c5cce55256c647a6514444df852dbc246131805ac298ac241027213f9db0cf87"
   },
   {
+    "revision": "9a540740389d0be1d6725225253c36825adea5d8",
+    "sourcePath": "packages/node-adapters/src/python/checker.ts",
+    "file": "checker-9a540.ts.txt",
+    "sha256": "4c838dbc2ade8ec60c310f4696e26d34d7d2a2583c26bf8f2e14a0f374c88458"
+  },
+  {
+    "revision": "9a540740389d0be1d6725225253c36825adea5d8",
+    "sourcePath": "runtime/python/typing/checker-project.py",
+    "file": "checker-project-9a540.py.txt",
+    "sha256": "5e7b29f4642685dc3aef960dd8d35ee16713cae44b7a1d20323a1a5df2f617bc"
+  },
+  {
     "revision": "843ce0dc98d512f88c3c42124ad4f6909b69cc91",
     "sourcePath": "src/queue-atomic-recovery-audit.js",
     "file": "audit-843.js.txt",
