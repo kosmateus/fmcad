@@ -93,5 +93,12 @@ export function inventory(folder: FixtureFolder): string {
 from typing import cast
 app = adsk.core.Application.get()
 ${folderSource(folder)}
-${emit("dict(projectId=project.id, folderId=folder.id, files=[dict(fileId=f.id, name=f.name, version=f.versionNumber, complete=f.isComplete) for f in folder.dataFiles])")}`);
+collection = folder.dataFiles
+count_before = collection.count
+files = collection.asArray()
+rows = [dict(fileId=f.id, name=f.name, version=f.versionNumber, complete=f.isComplete) for f in files]
+assert len(files) == count_before == collection.count, 'File snapshot is incomplete or changed'
+file_ids = [f.id for f in files]
+assert all(file_ids) and len(set(file_ids)) == len(files), 'Duplicate file identity or missing persistent ID'
+${emit("dict(projectId=project.id, folderId=folder.id, files=rows)")}`);
 }
