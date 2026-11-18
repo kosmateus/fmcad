@@ -47,6 +47,62 @@ function acceptedPendingDocumentSave(value: Record<string, unknown>): boolean {
     target["folderId"] === current["folderId"]
   );
 }
+function passedParameterTestV2(
+  output: Record<string, unknown>,
+  result: Record<string, unknown>,
+): boolean {
+  const coverage = record(result["coverage"]);
+  const cases = result["cases"];
+  if (
+    output["success"] !== true ||
+    result["version"] !== 2 ||
+    result["status"] !== "pass" ||
+    result["passed"] !== true ||
+    result["primaryError"] !== null ||
+    !Array.isArray(result["restoreErrors"]) ||
+    result["restoreErrors"].length !== 0 ||
+    result["restored"] !== true ||
+    result["budgetExhausted"] !== false ||
+    !coverage ||
+    !Array.isArray(cases) ||
+    cases.length === 0 ||
+    !Number.isInteger(coverage["required"]) ||
+    coverage["required"] !== cases.length ||
+    coverage["completed"] !== cases.length ||
+    coverage["skipped"] !== 0
+  )
+    return false;
+  const caseIds = new Set<string>();
+  return cases.every((item) => {
+    const testCase = record(item);
+    if (
+      !testCase ||
+      typeof testCase["id"] !== "string" ||
+      !testCase["id"].trim() ||
+      caseIds.has(testCase["id"]) ||
+      testCase["status"] !== "pass" ||
+      testCase["passed"] !== true ||
+      testCase["primaryError"] !== null ||
+      !Array.isArray(testCase["restoreErrors"]) ||
+      testCase["restoreErrors"].length !== 0 ||
+      testCase["restored"] !== true ||
+      testCase["healthPassed"] !== true ||
+      !Array.isArray(testCase["health"]) ||
+      !Array.isArray(testCase["restoredHealth"]) ||
+      !Array.isArray(testCase["checks"]) ||
+      (testCase["callbackPassed"] !== undefined &&
+        testCase["callbackPassed"] !== true) ||
+      (testCase["restoredCallbackPassed"] !== undefined &&
+        testCase["restoredCallbackPassed"] !== true)
+    )
+      return false;
+    caseIds.add(testCase["id"]);
+    return testCase["checks"].every((check) => {
+      const value = record(check);
+      return value?.["passed"] === true && value["status"] === "pass";
+    });
+  });
+}
 /** Transitional public exit-code policy, independent of SDK outcome. */
 export function failedOutcome(output: unknown): boolean {
   const value = record(output);
@@ -61,6 +117,11 @@ export function failedOutcome(output: unknown): boolean {
       !validation ||
       !["not_checked", "pass", "partial"].includes(String(validation["status"]))
     );
+  }
+  if (value && value["operation"] === "parameter.test") {
+    const result = record(value["result"]);
+    if (result && "version" in result)
+      return !passedParameterTestV2(value, result);
   }
   if (value && acceptedPendingDocumentSave(value)) return false;
   if (
