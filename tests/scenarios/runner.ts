@@ -90,6 +90,23 @@ function errorText(error: unknown): string {
     return error.message + ": " + error.errors.map(errorText).join("; ");
   return error instanceof Error ? error.message : String(error);
 }
+function observedCreationIds(reports: readonly ScenarioReport[]): Set<string> {
+  const ids = new Set<string>();
+  for (const report of reports) {
+    for (const entry of report.requests) {
+      if (
+        !entry.phase.startsWith("observe-") ||
+        entry.intent?.["kind"] !== "script"
+      )
+        continue;
+      const documents = resultValue(entry)?.["documents"];
+      if (Array.isArray(documents))
+        for (const document of documents)
+          ids.add(text(record(document)["creationId"]));
+    }
+  }
+  return ids;
+}
 function creationProof(
   value: Record<string, unknown>,
   owner: Owner,
@@ -549,6 +566,7 @@ export class ScenarioSession {
         ownedFixtures,
         "A non-fixture document changed during the owned unsaved case",
         true,
+        observedCreationIds([this.report]),
       );
       assertOwnedUnsavedDocument(current["documents"], this.document);
       const active = current["active"];
@@ -1753,6 +1771,8 @@ export async function runScenarios(
         after["documents"],
         discoverOwnedUnsavedFixtureProofs(root, backend),
         "Original documents changed or an unowned scenario document remains after cleanup",
+        true,
+        observedCreationIds(reports),
       );
       const files = (value: Record<string, unknown>): string => {
         if (!Array.isArray(value["files"]))

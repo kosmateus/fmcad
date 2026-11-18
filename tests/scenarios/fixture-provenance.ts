@@ -423,9 +423,18 @@ export function assertReceiptBoundDocumentInventory(
   proofs: ReadonlyMap<string, OwnedUnsavedFixtureProof>,
   message: string,
   allowVisibleUnsettledPeers = false,
+  observedCreationIds: ReadonlySet<string> = new Set(),
 ): void {
   const before = documentRows(beforeValue),
     current = documentRows(currentValue);
+  for (const creationId of observedCreationIds) {
+    if (!current.some((document) => document["creationId"] === creationId))
+      assert.equal(
+        proofs.get(creationId)?.state,
+        "closed",
+        "An observed fixture disappeared without its exact close receipt",
+      );
+  }
   const admittedPeers = new Set<string>();
   for (const [creationId, proof] of proofs) {
     assert.equal(proof.document.creationId, creationId);
@@ -436,6 +445,10 @@ export function assertReceiptBoundDocumentInventory(
         !allowVisibleUnsettledPeers ||
         before.some((document) => document["creationId"] === creationId)
       )
+        continue;
+      // Historical creation receipts are not evidence that a fixture was ever
+      // visible in this run. Prior observations above still fence disappearance.
+      if (!current.some((document) => document["creationId"] === creationId))
         continue;
       assert.equal(
         current.filter((document) => document["creationId"] === creationId)
