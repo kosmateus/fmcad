@@ -18,6 +18,15 @@ const { pythonValue: py } = load(
   "./src/python",
 ) as typeof import("../../packages/node-adapters/src/python/artifact");
 export const nativeStyleSaveCapability = "native-style-save-addin";
+export function nativeStyleSaveRuntime(): string {
+  return nativeCadRuntime([
+    "material.assign",
+    "appearance.assign",
+    "appearance.clear",
+    "document.save_as",
+    "checkpoint.open",
+  ]);
+}
 function field(value: unknown, ...keys: (string | number)[]): unknown {
   return keys.reduce<unknown>(
     (current, key) =>
@@ -49,60 +58,85 @@ export async function nativeStyleSavePreview() {
   );
 }
 
-const helpers = `
+const guardHelpers = `
 import tempfile
+from typing import TypedDict, Callable as StyleCallable, cast as style_cast
+class StyleIdentity(TypedDict):
+    name: str
+    creationId: str
+class StyleDocumentRow(StyleIdentity):
+    saved: bool
+    modified: bool
+    fileId: str | None
+class StyleDensity(TypedDict):
+    id: str
+    name: str
+    value: float | None
+    units: str | None
+    expressionUnits: str | None
+    type: str
+class StyleColor(TypedDict):
+    id: str
+    rgba: list[int | float]
 app = adsk.core.Application.get()
-def doc_rows():
-    return sorted([dict(name=d.name, creationId=d.creationId, saved=d.isSaved, modified=d.isModified, fileId=d.dataFile.id if d.dataFile else None) for d in app.documents], key=lambda r: (r['creationId'], r['name']))
-def identity(d):
-    return dict(name=d.name, creationId=d.creationId)
-def same_doc(d, key):
+style_float_cast = style_cast(StyleCallable[[object], adsk.core.FloatProperty | None], adsk.core.FloatProperty.cast)
+style_color_cast = style_cast(StyleCallable[[object], adsk.core.ColorProperty | None], adsk.core.ColorProperty.cast)
+def doc_rows() -> list[StyleDocumentRow]:
+    rows: list[StyleDocumentRow] = [StyleDocumentRow(name=d.name, creationId=d.creationId, saved=d.isSaved, modified=d.isModified, fileId=d.dataFile.id if d.dataFile else None) for d in app.documents]
+    return sorted(rows, key=lambda r: (r['creationId'], r['name']))
+def identity(d: adsk.core.Document) -> StyleIdentity:
+    return StyleIdentity(name=d.name, creationId=d.creationId)
+def same_doc(d: adsk.core.Document, key: StyleIdentity) -> bool:
     return d.name == key['name'] and d.creationId == key['creationId']
-def checked_doc(key):
+def checked_doc(key: StyleIdentity) -> adsk.core.Document:
     matches = [d for d in app.documents if same_doc(d, key)]
     assert len(matches) == 1, 'Document name/creationId guard failed'
     return matches[0]
-def guard(key, original):
+def guard(key: StyleIdentity, original: list[StyleDocumentRow]) -> adsk.core.Document:
     d = checked_doc(key)
     assert app.activeDocument == d and not d.isSaved and d.dataFile is None, 'Owned document must be active and unsaved'
     assert app.userInterface.activeCommand in ('', 'SelectCommand'), 'Interactive command open'
     remaining = [r for r in doc_rows() if not (r['name'] == key['name'] and r['creationId'] == key['creationId'])]
     assert remaining == original, 'Other document states changed'
     return d
-def density_metadata(material):
-    matches = [p for p in material.materialProperties if 'density' in p.id.casefold() and adsk.core.FloatProperty.cast(p)]
+`;
+const helpers =
+  guardHelpers +
+  `
+def density_metadata(material: adsk.core.Material) -> StyleDensity | None:
+    matches = [p for p in material.materialProperties if 'density' in p.id.casefold() and style_float_cast(p)]
     if len(matches) != 1:
         return None
-    p = matches[0]
-    value = getattr(p, 'value', None)
-    units = getattr(p, 'units', None)
-    expression_units = {'KilogramPerCubicMeter': 'kg / m^3', 'GramPerCubicCentimeter': 'g / cm^3'}.get(units)
-    return dict(id=p.id, name=p.name, value=value if type(value) in (int, float) and math.isfinite(value) else None,
+    p = style_cast(adsk.core.FloatProperty, matches[0])
+    value = style_cast(object, getattr(p, 'value', None))
+    units = style_cast(str | None, getattr(p, 'units', None))
+    expression_units = {'KilogramPerCubicMeter': 'kg / m^3', 'GramPerCubicCentimeter': 'g / cm^3'}.get(units) if units is not None else None
+    return StyleDensity(id=p.id, name=p.name, value=value if isinstance(value, (int, float)) and type(value) in (int, float) and math.isfinite(value) else None,
                 units=units, expressionUnits=expression_units, type=p.objectType)
-def colors(appearance):
+def colors(appearance: adsk.core.Appearance | None) -> list[StyleColor] | None:
     if appearance is None:
         return None
-    rows = []
+    rows: list[StyleColor] = []
     for p in appearance.appearanceProperties:
-        color = adsk.core.ColorProperty.cast(p)
+        color = style_color_cast(p)
         if color and not color.hasMultipleValues:
             v = color.value
-            rows.append(dict(id=p.id, rgba=[v.red, v.green, v.blue, v.opacity]))
+            rows.append(StyleColor(id=p.id, rgba=[v.red, v.green, v.blue, v.opacity]))
     return sorted(rows, key=lambda r: r['id'])
-def native_state(ctx, refs):
-    rows = []
+def native_state(ctx: CadContext, refs: list[object]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
     for ref in refs:
         e = ctx.resolve(ref)
         kind = _cad_kind(e)
-        m = e.body.material if kind == 'face' else e.component.material if kind == 'occurrence' else e.material
-        a = getattr(e, 'appearance', None)
-        row = dict(kind=kind, name=getattr(e, 'name', None), material=_io_style_value(m),
-                   appearance=_io_style_value(a), colors=colors(a), source=getattr(e, 'appearanceSourceType', None))
-        if row['source'] is not None:
-            row['source'] = int(row['source'])
+        m = style_cast(adsk.fusion.BRepFace, e).body.material if kind == 'face' else style_cast(adsk.fusion.Occurrence, e).component.material if kind == 'occurrence' else style_cast(adsk.fusion.BRepBody | adsk.fusion.Component, e).material
+        a = style_cast(adsk.core.Appearance | None, getattr(e, 'appearance', None))
+        appearance_source = style_cast(int | None, getattr(e, 'appearanceSourceType', None))
+        row: dict[str, object] = dict(kind=kind, name=style_cast(str | None, getattr(e, 'name', None)), material=_io_style_value(m),
+                   appearance=_io_style_value(a), colors=colors(a), source=int(appearance_source) if appearance_source is not None else None)
         if kind == 'body':
-            assert e.nativeObject is None and e.assemblyContext is None and not e.isTransient
-            p = e.physicalProperties
+            body = style_cast(adsk.fusion.BRepBody, e)
+            assert body.nativeObject is None and body.assemblyContext is None and not body.isTransient
+            p = body.physicalProperties
             row['physicalProperties'] = dict(mass=p.mass, density=p.density, volume=p.volume,
                                             units=dict(mass='kg', density='kg/cm3', volume='cm3'))
             metadata = density_metadata(m)
@@ -115,6 +149,31 @@ def native_state(ctx, refs):
         rows.append(row)
     return rows
 `;
+
+export function nativeStyleSaveProbePrelude(
+  bundle = nativeStyleSaveRuntime(),
+): string {
+  return bundle + "\n" + helpers;
+}
+
+export function instrumentStyleSaveCad(
+  source: string,
+  guardCode: string,
+): string {
+  const needle = "def run(_context: str):\n";
+  assert.equal(source.split(needle).length, 2);
+  return source.replace(
+    needle,
+    guardHelpers +
+      "\n" +
+      needle +
+      guardCode
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => "    " + line + "\n")
+        .join(""),
+  );
+}
 
 export function nativeStyleSaveScenarios(owners = 10): Scenario[] {
   concurrencyLimit(owners);
@@ -131,12 +190,12 @@ export function nativeStyleSaveScenarios(owners = 10): Scenario[] {
       const owned = session.document,
         name = owned.name;
       const baseline = session.originalView;
-      const bundle = nativeCadRuntime();
+      const bundle = nativeStyleSaveRuntime();
       const native = new NativeProbe(
         session,
         "native-style-save",
         "STYLE_SAVE ",
-        bundle + "\n" + helpers,
+        nativeStyleSaveProbePrelude(bundle),
       );
       const report = {
         source: "tests/live-style-save.js",
@@ -188,21 +247,7 @@ export function nativeStyleSaveScenarios(owners = 10): Scenario[] {
           operation,
           data,
           typeof component === "string" ? component : record(component),
-          (source) => {
-            const needle = "def run(_context: str):\n";
-            assert.equal(source.split(needle).length, 2);
-            return source.replace(
-              needle,
-              helpers +
-                "\n" +
-                needle +
-                guardCode()
-                  .split("\n")
-                  .filter(Boolean)
-                  .map((line) => "    " + line + "\n")
-                  .join(""),
-            );
-          },
+          (source) => instrumentStyleSaveCad(source, guardCode()),
         );
         assert.equal(result["success"], true, JSON.stringify(result));
         return record(result["result"]);
