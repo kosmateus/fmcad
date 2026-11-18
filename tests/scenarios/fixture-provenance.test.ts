@@ -814,9 +814,51 @@ test("an unresolved held fixture is protected as baseline, never admitted as a p
         [user],
         [user, held],
         proofs,
-        "unproven non-baseline fixture appeared",
+        "unsettled non-baseline fixture is not admitted by default",
       ),
-    /unproven non-baseline fixture appeared/u,
+    /unsettled non-baseline fixture is not admitted by default/u,
+  );
+  assert.doesNotThrow(() =>
+    assertReceiptBoundDocumentInventory(
+      [user],
+      [user, held],
+      proofs,
+      "visible creation-proven peer",
+      true,
+    ),
+  );
+  assert.throws(
+    () =>
+      assertReceiptBoundDocumentInventory(
+        [user],
+        [user],
+        proofs,
+        "visible peer disappeared without its exact close receipt",
+        true,
+    ),
+    /unsettled peer disappeared without its exact close receipt/u,
+  );
+  assert.throws(
+    () =>
+      assertReceiptBoundDocumentInventory(
+        [user],
+        [user, held],
+        new Map(),
+        "unproven peer appeared",
+        true,
+      ),
+    /unproven peer appeared/u,
+  );
+  assert.throws(
+    () =>
+      assertReceiptBoundDocumentInventory(
+        baseline,
+        [user, { ...held, modified: true }],
+        proofs,
+        "unsettled baseline fixture changed",
+        true,
+      ),
+    /unsettled baseline fixture changed/u,
   );
 });
 

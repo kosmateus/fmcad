@@ -1,3 +1,23 @@
+# Project-specific staffing and continuous delivery
+
+These explicit user requirements replace the generic `team-coordinator` staffing defaults for this project.
+
+- Use `openai/gpt-6.1-sol` for work previously assigned to Luna and for new standard assignments. Use `openai/gpt-6-astra` for work previously assigned to Sol and for escalations beyond Sol. Existing Astra assignments stay with Astra. Use the default variants unless the user requests otherwise; do not assign new work to Luna.
+- Preserve the session, worktree, branch, evidence, and running operations when changing models. Confirm the configured model and the model of actual execution separately. Update open Beads assignees to `sol-<scope>` or `astra-<scope>` and record the model, variant, and session ID; preserve historical owners of closed tasks.
+- The coordinator owns delivery through completion, not just reporting. Independently inspect ready tasks and concrete blockers, launch as many useful independent executors as capacity permits, and immediately refill capacity when work finishes or dependencies unblock. Keep this discipline throughout the assignment; do not manufacture audits or duplicate work just to increase the agent count.
+- The coordinator also diagnoses, implements, and verifies explicitly owned, non-overlapping tasks while coordinating the team. Record those assignments in Beads and preserve other executors' file ownership.
+- Executors collaborate on contracts, failures, fixes, and evidence through the permitted mailbox. Route messages through the coordinator when direct routing is unavailable. Only the coordinator starts or resumes subagents, in the background, and prevents overlapping edits and duplicate runs.
+- Continue from results directly to the next required action. Progress updates, one completed batch, and routine implementation decisions are not stopping points. Ask the user only about a genuine unresolved scope, authority, or resource blocker after safe available remedies have been exhausted.
+
+## Responsibility for Fusion and the refactor
+
+- The team owns Fusion operation and recovery for this project. The goal is to finish the refactor against the agreed requirements, pass the required offline and actual live tests, and complete integration; starting commands, receiving receipts, or publishing commits alone is not delivery.
+- Decide and perform necessary Fusion/broker restarts, resets, recovery, runtime deployment, and routine test actions autonomously within the authorized scope. Do not ask the user for routine permission to restart Fusion or proceed with these operations.
+- Before lifecycle changes, establish the actual state of active producers and accepted requests, coordinate a safe boundary with their owners, and use the supported lifecycle and shared SDK queue. Preserve user and peer documents, saved files and versions, receipt identity, and historical UNKNOWN evidence. A model change never justifies replaying an uncertain mutation, bypassing a guard, or replacing a runtime beneath active clients.
+- Use the currently authorized transport and pinned runtime. For the current live scope, physical execution is ADDIN `8765` only; public fmcad MCP stdio may route through ADDIN. Physical MCP `27182` probes, initialization, and requests remain excluded. A simulator result is not live Fusion evidence.
+- When a new live test fails, compare the corresponding historical JS implementation and tests before inventing a replacement mechanism. Fix the technical cause, verify it, and use fresh request/document IDs for a fresh test; preserve the original uncertain outcome without replay or fabricated settlement.
+- PR #104 has the user's explicit shared-integration exception: each executor may integrate and push their own verified changes fast-forward to `refactor/offline-completion`, from a separate worktree after incorporating the current remote. Preserve peers' changes; no force-push or direct push to `main`. After PR #104 is actually merged, return to separate branches and pull requests as specified below.
+
 # Commit and pull request style
 
 - Write commit subjects in English.
