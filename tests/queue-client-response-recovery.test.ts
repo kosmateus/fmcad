@@ -387,6 +387,12 @@ for (const fault of [
   "register",
 ] as const) {
   test(`real QueueClient identifies ${fault} reply timeout without replaying the original job`, async (t) => {
+    if (fault === "persistent-result") {
+      // Exercise subtraction across the 1024 ms floating-point boundary.
+      // The socket timeout still uses its real timer; only trace timestamps
+      // are fixed so the precision regression cannot depend on process uptime.
+      t.mock.method(performance, "now", () => 1007.459);
+    }
     const lostAction = fault === "persistent-result" ? "result" : fault;
     const connection = runtimeRequire(
         "./queue-connection",
@@ -532,9 +538,11 @@ for (const fault of [
       assert.equal(timeout["requestId"], requestId);
       if (lostAction === "result") assert.equal(timeout["jobId"], job.id);
       assert.equal(
-        Number(timeout["deadlineMonotonicMs"]) -
-          Number(timeout["monotonicStartMs"]),
-        25,
+        // Trace timestamps are serialized to 0.001 ms. Compare those exact
+        // integer microseconds, not the binary floating-point subtraction.
+        Math.round(Number(timeout["deadlineMonotonicMs"]) * 1000) -
+          Math.round(Number(timeout["monotonicStartMs"]) * 1000),
+        25_000,
       );
       assert.ok(Number(timeout["durationMs"]) >= 0);
       assert.ok(
