@@ -13,6 +13,10 @@ export interface AssertionSite {
 export const digest = (source: string): string =>
   createHash("sha256").update(source).digest("hex");
 
+// Ledgers bind Git source text, not the checkout's LF/CRLF representation.
+const sourceText = (filename: string): string =>
+  fs.readFileSync(filename, "utf8").replace(/\r\n/gu, "\n");
+
 /** Static assertion sites, not runtime invocation counts or proof of coverage.
  * Loop-generated assertions remain one site with their full expression retained.
  * Python in strings is retained separately instead of pretending it is JS AST.
@@ -176,7 +180,7 @@ export function reviewedImportSnapshots(
       expected,
       "Only the named public pre-extraction source snapshots are permitted",
     );
-    const content = fs.readFileSync(path.join(root, expected), "utf8");
+    const content = sourceText(path.join(root, expected));
     assert.equal(
       digest(content),
       row.sha256,
@@ -226,7 +230,7 @@ export function reviewedImportSnapshots(
     assert.ok(
       row.source.startsWith("tests/") && !row.source.split("/").includes(".."),
     );
-    const content = fs.readFileSync(path.join(root, row.source), "utf8");
+    const content = sourceText(path.join(root, row.source));
     assert.equal(
       digest(content),
       row.sha256,
@@ -259,8 +263,7 @@ export function reviewedImportSnapshots(
 export function inventorySources(root: string) {
   const reviewed = reviewedImportSnapshots(root);
   return currentSources(root).map((source) => {
-    const content =
-      reviewed.get(source) ?? fs.readFileSync(path.join(root, source), "utf8");
+    const content = reviewed.get(source) ?? sourceText(path.join(root, source));
     return {
       source,
       sha256: digest(content),

@@ -5,6 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import {
   assertionSites,
+  digest,
   inventorySources,
   reviewedImportSnapshots,
 } from "./assertion-inventory";
@@ -84,13 +85,53 @@ test("reviewed import extraction preserves all 482 old sites and separately bind
   assert.equal(manifest.current.length, 7);
   assert.equal(
     manifest.current.reduce((total, row) => total + row.assertions.length, 0),
-    536,
+    546,
   );
+});
+
+test("reviewed import evidence is checkout-line-ending independent without changing frozen hashes", (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-import-crlf-"));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const reviewPath = "tests/live-import-extraction-review.json";
+  const mappingPath = "tests/scenarios/assertion-dispositions-import.json";
+  const review = JSON.parse(
+    fs.readFileSync(path.join(root, reviewPath), "utf8"),
+  ) as {
+    retained: { source: string; snapshot: string; sha256: string }[];
+    current: { source: string }[];
+  };
+  for (const relative of [
+    reviewPath,
+    mappingPath,
+    ...review.retained.map((row) => row.snapshot),
+    ...review.current.map((row) => row.source),
+  ]) {
+    const file = path.join(fixture, relative);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.copyFileSync(path.join(root, relative), file);
+  }
+  const observations: Array<ReturnType<typeof reviewedImportSnapshots>> = [];
+  for (const ending of ["\n", "\r\n"]) {
+    for (const relative of [
+      ...review.retained.map((row) => row.snapshot),
+      ...review.current.map((row) => row.source),
+    ]) {
+      const file = path.join(fixture, relative);
+      const normalized = fs.readFileSync(file, "utf8").replace(/\r\n/gu, "\n");
+      fs.writeFileSync(file, normalized.replace(/\n/gu, ending));
+    }
+    const observed = reviewedImportSnapshots(fixture);
+    for (const retained of review.retained)
+      assert.equal(digest(observed.get(retained.source)!), retained.sha256);
+    observations.push(observed);
+  }
+  assert.deepEqual([...observations[0]!], [...observations[1]!]);
 });
 
 for (const tamper of [
   "retained-source",
   "current-guard",
+  "cleanup-guard",
   "extracted-assertion",
   "missing-disposition",
 ] as const) {
@@ -131,11 +172,25 @@ for (const tamper of [
           ? review.retained[0]!.snapshot
           : tamper === "current-guard"
             ? "tests/live-import-receipts.ts"
-            : "tests/import-result-contracts.ts";
-      fs.appendFileSync(
-        path.join(fixture, relative),
-        "\nassert.equal('unreviewed', 'changed');\n",
-      );
+            : tamper === "cleanup-guard"
+              ? "tests/scenarios/programs.ts"
+              : "tests/import-result-contracts.ts";
+      const file = path.join(fixture, relative);
+      if (tamper === "cleanup-guard") {
+        const source = fs.readFileSync(file, "utf8");
+        const changed = source.replace(
+          "assert len(matches) == 1, 'Owned fixture identity is missing or duplicated'",
+          "assert len(matches) <= 1, 'Owned fixture identity is missing or duplicated'",
+        );
+        assert.notEqual(
+          changed,
+          source,
+          "The actual cleanup guard must be weakened by this negative test",
+        );
+        fs.writeFileSync(file, changed);
+      } else {
+        fs.appendFileSync(file, "\nassert.equal('unreviewed', 'changed');\n");
+      }
       assert.throws(
         () => reviewedImportSnapshots(fixture),
         /Retained import snapshot changed|Review changed current import source/,

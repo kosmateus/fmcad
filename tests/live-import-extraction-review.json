@@ -3161,119 +3161,179 @@
     },
     {
       "source": "tests/scenarios/programs.ts",
-      "sha256": "66b3c7df4f808fdb399742dd3a68a084e9e076b6f22551b313f3347d25ecca0c",
+      "sha256": "aaca0a88fd1f9995065d75104b9a949505ba555e8f8b402a016485e4df561a9e",
       "assertions": [
         {
           "id": "311687a38872abf258cc-1",
-          "line": 25,
+          "line": 33,
           "kind": "embedded-python",
           "expression": "]\nassert len(matches) == 1, 'Owned creationId is unavailable'\ndoc = matches[0]\nassert doc.name == "
         },
         {
           "id": "819e45edba51816ed174-1",
-          "line": 28,
+          "line": 36,
           "kind": "embedded-python",
           "expression": ", 'Owned document identity changed'\nassert sum(d.name == "
         },
         {
           "id": "9dc712422aae638e2b90-1",
-          "line": 29,
+          "line": 37,
           "kind": "embedded-python",
           "expression": " for d in app.documents) == 1, 'Ambiguous owned name'\nassert doc.activate()\nassert app.activeDocument is not None and app.activeDocument.creationId == doc.creationId"
         },
         {
           "id": "b6f5f479a98f2352987c-1",
-          "line": 35,
+          "line": 43,
           "kind": "embedded-python",
           "expression": "assert doc.isSaved\nfile = cast('adsk.core.DataFile | None', doc.dataFile)\nassert file is not None\nassert file.id == "
         },
         {
           "id": "b73a5af197c9a70be31c-1",
-          "line": 38,
+          "line": 46,
           "kind": "embedded-python",
           "expression": "\nassert file.parentProject.id == "
         },
         {
           "id": "a92ab551f3abb7f3d529-1",
-          "line": 40,
+          "line": 48,
           "kind": "embedded-python",
           "expression": "assert not doc.isSaved, 'Owned document unexpectedly became saved'\nassert doc.dataFile is None, 'Unsaved owned document unexpectedly has a cloud file'"
         },
         {
           "id": "db54ac31f03e8cdf62c7-1",
-          "line": 44,
+          "line": 52,
           "kind": "embedded-python",
           "expression": "\ndesign = cast(adsk.fusion.Design, doc.products.itemByProductType('DesignProductType'))\nassert design is not None"
         },
         {
           "id": "769f2eb05cf5705b59b3-1",
-          "line": 53,
+          "line": 61,
           "kind": "embedded-python",
           "expression": "import adsk.core, json\nfrom typing import cast\napp = adsk.core.Application.get()\nassert not any(d.name == "
         },
         {
           "id": "4bcb70994fcc014e2620-1",
-          "line": 56,
+          "line": 64,
           "kind": "embedded-python",
           "expression": " for d in app.documents)\nassert app.userInterface.activeCommand in (None, '', 'SelectCommand'), 'Fusion interactive command must be idle before creating a fixture'\ndoc = app.documents.add(cast(adsk.core.DocumentTypes, adsk.core.DocumentTypes.FusionDesignDocumentType))\ndoc.name = "
         },
         {
           "id": "197b565b7df6dba3b5f5-1",
-          "line": 67,
+          "line": 75,
           "kind": "embedded-python",
           "expression": ")\nassert design.exportManager.execute(options)\nassert not doc.isSaved, 'Export must not change the unsaved fixture precondition'\n"
         },
         {
           "id": "f926f6dfcb0bfedaca36-1",
-          "line": 77,
+          "line": 85,
           "kind": "embedded-python",
           "expression": "assert design.userParameters.count == 0\np = design.userParameters.add('OwnedCounter', adsk.core.ValueInput.createByString('"
         },
         {
           "id": "e7378308582714ca489e-1",
-          "line": 79,
+          "line": 87,
           "kind": "embedded-python",
           "expression": "\nassert p is not None\n"
         },
         {
-          "id": "0952372d00f2f21d912e-1",
-          "line": 91,
+          "id": "aba421269fa555351d65-1",
+          "line": 116,
           "kind": "embedded-python",
-          "expression": "]\nassert len(matches) <= 1\nif matches:\n    doc = matches[0]\n    assert doc.name == "
+          "expression": "]\nassert len(matches) == 1, 'Owned fixture identity is missing or duplicated'\ndoc = matches[0]\nassert doc.name == "
         },
         {
-          "id": "926945d63416650cfc0f-1",
-          "line": 95,
+          "id": "249dbf91b33317acb4e0-1",
+          "line": 119,
           "kind": "embedded-python",
-          "expression": "\n    assert app.userInterface.activeCommand in (None, '', 'SelectCommand'), 'Fusion interactive command must be idle before closing a fixture'\n"
+          "expression": "\nassert app.userInterface.activeCommand in (None, '', 'SelectCommand'), 'Fusion interactive command must be idle before closing a fixture'\n"
         },
         {
-          "id": "64e7b7fbcf93c2128ed7-1",
-          "line": 100,
+          "id": "c15222e4ed3a6c7971a9-1",
+          "line": 121,
           "kind": "embedded-python",
-          "expression": "\n    assert doc.close(False)\nassert not any(d.creationId == "
+          "expression": "\nassert doc.close(False)\n_fmcad_after = _fmcad_close_inventory()\nassert not any(d.creationId == "
+        },
+        {
+          "id": "03af0d32851e77d981a6-1",
+          "line": 124,
+          "kind": "embedded-python",
+          "expression": " for d in app.documents)\nassert _fmcad_close_stable([d for d in _fmcad_before if d['creationId'] != "
         },
         {
           "id": "311687a38872abf258cc-2",
-          "line": 116,
+          "line": 148,
           "kind": "embedded-python",
           "expression": "]\nassert len(matches) == 1, 'Owned creationId is unavailable'\ndoc = matches[0]\nassert doc.name == "
         },
         {
           "id": "819e45edba51816ed174-2",
-          "line": 119,
+          "line": 151,
           "kind": "embedded-python",
           "expression": ", 'Owned document identity changed'\nassert sum(d.name == "
         },
         {
-          "id": "ca4f1ac7d1aba893847f-1",
-          "line": 120,
+          "id": "4cb691841eb27e42121b-1",
+          "line": 152,
           "kind": "embedded-python",
-          "expression": " for d in app.documents) == 1, 'Ambiguous owned name'\nassert not doc.isSaved and doc.dataFile is None, 'Owned fixture unexpectedly became saved'\nassert app.activeDocument is not None and app.activeDocument.creationId == doc.creationId, 'Fixture is not active'\n"
+          "expression": " for d in app.documents) == 1, 'Ambiguous owned name'\nassert not doc.isSaved and doc.dataFile is None, 'Owned fixture unexpectedly became saved'\n"
+        },
+        {
+          "id": "d09c7e5e71b1dce422bd-1",
+          "line": 205,
+          "kind": "embedded-python",
+          "expression": "\ndef _fmcad_inventory() -> list[_FmcadInventoryDocument]:\n    rows: list[_FmcadInventoryDocument] = []\n    for d in app.documents:\n        rows.append({\n            'creationId': d.creationId,\n            'name': d.name,\n            'fileId': d.dataFile.id if d.dataFile else None,\n            'saved': d.isSaved,\n            'modified': d.isModified,\n            'active': d == app.activeDocument,\n        })\n    return rows\ndef _fmcad_stable(rows: Sequence[_FmcadStableDocument]) -> list[tuple[str, str, str | None, bool, bool]]:\n    return sorted((d['creationId'], d['name'], d['fileId'], d['saved'], d['modified']) for d in rows)\ndef _fmcad_check_inventory(rows: Sequence[_FmcadInventoryDocument]) -> None:\n    ids: list[str] = [d['creationId'] for d in rows]\n    assert len(set(ids)) == len(ids), 'Duplicate document identity in fenced inventory'\n    for expected in _fmcad_expected_baseline:\n        if expected['creationId'] in _fmcad_closed_peers or any(peer['creationId'] == expected['creationId'] for peer in _fmcad_expected_peers):\n            continue\n        matches = [d for d in rows if d['creationId'] == expected['creationId']]\n        assert len(matches) == 1, 'Coordinator baseline document is missing or duplicated'\n        assert _fmcad_stable(matches) == _fmcad_stable([expected]), 'Coordinator baseline identity or file provenance changed'\n    for expected in _fmcad_expected_peers:\n        matches = [d for d in rows if d['creationId'] == expected['creationId']]\n        assert len(matches) == 1, 'Receipt-proven open peer is missing or duplicated'\n        peer = matches[0]\n        assert peer['name'] == expected['name'] and not peer['saved'] and peer['fileId'] is None, 'Receipt-proven peer identity or file provenance changed'\n    for creation_id in _fmcad_closed_peers:\n        assert not any(d['creationId'] == creation_id for d in rows), 'A receipt-closed peer fixture remains open'\n    allowed = {d['creationId'] for d in _fmcad_expected_baseline}\n    allowed.update(d['creationId'] for d in _fmcad_expected_peers)\n    allowed.add("
+        },
+        {
+          "id": "c5baca6596bfb4f9cae9-1",
+          "line": 238,
+          "kind": "embedded-python",
+          "expression": ")\n    assert all(identity in allowed for identity in ids), 'Unproven non-baseline document in fenced inventory'\ndef _fmcad_json_inventory(rows: Sequence[_FmcadInventoryDocument]) -> list[_FmcadJsonValue]:\n    encoded: list[_FmcadJsonValue] = []\n    for row in rows:\n        encoded_row: dict[str, _FmcadJsonValue] = {\n            'creationId': row['creationId'],\n            'name': row['name'],\n            'fileId': row['fileId'],\n            'saved': row['saved'],\n            'modified': row['modified'],\n            'active': row['active'],\n        }\n        encoded.append(encoded_row)\n    return encoded\n_fmcad_before = _fmcad_inventory()\n_fmcad_targets = [d for d in _fmcad_before if d['creationId'] == "
+        },
+        {
+          "id": "44acf4af869c387d7a5c-1",
+          "line": 254,
+          "kind": "embedded-python",
+          "expression": "]\nassert len(_fmcad_targets) == 1, 'Owned fixture identity is missing or duplicated'\nassert _fmcad_targets[0]['name'] == "
+        },
+        {
+          "id": "90295511faeea1aacdd2-1",
+          "line": 257,
+          "kind": "embedded-python",
+          "expression": "]\nassert len(_fmcad_native_targets) == 1, 'Owned native fixture identity is missing or duplicated'\ndoc = _fmcad_native_targets[0]\nassert doc.name == "
+        },
+        {
+          "id": "0e3ce40aa40e785aded1-1",
+          "line": 260,
+          "kind": "embedded-python",
+          "expression": ", 'Owned fixture name changed'\nassert sum(d.name == "
+        },
+        {
+          "id": "7c300640c6fd92385a48-1",
+          "line": 261,
+          "kind": "embedded-python",
+          "expression": " for d in app.documents) == 1, 'Owned fixture name is ambiguous'\nassert not doc.isSaved and doc.dataFile is None, 'Owned fixture unexpectedly became saved'\n"
+        },
+        {
+          "id": "b664feb4e3e866ba3052-1",
+          "line": 283,
+          "kind": "embedded-python",
+          "expression": "]\nassert len(_fmcad_after_targets) == 1, 'Owned fixture identity changed during the SDK turn'\nassert _fmcad_after_targets[0]['name'] == "
+        },
+        {
+          "id": "6cf6bfd096d13adcb718-1",
+          "line": 285,
+          "kind": "embedded-python",
+          "expression": ", 'Owned fixture name changed during the SDK turn'\nassert not _fmcad_after_targets[0]['saved'] and _fmcad_after_targets[0]['fileId'] is None, 'Owned fixture was saved during the SDK turn'\n_fmcad_other_before = [d for d in _fmcad_before if d['creationId'] != "
+        },
+        {
+          "id": "e0edcf7bbb5442ed31f2-1",
+          "line": 288,
+          "kind": "embedded-python",
+          "expression": "]\nassert _fmcad_stable(_fmcad_other_before) == _fmcad_stable(_fmcad_other_after), 'A non-target document changed during the SDK turn'\n_fmcad_payload: dict[str, _FmcadJsonValue] = {\n    'success': True,\n    'operation': "
         },
         {
           "id": "2e9d2bc94d38af32506f-1",
-          "line": 128,
+          "line": 311,
           "kind": "embedded-python",
           "expression": "]\nassert len(matches) == 1, 'Original active document is unavailable'\nassert matches[0].activate()\nassert app.activeDocument is not None and app.activeDocument.creationId == "
         }
