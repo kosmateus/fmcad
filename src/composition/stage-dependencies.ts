@@ -872,6 +872,38 @@ function helperReceipt({
     postflightSha256: lifecycle.postflightEvidenceSha256,
   };
 }
+/** Reuse the broker's verified current-head authority; never promote a retired head. */
+export function resolveStageBackendIdentity(
+  brokerDirectory: string,
+  admissionDirectory: string,
+) {
+  const state = (
+    loadHost(
+      "queue-isolated-epoch.js",
+    ) as typeof import("../queue-isolated-epoch")
+  ).openIsolatedEpoch(brokerDirectory, { recover: false });
+  const resolved = (
+    loadHost(
+      "queue-backend-transition.js",
+    ) as typeof import("../queue-backend-transition")
+  ).resolveBackendHead(brokerDirectory, () => state);
+  const current = resolved.current;
+  if (!current) return null;
+  const pointer = state.epoch;
+  if (
+    !pointer ||
+    fs.realpathSync(pointer.root) !== admissionDirectory ||
+    current.head.epochId !== pointer.epochId ||
+    current.head.ownerClientId !== pointer.ownerClientId ||
+    current.head.ownerTokenHash !== pointer.ownerTokenHash
+  )
+    throw new Error(
+      "Physical backend head differs from the owning admission epoch",
+    );
+  state.assertEpoch(true);
+  return current.identity;
+}
+
 export async function createAuthenticatedStageDependencies(
   verifiedWorkerInputs?: Partial<VerifiedStageInputs> | null,
 ): Promise<AuthenticatedStageDependencies | null> {
@@ -905,6 +937,8 @@ export async function createAuthenticatedStageDependencies(
   const owner = createAuthenticatedStageOwner({
     brokerDirectory,
     admissionDirectory: () => epoch().isolatedEpochDirectory(brokerDirectory),
+    backendIdentity: (admissionDirectory) =>
+      resolveStageBackendIdentity(brokerDirectory, admissionDirectory),
     jobId: verifiedWorkerInputs.jobId,
     expectedClientId: verifiedWorkerInputs.clientId,
     expectedProject: verifiedWorkerInputs.projectDirectory,

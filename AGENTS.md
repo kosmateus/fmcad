@@ -2,7 +2,8 @@
 
 These explicit user requirements replace the generic `team-coordinator` staffing defaults for this project.
 
-- Use `openai/gpt-6.1-sol` for work previously assigned to Luna and for new standard assignments. Use `openai/gpt-6-astra` for work previously assigned to Sol and for escalations beyond Sol. Existing Astra assignments stay with Astra. Use the default variants unless the user requests otherwise; do not assign new work to Luna.
+- Use `openai/gpt-6.1-sol` for work previously assigned to Luna and for new standard assignments. Use `openai/gpt-6-astra` for work previously assigned to Sol and for escalations beyond Sol. Existing Astra assignments stay with Astra. Use the default variants unless the user requests otherwise; do not assign implementation work to Luna.
+- Explicit testing exception: Luna may execute existing live tests and write result reports. Sol/Astra implement fixes; Astra compares actual failures against the historical JS implementation. Test execution and a concrete result inventory take priority over additional analysis or optimization.
 - Preserve the session, worktree, branch, evidence, and running operations when changing models. Confirm the configured model and the model of actual execution separately. Update open Beads assignees to `sol-<scope>` or `astra-<scope>` and record the model, variant, and session ID; preserve historical owners of closed tasks.
 - The coordinator owns delivery through completion, not just reporting. Independently inspect ready tasks and concrete blockers, launch as many useful independent executors as capacity permits, and immediately refill capacity when work finishes or dependencies unblock. Keep this discipline throughout the assignment; do not manufacture audits or duplicate work just to increase the agent count.
 - The coordinator also diagnoses, implements, and verifies explicitly owned, non-overlapping tasks while coordinating the team. Record those assignments in Beads and preserve other executors' file ownership.
@@ -17,6 +18,13 @@ These explicit user requirements replace the generic `team-coordinator` staffing
 - Use the currently authorized transport and pinned runtime. For the current live scope, physical execution is ADDIN `8765` only; public fmcad MCP stdio may route through ADDIN. Physical MCP `27182` probes, initialization, and requests remain excluded. A simulator result is not live Fusion evidence.
 - When a new live test fails, compare the corresponding historical JS implementation and tests before inventing a replacement mechanism. Fix the technical cause, verify it, and use fresh request/document IDs for a fresh test; preserve the original uncertain outcome without replay or fabricated settlement.
 - PR #104 has the user's explicit shared-integration exception: each executor may integrate and push their own verified changes fast-forward to `refactor/offline-completion`, from a separate worktree after incorporating the current remote. Preserve peers' changes; no force-push or direct push to `main`. After PR #104 is actually merged, return to separate branches and pull requests as specified below.
+
+## Live results and Discord updates
+
+- The current priority is to execute the entire authorized live catalog. Publish explicit PASS / FAIL / NOTRUN / RUNNING / UNKNOWN counts with a stated denominator, separating profiles, owner cases, markers, and replicas. Retain full required owners and soak lengths; simulator or recovered individual receipts do not qualify a failed live profile.
+- Keep the requested factual result report in `.test-artifacts/live/current-results.md` and `current-results.json`, updated after terminal results. List exact failing tests, errors, source/runtime pins, assertion and cleanup outcomes, and evidence paths so fixes can be assigned in Beads. This report records test evidence, not a second task board.
+- Record the evidence-backed pre-refactor JS reference commit and its actually verified live scope in `docs/live-js-baseline.md`. Preserve the historical repository's WIP. Do not label an arbitrary old HEAD or partial success as an all-tests-passing baseline.
+- Send meaningful progress updates in Polish to the existing project Discord channel. Create a **new thread for every update**, using `kimaki send --project <project-directory> --notify-only --name <short-title> --prompt <message>`; omit `--thread` and `--session`. Pass real newlines, report concrete results and next work, and record the returned thread URL. A send attempt is not delivery; report a concrete delivery failure rather than claiming success. Notifications must not start duplicate AI sessions.
 
 # Commit and pull request style
 
