@@ -94,6 +94,47 @@ doc.name = 'USER_SENTINEL'`),
     assert.deepEqual(await remaining(model), before);
   },
 );
+for (const mode of ["fusion", "simulator"] as const) {
+  test(`${mode} cleanup rejects a successful close without its inventory fence`, async (t) => {
+    const { directory, backend } = await fixture(t);
+    const missingFenceBackend: ScenarioBackend = {
+      ...backend,
+      mode,
+      async execute(request) {
+        const execution = await backend.execute(request);
+        if (!request.source.includes("doc.close(False)")) return execution;
+        const lines = execution.stdout
+          .split(/\r?\n/u)
+          .filter((line) => line.startsWith(programs.marker));
+        assert.equal(lines.length, 1);
+        const result = JSON.parse(
+          lines[0]!.slice(programs.marker.length),
+        ) as Record<string, unknown>;
+        delete result["inventoryFence"];
+        return {
+          ...execution,
+          stdout: programs.marker + JSON.stringify(result) + "\n",
+        };
+      },
+    };
+    const reports = await runScenarios(
+      missingFenceBackend,
+      [
+        {
+          id: "missing-close-inventory-fence",
+          scope: "exclusive-instance",
+          requires: ["documents"],
+          async run() {},
+        },
+      ],
+      directory,
+      1,
+    );
+    assert.equal(reports[0]?.status, "failed");
+    assert.equal(reports[0]?.cleanup, "failed");
+    assert.match(reports[0]?.cleanupError ?? "", /Expected an object/u);
+  });
+}
 test("separate worktree processes share explicit receipts and clean only their fixtures", async (t) => {
   const parent = path.join(root, ".test-artifacts/scenario-unit");
   fs.mkdirSync(parent, { recursive: true });
