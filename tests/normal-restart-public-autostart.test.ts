@@ -29,13 +29,35 @@ const { request } = load("../src/queue-connection") as {
 const installFakeWslPlatform = load(
   "./fixtures/fake-wsl-platform.cjs",
 ) as () => () => void;
-const fakeWslPreload = load.resolve("./fixtures/fake-wsl-preload.cjs");
+const fakeWslPlatform = load.resolve("./fixtures/fake-wsl-platform.cjs");
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
 const read = (file: string) =>
   object(JSON.parse(fs.readFileSync(file, "utf8")));
+
+// Production subprocesses allowlist env, so preload each child and neutralize a real WSL host.
+function createFakeWslNodeWrapper(root: string): string {
+  const wrapper = path.join(root, "fmcad-test-node");
+  const preload = path.join(root, "fake-wsl-preload.cjs");
+  fs.writeFileSync(
+    preload,
+    `const os = require("node:os");\n` +
+      `const release = os.release;\n` +
+      `os.release = () => release().replace(/microsoft.*wsl2|wsl2.*microsoft/i, "generic-linux");\n` +
+      `require(${JSON.stringify(fakeWslPlatform)})();\n` +
+      `process.execPath = ${JSON.stringify(wrapper)};\n`,
+  );
+  const shellQuote = (value: string) =>
+    "'" + value.replaceAll("'", "'\\''") + "'";
+  fs.writeFileSync(
+    wrapper,
+    `#!/bin/sh\nexec ${shellQuote(process.execPath)} --require ${shellQuote(preload)} "$@"\n`,
+    { mode: 0o700 },
+  );
+  return wrapper;
+}
 
 for (const mode of ["new-pid", "reused-sdk-pid", "two-independent-clients"]) {
   test(
@@ -44,6 +66,7 @@ for (const mode of ["new-pid", "reused-sdk-pid", "two-independent-clients"]) {
       const restoreFakeWslPlatform = installFakeWslPlatform();
       t.after(restoreFakeWslPlatform);
       const base = fs.mkdtempSync("/tmp/opencode/nr-public-");
+      const nodeWrapper = createFakeWslNodeWrapper(base);
       const stateHome = path.join(base, "s");
       const fixtureRoot = path.join(stateHome, "fmcad");
       fs.mkdirSync(fixtureRoot, { recursive: true });
@@ -318,7 +341,7 @@ for (const mode of ["new-pid", "reused-sdk-pid", "two-independent-clients"]) {
       async function publicClient(): Promise<string> {
         const clientId = "live:normal-restart:" + randomUUID();
         const child = spawn(
-          process.execPath,
+          nodeWrapper,
           [
             path.join(repo, "bin/fmcad-mcp.js"),
             "--routing",
@@ -333,12 +356,6 @@ for (const mode of ["new-pid", "reused-sdk-pid", "two-independent-clients"]) {
               FMCAD_CONFIG: config,
               FMCAD_BACKEND: "mcp",
               FMCAD_PROJECT_DIRECTORY: base,
-              NODE_OPTIONS: [
-                process.env["NODE_OPTIONS"],
-                `--require=${fakeWslPreload}`,
-              ]
-                .filter(Boolean)
-                .join(" "),
             },
             stdio: ["pipe", "pipe", "pipe"],
           },
