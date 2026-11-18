@@ -5,10 +5,25 @@ import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { createRequire } from "node:module";
+import type {
+  DebugTraceContext,
+  DebugTraceEvent,
+} from "../packages/node-adapters/src/telemetry/diagnostic-log";
 const runtimeRequire = createRequire(__filename);
 const { queueDirectory, request } = runtimeRequire("./queue-connection") as {
   queueDirectory(): string;
-  request(dir: string, message: Record<string, unknown>): Promise<unknown>;
+  request(
+    dir: string,
+    message: Record<string, unknown>,
+    options?: {
+      ipcTrace?: {
+        context: DebugTraceContext;
+        action: NonNullable<DebugTraceEvent["action"]>;
+        messageId: string;
+        jobId?: string;
+      };
+    },
+  ): Promise<unknown>;
 };
 interface Config {
   routing?: string;
@@ -340,6 +355,7 @@ class QueueClient {
   readonly instanceId: string;
   readonly exitHandler: () => void;
   private registered = false;
+  private readonly observedRequests = new Map<string, string>();
   constructor(clientId?: string, options: Options = {}) {
     this.dir = queueDirectory();
     this.auth = credentials(clientId, options.existingCredentialsOnly === true);
@@ -349,9 +365,16 @@ class QueueClient {
     this.exitHandler = () => this.dispose();
     process.once("exit", this.exitHandler);
   }
-  async register({ autoStart = false } = {}) {
+  async register({
+    autoStart = false,
+    requestId,
+  }: { autoStart?: boolean; requestId?: string } = {}) {
     try {
-      await request(this.dir, { action: "register", ...this.auth });
+      await request(
+        this.dir,
+        { action: "register", ...this.auth },
+        this.ipcTrace("register", requestId),
+      );
     } catch (error) {
       const { ensureBroker, missing } = runtimeRequire("./queue-autostart") as {
         ensureBroker(
@@ -417,7 +440,73 @@ class QueueClient {
         /* Passive telemetry cannot change admission/execution outcomes. */
       }
     }
-    return request(this.dir, { ...values, action, auth: this.auth });
+    const inputRequestId =
+        input && typeof input === "object" && "requestId" in input
+          ? input.requestId
+          : values["requestId"],
+      jobId = values["jobId"],
+      requestId =
+        typeof inputRequestId === "string"
+          ? inputRequestId
+          : typeof jobId === "string"
+            ? this.observedRequests.get(jobId)
+            : undefined,
+      trace = this.ipcTrace(
+        action,
+        requestId,
+        typeof jobId === "string" ? jobId : undefined,
+      );
+    return request(
+      this.dir,
+      { ...values, action, auth: this.auth },
+      trace,
+    ).then((value) => {
+      if (trace && requestId && value && typeof value === "object") {
+        const job = "job" in value ? value.job : value;
+        if (
+          job &&
+          typeof job === "object" &&
+          "id" in job &&
+          typeof job.id === "string" &&
+          "clientId" in job &&
+          job.clientId === this.auth.clientId &&
+          "requestId" in job &&
+          job.requestId === requestId
+        )
+          this.observedRequests.set(job.id, requestId);
+      }
+      return value;
+    });
+  }
+  private ipcTrace(action: string, requestId?: string, jobId?: string) {
+    if (
+      !requestId ||
+      !["register", "submit", "find-request", "result"].includes(action) ||
+      process.env["FMCAD_DEBUG_TRACE"] !== "1"
+    )
+      return undefined;
+    try {
+      const traceRuntime = runtimeRequire(
+          "./dist/node-adapters/telemetry/diagnostic-log",
+        ) as DebugTraceRuntime,
+        context = traceRuntime.createDebugTraceContext(
+          requestId,
+          this.auth.clientId,
+          "cli",
+        );
+      if (context)
+        return {
+          ipcTrace: {
+            context,
+            action: action as NonNullable<DebugTraceEvent["action"]>,
+            messageId: randomUUID(),
+            ...(jobId ? { jobId } : {}),
+          },
+        };
+    } catch {
+      // Optional metadata cannot change admission, recovery, or execution.
+    }
+    return undefined;
   }
   async findRequest(requestId: string) {
     if (
@@ -535,6 +624,7 @@ class QueueClient {
     return readRequestContextFile(file, this.auth.clientId, requestId);
   }
   dispose() {
+    this.observedRequests.clear();
     process.removeListener("exit", this.exitHandler);
     try {
       this.clientPresence?.dispose();
@@ -559,8 +649,8 @@ class QueueClient {
         );
       }
     }
-    await this.register({ autoStart: true });
     const value = { ...input, requestId: input.requestId || randomUUID() };
+    await this.register({ autoStart: true, requestId: value.requestId });
     const recovery = runtimeRequire(
       "./dist/node-adapters/broker-ipc/response-recovery",
     ) as {

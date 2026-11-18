@@ -104,6 +104,12 @@ export interface StageOwnerPorts {
   brokerDirectory: string;
   /** Trusted composition resolves the current admission snapshot, never input from a script. */
   admissionDirectory?(): string;
+  /** Trusted composition authenticates the current physical head in this admission epoch.
+   * Null means no current transition; never an unverified or retired identity. */
+  backendIdentity?(admissionDirectory: string): {
+    buildHash: string;
+    instance: unknown;
+  } | null;
   jobId: string;
   expectedClientId?: string;
   expectedProject?: string;
@@ -349,15 +355,10 @@ export function createAuthenticatedStageOwner(
   const admission = ports.admissionDirectory
     ? fs.realpathSync(ports.admissionDirectory())
     : broker;
-  const owningJob = (id: string) => {
-    if (
-      ports.admissionDirectory &&
-      fs.realpathSync(ports.admissionDirectory()) !== admission
-    )
-      fail("Owning admission epoch changed during stage inspection");
-    return readOwningJob(admission, id, ports);
-  };
-  const job = owningJob(ports.jobId);
+  const readIdentity = () =>
+    ports.backendIdentity?.(admission) ??
+    readRecord(path.join(admission, "instance.json"));
+  const job = readOwningJob(admission, ports.jobId, ports);
   const directory = path.join(broker, "jobs", job.id);
   if (fs.realpathSync(directory) !== directory)
     fail("Owning job directory escaped the broker scope");
@@ -370,12 +371,27 @@ export function createAuthenticatedStageOwner(
     fail(
       "Persisted execution request differs from the authenticated QueueState job",
     );
-  const brokerIdentity = readRecord(path.join(admission, "instance.json"));
+  const brokerIdentity = readIdentity();
   if (
     brokerIdentity.buildHash !== requestRecord.buildHash ||
+    ports.buildHash() !== requestRecord.buildHash ||
     !brokerIdentity.instance
   )
     fail("Owning job build/instance differs from the broker identity");
+  const owningJob = (id: string) => {
+    if (
+      ports.admissionDirectory &&
+      fs.realpathSync(ports.admissionDirectory()) !== admission
+    )
+      fail("Owning admission epoch changed during stage inspection");
+    const current = readIdentity();
+    if (
+      current.buildHash !== brokerIdentity.buildHash ||
+      !ports.sameInstance(current.instance, brokerIdentity.instance)
+    )
+      fail("Authenticated physical backend identity changed during stage inspection");
+    return readOwningJob(admission, id, ports);
+  };
 
   const acceptedAdmission = readAdmission(broker, job);
   if (acceptedAdmission.status !== "available")

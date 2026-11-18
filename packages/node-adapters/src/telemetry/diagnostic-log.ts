@@ -49,7 +49,14 @@ export interface DebugTraceContext {
 export interface DebugTraceEvent {
   readonly stage: DebugTraceStage | "ipc";
   readonly ipcStage?: DebugTraceIpcStage | undefined;
-  readonly action?: "worker-status" | "backend" | undefined;
+  readonly action?:
+    | "worker-status"
+    | "backend"
+    | "register"
+    | "submit"
+    | "find-request"
+    | "result"
+    | undefined;
   readonly status?:
     | "started"
     | "passed"
@@ -292,9 +299,19 @@ function safeEvent(
   if (
     event.stage === "ipc"
       ? !traceIpcStages.has(event.ipcStage!) ||
-        !["worker-status", "backend"].includes(String(event.action)) ||
+        ![
+          "worker-status",
+          "backend",
+          "register",
+          "submit",
+          "find-request",
+          "result",
+        ].includes(String(event.action)) ||
         !safeId(event.messageId) ||
-        !safeId(event.jobId)
+        ((event.action === "worker-status" ||
+          event.action === "backend" ||
+          event.jobId !== undefined) &&
+          !safeId(event.jobId))
       : event.ipcStage !== undefined ||
         event.action !== undefined ||
         event.messageId !== undefined ||

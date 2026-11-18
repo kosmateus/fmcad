@@ -173,6 +173,58 @@ test("an unsettled held peer remains in the coordinator baseline", async (t) => 
   );
 });
 
+test("final read-only audit admits a newly visible held peer but ignores never-observed history", async (t) => {
+  const fixture = reportFixture(t);
+  Object.assign(fixture.report, {
+    cleanup: "deferred",
+    cleanupHold: { requestId: fixture.identity.requestId, reason: "held" },
+  });
+  fs.writeFileSync(fixture.reportFile, JSON.stringify(fixture.report));
+  const user = {
+      creationId: "user-sentinel",
+      name: "User design",
+      saved: false,
+      modified: false,
+      fileId: null,
+    },
+    peer = { ...fixture.document, saved: false, modified: false, fileId: null };
+  for (const visible of [false, true]) {
+    let snapshots = 0;
+    const reports = await runScenarios(
+      {
+        ...backend,
+        capabilities: new Set(),
+        fusionPath: (filename) => filename,
+        execute: async (request) => ({
+          requestId: request.requestId,
+          state: "succeeded",
+          sdkSettled: true,
+          mayHaveMutated: false,
+          stdout:
+            marker +
+            JSON.stringify({
+              active: null,
+              documents: ++snapshots > 1 && visible ? [user, peer] : [user],
+            }),
+        }),
+      },
+      [
+        {
+          id: "readonly-peer-audit",
+          requires: [],
+          scope: "exclusive-instance",
+          lifecycle: "read-only",
+          async run() {},
+        },
+      ],
+      fixture.root,
+      1,
+    );
+    assert.equal(reports[0]?.status, "passed", reports[0]?.error);
+    assert.equal(snapshots, 2);
+  }
+});
+
 test("owned unsaved cleanup preserves the same-turn foreign inventory", (t) => {
   const fixture = reportFixture(t),
     user = {
@@ -827,6 +879,15 @@ test("an unresolved held fixture is protected as baseline, never admitted as a p
       true,
     ),
   );
+  assert.doesNotThrow(() =>
+    assertReceiptBoundDocumentInventory(
+      [user],
+      [user],
+      proofs,
+      "historical fixture was never observed by this run",
+      true,
+    ),
+  );
   assert.throws(
     () =>
       assertReceiptBoundDocumentInventory(
@@ -835,8 +896,21 @@ test("an unresolved held fixture is protected as baseline, never admitted as a p
         proofs,
         "visible peer disappeared without its exact close receipt",
         true,
-    ),
-    /unsettled peer disappeared without its exact close receipt/u,
+        new Set([held.creationId]),
+      ),
+    /observed fixture disappeared without its exact close receipt/u,
+  );
+  assert.throws(
+    () =>
+      assertReceiptBoundDocumentInventory(
+        [user],
+        [user],
+        new Map(),
+        "observed peer lost its provenance",
+        true,
+        new Set([held.creationId]),
+      ),
+    /observed fixture disappeared without its exact close receipt/u,
   );
   assert.throws(
     () =>
