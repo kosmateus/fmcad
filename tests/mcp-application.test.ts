@@ -106,6 +106,7 @@ const publicExecutionBudgetMs = 180000;
 function receiptFromPreparedScript(script: string) {
   let source = script;
   for (let depth = 0; depth < 8; depth++) {
+    source = decodeNativeSourceEnvelope(source);
     const binding = source.match(
       /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/,
     );
@@ -133,10 +134,7 @@ function decodeNativeSourceEnvelope(script: string) {
   if (!envelope) return script;
   const decoded = inflateSync(Buffer.from(envelope[1]!, "base64"));
   assert.equal(decoded.length, Number(envelope[2]));
-  assert.equal(
-    createHash("sha256").update(decoded).digest("hex"),
-    envelope[3],
-  );
+  assert.equal(createHash("sha256").update(decoded).digest("hex"), envelope[3]);
   return decoded.toString("utf8");
 }
 
@@ -165,6 +163,34 @@ test("MCP physical fixture reads current prepared receipt wrappers and rejects m
       record: binding,
       target: receiptPath,
     });
+    const decoded = decodeNativeSourceEnvelope(prepared.script);
+    assert.throws(
+      () =>
+        receiptFromPreparedScript(
+          decoded.replace(/^[ \t]*_qr_path = .*$/m, ""),
+        ),
+      /exact prepared receipt/,
+    );
+    assert.throws(
+      () =>
+        receiptFromPreparedScript(
+          decoded.replace(/^[ \t]*_qr_binding_value = .*$/m, ""),
+        ),
+      /exact prepared receipt/,
+    );
+    if (official) {
+      const envelope = prepared.script.match(
+        /_fmcad_decode_source_v1\('([^']+)', (\d+), '([a-f0-9]{64})'\)/,
+      );
+      assert(envelope);
+      const invalidHash =
+        (envelope[3]![0] === "0" ? "1" : "0") + envelope[3]!.slice(1);
+      assert.throws(() =>
+        receiptFromPreparedScript(
+          prepared.script.replace(envelope[3]!, invalidHash),
+        ),
+      );
+    }
   }
   assert.throws(
     () => receiptFromPreparedScript("pass\n"),
@@ -646,846 +672,828 @@ test("explicit raw compatibility adapters preserve wire arguments and never prom
   assert.equal(seen.length, 1);
 });
 
-test(
-  "process MCP and CLI share the production broker/typed worker and execute once per explicit request",
-  async (t) => {
-    t.after(
-      (
-        load(
-          path.join(root, "tests/fixtures/fake-wsl-platform.cjs"),
-        ) as () => () => void
-      )(),
-    );
-    const { resolveFmcadConfiguration } = load(
-      path.join(root, "dist/src/dist/core"),
-    ) as typeof import("../packages/core/src");
-    const { queueDirectory } = load(
-      path.join(root, "dist/src/queue-connection"),
-    ) as typeof import("../src/entrypoints/queue-connection");
-    const { serve } = load(
-      path.join(root, "dist/src/queue-broker"),
-    ) as typeof import("../src/queue-broker");
-    const { durable } = load(
-      path.join(root, "dist/src/queue-instance"),
-    ) as BrokerModules["./queue-instance"];
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-broker-"));
-    const oldState = process.env["XDG_STATE_HOME"];
-    process.env["XDG_STATE_HOME"] = directory;
-    const dir = queueDirectory();
-    const config = {
-      ...resolveFmcadConfiguration({
-        adapter: {
-          backend: "mcp",
-          url: "http://localhost:1",
-          timeoutMs: publicExecutionBudgetMs,
-        },
-        environment: {},
-        file: {},
-        platformDefaults: {},
-        acceptedService: null,
-      }),
-      queue: {
-        autoStart: false,
-        startupTimeoutMs: 45000,
-        waitTimeoutMs: 35000,
-        client: "typed-mcp",
-      },
-      controlCenter: { port: 5481 },
-    };
-    fs.writeFileSync(
-      path.join(directory, "config.json"),
-      JSON.stringify(config),
-    );
-    const instance = {
-      pid: 99,
-      birth: "mock:99",
-      version: "mock",
-      activeCommand: "SelectCommand",
-      documents: [],
-      documentState: {
-        status: "complete",
-        fingerprint: "unchanged",
-        state: {
-          identity: { creationId: "creation", fileId: "file" },
-          references: [],
-        },
-      },
-    };
-    const expected = {
-      success: true,
-      operation: "document.status",
-      result: {
-        name: "Model",
-        creationId: "creation",
-        saved: true,
-        modified: false,
-        fileId: "file",
-        fileName: "Model.f3d",
-        version: 1,
-        versionId: "version-1",
-        isComplete: true,
-        folderId: "folder",
-        projectId: "project",
-      },
-    };
-    let calls = 0;
-    function settle(script: string) {
-      const { record, target } = receiptFromPreparedScript(script);
-      durable(target, {
-        ...record,
-        terminal: true,
-        outcome: "succeeded",
-        instance,
-      });
-    }
-    const physical: Client = partial<Client>({
-      // The predecessor's plain physical fixture intentionally had no transport
-      // preparation or session hooks. Keep those probes explicitly absent while
-      // the proxy still rejects unexpected required fixture reads.
-      prepareCallTool: undefined,
-      prepareUiGuardedScript: undefined,
-      prepareListTools: undefined,
-      executeUiGuardedScript: undefined,
-      withRequest: undefined,
-      reqOpts: undefined,
-      negotiatedProtocolVersion: undefined,
-      serverInfo: undefined,
-      capabilities: {},
-      server: { timeoutMs: publicExecutionBudgetMs },
-      _parse: JSON.parse,
-      async _post(payload) {
-        calls++;
-        settle(text(field(payload, "params", "arguments", "object", "script")));
-        return {
-          status: 200,
-          raw: JSON.stringify({
-            jsonrpc: "2.0",
-            id: payload.id,
-            result: {
-              content: [
-                {
-                  type: "text",
-                  text: "FMCAD_RESULT " + JSON.stringify(expected),
-                },
-              ],
-            },
-          }),
-        };
-      },
-      async callTool(value) {
-        const script = text(optional(value, "object", "script") ?? "");
-        if (script.includes("FMCAD_QUEUE_INSTANCE")) {
-          settle(script);
-          return {
-            failed: false,
-            text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance),
-          };
-        }
-        assert(this._post);
-        const response = await this._post({
-          jsonrpc: "2.0",
-          id: randomUUID(),
-          method: "tools/call",
-          params: { name: "fusion_mcp_execute", arguments: value },
-        });
-        return {
-          failed: false,
-          text: JSON.parse(response.raw).result.content[0].text,
-        };
-      },
-    });
-    const preload = path.join(directory, "fake-wsl-preload.cjs");
-    fs.writeFileSync(
-      preload,
-      `require(${JSON.stringify(path.join(root, "tests/fixtures/fake-wsl-platform.cjs"))})();\n`,
-    );
-    const broker = await serve(
-      { ...config },
-      {
-        dir,
-        spawnWorker: ((
-          executable: string,
-          args: readonly string[] = [],
-          options: import("node:child_process").SpawnOptions = {},
-        ) =>
-          spawn(
-            executable,
-            ["--require", preload, ...args],
-            options,
-          )) as typeof spawn,
-        confirmOwnership: true,
-        createBackend: () => physical,
-        pollMs: 5,
-      },
-    );
-    t.after(async () => {
-      await broker.close();
-      if (oldState === undefined) delete process.env["XDG_STATE_HOME"];
-      else process.env["XDG_STATE_HOME"] = oldState;
-      fs.rmSync(directory, { recursive: true, force: true });
-    });
-    const env = { FMCAD_BACKEND: "mcp" };
-    const client = processClient(
-      t,
-      path.join(root, "dist/bin/fmcad-mcp.js"),
-      directory,
-      env,
-    );
-    async function completed(response: unknown) {
-      if (!optional(response, "result", "structuredContent", "jobId"))
-        return optional(response, "result", "structuredContent");
-      const jobId = field(response, "result", "structuredContent", "jobId");
-      for (
-        let i = 0, deadline = Date.now() + publicExecutionBudgetMs;
-        Date.now() < deadline;
-        i++
-      ) {
-        const value = await client.request(
-          request(`poll-${i}`, "tools/call", {
-            name: "fmcad_queue_result",
-            arguments: { jobId },
-          }),
-        );
-        const result = optional(value, "result", "structuredContent");
-        if (
-          ["succeeded", "failed"].includes(
-            String(optional(result, "job", "state")),
-          )
-        ) {
-          assert.equal(
-            field(result, "job", "state"),
-            "succeeded",
-            JSON.stringify(result),
-          );
-          return JSON.parse(text(field(result, "stdout")));
-        }
-        assert(!field(value, "error"), JSON.stringify(value));
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      assert.fail("The existing owned job did not settle");
-    }
-    const native = await client.request(
-      execute(
-        1,
-        "document.status",
-        {},
-        {
-          doc: "Model",
-          docId: "creation",
-          docFileId: "file",
-          purpose: "Inspect part",
-        },
-        { requestId: "mcp-stable" },
-      ),
-    );
-    const nativeOutput = await completed(native);
-    assert.deepEqual(nativeOutput, expected, JSON.stringify(native));
-    assert.equal(calls, 1);
-    const jobs = publicJobs(broker);
-    assert.equal(jobs.length, 1);
-    assert.equal(jobs[0]?.requestId, "mcp-stable");
-    assert(
-      !Object.hasOwn(jobs[0]!, "request"),
-      "public broker status must not leak the worker envelope",
-    );
-    const repeated = await client.request(
-      execute(
-        2,
-        "document.status",
-        {},
-        {
-          doc: "Model",
-          docId: "creation",
-          docFileId: "file",
-          purpose: "Inspect part",
-        },
-        { requestId: "mcp-stable" },
-      ),
-    );
-    assert.deepEqual(
-      await completed(repeated),
-      expected,
-      JSON.stringify(repeated),
-    );
-    assert.equal(
-      calls,
-      1,
-      "same explicit request identity is deduplicated by the broker, never replayed",
-    );
-    const cliChild = spawn(
-      process.execPath,
-      [
-        path.join(root, "dist/bin/fmcad.js"),
-        "document",
-        "status",
-        "--doc",
-        "Model",
-        "--doc-id",
-        "creation",
-        "--doc-file-id",
-        "file",
-        "--json",
-      ],
-      {
-        cwd: directory,
-        env: {
-          ...process.env,
-          FMCAD_CONFIG: path.join(directory, "config.json"),
-          FMCAD_BACKEND: "mcp",
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    let output = "",
-      errors = "";
-    cliChild.stdout.on("data", (chunk) => {
-      output += chunk;
-    });
-    cliChild.stderr.on("data", (chunk) => {
-      errors += chunk;
-    });
-    assert.deepEqual(await once(cliChild, "close"), [0, null], errors);
-    assert.deepEqual(JSON.parse(output), nativeOutput);
-    assert.equal(
-      calls,
-      2,
-      "one MCP operation and one distinct CLI operation each get one SDK turn",
-    );
-    await client.close(["", controlCenterWarning]);
-  },
-);
-
-test(
-  "MCP process identities preserve project-scoped jobs across pause, lost acknowledgement and owner restart",
-  async (t) => {
-    t.after(
-      (
-        load(
-          path.join(root, "tests/fixtures/fake-wsl-platform.cjs"),
-        ) as () => () => void
-      )(),
-    );
-    const { resolveFmcadConfiguration } = load(
-      path.join(root, "dist/src/dist/core"),
-    ) as typeof import("../packages/core/src");
-    const { queueDirectory } = load(
-      path.join(root, "src/queue-connection"),
-    ) as typeof import("../src/entrypoints/queue-connection");
-    const { serve } = load(
-      path.join(root, "dist/src/queue-broker"),
-    ) as typeof import("../src/queue-broker");
-    const { durable } = load(
-      path.join(root, "dist/src/queue-instance"),
-    ) as BrokerModules["./queue-instance"];
-    const { QueueClient } = load(
-      path.join(root, "src/queue-client"),
-    ) as typeof import("../src/queue-client");
-    const directory = fs.mkdtempSync(
-      path.join(os.tmpdir(), "mcp-context-process-"),
-    );
-    const projectA = path.join(directory, "project-a");
-    const projectB = path.join(directory, "project-b");
-    fs.mkdirSync(projectA);
-    fs.mkdirSync(projectB);
-    const oldState = process.env["XDG_STATE_HOME"];
-    process.env["XDG_STATE_HOME"] = directory;
-    const clients: ReturnType<typeof processClient>[] = [];
-    const dir = queueDirectory();
-    const config = resolveFmcadConfiguration({
+test("process MCP and CLI share the production broker/typed worker and execute once per explicit request", async (t) => {
+  t.after(
+    (
+      load(
+        path.join(root, "tests/fixtures/fake-wsl-platform.cjs"),
+      ) as () => () => void
+    )(),
+  );
+  const { resolveFmcadConfiguration } = load(
+    path.join(root, "dist/src/dist/core"),
+  ) as typeof import("../packages/core/src");
+  const { queueDirectory } = load(
+    path.join(root, "dist/src/queue-connection"),
+  ) as typeof import("../src/entrypoints/queue-connection");
+  const { serve } = load(
+    path.join(root, "dist/src/queue-broker"),
+  ) as typeof import("../src/queue-broker");
+  const { durable } = load(
+    path.join(root, "dist/src/queue-instance"),
+  ) as BrokerModules["./queue-instance"];
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-broker-"));
+  const oldState = process.env["XDG_STATE_HOME"];
+  process.env["XDG_STATE_HOME"] = directory;
+  const dir = queueDirectory();
+  const config = {
+    ...resolveFmcadConfiguration({
       adapter: {
         backend: "mcp",
-        url: "http://localhost:1/mcp",
+        url: "http://localhost:1",
         timeoutMs: publicExecutionBudgetMs,
       },
       environment: {},
       file: {},
       platformDefaults: {},
       acceptedService: null,
-    });
-    fs.writeFileSync(
-      path.join(directory, "config.json"),
-      JSON.stringify(config),
-    );
-    const instance = {
-      pid: 99,
-      birth: "mock:99",
-      version: "mock",
-      activeCommand: "SelectCommand",
-      documents: [],
-      documentState: {
-        status: "complete",
-        fingerprint: "unchanged",
-        state: {
-          identity: { creationId: "creation", fileId: "file" },
-          references: [],
-        },
+    }),
+    queue: {
+      autoStart: false,
+      startupTimeoutMs: 45000,
+      waitTimeoutMs: 35000,
+      client: "typed-mcp",
+    },
+    controlCenter: { port: 5481 },
+  };
+  fs.writeFileSync(path.join(directory, "config.json"), JSON.stringify(config));
+  const instance = {
+    pid: 99,
+    birth: "mock:99",
+    version: "mock",
+    activeCommand: "SelectCommand",
+    documents: [],
+    documentState: {
+      status: "complete",
+      fingerprint: "unchanged",
+      state: {
+        identity: { creationId: "creation", fileId: "file" },
+        references: [],
       },
-    };
-    const expected = {
-      success: true,
-      operation: "entity.list",
-      result: { entities: [], observed: true },
-    };
-    let userCalls = 0;
-    let releaseFirstCall!: () => void;
-    let markFirstCall!: () => void;
-    const firstCallStarted = new Promise<void>((resolve) => {
-      markFirstCall = resolve;
-    });
-    const firstCallGate = new Promise<void>((resolve) => {
-      releaseFirstCall = resolve;
-    });
-    function settle(script: string) {
-      const source = decodeNativeSourceEnvelope(script);
-      const { record, target } = receiptFromPreparedScript(source);
-      durable(target, {
-        ...record,
-        terminal: true,
-        outcome: "succeeded",
-        instance,
-      });
-    }
-    function settleProbe(script: string) {
-      const { record, target } = receiptFromPreparedScript(script);
-      durable(target, {
-        ...record,
-        terminal: true,
-        outcome: "succeeded",
-        instance,
-        probeObservation: {
-          schema: "fmcad-instance-probe-v1",
-          identity: instance,
-        },
-      });
-    }
-    const physical: Client = partial<Client>({
-      // The predecessor's plain physical fixture intentionally had no transport
-      // preparation or session hooks. Keep those probes explicitly absent while
-      // the proxy still rejects unexpected required fixture reads.
-      prepareCallTool: undefined,
-      prepareUiGuardedScript: undefined,
-      prepareListTools: undefined,
-      executeUiGuardedScript: undefined,
-      withRequest: undefined,
-      reqOpts: undefined,
-      negotiatedProtocolVersion: undefined,
-      serverInfo: undefined,
-      capabilities: {},
-      server: { timeoutMs: publicExecutionBudgetMs },
-      _parse: JSON.parse,
-      async _post(payload) {
-        userCalls++;
-        if (userCalls === 1) {
-          markFirstCall();
-          await firstCallGate;
-        }
-        settle(text(field(payload, "params", "arguments", "object", "script")));
-        return {
-          status: 200,
-          raw: JSON.stringify({
-            jsonrpc: "2.0",
-            id: payload.id,
-            result: {
-              content: [
-                {
-                  type: "text",
-                  text: "FMCAD_RESULT " + JSON.stringify(expected),
-                },
-              ],
+    },
+  };
+  const expected = {
+    success: true,
+    operation: "document.status",
+    result: {
+      name: "Model",
+      creationId: "creation",
+      saved: true,
+      modified: false,
+      fileId: "file",
+      fileName: "Model.f3d",
+      version: 1,
+      versionId: "version-1",
+      isComplete: true,
+      folderId: "folder",
+      projectId: "project",
+    },
+  };
+  let calls = 0;
+  function settle(script: string, probe = false) {
+    const { record, target } = receiptFromPreparedScript(script);
+    durable(target, {
+      ...record,
+      terminal: true,
+      outcome: "succeeded",
+      instance,
+      ...(probe
+        ? {
+            probeObservation: {
+              schema: "fmcad-instance-probe-v1",
+              identity: instance,
             },
-          }),
-        };
-      },
-      async callTool(value) {
-        const script = text(optional(value, "object", "script") ?? "");
-        const source = decodeNativeSourceEnvelope(script);
-        if (source.includes("FMCAD_QUEUE_INSTANCE")) {
-          let boundProbe = false;
-          try {
-            receiptFromPreparedScript(source);
-            boundProbe = true;
-          } catch {
-            /* Unbound instance probes have no terminal receipt to settle. */
           }
-          if (boundProbe) settleProbe(source);
-          return {
-            failed: false,
-            text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance),
-          };
-        }
-        assert(this._post);
-        const response = await this._post({
+        : {}),
+    });
+  }
+  const physical: Client = partial<Client>({
+    // The predecessor's plain physical fixture intentionally had no transport
+    // preparation or session hooks. Keep those probes explicitly absent while
+    // the proxy still rejects unexpected required fixture reads.
+    prepareCallTool: undefined,
+    prepareUiGuardedScript: undefined,
+    prepareListTools: undefined,
+    executeUiGuardedScript: undefined,
+    withRequest: undefined,
+    reqOpts: undefined,
+    negotiatedProtocolVersion: undefined,
+    serverInfo: undefined,
+    capabilities: {},
+    server: { timeoutMs: publicExecutionBudgetMs },
+    _parse: JSON.parse,
+    async _post(payload) {
+      calls++;
+      settle(text(field(payload, "params", "arguments", "object", "script")));
+      return {
+        status: 200,
+        raw: JSON.stringify({
           jsonrpc: "2.0",
-          id: randomUUID(),
-          method: "tools/call",
-          params: { name: "fusion_mcp_execute", arguments: value },
-        });
+          id: payload.id,
+          result: {
+            content: [
+              {
+                type: "text",
+                text: "FMCAD_RESULT " + JSON.stringify(expected),
+              },
+            ],
+          },
+        }),
+      };
+    },
+    async callTool(value) {
+      const script = text(optional(value, "object", "script") ?? "");
+      if (decodeNativeSourceEnvelope(script).includes("FMCAD_QUEUE_INSTANCE")) {
+        settle(script, true);
         return {
           failed: false,
-          text: JSON.parse(response.raw).result.content[0].text,
+          text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance),
         };
-      },
-    });
-    const preload = path.join(directory, "fake-wsl-preload.cjs");
-    fs.writeFileSync(
-      preload,
-      `require(${JSON.stringify(path.join(root, "tests/fixtures/fake-wsl-platform.cjs"))})();\n`,
-    );
-    const broker = await serve(
-      { ...config },
-      {
-        dir,
-        spawnWorker: ((
-          executable: string,
-          args: readonly string[] = [],
-          options: import("node:child_process").SpawnOptions = {},
-        ) =>
-          spawn(
-            executable,
-            ["--require", preload, ...args],
-            options,
-          )) as typeof spawn,
-        confirmOwnership: true,
-        createBackend: () => physical,
-        pollMs: 5,
-      },
-    );
-    const owner = new QueueClient("owner-a", { cfg: config });
-    t.after(async () => {
-      releaseFirstCall();
-      for (const client of clients) {
-        if (client.child.exitCode === null && client.child.signalCode === null)
-          await client.kill();
       }
-      try {
-        let state = object(await owner.call("control-status"));
-        const deadline = Date.now() + 10000;
-        while (state["phase"] === "PAUSING" && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-          state = object(await owner.call("control-status"));
-        }
-        if (state["phase"] === "PAUSED") {
-          await owner.call("resume", {
-            control: {
-              requestId: "mcp-context-cleanup-resume",
-              instanceId: state["instanceId"],
-              expectedGeneration: state["generation"],
-            },
-          });
-        }
-      } catch {
-        /* Preserve the original process-test failure during cleanup. */
-      }
-      owner.dispose();
-      await broker.close();
-      if (oldState === undefined) delete process.env["XDG_STATE_HOME"];
-      else process.env["XDG_STATE_HOME"] = oldState;
-      fs.rmSync(directory, { recursive: true, force: true });
-    });
-    await owner.register();
-    const entrypoint = path.join(root, "dist/bin/fmcad-mcp.js");
-    const ownerAEnv = {
-      FMCAD_CLIENT: "owner-a",
-      FMCAD_BACKEND: "mcp",
-      FMCAD_PROJECT_DIRECTORY: projectA,
-    };
-    const first = processClient(t, entrypoint, directory, ownerAEnv);
-    clients.push(first);
-    await first.request(
-      request("initialize-a", "initialize", {
-        protocolVersion: "2025-11-25",
-        capabilities: {},
-        clientInfo: { name: "label-is-not-owner", version: "1" },
-      }),
-    );
-    first.notify(
-      execute(
-        "lost-ack",
-        "entity.list",
-        {},
-        {
-          projectDirectory: projectA,
-          doc: "Model",
-          docId: "creation",
-          docFileId: "file",
-          purpose: "Inspect project A",
-        },
-        { requestId: "request-a" },
-      ),
-    );
-    const jobA = await until(
-      () => publicJobs(broker).find((job) => job.requestId === "request-a"),
-      "owner A queued job",
-    ).catch(async (error: unknown) => {
-      assert(error instanceof Error);
-      await first.kill();
-      throw new Error(
-        `${error.message}; stdout=${first.output()}; stderr=${first.diagnostics()}`,
+      assert(this._post);
+      const response = await this._post({
+        jsonrpc: "2.0",
+        id: randomUUID(),
+        method: "tools/call",
+        params: { name: "fusion_mcp_execute", arguments: value },
+      });
+      return {
+        failed: false,
+        text: JSON.parse(response.raw).result.content[0].text,
+      };
+    },
+  });
+  const preload = path.join(directory, "fake-wsl-preload.cjs");
+  fs.writeFileSync(
+    preload,
+    `require(${JSON.stringify(path.join(root, "tests/fixtures/fake-wsl-platform.cjs"))})();\n`,
+  );
+  const broker = await serve(
+    { ...config },
+    {
+      dir,
+      spawnWorker: ((
+        executable: string,
+        args: readonly string[] = [],
+        options: import("node:child_process").SpawnOptions = {},
+      ) =>
+        spawn(
+          executable,
+          ["--require", preload, ...args],
+          options,
+        )) as typeof spawn,
+      confirmOwnership: true,
+      createBackend: () => physical,
+      pollMs: 5,
+    },
+  );
+  t.after(async () => {
+    await broker.close();
+    if (oldState === undefined) delete process.env["XDG_STATE_HOME"];
+    else process.env["XDG_STATE_HOME"] = oldState;
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  const env = { FMCAD_BACKEND: "mcp" };
+  const client = processClient(
+    t,
+    path.join(root, "dist/bin/fmcad-mcp.js"),
+    directory,
+    env,
+  );
+  async function completed(response: unknown) {
+    if (!optional(response, "result", "structuredContent", "jobId"))
+      return optional(response, "result", "structuredContent");
+    const jobId = field(response, "result", "structuredContent", "jobId");
+    for (
+      let i = 0, deadline = Date.now() + publicExecutionBudgetMs;
+      Date.now() < deadline;
+      i++
+    ) {
+      const value = await client.request(
+        request(`poll-${i}`, "tools/call", {
+          name: "fmcad_queue_result",
+          arguments: { jobId },
+        }),
       );
-    });
-    await firstCallStarted;
-    assert(
-      ["running", "sending"].includes(
-        text(field(broker.status(), "jobs", jobA.id, "state")),
-      ),
-    );
-    const beforePause = object(await owner.call("control-status"));
-    const paused = await owner.call("pause", {
-      control: {
-        requestId: "mcp-context-pause",
-        instanceId: beforePause["instanceId"],
-        expectedGeneration: beforePause["generation"],
-      },
-    });
-    assert.equal(
-      field(paused, "phase"),
-      "PAUSING",
-      `pause waits for the active SDK turn; actual state: ${field(paused, "phase")}`,
-    );
-    await first.kill(); // The active SDK request remains; the MCP process never consumes its acknowledgement.
-
-    const second = processClient(t, entrypoint, directory, {
-      FMCAD_CLIENT: "owner-b",
-      FMCAD_BACKEND: "mcp",
-      FMCAD_PROJECT_DIRECTORY: projectB,
-    });
-    clients.push(second);
-    const snapshot = JSON.parse(
-      fs.readFileSync(path.join(dir, "queue-state.json"), "utf8"),
-    );
-    const savedA = snapshot.jobs[jobA.id].request;
-    assert.equal(savedA.cwd, fs.realpathSync(projectA));
-    assert.deepEqual(savedA.clientContext, {
-      clientId: "owner-a",
-      requestId: "request-a",
-      sessionId: savedA.clientContext.sessionId,
-      projectDirectory: fs.realpathSync(projectA),
-      doc: "Model",
-      docId: "creation",
-      docFileId: "file",
-      purpose: "Inspect project A",
-    });
-
-    const foreignResult = await second.request(
-      request("foreign-result", "tools/call", {
-        name: "fmcad_queue_result",
-        arguments: { jobId: jobA.id },
-      }),
-    );
-    assert(field(foreignResult, "error"));
-    assert.match(text(field(foreignResult, "error", "message")), /NOT_OWNER/);
-    const hiddenRequest = await second.request(
-      request("foreign-request", "tools/call", {
-        name: "fmcad_queue_request",
-        arguments: { requestId: "request-a" },
-      }),
-    );
-    assert.equal(
-      field(hiddenRequest, "result", "structuredContent", "jobId"),
-      null,
-    );
-    assert.equal(
-      field(hiddenRequest, "result", "structuredContent", "context"),
-      null,
-    );
-    assert.equal(
-      field(hiddenRequest, "result", "structuredContent", "lookupState"),
-      "no_owned_job",
-    );
-    assert.equal(
-      field(
-        hiddenRequest,
-        "result",
-        "structuredContent",
-        "acceptanceState",
-      ),
-      "unknown",
-    );
-    assert.equal(
-      field(
-        hiddenRequest,
-        "result",
-        "structuredContent",
-        "globalQueueState",
-      ),
-      "not_read",
-    );
-    assert.equal(
-      field(hiddenRequest, "result", "structuredContent", "queueBlocked"),
-      undefined,
-    );
-
-    const restarted = processClient(t, entrypoint, directory, ownerAEnv);
-    clients.push(restarted);
-    const recovered = await restarted.request(
-      request("recover-a", "tools/call", {
-        name: "fmcad_queue_request",
-        arguments: { requestId: "request-a" },
-      }),
-    );
-    const recoveredContext = field(
-      recovered,
-      "result",
-      "structuredContent",
-      "context",
-    );
-    assert.equal(
-      field(recovered, "result", "structuredContent", "jobId"),
-      jobA.id,
-    );
-    assert.equal(
-      field(recovered, "result", "structuredContent", "status"),
-      "running",
-    );
-    assert.equal(field(recoveredContext, "clientId"), "owner-a");
-    assert.equal(
-      field(recoveredContext, "projectDirectory"),
-      fs.realpathSync(projectA),
-    );
-    assert.equal(field(recoveredContext, "docId"), "creation");
-    assert.equal(field(recoveredContext, "docFileId"), "file");
-    assert.equal(field(recoveredContext, "projectId"), undefined);
-    assert.equal(field(recoveredContext, "purpose"), "Inspect project A");
-
-    const duplicate = await restarted.request(
-      execute(
-        "duplicate-a",
-        "entity.list",
-        {},
-        {
-          projectDirectory: projectA,
-          doc: "Model",
-          docId: "creation",
-          docFileId: "file",
-          purpose: "Inspect project A",
-        },
-        { requestId: "request-a" },
-      ),
-    );
-    assert.equal(
-      field(duplicate, "result", "structuredContent", "jobId"),
-      jobA.id,
-    );
-    assert.equal(
-      publicJobs(broker).filter((job) => job.requestId === "request-a").length,
-      1,
-    );
-    assert.equal(
-      userCalls,
-      1,
-      "a duplicate request during a long SDK turn does not dispatch again",
-    );
-
-    releaseFirstCall();
-    await until(
-      async () =>
-        field(await owner.call("control-status"), "phase") === "PAUSED",
-      "pause to settle after active SDK turn",
-      publicExecutionBudgetMs,
-    );
-    const current = object(await owner.call("control-status"));
-    const resumed = await owner.call("resume", {
-      control: {
-        requestId: "mcp-context-resume",
-        instanceId: current["instanceId"],
-        expectedGeneration: current["generation"],
-      },
-    });
-    assert(["RUNNING", "RESUMING"].includes(text(field(resumed, "phase"))));
-    const aFinished = await until(
-      async () => {
-        const value = await restarted.request(
-          request("poll-a-" + randomUUID(), "tools/call", {
-            name: "fmcad_queue_request",
-            arguments: { requestId: "request-a" },
-          }),
+      const result = optional(value, "result", "structuredContent");
+      if (
+        ["succeeded", "failed"].includes(
+          String(optional(result, "job", "state")),
+        )
+      ) {
+        assert.equal(
+          field(result, "job", "state"),
+          "succeeded",
+          JSON.stringify(result),
         );
-        return optional(value, "result", "structuredContent", "status") ===
-          "succeeded"
-          ? field(value, "result", "structuredContent")
-          : null;
+        return JSON.parse(text(field(result, "stdout")));
+      }
+      assert(!field(value, "error"), JSON.stringify(value));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.fail("The existing owned job did not settle");
+  }
+  const native = await client.request(
+    execute(
+      1,
+      "document.status",
+      {},
+      {
+        doc: "Model",
+        docId: "creation",
+        docFileId: "file",
+        purpose: "Inspect part",
       },
-      "recovered project A terminal result",
-      publicExecutionBudgetMs,
-    );
-    const replyB = await second.request(
-      execute(
-        "project-b",
-        "entity.list",
-        {},
-        {
-          projectDirectory: projectB,
-          doc: "Model",
-          docId: "creation",
-          docFileId: "file",
-          projectId: "fusion-project-b",
-          purpose: "Inspect project B",
-        },
-        { requestId: "request-b" },
-      ),
-    );
-    const jobB = await until(
-      () => publicJobs(broker).find((job) => job.requestId === "request-b"),
-      "owner B project job",
-    );
-    assert.equal(
-      optional(replyB, "result", "_meta", "fmcad", "jobId"),
-      jobB.id,
-      JSON.stringify(replyB),
-    );
-    const snapshotB = JSON.parse(
-      fs.readFileSync(path.join(dir, "queue-state.json"), "utf8"),
-    );
-    const savedB = snapshotB.jobs[jobB.id].request;
-    assert.equal(savedB.cwd, fs.realpathSync(projectB));
-    assert.equal(
-      savedB.clientContext.projectDirectory,
-      fs.realpathSync(projectB),
-    );
-    assert.equal(savedB.clientContext.docId, "creation");
-    assert.equal(savedB.clientContext.docFileId, "file");
-    assert.equal(savedB.clientContext.projectId, "fusion-project-b");
-    const bFinished = await until(
-      async () => {
-        const value = await second.request(
-          request("poll-b-" + randomUUID(), "tools/call", {
-            name: "fmcad_queue_request",
-            arguments: { requestId: "request-b" },
-          }),
-        );
-        return optional(value, "result", "structuredContent", "status") ===
-          "succeeded"
-          ? field(value, "result", "structuredContent")
-          : null;
-      },
-      "project B terminal result",
-      publicExecutionBudgetMs,
-    );
-    assert.equal(
-      field(aFinished, "context", "projectDirectory"),
-      fs.realpathSync(projectA),
-    );
-    assert.equal(
-      field(bFinished, "context", "projectDirectory"),
-      fs.realpathSync(projectB),
-    );
-    const foreignReconcile = await second.request(
-      request("foreign-reconcile", "tools/call", {
-        name: "fmcad_queue_reconcile",
-        arguments: { jobId: jobA.id },
-      }),
-    );
-    assert(field(foreignReconcile, "error"));
-    assert.match(
-      text(field(foreignReconcile, "error", "message")),
-      /NOT_OWNER/,
-    );
-    assert.equal(
-      userCalls,
+      { requestId: "mcp-stable" },
+    ),
+  );
+  const nativeOutput = await completed(native);
+  assert.deepEqual(nativeOutput, expected, JSON.stringify(native));
+  assert.equal(calls, 1);
+  const jobs = publicJobs(broker);
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0]?.requestId, "mcp-stable");
+  assert(
+    !Object.hasOwn(jobs[0]!, "request"),
+    "public broker status must not leak the worker envelope",
+  );
+  const repeated = await client.request(
+    execute(
       2,
-      "each distinct request dispatches once after resume",
+      "document.status",
+      {},
+      {
+        doc: "Model",
+        docId: "creation",
+        docFileId: "file",
+        purpose: "Inspect part",
+      },
+      { requestId: "mcp-stable" },
+    ),
+  );
+  assert.deepEqual(
+    await completed(repeated),
+    expected,
+    JSON.stringify(repeated),
+  );
+  assert.equal(
+    calls,
+    1,
+    "same explicit request identity is deduplicated by the broker, never replayed",
+  );
+  const cliChild = spawn(
+    process.execPath,
+    [
+      path.join(root, "dist/bin/fmcad.js"),
+      "document",
+      "status",
+      "--doc",
+      "Model",
+      "--doc-id",
+      "creation",
+      "--doc-file-id",
+      "file",
+      "--json",
+    ],
+    {
+      cwd: directory,
+      env: {
+        ...process.env,
+        FMCAD_CONFIG: path.join(directory, "config.json"),
+        FMCAD_BACKEND: "mcp",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  let output = "",
+    errors = "";
+  cliChild.stdout.on("data", (chunk) => {
+    output += chunk;
+  });
+  cliChild.stderr.on("data", (chunk) => {
+    errors += chunk;
+  });
+  assert.deepEqual(await once(cliChild, "close"), [0, null], errors);
+  assert.deepEqual(JSON.parse(output), nativeOutput);
+  assert.equal(
+    calls,
+    2,
+    "one MCP operation and one distinct CLI operation each get one SDK turn",
+  );
+  await client.close(["", controlCenterWarning]);
+});
+
+test("MCP process identities preserve project-scoped jobs across pause, lost acknowledgement and owner restart", async (t) => {
+  t.after(
+    (
+      load(
+        path.join(root, "tests/fixtures/fake-wsl-platform.cjs"),
+      ) as () => () => void
+    )(),
+  );
+  const { resolveFmcadConfiguration } = load(
+    path.join(root, "dist/src/dist/core"),
+  ) as typeof import("../packages/core/src");
+  const { queueDirectory } = load(
+    path.join(root, "src/queue-connection"),
+  ) as typeof import("../src/entrypoints/queue-connection");
+  const { serve } = load(
+    path.join(root, "dist/src/queue-broker"),
+  ) as typeof import("../src/queue-broker");
+  const { durable } = load(
+    path.join(root, "dist/src/queue-instance"),
+  ) as BrokerModules["./queue-instance"];
+  const { QueueClient } = load(
+    path.join(root, "src/queue-client"),
+  ) as typeof import("../src/queue-client");
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "mcp-context-process-"),
+  );
+  const projectA = path.join(directory, "project-a");
+  const projectB = path.join(directory, "project-b");
+  fs.mkdirSync(projectA);
+  fs.mkdirSync(projectB);
+  const oldState = process.env["XDG_STATE_HOME"];
+  process.env["XDG_STATE_HOME"] = directory;
+  const clients: ReturnType<typeof processClient>[] = [];
+  const dir = queueDirectory();
+  const config = resolveFmcadConfiguration({
+    adapter: {
+      backend: "mcp",
+      url: "http://localhost:1/mcp",
+      timeoutMs: publicExecutionBudgetMs,
+    },
+    environment: {},
+    file: {},
+    platformDefaults: {},
+    acceptedService: null,
+  });
+  fs.writeFileSync(path.join(directory, "config.json"), JSON.stringify(config));
+  const instance = {
+    pid: 99,
+    birth: "mock:99",
+    version: "mock",
+    activeCommand: "SelectCommand",
+    documents: [],
+    documentState: {
+      status: "complete",
+      fingerprint: "unchanged",
+      state: {
+        identity: { creationId: "creation", fileId: "file" },
+        references: [],
+      },
+    },
+  };
+  const expected = {
+    success: true,
+    operation: "entity.list",
+    result: { entities: [], observed: true },
+  };
+  let userCalls = 0;
+  let releaseFirstCall!: () => void;
+  let markFirstCall!: () => void;
+  const firstCallStarted = new Promise<void>((resolve) => {
+    markFirstCall = resolve;
+  });
+  const firstCallGate = new Promise<void>((resolve) => {
+    releaseFirstCall = resolve;
+  });
+  function settle(script: string) {
+    const source = decodeNativeSourceEnvelope(script);
+    const { record, target } = receiptFromPreparedScript(source);
+    durable(target, {
+      ...record,
+      terminal: true,
+      outcome: "succeeded",
+      instance,
+    });
+  }
+  function settleProbe(script: string) {
+    const { record, target } = receiptFromPreparedScript(script);
+    durable(target, {
+      ...record,
+      terminal: true,
+      outcome: "succeeded",
+      instance,
+      probeObservation: {
+        schema: "fmcad-instance-probe-v1",
+        identity: instance,
+      },
+    });
+  }
+  const physical: Client = partial<Client>({
+    // The predecessor's plain physical fixture intentionally had no transport
+    // preparation or session hooks. Keep those probes explicitly absent while
+    // the proxy still rejects unexpected required fixture reads.
+    prepareCallTool: undefined,
+    prepareUiGuardedScript: undefined,
+    prepareListTools: undefined,
+    executeUiGuardedScript: undefined,
+    withRequest: undefined,
+    reqOpts: undefined,
+    negotiatedProtocolVersion: undefined,
+    serverInfo: undefined,
+    capabilities: {},
+    server: { timeoutMs: publicExecutionBudgetMs },
+    _parse: JSON.parse,
+    async _post(payload) {
+      userCalls++;
+      if (userCalls === 1) {
+        markFirstCall();
+        await firstCallGate;
+      }
+      settle(text(field(payload, "params", "arguments", "object", "script")));
+      return {
+        status: 200,
+        raw: JSON.stringify({
+          jsonrpc: "2.0",
+          id: payload.id,
+          result: {
+            content: [
+              {
+                type: "text",
+                text: "FMCAD_RESULT " + JSON.stringify(expected),
+              },
+            ],
+          },
+        }),
+      };
+    },
+    async callTool(value) {
+      const script = text(optional(value, "object", "script") ?? "");
+      const source = decodeNativeSourceEnvelope(script);
+      if (source.includes("FMCAD_QUEUE_INSTANCE")) {
+        let boundProbe = false;
+        try {
+          receiptFromPreparedScript(source);
+          boundProbe = true;
+        } catch {
+          /* Unbound instance probes have no terminal receipt to settle. */
+        }
+        if (boundProbe) settleProbe(source);
+        return {
+          failed: false,
+          text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance),
+        };
+      }
+      assert(this._post);
+      const response = await this._post({
+        jsonrpc: "2.0",
+        id: randomUUID(),
+        method: "tools/call",
+        params: { name: "fusion_mcp_execute", arguments: value },
+      });
+      return {
+        failed: false,
+        text: JSON.parse(response.raw).result.content[0].text,
+      };
+    },
+  });
+  const preload = path.join(directory, "fake-wsl-preload.cjs");
+  fs.writeFileSync(
+    preload,
+    `require(${JSON.stringify(path.join(root, "tests/fixtures/fake-wsl-platform.cjs"))})();\n`,
+  );
+  const broker = await serve(
+    { ...config },
+    {
+      dir,
+      spawnWorker: ((
+        executable: string,
+        args: readonly string[] = [],
+        options: import("node:child_process").SpawnOptions = {},
+      ) =>
+        spawn(
+          executable,
+          ["--require", preload, ...args],
+          options,
+        )) as typeof spawn,
+      confirmOwnership: true,
+      createBackend: () => physical,
+      pollMs: 5,
+    },
+  );
+  const owner = new QueueClient("owner-a", { cfg: config });
+  t.after(async () => {
+    releaseFirstCall();
+    for (const client of clients) {
+      if (client.child.exitCode === null && client.child.signalCode === null)
+        await client.kill();
+    }
+    try {
+      let state = object(await owner.call("control-status"));
+      const deadline = Date.now() + 10000;
+      while (state["phase"] === "PAUSING" && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        state = object(await owner.call("control-status"));
+      }
+      if (state["phase"] === "PAUSED") {
+        await owner.call("resume", {
+          control: {
+            requestId: "mcp-context-cleanup-resume",
+            instanceId: state["instanceId"],
+            expectedGeneration: state["generation"],
+          },
+        });
+      }
+    } catch {
+      /* Preserve the original process-test failure during cleanup. */
+    }
+    owner.dispose();
+    await broker.close();
+    if (oldState === undefined) delete process.env["XDG_STATE_HOME"];
+    else process.env["XDG_STATE_HOME"] = oldState;
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  await owner.register();
+  const entrypoint = path.join(root, "dist/bin/fmcad-mcp.js");
+  const ownerAEnv = {
+    FMCAD_CLIENT: "owner-a",
+    FMCAD_BACKEND: "mcp",
+    FMCAD_PROJECT_DIRECTORY: projectA,
+  };
+  const first = processClient(t, entrypoint, directory, ownerAEnv);
+  clients.push(first);
+  await first.request(
+    request("initialize-a", "initialize", {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "label-is-not-owner", version: "1" },
+    }),
+  );
+  first.notify(
+    execute(
+      "lost-ack",
+      "entity.list",
+      {},
+      {
+        projectDirectory: projectA,
+        doc: "Model",
+        docId: "creation",
+        docFileId: "file",
+        purpose: "Inspect project A",
+      },
+      { requestId: "request-a" },
+    ),
+  );
+  const jobA = await until(
+    () => publicJobs(broker).find((job) => job.requestId === "request-a"),
+    "owner A queued job",
+  ).catch(async (error: unknown) => {
+    assert(error instanceof Error);
+    await first.kill();
+    throw new Error(
+      `${error.message}; stdout=${first.output()}; stderr=${first.diagnostics()}`,
     );
-    await restarted.close(["", controlCenterWarning]);
-    await second.close(["", controlCenterWarning]);
-  },
-);
+  });
+  await firstCallStarted;
+  assert(
+    ["running", "sending"].includes(
+      text(field(broker.status(), "jobs", jobA.id, "state")),
+    ),
+  );
+  const beforePause = object(await owner.call("control-status"));
+  const paused = await owner.call("pause", {
+    control: {
+      requestId: "mcp-context-pause",
+      instanceId: beforePause["instanceId"],
+      expectedGeneration: beforePause["generation"],
+    },
+  });
+  assert.equal(
+    field(paused, "phase"),
+    "PAUSING",
+    `pause waits for the active SDK turn; actual state: ${field(paused, "phase")}`,
+  );
+  await first.kill(); // The active SDK request remains; the MCP process never consumes its acknowledgement.
+
+  const second = processClient(t, entrypoint, directory, {
+    FMCAD_CLIENT: "owner-b",
+    FMCAD_BACKEND: "mcp",
+    FMCAD_PROJECT_DIRECTORY: projectB,
+  });
+  clients.push(second);
+  const snapshot = JSON.parse(
+    fs.readFileSync(path.join(dir, "queue-state.json"), "utf8"),
+  );
+  const savedA = snapshot.jobs[jobA.id].request;
+  assert.equal(savedA.cwd, fs.realpathSync(projectA));
+  assert.deepEqual(savedA.clientContext, {
+    clientId: "owner-a",
+    requestId: "request-a",
+    sessionId: savedA.clientContext.sessionId,
+    projectDirectory: fs.realpathSync(projectA),
+    doc: "Model",
+    docId: "creation",
+    docFileId: "file",
+    purpose: "Inspect project A",
+  });
+
+  const foreignResult = await second.request(
+    request("foreign-result", "tools/call", {
+      name: "fmcad_queue_result",
+      arguments: { jobId: jobA.id },
+    }),
+  );
+  assert(field(foreignResult, "error"));
+  assert.match(text(field(foreignResult, "error", "message")), /NOT_OWNER/);
+  const hiddenRequest = await second.request(
+    request("foreign-request", "tools/call", {
+      name: "fmcad_queue_request",
+      arguments: { requestId: "request-a" },
+    }),
+  );
+  assert.equal(
+    field(hiddenRequest, "result", "structuredContent", "jobId"),
+    null,
+  );
+  assert.equal(
+    field(hiddenRequest, "result", "structuredContent", "context"),
+    null,
+  );
+  assert.equal(
+    field(hiddenRequest, "result", "structuredContent", "lookupState"),
+    "no_owned_job",
+  );
+  assert.equal(
+    field(hiddenRequest, "result", "structuredContent", "acceptanceState"),
+    "unknown",
+  );
+  assert.equal(
+    field(hiddenRequest, "result", "structuredContent", "globalQueueState"),
+    "not_read",
+  );
+  assert.equal(
+    field(hiddenRequest, "result", "structuredContent", "queueBlocked"),
+    undefined,
+  );
+
+  const restarted = processClient(t, entrypoint, directory, ownerAEnv);
+  clients.push(restarted);
+  const recovered = await restarted.request(
+    request("recover-a", "tools/call", {
+      name: "fmcad_queue_request",
+      arguments: { requestId: "request-a" },
+    }),
+  );
+  const recoveredContext = field(
+    recovered,
+    "result",
+    "structuredContent",
+    "context",
+  );
+  assert.equal(
+    field(recovered, "result", "structuredContent", "jobId"),
+    jobA.id,
+  );
+  assert.equal(
+    field(recovered, "result", "structuredContent", "status"),
+    "running",
+  );
+  assert.equal(field(recoveredContext, "clientId"), "owner-a");
+  assert.equal(
+    field(recoveredContext, "projectDirectory"),
+    fs.realpathSync(projectA),
+  );
+  assert.equal(field(recoveredContext, "docId"), "creation");
+  assert.equal(field(recoveredContext, "docFileId"), "file");
+  assert.equal(field(recoveredContext, "projectId"), undefined);
+  assert.equal(field(recoveredContext, "purpose"), "Inspect project A");
+
+  const duplicate = await restarted.request(
+    execute(
+      "duplicate-a",
+      "entity.list",
+      {},
+      {
+        projectDirectory: projectA,
+        doc: "Model",
+        docId: "creation",
+        docFileId: "file",
+        purpose: "Inspect project A",
+      },
+      { requestId: "request-a" },
+    ),
+  );
+  assert.equal(
+    field(duplicate, "result", "structuredContent", "jobId"),
+    jobA.id,
+  );
+  assert.equal(
+    publicJobs(broker).filter((job) => job.requestId === "request-a").length,
+    1,
+  );
+  assert.equal(
+    userCalls,
+    1,
+    "a duplicate request during a long SDK turn does not dispatch again",
+  );
+
+  releaseFirstCall();
+  await until(
+    async () => field(await owner.call("control-status"), "phase") === "PAUSED",
+    "pause to settle after active SDK turn",
+    publicExecutionBudgetMs,
+  );
+  const current = object(await owner.call("control-status"));
+  const resumed = await owner.call("resume", {
+    control: {
+      requestId: "mcp-context-resume",
+      instanceId: current["instanceId"],
+      expectedGeneration: current["generation"],
+    },
+  });
+  assert(["RUNNING", "RESUMING"].includes(text(field(resumed, "phase"))));
+  const aFinished = await until(
+    async () => {
+      const value = await restarted.request(
+        request("poll-a-" + randomUUID(), "tools/call", {
+          name: "fmcad_queue_request",
+          arguments: { requestId: "request-a" },
+        }),
+      );
+      return optional(value, "result", "structuredContent", "status") ===
+        "succeeded"
+        ? field(value, "result", "structuredContent")
+        : null;
+    },
+    "recovered project A terminal result",
+    publicExecutionBudgetMs,
+  );
+  const replyB = await second.request(
+    execute(
+      "project-b",
+      "entity.list",
+      {},
+      {
+        projectDirectory: projectB,
+        doc: "Model",
+        docId: "creation",
+        docFileId: "file",
+        projectId: "fusion-project-b",
+        purpose: "Inspect project B",
+      },
+      { requestId: "request-b" },
+    ),
+  );
+  const jobB = await until(
+    () => publicJobs(broker).find((job) => job.requestId === "request-b"),
+    "owner B project job",
+  );
+  assert.equal(
+    optional(replyB, "result", "_meta", "fmcad", "jobId"),
+    jobB.id,
+    JSON.stringify(replyB),
+  );
+  const snapshotB = JSON.parse(
+    fs.readFileSync(path.join(dir, "queue-state.json"), "utf8"),
+  );
+  const savedB = snapshotB.jobs[jobB.id].request;
+  assert.equal(savedB.cwd, fs.realpathSync(projectB));
+  assert.equal(
+    savedB.clientContext.projectDirectory,
+    fs.realpathSync(projectB),
+  );
+  assert.equal(savedB.clientContext.docId, "creation");
+  assert.equal(savedB.clientContext.docFileId, "file");
+  assert.equal(savedB.clientContext.projectId, "fusion-project-b");
+  const bFinished = await until(
+    async () => {
+      const value = await second.request(
+        request("poll-b-" + randomUUID(), "tools/call", {
+          name: "fmcad_queue_request",
+          arguments: { requestId: "request-b" },
+        }),
+      );
+      return optional(value, "result", "structuredContent", "status") ===
+        "succeeded"
+        ? field(value, "result", "structuredContent")
+        : null;
+    },
+    "project B terminal result",
+    publicExecutionBudgetMs,
+  );
+  assert.equal(
+    field(aFinished, "context", "projectDirectory"),
+    fs.realpathSync(projectA),
+  );
+  assert.equal(
+    field(bFinished, "context", "projectDirectory"),
+    fs.realpathSync(projectB),
+  );
+  const foreignReconcile = await second.request(
+    request("foreign-reconcile", "tools/call", {
+      name: "fmcad_queue_reconcile",
+      arguments: { jobId: jobA.id },
+    }),
+  );
+  assert(field(foreignReconcile, "error"));
+  assert.match(text(field(foreignReconcile, "error", "message")), /NOT_OWNER/);
+  assert.equal(
+    userCalls,
+    2,
+    "each distinct request dispatches once after resume",
+  );
+  await restarted.close(["", controlCenterWarning]);
+  await second.close(["", controlCenterWarning]);
+});
