@@ -290,7 +290,7 @@ for (const { operation, data, dependencies, ...selection } of operations) {
   });
 }
 
-test("six public scalar measurement builders pass the pinned Fusion checker", async (t) => {
+test("six public scalar measurement builders and retained callers pass the pinned Fusion checker", async (t) => {
   const body = {
     // Resolved body reference from definition-transaction-0's rejected volume step.
     kind: "body",
@@ -314,6 +314,10 @@ test("six public scalar measurement builders pass the pinned Fusion checker", as
     { operation: "measure.area", data: { ref: body, units: "mm2" } },
     { operation: "measure.volume", data: { ref: body, units: "mm3" } },
     { operation: "measure.mass", data: { ref: body, units: "kg" } },
+    ...["check", "parameter.test"].map((operation) => ({
+      operation,
+      data: catalog[operation]!.example,
+    })),
   ];
   const admission = python.createPythonRpcAdmission({
     runtime,

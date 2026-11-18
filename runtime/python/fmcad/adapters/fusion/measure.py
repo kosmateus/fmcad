@@ -283,7 +283,8 @@ def _measure_scalar(ctx: "CadContext", data: "JsonObject", mode: "Literal['diame
     _cad_fields(data, ('ref',), ('units',))
     entity = ctx.resolve(data['ref'])
     context = _measure_space(ctx, [entity])
-    dimension = (_cad_cast("Literal['area', 'volume', 'mass']", mode)
+    # Keep the full result domain when specialization erases the membership guard.
+    dimension = (_cad_cast("Literal['length', 'area', 'volume', 'mass']", mode)
                  if mode in ('area', 'volume', 'mass') else 'length')
     _measure_value(0, dimension, data)
     method = mode

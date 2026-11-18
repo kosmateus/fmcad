@@ -36,6 +36,18 @@ def without_static_cast(expression):
 
 
 class MeasureScalarParityTests(unittest.TestCase):
+    def test_static_dimension_domain_matches_all_retained_runtime_results(self):
+        current = dimension_expression(ADAPTER)
+        self.assertIsInstance(current, ast.IfExp)
+        self.assertIsInstance(current.body, ast.Call)
+        annotation = ast.parse(current.body.args[0].value, mode='eval').body
+        self.assertIsInstance(annotation, ast.Subscript)
+        self.assertEqual(annotation.value.id, 'Literal')
+        domain = {value.value for value in annotation.slice.elts}
+        modes = ('diameter', 'radius', 'distance', 'angle', 'length', 'area',
+                 'volume', 'mass', 'thickness')
+        self.assertEqual(domain, {dimension_value(current, mode) for mode in modes})
+
     def test_dimension_selection_preserves_frozen_mapping_with_static_narrowing(self):
         current = dimension_expression(ADAPTER)
         historical = dimension_expression(HISTORICAL)
