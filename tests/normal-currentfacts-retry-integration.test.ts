@@ -102,6 +102,10 @@ test("initial normal cold authority allows default-name identity only after old 
 });
 
 test("legacy failed normal read traverses fresh authorization, retirement and existing successor inspectors on the same SDK", async (t) => {
+  const restoreFakeWslPlatform = (
+    load("./fixtures/fake-wsl-platform.cjs") as () => () => void
+  )();
+  t.after(restoreFakeWslPlatform);
   const repo = path.resolve(".");
   const f = createFixture(t, repo);
   const { write, ref, hash } = f;

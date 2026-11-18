@@ -26,6 +26,10 @@ const { request } = load("../src/queue-connection") as {
     value: Record<string, unknown>,
   ): Promise<Record<string, unknown>>;
 };
+const installFakeWslPlatform = load(
+  "./fixtures/fake-wsl-platform.cjs",
+) as () => () => void;
+const fakeWslPreload = load.resolve("./fixtures/fake-wsl-preload.cjs");
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -37,6 +41,8 @@ for (const mode of ["new-pid", "reused-sdk-pid", "two-independent-clients"]) {
   test(
     "public MCP automatically restarts settled normal broker: " + mode,
     async (t) => {
+      const restoreFakeWslPlatform = installFakeWslPlatform();
+      t.after(restoreFakeWslPlatform);
       const base = fs.mkdtempSync("/tmp/opencode/nr-public-");
       const stateHome = path.join(base, "s");
       const fixtureRoot = path.join(stateHome, "fmcad");
@@ -327,6 +333,12 @@ for (const mode of ["new-pid", "reused-sdk-pid", "two-independent-clients"]) {
               FMCAD_CONFIG: config,
               FMCAD_BACKEND: "mcp",
               FMCAD_PROJECT_DIRECTORY: base,
+              NODE_OPTIONS: [
+                process.env["NODE_OPTIONS"],
+                `--require=${fakeWslPreload}`,
+              ]
+                .filter(Boolean)
+                .join(" "),
             },
             stdio: ["pipe", "pipe", "pipe"],
           },
