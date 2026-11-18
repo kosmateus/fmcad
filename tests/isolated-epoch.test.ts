@@ -18,6 +18,7 @@ type FixtureRequest = {
 };
 import test from "node:test";
 import assert from "node:assert/strict";
+import { fork } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -420,6 +421,163 @@ test("old request IDs and historical mutations never cross into the new queue", 
   assert.deepEqual(
     fs.readFileSync(path.join(f.root, "queue-state.json")),
     f.bytes,
+  );
+});
+
+test("worker stage preparation retries a transient pending epoch snapshot commit", async (t) => {
+  const f = fixture(t);
+  f.install();
+  const job = f.state.submit(f.typed());
+  const queueFile = path.join(f.pointer.root, "queue-state.json");
+  const committedSnapshot = fs.readFileSync(queueFile);
+  const releaseFile = path.join(f.root, "release-snapshot-commit");
+  const child = fork(
+    path.join(sourceDirectory, "fixtures", "held-snapshot-commit.cjs"),
+    [process.cwd(), f.pointer.root, releaseFile],
+    { stdio: ["ignore", "ignore", "pipe", "ipc"] },
+  );
+  const childExit = new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", resolve);
+  });
+  t.after(() => {
+    if (child.exitCode === null) {
+      fs.writeFileSync(releaseFile, "release");
+      child.kill();
+    }
+  });
+  const marker = await new Promise<unknown>((resolve, reject) => {
+    child.once("message", resolve);
+    child.once("error", reject);
+    child.once("exit", (code) =>
+      reject(new Error(`Snapshot commit exited before holding its marker: ${code}`)),
+    );
+  });
+  assert.deepEqual(marker, { kind: "pending" });
+
+  const queueConnection = loadModule("../src/queue-connection") as {
+    request(
+      directory: string,
+      message: Record<string, unknown>,
+      options?: { timeoutMs?: number },
+    ): Promise<unknown>;
+  };
+  const originalRequest = queueConnection.request;
+  const previousToken = process.env["FMCAD_QUEUE_WORKER_TOKEN"];
+  process.env["FMCAD_QUEUE_WORKER_TOKEN"] = "isolated-epoch-test-worker-token";
+  let snapshotFences = 0;
+  queueConnection.request = async (directory, message, options) => {
+    snapshotFences++;
+    assert.equal(directory, f.root);
+    assert.equal(message["action"], "worker-status");
+    assert.equal(message["snapshotFence"], true);
+    assert.equal(message["jobId"], job["id"]);
+    assert.equal(options?.timeoutMs, 0);
+    const pointer = JSON.parse(
+      fs.readFileSync(
+        path.join(directory, "isolated-admission-epoch.json"),
+        "utf8",
+      ),
+    ) as { root: string };
+    const snapshot = JSON.parse(
+      fs.readFileSync(path.join(pointer.root, "queue-state.json"), "utf8"),
+    );
+    return { snapshotHash: hash(JSON.stringify(snapshot)) };
+  };
+
+  try {
+    const attempt = (
+      loadModule(
+        "../src/composition/stage-dependencies",
+      ) as typeof import("../src/composition/stage-dependencies")
+    )
+      .createAuthenticatedStageDependencies({
+        brokerDirectory: f.root,
+        jobId: string(job["id"]),
+        clientId: "owner",
+        projectDirectory: f.root,
+      })
+      .then(
+        (stage) => ({ stage }),
+        (error: unknown) => ({ error }),
+      );
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    fs.writeFileSync(releaseFile, "release");
+    assert.equal(await childExit, 0);
+    const outcome = await attempt;
+    if ("error" in outcome) throw outcome.error;
+    assert.equal(outcome.stage, null);
+    assert.equal(snapshotFences, 1);
+    assert.deepEqual(fs.readFileSync(queueFile), committedSnapshot);
+    assert.equal(f.state.status(string(job["id"]))["state"], "queued");
+  } finally {
+    queueConnection.request = originalRequest;
+    if (previousToken === undefined)
+      delete process.env["FMCAD_QUEUE_WORKER_TOKEN"];
+    else process.env["FMCAD_QUEUE_WORKER_TOKEN"] = previousToken;
+    if (child.exitCode === null) fs.writeFileSync(releaseFile, "release");
+  }
+});
+
+test("worker stage preparation keeps permanent markers and invalid epoch lineage closed", async (t) => {
+  const createStages = (
+    loadModule(
+      "../src/composition/stage-dependencies",
+    ) as typeof import("../src/composition/stage-dependencies")
+  ).createAuthenticatedStageDependencies;
+  const pending = fixture(t);
+  pending.install();
+  const pendingFile = path.join(
+    pending.pointer.root,
+    "queue-state.pending.json",
+  );
+  const pendingMarker = Buffer.from("permanent durability evidence");
+  const pendingSnapshot = fs.readFileSync(
+    path.join(pending.pointer.root, "queue-state.json"),
+  );
+  fs.writeFileSync(pendingFile, pendingMarker);
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => (now += 6000);
+  try {
+    await assert.rejects(
+      createStages({ brokerDirectory: pending.root, jobId: randomUUID() }),
+      { code: "EPOCH_PROOF_INVALID" },
+    );
+  } finally {
+    Date.now = originalNow;
+  }
+  assert.deepEqual(fs.readFileSync(pendingFile), pendingMarker);
+  assert.deepEqual(
+    fs.readFileSync(path.join(pending.pointer.root, "queue-state.json")),
+    pendingSnapshot,
+  );
+
+  const history = fixture(t);
+  history.install();
+  fs.appendFileSync(path.join(history.root, "queue-state.json"), " ");
+  await assert.rejects(
+    createStages({ brokerDirectory: history.root, jobId: randomUUID() }),
+    { code: "EPOCH_PROOF_INVALID" },
+  );
+
+  const pointer = fixture(t);
+  pointer.install();
+  durable(path.join(pointer.root, "isolated-admission-epoch.json"), {
+    ...pointer.pointer,
+    root: path.join(pointer.root, "foreign-epoch"),
+  });
+  await assert.rejects(
+    createStages({ brokerDirectory: pointer.root, jobId: randomUUID() }),
+    { code: "EPOCH_PROOF_INVALID" },
+  );
+
+  const proof = fixture(t);
+  proof.install();
+  durable(proof.pointer.qualificationReceipt.path, { status: "forged" });
+  await assert.rejects(
+    createStages({ brokerDirectory: proof.root, jobId: randomUUID() }),
+    { code: "EPOCH_PROOF_INVALID" },
   );
 });
 

@@ -126,6 +126,118 @@ async function readCommittedQueueSnapshot(
   }
 }
 
+function workerMetadataSample(brokerDirectory: string) {
+  const pointerFile = path.join(
+    brokerDirectory,
+    "isolated-admission-epoch.json",
+  );
+  const pointer = fs.existsSync(pointerFile)
+    ? (JSON.parse(fs.readFileSync(pointerFile, "utf8")) as {
+        epochId?: string;
+      })
+    : null;
+  const stores = [brokerDirectory];
+  if (pointer?.epochId && /^[a-f0-9-]{36}$/.test(pointer.epochId))
+    stores.push(
+      path.join(brokerDirectory, "admission-epochs", pointer.epochId),
+    );
+  const stamp = (file: string): string => {
+    try {
+      const stat = fs.lstatSync(file, { bigint: true });
+      return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent";
+      throw error;
+    }
+  };
+  const pending = stores.some((store) => {
+    const file = path.join(store, "queue-state.pending.json");
+    try {
+      if (!fs.lstatSync(file).isFile())
+        throw Object.assign(new Error("Invalid pending snapshot marker"), {
+          code: "EPOCH_PROOF_INVALID",
+        });
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  });
+  const files = [
+    path.join(brokerDirectory, "broker.lock"),
+    pointerFile,
+    path.join(brokerDirectory, "physical-backend-head.json"),
+    ...stores.flatMap((store) => [
+      path.join(store, "queue-state.json"),
+      path.join(store, "instance.json"),
+    ]),
+  ];
+  return {
+    hasEpochPointer: pointer !== null,
+    pending,
+    signature: files.map((file) => `${file}:${stamp(file)}`).join("\n"),
+  };
+}
+
+async function readStableCommittedQueueSnapshot(
+  brokerDirectory: string,
+  jobId: string,
+): Promise<{ jobs?: Record<string, StageOwnerJob> }> {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const before = workerMetadataSample(brokerDirectory);
+    let snapshot: { jobs?: Record<string, StageOwnerJob> } | undefined;
+    let error: unknown;
+    if (!before.pending || !before.hasEpochPointer) {
+      try {
+        const admissionDirectory =
+          epoch().isolatedEpochDirectory(brokerDirectory);
+        snapshot = await readCommittedQueueSnapshot(
+          path.join(admissionDirectory, "queue-state.json"),
+          brokerDirectory,
+          jobId,
+        );
+      } catch (cause) {
+        error = cause;
+      }
+    }
+    const after = workerMetadataSample(brokerDirectory);
+    if (before.pending && !before.hasEpochPointer && error !== undefined)
+      throw error;
+    if (
+      snapshot &&
+      before.pending &&
+      !before.hasEpochPointer &&
+      !after.pending &&
+      !after.hasEpochPointer
+    )
+      return snapshot;
+    if (
+      !before.pending &&
+      !after.pending &&
+      before.signature === after.signature
+    ) {
+      if (snapshot) return snapshot;
+      if (error !== undefined) throw error;
+      throw Object.assign(
+        new Error("Queue metadata did not reach a stable committed snapshot"),
+        { code: "EPOCH_PROOF_INVALID" },
+      );
+    }
+    if (Date.now() >= deadline)
+      throw (
+        error ??
+        Object.assign(
+          new Error(
+            "Queue metadata did not reach a stable committed snapshot; pending storage requires inspection",
+          ),
+          { code: "EPOCH_PROOF_INVALID" },
+        )
+      );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 type Accepted = AuthenticatedStageOwner["accepted"];
 type ReceiptInput = Parameters<StageOwnerPorts["readOriginalReceipt"]>[0];
 type PinInput = Parameters<StageOwnerPorts["resolvePinnedDocument"]>[0];
@@ -766,10 +878,7 @@ export async function createAuthenticatedStageDependencies(
   if (!verifiedWorkerInputs?.brokerDirectory || !verifiedWorkerInputs.jobId)
     return null;
   const brokerDirectory = fs.realpathSync(verifiedWorkerInputs.brokerDirectory);
-  const admissionDirectory = epoch().isolatedEpochDirectory(brokerDirectory);
-  const queueFile = path.join(admissionDirectory, "queue-state.json");
-  const queue = await readCommittedQueueSnapshot(
-    queueFile,
+  const queue = await readStableCommittedQueueSnapshot(
     brokerDirectory,
     verifiedWorkerInputs.jobId,
   );
