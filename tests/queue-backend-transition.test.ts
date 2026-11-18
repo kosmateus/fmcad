@@ -148,7 +148,7 @@ test(
       activeCommand: "SelectCommand",
       documents: [],
     };
-    const owner = spawn(
+    let owner = spawn(
       process.execPath,
       [
         path.join(process.cwd(), "tests/fixtures/backend-transition-owner.cjs"),
@@ -184,6 +184,56 @@ test(
     const originalHeadBytes = fs.readFileSync(
       path.join(f.dir, "physical-backend-head.json"),
     );
+    // Exercise the real SDK0 reopen, not the fixture's explicit extra probe.
+    const initialExit = once(owner, "exit");
+    owner.send({ action: "exit" });
+    await initialExit;
+    owner = spawn(
+      process.execPath,
+      [
+        "-e",
+        `const { createRequire } = require('node:module');
+         const path = require('node:path');
+         const load = createRequire(path.join(process.argv[1], 'src/queue-broker.js'));
+         load('./queue-instance').buildHash = () => 'a'.repeat(64);
+         let handle;
+         process.on('message', async () => {
+           await handle.close(); process.disconnect();
+         });
+         load('./queue-broker').serve(JSON.parse(process.argv[3]), {
+           dir: process.argv[2], confirmOwnership: true, autoReconcile: false,
+           createBackend() {
+             const forbidden = () => { throw new Error('SDK0 reopen must not send SDK work'); };
+             return {server:{timeoutMs:1000}, _post:forbidden, _parse:JSON.parse,
+               _openSession:forbidden, listTools:forbidden,
+               executeUiGuardedScript:forbidden, callTool:forbidden};
+           }
+         }).then(value => { handle = value; process.send({kind:'ready'}); })
+           .catch(error => { process.send({kind:'error', message:error.message}); process.disconnect(); });`,
+        runtimeRoot,
+        f.dir,
+        JSON.stringify(f.next),
+      ],
+      { stdio: ["ignore", "ignore", "pipe", "ipc"] },
+    );
+    await new Promise<void>((resolve, reject) => {
+      owner.on("message", (raw: unknown) => {
+        const message = raw as { kind: string; message?: string };
+        if (message.kind === "ready") resolve();
+        else reject(new Error(message.message));
+      });
+      owner.once("exit", () =>
+        reject(new Error("SDK0 owner exited before ready")),
+      );
+    });
+    const reopenedOwner = JSON.parse(
+      fs.readFileSync(path.join(f.dir, "broker.lock"), "utf8"),
+    ) as { nonce: string };
+    const reopenedReceipt = path.join(
+      f.dir,
+      `broker-startup-${reopenedOwner.nonce}.receipt.json`,
+    );
+    assert.equal(fs.existsSync(reopenedReceipt), false);
     const { queueCommand } = load("./dist/entrypoints/queue-cli") as {
       queueCommand(argv: string[], deps: object): Promise<number>;
     };
@@ -324,6 +374,25 @@ test(
     assert.equal(next.identity.buildHash, qi.buildHash());
     assert.equal(next.identity.configHash, originalHead.identity.configHash);
     assert.deepEqual(next.identity.instance, originalHead.identity.instance);
+    assert.equal(
+      fs.existsSync(reopenedReceipt),
+      false,
+      "no source receipt is fabricated",
+    );
+    const upgradeProof = JSON.parse(
+      fs.readFileSync(next.head.runtimeUpgrade!.path, "utf8"),
+    ) as {
+      sourceStartup: { kind: string; receiptReference: { path: string } };
+    };
+    assert.equal(upgradeProof.sourceStartup.kind, "pinned-head-reopen");
+    assert.notEqual(
+      upgradeProof.sourceStartup.receiptReference.path,
+      reopenedReceipt,
+    );
+    assert.ok(
+      next.head.observation.some((ref) => ref.path.endsWith(".receipt.json")),
+      "the new target has its own bound physical startup receipt",
+    );
     for (const entry of retained)
       assert.deepEqual(fs.readFileSync(entry.file), entry.bytes);
     assert.deepEqual(

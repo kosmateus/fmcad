@@ -177,6 +177,225 @@ function ownerStoppedFixture(t: { after(fn: () => void): void }) {
   return { ...f, stopRequestId, sourceIdentity, adminFile, releaseFile, ports };
 }
 
+function pinnedReopenFixture(t: { after(fn: () => void): void }) {
+  const f = ownerStoppedFixture(t);
+  const epoch = {
+    ...f.epoch,
+    epochId: "epoch",
+    ownerTokenHash: "owner-token-hash",
+  };
+  f.write(path.join(f.root, "isolated-admission-epoch.json"), epoch);
+  const destination = path.join(
+    f.root,
+    "physical-backend-transitions",
+    "original",
+  );
+  fs.mkdirSync(destination, { recursive: true });
+  const sourceIdentity = path.join(destination, "instance.json");
+  f.write(sourceIdentity, f.old);
+  const sourceOwner = {
+    ...f.owner,
+    nonce: randomUUID(),
+    birth: "head-publisher",
+  };
+  const binding = {
+    ...f.binding,
+    brokerNonce: sourceOwner.nonce,
+    ownerBirth: sourceOwner.birth,
+  };
+  const sourceReceipt = path.join(
+    f.root,
+    `broker-startup-${sourceOwner.nonce}.receipt.json`,
+  );
+  f.write(sourceReceipt, {
+    ...binding,
+    terminal: true,
+    outcome: "succeeded",
+    instance: f.old.instance,
+    probeObservation: {
+      schema: "fmcad-instance-probe-v1",
+      identity: f.old.instance,
+    },
+  });
+  const sourceLifecycle = path.join(
+    f.root,
+    `broker-lifecycle-${sourceOwner.nonce}.json`,
+  );
+  f.write(sourceLifecycle, {
+    owner: sourceOwner,
+    binding,
+    stage: "ready",
+    receipt: sourceReceipt,
+    buildHash: f.old.buildHash,
+    configHash: f.old.configHash,
+  });
+  const head = {
+    version: 1,
+    kind: "owner-bound-physical-backend-transition",
+    requestId: "original",
+    epochId: epoch.epochId,
+    ownerClientId: epoch.ownerClientId,
+    ownerTokenHash: epoch.ownerTokenHash,
+    nextConfigHash: f.old.configHash,
+    identity: f.ref(sourceIdentity),
+    predecessor: [],
+    observation: [f.ref(sourceReceipt)],
+  };
+  const headFile = path.join(destination, "transition.json");
+  const currentHead = path.join(f.root, "physical-backend-head.json");
+  f.write(headFile, head);
+  f.write(currentHead, head);
+  fs.unlinkSync(f.receipt); // Truthful SDK0 lifecycle, no fabricated owner probe.
+  const ports = {
+    priorProcessAlive: (value: object) => object(value)["birth"] === "old-sdk",
+  };
+  const inspect = () =>
+    restart.inspectSettledRuntimeUpgrade(
+      f.root,
+      epoch,
+      f.old,
+      f.state,
+      ports,
+      f.stopRequestId,
+      sourceIdentity,
+      f.ref(headFile),
+    );
+  return {
+    ...f,
+    epoch,
+    sourceIdentity,
+    sourceOwner,
+    sourceReceipt,
+    sourceLifecycle,
+    head,
+    headFile,
+    currentHead,
+    ports,
+    inspect,
+  };
+}
+
+test("legacy metadata-only reopen inherits original head proof without inventing an owner receipt", (t) => {
+  const f = pinnedReopenFixture(t);
+  const before = fs.readFileSync(f.currentHead);
+  const proof = f.inspect();
+  assert.ok(proof);
+  assert.equal(proof.sourceStartup.kind, "pinned-head-reopen");
+  assert.equal(proof.sourceStartup.receiptReference.path, f.sourceReceipt);
+  assert.equal(proof.deadPredecessorRecord, undefined);
+  restart.assertSettledNormalRestartPredecessor(proof, f.state, f.ports);
+  assert.equal(fs.existsSync(f.receipt), false);
+  assert.deepEqual(fs.readFileSync(f.currentHead), before);
+  assert.throws(
+    () =>
+      restart.inspectSettledNormalRestart(
+        f.root,
+        f.epoch,
+        f.old,
+        f.state,
+        { priorProcessAlive: () => false },
+        f.stopRequestId,
+        f.sourceIdentity,
+      ),
+    /receipt/,
+  );
+});
+
+test("the pinned head publisher still uses its own physical startup receipt", (t) => {
+  const f = pinnedReopenFixture(t);
+  for (const file of [f.adminFile, f.releaseFile])
+    f.write(file, {
+      ...JSON.parse(fs.readFileSync(file, "utf8")),
+      instanceId: f.sourceOwner.nonce,
+    });
+  const proof = f.inspect();
+  assert.ok(proof);
+  assert.equal(proof.sourceStartup.kind, "owner-startup-probe");
+  restart.assertSettledNormalRestartPredecessor(proof, f.state, f.ports);
+});
+
+for (const mode of [
+  "missing-original-receipt",
+  "corrupt-original-receipt",
+  "original-lifecycle",
+  "head",
+  "epoch",
+  "owner",
+  "config",
+  "source",
+  "binding",
+  "owner-alive",
+  "sdk-dead",
+  "sdk-unproven",
+  "ordinary-receipt-corrupt",
+  "ordinary-receipt-missing",
+  "pause",
+  "pending",
+  "UNKNOWN",
+] as const) {
+  test(`metadata-only source refuses ${mode}`, (t) => {
+    const f = pinnedReopenFixture(t);
+    if (mode === "missing-original-receipt") fs.unlinkSync(f.sourceReceipt);
+    if (mode === "corrupt-original-receipt") f.write(f.sourceReceipt, {});
+    if (mode === "original-lifecycle") f.write(f.sourceLifecycle, {});
+    if (mode === "head")
+      f.write(f.currentHead, { ...f.head, requestId: "forged" });
+    if (mode === "epoch") f.epoch.epochId = "forged";
+    if (mode === "owner") f.epoch.ownerClientId = "forged";
+    if (mode === "config") f.old.configHash = "forged";
+    if (mode === "source")
+      f.write(f.sourceIdentity, { ...f.old, buildHash: "forged" });
+    if (mode === "binding")
+      f.write(f.lifecycle, {
+        ...JSON.parse(fs.readFileSync(f.lifecycle, "utf8")),
+        binding: { ...f.binding, auditExpectedInstance: f.old.instance },
+      });
+    if (mode === "owner-alive") f.ports.priorProcessAlive = () => true;
+    if (mode === "sdk-dead") f.ports.priorProcessAlive = () => false;
+    if (mode === "sdk-unproven")
+      Object.assign(f.ports, { priorProcessAlive: () => null });
+    if (mode === "ordinary-receipt-corrupt") f.write(f.receipt, {});
+    if (mode === "ordinary-receipt-missing") {
+      // A head publisher is a probed owner, never a metadata-only reopen.
+      for (const file of [f.adminFile, f.releaseFile])
+        f.write(file, {
+          ...JSON.parse(fs.readFileSync(file, "utf8")),
+          instanceId: f.sourceOwner.nonce,
+        });
+      fs.unlinkSync(f.sourceReceipt);
+    }
+    if (mode === "pause") f.state.controlGeneration++;
+    if (mode === "pending" || mode === "UNKNOWN")
+      f.state.jobs["job-0"]!.state = mode === "pending" ? "queued" : "unknown";
+    if (mode === "pending" || mode === "UNKNOWN")
+      assert.equal(f.inspect(), undefined);
+    else assert.throws(f.inspect);
+  });
+}
+
+for (const mode of [
+  "head",
+  "receipt",
+  "lifecycle",
+  "history",
+  "pause",
+] as const) {
+  test(`metadata-only source revalidates ${mode} at the commit fence`, (t) => {
+    const f = pinnedReopenFixture(t);
+    const proof = f.inspect();
+    assert.ok(proof);
+    if (mode === "head")
+      f.write(f.currentHead, { ...f.head, requestId: "changed" });
+    if (mode === "receipt") f.write(f.sourceReceipt, {});
+    if (mode === "lifecycle") f.write(f.lifecycle, {});
+    if (mode === "history") f.state.jobs["job-0"]!.immutable = -1;
+    if (mode === "pause") f.state.controlGeneration++;
+    assert.throws(() =>
+      restart.assertSettledNormalRestartPredecessor(proof, f.state, f.ports),
+    );
+  });
+}
+
 test("runtime upgrade binds live SDK, dead owner and settled source without restart authority", (t) => {
   const f = ownerStoppedFixture(t);
   const ports = {

@@ -884,6 +884,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       { priorProcessAlive },
       approval.stopRequestId,
       sourceFile,
+      {
+        path: path.join(path.dirname(sourceFile), "transition.json"),
+        sha256: hash(
+          fs.readFileSync(
+            path.join(path.dirname(sourceFile), "transition.json"),
+          ),
+        ),
+      },
     );
     if (!proof?.runtimeUpgradeRecord)
       fail(

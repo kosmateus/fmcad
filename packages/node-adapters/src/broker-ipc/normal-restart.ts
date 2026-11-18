@@ -19,6 +19,8 @@ interface Epoch {
   root: string;
   currentInstance: object;
   ownerClientId?: string;
+  epochId?: string;
+  ownerTokenHash?: string;
 }
 interface State {
   jobs: Record<string, unknown>;
@@ -48,7 +50,14 @@ export interface SettledNormalRestart {
   sourceIdentityReference?: RestartReference;
   workerEvidence: RestartReference[];
   lifecycleReference: RestartReference;
-  startupReceiptReference: RestartReference;
+  sourceStartup:
+    | { kind: "owner-startup-probe"; receiptReference: RestartReference }
+    | {
+        kind: "pinned-head-reopen";
+        headReference: RestartReference;
+        receiptReference: RestartReference;
+        lifecycleReference: RestartReference;
+      };
   pointerReference: RestartReference;
   closedReference: RestartReference;
   jobs: Record<string, unknown>;
@@ -282,6 +291,7 @@ export function inspectSettledRuntimeUpgrade(
   ports: RestartPorts,
   stopRequestId: string,
   sourceIdentityFile: string,
+  pinnedHead?: RestartReference,
 ): SettledNormalRestart | undefined {
   return inspectSettledOwner(
     root,
@@ -292,7 +302,120 @@ export function inspectSettledRuntimeUpgrade(
     stopRequestId,
     sourceIdentityFile,
     true,
+    pinnedHead,
   );
+}
+
+/** A matching-head SDK0 reopen inherits the head's physical observation, not a
+ * fictitious owner probe. Legacy ready lifecycles have no explicit SDK0 field:
+ * their exact five-field binding and distinct head-publisher owner identify this
+ * source variant. This is selected by lineage, never by a missing receipt. */
+function pinnedReopenStartup(
+  root: string,
+  epoch: Epoch,
+  previous: Identity,
+  lifecycle: Data,
+  headReference: RestartReference,
+): SettledNormalRestart["sourceStartup"] | undefined {
+  const head = checked(headReference, headReference.path);
+  const requestId = head["requestId"];
+  if (
+    typeof requestId !== "string" ||
+    !/^[a-zA-Z0-9_-]{1,128}$/.test(requestId) ||
+    headReference.path !==
+      path.join(
+        root,
+        "physical-backend-transitions",
+        requestId,
+        "transition.json",
+      ) ||
+    !same(read(path.join(root, "physical-backend-head.json")), head) ||
+    head["version"] !== 1 ||
+    head["kind"] !== "owner-bound-physical-backend-transition" ||
+    !epoch.epochId ||
+    !epoch.ownerTokenHash ||
+    head["epochId"] !== epoch.epochId ||
+    head["ownerClientId"] !== epoch.ownerClientId ||
+    head["ownerTokenHash"] !== epoch.ownerTokenHash ||
+    head["nextConfigHash"] !== previous.configHash ||
+    !same(
+      checked(
+        head["identity"],
+        path.join(path.dirname(headReference.path), "instance.json"),
+      ),
+      previous,
+    ) ||
+    !Array.isArray(head["observation"]) ||
+    !Array.isArray(head["predecessor"])
+  )
+    fail("Pinned reopen differs from its verified current head");
+  const observations = head["observation"] as unknown[];
+  for (const value of [
+    ...observations,
+    ...(head["predecessor"] as unknown[]),
+  ]) {
+    const ref = object(value);
+    if (typeof ref["path"] !== "string") fail("Invalid pinned head evidence");
+    checked(ref, ref["path"]);
+  }
+  const receipts = observations.filter((value) => {
+    const file = object(value)["path"];
+    return (
+      typeof file === "string" &&
+      path.dirname(file) === root &&
+      /^broker-startup-[a-f0-9-]{36}\.receipt\.json$/.test(path.basename(file))
+    );
+  });
+  if (receipts.length !== 1)
+    fail("Pinned head requires its original physical startup receipt");
+  const receiptReference = object(receipts[0]) as unknown as RestartReference;
+  const receipt = checked(receiptReference, receiptReference.path);
+  const nonce = receipt["brokerNonce"];
+  if (typeof nonce !== "string" || !/^[a-f0-9-]{36}$/.test(nonce))
+    fail("Pinned head startup owner is invalid");
+  const sourceFile = path.join(root, `broker-lifecycle-${nonce}.json`);
+  const source = read(sourceFile);
+  const owner = object(source["owner"]);
+  const binding = object(source["binding"]);
+  const observation = object(receipt["probeObservation"]);
+  if (
+    source["stage"] !== "ready" ||
+    source["buildHash"] !== previous.buildHash ||
+    source["configHash"] !== previous.configHash ||
+    source["receipt"] !== receiptReference.path ||
+    owner["nonce"] !== nonce ||
+    binding["brokerNonce"] !== nonce ||
+    binding["ownerPid"] !== owner["pid"] ||
+    binding["ownerBirth"] !== owner["birth"] ||
+    binding["stage"] !== "startup" ||
+    binding["buildHash"] !== previous.buildHash ||
+    receipt["terminal"] !== true ||
+    receipt["outcome"] !== "succeeded" ||
+    !Object.entries(binding).every(([key, value]) =>
+      same(receipt[key], value),
+    ) ||
+    !sameProcess(object(receipt["instance"]), previous.instance) ||
+    object(receipt["instance"])["activeCommand"] !==
+      object(previous.instance)["activeCommand"] ||
+    observation["schema"] !== "fmcad-instance-probe-v1" ||
+    !same(observation["identity"], previous.instance)
+  )
+    fail("Pinned head original physical startup proof differs");
+  if (object(lifecycle["owner"])["nonce"] === nonce) return undefined;
+  const reopened = object(lifecycle["binding"]);
+  if (
+    !same(
+      Object.keys(reopened).sort(),
+      ["brokerNonce", "ownerPid", "ownerBirth", "buildHash", "stage"].sort(),
+    )
+  )
+    fail("Pinned reopen is not a metadata-only startup binding");
+  return {
+    kind: "pinned-head-reopen",
+    headReference,
+    receiptReference,
+    lifecycleReference: reference(sourceFile),
+  };
 }
 
 function inspectSettledOwner(
@@ -304,6 +427,7 @@ function inspectSettledOwner(
   stopRequestId: string | undefined,
   sourceIdentityFile: string | undefined,
   sameLiveInstance: boolean,
+  pinnedHead?: RestartReference,
 ): SettledNormalRestart | undefined {
   if (!sameLiveInstance) normalRestartInstance(root, epoch, previous, state);
   else {
@@ -428,24 +552,38 @@ function inspectSettledOwner(
     root,
     `broker-startup-${String(owner["nonce"])}.receipt.json`,
   );
-  const receipt = read(receiptFile);
   if (
     lifecycle["receipt"] !== receiptFile ||
     binding["brokerNonce"] !== owner["nonce"] ||
     binding["ownerPid"] !== owner["pid"] ||
     binding["ownerBirth"] !== owner["birth"] ||
     binding["buildHash"] !== previous.buildHash ||
-    binding["stage"] !== "startup" ||
-    receipt["terminal"] !== true ||
-    receipt["outcome"] !== "succeeded" ||
-    !Object.entries(binding).every(([key, value]) =>
-      same(receipt[key], value),
-    ) ||
-    !sameProcess(object(receipt["instance"]), previous.instance)
+    binding["stage"] !== "startup"
   )
-    fail("Previous normal startup receipt is unproven");
+    fail("Previous normal startup binding is unproven");
+  const sourceStartup =
+    sameLiveInstance && pinnedHead
+      ? pinnedReopenStartup(root, epoch, previous, lifecycle, pinnedHead)
+      : undefined;
+  // If this owner did produce a receipt, it remains mandatory evidence too.
+  // Corruption is never hidden by the inherited physical observation.
+  if (!sourceStartup || fs.existsSync(receiptFile)) {
+    const receipt = read(receiptFile);
+    if (
+      receipt["terminal"] !== true ||
+      receipt["outcome"] !== "succeeded" ||
+      !Object.entries(binding).every(([key, value]) =>
+        same(receipt[key], value),
+      ) ||
+      !sameProcess(object(receipt["instance"]), previous.instance)
+    )
+      fail("Previous normal startup receipt is unproven");
+  }
   const lifecycleReference = reference(lifecycleFile);
-  const startupReceiptReference = reference(receiptFile);
+  const startupProof: SettledNormalRestart["sourceStartup"] = sourceStartup || {
+    kind: "owner-startup-probe",
+    receiptReference: reference(receiptFile),
+  };
   const pointerReference = reference(
     path.join(root, "isolated-admission-epoch.json"),
   );
@@ -454,7 +592,14 @@ function inspectSettledOwner(
     ...(ownerReference ? [ownerReference] : []),
     ...(sourceIdentityReference ? [sourceIdentityReference] : []),
     lifecycleReference,
-    startupReceiptReference,
+    startupProof.receiptReference,
+    ...(startupProof.kind === "pinned-head-reopen"
+      ? [
+          startupProof.headReference,
+          startupProof.lifecycleReference,
+          ...(fs.existsSync(receiptFile) ? [reference(receiptFile)] : []),
+        ]
+      : []),
     pointerReference,
     closedReference,
     ...workerEvidence,
@@ -469,6 +614,7 @@ function inspectSettledOwner(
             : "settled-normal-dead-predecessor-v1",
           previous,
           previousOwner: owner,
+          sourceStartup: startupProof,
           sourceIdentityReference,
           stopRequestId,
           epoch: {
@@ -518,7 +664,7 @@ function inspectSettledOwner(
       : {}),
     workerEvidence,
     lifecycleReference,
-    startupReceiptReference,
+    sourceStartup: startupProof,
     pointerReference,
     closedReference,
     jobs: structuredClone(state.jobs),
@@ -589,21 +735,38 @@ export function assertSettledNormalRestartPredecessor(
     root,
     `broker-startup-${String(proof.previousOwner["nonce"])}.receipt.json`,
   );
-  const startupReceipt = checked(
-    proof.startupReceiptReference,
-    startupReceiptFile,
-  );
-  const binding = object(lifecycle["binding"]);
-  if (
-    lifecycle["receipt"] !== startupReceiptFile ||
-    startupReceipt["terminal"] !== true ||
-    startupReceipt["outcome"] !== "succeeded" ||
-    !Object.entries(binding).every(([key, value]) =>
-      same(startupReceipt[key], value),
-    ) ||
-    !sameProcess(object(startupReceipt["instance"]), proof.previous.instance)
-  )
-    fail("Previous normal startup receipt changed");
+  if (proof.sourceStartup.kind === "pinned-head-reopen") {
+    if (
+      !proof.sameLiveInstance ||
+      !same(
+        pinnedReopenStartup(
+          root,
+          epoch,
+          proof.previous,
+          lifecycle,
+          proof.sourceStartup.headReference,
+        ),
+        proof.sourceStartup,
+      )
+    )
+      fail("Pinned reopen source authority changed");
+  } else {
+    const startupReceipt = checked(
+      proof.sourceStartup.receiptReference,
+      startupReceiptFile,
+    );
+    const binding = object(lifecycle["binding"]);
+    if (
+      lifecycle["receipt"] !== startupReceiptFile ||
+      startupReceipt["terminal"] !== true ||
+      startupReceipt["outcome"] !== "succeeded" ||
+      !Object.entries(binding).every(([key, value]) =>
+        same(startupReceipt[key], value),
+      ) ||
+      !sameProcess(object(startupReceipt["instance"]), proof.previous.instance)
+    )
+      fail("Previous normal startup receipt changed");
+  }
   const currentWorkers = workersGone(root, proof.jobs, ports);
   if (!same(currentWorkers, proof.workerEvidence))
     fail("Previous normal worker evidence changed");
