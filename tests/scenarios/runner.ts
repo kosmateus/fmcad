@@ -474,7 +474,8 @@ export class ScenarioSession {
       assert.deepEqual(existingTarget.document, this.document);
     if (
       existingTarget?.state === "unsettled" ||
-      existingTarget?.state === "closed"
+      existingTarget?.state === "closed" ||
+      existingTarget?.state === "saved"
     )
       throw new Error("Owned target lacks a live settled creation receipt");
     peerFixtures.delete(this.document.creationId);
@@ -483,7 +484,19 @@ export class ScenarioSession {
         .map((proof) => proof.document),
       closedPeerIds = [...peerFixtures]
         .filter(([, proof]) => proof.state === "closed")
-        .map(([creationId]) => creationId);
+        .map(([creationId]) => creationId),
+      savedTransfers = [...peerFixtures.values()].flatMap(
+        (proof): programs.SavedPeerTransfer[] =>
+          proof.state === "saved" && proof.savedState !== "unsettled"
+            ? [
+                {
+                  document: proof.document,
+                  savedDocument: proof.savedDocument,
+                  savedState: proof.savedState,
+                },
+              ]
+            : [],
+      );
     try {
       const output = await this.#dispatch(
         phase,
@@ -497,6 +510,7 @@ export class ScenarioSession {
             closedPeerIds,
             options.component,
             requestId,
+            savedTransfers,
           ),
         this.document,
         true,
@@ -533,13 +547,30 @@ export class ScenarioSession {
         );
         refreshed.delete(this.document.creationId);
         for (const [creationId, previous] of peerFixtures) {
-          if (previous.state !== "open") continue;
+          if (
+            previous.state !== "open" &&
+            !(previous.state === "saved" && previous.savedState === "open")
+          )
+            continue;
           const current = refreshed.get(creationId);
           assert.ok(
-            current && current.state !== "unsettled",
+            current &&
+              current.state !== "unsettled" &&
+              !(
+                current.state === "saved" && current.savedState === "unsettled"
+              ),
             "A previously admitted peer lost its exact lifecycle proof",
           );
           assert.deepEqual(current.document, previous.document);
+          if (previous.state === "saved") {
+            assert.equal(
+              current.state,
+              "saved",
+              "Saved peer lost its identity transfer proof",
+            );
+            assert.ok(current.state === "saved");
+            assert.deepEqual(current.savedDocument, previous.savedDocument);
+          }
         }
         // A no-helper receipt alone never authorizes another request. Every
         // observed difference must be explained by exact lifecycle receipts.
@@ -554,10 +585,13 @@ export class ScenarioSession {
         );
         const snapshotProofs = new Map(
           [...refreshed].filter(
-            ([id]) =>
+            ([id, proof]) =>
               observedIds.has(id) ||
               baselineIds.has(id) ||
-              peerFixtures.has(id),
+              peerFixtures.has(id) ||
+              (proof.state === "saved" &&
+                (observedIds.has(proof.savedDocument.creationId) ||
+                  baselineIds.has(proof.savedDocument.creationId))),
           ),
         );
         assertFencedDocumentInventory(
@@ -1792,9 +1826,31 @@ export async function runScenarios(
     // Discovery follows the SDK snapshot. Future creations are not obligations
     // of that older snapshot; a later close stays in the original baseline.
     const observedPeers = new Map(
-      [...peerFixtures].filter(
-        ([id, proof]) => observedIds.has(id) && proof.state === "open",
-      ),
+      [...peerFixtures].filter(([id, proof]) => {
+        if (proof.state !== "saved")
+          return observedIds.has(id) && proof.state === "open";
+        const successorId = proof.savedDocument.creationId;
+        if (
+          id !== successorId &&
+          observedIds.has(id) &&
+          observedIds.has(successorId)
+        )
+          throw new Error(
+            "Both original and saved successor identities remain visible",
+          );
+        // The bridge may have been published after this snapshot. Preserve
+        // an observed unsaved original as baseline until a later fenced turn.
+        return (
+          proof.savedState === "open" &&
+          documents.some((row) => {
+            const document = record(row);
+            return (
+              document["creationId"] === successorId &&
+              document["saved"] === true
+            );
+          })
+        );
+      }),
     );
     assertReceiptBoundDocumentInventory(
       documents,
@@ -1805,7 +1861,14 @@ export async function runScenarios(
     before = {
       ...before,
       documents: documents.map(record).filter((document) => {
-        return !observedPeers.has(text(document["creationId"]));
+        const id = text(document["creationId"]);
+        return (
+          !observedPeers.has(id) &&
+          ![...observedPeers.values()].some(
+            (proof) =>
+              proof.state === "saved" && proof.savedDocument.creationId === id,
+          )
+        );
       }),
     };
   }

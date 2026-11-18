@@ -12,6 +12,12 @@ import { discoverOwnedUnsavedFixtureProofs } from "./fixture-provenance";
 
 for (const mode of [
   "create",
+  "saved-same",
+  "saved-changed",
+  "saved-initial",
+  "saved-close",
+  "saved-transition",
+  "saved-transition-same",
   "initial-create",
   "initial-close",
   "refresh-create",
@@ -28,10 +34,26 @@ for (const mode of [
 ] as const) {
   test(`independent runner inventory admission: ${mode}`, async (t) => {
     const { backend, directory, model } = await fixture(t, "addin");
+    const transitioning =
+      mode === "saved-transition" || mode === "saved-transition-same";
+    if (mode === "saved-changed" || mode === "saved-transition") {
+      const configured = await model.execute(
+        programs.program(`import adsk.core
+original_save = adsk.core.Document.saveAs
+def changed_save(self, name, folder, description, tag):
+    result = original_save(self, name, folder, description, tag)
+    self.creationId = self.creationId + '-saved'
+    self.name = self.name + ' v1'
+    return result
+adsk.core.Document.saveAs = changed_save`),
+      );
+      assert.equal(configured.success, true, configured.error);
+    }
     const closing =
       mode === "close" ||
       mode === "close-without-proof" ||
-      mode === "initial-close";
+      mode === "initial-close" ||
+      mode === "saved-close";
     if (mode === "baseline-change" || mode === "initial-close") {
       const created = await model.execute(
         programs.program(
@@ -64,6 +86,7 @@ for (const mode of [
           ...process.env,
           PEER_ADMISSION_ROLE: role,
           PEER_ADMISSION_ROOT: directory,
+          PEER_ADMISSION_SAVED: mode.startsWith("saved-") ? "1" : "0",
         },
       });
     });
@@ -84,6 +107,10 @@ for (const mode of [
       peerClosed = resolve;
     });
     let firstCad = true;
+    let releaseSave: () => void = () => {};
+    const saveReleased = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
     let laterPeerReady: () => void = () => {};
     const laterReady = new Promise<void>((resolve) => {
       laterPeerReady = resolve;
@@ -124,8 +151,10 @@ for (const mode of [
                   if (ready === 2) laterPeerReady();
                 }
                 if (ready === peerCount) {
-                  if (closing) writer.send({ type: "start" });
-                  else if (mode === "churn-ten")
+                  if (closing || mode === "saved-initial") {
+                    if (mode === "saved-initial") releaseCad();
+                    writer.send({ type: "start" });
+                  } else if (mode === "churn-ten")
                     for (const p of peers.slice(0, 5)) releaseChild(p);
                   else releaseCad();
                 }
@@ -188,11 +217,25 @@ for (const mode of [
               if (message.request) {
                 const request = message.request;
                 void (async () => {
+                  if (
+                    transitioning &&
+                    child === peer &&
+                    request.source.includes("assert doc.saveAs")
+                  ) {
+                    writer.send({ type: "start" });
+                    await saveReleased;
+                  }
                   if (request.helpers) {
                     cadRequestIds.push(request.requestId);
                     if (firstCad) {
                       firstCad = false;
-                      if (mode !== "initial-create" && mode !== "initial-close")
+                      if (transitioning) releaseSave();
+                      if (
+                        mode !== "initial-create" &&
+                        mode !== "initial-close" &&
+                        mode !== "saved-initial" &&
+                        !transitioning
+                      )
                         for (const p of mode === "refresh-create"
                           ? peers.slice(0, 1)
                           : peers)
@@ -295,11 +338,18 @@ for (const mode of [
           );
         }),
     );
-    if (closing) peer.send({ type: "start" });
+    if (closing || mode === "saved-initial" || transitioning)
+      peer.send({ type: "start" });
     else writer.send({ type: "start" });
     const [writerReports] = await Promise.all(results);
     const positive = [
       "create",
+      "saved-same",
+      "saved-changed",
+      "saved-initial",
+      "saved-close",
+      "saved-transition",
+      "saved-transition-same",
       "initial-create",
       "initial-close",
       "refresh-create",
@@ -314,14 +364,22 @@ for (const mode of [
     );
     assert.equal(
       cadRequestIds.length,
-      (positive && mode !== "initial-create" && mode !== "initial-close") ||
+      (positive &&
+        mode !== "initial-create" &&
+        mode !== "initial-close" &&
+        mode !== "saved-initial") ||
         mode === "second-change"
         ? 2
         : 1,
     );
     assert.equal(new Set(cadRequestIds).size, cadRequestIds.length);
     if (positive) assert.equal(writerReports?.[0]?.cleanup, "complete");
-    if (positive && mode !== "initial-create" && mode !== "initial-close") {
+    if (
+      positive &&
+      mode !== "initial-create" &&
+      mode !== "initial-close" &&
+      mode !== "saved-initial"
+    ) {
       const cad = writerReports![0]!.requests.filter((entry) =>
         entry.phase.startsWith("cad-"),
       );
