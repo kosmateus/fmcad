@@ -462,6 +462,23 @@ export function validateCleanupResolution(
   const bytes = read(path.join(directory, canonical));
   return verifiedDecision(directory, backend, runtime, bytes);
 }
+/** Authoring-only guard. Historical closure readers must use the validator above. */
+export function validateCleanupResolutionForClose(
+  directory: string,
+  backend: Pick<
+    ScenarioBackend,
+    "identity" | "mode" | "qualification" | "protocol"
+  >,
+  runtime: CleanupRuntimeBinding,
+): VerifiedCleanupResolution {
+  const verified = validateCleanupResolution(directory, backend, runtime);
+  noProducer(directory, verified.document);
+  assert.ok(
+    Date.now() < verified.expiresAt,
+    "Inspection is stale; do not replay",
+  );
+  return verified;
+}
 function verifiedDecision(
   directory: string,
   backend: Pick<
@@ -578,14 +595,13 @@ export async function resolveCleanupHold(
   ports: CleanupHoldPorts,
 ): Promise<VerifiedCleanupResolution> {
   assert.ok(backend.lookup, "Original lookup is mandatory");
-  assert.ok(
-    !fs.existsSync(path.join(directory, canonical)),
-    "Resolution already exists; never replay inspection",
-  );
   const c = context(directory, backend),
     runtime = await ports.readRuntimeBinding();
   runtimeBinding(runtime, backend);
   noProducer(directory, c.document);
+  if (fs.existsSync(path.join(directory, canonical))) {
+    return validateCleanupResolutionForClose(directory, backend, runtime);
+  }
   const originals: unknown[] = [];
   for (const row of c.requests) {
     const id = text(row["requestId"]),

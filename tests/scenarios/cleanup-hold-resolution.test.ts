@@ -8,6 +8,7 @@ import { record, type Execution, type ScenarioBackend } from "./contracts";
 import {
   resolveCleanupHold,
   validateCleanupResolution,
+  validateCleanupResolutionForClose,
   type CleanupHoldPorts,
 } from "./cleanup-hold-resolution";
 import { resumeCleanup } from "./runner";
@@ -583,3 +584,21 @@ for (const failure of [
       false,
     );
   });
+
+test("close authorization requires freshness while historical validation remains valid after expiry", async (t) => {
+  const f = fixture(t);
+  const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.deepEqual(
+    validateCleanupResolutionForClose(f.directory, f.backend, f.runtime),
+    proof,
+  );
+  t.mock.method(Date, "now", () => proof.expiresAt);
+  assert.deepEqual(
+    validateCleanupResolution(f.directory, f.backend, f.runtime),
+    proof,
+  );
+  assert.throws(
+    () => validateCleanupResolutionForClose(f.directory, f.backend, f.runtime),
+    /stale/u,
+  );
+});
