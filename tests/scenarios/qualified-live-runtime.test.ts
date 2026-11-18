@@ -4,7 +4,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { randomUUID } from "node:crypto";
 import { QueueScenarioBackend } from "./queue-backend";
+import {
+  currentProcessIdentity,
+  discoverOwnedUnsavedFixtures,
+} from "./fixture-provenance";
+import { marker } from "./programs";
 
 interface RuntimeBinding {
   root: string;
@@ -106,6 +112,10 @@ function projectFixture(t: TestContext): {
     path.join(helpers, "qualified-live-runtime.js"),
   );
   fs.writeFileSync(
+    path.join(helpers, "live-broker.js"),
+    "module.exports = {};\n",
+  );
+  fs.writeFileSync(
     path.join(src, "queue-instance.js"),
     `module.exports = { buildHash: () => ${JSON.stringify("b".repeat(64))} };\n`,
   );
@@ -175,8 +185,127 @@ test("Fusion queue backend binds its client and identity to the qualified instal
   );
 
   assert.equal(backend.identity, `fusion:mcp:${"a".repeat(64)}`);
+  const peer = new QueueScenarioBackend(
+    "fusion",
+    "mcp",
+    new Set(),
+    project.root,
+    { url: "http://127.0.0.1:41146/mcp" },
+    (file) => file,
+  );
+  assert.equal(peer.identity, backend.identity);
   assert.equal(fs.existsSync(runtime.queueClientMarker), true);
   assert.equal(fs.existsSync(project.queueClientMarker), false);
+});
+
+test("simulator queue provenance cannot discover a peer from another endpoint", (t) => {
+  const project = projectFixture(t);
+  const simulator = (url: string) =>
+    new QueueScenarioBackend(
+      "simulator",
+      "addin",
+      new Set(),
+      project.root,
+      { url },
+      (file) => file,
+    );
+
+  const firstSimulator = simulator("http://127.0.0.1:41145/mcp");
+  const sameSimulator = simulator("http://127.0.0.1:41145/mcp");
+  const independentSimulator = simulator("http://127.0.0.1:41146/mcp");
+  const fixtureRoot = directory(t, "fmcad-simulator-provenance-");
+  const runId = randomUUID();
+  const scenarioId = "simulator-peer";
+  const clientId = `scenario:${runId}:${scenarioId}`;
+  const requestId = `${clientId}:0`;
+  const runRoot = path.join(fixtureRoot, runId);
+  const scenarioDirectory = path.join(runRoot, scenarioId);
+  const creationId = randomUUID();
+  const document = { creationId, name: "Owned simulator fixture" };
+  const identity = {
+    ...document,
+    requestId,
+    clientId,
+    activeCreationId: creationId,
+  };
+  fs.mkdirSync(scenarioDirectory, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(
+    path.join(runRoot, "index.json"),
+    JSON.stringify({
+      runId,
+      mode: firstSimulator.mode,
+      qualification: firstSimulator.qualification,
+      protocol: firstSimulator.protocol,
+      backendIdentity: firstSimulator.identity,
+      processIdentity: currentProcessIdentity(),
+      before: { documents: [] },
+      scenarioIds: [scenarioId],
+      status: "running",
+    }),
+    { mode: 0o600 },
+  );
+  fs.writeFileSync(
+    path.join(scenarioDirectory, "report.json"),
+    JSON.stringify({
+      owner: { runId, scenarioId, clientId },
+      directory: scenarioDirectory,
+      mode: firstSimulator.mode,
+      qualification: firstSimulator.qualification,
+      protocol: firstSimulator.protocol,
+      backendIdentity: firstSimulator.identity,
+      scope: "exclusive-instance",
+      status: "running",
+      cleanup: "pending",
+      requests: [
+        {
+          requestId,
+          phase: "create",
+          intent: { kind: "script" },
+          result: {
+            requestId,
+            state: "succeeded",
+            sdkSettled: true,
+            mayHaveMutated: true,
+            stdout: marker + JSON.stringify(identity),
+            brokerReceipt: {
+              requestId,
+              clientId,
+              jobId: randomUUID(),
+              state: "succeeded",
+            },
+          },
+        },
+      ],
+      document,
+    }),
+    { mode: 0o600 },
+  );
+  fs.writeFileSync(
+    path.join(scenarioDirectory, "creation.json"),
+    JSON.stringify(identity),
+    { mode: 0o600 },
+  );
+
+  assert.equal(firstSimulator.identity, sameSimulator.identity);
+  assert.deepEqual(
+    discoverOwnedUnsavedFixtures(fixtureRoot, firstSimulator).get(
+      document.creationId,
+    ),
+    document,
+  );
+  assert.deepEqual(
+    discoverOwnedUnsavedFixtures(fixtureRoot, sameSimulator).get(
+      document.creationId,
+    ),
+    document,
+  );
+  assert.equal(
+    discoverOwnedUnsavedFixtures(fixtureRoot, independentSimulator).has(
+      document.creationId,
+    ),
+    false,
+  );
+  assert.notEqual(firstSimulator.identity, independentSimulator.identity);
 });
 
 test("Fusion queue backend and run-live preflight reject a wrong pin before loading a queue client", async (t) => {

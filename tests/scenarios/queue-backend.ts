@@ -89,7 +89,14 @@ export class QueueScenarioBackend implements ScenarioBackend {
         load("./src/queue-instance") as { buildHash(): string }
       ).buildHash;
     }
-    this.identity = mode + ":" + protocol + ":" + this.#buildHash();
+    const identity = [mode, protocol, this.#buildHash()];
+    if (mode === "simulator") {
+      const endpoint = config["url"];
+      if (typeof endpoint !== "string")
+        throw new Error("Simulator queue endpoint is missing");
+      identity.push(new URL(endpoint).origin);
+    }
+    this.identity = identity.join(":");
   }
   fusionPath(local: string): string {
     return this.pathMapper(local);
