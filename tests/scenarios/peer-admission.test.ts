@@ -88,6 +88,11 @@ adsk.core.Document.saveAs = changed_save`),
         path.join(cwd, "src"),
         "dir",
       );
+      fs.symlinkSync(
+        path.resolve(__dirname, "../../../packages"),
+        path.join(cwd, "packages"),
+        "dir",
+      );
       return fork(path.join(__dirname, "peer-admission-worker.js"), [], {
         cwd,
         stdio: ["ignore", "pipe", "pipe", "ipc"],
