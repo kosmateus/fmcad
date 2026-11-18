@@ -144,12 +144,12 @@ function verifiedFixture(
       result = record(create["result"]),
       receipt = record(result["brokerReceipt"]);
     if (
-      requestId !== owner["clientId"] + ":0" ||
       record(create["intent"])["kind"] !== "script" ||
       result["requestId"] !== requestId ||
       result["state"] !== "succeeded" ||
       result["sdkSettled"] !== true ||
       result["mayHaveMutated"] !== true ||
+      (result["exitCode"] !== undefined && result["exitCode"] !== 0) ||
       receipt["requestId"] !== requestId ||
       receipt["clientId"] !== owner["clientId"] ||
       receipt["state"] !== "succeeded" ||
@@ -157,6 +157,24 @@ function verifiedFixture(
       !receipt["jobId"]
     )
       return undefined;
+
+    // The create phase may follow capture or other setup requests. Keep its
+    // exact original receipt binding instead of inferring identity from an ordinal.
+    if (
+      receipt["operationResult"] !== undefined &&
+      receipt["operationResult"] !== null
+    ) {
+      const original = record(receipt["operationResult"]);
+      if (
+        original["version"] !== 1 ||
+        original["requestId"] !== requestId ||
+        original["jobId"] !== receipt["jobId"] ||
+        original["acceptance"] !== "accepted" ||
+        original["executionOutcome"] !== "succeeded" ||
+        original["mayHaveMutated"] !== true
+      )
+        return undefined;
+    }
 
     const lines = text(result["stdout"])
       .split(/\r?\n/u)
@@ -172,6 +190,11 @@ function verifiedFixture(
     const documentValue = record(report["document"]),
       creation = readJson(path.join(directory, "creation.json")),
       baseline = record(index["before"]);
+    assert.deepEqual(
+      creation,
+      identity,
+      "Original create body differs from its immutable creation receipt",
+    );
     if (
       identity["requestId"] !== requestId ||
       identity["clientId"] !== owner["clientId"] ||
