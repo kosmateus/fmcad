@@ -7,5 +7,8 @@
 /tests/fixtures/file-workflows/*-reference-occurrence.py.txt text eol=lf
 /tests/fixtures/history/cloud-9dc58fd.py.txt text eol=lf
 /tests/fixtures/history/inspect-a262.py.txt text eol=lf
+/tests/fixtures/history/checker-f708.ts.txt text eol=lf
+/tests/fixtures/history/checker-9a540.ts.txt text eol=lf
+/tests/fixtures/history/checker-project-9a540.py.txt text eol=lf
 /tests/native/iw7.4_parameter_test.py text eol=lf
 /tests/native/iw7.4_parameter_failures.py text eol=lf
