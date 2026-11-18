@@ -9,11 +9,12 @@ const { pythonLiteral } = createRequire(path.join(root, "package.json"))(
 
 export const marker = "FMCAD_SCENARIO ";
 const quoted = (value: string): string => JSON.stringify(value);
-export function program(body: string): string {
+export function program(body: string, modulePrelude = ""): string {
   return (
     // The public run command requires this slot when --doc is supplied.
     // Identity remains pinned separately by --doc-id and the in-script guard.
     "DOC_NAME = None\n" +
+    (modulePrelude ? modulePrelude + "\n" : "") +
     "def run(context: str) -> None:\n" +
     body
       .split("\n")
@@ -154,17 +155,45 @@ export function cadFence(
     ),
     closedPeers = pythonLiteral([...closedPeerCreationIds]),
     scope = component === "root" ? "None" : pythonLiteral(component);
-  return program(`import adsk.core, json
+  return program(
+    `import adsk.core, json
+from collections.abc import Sequence
+from typing import TypedDict
+
+class _FmcadStableDocument(TypedDict):
+    creationId: str
+    name: str
+    fileId: str | None
+    saved: bool
+    modified: bool
+
+class _FmcadInventoryDocument(_FmcadStableDocument):
+    active: bool
+
+class _FmcadPeerIdentity(TypedDict):
+    creationId: str
+    name: str
+
 app = adsk.core.Application.get()
-_fmcad_expected_baseline = ${expected}
-_fmcad_expected_peers = ${peerIdentities}
-_fmcad_closed_peers = ${closedPeers}
-def _fmcad_inventory():
-    return [dict(creationId=d.creationId, name=d.name, fileId=d.dataFile.id if d.dataFile else None, saved=d.isSaved, modified=d.isModified, active=d == app.activeDocument) for d in app.documents]
-def _fmcad_stable(rows):
+_fmcad_expected_baseline: list[_FmcadStableDocument] = ${expected}
+_fmcad_expected_peers: list[_FmcadPeerIdentity] = ${peerIdentities}
+_fmcad_closed_peers: list[str] = ${closedPeers}
+def _fmcad_inventory() -> list[_FmcadInventoryDocument]:
+    rows: list[_FmcadInventoryDocument] = []
+    for d in app.documents:
+        rows.append({
+            'creationId': d.creationId,
+            'name': d.name,
+            'fileId': d.dataFile.id if d.dataFile else None,
+            'saved': d.isSaved,
+            'modified': d.isModified,
+            'active': d == app.activeDocument,
+        })
+    return rows
+def _fmcad_stable(rows: Sequence[_FmcadStableDocument]) -> list[tuple[str, str, str | None, bool, bool]]:
     return sorted((d['creationId'], d['name'], d['fileId'], d['saved'], d['modified']) for d in rows)
-def _fmcad_check_inventory(rows):
-    ids = [d['creationId'] for d in rows]
+def _fmcad_check_inventory(rows: Sequence[_FmcadInventoryDocument]) -> None:
+    ids: list[str] = [d['creationId'] for d in rows]
     assert len(set(ids)) == len(ids), 'Duplicate document identity in fenced inventory'
     for expected in _fmcad_expected_baseline:
         matches = [d for d in rows if d['creationId'] == expected['creationId']]
@@ -181,6 +210,19 @@ def _fmcad_check_inventory(rows):
     allowed.update(d['creationId'] for d in _fmcad_expected_peers)
     allowed.add(${quoted(document.creationId)})
     assert all(identity in allowed for identity in ids), 'Unproven non-baseline document in fenced inventory'
+def _fmcad_json_inventory(rows: Sequence[_FmcadInventoryDocument]) -> list[_FmcadJsonValue]:
+    encoded: list[_FmcadJsonValue] = []
+    for row in rows:
+        encoded_row: dict[str, _FmcadJsonValue] = {
+            'creationId': row['creationId'],
+            'name': row['name'],
+            'fileId': row['fileId'],
+            'saved': row['saved'],
+            'modified': row['modified'],
+            'active': row['active'],
+        }
+        encoded.append(encoded_row)
+    return encoded
 _fmcad_before = _fmcad_inventory()
 _fmcad_check_inventory(_fmcad_before)
 _fmcad_targets = [d for d in _fmcad_before if d['creationId'] == ${quoted(document.creationId)}]
@@ -202,7 +244,23 @@ assert not _fmcad_after_targets[0]['saved'] and _fmcad_after_targets[0]['fileId'
 _fmcad_other_before = [d for d in _fmcad_before if d['creationId'] != ${quoted(document.creationId)}]
 _fmcad_other_after = [d for d in _fmcad_after if d['creationId'] != ${quoted(document.creationId)}]
 assert _fmcad_stable(_fmcad_other_before) == _fmcad_stable(_fmcad_other_after), 'A non-target document changed during the SDK turn'
-FMCAD.emit(dict(success=True, operation=${quoted(operation)}, document=doc.name, creationId=doc.creationId, result=_fmcad_result, inventoryFence=dict(version=1, before=_fmcad_before, after=_fmcad_after)))`);
+_fmcad_payload: dict[str, _FmcadJsonValue] = {
+    'success': True,
+    'operation': ${quoted(operation)},
+    'document': doc.name,
+    'creationId': doc.creationId,
+    'result': _fmcad_result,
+    'inventoryFence': {
+        'version': 1,
+        'before': _fmcad_json_inventory(_fmcad_before),
+        'after': _fmcad_json_inventory(_fmcad_after),
+    },
+}
+FMCAD.emit(_fmcad_payload)`,
+    `from types import NoneType
+from typing import TypeAlias
+_FmcadJsonValue: TypeAlias = NoneType | bool | int | float | str | list["_FmcadJsonValue"] | dict[str, "_FmcadJsonValue"]`,
+  );
 }
 export function restoreActive(creationId: string): string {
   return program(`import adsk.core, json
