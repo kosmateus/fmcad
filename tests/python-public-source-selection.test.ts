@@ -290,6 +290,60 @@ for (const { operation, data, dependencies, ...selection } of operations) {
   });
 }
 
+test("native drive programs keep only their reachable adapter and pass pinned admission", async () => {
+  const checker = createChecker();
+  for (const operation of [
+    "mechanism.drive-test",
+    "mechanism.motion-link.create",
+  ] as const) {
+    const original = prepareCadScript(operation, catalog[operation]!.example, {
+      doc: "PublicNativeDriveFixture",
+      docId: `public-source-selection-${operation}`,
+    });
+    const fusion = original.units.find(
+      (unit) => unit.id === "native-drive-fusion",
+    );
+    const handlers = original.units.find(
+      (unit) => unit.id === "native-drive-handlers",
+    );
+    assert.ok(fusion, operation);
+    assert.ok(handlers, operation);
+
+    const report = await checker.check({
+      artifact: original,
+      context: { kind: "bundle" },
+    });
+    assert.equal(report.status, "passed", JSON.stringify(report));
+    assert.deepEqual(report.diagnostics, []);
+    assert.equal(report.provenance.checker, "basedpyright");
+    assert.equal(report.provenance.checkerVersion, "1.40.2");
+    assert.equal(
+      report.provenance.definitionsHash,
+      "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+    );
+
+    if (operation === "mechanism.drive-test") {
+      assert.match(fusion.source, /class _NativeDriveFusionPort\b/);
+      assert.match(fusion.source, /def mechanism_drive_test\(/);
+      assert.doesNotMatch(fusion.source, /def mechanism_motion_link_create\(/);
+      assert.match(
+        handlers.source,
+        /'mechanism\.drive-test': mechanism_drive_test/,
+      );
+      assert.doesNotMatch(handlers.source, /'mechanism\.motion-link\.create':/);
+    } else {
+      assert.doesNotMatch(fusion.source, /class _NativeDriveFusionPort\b/);
+      assert.doesNotMatch(fusion.source, /def mechanism_drive_test\(/);
+      assert.match(fusion.source, /def mechanism_motion_link_create\(/);
+      assert.doesNotMatch(handlers.source, /'mechanism\.drive-test':/);
+      assert.match(
+        handlers.source,
+        /'mechanism\.motion-link\.create': mechanism_motion_link_create/,
+      );
+    }
+  }
+});
+
 test("six public scalar measurement builders and retained callers pass the pinned Fusion checker", async (t) => {
   const body = {
     // Resolved body reference from definition-transaction-0's rejected volume step.
