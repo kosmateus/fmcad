@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { object, rows, present } from "./modeling-unit-test-support.js";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -90,6 +91,136 @@ function python(program: string, input: string) {
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   return result.stdout;
+}
+function parameterTestProgram(
+  faults: { failRestore?: boolean; corruptCoverage?: boolean } = {},
+) {
+  return (
+    stubImports +
+    `adsk.fusion.FeatureHealthStates = types.SimpleNamespace(
+    HealthyFeatureHealthState=0, WarningFeatureHealthState=1,
+    ErrorFeatureHealthState=2, SuppressedFeatureHealthState=3)
+import re
+exec(sys.stdin.read())
+_BaseCadContext = CadContext
+_FAIL_RESTORE = ${faults.failRestore ? "True" : "False"}
+_CORRUPT_COVERAGE = ${faults.corruptCoverage ? "True" : "False"}
+
+class Parameter:
+    objectType = 'adsk::fusion::UserParameter'
+    name = 'd1'
+    unit = 'mm'
+    def __init__(self):
+        self._expression = '10 mm'
+    @property
+    def expression(self):
+        return self._expression
+    @expression.setter
+    def expression(self, value):
+        if _FAIL_RESTORE and value == '10 mm' and self._expression != '10 mm':
+            raise RuntimeError('fixture restore setter failed')
+        self._expression = value
+
+class Context(_BaseCadContext):
+    def __init__(self, doc, component, project, doc_id=None, doc_file_id=None):
+        self.doc_id, self.doc_file_id = doc_id, doc_file_id
+        self.doc = types.SimpleNamespace(name=doc)
+        self.app = types.SimpleNamespace(activeDocument=self.doc)
+        self.root = types.SimpleNamespace(
+            objectType='adsk::fusion::Component', allOccurrences=[])
+        self.component, self.occurrence = self.root, None
+        self.design = types.SimpleNamespace(timeline=[], computeAll=lambda: 0)
+        self.created = []
+        self.parameter = Parameter()
+        self.circle = types.SimpleNamespace(
+            objectType='adsk::fusion::SketchCircle',
+            parentComponent=self.root,
+            assemblyContext=None,
+            geometry=types.SimpleNamespace(objectType='adsk::core::Circle3D'))
+    def assert_identity(self):
+        pass
+    def activate_target(self):
+        pass
+    def resolve(self, ref, kind=None):
+        if ref == 'd1': return self.parameter
+        if ref == 'circle': return self.circle
+        raise ValueError('Unknown fixture reference')
+    def ref(self, entity):
+        return {'kind': 'component', 'name': 'root'}
+    def _expression(self, expression, units=None, unitless=False):
+        if not isinstance(expression, str):
+            raise TypeError('expression must be text')
+        match = re.fullmatch(r'\\s*(-?[0-9]+(?:\\.[0-9]+)?)\\s*(mm|cm)\\s*', expression)
+        if not match: raise ValueError('unsupported fixture expression')
+        value = float(match.group(1))
+        if match.group(2) == 'mm': value /= 10
+        return expression, value
+    def call(self, operation, data):
+        if operation == 'measure.radius':
+            return {'value': float(self.parameter.expression.split()[0]),
+                    'dimension': 'length', 'units': 'mm'}
+        result = super().call(operation, data)
+        if operation == 'parameter.test' and _CORRUPT_COVERAGE:
+            result['coverage']['completed'] = 0
+        return result
+
+CadContext = Context
+run('')
+`
+  );
+}
+async function generatedParameterTest(
+  data: Record<string, unknown>,
+  faults: { failRestore?: boolean; corruptCoverage?: boolean } = {},
+) {
+  let sourceOutput: Record<string, unknown> | undefined;
+  const client = {
+    callTool: async (request: ToolRequest) => {
+      const text = python(parameterTestProgram(faults), request.object.script);
+      const line = text
+        .split("\n")
+        .find((row) => row.startsWith("FMCAD_RESULT "));
+      assert.ok(line, text);
+      sourceOutput = JSON.parse(line.slice("FMCAD_RESULT ".length)) as Record<
+        string,
+        unknown
+      >;
+      return { text };
+    },
+  };
+  const result = (await executeCad(
+    client,
+    "parameter.test",
+    data,
+    context,
+  )) as unknown as { success: boolean; result: Record<string, unknown> };
+  return { source: present(sourceOutput), result };
+}
+function parameterTestData(firstExpected = "12 mm") {
+  const check = (expected: string) => ({
+    measurement: {
+      operation: "measure.radius",
+      data: { ref: "circle", units: "mm" },
+    },
+    expected,
+    tolerance: "0 mm",
+  });
+  return {
+    confirm: true,
+    timeBudgetMs: 10_000,
+    cases: [
+      {
+        id: "radius-12",
+        assign: [{ parameter: "d1", expression: "12 mm" }],
+        checks: [check(firstExpected)],
+      },
+      {
+        id: "radius-8",
+        assign: [{ parameter: "d1", expression: "8 mm" }],
+        checks: [check("8 mm")],
+      },
+    ],
+  };
 }
 function registeredPython(script: string, afterRegistration: string) {
   return python(
@@ -570,6 +701,52 @@ run('')
       .slice(13),
   );
   assert.equal(output.success, false, JSON.stringify(output));
+});
+
+test("CAD integration: parameter.test v2 public outcome validates generated evidence", async () => {
+  const good = await generatedParameterTest(parameterTestData());
+  const sourceReport = object(good.source["result"]);
+  const publicReport = object(good.result.result);
+  assert.equal(good.source["success"], true);
+  assert.equal(sourceReport["passed"], true);
+  assert.equal(sourceReport["restored"], true);
+  assert.deepEqual(sourceReport["coverage"], {
+    required: 2,
+    completed: 2,
+    skipped: 0,
+  });
+  assert.equal(good.result.success, true);
+  assert.equal(publicReport["passed"], true);
+
+  const failedCheck = await generatedParameterTest(parameterTestData("13 mm"));
+  const failedCheckReport = object(failedCheck.source["result"]);
+  const failedCases = rows(failedCheckReport["cases"]);
+  assert.equal(failedCheck.source["success"], false);
+  const failedCase = present(failedCases[0]);
+  assert.equal(present(rows(failedCase["checks"])[0])["passed"], false);
+  assert.equal(failedCheck.result.success, false);
+
+  const failedRestore = await generatedParameterTest(parameterTestData(), {
+    failRestore: true,
+  });
+  const failedRestoreReport = object(failedRestore.source["result"]);
+  assert.equal(failedRestoreReport["passed"], false);
+  assert.equal(failedRestoreReport["restored"], false);
+  assert.ok(rows(failedRestoreReport["restoreErrors"]).length > 0);
+  assert.equal(failedRestore.result.success, false);
+
+  const corruptCoverage = await generatedParameterTest(parameterTestData(), {
+    corruptCoverage: true,
+  });
+  const corruptReport = object(corruptCoverage.source["result"]);
+  assert.equal(corruptCoverage.source["success"], true);
+  assert.equal(corruptReport["passed"], true);
+  assert.deepEqual(corruptReport["coverage"], {
+    required: 2,
+    completed: 0,
+    skipped: 0,
+  });
+  assert.equal(corruptCoverage.result.success, false);
 });
 
 test("CAD integration: batch stops and refuses replay on nested failed CAD evidence", async (t) => {

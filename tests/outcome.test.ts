@@ -222,6 +222,72 @@ test("unknown and unresolved acceptance evidence defeats a success wrapper", () 
   }
 });
 
+test("parameter.test v2 accepts only complete, restored pass reports", () => {
+  const report = {
+    version: 2,
+    status: "pass",
+    passed: true,
+    primaryError: null,
+    restoreErrors: [],
+    restored: true,
+    budgetExhausted: false,
+    cases: [
+      {
+        id: "case-1",
+        status: "pass",
+        passed: true,
+        health: [],
+        healthPassed: true,
+        checks: [],
+        primaryError: null,
+        restoreErrors: [],
+        restored: true,
+        restoredHealth: [],
+      },
+    ],
+    coverage: { required: 1, completed: 1, skipped: 0 },
+  };
+
+  assert.equal(
+    failedOutcome({
+      success: true,
+      operation: "parameter.test",
+      result: report,
+    }),
+    false,
+  );
+
+  const malformed = [
+    { ...report, coverage: { required: 1, completed: 0, skipped: 1 } },
+    {
+      ...report,
+      cases: [
+        { ...report.cases[0]!, restoreErrors: [{ stage: "expression" }] },
+      ],
+    },
+    {
+      ...report,
+      cases: [
+        {
+          ...report.cases[0]!,
+          checks: [{ passed: false, status: "fail" }],
+        },
+      ],
+    },
+    {
+      ...report,
+      cases: [report.cases[0]!, { ...report.cases[0]! }],
+      coverage: { required: 2, completed: 2, skipped: 0 },
+    },
+  ];
+  for (const result of malformed)
+    assert.equal(
+      failedOutcome({ success: true, operation: "parameter.test", result }),
+      true,
+      JSON.stringify(result),
+    );
+});
+
 // Exercise the actual historical envelope and the application policy separately;
 // a synchronous Python success must not erase unknown/invalid quality evidence.
 test("generated Python retains evidence and the application rejects unresolved legacy success", async () => {
