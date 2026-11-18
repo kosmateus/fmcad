@@ -51,7 +51,6 @@ const documentStatusAdmission = load(
   checker: {
     engine: string;
     version: string;
-    checkerHash: string;
     definitionsHash: string;
     diagnostics: number;
     cache: string;
@@ -566,9 +565,13 @@ test("public document.status checks the current seven-unit artifact before exact
     required(valid.certificate.report).provenance.definitionsHash,
     documentStatusAdmission.checker.definitionsHash,
   );
+  // The resource fingerprint includes the absolute install path, so compare
+  // it with this checkout instead of the capture-time fixture value.
   assert.equal(
     required(valid.certificate.report).provenance.checkerHash,
-    documentStatusAdmission.checker.checkerHash,
+    pythonAdmissionResources([
+      path.dirname(load.resolve("basedpyright/package.json")),
+    ]),
   );
   assert.equal(
     required(valid.certificate.report).provenance.cache,

@@ -51,6 +51,7 @@
     "engine": "basedpyright",
     "version": "1.40.2",
     "checkerHash": "fd0349739c77e9c0728eacce31e0e8f0785166ea4a1d5cc4529c83da224e8ed9",
+    "checkerHashScope": "capture-time resource fingerprint; the runtime fingerprint includes the absolute checker installation path and must be computed per checkout",
     "definitionsHash": "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
     "diagnostics": 0,
     "cache": "disabled"
