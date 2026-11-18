@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import path from "node:path";
 import readline from "node:readline";
-import { spawn, spawnSync } from "node:child_process";
+import {
+  spawn,
+  spawnSync,
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
 import { once } from "node:events";
 import type { Scenario } from "./runner";
 import { record, text } from "./contracts";
@@ -44,6 +48,137 @@ export function nativeMcpStdioArguments(
     "--project-directory",
     projectDirectory,
   ];
+}
+
+export function nativeMcpStdioClient(
+  child: ChildProcessWithoutNullStreams,
+  trace: (event: Record<string, unknown>) => void,
+  signal?: AbortSignal,
+  discoveryTimeoutMs = 20000,
+) {
+  const waiting = new Map<
+    number,
+    {
+      resolve(value: Record<string, unknown>): void;
+      reject(error: Error): void;
+      timer: NodeJS.Timeout | undefined;
+      finish(outcome: string): void;
+    }
+  >();
+  let nextId = 1,
+    errors = "",
+    fatal: Error | undefined;
+  const fail = (error: Error) => {
+    fatal = error;
+    for (const pending of waiting.values()) {
+      clearTimeout(pending.timer);
+      pending.finish("closed");
+      pending.reject(error);
+    }
+    waiting.clear();
+  };
+  child.on("error", fail);
+  child.stdin.on("error", fail);
+  child.on("close", () =>
+    fail(
+      new Error(
+        "MCP stdio closed; inspect the original request, never resubmit: " +
+          errors,
+      ),
+    ),
+  );
+  child.stderr.on("data", (chunk: Buffer) => {
+    errors += chunk.toString("utf8");
+  });
+  const lines = readline.createInterface({ input: child.stdout });
+  lines.on("line", (line) => {
+    try {
+      const message = record(JSON.parse(line) as unknown);
+      if (typeof message["id"] !== "number") return;
+      const pending = waiting.get(message["id"]);
+      if (!pending) return;
+      waiting.delete(message["id"]);
+      clearTimeout(pending.timer);
+      pending.finish(message["error"] ? "error" : "response");
+      if (message["error"])
+        pending.reject(new Error(JSON.stringify(message["error"])));
+      else pending.resolve(record(message["result"]));
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+  const abort = () =>
+    fail(
+      new Error(
+        "MCP observation interrupted; inspect the original request, never resubmit",
+      ),
+    );
+  signal?.addEventListener("abort", abort, { once: true });
+  return {
+    request(
+      method: string,
+      params: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
+      if (signal?.aborted) abort();
+      if (fatal) return Promise.reject(fatal);
+      return new Promise((resolve, reject) => {
+        const id = nextId++;
+        const start = performance.now();
+        // Local discovery is bounded. Queued execution includes admission/checker
+        // and shared-queue waiting, not just SDK time; observe it until the
+        // original response, explicit abort, or child closure, never replay it.
+        const timeoutMs =
+          method === "initialize" || method === "tools/list"
+            ? discoveryTimeoutMs
+            : null;
+        const meta = record(record(params["_meta"] ?? {})["fmcad"] ?? {});
+        const identity = {
+          id,
+          method,
+          ...(typeof params["name"] === "string"
+            ? { tool: params["name"] }
+            : {}),
+          ...(typeof meta["requestId"] === "string"
+            ? { requestId: meta["requestId"] }
+            : {}),
+          timeoutMs,
+        };
+        trace({ ...identity, stage: "write", monotonicMs: start });
+        const finish = (outcome: string) =>
+          trace({
+            ...identity,
+            stage: outcome,
+            monotonicMs: performance.now(),
+            elapsedMs: performance.now() - start,
+          });
+        const timer =
+          timeoutMs === null
+            ? undefined
+            : setTimeout(() => {
+                waiting.delete(id);
+                finish("timeout");
+                reject(new Error("MCP smoke timeout: " + errors));
+              }, timeoutMs);
+        waiting.set(id, { resolve, reject, timer, finish });
+        child.stdin.write(
+          JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n",
+          (error) => {
+            if (error) fail(error);
+          },
+        );
+      });
+    },
+    diagnostics: () => errors,
+    dispose() {
+      signal?.removeEventListener("abort", abort);
+      lines.close();
+      fail(
+        new Error(
+          "MCP observer disposed; inspect original requests without replay",
+        ),
+      );
+    },
+  };
 }
 
 /** Retained OpenCode stdio entry and assertions, with original-request recovery. */
@@ -97,74 +232,17 @@ export function nativeMcpStdioScenarios(owners = 10): Scenario[] {
         automaticReplay: false,
       };
       const save = () => privateEvidence(session, "mcp-stdio.json", report);
-      const waiting = new Map<
-        number,
-        {
-          resolve(value: Record<string, unknown>): void;
-          reject(error: Error): void;
-          timer: NodeJS.Timeout;
-        }
-      >();
-      let nextId = 1,
-        errors = "",
-        fatal: Error | undefined;
-      const fail = (error: Error) => {
-        fatal = error;
-        for (const pending of waiting.values()) {
-          clearTimeout(pending.timer);
-          pending.reject(error);
-        }
-        waiting.clear();
-      };
-      child.on("error", fail);
-      child.stdin.on("error", fail);
-      child.on("close", () =>
-        fail(
-          new Error(
-            "MCP stdio closed; inspect the original request, never resubmit: " +
-              errors,
-          ),
-        ),
+      const timings: Record<string, unknown>[] = [];
+      report["timings"] = timings;
+      const client = nativeMcpStdioClient(
+        child,
+        (event) => {
+          timings.push(event);
+          save();
+        },
+        session.signal,
       );
-      child.stderr.on("data", (chunk: Buffer) => {
-        errors += chunk.toString("utf8");
-      });
-      const lines = readline.createInterface({ input: child.stdout });
-      lines.on("line", (line) => {
-        try {
-          const message = record(JSON.parse(line) as unknown);
-          if (typeof message["id"] !== "number") return;
-          const pending = waiting.get(message["id"]);
-          if (!pending) return;
-          waiting.delete(message["id"]);
-          clearTimeout(pending.timer);
-          if (message["error"])
-            pending.reject(new Error(JSON.stringify(message["error"])));
-          else pending.resolve(record(message["result"]));
-        } catch (error) {
-          fail(error instanceof Error ? error : new Error(String(error)));
-        }
-      });
-      const request = (
-        method: string,
-        params: Record<string, unknown>,
-      ): Promise<Record<string, unknown>> => {
-        if (fatal) return Promise.reject(fatal);
-        return new Promise((resolve, reject) => {
-          const id = nextId++;
-          const timer = setTimeout(() => {
-            waiting.delete(id);
-            reject(new Error("MCP smoke timeout: " + errors));
-          }, 20000);
-          waiting.set(id, { resolve, reject, timer });
-          child.stdin.write(
-            JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n",
-            (error) => {
-              if (error) fail(error);
-            },
-          );
-        });
-      };
+      const request = client.request;
       try {
         assert.ok(child.pid, "MCP child identity missing");
         report["child"] = {
@@ -210,6 +288,44 @@ export function nativeMcpStdioScenarios(owners = 10): Scenario[] {
               arguments: { code, persistent: false },
               _meta: { fmcad: { requestId: binding.requestId } },
             });
+            if (
+              !response["structuredContent"] ||
+              !["QUEUED", "ACCEPTED"].includes(
+                String(record(response["structuredContent"])["status"]),
+              )
+            ) {
+              const start = performance.now();
+              timings.push({
+                stage: "lookup-original",
+                requestId: binding.requestId,
+                monotonicMs: start,
+              });
+              save();
+              const original = await native.queue.findRequest(
+                binding.requestId,
+              );
+              const job = record(record(original)["job"]);
+              assert.equal(job["requestId"], binding.requestId);
+              assert.equal(job["clientId"], binding.owner.clientId);
+              assert.ok(["succeeded", "failed"].includes(text(job["state"])));
+              report["terminal"] = original;
+              timings.push({
+                stage: "original-settled",
+                requestId: binding.requestId,
+                jobId: job["id"],
+                monotonicMs: performance.now(),
+                elapsedMs: performance.now() - start,
+              });
+              save();
+              return {
+                value: response,
+                execution: queueExecution(
+                  original,
+                  binding.owner,
+                  binding.requestId,
+                ),
+              };
+            }
             const accepted = record(response["structuredContent"]);
             assert.ok(
               ["QUEUED", "ACCEPTED"].includes(text(accepted["status"])),
@@ -300,9 +416,9 @@ export function nativeMcpStdioScenarios(owners = 10): Scenario[] {
         child.stdin.end();
         if (child.exitCode === null && child.signalCode === null) child.kill();
         await closed.catch(() => undefined);
-        lines.close();
+        client.dispose();
         native.queue.dispose();
-        report["stderr"] = errors;
+        report["stderr"] = client.diagnostics();
         report["finishedAt"] = new Date().toISOString();
         save();
       }

@@ -7,12 +7,14 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import readline from "node:readline";
 import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 import type { ScenarioBackend } from "./contracts";
 import { record, text } from "./contracts";
 import { ScenarioSession, runScenarios } from "./runner";
 import { nativeBackendAdapterScenarios } from "./native-backend-adapter-cases";
 import {
   nativeMcpStdioArguments,
+  nativeMcpStdioClient,
   nativeMcpStdioEntry,
   nativeMcpStdioScenarios,
 } from "./native-mcp-stdio-cases";
@@ -64,6 +66,7 @@ function startMcpChild(
     }
   });
   return {
+    child,
     async request(value: unknown): Promise<Record<string, unknown>> {
       child.stdin.write(JSON.stringify(value) + "\n");
       const line = await lines.next();
@@ -73,10 +76,10 @@ function startMcpChild(
     notify(value: unknown): void {
       child.stdin.write(JSON.stringify(value) + "\n");
     },
-    async close(): Promise<void> {
+    async close(checkOutput = true): Promise<void> {
       child.stdin.end();
       assert.deepEqual(await closed, [0, null], diagnostics);
-      assert.equal((await lines.next()).done, true);
+      if (checkOutput) assert.equal((await lines.next()).done, true);
       assert.equal(diagnostics, "");
       lines.return?.();
     },
@@ -145,6 +148,55 @@ test("native MCP stdio uses the qualified runtime entry and rejects a fingerprin
   );
 });
 
+test("MCP discovery budget and explicit observation abort fail without resubmission", async (t) => {
+  const child = spawn(process.execPath, ["-e", "process.stdin.resume()"], {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const closed = once(child, "close");
+  const trace: Record<string, unknown>[] = [];
+  const controller = new AbortController();
+  const client = nativeMcpStdioClient(
+    child,
+    (event) => trace.push(event),
+    controller.signal,
+    25,
+  );
+  t.after(async () => {
+    client.dispose();
+    child.kill();
+    await closed;
+  });
+  await assert.rejects(client.request("tools/list", {}), /MCP smoke timeout/u);
+  assert.equal(trace.at(-1)?.["stage"], "timeout");
+  assert.equal(trace.at(-1)?.["timeoutMs"], 25);
+  const pending = client.request("tools/call", { name: "execute_python" });
+  const rejected = assert.rejects(pending, /interrupted.*never resubmit/u);
+  controller.abort();
+  await rejected;
+  assert.equal(trace.filter((event) => event["stage"] === "write").length, 2);
+  assert.equal(trace.at(-1)?.["timeoutMs"], null);
+});
+
+test("MCP child closure rejects an outstanding observation without replay or settlement", async (t) => {
+  const child = spawn(
+    process.execPath,
+    ["-e", 'process.stdin.once("data", () => process.exit(0))'],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  const closed = once(child, "close");
+  const trace: Record<string, unknown>[] = [];
+  const client = nativeMcpStdioClient(child, (event) => trace.push(event));
+  t.after(() => client.dispose());
+  await assert.rejects(
+    client.request("tools/call", { name: "execute_python" }),
+    /closed.*never resubmit/u,
+  );
+  await closed;
+  assert.equal(trace.filter((event) => event["stage"] === "write").length, 1);
+  assert.equal(trace.at(-1)?.["stage"], "closed");
+  assert.equal(trace.at(-1)?.["timeoutMs"], null);
+});
+
 test("public MCP child binds its validated project before admission and rejects missing or foreign projects", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "native-mcp-project-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -186,16 +238,28 @@ test("public MCP child binds its validated project before admission and rejects 
               async register() {}
               persistRequestContext() {}
               async submit(input) {
+                await new Promise(resolve => setTimeout(resolve, 700));
                 fs.appendFileSync(${JSON.stringify(trace)}, JSON.stringify(input) + "\\n");
                 this.submitted = input;
                 return { id: "offline-job", requestId: input.requestId, clientId: this.auth.clientId, state: "succeeded" };
               }
               async wait(jobId) {
                 const input = this.submitted;
+                if (input.requestId === "offline-queued-admission")
+                  return new Promise(() => {});
                 return {
                   job: { id: jobId, requestId: input.requestId, clientId: this.auth.clientId, state: "succeeded" },
                   rpc: { status: 200, raw: JSON.stringify({ jsonrpc: "2.0", id: input.payload.id, result: { isError: false, content: [{ type: "text", text: JSON.stringify({ success: true, stdout: "OFFLINE_BOUND_PROJECT" }) }] } }) },
                 };
+              }
+              async call(action, args) {
+                if (action !== "result" || args.jobId !== "offline-job") throw new Error("Unexpected offline queue action");
+                const input = this.submitted;
+                if (!this.polled) {
+                  this.polled = true;
+                  return { job: { id: args.jobId, requestId: input.requestId, clientId: this.auth.clientId, state: "queued" } };
+                }
+                return { job: { id: args.jobId, requestId: input.requestId, clientId: this.auth.clientId, state: "succeeded" }, rpc: { status: 200, raw: JSON.stringify({ jsonrpc: "2.0", id: input.payload.id, result: { isError: false, content: [] } }) } };
               }
               dispose() {}
             },
@@ -209,7 +273,18 @@ test("public MCP child binds its validated project before admission and rejects 
       };
     `,
   );
-  const entry = path.join(root, "dist/bin/fmcad-mcp.js");
+  const qualified = process.env["FMCAD_LIVE_RUNTIME_ROOT"]
+    ? (
+        createRequire(__filename)(
+          path.join(root, "tests/helpers/qualified-live-runtime"),
+        ) as {
+          resolveQualifiedLiveRuntime(): { fingerprint: string };
+        }
+      ).resolveQualifiedLiveRuntime()
+    : undefined;
+  const entry = qualified
+    ? nativeMcpStdioEntry({ root, buildHash: qualified.fingerprint })
+    : path.join(root, "dist/bin/fmcad-mcp.js");
   const clientId = "offline-project-binding";
   const executeRequest = (id: string, meta?: Record<string, unknown>) => ({
     jsonrpc: "2.0",
@@ -236,12 +311,22 @@ test("public MCP child binds its validated project before admission and rejects 
     preload,
     t,
   );
-  assert.equal(record(await positive.request(initialize))["id"], "initialize");
+  const timings: Record<string, unknown>[] = [];
+  const observer = nativeMcpStdioClient(
+    positive.child,
+    (event) => timings.push(event),
+    undefined,
+    300,
+  );
+  t.after(() => observer.dispose());
+  await observer.request("initialize", initialize.params);
   positive.notify(initialized);
-  const success = await positive.request(executeRequest("positive"));
-  assert.equal(success["error"], undefined, JSON.stringify(success));
-  assert.equal(record(success["result"])["isError"], false);
-  await positive.close();
+  const success = await observer.request(
+    "tools/call",
+    executeRequest("positive", { requestId: "offline-delayed-admission" })
+      .params,
+  );
+  assert.equal(success["isError"], false);
   const submission = record(
     JSON.parse(fs.readFileSync(trace, "utf8").trim()) as unknown,
   );
@@ -250,6 +335,44 @@ test("public MCP child binds its validated project before admission and rejects 
     record(submission["clientContext"])["projectDirectory"],
     fs.realpathSync(project),
   );
+  assert.equal(submission["requestId"], "offline-delayed-admission");
+  assert.equal(
+    timings.filter(
+      (event) =>
+        event["tool"] === "execute_python" && event["stage"] === "write",
+    ).length,
+    1,
+  );
+  assert.ok(
+    Number(
+      timings.find(
+        (event) =>
+          event["tool"] === "execute_python" && event["stage"] === "response",
+      )?.["elapsedMs"],
+    ) >= 700,
+  );
+  fs.rmSync(trace);
+  const queued = await observer.request(
+    "tools/call",
+    executeRequest("queued", { requestId: "offline-queued-admission" }).params,
+  );
+  const accepted = record(queued["structuredContent"]);
+  assert.equal(accepted["status"], "QUEUED");
+  assert.equal(accepted["jobId"], "offline-job");
+  const settled = await observer.request("tools/call", {
+    name: "fmcad_queue_result",
+    arguments: { jobId: accepted["jobId"] },
+  });
+  const terminal = record(record(settled["structuredContent"])["job"]);
+  assert.equal(terminal["requestId"], "offline-queued-admission");
+  assert.equal(terminal["clientId"], clientId);
+  assert.equal(terminal["state"], "succeeded");
+  assert.equal(
+    fs.readFileSync(trace, "utf8").trim().split("\n").length,
+    1,
+    "queued work must be submitted once, never replayed",
+  );
+  await positive.close(false); // Responses are consumed by the production scenario waiter.
 
   fs.rmSync(trace, { force: true });
   const unbound = startMcpChild(
