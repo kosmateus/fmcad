@@ -226,6 +226,11 @@ function verifiedFixture(
       documentValue["file"] !== undefined
     )
       return undefined;
+    if (requests.some((entry) => entry["phase"] === "save"))
+      return Object.freeze({
+        document: Object.freeze(document),
+        state: "unsettled",
+      });
     const cleanupEntries = requests
       .map(record)
       .filter((entry) => entry["phase"] === "cleanup");
