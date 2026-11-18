@@ -14,14 +14,10 @@ import {
 } from "./native-transport-support";
 
 export const nativeBackendAdapterCapability = "native-addin-adapter-soak";
-const snapshotScript = `import adsk.core, json, sys
+const snapshotScript = `import adsk.core, inspect, json, sys
 def run(_context: str):
     app = adsk.core.Application.get()
-    frame = sys._getframe()
-    frame_depth = 0
-    while frame is not None:
-        frame_depth += 1
-        frame = frame.f_back
+    frame_depth = len(inspect.stack())
     documents = sorted([{"creationId": d.creationId, "name": d.name,
         "isSaved": d.isSaved, "isModified": d.isModified} for d in app.documents if _fmcad_live_visible(d)],
         key=lambda d: d["creationId"])

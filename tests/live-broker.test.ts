@@ -1292,6 +1292,7 @@ app.documents = [Document('user model','original'),Document('fixture','owned'),D
 app.activeDocument = app.documents[2]
 adsk=types.ModuleType('adsk'); core=types.ModuleType('adsk.core')
 core.Application=types.SimpleNamespace(get=lambda: app); adsk.core=core
+core.Document=Document
 sys.modules.update({'adsk':adsk,'adsk.core':core})
 `;
   try {

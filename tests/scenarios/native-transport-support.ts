@@ -31,6 +31,10 @@ export async function nativeDiagnosticQueue(session: ScenarioSession) {
   );
   const root = session.backend.root;
   const config = session.backend.config;
+  assert.equal(config["backend"], "addin");
+  assert.equal(config["url"], "http://127.0.0.1:8765/mcp");
+  assert.equal(config["protocolVersion"], "2025-06-18");
+  assert.equal(config["tool"], "execute_python");
   const load = createRequire(path.join(root, "package.json"));
   const { resolveQualifiedLiveRuntime } = load(
     "./tests/helpers/qualified-live-runtime",
@@ -39,6 +43,31 @@ export async function nativeDiagnosticQueue(session: ScenarioSession) {
   };
   const runtime = resolveQualifiedLiveRuntime();
   const loadRuntime = createRequire(path.join(runtime.dist, "package.json"));
+  const { readQueueStatus } = load("./tests/helpers/live-broker") as {
+    readQueueStatus(input: {
+      cliPath: string;
+      backend: "addin";
+      clientId: string;
+      cwd: string;
+    }): Promise<unknown>;
+  };
+  const cliPath = path.join(runtime.dist, "bin/fmcad.js");
+  const status = record(
+    await readQueueStatus({
+      cliPath,
+      backend: "addin",
+      clientId: session.report.owner.clientId,
+      cwd: root,
+    }),
+  );
+  assert.equal(
+    status["buildHash"],
+    runtime.fingerprint,
+    "Diagnostic candidate differs from the running broker",
+  );
+
+  // The retained raw-RPC cases qualify internal ADDIN transport semantics;
+  // public command scenarios use QueueScenarioBackend's queue-exec path.
   const { QueueClient } = loadRuntime("./src/queue-client") as {
     QueueClient: new (
       clientId: string,
@@ -49,12 +78,6 @@ export async function nativeDiagnosticQueue(session: ScenarioSession) {
   const queue = new QueueClient(session.report.owner.clientId, { cfg: config });
   try {
     await queue.register({ autoStart: false });
-    const status = record(await queue.call("status"));
-    assert.equal(
-      status["buildHash"],
-      buildHash(),
-      "Diagnostic candidate differs from the running broker",
-    );
   } catch (error) {
     queue.dispose();
     throw error;
@@ -68,9 +91,16 @@ export function privateEvidence(
   value: unknown,
 ): void {
   assert.equal(path.basename(filename), filename);
+  const evidence =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? {
+          ...record(value),
+          evidenceClass: "addin-internal-transport-qualification",
+        }
+      : value;
   fs.writeFileSync(
     path.join(session.directory, filename),
-    JSON.stringify(value, null, 2) + "\n",
+    JSON.stringify(evidence, null, 2) + "\n",
     { mode: 0o600 },
   );
 }
