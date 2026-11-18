@@ -86,9 +86,10 @@ snapshotFenceConnection.request = async (directory, message, options) => {
 const { createAuthenticatedStageOwner } = loadModule(
   "../src/dist/node-adapters/persistence/stage-owner",
 ) as typeof import("../packages/node-adapters/src/persistence/stage-owner");
-const { createAuthenticatedStageDependencies } = loadModule(
-  "../src/composition/stage-dependencies",
-) as typeof import("../src/composition/stage-dependencies");
+const { createAuthenticatedStageDependencies, resolveStageBackendIdentity } =
+  loadModule(
+    "../src/composition/stage-dependencies",
+  ) as typeof import("../src/composition/stage-dependencies");
 const documentPublication = loadModule(
   "../src/document-publication",
 ) as typeof import("../src/composition/document-publication");
@@ -121,6 +122,324 @@ const document = {
   name: "Part",
   version: 8,
 };
+
+function physicalHeadFixture(t: TestContext) {
+  const f = fixture(t, { seedStage: false });
+  const closed = loadModule(
+    "./fixtures/closed-epoch-successor.cjs",
+  ) as typeof import("./fixtures/closed-epoch-successor.cjs");
+  const physical = {
+    pid: process.pid,
+    birth: instance.processBirth(),
+    version: "Synthetic-stage-owner",
+    activeCommand: "",
+  };
+  const e = closed(f.broker, process.cwd(), "normal-multidocument", physical);
+  const admission = e.epoch.root;
+  const snapshotFile = path.join(admission, "queue-state.json");
+  const snapshot = object(readJson(snapshotFile));
+  object(snapshot["jobs"])[f.job.id] = f.job;
+  durable(snapshotFile, snapshot);
+  for (const name of ["accepted", "admissions"])
+    fs.cpSync(path.join(f.broker, name), path.join(e.dir, name), {
+      recursive: true,
+    });
+  const directory = path.join(e.dir, "jobs", f.job.id);
+  fs.mkdirSync(directory, { recursive: true });
+  fs.copyFileSync(
+    path.join(f.directory, "request.json"),
+    path.join(directory, "request.json"),
+  );
+  writeObservation(e.dir, f.job, f.build, physical, "preflight");
+  const admissionIdentityFile = path.join(admission, "instance.json");
+  const staleIdentity: Record<string, unknown> = {
+    ...object(readJson(admissionIdentityFile)),
+    buildHash: "a".repeat(64),
+    instance: f.physical,
+  };
+  durable(admissionIdentityFile, staleIdentity);
+  const transition = path.join(
+    e.dir,
+    "physical-backend-transitions",
+    "stage-owner-runtime-upgrade",
+  );
+  fs.mkdirSync(transition, { recursive: true });
+  const identityFile = path.join(transition, "instance.json");
+  durable(identityFile, {
+    ...staleIdentity,
+    buildHash: f.build,
+    instance: physical,
+  });
+  const lineage = loadModule(
+    "../src/queue-epoch-lineage",
+  ) as typeof import("../src/queue-epoch-lineage");
+  const head = {
+    version: 1,
+    kind: "owner-bound-physical-backend-transition",
+    requestId: "stage-owner-runtime-upgrade",
+    ownerClientId: e.epoch.ownerClientId,
+    ownerTokenHash: e.epoch.ownerTokenHash,
+    epochId: e.epoch.epochId,
+    previousConfig: e.cfg,
+    nextConfig: e.cfg,
+    previousConfigHash: staleIdentity["configHash"],
+    nextConfigHash: staleIdentity["configHash"],
+    predecessor: [
+      admissionIdentityFile,
+      path.join(e.dir, "isolated-admission-epoch.json"),
+    ].map(lineage.reference),
+    observation: [e.epoch.qualificationReceipt],
+    identity: lineage.reference(identityFile),
+  };
+  const headFile = path.join(e.dir, "physical-backend-head.json");
+  durable(path.join(transition, "transition.json"), head);
+  durable(headFile, head);
+  const resolveIdentity = () => resolveStageBackendIdentity(e.dir, admission);
+  const ports = {
+    ...ownerPorts(e.dir, f.job.id, f.build),
+    admissionDirectory: () => admission,
+    backendIdentity: resolveIdentity,
+  };
+  return {
+    ...f,
+    broker: e.dir,
+    directory,
+    admission,
+    admissionIdentityFile,
+    identityFile,
+    headFile,
+    head,
+    ports,
+    resolveIdentity,
+  };
+}
+
+test("stage owner binds stale admission identity to the authenticated current physical head", (t) => {
+  const f = physicalHeadFixture(t);
+  assert.equal(f.resolveIdentity()?.buildHash, f.build);
+  const protectedFiles = [
+    f.admissionIdentityFile,
+    f.identityFile,
+    f.headFile,
+    path.join(path.dirname(f.identityFile), "transition.json"),
+    path.join(f.admission, "queue-state.json"),
+    path.join(f.broker, "queue-state.json"),
+    path.join(f.broker, "instance.json"),
+    path.join(f.broker, "isolated-admission-epoch.json"),
+  ];
+  const before = protectedFiles.map((file) => fs.readFileSync(file));
+  const owner = createAuthenticatedStageOwner(f.ports);
+  assert.equal(owner.owner.scope.build, f.build);
+  assert.equal(owner.job.id, f.job.id);
+  assert.deepEqual(
+    protectedFiles.map((file) => fs.readFileSync(file)),
+    before,
+  );
+});
+
+test("physical-head stage owner remains fail-closed on damaged or foreign evidence", async (t) => {
+  const cases: [string, (f: ReturnType<typeof physicalHeadFixture>) => void][] =
+    [
+      ["missing head", (f) => fs.unlinkSync(f.headFile)],
+      ["corrupt head", (f) => fs.writeFileSync(f.headFile, "{")],
+      ["missing immutable identity", (f) => fs.unlinkSync(f.identityFile)],
+      [
+        "predecessor bytes changed",
+        (f) => fs.appendFileSync(f.admissionIdentityFile, " "),
+      ],
+      [
+        "observation bytes changed",
+        (f) => fs.appendFileSync(present(f.head.observation[0]).path, " "),
+      ],
+      [
+        "corrupt epoch pointer",
+        (f) =>
+          fs.writeFileSync(
+            path.join(f.broker, "isolated-admission-epoch.json"),
+            "{",
+          ),
+      ],
+      [
+        "accepted input identity changed",
+        (f) => {
+          for (const name of fs.readdirSync(
+            path.join(f.broker, "admissions"),
+          )) {
+            const file = path.join(f.broker, "admissions", name);
+            durable(file, {
+              ...object(readJson(file)),
+              inputIdentity: "0".repeat(64),
+            });
+          }
+        },
+      ],
+      [
+        "head SDK identity mismatch",
+        (f) => {
+          durable(f.identityFile, {
+            ...object(readJson(f.identityFile)),
+            instance: f.physical,
+          });
+          const head = {
+            ...f.head,
+            identity: {
+              path: f.identityFile,
+              sha256: sha(fs.readFileSync(f.identityFile)),
+            },
+          };
+          durable(f.headFile, head);
+          durable(
+            path.join(path.dirname(f.identityFile), "transition.json"),
+            head,
+          );
+        },
+      ],
+      [
+        "head build mismatch",
+        (f) => {
+          durable(f.identityFile, {
+            ...object(readJson(f.identityFile)),
+            buildHash: "a".repeat(64),
+          });
+          const head = {
+            ...f.head,
+            identity: {
+              path: f.identityFile,
+              sha256: sha(fs.readFileSync(f.identityFile)),
+            },
+          };
+          durable(f.headFile, head);
+          durable(
+            path.join(path.dirname(f.identityFile), "transition.json"),
+            head,
+          );
+        },
+      ],
+      [
+        "identity reference hash",
+        (f) => fs.appendFileSync(f.identityFile, " "),
+      ],
+      [
+        "immutable transition mismatch",
+        (f) => durable(f.headFile, { ...f.head, requestId: "foreign" }),
+      ],
+      [
+        "foreign epoch",
+        (f) => {
+          const head = {
+            ...f.head,
+            epochId: "00000000-0000-0000-0000-000000000000",
+          };
+          durable(f.headFile, head);
+          durable(
+            path.join(path.dirname(f.identityFile), "transition.json"),
+            head,
+          );
+        },
+      ],
+      [
+        "foreign owner",
+        (f) => {
+          const head = { ...f.head, ownerClientId: "foreign-owner" };
+          durable(f.headFile, head);
+          durable(
+            path.join(path.dirname(f.identityFile), "transition.json"),
+            head,
+          );
+        },
+      ],
+      [
+        "configuration mismatch",
+        (f) => {
+          const identity = {
+            ...object(readJson(f.identityFile)),
+            configHash: "0".repeat(64),
+          };
+          durable(f.identityFile, identity);
+          const head = {
+            ...f.head,
+            identity: {
+              path: f.identityFile,
+              sha256: sha(fs.readFileSync(f.identityFile)),
+            },
+          };
+          durable(f.headFile, head);
+          durable(
+            path.join(path.dirname(f.identityFile), "transition.json"),
+            head,
+          );
+        },
+      ],
+      [
+        "foreign admission directory",
+        (f) => {
+          f.ports.admissionDirectory = () => f.broker;
+        },
+      ],
+      [
+        "owning request mismatch",
+        (f) => {
+          const file = path.join(f.directory, "request.json");
+          durable(file, { ...object(readJson(file)), id: "foreign-job" });
+        },
+      ],
+      [
+        "accepted bytes changed",
+        (f) => {
+          const file = path.join(
+            f.broker,
+            "accepted",
+            sha(fs.readFileSync(path.join(f.project, "accepted.json"))),
+          );
+          fs.writeFileSync(file, "foreign bytes");
+        },
+      ],
+      [
+        "SDK preflight identity mismatch",
+        (f) => {
+          const file = path.join(f.directory, "preflight-start.json");
+          durable(file, {
+            ...object(readJson(file)),
+            instance: { ...f.physical, pid: 987654 },
+          });
+        },
+      ],
+      [
+        "executable build mismatch",
+        (f) => {
+          f.ports.buildHash = () => "0".repeat(64);
+        },
+      ],
+    ];
+  for (const [name, damage] of cases) {
+    await t.test(name, (t) => {
+      const f = physicalHeadFixture(t);
+      assert.doesNotThrow(() => createAuthenticatedStageOwner(f.ports));
+      damage(f);
+      assert.throws(() => createAuthenticatedStageOwner(f.ports));
+    });
+  }
+});
+
+test("physical-head stage owner revalidates its authority before reporting readiness", (t) => {
+  const f = physicalHeadFixture(t);
+  const owner = createAuthenticatedStageOwner(f.ports);
+  fs.appendFileSync(f.identityFile, " ");
+  const readiness = present(owner.evidence.ownerReady)(owner.owner.scope);
+  assert.equal(readiness.ready, false);
+});
+
+test("production stage dependencies select the authenticated current physical head", async (t) => {
+  const f = physicalHeadFixture(t);
+  const dependencies = present(
+    await createAuthenticatedStageDependencies({
+      brokerDirectory: f.broker,
+      jobId: f.job.id,
+    }),
+  );
+  assert.equal(dependencies.owner.owner.scope.build, f.build);
+  assert.equal(dependencies.owner.job.id, f.job.id);
+});
 
 test("stage owner uses the trusted admission snapshot while retaining broker-root accepted bytes and job receipts", (t) => {
   const f = fixture(t, { seedStage: false });
@@ -1889,6 +2208,11 @@ test("changed build, incomplete/corrupt terminal receipts and foreign jobs canno
   finishLifecycle(f);
   f.ports.buildHash = () => sha("different-build");
   assert.equal(f.owner.resumePlan().status, "reconciliationRequired");
+  assert.throws(
+    () => createAuthenticatedStageOwner(f.ports),
+    /build\/instance/,
+  );
+  f.ports.buildHash = () => f.build;
   const receipt = path.join(
     f.directory,
     "remote-33333333-3333-4333-8333-333333333333.json",
