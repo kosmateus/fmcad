@@ -400,10 +400,13 @@ export function assertReceiptBoundDocumentInventory(
 ): void {
   const before = documentRows(beforeValue),
     current = documentRows(currentValue);
+  const admittedPeers = new Set<string>();
   for (const [creationId, proof] of proofs) {
     assert.equal(proof.document.creationId, creationId);
-    if (proof.state === "unsettled")
-      assert.fail("A peer fixture has no settled exact cleanup receipt");
+    // An unresolved historical fixture has no ownership exemption. If it was
+    // already present, the ordinary inventory comparison below protects it.
+    if (proof.state !== "open" && proof.state !== "closed") continue;
+    admittedPeers.add(creationId);
     const matches = current.filter(
       (document) => document["creationId"] === creationId,
     );
@@ -416,10 +419,14 @@ export function assertReceiptBoundDocumentInventory(
   }
   assert.deepEqual(
     stableDocuments(
-      current.filter((document) => !proofs.has(text(document["creationId"]))),
+      current.filter(
+        (document) => !admittedPeers.has(text(document["creationId"])),
+      ),
     ),
     stableDocuments(
-      before.filter((document) => !proofs.has(text(document["creationId"]))),
+      before.filter(
+        (document) => !admittedPeers.has(text(document["creationId"])),
+      ),
     ),
     message,
   );

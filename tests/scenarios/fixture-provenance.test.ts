@@ -609,6 +609,108 @@ test("a peer may disappear only after its exact settled close receipt", (t) => {
   );
 });
 
+test("an unresolved held fixture is protected as baseline, never admitted as a peer", (t) => {
+  const fixture = reportFixture(t),
+    index = JSON.parse(fs.readFileSync(fixture.indexFile, "utf8")) as Record<
+      string,
+      unknown
+    >,
+    requests = fixture.report["requests"] as Record<string, unknown>[],
+    failedRequestId = fixture.identity.clientId + ":4",
+    user = {
+      creationId: "user-sentinel",
+      name: "User design",
+      saved: false,
+      modified: false,
+      fileId: null,
+    },
+    held = {
+      ...fixture.document,
+      saved: false,
+      modified: false,
+      fileId: null,
+    },
+    baseline = [user, held];
+  requests.push({
+    requestId: failedRequestId,
+    phase: "cad-attribute-4-shape.box",
+    intent: { kind: "cad-fenced", operation: "shape.box" },
+    result: {
+      requestId: failedRequestId,
+      state: "failed",
+      sdkSettled: true,
+      mayHaveMutated: false,
+      error: "PYTHON_CHECK_REJECTED before SDK submission",
+      brokerReceipt: {
+        requestId: failedRequestId,
+        clientId: fixture.identity.clientId,
+        jobId: randomUUID(),
+        state: "failed",
+      },
+    },
+  });
+  fixture.report["status"] = "failed";
+  fixture.report["cleanup"] = "deferred";
+  (fixture.report as Record<string, unknown>)["cleanupHold"] = {
+    requestId: failedRequestId,
+    reason: "A local static check failed before SDK submission",
+  };
+  index["status"] = "failed";
+  index["processIdentity"] = {
+    pid: 2_147_483_647,
+    birth: "dead-held-producer:0",
+  };
+  fs.writeFileSync(fixture.indexFile, JSON.stringify(index));
+  fs.writeFileSync(fixture.reportFile, JSON.stringify(fixture.report));
+
+  const proofs = discoverOwnedUnsavedFixtureProofs(fixture.root, backend);
+  assert.equal(proofs.get(fixture.document.creationId)?.state, "unsettled");
+  assert.equal(
+    discoverOwnedUnsavedFixtures(fixture.root, backend).has(
+      fixture.document.creationId,
+    ),
+    false,
+  );
+  assert.doesNotThrow(() =>
+    assertReceiptBoundDocumentInventory(
+      baseline,
+      baseline,
+      proofs,
+      "held baseline changed",
+    ),
+  );
+  assert.throws(
+    () =>
+      assertReceiptBoundDocumentInventory(
+        baseline,
+        [user, { ...held, modified: true }],
+        proofs,
+        "held baseline changed",
+      ),
+    /held baseline changed/u,
+  );
+  assert.throws(
+    () =>
+      assertReceiptBoundDocumentInventory(
+        baseline,
+        [user],
+        proofs,
+        "held baseline disappeared without settled cleanup proof",
+      ),
+    /held baseline disappeared without settled cleanup proof/u,
+  );
+  assert.throws(
+    () =>
+      assertReceiptBoundDocumentInventory(
+        [user],
+        [user, held],
+        proofs,
+        "unproven non-baseline fixture appeared",
+      ),
+    /unproven non-baseline fixture appeared/u,
+  );
+});
+
 test("live thread guard selects the exact owned identity, not a same-named document", () => {
   const owned = { creationId: "owned-id", name: "Thread fixture" };
   const inventory = [
