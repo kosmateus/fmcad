@@ -101,15 +101,19 @@ export class NativeProbe {
         this.runtimePrelude +
         "\n" +
         program(`import adsk.core, adsk.fusion, json, os, tempfile, struct, zlib, hashlib, math, builtins
+from typing import Protocol, cast
+class _NativePrintFile(Protocol):
+    def write(self, value: str, /) -> object: ...
+    def flush(self) -> object: ...
 app = adsk.core.Application.get()
 matches = [d for d in app.documents if d.creationId == ${JSON.stringify(this.session.document.creationId)} and d.name == ${JSON.stringify(this.name)}]
 assert len(matches) == 1 and app.activeDocument == matches[0] and not matches[0].isSaved and matches[0].dataFile is None, 'Owned active unsaved fixture guard failed'
-def print(*values, **options):
+def print(*values: object, sep: str | None = ' ', end: str | None = '\\n', file: _NativePrintFile | None = None, flush: bool = False) -> None:
     if len(values) == 1 and isinstance(values[0], str) and values[0].startswith(${JSON.stringify(this.marker)}):
-        value = json.loads(values[0][${this.marker.length}:])
+        value = cast(object, json.loads(values[0][${this.marker.length}:]))
         builtins.print('FMCAD_SCENARIO ' + json.dumps(dict(creationId=${JSON.stringify(this.session.document.creationId)}, result=value)))
     else:
-        builtins.print(*values, **options)
+        builtins.print(*values, sep=sep, end=end, file=file, flush=flush)
 ${scoped}`)
       );
     };
@@ -165,26 +169,31 @@ ${scoped}`)
       instrumentation(original) +
       `
 import builtins
+from typing import Protocol, cast as _native_cast
+class _NativePrintFile(Protocol):
+    def write(self, value: str, /) -> object: ...
+    def flush(self) -> object: ...
 _native_case_run = run
-_native_case_results, _native_case_observations = [], []
-def print(*values, **options):
+_native_case_results, _native_case_observations = list[object](), list[object]()
+def print(*values: object, sep: str | None = ' ', end: str | None = '\\n', file: _NativePrintFile | None = None, flush: bool = False) -> None:
     if len(values) == 1 and isinstance(values[0], str) and values[0].startswith('FMCAD_RESULT '):
-        _native_case_results.append(json.loads(values[0][len('FMCAD_RESULT '):]))
+        _native_case_results.append(_native_cast(object, json.loads(values[0][len('FMCAD_RESULT '):])))
     elif len(values) == 1 and isinstance(values[0], str) and values[0].startswith(${JSON.stringify(observationsPrefix)}):
-        _native_case_observations.append(json.loads(values[0][${observationsPrefix.length}:]))
+        _native_case_observations.append(_native_cast(object, json.loads(values[0][${observationsPrefix.length}:])))
     else:
-        builtins.print(*values, **options)
-def run(context):
+        builtins.print(*values, sep=sep, end=end, file=file, flush=flush)
+def _native_case_envelope(_context: str) -> None:
     app = adsk.core.Application.get()
     matches = [d for d in app.documents if d.creationId == ${JSON.stringify(this.session.document.creationId)} and d.name == ${JSON.stringify(this.name)}]
     assert len(matches) == 1 and app.activeDocument == matches[0] and not matches[0].isSaved and matches[0].dataFile is None, 'Owned active unsaved fixture guard failed'
     assert app.userInterface.activeCommand in ('', 'SelectCommand'), 'Interactive command open'
     error, error_type = None, None
     try:
-        _native_case_run(context)
+        _native_case_run(_context)
     except BaseException as exc:
         error, error_type = str(exc), type(exc).__name__
     builtins.print('FMCAD_SCENARIO ' + json.dumps(dict(creationId=${JSON.stringify(this.session.document.creationId)}, results=_native_case_results, observations=_native_case_observations, error=error, errorType=error_type), allow_nan=False))
+run = _native_case_envelope
 `;
     const value = await this.session.execute(
       phase,
