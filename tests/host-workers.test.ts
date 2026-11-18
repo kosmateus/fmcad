@@ -44,6 +44,34 @@ const plan: import("@fmcad/core").LocalWorkerPlan = {
   request: {},
 };
 
+function stoppedProcess(stat: string): boolean {
+  try {
+    return text(fs.readFileSync(stat, "utf8").split(") ")[1]).startsWith("Z");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT")
+      return true;
+    throw error;
+  }
+}
+
+test("process observation accepts a proc entry disappearing after its existence check", (t) => {
+  const root = fs.mkdtempSync(path.join(tmpdir(), "fmcad-proc-race-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const missing = path.join(root, "exited-stat");
+  const exists = fs.existsSync;
+  t.mock.method(
+    fs,
+    "existsSync",
+    (file: fs.PathLike) => file === missing || exists(file),
+  );
+  assert.equal(stoppedProcess(missing), true);
+  assert.equal(stoppedProcess(`/proc/${process.pid}/stat`), false);
+  const zombie = path.join(root, "zombie-stat");
+  fs.writeFileSync(zombie, "123 (owned worker) Z 1 0\n");
+  assert.equal(stoppedProcess(zombie), true);
+  assert.throws(() => stoppedProcess(root), { code: "EISDIR" });
+});
+
 for (const output of [
   "",
   "{} {}",
@@ -104,18 +132,9 @@ test("deadline and output limit stop owned process group, never an unrelated sen
   const pid = Number(fs.readFileSync(pidfile, "utf8"));
   const stat = `/proc/${pid}/stat`;
   // The host init may retain a killed orphan zombie; it must not execute.
-  for (
-    let i = 0;
-    i < 50 &&
-    fs.existsSync(stat) &&
-    !text(fs.readFileSync(stat, "utf8").split(") ")[1]).startsWith("Z");
-    i++
-  )
+  for (let i = 0; i < 50 && !stoppedProcess(stat); i++)
     await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.ok(
-    !fs.existsSync(stat) ||
-      text(fs.readFileSync(stat, "utf8").split(") ")[1]).startsWith("Z"),
-  );
+  assert.ok(stoppedProcess(stat));
   assert.equal(sentinel.exitCode, null);
   await assert.rejects(
     fixture(t, 'print("x"*10000)', { maxOutputBytes: 100 }).run(plan),
