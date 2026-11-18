@@ -12,6 +12,9 @@ import { discoverOwnedUnsavedFixtureProofs } from "./fixture-provenance";
 
 for (const mode of [
   "create",
+  "initial-create",
+  "initial-close",
+  "refresh-create",
   "create-ten",
   "churn-ten",
   "close",
@@ -25,8 +28,11 @@ for (const mode of [
 ] as const) {
   test(`independent runner inventory admission: ${mode}`, async (t) => {
     const { backend, directory, model } = await fixture(t, "addin");
-    const closing = mode === "close" || mode === "close-without-proof";
-    if (mode === "baseline-change") {
+    const closing =
+      mode === "close" ||
+      mode === "close-without-proof" ||
+      mode === "initial-close";
+    if (mode === "baseline-change" || mode === "initial-close") {
       const created = await model.execute(
         programs.program(
           "import adsk.core\ndoc = adsk.core.Application.get().documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)\ndoc.name = 'UserBaseline'",
@@ -34,7 +40,12 @@ for (const mode of [
       );
       assert.equal(created.success, true);
     }
-    const peerCount = mode === "create-ten" || mode === "churn-ten" ? 10 : 1;
+    const peerCount =
+      mode === "create-ten" || mode === "churn-ten"
+        ? 10
+        : mode === "refresh-create"
+          ? 2
+          : 1;
     const children = [
       "writer",
       ...Array.from({ length: peerCount }, (_, i) => "peer-" + i),
@@ -73,7 +84,20 @@ for (const mode of [
       peerClosed = resolve;
     });
     let firstCad = true;
+    let laterPeerReady: () => void = () => {};
+    const laterReady = new Promise<void>((resolve) => {
+      laterPeerReady = resolve;
+    });
     const cadRequestIds: string[] = [];
+    const releasedChildren = new Set<(typeof children)[number]>();
+    const completedChildren = new Set<(typeof children)[number]>();
+    const releaseChild = (child: (typeof children)[number]) => {
+      if (releasedChildren.has(child) || completedChildren.has(child)) return;
+      releasedChildren.add(child);
+      child.send({ type: "release" }, (error) => {
+        if (error) child.emit("error", error);
+      });
+    };
     const results = children.map(
       (child) =>
         new Promise<ScenarioReport[]>((resolve, reject) => {
@@ -95,20 +119,23 @@ for (const mode of [
               if (message.type === "error") reject(new Error(message.error));
               if (message.type === "peer-ready") {
                 ready++;
+                if (mode === "refresh-create") {
+                  if (ready === 1) releaseCad();
+                  if (ready === 2) laterPeerReady();
+                }
                 if (ready === peerCount) {
                   if (closing) writer.send({ type: "start" });
                   else if (mode === "churn-ten")
-                    for (const p of peers.slice(0, 5))
-                      p.send({ type: "release" });
+                    for (const p of peers.slice(0, 5)) releaseChild(p);
                   else releaseCad();
                 }
               }
               if (message.type === "mutated") {
-                writer.send({ type: "release" });
-                for (const p of peers)
-                  if (p.connected) p.send({ type: "release" });
+                releaseChild(writer);
+                for (const p of peers) releaseChild(p);
               }
               if (message.type === "done") {
+                completedChildren.add(child);
                 if (
                   mode === "churn-ten" &&
                   peers.slice(0, 5).includes(child) &&
@@ -116,9 +143,7 @@ for (const mode of [
                 )
                   releaseCad();
                 // Release the peer even on RED so the test never leaves a waiting process.
-                if (child === writer)
-                  for (const p of peers)
-                    if (p.connected) p.send({ type: "release" });
+                if (child === writer) for (const p of peers) releaseChild(p);
                 if (child === peer) {
                   if (mode === "close-without-proof") {
                     const filename = path.join(
@@ -167,8 +192,12 @@ for (const mode of [
                     cadRequestIds.push(request.requestId);
                     if (firstCad) {
                       firstCad = false;
-                      for (const p of peers)
-                        p.send({ type: closing ? "release" : "start" });
+                      if (mode !== "initial-create" && mode !== "initial-close")
+                        for (const p of mode === "refresh-create"
+                          ? peers.slice(0, 1)
+                          : peers)
+                          if (closing) releaseChild(p);
+                          else p.send({ type: "start" });
                       await peerReady;
                       if (mode === "unproven") {
                         await backend.execute({
@@ -188,11 +217,47 @@ for (const mode of [
                         );
                       }
                     } else if (mode === "second-change") {
-                      peer.send({ type: "release" });
+                      releaseChild(peer);
                       await closed;
                     }
                   }
+                  if (
+                    mode === "initial-close" &&
+                    child === writer &&
+                    request.requestId.endsWith(":coordinator:before")
+                  ) {
+                    await model.execute(
+                      programs.program(
+                        "import adsk.core\nnext(d for d in adsk.core.Application.get().documents if d.name == 'UserBaseline').activate()",
+                      ),
+                    );
+                  }
                   const result = await backend.execute(request);
+                  if (
+                    mode === "initial-close" &&
+                    child === writer &&
+                    request.requestId.endsWith(":coordinator:before")
+                  ) {
+                    releaseChild(peer);
+                    await closed;
+                  }
+                  if (
+                    mode === "refresh-create" &&
+                    child === writer &&
+                    request.helpers &&
+                    cadRequestIds.length === 1
+                  ) {
+                    peers[1]!.send({ type: "start" });
+                    await laterReady;
+                  }
+                  if (
+                    mode === "initial-create" &&
+                    child === writer &&
+                    request.requestId.endsWith(":coordinator:before")
+                  ) {
+                    peer.send({ type: "start" });
+                    await peerReady;
+                  }
                   let stdout = result.stdout;
                   if (request.helpers && cadRequestIds.length === 1) {
                     if (mode === "partial-helper")
@@ -233,9 +298,15 @@ for (const mode of [
     if (closing) peer.send({ type: "start" });
     else writer.send({ type: "start" });
     const [writerReports] = await Promise.all(results);
-    const positive = ["create", "create-ten", "churn-ten", "close"].includes(
-      mode,
-    );
+    const positive = [
+      "create",
+      "initial-create",
+      "initial-close",
+      "refresh-create",
+      "create-ten",
+      "churn-ten",
+      "close",
+    ].includes(mode);
     assert.equal(
       writerReports?.[0]?.status,
       positive ? "passed" : "failed",
@@ -243,11 +314,14 @@ for (const mode of [
     );
     assert.equal(
       cadRequestIds.length,
-      positive || mode === "second-change" ? 2 : 1,
+      (positive && mode !== "initial-create" && mode !== "initial-close") ||
+        mode === "second-change"
+        ? 2
+        : 1,
     );
     assert.equal(new Set(cadRequestIds).size, cadRequestIds.length);
     if (positive) assert.equal(writerReports?.[0]?.cleanup, "complete");
-    if (positive) {
+    if (positive && mode !== "initial-create" && mode !== "initial-close") {
       const cad = writerReports![0]!.requests.filter((entry) =>
         entry.phase.startsWith("cad-"),
       );
