@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { createRequire } from "node:module";
 import type { Scenario } from "./runner";
 import { record, text } from "./contracts";
 import { concurrencyLimit } from "./scheduling";
@@ -12,13 +11,117 @@ import {
   nativeResultUncertain,
   values,
 } from "./native-modeling-support";
-const root = path.resolve(__dirname, "../../..");
-const { validateCad } = createRequire(path.join(root, "package.json"))(
-  "./src/cad",
-) as typeof import("../../src/composition/cad-execution");
 export const nativeFeatureModesCapability = "native-feature-modes-addin";
 const py = (value: unknown): string =>
   `json.loads(${JSON.stringify(JSON.stringify(value))})`;
+export function featureModeProbeSource(
+  identity: { name: string; creationId: string },
+  foreign: readonly unknown[],
+  body: string,
+): string {
+  return program(
+    `import adsk.core, adsk.fusion, json, math
+app = adsk.core.Application.get()
+def documents():
+    return sorted([dict(name=d.name, creationId=d.creationId, saved=d.isSaved, modified=d.isModified) for d in app.documents], key=lambda d: d['creationId'])
+matches = [d for d in app.documents if d.creationId == ${JSON.stringify(identity.creationId)} and d.name == ${JSON.stringify(identity.name)}]
+assert len(matches) == 1 and not matches[0].isSaved and matches[0].dataFile is None and app.activeDocument == matches[0], 'Owned active unsaved document guard failed'
+doc = matches[0]
+assert [d for d in documents() if d['creationId'] != doc.creationId] == ${py(foreign)}, 'Other document state changed'
+${body}`,
+    `from typing import TypeAlias
+_FeatureJsonValue: TypeAlias = None | bool | int | float | str | list['_FeatureJsonValue'] | dict[str, '_FeatureJsonValue']`,
+  );
+}
+export function featureModeLineProbe(entity: unknown): string {
+  return `from typing import Callable, cast
+e = cast(Callable[[object], adsk.fusion.SketchLine | None], adsk.fusion.SketchLine.cast)(FMCAD.resolve(cast('str | dict[str, _FeatureJsonValue]', ${py(entity)})))
+assert e is not None, 'Expected the owned sketch line'
+${emit("dict(creationId=doc.creationId, result=[ [p.x * 10, p.y * 10, p.z * 10] for p in (e.startSketchPoint.worldGeometry, e.endSketchPoint.worldGeometry) ])")}`;
+}
+export function featureModePropertiesProbe(
+  feature: unknown,
+  mode: string,
+): string {
+  return `from typing import Callable, cast
+feature = cast(Callable[[object], adsk.fusion.Feature | None], adsk.fusion.Feature.cast)(FMCAD.resolve(cast('str | dict[str, _FeatureJsonValue]', ${py(feature)})))
+assert feature is not None, 'Expected the owned feature'
+r: dict[str, object] = dict(name=feature.name, type=feature.objectType, health=int(cast(int, feature.healthState)), message=feature.errorOrWarningMessage, token=feature.entityToken)
+mode = ${JSON.stringify(mode)}
+if mode == 'extrude':
+    extrude = cast(Callable[[object], adsk.fusion.ExtrudeFeature | None], adsk.fusion.ExtrudeFeature.cast)(feature)
+    assert extrude is not None
+    r['extentType'] = extrude.extentOne.objectType
+    r['startType'] = extrude.startExtent.objectType
+    to_entity = cast(Callable[[object], adsk.fusion.ToEntityExtentDefinition | None], adsk.fusion.ToEntityExtentDefinition.cast)(extrude.extentOne)
+    if to_entity is not None:
+        target = cast(Callable[[object], adsk.fusion.ConstructionPlane | None], adsk.fusion.ConstructionPlane.cast)(to_entity.entity)
+        assert target is not None, 'Expected the declared target construction plane'
+        r['target'] = dict(kind='plane', name=target.name, token=target.entityToken)
+        offset = cast(Callable[[object], adsk.fusion.ModelParameter | None], adsk.fusion.ModelParameter.cast)(to_entity.offset)
+        assert offset is not None, 'Expected the created feature offset parameter'
+        r['offset'] = offset.expression
+    start = cast(Callable[[object], adsk.fusion.OffsetStartDefinition | None], adsk.fusion.OffsetStartDefinition.cast)(extrude.startExtent)
+    if start is not None:
+        start_offset = cast(Callable[[object], adsk.fusion.ModelParameter | None], adsk.fusion.ModelParameter.cast)(start.offset)
+        assert start_offset is not None, 'Expected the created feature start parameter'
+        r['startOffset'] = start_offset.expression
+elif mode == 'hole':
+    hole = cast(Callable[[object], adsk.fusion.HoleFeature | None], adsk.fusion.HoleFeature.cast)(feature)
+    assert hole is not None
+    r['extentType'] = hole.extentDefinition.objectType
+    r['defaultDirection'] = hole.isDefaultDirection
+    r['diameter'] = hole.holeDiameter.expression
+    r['direction'] = [hole.direction.x, hole.direction.y, hole.direction.z]
+    r['holeType'] = int(cast(int, hole.holeType))
+    r['parameters'] = [dict(name=p.name, expression=p.expression, value=p.value, unit=p.unit) for p in FMCAD.design.allParameters if getattr(p, 'createdBy', None) == hole]
+    cylinders: list[dict[str, float]] = []
+    for body in hole.bodies:
+        for face in body.faces:
+            cylinder = cast(Callable[[object], adsk.core.Cylinder | None], adsk.core.Cylinder.cast)(face.geometry)
+            if cylinder is not None:
+                box = face.boundingBox
+                cylinders.append(dict(radiusMm=cylinder.radius * 10, minZMm=box.minPoint.z * 10, maxZMm=box.maxPoint.z * 10))
+    r['cylinders'] = cylinders
+elif mode == 'sweep':
+    sweep = cast(Callable[[object], adsk.fusion.SweepFeature | None], adsk.fusion.SweepFeature.cast)(feature)
+    assert sweep is not None
+    r['orientation'] = int(cast(int, sweep.orientation))
+    r['parallelEnum'] = int(adsk.fusion.SweepOrientationTypes.ParallelOrientationType)
+    r['perpendicularEnum'] = int(adsk.fusion.SweepOrientationTypes.PerpendicularOrientationType)
+elif mode == 'sweepRail':
+    rail = cast(Callable[[object], adsk.fusion.SweepFeature | None], adsk.fusion.SweepFeature.cast)(feature)
+    assert rail is not None
+    r['profileScaling'] = int(cast(int, rail.profileScaling))
+    r['scaleEnum'] = int(adsk.fusion.SweepProfileScalingOptions.SweepProfileScaleOption)
+    r['inspectionGap'] = 'guideRail getter requires timeline rollback; orientation getter is inapplicable. Neither is read by this read-only probe. Guide effect verified by separate scaling geometry test.'
+elif mode == 'loft':
+    loft = cast(Callable[[object], adsk.fusion.LoftFeature | None], adsk.fusion.LoftFeature.cast)(feature)
+    assert loft is not None
+    r['guideCount'] = loft.centerLineOrRails.count
+    r['isCenterLine'] = loft.centerLineOrRails.isCenterLine
+${emit("dict(creationId=doc.creationId, result=r)")}`;
+}
+export function featureModeHoleInputProbe(
+  point: unknown,
+  component: string,
+): string {
+  return `from typing import Callable, cast
+p = cast(Callable[[object], adsk.fusion.SketchPoint | None], adsk.fusion.SketchPoint.cast)(FMCAD.resolve(cast('str | dict[str, _FeatureJsonValue]', ${py(point)})))
+assert p is not None, 'Expected the owned sketch point'
+component = cast(Callable[[object], adsk.fusion.Component | None], adsk.fusion.Component.cast)(FMCAD.resolve(cast(str, ${py(component)}), 'component'))
+assert component is not None
+rows: list[dict[str, object]] = []
+for direction in [adsk.fusion.ExtentDirections.NegativeExtentDirection, adsk.fusion.ExtentDirections.PositiveExtentDirection]:
+    inp = component.features.holeFeatures.createSimpleInput(adsk.core.ValueInput.createByString('4 mm'))
+    assert inp is not None
+    assert inp.setPositionBySketchPoints(FMCAD.collection([p]))
+    row: dict[str, object] = dict(directionEnum=int(direction), before=inp.isDefaultDirection)
+    assert inp.setAllExtent(cast(adsk.fusion.ExtentDirections, direction))
+    row['after'] = inp.isDefaultDirection
+    rows.append(row)
+${emit("dict(creationId=doc.creationId, result=dict(inputs=rows, point=[p.worldGeometry.x * 10, p.worldGeometry.y * 10, p.worldGeometry.z * 10]))")}`;
+}
 interface Metric {
   label: string;
   actual: unknown;
@@ -80,7 +183,6 @@ export function nativeFeatureModesScenarios(owners = 10): Scenario[] {
         [],
       );
       const { identity, baseline } = harness;
-      const name = identity.name;
       const foreign = values(baseline["documents"])
         .map(record)
         .map((doc) => ({
@@ -90,22 +192,11 @@ export function nativeFeatureModesScenarios(owners = 10): Scenario[] {
           modified: doc["modified"],
         }))
         .sort((a, b) => text(a.creationId).localeCompare(text(b.creationId)));
-      const cadDir = path.join(root, "assets/cad");
-      const files = [
-        "core.py",
-        ...fs
-          .readdirSync(cadDir)
-          .filter((f) => f.endsWith(".py") && f !== "core.py")
-          .sort(),
-      ];
-      const bundle = files
-        .map((f) => fs.readFileSync(path.join(cadDir, f), "utf8"))
-        .join("\n\n");
       const report = {
         retainedSource: "tests/live-feature-modes.js",
         owner: session.report.owner,
         identity,
-        bundleSha256: createHash("sha256").update(bundle).digest("hex"),
+        preparation: "canonical public CAD and selected runtime probes",
         tolerances: {
           lengthMm: 0.001,
           volumeAbsoluteMm3: 0.001,
@@ -127,25 +218,13 @@ export function nativeFeatureModesScenarios(owners = 10): Scenario[] {
         status: "running",
         metrics: [],
       };
-      const output = (value: string): string =>
-        emit(`dict(creationId=doc.creationId, result=${value})`);
       async function script(
         label: string,
         body: string,
         options: ScriptOptions = {},
       ): Promise<unknown> {
         await harness.guard();
-        const guard = `import adsk.core, adsk.fusion, json, math
-app = adsk.core.Application.get()
-def documents():
-    return sorted([dict(name=d.name, creationId=d.creationId, saved=d.isSaved, modified=d.isModified) for d in app.documents], key=lambda d: d['creationId'])
-matches = [d for d in app.documents if d.creationId == ${JSON.stringify(identity.creationId)} and d.name == ${JSON.stringify(name)}]
-assert len(matches) == 1 and not matches[0].isSaved and matches[0].dataFile is None and app.activeDocument == matches[0], 'Owned active unsaved document guard failed'
-doc = matches[0]
-assert [d for d in documents() if d['creationId'] != doc.creationId] == ${py(foreign)}, 'Other document state changed'
-`;
-        const source =
-          (options.cadBundle ? bundle + "\n\n" : "") + program(guard + body);
+        const source = featureModeProbeSource(identity, foreign, body);
         const row: Record<string, unknown> = {
           label,
           test: current.name,
@@ -158,6 +237,8 @@ assert [d for d in documents() if d['creationId'] != doc.creationId] == ${py(for
         const result = await session.execute(
           "feature-mode-" + sequence++ + "-" + label,
           source,
+          session.document,
+          options.cadBundle ? "cad-v1" : undefined,
         );
         if (nativeResultUncertain(result))
           session.deferCleanup(
@@ -172,21 +253,18 @@ assert [d for d in documents() if d['creationId'] != doc.creationId] == ${py(for
         data: Record<string, unknown> = {},
         scope = component,
       ): Promise<Record<string, unknown>> {
-        const entry = validateCad(operation, data);
-        const result = record(
-          await script(
-            operation,
-            `ctx = CadContext(${JSON.stringify(name)}, ${py(scope)})
-result = ctx.call(${JSON.stringify(operation)}, ${py(data)})
-${output("dict(result=_cad_json(result), created=ctx.created)")}`,
-            {
-              mutation: !entry.readOnly,
-              cadBundle: true,
-              request: { operation, data, component: scope },
-            },
-          ),
-        );
-        return record(result["result"]);
+        const row: Record<string, unknown> = {
+          label: operation,
+          test: current.name,
+          request: { operation, data, component: scope },
+          preparation: "public-cad",
+        };
+        report.probes.push(row);
+        persist();
+        const result = await harness.cad(operation, data, scope);
+        row["result"] = result;
+        persist();
+        return result;
       }
       function near(
         actual: unknown,
@@ -351,13 +429,9 @@ ${output("dict(result=_cad_json(result), created=ctx.created)")}`,
           "path",
         );
         const ends = values(
-          await script(
-            "native-line-endpoints",
-            `ctx = CadContext(${JSON.stringify(name)}, ${py(component)})
-e = ctx.resolve(${py(entity)})
-${output("[ [p.x * 10, p.y * 10, p.z * 10] for p in (e.startSketchPoint.worldGeometry, e.endSketchPoint.worldGeometry) ]")}`,
-            { cadBundle: true },
-          ),
+          await script("native-line-endpoints", featureModeLineProbe(entity), {
+            cadBundle: true,
+          }),
         );
         assert.equal(
           values(ends[0]).length,
@@ -384,44 +458,7 @@ ${output("[ [p.x * 10, p.y * 10, p.z * 10] for p in (e.startSketchPoint.worldGeo
         const result = record(
           await script(
             "native-feature-properties",
-            `ctx = CadContext(${JSON.stringify(name)}, ${py(component)})
-f = ctx.resolve(${py(feature)})
-r = dict(name=f.name, type=f.objectType, health=int(f.healthState), message=f.errorOrWarningMessage, token=f.entityToken)
-mode = ${JSON.stringify(mode)}
-if mode == 'extrude':
-    r['extentType'] = f.extentOne.objectType
-    r['startType'] = f.startExtent.objectType
-    if adsk.fusion.ToEntityExtentDefinition.cast(f.extentOne):
-        r['target'] = ctx.ref(f.extentOne.entity)
-        r['offset'] = f.extentOne.offset.expression
-    if adsk.fusion.OffsetStartDefinition.cast(f.startExtent):
-        r['startOffset'] = f.startExtent.offset.expression
-elif mode == 'hole':
-    r['extentType'] = f.extentDefinition.objectType
-    r['defaultDirection'] = f.isDefaultDirection
-    r['diameter'] = f.holeDiameter.expression
-    r['direction'] = [f.direction.x, f.direction.y, f.direction.z]
-    r['holeType'] = int(f.holeType)
-    r['parameters'] = [dict(name=p.name, expression=p.expression, value=p.value, unit=p.unit) for p in ctx.design.allParameters if getattr(p, 'createdBy', None) == f]
-    r['cylinders'] = []
-    for body in f.bodies:
-        for face in body.faces:
-            cylinder = adsk.core.Cylinder.cast(face.geometry)
-            if cylinder:
-                box = face.boundingBox
-                r['cylinders'].append(dict(radiusMm=cylinder.radius * 10, minZMm=box.minPoint.z * 10, maxZMm=box.maxPoint.z * 10))
-elif mode == 'sweep':
-    r['orientation'] = int(f.orientation)
-    r['parallelEnum'] = int(adsk.fusion.SweepOrientationTypes.ParallelOrientationType)
-    r['perpendicularEnum'] = int(adsk.fusion.SweepOrientationTypes.PerpendicularOrientationType)
-elif mode == 'sweepRail':
-    r['profileScaling'] = int(f.profileScaling)
-    r['scaleEnum'] = int(adsk.fusion.SweepProfileScalingOptions.SweepProfileScaleOption)
-    r['inspectionGap'] = 'guideRail getter requires timeline rollback; orientation getter is inapplicable. Neither is read by this read-only probe. Guide effect verified by separate scaling geometry test.'
-elif mode == 'loft':
-    r['guideCount'] = f.centerLineOrRails.count
-    r['isCenterLine'] = f.centerLineOrRails.isCenterLine
-${output("r")}`,
+            featureModePropertiesProbe(feature, mode),
             { cadBundle: true, request: { feature, mode } },
           ),
         );
@@ -560,17 +597,7 @@ ${output("r")}`,
           if (extent === "throughAll")
             await script(
               "hole-native-input-direction-diagnostic",
-              `ctx = CadContext(${JSON.stringify(name)}, ${py(component)})
-p = ctx.resolve(${py(points.entities[0])})
-rows = []
-for direction in [adsk.fusion.ExtentDirections.NegativeExtentDirection, adsk.fusion.ExtentDirections.PositiveExtentDirection]:
-    inp = ctx.component.features.holeFeatures.createSimpleInput(adsk.core.ValueInput.createByString('4 mm'))
-    assert inp.setPositionBySketchPoints(ctx.collection([p]))
-    row = dict(directionEnum=int(direction), before=inp.isDefaultDirection)
-    assert inp.setAllExtent(direction)
-    row['after'] = inp.isDefaultDirection
-    rows.append(row)
-${output("dict(inputs=rows, point=[p.worldGeometry.x * 10, p.worldGeometry.y * 10, p.worldGeometry.z * 10])")}`,
+              featureModeHoleInputProbe(points.entities[0], component),
               { cadBundle: true },
             );
           const made = await cad("model.hole", {
