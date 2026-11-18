@@ -100,6 +100,14 @@ function writeSyntheticReceipt(script, root, instance) {
           terminal: true,
           outcome: "succeeded",
           instance,
+          ...(source.includes("FMCAD_QUEUE_INSTANCE")
+            ? {
+                probeObservation: {
+                  schema: "fmcad-instance-probe-v1",
+                  identity: instance,
+                },
+              }
+            : {}),
         }),
         { mode: 0o600 },
       );
