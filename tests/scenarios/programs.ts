@@ -119,7 +119,6 @@ doc = matches[0]
 assert doc.name == ${quoted(document.name)}, 'Owned document identity changed'
 assert sum(d.name == ${quoted(document.name)} for d in app.documents) == 1, 'Ambiguous owned name'
 assert not doc.isSaved and doc.dataFile is None, 'Owned fixture unexpectedly became saved'
-assert app.activeDocument is not None and app.activeDocument.creationId == doc.creationId, 'Fixture is not active'
 ${emit("dict(creationId=doc.creationId, active=app.activeDocument.creationId, documents=[dict(creationId=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified,fileId=d.dataFile.id if d.dataFile else None) for d in app.documents])")}`);
 }
 export function restoreActive(creationId: string): string {

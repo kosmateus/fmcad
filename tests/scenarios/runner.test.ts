@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { fork } from "node:child_process";
 import type { createBrokerTransport } from "../../packages/node-adapters/src/fusion-transport/broker";
 import type { ScenarioBackend, Document } from "./contracts";
 import { simulatorEndpoint } from "./simulator";
@@ -89,6 +90,120 @@ doc.name = 'USER_SENTINEL'`),
     assert.deepEqual(await remaining(model), before);
   },
 );
+test("independent runner processes clean their own receipt-proven fixtures", async (t) => {
+  const parent = path.join(root, ".test-artifacts/scenario-unit");
+  fs.mkdirSync(parent, { recursive: true });
+  const directory = fs.mkdtempSync(path.join(parent, "parallel-processes-")),
+    output = path.join(directory, "runs"),
+    ready = path.join(directory, "ready"),
+    state = path.join(directory, "inventory.json"),
+    sentinel = {
+      creationId: "user-sentinel",
+      name: "User design",
+      saved: false,
+      modified: false,
+      fileId: null,
+    };
+  fs.mkdirSync(ready);
+  fs.writeFileSync(
+    state,
+    JSON.stringify({ active: sentinel.creationId, documents: [sentinel] }),
+    { mode: 0o600 },
+  );
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+
+  const start = (tag: string, peer: string) => {
+    const child = fork(path.join(__dirname, "parallel-runner-worker.js"), [], {
+      execArgv: [],
+      env: {
+        ...process.env,
+        PARALLEL_ROOT: output,
+        PARALLEL_READY_ROOT: ready,
+        PARALLEL_STATE: state,
+        PARALLEL_TAG: tag,
+        PARALLEL_PEER: peer,
+      },
+      stdio: ["ignore", "ignore", "pipe", "ipc"],
+    });
+    let stderr = "";
+    child.stderr?.setEncoding("utf8").on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    let resolveReady!: () => void,
+      rejectReady!: (error: Error) => void,
+      resolveDone!: (message: Record<string, unknown>) => void,
+      rejectDone!: (error: Error) => void,
+      hasReady = false,
+      hasDone = false;
+    const readyMessage = new Promise<void>((resolve, reject) => {
+      resolveReady = resolve;
+      rejectReady = reject;
+    });
+    const done = new Promise<Record<string, unknown>>((resolve, reject) => {
+      resolveDone = resolve;
+      rejectDone = reject;
+    });
+    void done.catch(() => {});
+    const exited = new Promise<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+    }>((resolve) => {
+      child.once("exit", (code, signal) => resolve({ code, signal }));
+    });
+    child.on("message", (value: unknown) => {
+      if (!value || typeof value !== "object") return;
+      const message = value as Record<string, unknown>;
+      if (message["type"] === "ready" && message["tag"] === tag) {
+        hasReady = true;
+        resolveReady();
+      }
+      if (message["type"] === "done" && message["tag"] === tag) {
+        hasDone = true;
+        resolveDone(message);
+      }
+    });
+    child.once("error", (error) => {
+      rejectReady(error);
+      rejectDone(error);
+    });
+    child.once("exit", (code, signal) => {
+      const error = new Error(
+        `${tag} worker exited (${code ?? signal})${stderr ? `: ${stderr}` : ""}`,
+      );
+      if (!hasReady) rejectReady(error);
+      if (!hasDone) rejectDone(error);
+    });
+    t.after(() => {
+      if (child.exitCode === null) child.kill();
+    });
+    return { child, readyMessage, done, exited };
+  };
+
+  const first = start("first", "second");
+  await first.readyMessage;
+  const second = start("second", "first");
+  await second.readyMessage;
+  const reports = await Promise.all([first.done, second.done]);
+  const exits = await Promise.all([first.exited, second.exited]);
+  assert.deepEqual(
+    exits.map(({ code }) => code),
+    [0, 0],
+  );
+
+  assert.deepEqual(
+    reports.map(({ status, cleanup }) => ({ status, cleanup })),
+    [
+      { status: "passed", cleanup: "complete" },
+      { status: "passed", cleanup: "complete" },
+    ],
+    JSON.stringify(reports),
+  );
+  assert.deepEqual(JSON.parse(fs.readFileSync(state, "utf8")), {
+    active: sentinel.creationId,
+    documents: [sentinel],
+  });
+});
+
 test("settled operation failure and assertion failure both close documents and remove files", async (t) => {
   const { directory, model, backend } = await fixture(t);
   const scenarios: Scenario[] = [

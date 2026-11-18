@@ -42,6 +42,11 @@ import {
 import { revisionProgram, recoverRevision } from "./revision";
 import { reopenProgram, recoveredReopen } from "./reopen";
 import { auditRecovery } from "./recovery-audit";
+import {
+  assertPreservedDocumentInventory,
+  currentProcessIdentity,
+  discoverOwnedUnsavedFixtures,
+} from "./fixture-provenance";
 
 export interface Scenario {
   readonly lifecycle?: "read-only";
@@ -400,7 +405,7 @@ export class ScenarioSession {
       throw new Error("Observation phase must use observe- prefix");
     return this.#dispatch(phase, source, this.document, false);
   }
-  /** Retained full-inventory guards require the existing exclusive-instance barrier. */
+  /** Retained inventory guards accept only receipt-proven peer fixtures. */
   async verifyOwnedUnsaved(phase: string): Promise<void> {
     if (this.report.scope !== "exclusive-instance")
       throw new Error(
@@ -419,25 +424,30 @@ export class ScenarioSession {
           coordinator["scenarioIds"].includes(this.report.owner.scenarioId),
       );
       const before = record(coordinator["before"]);
+      const peerFixtures = discoverOwnedUnsavedFixtures(
+        path.dirname(path.dirname(this.directory)),
+        this.backend,
+      );
+      const ownedFixtures = new Map(peerFixtures);
+      ownedFixtures.set(this.document.creationId, this.document);
       const current = await this.observe(
         phase,
         programs.unsavedState(this.document),
       );
-      const documents = (value: unknown) => {
-        assert.ok(Array.isArray(value));
-        return value
-          .map(record)
-          .filter(
-            (document) => document["creationId"] !== this.document.creationId,
-          )
-          .sort((left, right) =>
-            text(left["creationId"]).localeCompare(text(right["creationId"])),
-          );
-      };
-      assert.deepEqual(
-        documents(current["documents"]),
-        documents(before["documents"]),
+      assertPreservedDocumentInventory(
+        before["documents"],
+        current["documents"],
+        ownedFixtures,
         "A non-fixture document changed during the owned unsaved case",
+      );
+      const active = current["active"];
+      assert.ok(
+        active === null ||
+          (typeof active === "string" &&
+            (Array.isArray(current["documents"]) ? current["documents"] : [])
+              .map(record)
+              .some((document) => document["creationId"] === active)),
+        "Active document identity is not present in the observed inventory",
       );
     } catch (error) {
       if (this.#uncertain) throw error;
@@ -1461,10 +1471,29 @@ export async function runScenarios(
   const hasSupported = scenarios.some((s) =>
     s.requires.every((c) => backend.capabilities.has(c)),
   );
-  const before =
+  let before =
     hasSupported && !signal?.aborted
       ? await observation("before", programs.snapshot())
       : undefined;
+  const processIdentity = currentProcessIdentity();
+  if (before) {
+    const peerFixtures = discoverOwnedUnsavedFixtures(root, backend),
+      documents = before["documents"];
+    assertPreservedDocumentInventory(
+      documents,
+      documents,
+      peerFixtures,
+      "A proven peer fixture does not match its current identity",
+    );
+    if (!Array.isArray(documents))
+      throw new Error("Missing coordinator document inventory");
+    before = {
+      ...before,
+      documents: documents
+        .map(record)
+        .filter((document) => !peerFixtures.has(text(document["creationId"]))),
+    };
+  }
   const folders = [
     ...new Map(
       scenarios
@@ -1490,6 +1519,8 @@ export async function runScenarios(
     mode: backend.mode,
     qualification: backend.qualification,
     protocol: backend.protocol,
+    backendIdentity: backend.identity,
+    processIdentity,
     before,
     cloudBefore,
     scenarioIds: scenarios.map((s) => s.id),
@@ -1551,21 +1582,12 @@ export async function runScenarios(
       )
     ) {
       const after = await observation("after", programs.snapshot());
-      const documents = (value: unknown): string => {
-        if (!Array.isArray(value))
-          throw new Error("Missing coordinator document inventory");
-        return JSON.stringify(
-          value
-            .map(record)
-            .sort((a, b) =>
-              text(a["creationId"]).localeCompare(text(b["creationId"])),
-            ),
-        );
-      };
-      if (documents(before["documents"]) !== documents(after["documents"]))
-        throw new Error(
-          "Original documents changed or scenario documents remain after cleanup",
-        );
+      assertPreservedDocumentInventory(
+        before["documents"],
+        after["documents"],
+        discoverOwnedUnsavedFixtures(root, backend),
+        "Original documents changed or an unowned scenario document remains after cleanup",
+      );
       const files = (value: Record<string, unknown>): string => {
         if (!Array.isArray(value["files"]))
           throw new Error("Missing fixture folder inventory");
@@ -1590,7 +1612,15 @@ export async function runScenarios(
             "Original cloud files changed or scenario files remain after cleanup",
           );
       }
-      if (typeof before["active"] === "string")
+      const baselineIds = Array.isArray(before["documents"])
+        ? before["documents"].map((value: unknown) =>
+            text(record(value)["creationId"]),
+          )
+        : [];
+      if (
+        typeof before["active"] === "string" &&
+        baselineIds.includes(before["active"])
+      )
         await observation("restore", programs.restoreActive(before["active"]));
     }
   } catch (error) {
@@ -1609,6 +1639,8 @@ export async function runScenarios(
     mode: backend.mode,
     qualification: backend.qualification,
     protocol: backend.protocol,
+    backendIdentity: backend.identity,
+    processIdentity,
     before,
     cloudBefore,
     scenarioIds: scenarios.map((s) => s.id),
