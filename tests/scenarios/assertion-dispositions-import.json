@@ -10740,7 +10740,7 @@
       "scenario": "native-import-*",
       "capabilities": ["documents", "queue-receipts", "owned-child-cli"],
       "evidence": "tests/scenarios/programs.ts",
-      "evidenceAssertion": "assert len(matches) <= 1",
+      "evidenceAssertion": "assert len(matches) == 1, 'Owned fixture identity is missing or duplicated'",
       "reason": "After all original requests settle, the existing ScenarioSession closes only the exact unsaved document; independently verify its absence, unchanged protected documents, restored active document and removal of only owned synthetic files. Unknown execution defers cleanup.",
       "qualification": "not-run",
       "nativeObligation": "native-cleanup:48bbfac9136402361c01-1",
@@ -10761,7 +10761,7 @@
       "runnerStatus": "migration-required",
       "blocker": "docs/refactor-agents/D_IMPORT_ASSERTION_OBLIGATIONS.md",
       "migrationRequirement": "Owned handoff source, narrow type/lint and 13 pure contract/handoff fault tests pass; actual owned child execution receipts remain pending. Native Fusion qualification remains NOT RUN.",
-      "lifecycleRelocation": "The original close guard moved into the shared lifecycle: it fences the exact creationId, exact name and unsaved condition before closing once; a prior confirmed absence is accepted only for original-request recovery."
+      "lifecycleRelocation": "The historical JS close guard required exactly one owned unsaved document. The current shared close preserves exact creationId, name, unsaved and close(False) checks, rejects missing or duplicate identities before closing, and adds same-turn before/after foreign inventory equality. Original-request recovery remains separate from this mutating close."
     },
     {
       "source": "tests/live-data-import.ts",

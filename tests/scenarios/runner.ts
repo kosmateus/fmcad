@@ -543,16 +543,33 @@ export class ScenarioSession {
         }
         // A no-helper receipt alone never authorizes another request. Every
         // observed difference must be explained by exact lifecycle receipts.
+        assert.ok(Array.isArray(fence["before"]));
+        const observedIds = new Set(
+          fence["before"].map((document) =>
+            text(record(document)["creationId"]),
+          ),
+        );
+        const baselineIds = new Set(
+          baselineDocuments.map((document) => text(document["creationId"])),
+        );
+        const snapshotProofs = new Map(
+          [...refreshed].filter(
+            ([id]) =>
+              observedIds.has(id) ||
+              baselineIds.has(id) ||
+              peerFixtures.has(id),
+          ),
+        );
         assertFencedDocumentInventory(
           fence["before"],
           fence["after"],
           this.document,
           baselineDocuments,
-          refreshed,
+          snapshotProofs,
           "Inventory re-admission lacks exact peer lifecycle receipts",
         );
         assert.notDeepEqual(
-          [...refreshed],
+          [...snapshotProofs],
           [...peerFixtures],
           "Inventory changed without new lifecycle evidence",
         );
@@ -1767,19 +1784,28 @@ export async function runScenarios(
   if (before) {
     const peerFixtures = discoverOwnedUnsavedFixtureProofs(root, backend),
       documents = before["documents"];
+    if (!Array.isArray(documents))
+      throw new Error("Missing coordinator document inventory");
+    const observedIds = new Set(
+      documents.map((document) => text(record(document)["creationId"])),
+    );
+    // Discovery follows the SDK snapshot. Future creations are not obligations
+    // of that older snapshot; a later close stays in the original baseline.
+    const observedPeers = new Map(
+      [...peerFixtures].filter(
+        ([id, proof]) => observedIds.has(id) && proof.state === "open",
+      ),
+    );
     assertReceiptBoundDocumentInventory(
       documents,
       documents,
-      peerFixtures,
+      observedPeers,
       "A proven peer fixture does not match its current identity",
     );
-    if (!Array.isArray(documents))
-      throw new Error("Missing coordinator document inventory");
     before = {
       ...before,
       documents: documents.map(record).filter((document) => {
-        const proof = peerFixtures.get(text(document["creationId"]));
-        return proof?.state !== "open" && proof?.state !== "closed";
+        return !observedPeers.has(text(document["creationId"]));
       }),
     };
   }
