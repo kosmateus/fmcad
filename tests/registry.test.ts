@@ -386,6 +386,8 @@ test("run keeps JSON, document pins, readonly and listing as typed library/offli
         "--doc-file-id",
         "file",
         "--readonly",
+        "--timeout",
+        "321",
       ],
       h.dependencies,
     ),
@@ -393,6 +395,8 @@ test("run keeps JSON, document pins, readonly and listing as typed library/offli
     h.stderr,
   );
   assert(admitted[0]);
+  assert.equal(admitted[0].execution.executionTimeoutMs, 321);
+  assert.equal(Object.hasOwn(call(h.calls, "config")[1], "timeoutMs"), false);
   assert.equal(admitted[0].payload.kind, "run");
   assert(admitted[0].payload.kind === "run");
   assert.deepEqual(admitted[0].payload.request.args, [25]);
@@ -411,7 +415,7 @@ test("run keeps JSON, document pins, readonly and listing as typed library/offli
   }
 });
 
-test("purpose/global options reach configuration; negative values and path arguments remain caller-owned", async () => {
+test("purpose/global options exclude per-request timeout; negative values and path arguments remain caller-owned", async () => {
   const h = harness();
   assert.equal(
     await main(
@@ -440,8 +444,11 @@ test("purpose/global options reach configuration; negative values and path argum
   assert.equal(configured[1].description, "Inspect model");
   assert.equal(configured[1]["config"], "/config");
   assert.deepEqual(configured[1].headers, { A: "one", B: "two:three" });
-  assert.equal(configured[1].timeoutMs, 123);
+  assert.equal(Object.hasOwn(configured[1], "timeoutMs"), false);
   const routed = call(h.calls, "queue");
+  assert.equal(routed[2].timeoutMs, config.timeoutMs);
+  assert.equal(routed[3].timeoutMs, 123);
+  assert.deepEqual(routed[1].slice(-2), ["--timeout", "123"]);
   assert.ok(routed[1].includes("call"));
   assert.ok(routed[1].includes("http://localhost"));
   assert.ok(routed[1].includes("/config"));
