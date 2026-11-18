@@ -3,11 +3,16 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import readline from "node:readline";
+import { pathToFileURL } from "node:url";
 import type { ScenarioBackend } from "./contracts";
 import { record, text } from "./contracts";
 import { ScenarioSession, runScenarios } from "./runner";
 import { nativeBackendAdapterScenarios } from "./native-backend-adapter-cases";
 import {
+  nativeMcpStdioArguments,
   nativeMcpStdioEntry,
   nativeMcpStdioScenarios,
 } from "./native-mcp-stdio-cases";
@@ -24,6 +29,60 @@ import type { Job, Result } from "../live-recovery-ports";
 import type { ObjectValue } from "../../packages/node-adapters/src/fusion-transport/contracts";
 
 const root = path.resolve(__dirname, "../../..");
+
+function startMcpChild(
+  args: string[],
+  home: string,
+  config: string,
+  preload: string,
+  t: import("node:test").TestContext,
+) {
+  const child = spawn(process.execPath, ["--require", preload, ...args], {
+    cwd: home,
+    env: {
+      PATH: process.env["PATH"],
+      HOME: home,
+      XDG_CONFIG_HOME: home,
+      XDG_STATE_HOME: home,
+      FMCAD_CONFIG: config,
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const closed = once(child, "close");
+  let diagnostics = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => {
+    diagnostics += chunk;
+  });
+  const lines = readline
+    .createInterface({ input: child.stdout })
+    [Symbol.asyncIterator]();
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill();
+      await closed;
+    }
+  });
+  return {
+    async request(value: unknown): Promise<Record<string, unknown>> {
+      child.stdin.write(JSON.stringify(value) + "\n");
+      const line = await lines.next();
+      assert.equal(line.done, false, diagnostics);
+      return record(JSON.parse(line.value) as unknown);
+    },
+    notify(value: unknown): void {
+      child.stdin.write(JSON.stringify(value) + "\n");
+    },
+    async close(): Promise<void> {
+      child.stdin.end();
+      assert.deepEqual(await closed, [0, null], diagnostics);
+      assert.equal((await lines.next()).done, true);
+      assert.equal(diagnostics, "");
+      lines.return?.();
+    },
+  };
+}
+
 const backend: ScenarioBackend = {
   identity: "native-transport-port-proof",
   mode: "simulator",
@@ -83,6 +142,169 @@ test("native MCP stdio uses the qualified runtime entry and rejects a fingerprin
   assert.throws(
     () => nativeMcpStdioEntry({ root, buildHash: "different-build" }),
     assert.AssertionError,
+  );
+});
+
+test("public MCP child binds its validated project before admission and rejects missing or foreign projects", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "native-mcp-project-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const project = path.join(home, "project");
+  const foreign = path.join(home, "foreign-project");
+  fs.mkdirSync(project);
+  fs.mkdirSync(foreign);
+  const trace = path.join(home, "submissions.jsonl");
+  const preload = path.join(home, "queue-boundary.cjs");
+  const config = path.join(home, "config.json");
+  fs.writeFileSync(
+    config,
+    JSON.stringify({
+      backend: "addin",
+      routing: "queue",
+      url: "http://127.0.0.1:1/mcp",
+      headers: {},
+      timeoutMs: 1000,
+      tool: "execute_python",
+      transport: "node",
+      protocolVersion: "2025-06-18",
+      queue: { autoStart: false },
+      controlCenter: { port: 4748 },
+    }),
+  );
+  fs.writeFileSync(
+    preload,
+    `
+      const fs = require("node:fs");
+      const Module = require("node:module");
+      const original = Module._load;
+      Module._load = function(request, parent, isMain) {
+        if (request === "../../queue-client.js" && parent?.filename.endsWith("/entrypoints/mcp-stdio.js")) {
+          const loaded = original.call(this, request, parent, isMain);
+          return {
+            ...loaded,
+            QueueClient: class {
+              constructor(clientId) { this.dir = process.env.FMCAD_FAKE_QUEUE_DIR; this.auth = { clientId }; }
+              async register() {}
+              persistRequestContext() {}
+              async submit(input) {
+                fs.appendFileSync(${JSON.stringify(trace)}, JSON.stringify(input) + "\\n");
+                this.submitted = input;
+                return { id: "offline-job", requestId: input.requestId, clientId: this.auth.clientId, state: "succeeded" };
+              }
+              async wait(jobId) {
+                const input = this.submitted;
+                return {
+                  job: { id: jobId, requestId: input.requestId, clientId: this.auth.clientId, state: "succeeded" },
+                  rpc: { status: 200, raw: JSON.stringify({ jsonrpc: "2.0", id: input.payload.id, result: { isError: false, content: [{ type: "text", text: JSON.stringify({ success: true, stdout: "OFFLINE_BOUND_PROJECT" }) }] } }) },
+                };
+              }
+              dispose() {}
+            },
+          };
+        }
+        if (request === "../composition/control-center.js" && parent?.filename.endsWith("/entrypoints/mcp-stdio.js"))
+          return { async ensureControlCenter() {} };
+        if (request === "../composition/control-center-telemetry.js" && parent?.filename.endsWith("/entrypoints/mcp-stdio.js"))
+          return { createMcpStdioTelemetry: () => ({ publishOwnedResult() {}, async close() {} }) };
+        return original.call(this, request, parent, isMain);
+      };
+    `,
+  );
+  const entry = path.join(root, "dist/bin/fmcad-mcp.js");
+  const clientId = "offline-project-binding";
+  const executeRequest = (id: string, meta?: Record<string, unknown>) => ({
+    jsonrpc: "2.0",
+    id,
+    method: "tools/call",
+    params: {
+      name: "execute_python",
+      arguments: { code: 'print("offline")', persistent: false },
+      ...(meta ? { _meta: { fmcad: meta } } : {}),
+    },
+  });
+  const initialize = {
+    jsonrpc: "2.0",
+    id: "initialize",
+    method: "initialize",
+    params: { protocolVersion: "2025-11-25", capabilities: {} },
+  };
+  const initialized = { jsonrpc: "2.0", method: "notifications/initialized" };
+
+  const positive = startMcpChild(
+    nativeMcpStdioArguments(entry, clientId, project),
+    home,
+    config,
+    preload,
+    t,
+  );
+  assert.equal(record(await positive.request(initialize))["id"], "initialize");
+  positive.notify(initialized);
+  const success = await positive.request(executeRequest("positive"));
+  assert.equal(success["error"], undefined, JSON.stringify(success));
+  assert.equal(record(success["result"])["isError"], false);
+  await positive.close();
+  const submission = record(
+    JSON.parse(fs.readFileSync(trace, "utf8").trim()) as unknown,
+  );
+  assert.equal(submission["cwd"], fs.realpathSync(project));
+  assert.equal(
+    record(submission["clientContext"])["projectDirectory"],
+    fs.realpathSync(project),
+  );
+
+  fs.rmSync(trace, { force: true });
+  const unbound = startMcpChild(
+    [entry, "--routing", "queue", "--client", clientId],
+    home,
+    config,
+    preload,
+    t,
+  );
+  await unbound.request(initialize);
+  unbound.notify(initialized);
+  const missing = await unbound.request(executeRequest("missing"));
+  assert.match(
+    text(record(missing["error"])["message"]),
+    /MCP_PROJECT_REQUIRED/u,
+  );
+  assert.equal(
+    record(record(missing["error"])["data"])["acceptanceState"],
+    "rejected-before-admission",
+  );
+  await unbound.close();
+  assert.equal(
+    fs.existsSync(trace),
+    false,
+    "missing project must not reach admission",
+  );
+
+  const foreignChild = startMcpChild(
+    [entry, "--routing", "queue", "--client", clientId],
+    home,
+    config,
+    preload,
+    t,
+  );
+  await foreignChild.request(initialize);
+  foreignChild.notify(initialized);
+  const rejectedForeign = await foreignChild.request(
+    executeRequest("foreign", {
+      projectDirectory: foreign,
+      roots: [{ uri: pathToFileURL(project).href, name: "validated project" }],
+    }),
+  );
+  assert.match(
+    text(record(rejectedForeign["error"])["message"]),
+    /inside one of the validated MCP roots/u,
+  );
+  assert.equal(
+    record(record(rejectedForeign["error"])["data"])["acceptanceState"],
+    "rejected-before-admission",
+  );
+  await foreignChild.close();
+  assert.equal(
+    fs.existsSync(trace),
+    false,
+    "foreign project must not reach admission",
   );
 });
 

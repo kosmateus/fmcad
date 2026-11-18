@@ -30,6 +30,22 @@ export function nativeMcpStdioEntry(native: {
   return path.join(runtime.dist, "bin/fmcad-mcp.js");
 }
 
+export function nativeMcpStdioArguments(
+  entry: string,
+  clientId: string,
+  projectDirectory: string,
+): string[] {
+  return [
+    entry,
+    "--routing",
+    "queue",
+    "--client",
+    clientId,
+    "--project-directory",
+    projectDirectory,
+  ];
+}
+
 /** Retained OpenCode stdio entry and assertions, with original-request recovery. */
 export function nativeMcpStdioScenarios(owners = 10): Scenario[] {
   concurrencyLimit(owners);
@@ -59,13 +75,11 @@ export function nativeMcpStdioScenarios(owners = 10): Scenario[] {
       }
       const child = spawn(
         process.execPath,
-        [
+        nativeMcpStdioArguments(
           entry,
-          "--routing",
-          "queue",
-          "--client",
           session.report.owner.clientId,
-        ],
+          native.root,
+        ),
         {
           cwd: native.root,
           stdio: ["pipe", "pipe", "pipe"],
