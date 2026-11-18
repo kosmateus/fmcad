@@ -140,7 +140,11 @@ for (const corruption of [
   "unknown",
   "mismatched-receipt",
   "stale-process",
+  "dead-process",
   "cleanup-hold",
+  "owner",
+  "runtime",
+  "config",
 ] as const) {
   test(`${corruption} owner evidence cannot authorize a new document`, (t) => {
     const fixture = reportFixture(t),
@@ -162,16 +166,43 @@ for (const corruption of [
         fs.readFileSync(fixture.indexFile, "utf8"),
       ) as Record<string, unknown>;
       index["processIdentity"] = {
-        pid: 2_147_483_647,
-        birth: "not-the-current-process",
+        pid: process.pid,
+        birth: "not-the-current-process:0",
       };
       fs.writeFileSync(fixture.indexFile, JSON.stringify(index));
-    } else {
+    } else if (corruption === "dead-process") {
+      const index = JSON.parse(
+        fs.readFileSync(fixture.indexFile, "utf8"),
+      ) as Record<string, unknown>;
+      index["processIdentity"] = {
+        pid: 2_147_483_647,
+        birth: "dead-process:0",
+      };
+      fs.writeFileSync(fixture.indexFile, JSON.stringify(index));
+    } else if (corruption === "cleanup-hold") {
       (fixture.report as Record<string, unknown>)["cleanupHold"] = {
         requestId: (fixture.report["requests"] as { requestId: string }[])[0]!
           .requestId,
         reason: "Do not infer ownership while cleanup is held",
       };
+    } else if (corruption === "owner") {
+      (fixture.report["owner"] as Record<string, unknown>)["scenarioId"] =
+        "another-owner";
+    } else if (corruption === "runtime") {
+      const identity = "provenance-test:another-runtime";
+      (fixture.report as Record<string, unknown>)["backendIdentity"] = identity;
+      const index = JSON.parse(
+        fs.readFileSync(fixture.indexFile, "utf8"),
+      ) as Record<string, unknown>;
+      index["backendIdentity"] = identity;
+      fs.writeFileSync(fixture.indexFile, JSON.stringify(index));
+    } else {
+      (fixture.report as Record<string, unknown>)["protocol"] = "addin";
+      const index = JSON.parse(
+        fs.readFileSync(fixture.indexFile, "utf8"),
+      ) as Record<string, unknown>;
+      index["protocol"] = "addin";
+      fs.writeFileSync(fixture.indexFile, JSON.stringify(index));
     }
     fs.writeFileSync(fixture.reportFile, JSON.stringify(fixture.report));
     const owned = discoverOwnedUnsavedFixtures(fixture.root, backend);
@@ -195,6 +226,75 @@ for (const corruption of [
     );
   });
 }
+
+test("a different campaign artifact root cannot authorize a fixture", (t) => {
+  const fixture = reportFixture(t),
+    unrelatedRoot = fs.mkdtempSync(
+      path.join(path.dirname(fixture.root), "unrelated-scenario-root-"),
+    );
+  t.after(() => fs.rmSync(unrelatedRoot, { recursive: true, force: true }));
+  const owned = discoverOwnedUnsavedFixtures(unrelatedRoot, backend);
+  assert.equal(owned.has(fixture.document.creationId), false);
+  assert.throws(
+    () =>
+      assertPreservedDocumentInventory(
+        [],
+        [
+          {
+            ...fixture.document,
+            saved: false,
+            modified: false,
+            fileId: null,
+          },
+        ],
+        owned,
+        "unproven fixture appeared",
+      ),
+    /unproven fixture appeared/u,
+  );
+});
+
+test("a peer's baseline disappearance is allowed only with its exact live proof", (t) => {
+  const fixture = reportFixture(t),
+    owned = discoverOwnedUnsavedFixtures(fixture.root, backend),
+    user = {
+      creationId: "user-sentinel",
+      name: "User design",
+      saved: false,
+      modified: false,
+      fileId: null,
+    },
+    baseline = [
+      user,
+      { ...fixture.document, saved: false, modified: false, fileId: null },
+    ];
+  assert.doesNotThrow(() =>
+    assertPreservedDocumentInventory(
+      baseline,
+      [user],
+      owned,
+      "a proven peer fixture closed during the run",
+    ),
+  );
+
+  const requests = fixture.report["requests"] as {
+    result: Record<string, unknown>;
+  }[];
+  requests[0]!.result["state"] = "unknown";
+  fs.writeFileSync(fixture.reportFile, JSON.stringify(fixture.report));
+  const unproven = discoverOwnedUnsavedFixtures(fixture.root, backend);
+  assert.equal(unproven.has(fixture.document.creationId), false);
+  assert.throws(
+    () =>
+      assertPreservedDocumentInventory(
+        baseline,
+        [user],
+        unproven,
+        "unproven peer disappeared from baseline",
+      ),
+    /unproven peer disappeared from baseline/u,
+  );
+});
 
 test("a proven peer fixture never exempts a changed baseline document", (t) => {
   const fixture = reportFixture(t),

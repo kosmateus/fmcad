@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { runScenarios, type Scenario } from "./runner";
 import type { Execution, ScenarioBackend, ScriptRequest } from "./contracts";
 import { marker } from "./programs";
+import { scenarioArtifactRoot } from "./artifact-root";
 
 interface SharedState {
   active: string | null;
@@ -16,9 +17,11 @@ interface SharedState {
   }[];
 }
 
-const root = textEnv("PARALLEL_ROOT"),
+const sourceRoot = textEnv("PARALLEL_SOURCE_ROOT"),
+  root = scenarioArtifactRoot(sourceRoot, "fusion"),
   stateFile = textEnv("PARALLEL_STATE"),
   readyRoot = textEnv("PARALLEL_READY_ROOT"),
+  releaseFile = textEnv("PARALLEL_RELEASE_FILE"),
   tag = textEnv("PARALLEL_TAG"),
   peer = textEnv("PARALLEL_PEER");
 
@@ -27,6 +30,11 @@ function textEnv(name: string): string {
   if (!value) throw new Error("Missing " + name);
   return value;
 }
+
+if (path.resolve(process.cwd()) !== path.resolve(sourceRoot))
+  throw new Error("Worker cwd does not match its independent source root");
+if (path.resolve(root) === path.resolve(sourceRoot))
+  throw new Error("Scenario artifacts must be separate from the source root");
 
 function readState(): SharedState {
   return JSON.parse(fs.readFileSync(stateFile, "utf8")) as SharedState;
@@ -179,12 +187,15 @@ const scenario: Scenario = {
   scope: "exclusive-instance",
   requires: ["documents"],
   async run(session) {
-    fs.writeFileSync(path.join(readyRoot, tag), "ready", {
-      flag: "wx",
-      mode: 0o600,
-    });
+    fs.writeFileSync(
+      path.join(readyRoot, tag),
+      JSON.stringify({ creationId: session.document.creationId }),
+      { flag: "wx", mode: 0o600 },
+    );
     process.send?.({ type: "ready", tag });
     while (!fs.existsSync(path.join(readyRoot, peer)))
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    while (!fs.existsSync(releaseFile))
       await new Promise((resolve) => setTimeout(resolve, 5));
     await session.verifyOwnedUnsaved("observe-cross-process-owned-fixture");
   },
@@ -199,6 +210,13 @@ void runScenarios(backend, [scenario], root, 1)
       cleanup: reports[0]?.cleanup,
       error: reports[0]?.error,
       cleanupError: reports[0]?.cleanupError,
+      sourceRoot: process.cwd(),
+      artifactRoot: root,
+      runId: reports[0]?.owner.runId,
+      owner: reports[0]?.owner,
+      document: reports[0]?.document,
+      directory: reports[0]?.directory,
+      pid: process.pid,
     });
   })
   .catch((error: unknown) => {

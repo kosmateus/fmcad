@@ -143,6 +143,7 @@ import { rectangleScenarios } from "./rectangle-cases";
 import { sketchScenarios } from "./sketch-cases";
 import { runScenarios, resumeCleanup, type Scenario } from "./runner";
 import { concurrencyLimit, defaultConcurrency, sourceHash } from "./scheduling";
+import { scenarioArtifactRoot } from "./artifact-root";
 import type { FixtureFolder, Protocol, ScenarioBackend } from "./contracts";
 import type { createBrokerTransport } from "../../packages/node-adapters/src/fusion-transport/broker";
 import type {
@@ -614,6 +615,7 @@ export function scenariosFor(
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const options = parse(argv);
   const root = path.resolve(__dirname, "../../..");
+  const output = scenarioArtifactRoot(root, options.backend);
   const load = createRequire(path.join(root, "package.json"));
   if (options.backend === "fusion") {
     const { resolveQualifiedLiveRuntime } = load(
@@ -623,8 +625,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     };
     resolveQualifiedLiveRuntime();
   }
-  const output = path.join(root, ".test-artifacts/scenarios");
-  const temporary = path.join(output, "checker");
+  const temporary = path.join(root, ".test-artifacts/scenarios/checker");
   fs.mkdirSync(temporary, { recursive: true });
   let model: PythonSimulator | undefined;
   let endpoint: Awaited<ReturnType<typeof simulatorEndpoint>> | undefined;

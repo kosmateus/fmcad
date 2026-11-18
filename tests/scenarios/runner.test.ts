@@ -11,6 +11,10 @@ import { simulatorEndpoint } from "./simulator";
 import { runScenarios, resumeCleanup, type Scenario } from "./runner";
 import { foundationScenarios, lifecycle, parameterScenario } from "./cases";
 import * as programs from "./programs";
+import {
+  liveScenarioArtifactRootEnv,
+  scenarioArtifactRoot,
+} from "./artifact-root";
 
 const root = path.resolve(__dirname, "../../..");
 const runtimeRequire = createRequire(path.join(root, "package.json"));
@@ -90,12 +94,15 @@ doc.name = 'USER_SENTINEL'`),
     assert.deepEqual(await remaining(model), before);
   },
 );
-test("independent runner processes clean their own receipt-proven fixtures", async (t) => {
+test("separate worktree processes share explicit receipts and clean only their fixtures", async (t) => {
   const parent = path.join(root, ".test-artifacts/scenario-unit");
   fs.mkdirSync(parent, { recursive: true });
   const directory = fs.mkdtempSync(path.join(parent, "parallel-processes-")),
-    output = path.join(directory, "runs"),
+    firstWorktree = path.join(directory, "worktree-a"),
+    secondWorktree = path.join(directory, "worktree-b"),
+    campaignRoot = path.join(directory, "campaign-artifacts"),
     ready = path.join(directory, "ready"),
+    release = path.join(directory, "release"),
     state = path.join(directory, "inventory.json"),
     sentinel = {
       creationId: "user-sentinel",
@@ -103,22 +110,57 @@ test("independent runner processes clean their own receipt-proven fixtures", asy
       saved: false,
       modified: false,
       fileId: null,
+    },
+    foreignFixture = {
+      creationId: "foreign-owned-fixture",
+      name: "Peer-owned unsaved fixture",
+      saved: false,
+      modified: false,
+      fileId: null,
     };
+  fs.mkdirSync(firstWorktree, { mode: 0o700 });
+  fs.mkdirSync(secondWorktree, { mode: 0o700 });
+  fs.mkdirSync(campaignRoot, { mode: 0o700 });
+  for (const worktree of [firstWorktree, secondWorktree]) {
+    fs.symlinkSync(
+      path.join(root, "package.json"),
+      path.join(worktree, "package.json"),
+    );
+    fs.symlinkSync(path.join(root, "src"), path.join(worktree, "src"), "dir");
+    fs.symlinkSync(
+      path.join(root, "node_modules"),
+      path.join(worktree, "node_modules"),
+      "dir",
+    );
+  }
   fs.mkdirSync(ready);
+  const firstOutput = scenarioArtifactRoot(firstWorktree, "fusion", {
+      [liveScenarioArtifactRootEnv]: campaignRoot,
+    }),
+    secondOutput = scenarioArtifactRoot(secondWorktree, "fusion", {
+      [liveScenarioArtifactRootEnv]: campaignRoot,
+    });
+  assert.equal(firstOutput, secondOutput);
   fs.writeFileSync(
     state,
-    JSON.stringify({ active: sentinel.creationId, documents: [sentinel] }),
+    JSON.stringify({
+      active: sentinel.creationId,
+      documents: [sentinel, foreignFixture],
+    }),
     { mode: 0o600 },
   );
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 
-  const start = (tag: string, peer: string) => {
+  const start = (tag: string, peer: string, worktree: string) => {
     const child = fork(path.join(__dirname, "parallel-runner-worker.js"), [], {
+      cwd: worktree,
       execArgv: [],
       env: {
         ...process.env,
-        PARALLEL_ROOT: output,
+        [liveScenarioArtifactRootEnv]: campaignRoot,
+        PARALLEL_SOURCE_ROOT: worktree,
         PARALLEL_READY_ROOT: ready,
+        PARALLEL_RELEASE_FILE: release,
         PARALLEL_STATE: state,
         PARALLEL_TAG: tag,
         PARALLEL_PEER: peer,
@@ -179,10 +221,40 @@ test("independent runner processes clean their own receipt-proven fixtures", asy
     return { child, readyMessage, done, exited };
   };
 
-  const first = start("first", "second");
+  const first = start("first", "second", firstWorktree);
   await first.readyMessage;
-  const second = start("second", "first");
+  const second = start("second", "first", secondWorktree);
   await second.readyMessage;
+  const overlapCreationIds = ["first", "second"].map((tag) => {
+    const readyReport = JSON.parse(
+      fs.readFileSync(path.join(ready, tag), "utf8"),
+    ) as { creationId: string };
+    return readyReport.creationId;
+  });
+  const overlap = JSON.parse(fs.readFileSync(state, "utf8")) as {
+      active: string | null;
+      documents: { creationId: string; name: string }[];
+    },
+    overlappingFixtures = overlap.documents.filter((document) =>
+      overlapCreationIds.includes(document.creationId),
+    );
+  assert.equal(overlap.documents.length, 4);
+  assert.ok(
+    overlap.documents.some(
+      (document) => document.creationId === sentinel.creationId,
+    ),
+  );
+  assert.ok(
+    overlap.documents.some(
+      (document) => document.creationId === foreignFixture.creationId,
+    ),
+  );
+  assert.equal(overlappingFixtures.length, 2);
+  assert.notEqual(
+    overlappingFixtures[0]?.creationId,
+    overlappingFixtures[1]?.creationId,
+  );
+  fs.writeFileSync(release, "continue", { flag: "wx", mode: 0o600 });
   const reports = await Promise.all([first.done, second.done]);
   const exits = await Promise.all([first.exited, second.exited]);
   assert.deepEqual(
@@ -198,10 +270,131 @@ test("independent runner processes clean their own receipt-proven fixtures", asy
     ],
     JSON.stringify(reports),
   );
-  assert.deepEqual(JSON.parse(fs.readFileSync(state, "utf8")), {
+  assert.deepEqual(
+    reports.map(({ sourceRoot, artifactRoot }) => ({
+      sourceRoot,
+      artifactRoot,
+    })),
+    [
+      { sourceRoot: firstWorktree, artifactRoot: firstOutput },
+      { sourceRoot: secondWorktree, artifactRoot: firstOutput },
+    ],
+  );
+  assert.notEqual(firstWorktree, secondWorktree);
+  assert.notEqual(firstWorktree, firstOutput);
+  assert.notEqual(secondWorktree, firstOutput);
+
+  for (const result of reports) {
+    const runId = result["runId"] as string,
+      scenarioId = result["tag"] as string,
+      scenarioDirectory = result["directory"] as string,
+      owner = result["owner"] as {
+        clientId: string;
+        runId: string;
+        scenarioId: string;
+      },
+      document = result["document"] as { creationId: string; name: string },
+      report = JSON.parse(
+        fs.readFileSync(path.join(scenarioDirectory, "report.json"), "utf8"),
+      ) as {
+        cleanup: string;
+        mode: string;
+        qualification: string;
+        protocol: string;
+        backendIdentity: string;
+        document: { creationId: string; name: string };
+        owner: { clientId: string; runId: string; scenarioId: string };
+        requests: {
+          phase: string;
+          requestId: string;
+          result?: {
+            requestId: string;
+            state: string;
+            sdkSettled: boolean;
+            mayHaveMutated: boolean;
+            brokerReceipt?: {
+              requestId: string;
+              clientId: string;
+              state: string;
+              jobId: string;
+            };
+          };
+        }[];
+      },
+      creation = JSON.parse(
+        fs.readFileSync(path.join(scenarioDirectory, "creation.json"), "utf8"),
+      ) as {
+        creationId: string;
+        name: string;
+        requestId: string;
+        clientId: string;
+      },
+      index = JSON.parse(
+        fs.readFileSync(path.join(firstOutput, runId, "index.json"), "utf8"),
+      ) as {
+        runId: string;
+        mode: string;
+        qualification: string;
+        protocol: string;
+        backendIdentity: string;
+        processIdentity: { pid: number; birth: string };
+        scenarioIds: string[];
+      },
+      create = report.requests.find((request) => request.phase === "create");
+    assert.equal(
+      path.resolve(scenarioDirectory),
+      path.join(firstOutput, runId, scenarioId),
+    );
+    assert.ok(overlapCreationIds.includes(document.creationId));
+    assert.equal(owner.scenarioId, scenarioId);
+    assert.equal(owner.runId, runId);
+    assert.equal(index.runId, runId);
+    assert.equal(report.owner.runId, runId);
+    assert.equal(report.owner.scenarioId, scenarioId);
+    assert.equal(report.owner.clientId, owner.clientId);
+    assert.equal(report.mode, "simulator");
+    assert.equal(report.qualification, "broker");
+    assert.equal(report.protocol, "mcp");
+    assert.equal(report.backendIdentity, "independent-process-fixture-test:v1");
+    assert.equal(index.mode, report.mode);
+    assert.equal(index.qualification, report.qualification);
+    assert.equal(index.protocol, report.protocol);
+    assert.equal(index.backendIdentity, report.backendIdentity);
+    assert.equal(report.document.creationId, document.creationId);
+    assert.equal(creation.creationId, document.creationId);
+    assert.equal(creation.name, document.name);
+    assert.equal(creation.clientId, owner.clientId);
+    assert.ok(index.scenarioIds.includes(scenarioId));
+    assert.equal(index.processIdentity.pid, result["pid"]);
+    assert.ok(Number.isSafeInteger(index.processIdentity.pid));
+    assert.ok(index.processIdentity.birth);
+    assert.equal(report.cleanup, "complete");
+    assert.ok(create?.result);
+    assert.equal(create.result.state, "succeeded");
+    assert.equal(create.result.sdkSettled, true);
+    assert.equal(create.result.mayHaveMutated, true);
+    assert.equal(create.result.requestId, create.requestId);
+    assert.ok(create.requestId.startsWith(owner.clientId + ":"));
+    assert.equal(creation.requestId, create.requestId);
+    assert.equal(create.result.brokerReceipt?.requestId, create.requestId);
+    assert.equal(create.result.brokerReceipt?.clientId, owner.clientId);
+    assert.equal(create.result.brokerReceipt?.state, "succeeded");
+    assert.ok(create.result.brokerReceipt?.jobId);
+  }
+  const finalState = JSON.parse(fs.readFileSync(state, "utf8")) as {
+    active: string | null;
+    documents: { creationId: string }[];
+  };
+  assert.deepEqual(finalState, {
     active: sentinel.creationId,
-    documents: [sentinel],
+    documents: [sentinel, foreignFixture],
   });
+  for (const creationId of overlapCreationIds)
+    assert.ok(
+      !finalState.documents.some(
+        (document) => document.creationId === creationId,
+      ),
+    );
 });
 
 test("settled operation failure and assertion failure both close documents and remove files", async (t) => {

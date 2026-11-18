@@ -49,9 +49,20 @@ must contain `dist/package.json`, `dist/runtime-build.json` and
 the installed runtime bytes before loading a queue client. Missing or mismatched
 identity fails closed. The protocol must match the broker configuration:
 
+Independent source worktrees may share the same scenario receipts by setting
+`FMCAD_LIVE_SCENARIO_ARTIFACT_ROOT` in each process to the same existing,
+absolute, canonical, user-private directory outside every checkout. This changes
+only the live Fusion report root: source files and the installed runtime are still
+resolved from each process's own checkout and `FMCAD_LIVE_RUNTIME_ROOT`. Without
+the variable, and for simulator/component runs, artifacts remain checkout-local.
+The shared root contains normal run indexes, reports, creation receipts and
+request evidence; it is not a separate ownership registry.
+
 ```sh
 npm run test:scenarios:live -- --run --protocol mcp --project-id PROJECT --folder-id FOLDER
 npm run test:scenarios:live -- --run --protocol addin --project-id PROJECT --folder-id FOLDER
+mkdir -m 700 -p /absolute/private/campaign
+FMCAD_LIVE_SCENARIO_ARTIFACT_ROOT=/absolute/private/campaign npm run test:scenarios:live -- --run --protocol addin --suite native-attributes --owners 1
 ```
 
 The npm script intentionally does not include `--run`; keep this explicit
