@@ -16,9 +16,178 @@ import {
   knownSettlement,
 } from "./live-recovery-ports";
 import type { OwnedDocument, LiveReport } from "./live-recovery-ports";
+import {
+  discoverOwnedUnsavedFixtureProofs,
+  assertFencedClosedDocumentInventory,
+} from "./scenarios/fixture-provenance";
+import type { OwnedUnsavedFixtureProof } from "./scenarios/fixture-provenance";
+import { scenarioArtifactRoot } from "./scenarios/artifact-root";
 const { QueueClient, inputFiles } = clientModule;
 const { loadConfig } = config;
 const { buildHash, processBirth } = identity;
+
+export function normalInventoryExpression(group: boolean): string {
+  const fileId = group ? "" : ",fileId=d.dataFile.id if d.dataFile else None";
+  return `sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified${fileId}) for d in a.documents],key=lambda d:d['id'])`;
+}
+
+/** Preserve user rows; only canonical, time-bound peer closes can remove a baseline row. */
+export function assertNormalFinalInventory(
+  beforeValue: unknown,
+  afterValue: unknown,
+  documents: readonly OwnedDocument[],
+  closeReceipts: readonly {
+    readonly requestId: string;
+    readonly clientId?: string;
+    readonly result?: unknown;
+  }[],
+  proofs: ReadonlyMap<string, OwnedUnsavedFixtureProof>,
+  window: {
+    readonly baselineFinishedAt: number;
+    readonly restoreStartedAt: number;
+  },
+): void {
+  const rows = (value: unknown) => {
+    const snapshot = nativeState(value);
+    const entries = snapshot.documents.map((row) => {
+      const document = object(row);
+      assert.ok(
+        document["fileId"] === null ||
+          (typeof document["fileId"] === "string" && document["fileId"]),
+      );
+      return document;
+    });
+    assert.equal(
+      new Set(entries.map((row) => row["id"])).size,
+      entries.length,
+      "Duplicate document identity",
+    );
+    return {
+      snapshot,
+      entries,
+      byId: new Map(entries.map((row) => [row["id"], row])),
+    };
+  };
+  const before = rows(beforeValue),
+    after = rows(afterValue),
+    jobs = new Set<string>();
+  assert.ok(
+    Number.isFinite(window.baselineFinishedAt) &&
+      Number.isFinite(window.restoreStartedAt) &&
+      window.baselineFinishedAt <= window.restoreStartedAt,
+  );
+  assert.equal(
+    documents.length,
+    closeReceipts.length,
+    "Every own document needs an exact close receipt",
+  );
+  assert.equal(
+    new Set(documents.map((d) => d.creationId)).size,
+    documents.length,
+  );
+  const closed = new Set<string>();
+  for (const receipt of closeReceipts) {
+    assert.ok(receipt.requestId && receipt.clientId);
+    assert.ok(knownSettlement([receipt.result]));
+    const result = object(receipt.result),
+      job = object(result["job"]);
+    assert.equal(job["requestId"], receipt.requestId);
+    assert.equal(job["clientId"], receipt.clientId);
+    assert.equal(job["state"], "succeeded");
+    assert.ok(
+      typeof job["id"] === "string" && job["id"] && !jobs.has(job["id"]),
+    );
+    jobs.add(job["id"]);
+    assert.equal(typeof result["stdout"], "string");
+    const markers = (result["stdout"] as string)
+      .split(/\r?\n/u)
+      .filter((line) => line.startsWith("FMCAD_RESULT "));
+    assert.equal(markers.length, 1);
+    const value = parse(markers[0]!.slice("FMCAD_RESULT ".length));
+    assert.equal(value["closed"], true);
+    const document = documents.find(
+      (d) => d.creationId === value["creationId"],
+    );
+    assert.ok(
+      document && !closed.has(document.creationId),
+      "Close receipt is foreign or reused",
+    );
+    closed.add(document.creationId);
+    assert.equal(
+      before.byId.has(document.creationId),
+      false,
+      "Own fixture predates this run",
+    );
+    assert.equal(
+      after.byId.has(document.creationId),
+      false,
+      "Own fixture remains open",
+    );
+  }
+  for (const row of before.entries) {
+    const current = after.byId.get(row["id"]);
+    if (current) {
+      assert.deepEqual(
+        current,
+        row,
+        "Baseline document identity or state changed",
+      );
+      continue;
+    }
+    const proof = proofs.get(String(row["id"]));
+    assert.equal(
+      proof?.state,
+      "closed",
+      "Baseline document disappeared without a canonical close",
+    );
+    const close = proof?.supplementalClose;
+    assert.ok(proof && close, "Missing time-bound supplemental close proof");
+    assert.ok(
+      close.startedAt >= window.baselineFinishedAt &&
+        close.finishedAt <= window.restoreStartedAt &&
+        close.finishedAt >= close.startedAt,
+      "Peer close is stale or outside this run",
+    );
+    assert.ok(!jobs.has(close.jobId), "Close receipt was reused");
+    jobs.add(close.jobId);
+    assert.deepEqual(proof.document, {
+      creationId: row["id"],
+      name: row["name"],
+    });
+    assertFencedClosedDocumentInventory(
+      close.inventoryFence["before"],
+      close.inventoryFence["after"],
+      proof.document,
+      "Peer close changed another document",
+    );
+    assert.ok(Array.isArray(close.inventoryFence["before"]));
+    const target = close.inventoryFence["before"]
+      .map(object)
+      .find((r) => r["creationId"] === row["id"]);
+    assert.ok(target);
+    assert.deepEqual(
+      {
+        id: target["creationId"],
+        name: target["name"],
+        fileId: target["fileId"],
+        saved: target["saved"],
+        modified: target["modified"],
+      },
+      row,
+      "Peer target drifted since baseline",
+    );
+  }
+  for (const row of after.entries)
+    assert.ok(
+      before.byId.has(row["id"]),
+      "Unexpected document appeared during the run",
+    );
+  assert.equal(
+    after.snapshot.active,
+    before.snapshot.active,
+    "Original active document was not restored",
+  );
+}
 
 interface MultiDocumentGroup {
   readonly version: 1;
@@ -349,7 +518,7 @@ async function main() {
       phase,
       `a=adsk.core.Application.get()
 print('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,
-    documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d['id']))))`,
+    documents=${normalInventoryExpression(!!group)})))`,
     );
   const guard = (document: OwnedDocument) => `started=time.perf_counter()
 a=adsk.core.Application.get()
@@ -567,7 +736,7 @@ print('FMCAD_RESULT '+json.dumps(dict(closed=True,creationId=${JSON.stringify(do
 previous=[d for d in a.documents if d.creationId==${report.before.active === null ? "None" : JSON.stringify(report.before.active)}]
 if previous: assert previous[0].activate()
 print('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,
-    documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d['id']))))`,
+    documents=${normalInventoryExpression(!!group)})))`,
       ),
     );
     if (group) {
@@ -587,7 +756,37 @@ print('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.ac
         ),
         "Every owned close receipt must restore the shared original active document",
       );
-    } else assert.deepEqual(report.after, report.before);
+    } else {
+      const baseline = report.receipts.find(
+        (receipt) => receipt.phase === "baseline",
+      )?.result;
+      const restore = report.receipts.find(
+        (receipt) => receipt.phase === "restore",
+      )?.result;
+      const baselineFinishedAt = object(object(baseline)["job"])["finishedAt"];
+      const restoreStartedAt = object(object(restore)["job"])["startedAt"];
+      assert.ok(
+        typeof baselineFinishedAt === "number" &&
+          typeof restoreStartedAt === "number",
+      );
+      const peers = discoverOwnedUnsavedFixtureProofs(
+        scenarioArtifactRoot(path.resolve(__dirname, "../.."), "fusion"),
+        {
+          identity: "fusion:addin:" + report.buildHash,
+          mode: "fusion",
+          protocol: "addin",
+          qualification: "broker",
+        },
+      );
+      assertNormalFinalInventory(
+        report.before,
+        report.after,
+        report.documents,
+        report.receipts.filter((receipt) => receipt.phase === "close"),
+        peers,
+        { baselineFinishedAt, restoreStartedAt },
+      );
+    }
     report.status = "passed";
   } catch (error) {
     report.status = "failed";

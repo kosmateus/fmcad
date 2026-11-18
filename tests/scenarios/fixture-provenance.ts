@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import path from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 import { childProcessIdentity } from "./legacy-handoff";
 import { record, text } from "./contracts";
 import type { Document, Owner, SavedFile, ScenarioBackend } from "./contracts";
-import { marker } from "./programs";
+import { close, marker } from "./programs";
 import { savedIdentityTransition } from "./saved-identity";
 import {
   recoveredFile,
@@ -19,13 +20,53 @@ export interface ProcessIdentity {
 }
 
 type FixtureState = "open" | "closed" | "unsettled";
+export interface SupplementalCloseReceipt {
+  readonly requestId: string;
+  readonly clientId: string;
+  readonly jobId: string;
+  readonly startedAt: number;
+  readonly finishedAt: number;
+  readonly inventoryFence: Record<string, unknown>;
+}
+type CloseProofBackend = Pick<
+  ScenarioBackend,
+  "identity" | "mode" | "qualification" | "protocol"
+> & {
+  lookup: NonNullable<ScenarioBackend["lookup"]>;
+};
+export interface SupplementalRuntimeBinding {
+  readonly buildHash: string;
+  readonly instanceId: string;
+}
+export interface SupplementalClosePorts {
+  readonly readRuntimeBinding: () => Promise<SupplementalRuntimeBinding>;
+  readonly readOriginalResult: (
+    owner: Owner,
+    requestId: string,
+  ) => Promise<unknown>;
+}
+export interface PreparedSupplementalClose {
+  readonly sourceFile: string;
+  readonly executionSourceFile: string;
+  readonly directory: string;
+  readonly source: string;
+  readonly owner: Owner;
+  readonly requestId: string;
+  readonly document: Document;
+  readonly runtime: SupplementalRuntimeBinding;
+}
 export type OwnedUnsavedFixtureProof =
-  | { readonly document: Document; readonly state: FixtureState }
+  | {
+      readonly document: Document;
+      readonly state: FixtureState;
+      readonly supplementalClose?: SupplementalCloseReceipt;
+    }
   | {
       readonly document: Document;
       readonly state: "saved";
       readonly savedDocument: Document & { readonly file: SavedFile };
       readonly savedState: FixtureState;
+      readonly supplementalClose?: never;
     };
 
 export function currentProcessIdentity(): ProcessIdentity {
@@ -62,6 +103,443 @@ function readJson(filename: string): Record<string, unknown> {
   } finally {
     fs.closeSync(fd);
   }
+}
+
+function boundedBytes(filename: string): Buffer {
+  const fd = fs.openSync(
+    filename,
+    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
+  );
+  try {
+    const stat = fs.fstatSync(fd);
+    assert.ok(stat.isFile() && stat.size <= 1024 * 1024);
+    return fs.readFileSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+const sha256 = (value: string | Buffer): string =>
+  createHash("sha256").update(value).digest("hex");
+function immutableRecord(filename: string, value: string): void {
+  const temporary = filename + "." + randomUUID() + ".tmp";
+  const fd = fs.openSync(temporary, "wx", 0o600);
+  try {
+    fs.writeFileSync(fd, value);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  try {
+    fs.linkSync(temporary, filename);
+  } finally {
+    fs.unlinkSync(temporary);
+  }
+}
+function runtimeBinding(
+  value: unknown,
+  backend: Pick<ScenarioBackend, "identity">,
+) {
+  const status = record(value),
+    buildHash = text(status["buildHash"]);
+  assert.equal(
+    backend.identity.split(":")[2],
+    buildHash,
+    "Runtime build differs from creator backend",
+  );
+  return { buildHash, instanceId: text(status["instanceId"]) };
+}
+function supplementalOrigin(
+  directory: string,
+  backend: Pick<
+    ScenarioBackend,
+    "identity" | "mode" | "qualification" | "protocol"
+  >,
+) {
+  const report = readJson(path.join(directory, "report.json")),
+    owner = record(report["owner"]),
+    document = record(report["document"]);
+  assert.equal(
+    path.resolve(text(report["directory"])),
+    path.resolve(directory),
+  );
+  assert.equal(report["backendIdentity"], backend.identity);
+  assert.equal(report["mode"], backend.mode);
+  assert.equal(report["qualification"], backend.qualification);
+  assert.equal(report["protocol"], backend.protocol);
+  assert.equal(
+    report["cleanupHold"],
+    undefined,
+    "A supplemental close does not resolve cleanupHold",
+  );
+  assert.equal(document["file"], undefined);
+  assert.ok(Array.isArray(report["requests"]));
+  const requests = report["requests"].map(record),
+    creates = requests.filter((r) => r["phase"] === "create");
+  assert.equal(creates.length, 1);
+  for (const entry of requests) {
+    const result = record(entry["result"]),
+      receipt = record(result["brokerReceipt"]);
+    assert.equal(result["sdkSettled"], true, "Original work is unsettled");
+    assert.ok(["succeeded", "failed"].includes(text(result["state"])));
+    assert.equal(receipt["clientId"], owner["clientId"]);
+    assert.equal(receipt["requestId"], entry["requestId"]);
+  }
+  return {
+    report,
+    owner: {
+      runId: text(owner["runId"]),
+      scenarioId: text(owner["scenarioId"]),
+      clientId: text(owner["clientId"]),
+    },
+    document: {
+      creationId: text(document["creationId"]),
+      name: text(document["name"]),
+    },
+    requests,
+    creationJobId: text(
+      record(record(creates[0]!["result"])["brokerReceipt"])["jobId"],
+    ),
+  };
+}
+
+function validateSupplementalOriginals(
+  directory: string,
+  origin: ReturnType<typeof supplementalOrigin>,
+  value: unknown,
+): void {
+  assert.ok(Array.isArray(value) && value.length === origin.requests.length);
+  for (let index = 0; index < origin.requests.length; index++) {
+    const entry = origin.requests[index]!,
+      captured = record(value[index]),
+      authenticated = record(captured["ownerLookup"]);
+    assert.deepEqual(
+      authenticated,
+      entry["result"],
+      "Original report differs from authenticated receipt",
+    );
+    const raw = record(captured["original"]),
+      job = record(raw["job"]),
+      execution = record(raw["execution"]),
+      receipt = record(authenticated["brokerReceipt"]);
+    assert.equal(job["id"], receipt["jobId"]);
+    assert.equal(job["requestId"], entry["requestId"]);
+    assert.equal(job["clientId"], origin.owner.clientId);
+    assert.equal(job["state"], authenticated["state"]);
+    assert.equal(execution["sdkSettled"], true);
+    assert.equal(raw["stdout"], authenticated["stdout"]);
+    assert.deepEqual(job["operationResult"], receipt["operationResult"]);
+    assert.equal(
+      record(entry["intent"])["kind"],
+      "script",
+      "Supplemental origin requires script-bound original work",
+    );
+    const provenance = record(raw["provenance"]);
+    assert.equal(provenance["status"], "available");
+    assert.ok(Array.isArray(provenance["inputs"]));
+    const sources = provenance["inputs"]
+      .map(record)
+      .filter((input) => input["kind"] === "source");
+    assert.equal(sources.length, 1);
+    const source = sources[0]!,
+      filename = path.join(
+        directory,
+        `request-${text(entry["requestId"]).split(":").at(-1)}.py`,
+      ),
+      bytes = boundedBytes(filename);
+    assert.equal(source["originalPath"], filename);
+    assert.equal(source["sha256"], sha256(bytes));
+    assert.equal(source["bytes"], bytes.length);
+  }
+}
+
+/** Prepare evidence before a new, guarded close; this never grants cleanup authority. */
+export async function prepareSupplementalCloseProof(
+  directory: string,
+  backend: CloseProofBackend,
+  requestId: string,
+  ports: SupplementalClosePorts,
+): Promise<PreparedSupplementalClose> {
+  const origin = supplementalOrigin(directory, backend),
+    proof = verifiedFixture(
+      path.dirname(directory),
+      path.basename(directory),
+      backend,
+    );
+  assert.ok(
+    proof && proof.state !== "closed" && proof.state !== "saved",
+    "Creator proof is unavailable",
+  );
+  assert.ok(exactScenarioRequestId(requestId, origin.owner.clientId));
+  assert.ok(
+    Number(requestId.slice(origin.owner.clientId.length + 1)) >
+      Math.max(
+        ...origin.requests.map((r) =>
+          Number(text(r["requestId"]).slice(origin.owner.clientId.length + 1)),
+        ),
+      ),
+  );
+  assert.equal(
+    await backend.lookup(origin.owner, requestId),
+    null,
+    "Never prepare an already admitted request",
+  );
+  const runtime = runtimeBinding(await ports.readRuntimeBinding(), backend),
+    source = close(origin.document, false);
+  const originals = [];
+  for (const entry of origin.requests) {
+    const originalId = text(entry["requestId"]),
+      authenticated = await backend.lookup(origin.owner, originalId);
+    assert.ok(authenticated, "Original owner cannot retrieve original work");
+    assert.deepEqual(
+      authenticated,
+      entry["result"],
+      "Original report differs from authenticated receipt",
+    );
+    originals.push({
+      ownerLookup: authenticated,
+      original: await ports.readOriginalResult(origin.owner, originalId),
+    });
+  }
+  validateSupplementalOriginals(directory, origin, originals);
+  assert.deepEqual(
+    runtimeBinding(await ports.readRuntimeBinding(), backend),
+    runtime,
+  );
+  const executionSourceFile = path.join(
+    directory,
+    `request-${requestId.split(":").at(-1)}.py`,
+  );
+  assert.equal(
+    fs.existsSync(executionSourceFile),
+    false,
+    "Execution source already exists",
+  );
+  const intent = {
+    version: 1,
+    owner: origin.owner,
+    document: origin.document,
+    creationJobId: origin.creationJobId,
+    creationHash: sha256(boundedBytes(path.join(directory, "creation.json"))),
+    sourceReportHash: sha256(boundedBytes(path.join(directory, "report.json"))),
+    backendIdentity: backend.identity,
+    runtime,
+    originals,
+    requestId,
+    sourceHash: sha256(source),
+    executionSourceFile,
+    preparedAt: Date.now(),
+  };
+  immutableRecord(
+    path.join(directory, "supplemental-close.intent.json"),
+    JSON.stringify(intent) + "\n",
+  );
+  immutableRecord(path.join(directory, "supplemental-close.py"), source);
+  return Object.freeze({
+    sourceFile: path.join(directory, "supplemental-close.py"),
+    executionSourceFile,
+    directory,
+    source,
+    owner: origin.owner,
+    requestId,
+    document: origin.document,
+    runtime,
+  });
+}
+
+function validateSupplementalClose(
+  directory: string,
+  backend: Pick<
+    ScenarioBackend,
+    "identity" | "mode" | "qualification" | "protocol"
+  >,
+  candidate?: Record<string, unknown>,
+): SupplementalCloseReceipt {
+  const origin = supplementalOrigin(directory, backend),
+    intent = readJson(path.join(directory, "supplemental-close.intent.json")),
+    proof =
+      candidate ?? readJson(path.join(directory, "supplemental-close.json"));
+  assert.equal(intent["version"], 1);
+  assert.deepEqual(intent["owner"], origin.owner);
+  assert.deepEqual(intent["document"], origin.document);
+  assert.equal(intent["creationJobId"], origin.creationJobId);
+  assert.equal(
+    intent["creationHash"],
+    sha256(boundedBytes(path.join(directory, "creation.json"))),
+  );
+  assert.equal(
+    intent["sourceReportHash"],
+    sha256(boundedBytes(path.join(directory, "report.json"))),
+  );
+  assert.equal(intent["backendIdentity"], backend.identity);
+  runtimeBinding(intent["runtime"], backend);
+  validateSupplementalOriginals(directory, origin, intent["originals"]);
+  assert.equal(
+    proof["intentHash"],
+    sha256(
+      boundedBytes(path.join(directory, "supplemental-close.intent.json")),
+    ),
+  );
+  assert.deepEqual(proof["runtime"], intent["runtime"]);
+  const source = boundedBytes(path.join(directory, "supplemental-close.py"));
+  assert.equal(source.toString("utf8"), close(origin.document, false));
+  assert.equal(intent["sourceHash"], sha256(source));
+  const original = record(proof["original"]),
+    job = record(original["job"]),
+    execution = record(original["execution"]),
+    witness = record(proof["ownerLookup"]),
+    witnessReceipt = record(witness["brokerReceipt"]);
+  const requestId = text(intent["requestId"]),
+    jobId = text(job["id"]);
+  assert.ok(exactScenarioRequestId(requestId, origin.owner.clientId));
+  assert.ok(
+    !origin.requests.some(
+      (r) =>
+        r["requestId"] === requestId ||
+        record(record(r["result"])["brokerReceipt"])["jobId"] === jobId,
+    ),
+  );
+  assert.equal(job["requestId"], requestId);
+  assert.equal(
+    job["clientId"],
+    origin.owner.clientId,
+    "Standalone client is not the original owner",
+  );
+  assert.equal(job["kind"], "command");
+  assert.equal(job["state"], "succeeded");
+  assert.equal(execution["sdkSettled"], true);
+  assert.equal(execution["state"], "succeeded");
+  assert.equal(execution["exitCode"], 0);
+  assert.equal(execution["publicationOutcome"], "published");
+  assert.equal(witness["requestId"], requestId);
+  assert.equal(witness["state"], "succeeded");
+  assert.equal(witness["sdkSettled"], true);
+  assert.equal(witness["exitCode"], 0);
+  assert.equal(witnessReceipt["requestId"], requestId);
+  assert.equal(witnessReceipt["clientId"], origin.owner.clientId);
+  assert.equal(witnessReceipt["jobId"], jobId);
+  assert.equal(witnessReceipt["state"], "succeeded");
+  assert.deepEqual(witnessReceipt["operationResult"], job["operationResult"]);
+  const operation = record(job["operationResult"]);
+  assert.equal(operation["requestId"], requestId);
+  assert.equal(operation["jobId"], jobId);
+  assert.equal(operation["acceptance"], "accepted");
+  assert.equal(operation["executionOutcome"], "succeeded");
+  const submittedAt = job["submittedAt"],
+    startedAt = job["startedAt"],
+    finishedAt = job["finishedAt"],
+    preparedAt = intent["preparedAt"],
+    publishedAt = proof["publishedAt"];
+  assert.ok(
+    typeof preparedAt === "number" &&
+      typeof submittedAt === "number" &&
+      typeof startedAt === "number" &&
+      typeof finishedAt === "number" &&
+      typeof publishedAt === "number",
+  );
+  assert.ok(
+    [preparedAt, submittedAt, startedAt, finishedAt, publishedAt].every(
+      Number.isFinite,
+    ),
+  );
+  assert.ok(
+    preparedAt <= submittedAt &&
+      submittedAt <= startedAt &&
+      startedAt <= finishedAt &&
+      finishedAt <= publishedAt,
+    "Cleanup chronology differs from prepared intent",
+  );
+  const provenance = record(original["provenance"]);
+  assert.equal(provenance["status"], "available");
+  assert.ok(
+    Array.isArray(provenance["inputs"]) && provenance["inputs"].length === 1,
+  );
+  const input = record(provenance["inputs"][0]);
+  assert.equal(input["kind"], "source");
+  assert.equal(input["sha256"], sha256(source));
+  assert.equal(input["bytes"], source.length);
+  const executionSourceFile = path.join(
+    directory,
+    `request-${requestId.split(":").at(-1)}.py`,
+  );
+  assert.equal(intent["executionSourceFile"], executionSourceFile);
+  assert.equal(input["originalPath"], executionSourceFile);
+  assert.equal(sha256(boundedBytes(executionSourceFile)), sha256(source));
+  assert.equal(original["stdout"], witness["stdout"]);
+  const lines = text(original["stdout"])
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith(marker));
+  assert.equal(lines.length, 1);
+  const value = record(JSON.parse(lines[0]!.slice(marker.length)) as unknown),
+    inventoryFence = record(value["inventoryFence"]);
+  assert.equal(value["creationId"], origin.document.creationId);
+  assert.equal(value["closed"], true);
+  assert.equal(inventoryFence["version"], 1);
+  assertFencedClosedDocumentInventory(
+    inventoryFence["before"],
+    inventoryFence["after"],
+    origin.document,
+    "Supplemental cleanup changed another document",
+  );
+  const rows = documentRows(inventoryFence["before"]);
+  assert.equal(
+    rows.find((r) => r["creationId"] === origin.document.creationId)?.[
+      "modified"
+    ],
+    false,
+  );
+  for (const entries of [rows, documentRows(inventoryFence["after"])])
+    assert.equal(
+      new Set(entries.map((r) => r["creationId"])).size,
+      entries.length,
+    );
+  return Object.freeze({
+    requestId,
+    clientId: origin.owner.clientId,
+    jobId,
+    startedAt,
+    finishedAt,
+    inventoryFence,
+  });
+}
+
+/** Publish only a newly prepared close verified through the original authenticated owner. */
+export async function publishSupplementalCloseProof(
+  directory: string,
+  backend: CloseProofBackend,
+  ports: SupplementalClosePorts,
+): Promise<SupplementalCloseReceipt> {
+  const origin = supplementalOrigin(directory, backend),
+    intent = readJson(path.join(directory, "supplemental-close.intent.json"));
+  const ownerLookup = await backend.lookup(
+    origin.owner,
+    text(intent["requestId"]),
+  );
+  assert.ok(ownerLookup, "Original owner cannot retrieve the close receipt");
+  const runtime = runtimeBinding(await ports.readRuntimeBinding(), backend);
+  assert.deepEqual(runtime, intent["runtime"]);
+  const original = await ports.readOriginalResult(
+    origin.owner,
+    text(intent["requestId"]),
+  );
+  assert.deepEqual(
+    runtimeBinding(await ports.readRuntimeBinding(), backend),
+    runtime,
+  );
+  const proof = {
+    intentHash: sha256(
+      boundedBytes(path.join(directory, "supplemental-close.intent.json")),
+    ),
+    original,
+    ownerLookup,
+    runtime,
+    publishedAt: Date.now(),
+  };
+  const validated = validateSupplementalClose(directory, backend, proof);
+  immutableRecord(
+    path.join(directory, "supplemental-close.json"),
+    JSON.stringify(proof) + "\n",
+  );
+  return validated;
 }
 
 function activeProcess(index: Record<string, unknown>): boolean {
@@ -254,6 +732,21 @@ function verifiedFixture(
         document: Object.freeze(document),
         state: "unsettled",
       });
+    if (fs.existsSync(path.join(directory, "supplemental-close.json"))) {
+      try {
+        const supplementalClose = validateSupplementalClose(directory, backend);
+        return Object.freeze({
+          document: Object.freeze(document),
+          state: "closed",
+          supplementalClose,
+        });
+      } catch {
+        return Object.freeze({
+          document: Object.freeze(document),
+          state: "unsettled",
+        });
+      }
+    }
     const cleanupEntries = requests
       .map(record)
       .filter((entry) => entry["phase"] === "cleanup");
