@@ -146,8 +146,11 @@ ${emit("dict(creationId=owned[0].creationId, version=app.version, documents=docs
       ),
     );
     const own = fixtures.get(identity.creationId);
-    assert.ok(own && own.state === "open");
-    assert.deepEqual(own.document, identity);
+    if (own) {
+      assert.equal(own.state, "open");
+      assert.deepEqual(own.document, identity);
+    }
+    fixtures.set(identity.creationId, { document: identity, state: "open" });
     return fixtures;
   };
   // State snapshots are read-only; operation fences remain strict in-turn.
@@ -180,7 +183,8 @@ ${emit("dict(creationId=owned[0].creationId, version=app.version, documents=docs
         "Fixture unexpectedly has a cloud file ID.",
       );
       assert.equal(match["saved"], false, "Fixture unexpectedly saved.");
-      assert.equal(match["active"], true, "Fixture is not active.");
+      // A peer may activate its own document between SDK turns. Mutating CAD
+      // selects and verifies this exact target inside its same-turn fence.
       return current;
     } catch (error) {
       if (session.uncertain) throw error;

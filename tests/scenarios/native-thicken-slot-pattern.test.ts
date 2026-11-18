@@ -25,7 +25,7 @@ import {
   nativeSketchOperationsScenarios,
   nativeSketchOperationsCapability,
 } from "./native-sketch-operations-cases";
-import { marker } from "./programs";
+import { marker, program } from "./programs";
 import { runScenarios, resumeCleanup } from "./runner";
 import {
   nativeThickenSlotPatternScenarios,
@@ -268,6 +268,65 @@ for (const protocol of ["mcp", "addin"] as const)
     assert.deepEqual(await remaining(model), { active: null, documents: [] });
   });
 
+for (const protocol of ["mcp", "addin"] as const)
+  test(`native read-only guard permits a peer activation between SDK turns via ${protocol}`, async (t) => {
+    const { backend, model, directory } = await fixture(t, protocol);
+    const created = await model.execute(
+      program(`import adsk.core
+app = adsk.core.Application.get()
+doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
+doc.name = 'USER_ACTIVE_SENTINEL'`),
+    );
+    assert.equal(created.success, true);
+    const before = await remaining(model);
+    let observations = 0;
+    const reports = await runScenarios(
+      {
+        ...backend,
+        async execute(request) {
+          if (request.source.includes("version=app.version, documents=docs")) {
+            const activation = await model.execute(
+              program(`import adsk.core
+app = adsk.core.Application.get()
+assert app.documents.item(0).activate()`),
+            );
+            assert.equal(activation.success, true);
+            observations++;
+          }
+          return backend.execute(request);
+        },
+      },
+      [
+        {
+          id: "native-peer-activation",
+          scope: "exclusive-instance",
+          requires: ["documents"],
+          async run(session) {
+            const harness = await nativeModelingHarness(
+              session,
+              "tests/live-component-hierarchy.js",
+              [],
+              [],
+            );
+            const snapshot = await harness.guard();
+            const documents = snapshot["documents"];
+            assert.ok(Array.isArray(documents));
+            const own = documents
+              .map(record)
+              .find((row) => row["creationId"] === session.document.creationId);
+            assert.equal(own?.["active"], false);
+          },
+        },
+      ],
+      directory,
+      1,
+    );
+    assert.equal(observations, 2);
+    assert.equal(reports[0]?.status, "passed", reports[0]?.error);
+    assert.equal(reports[0]?.cleanup, "complete");
+    assert.deepEqual(await remaining(model), before);
+  });
+
 test("retained nested native uncertainty predicate recognizes pending mutations and terminal failures", () => {
   for (const value of [
     { status: "unknown" },
@@ -298,7 +357,6 @@ for (const protocol of ["mcp", "addin"] as const)
     "creationId",
     "saved",
     "fileId",
-    "active",
     "foreign-document",
   ] as const) {
     test(`native owner guard defers cleanup after ${mismatch} readback mismatch via ${protocol}`, async (t) => {
@@ -342,11 +400,7 @@ for (const protocol of ["mcp", "addin"] as const)
               });
             else
               owned[mismatch] =
-                mismatch === "saved"
-                  ? true
-                  : mismatch === "active"
-                    ? false
-                    : "foreign-" + mismatch;
+                mismatch === "saved" ? true : "foreign-" + mismatch;
             value["documents"] = documents;
             injected = true;
             return { ...result, stdout: marker + JSON.stringify(value) + "\n" };
