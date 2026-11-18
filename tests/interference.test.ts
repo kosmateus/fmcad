@@ -46,15 +46,21 @@ test("GM19 rejects unknown top-level inputs before SDK dispatch", async () => {
   assert.equal(dispatches, 0);
 });
 
-test("GM19 native handoff bundles the interference module", () => {
-  const script = buildCadScript(
+test("GM19 native handoff retains each reachable interference handler", () => {
+  const clearanceScript = buildCadScript(
     "clearance.grid",
     catalog["clearance.grid"]!.example,
     { doc: "GM19" },
   );
-  assert.ok(script.includes("def _grid_pairs"));
-  assert.ok(script.includes("'clearance.grid': clearance_grid"));
-  assert.ok(script.includes("'motion.envelope': motion_envelope"));
+  assert.ok(clearanceScript.includes("def _grid_pairs"));
+  assert.ok(clearanceScript.includes("'clearance.grid': clearance_grid"));
+
+  const motionScript = buildCadScript(
+    "motion.envelope",
+    catalog["motion.envelope"]!.example,
+    { doc: "GM19" },
+  );
+  assert.ok(motionScript.includes("'motion.envelope': motion_envelope"));
 });
 
 test("GM19 Python recipes reproduce offline", () => {
