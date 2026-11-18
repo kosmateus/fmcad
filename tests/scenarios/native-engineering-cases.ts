@@ -471,8 +471,8 @@ export function nativeEngineeringScenarios(
               operation: "measure.volume",
               data: { ref: body, units: "mm3" },
             },
-            expected: "6000 mm3",
-            tolerance: "0.01 mm3",
+            expected: "6000 mm^3",
+            tolerance: "0.01 mm^3",
           });
           check(
             "check",
