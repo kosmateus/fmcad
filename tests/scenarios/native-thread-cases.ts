@@ -67,12 +67,13 @@ export function nativeThreadScenarios(owners = 10): Scenario[] {
       assert.match(rejected.stderr ?? rejected.error ?? "", /query|M10x1.5/u);
       // ORIGINAL_NATIVE_BODY
       await guard();
-      const nativeInfo = await session.observe(
+      const nativeObservation = await session.observe(
         "observe-native-thread-descriptor",
         program(
           threadInfoBody(session.document) + "\n" + emit("thread_result"),
         ),
       );
+      const nativeInfo = record(nativeObservation["descriptor"]);
       const radiusMm = threadMajorRadiusMm(nativeInfo);
       const radius = `${radiusMm} mm`;
       const cylinder = await cad("shape.cylinder", {

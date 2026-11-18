@@ -27,7 +27,7 @@ export function threadInfoBody(document: Document): string {
 ${descriptor}
 info = adsk.fusion.ThreadInfo.create(False, False, 'ISO Metric profile', 'M10x1.5', '6g', True)
 assert info is not None and info.isValid
-thread_result = describe(info)`;
+thread_result = dict(creationId=doc.creationId, descriptor=describe(info))`;
 }
 
 export function threadReadbackBody(

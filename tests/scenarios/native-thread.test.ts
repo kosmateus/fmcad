@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
 import {
   threadMajorRadiusMm,
   assertCosmeticCylinder,
@@ -152,6 +153,45 @@ for (const protocol of ["mcp", "addin"] as const) {
     );
   });
 }
+
+test("generated native descriptor returns the observed document identity beside its descriptor", () => {
+  const document = { name: "Owned thread fixture", creationId: "owned-thread" };
+  const source = program(
+    threadInfoBody(document) + "\n" + emit("thread_result"),
+  );
+  // Execute the generated program at the SDK read boundary. This does not
+  // qualify native table contents or thread geometry in Fusion.
+  const output = execFileSync(
+    "python3",
+    [
+      "-c",
+      `import sys, types
+adsk = types.ModuleType('adsk')
+core = types.ModuleType('adsk.core')
+fusion = types.ModuleType('adsk.fusion')
+adsk.core, adsk.fusion = core, fusion
+sys.modules.update({'adsk': adsk, 'adsk.core': core, 'adsk.fusion': fusion})
+doc = types.SimpleNamespace(name='Owned thread fixture', creationId='owned-thread', isSaved=False, dataFile=None,
+    products=types.SimpleNamespace(itemByProductType=lambda _: object()))
+core.Application = types.SimpleNamespace(get=lambda: types.SimpleNamespace(documents=[doc]))
+fusion.Design = object
+class ThreadInfo:
+    @staticmethod
+    def create(*args):
+        return types.SimpleNamespace(isValid=True, threadType='ISO Metric profile', threadDesignation='M10x1.5',
+            threadClass='6g', threadSize='10.0', isInternal=False, isTapered=False, isRightHanded=True,
+            majorDiameter=0.985, minorDiameter=0.8141, pitchDiameter=0.8928, threadPitch=0.15)
+fusion.ThreadInfo = ThreadInfo
+namespace = {}
+exec(sys.stdin.read(), namespace)
+namespace['run']('')`,
+    ],
+    { input: source, encoding: "utf8" },
+  );
+  const observed = JSON.parse(output.trim().slice("FMCAD_SCENARIO ".length));
+  assert.equal(observed.creationId, document.creationId);
+  assert.deepEqual(observed.descriptor, info);
+});
 
 test("native descriptor and physical readback programs pass the pinned strict Python checker", async () => {
   const root = path.resolve(__dirname, "../../.."),
