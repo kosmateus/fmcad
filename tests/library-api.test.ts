@@ -439,7 +439,7 @@ test("broker composition fences compatibility before credentials, submits typed 
   }
 });
 
-test("outside-repository consumer imports built JS and declarations with no source or host SDK", async (t) => {
+test("outside-repository package consumer separates public and private contracts", async (t) => {
   const directory = fs.mkdtempSync(path.join(tmpdir(), "fmcad-consumer-"));
   let installed: string | undefined;
   try {
@@ -478,94 +478,163 @@ test("outside-repository consumer imports built JS and declarations with no sour
     fs.writeFileSync(
       path.join(directory, "consumer.ts"),
       `
-      import {createFmcad, createReviewServices, contractVersions} from 'fmcad/api';
-      import {McpClient} from './node_modules/fmcad/dist/src/dist/composition/library-client.js';
-      import {loadConfig} from './node_modules/fmcad/dist/src/dist/composition/library-configuration.js';
-      import {buildBridgeScript} from './node_modules/fmcad/dist/src/dist/composition/library-addin-bridge.js';
-      void buildBridgeScript;
-      import {AddinClient} from './node_modules/fmcad/dist/src/dist/composition/library-addin-client.js';
-      import {createBackend} from './node_modules/fmcad/dist/src/dist/composition/library-backends.js';
-      import {parseCadInput} from './node_modules/fmcad/dist/src/dist/composition/library-cad-input.js';
-      void new AddinClient({clientId:'installed-addin'}).close();
-      void createBackend({backend:'mcp'}).close();
-      void parseCadInput(['--data','{}']);
-      void new McpClient({clientId: 'installed-owner'}).close();
-      void loadConfig;
-      import {parseReviewArgs, reviewCmd} from './node_modules/fmcad/dist/src/dist/composition/library-review-command.js';
-      void parseReviewArgs; void reviewCmd;
-      import {shotCmd, type ShotClient} from './node_modules/fmcad/dist/src/dist/composition/library-shot.js';
-      declare const shotClient: ShotClient;
-      void shotCmd(shotClient, []);
-      import {queueMetadata} from './node_modules/fmcad/dist/src/dist/composition/library-mcp-metadata.js';
-      import {createCatalogPost} from './node_modules/fmcad/dist/src/dist/composition/library-mcp-catalog.js';
-      void queueMetadata; void createCatalogPost;
-      import {commands, findCommand} from './node_modules/fmcad/dist/src/dist/composition/library-commands.js';
-      import {detail, globalHelp} from './node_modules/fmcad/dist/src/dist/composition/library-help.js';
-      void commands; void findCommand; void detail; void globalHelp;
-      import {validateInvocation, executeCapability} from './node_modules/fmcad/dist/src/dist/composition/library-catalog-registry.js';
-      void validateInvocation; void executeCapability;
-import {createQueuePost as queuePost, createForwarder as forwarder, responseMessages} from './node_modules/fmcad/dist/src/dist/composition/library-mcp-compat.js';
-void queuePost; void forwarder; void responseMessages;
-import {startHostHelper} from './node_modules/fmcad/dist/src/dist/composition/library-ui-host.js';
-void startHostHelper;
-import {createUiStateStore} from './node_modules/fmcad/dist/src/dist/composition/library-ui-state.js';
-import {validate as validateUi} from './node_modules/fmcad/dist/src/dist/composition/library-ui-domain.js';
-void createUiStateStore; void validateUi;
-import {execute as executeUi, armWatcher} from './node_modules/fmcad/dist/src/dist/composition/library-ui-command.js';
-void executeUi; void armWatcher;
-import {consoleCommand, type OpenControlCenter} from './node_modules/fmcad/dist/src/dist/composition/library-console.js';
-import {resolveProject} from './node_modules/fmcad/dist/src/dist/composition/library-console-project.js';
-import {t, preferences, savePreferences} from './node_modules/fmcad/dist/src/dist/composition/library-i18n.js';
-import {createReporter, setupV1, setupV2} from './node_modules/fmcad/dist/src/dist/composition/library-opencode-presence.js';
-void t; void preferences; void savePreferences; void createReporter; void setupV1; void setupV2;
-import {createEventSink as createProjectEvents} from './node_modules/fmcad/dist/src/dist/composition/library-project-events.js';
-void createProjectEvents;
-declare const openControlCenter: OpenControlCenter;
-void consoleCommand(['--web'], {stdout:{write(text:string){void text;}},openControlCenter});
-void resolveProject;
-      import type {FmcadOptions, ExecutionReceipt, ReviewRequest, ReviewServiceOptions, PythonCheckReport} from 'fmcad/api';
+      import {
+        createFmcad,
+        createReviewServices,
+        contractVersions,
+      } from "fmcad/api";
+      import type {
+        ExecutionReceipt,
+        FmcadOptions,
+        PythonCheckReport,
+        ReviewRequest,
+        ReviewServiceOptions,
+      } from "fmcad/api";
       declare const options: FmcadOptions;
       declare const reviewOptions: ReviewServiceOptions;
       declare const reviewRequest: ReviewRequest;
-      void createReviewServices(reviewOptions).execute({version: 1, kind: 'review', request: reviewRequest});
+      void createReviewServices(reviewOptions).execute({version: 1, kind: "review", request: reviewRequest});
       const services = createFmcad(options);
-       const result: Promise<ExecutionReceipt> = services.execute({version: 1, kind: 'cad', operation: 'document.status', data: {}, doc: 'active'}, {requestId: 'request'});
-       void result.then(receipt => {
-         const report: PythonCheckReport | undefined = receipt.pythonChecks?.[0];
-         const state: 'passed' | 'failed' | 'incomplete' | 'tool_error' | undefined = report?.status;
-         return state;
-       });
+      const result: Promise<ExecutionReceipt> = services.execute(
+        {
+          version: 1,
+          kind: "cad",
+          operation: "document.status",
+          data: {},
+          doc: "active",
+        },
+        { requestId: "request" },
+      );
+      void result.then((receipt) => {
+        const report: PythonCheckReport | undefined = receipt.pythonChecks?.[0];
+        const state:
+          | "passed"
+          | "failed"
+          | "incomplete"
+          | "tool_error"
+          | undefined = report?.status;
+        return state;
+      });
       void result; void contractVersions;
       // @ts-expect-error No physical transport constructor on public services.
       services.createBackend();
       // @ts-expect-error No direct routing in library configuration.
-      options.config.routing = 'direct';
+      options.config.routing = "direct";
     `,
     );
-    execFileSync(
-      process.execPath,
-      [
-        path.join(root, "node_modules/typescript/bin/tsc"),
-        "--noEmit",
-        "--strict",
-        "--skipLibCheck",
-        "false",
-        "--module",
-        "NodeNext",
-        "--moduleResolution",
-        "NodeNext",
-        "--target",
-        "ES2023",
-        "consumer.ts",
-      ],
-      { cwd: directory, encoding: "utf8" },
+    fs.writeFileSync(
+      path.join(directory, "private-consumer.ts"),
+      `
+      import { McpClient } from "./node_modules/fmcad/dist/src/dist/composition/library-client.js";
+      import { loadConfig } from "./node_modules/fmcad/dist/src/dist/composition/library-configuration.js";
+      import { buildBridgeScript } from "./node_modules/fmcad/dist/src/dist/composition/library-addin-bridge.js";
+      import { AddinClient } from "./node_modules/fmcad/dist/src/dist/composition/library-addin-client.js";
+      import { createBackend } from "./node_modules/fmcad/dist/src/dist/composition/library-backends.js";
+      import { parseCadInput } from "./node_modules/fmcad/dist/src/dist/composition/library-cad-input.js";
+      import { parseReviewArgs, reviewCmd } from "./node_modules/fmcad/dist/src/dist/composition/library-review-command.js";
+      import { shotCmd, type ShotClient } from "./node_modules/fmcad/dist/src/dist/composition/library-shot.js";
+      import { queueMetadata } from "./node_modules/fmcad/dist/src/dist/composition/library-mcp-metadata.js";
+      import { createCatalogPost } from "./node_modules/fmcad/dist/src/dist/composition/library-mcp-catalog.js";
+      import { commands, findCommand } from "./node_modules/fmcad/dist/src/dist/composition/library-commands.js";
+      import { detail, globalHelp } from "./node_modules/fmcad/dist/src/dist/composition/library-help.js";
+      import { validateInvocation, executeCapability } from "./node_modules/fmcad/dist/src/dist/composition/library-catalog-registry.js";
+      import { createQueuePost as queuePost, createForwarder as forwarder, responseMessages } from "./node_modules/fmcad/dist/src/dist/composition/library-mcp-compat.js";
+      import { startHostHelper } from "./node_modules/fmcad/dist/src/dist/composition/library-ui-host.js";
+      import { createUiStateStore } from "./node_modules/fmcad/dist/src/dist/composition/library-ui-state.js";
+      import { validate as validateUi } from "./node_modules/fmcad/dist/src/dist/composition/library-ui-domain.js";
+      import { execute as executeUi, armWatcher } from "./node_modules/fmcad/dist/src/dist/composition/library-ui-command.js";
+      import { consoleCommand, type OpenControlCenter } from "./node_modules/fmcad/dist/src/dist/composition/library-console.js";
+      import { resolveProject } from "./node_modules/fmcad/dist/src/dist/composition/library-console-project.js";
+      import { t, preferences, savePreferences } from "./node_modules/fmcad/dist/src/dist/composition/library-i18n.js";
+      import { createReporter, setupV1, setupV2 } from "./node_modules/fmcad/dist/src/dist/composition/library-opencode-presence.js";
+      import { createEventSink as createProjectEvents } from "./node_modules/fmcad/dist/src/dist/composition/library-project-events.js";
+
+      void buildBridgeScript;
+      void new AddinClient({ clientId: "installed-addin" }).close();
+      void createBackend({ backend: "mcp" }).close();
+      void parseCadInput(["--data", "{}"]);
+      void new McpClient({ clientId: "installed-owner" }).close();
+      void loadConfig;
+      void parseReviewArgs;
+      void reviewCmd;
+      declare const shotClient: ShotClient;
+      void shotCmd(shotClient, []);
+      void queueMetadata;
+      void createCatalogPost;
+      void commands;
+      void findCommand;
+      void detail;
+      void globalHelp;
+      void validateInvocation;
+      void executeCapability;
+      void queuePost;
+      void forwarder;
+      void responseMessages;
+      void startHostHelper;
+      void createUiStateStore;
+      void validateUi;
+      void executeUi;
+      void armWatcher;
+      declare const openControlCenter: OpenControlCenter;
+      void consoleCommand(["--web"], {
+        stdout: { write(text: string) { void text; } },
+        openControlCenter,
+      });
+      void resolveProject;
+      void t;
+      void preferences;
+      void savePreferences;
+      void createReporter;
+      void setupV1;
+      void setupV2;
+      void createProjectEvents;
+    `,
     );
-    execFileSync(
-      process.execPath,
-      [
-        "--input-type=module",
-        "-e",
-        `
+    const typecheck = (file: string, typeOptions: string[] = []) => {
+      execFileSync(
+        process.execPath,
+        [
+          path.join(root, "node_modules/typescript/bin/tsc"),
+          "--noEmit",
+          "--strict",
+          "--skipLibCheck",
+          "false",
+          "--module",
+          "NodeNext",
+          "--moduleResolution",
+          "NodeNext",
+          "--target",
+          "ES2023",
+          ...typeOptions,
+          file,
+        ],
+        { cwd: directory, encoding: "utf8" },
+      );
+    };
+    await t.test(
+      "documented fmcad/api declarations compile without ambient Node types",
+      () => {
+        typecheck("consumer.ts");
+      },
+    );
+    await t.test(
+      "private declarations compile with test-only Node typings",
+      () => {
+        typecheck("private-consumer.ts", [
+          "--types",
+          "node",
+          "--typeRoots",
+          path.join(root, "node_modules/@types"),
+        ]);
+      },
+    );
+    const runInstalledPackageWithoutHostEffects = (program: string) => {
+      execFileSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
       import {createRequire} from 'node:module';
       const require = createRequire(import.meta.url);
       const Module = require('node:module'), load = Module._load;
@@ -582,23 +651,39 @@ void resolveProject;
         if (flags !== 'r' && flags !== fs.constants.O_RDONLY) fail();
         return open(file, flags, ...args); // ESM loader reads package JavaScript.
       };
-      const { createFmcad } = await import('fmcad/api');
-      const api = createFmcad(${JSON.stringify(options)});
-      if (api.query.catalog().length < 250) throw Error('Missing public catalog');
-      await api.dispose();
-      const {createEventSink}=require('./node_modules/fmcad/dist/src/dist/composition/library-project-events.js');
-      const sink=createEventSink('/project');
-      await sink.dispose();
+       ${program}
     `,
-      ],
-      {
-        cwd: directory,
-        env: {
-          ...process.env,
-          HOME: "/nonexistent",
-          XDG_CONFIG_HOME: "/nonexistent",
+        ],
+        {
+          cwd: directory,
+          env: {
+            ...process.env,
+            HOME: "/nonexistent",
+            XDG_CONFIG_HOME: "/nonexistent",
+          },
+          encoding: "utf8",
         },
-        encoding: "utf8",
+      );
+    };
+    await t.test(
+      "documented fmcad/api runtime import has no host or startup effects",
+      () => {
+        runInstalledPackageWithoutHostEffects(`
+       const { createFmcad } = await import('fmcad/api');
+       const api = createFmcad(${JSON.stringify(options)});
+       if (api.query.catalog().length < 250) throw Error('Missing public catalog');
+       await api.dispose();
+      `);
+      },
+    );
+    await t.test(
+      "private project-event module remains importable from the packed package",
+      () => {
+        runInstalledPackageWithoutHostEffects(`
+        const {createEventSink}=require('./node_modules/fmcad/dist/src/dist/composition/library-project-events.js');
+        const sink=createEventSink('/project');
+        await sink.dispose();
+      `);
       },
     );
     const poison = path.join(directory, "invalid-help-config.json");
@@ -2124,6 +2209,7 @@ test("MCP queue migration preserves single admission, recovery, receipts and dis
       calls.filter((c) => list(c)[0] === "submit").length,
       scenario === "registration" ? 0 : 1,
     );
+    assert.equal(calls.filter((c) => list(c)[0] === "dispose").length, 1);
     assert.equal(list(calls.at(-1))[0], "dispose");
     return { calls, response };
   }
@@ -2137,12 +2223,48 @@ test("MCP queue migration preserves single admission, recovery, receipts and dis
     "lost",
     "recovery-failed",
     "registration",
-  ])
+  ]) {
+    const actual = await observe(current, scenario);
+    const expected = await observe(historical, scenario);
+    const raw = JSON.parse(actual.response.raw) as unknown;
+    const message = record(raw);
+    if (Object.hasOwn(message, "error")) {
+      const error = record(message["error"]);
+      const data = record(error["data"]);
+      const acceptanceState =
+        scenario === "registration"
+          ? "rejected-before-admission"
+          : ["lost", "recovery-failed"].includes(scenario)
+            ? "unknown"
+            : "accepted";
+      assert.equal(data["acceptanceState"], acceptanceState);
+      assert.equal(data["globalQueueState"], "not_read");
+      delete data["acceptanceState"];
+      delete data["globalQueueState"];
+    }
+    if (scenario === "unknown") {
+      const error = record(message["error"]);
+      const data = record(error["data"]);
+      assert.equal(actual.response.status, 200);
+      assert.equal(error["code"], -32000);
+      assert.match(String(error["message"]), /RAW_RESULT_UNAVAILABLE/);
+      assert.equal(data["requestStatus"], "needs_reconciliation");
+      assert.equal(data["requestId"], "owned-request");
+      const receipt = record(data["fmcad"]);
+      assert.equal(receipt["jobId"], "owned-job");
+      assert.equal(receipt["requestId"], "owned-request");
+      assert.equal(receipt["requestStatus"], "needs_reconciliation");
+    }
+    const historicalRaw = JSON.parse(expected.response.raw) as unknown;
     assert.deepEqual(
-      await observe(current, scenario),
-      await observe(historical, scenario),
+      { ...actual, response: { ...actual.response, raw: message } },
+      {
+        ...expected,
+        response: { ...expected.response, raw: historicalRaw },
+      },
       scenario,
     );
+  }
 });
 
 test("UI host helper preserves argv, bounded output, readiness and timeout ownership", async () => {
