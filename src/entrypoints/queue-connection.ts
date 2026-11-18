@@ -51,9 +51,9 @@ interface WorkerRequestOptions {
 
 interface IpcTraceRequest {
   readonly context: DebugTraceContext;
-  readonly action: "worker-status" | "backend";
+  readonly action: NonNullable<DebugTraceEvent["action"]>;
   readonly messageId: string;
-  readonly jobId: string;
+  readonly jobId?: string;
   readonly buildHash?: string;
   readonly deadlineBudgetMs?: number;
 }
@@ -82,7 +82,7 @@ function writeIpcTrace(
       ipcStage,
       action: trace.action,
       messageId: trace.messageId,
-      jobId: trace.jobId,
+      ...(trace.jobId ? { jobId: trace.jobId } : {}),
       ...(trace.buildHash ? { buildHash: trace.buildHash } : {}),
       ...fields,
     });
@@ -133,7 +133,7 @@ export function request(
   );
   if (payload.length > MAX_MESSAGE)
     return Promise.reject(new Error("Queue request exceeds 16 MiB"));
-  const monotonicStartMs = ipcTrace ? performance.now() : undefined;
+  const monotonicStartMs = performance.now();
   const deadlineBudgetMs =
     timeoutMs > 0 ? timeoutMs : ipcTrace?.deadlineBudgetMs;
   const deadlineMonotonicMs =
@@ -168,8 +168,37 @@ export function request(
       if (timer) clearTimeout(timer);
       socket.destroy();
       signal?.removeEventListener("abort", abort);
-      if (error) reject(error);
-      else resolve(value);
+      if (error) {
+        if (
+          ["register", "submit", "find-request", "result"].includes(
+            String(message["action"]),
+          )
+        ) {
+          const input = message["request"],
+            requestId =
+              input && typeof input === "object" && "requestId" in input
+                ? input.requestId
+                : (message["requestId"] ?? ipcTrace?.context.requestId),
+            jobId = message["jobId"],
+            safeIdentity = (value: unknown): value is string =>
+              typeof value === "string" &&
+              value.length > 0 &&
+              value.length <= 256 &&
+              !/[\u0000-\u001f\u007f]/u.test(value);
+          Object.assign(error, {
+            action: message["action"],
+            ...(safeIdentity(requestId) ? { requestId } : {}),
+            ...(safeIdentity(jobId) ? { jobId } : {}),
+            timeoutMs,
+            monotonicStartMs,
+            ...traceEnd(),
+            ...(timeoutMs > 0
+              ? { deadlineMonotonicMs: monotonicStartMs + timeoutMs }
+              : {}),
+          });
+        }
+        reject(error);
+      } else resolve(value);
     };
     const timer =
       timeoutMs > 0
@@ -183,7 +212,7 @@ export function request(
             finish(
               codedError(
                 "QUEUE_IPC_TIMEOUT",
-                "Queue IPC timeout; an accepted job is not cancelled. Inspect its requestId/jobId before resubmitting.",
+                `Queue IPC timeout${["register", "submit", "find-request", "result"].includes(String(message["action"])) ? ` during ${String(message["action"])}` : ""}; an accepted job is not cancelled. Inspect its requestId/jobId before resubmitting.`,
               ),
             );
           }, timeoutMs)

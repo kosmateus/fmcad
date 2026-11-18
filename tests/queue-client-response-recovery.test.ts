@@ -5,6 +5,7 @@ import * as net from "node:net";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
+import { randomUUID } from "node:crypto";
 
 interface RecoveryClient {
   readonly auth: { readonly clientId: string };
@@ -377,3 +378,185 @@ test("real IPC EOF after admission recovers durable original result with one sub
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+for (const fault of [
+  "submit",
+  "result",
+  "find-request",
+  "persistent-result",
+  "register",
+] as const) {
+  test(`real QueueClient identifies ${fault} reply timeout without replaying the original job`, async (t) => {
+    const lostAction = fault === "persistent-result" ? "result" : fault;
+    const connection = runtimeRequire(
+        "./queue-connection",
+      ) as typeof import("../src/entrypoints/queue-connection"),
+      diagnostics = runtimeRequire(
+        "./dist/node-adapters/telemetry/diagnostic-log",
+      ) as typeof import("../packages/node-adapters/src/telemetry/diagnostic-log"),
+      request = connection.request,
+      directory = fs.mkdtempSync(path.join(tmpdir(), "fmcad-client-observe-")),
+      requestId = randomUUID(),
+      job = {
+        id: randomUUID(),
+        requestId,
+        clientId: "offline-client-observation",
+        state: "succeeded",
+      },
+      events: Array<Record<string, unknown>> = [],
+      actions: string[] = [],
+      sockets = new Set<net.Socket>(),
+      writer = diagnostics.createDebugTraceWriter({
+        sink: {
+          write(line) {
+            events.push(JSON.parse(line) as Record<string, unknown>);
+            return true;
+          },
+        },
+      });
+    const previousTrace = process.env["FMCAD_DEBUG_TRACE"];
+    process.env["FMCAD_DEBUG_TRACE"] = "1";
+    t.after(() => {
+      if (previousTrace === undefined) delete process.env["FMCAD_DEBUG_TRACE"];
+      else process.env["FMCAD_DEBUG_TRACE"] = previousTrace;
+    });
+    t.mock.method(diagnostics, "writeDebugTrace", writer.write);
+    t.mock.method(connection, "queueDirectory", () => directory);
+    t.mock.method(
+      connection,
+      "request",
+      (...[dir, message, options]: Parameters<typeof request>) =>
+        request(dir, message, { ...options, timeoutMs: 25 }),
+    );
+    // Bind the actual client to the private socket, not an SDK/transport mock.
+    delete runtimeRequire.cache[runtimeRequire.resolve("./queue-client")];
+    const { QueueClient } = runtimeRequire(
+      "./queue-client",
+    ) as typeof import("../src/queue-client");
+    const queue = new QueueClient(job.clientId, {
+      cfg: { routing: "queue", queue: { autoStart: false } },
+    });
+    const withheld = new Set<string>();
+    const server = net.createServer((socket) => {
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
+      socket.on("error", () => {});
+      let data = "";
+      socket.on("data", (chunk: Buffer) => {
+        data += chunk.toString();
+        const newline = data.indexOf("\n");
+        if (newline < 0) return;
+        const message = JSON.parse(data.slice(0, newline)) as {
+          action: string;
+          request?: { requestId: string };
+          requestId?: string;
+          jobId?: string;
+        };
+        actions.push(message.action);
+        if (message.action === "submit")
+          assert.equal(message.request?.requestId, requestId);
+        if (message.action === "find-request")
+          assert.equal(message.requestId, requestId);
+        if (message.action === "result") assert.equal(message.jobId, job.id);
+        // The broker has already settled the job; only this reply is withheld.
+        if (
+          (message.action === lostAction &&
+            (!withheld.has(lostAction) || fault === "persistent-result")) ||
+          (fault === "find-request" && message.action === "submit")
+        ) {
+          withheld.add(message.action);
+          return;
+        }
+        const result =
+          message.action === "register"
+            ? {}
+            : message.action === "submit"
+              ? job
+              : { job, requestMatched: true, stdout: "ORIGINAL_MARKER" };
+        socket.end(JSON.stringify({ ok: true, result }) + "\n");
+      });
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(connection.queueSocket(directory), resolve),
+    );
+    try {
+      const input = {
+        kind: "rpc",
+        requestId,
+        payload: { secret: "PAYLOAD_MUST_NOT_APPEAR" },
+      };
+      if (fault === "register" || fault === "persistent-result") {
+        const observe = async () => {
+          const submitted = await queue.submit(input);
+          return queue.wait(submitted.id);
+        };
+        await assert.rejects(observe(), (error: unknown) => {
+          assert.ok(error && typeof error === "object");
+          const failure = error as Record<string, unknown>;
+          assert.equal(failure["code"], "QUEUE_IPC_TIMEOUT");
+          assert.equal(failure["action"], lostAction);
+          assert.equal(failure["requestId"], requestId);
+          assert.equal(failure["timeoutMs"], 25);
+          if (fault === "persistent-result")
+            assert.equal(failure["jobId"], job.id);
+          return true;
+        });
+      } else {
+        const submitted = await queue.submit(input);
+        assert.equal(submitted.id, job.id);
+        const result = await queue.wait(submitted.id);
+        assert.equal(result.job.id, job.id);
+        assert.equal(result.stdout, "ORIGINAL_MARKER");
+      }
+      assert.deepEqual(
+        actions,
+        fault === "register"
+          ? ["register"]
+          : fault === "persistent-result"
+            ? ["register", "submit", "result", "result", "result"]
+            : fault === "find-request"
+              ? ["register", "submit", "find-request", "find-request", "result"]
+              : lostAction === "submit"
+                ? ["register", "submit", "find-request", "result"]
+                : ["register", "submit", "result", "result"],
+      );
+      const timeout = events.find(
+        (event) =>
+          event["ipcStage"] === "timeout" && event["action"] === lostAction,
+      );
+      assert.ok(
+        timeout,
+        "the actual client timeout must retain its IPC action",
+      );
+      assert.equal(timeout["action"], lostAction);
+      assert.equal(timeout["requestId"], requestId);
+      if (lostAction === "result") assert.equal(timeout["jobId"], job.id);
+      assert.equal(
+        Number(timeout["deadlineMonotonicMs"]) -
+          Number(timeout["monotonicStartMs"]),
+        25,
+      );
+      assert.ok(Number(timeout["durationMs"]) >= 0);
+      assert.ok(
+        Number(timeout["monotonicEndMs"]) >=
+          Number(timeout["monotonicStartMs"]),
+      );
+      const output = JSON.stringify(events);
+      if (fault !== "register")
+        assert.ok(
+          events.some((event) => event["ipcStage"] === "reply-received"),
+        );
+      assert.equal(output.includes(queue.auth.clientToken), false);
+      assert.equal(output.includes("PAYLOAD_MUST_NOT_APPEAR"), false);
+      assert.equal(output.includes("ORIGINAL_MARKER"), false);
+      t.diagnostic(JSON.stringify({ fault, timeout, actions }));
+    } finally {
+      queue.dispose();
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+}
