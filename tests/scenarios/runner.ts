@@ -27,6 +27,8 @@ import * as programs from "./programs";
 import {
   captureOriginalView,
   restoreOriginalView,
+  prepareCaptureView,
+  verifiedViewCapture,
 } from "./original-view-programs";
 import { scopedMap, concurrencyLimit, defaultConcurrency } from "./scheduling";
 import * as savedPrograms from "./saved-programs";
@@ -273,9 +275,19 @@ export class ScenarioSession {
       throw new Error(
         "Original view capture requires an exclusive scenario before fixture creation",
       );
+    const plan = await prepareCaptureView(
+      path.dirname(path.dirname(this.directory)),
+      this.backend,
+      this.#coordinatorBaseline()["documents"] as Record<string, unknown>[],
+    );
+    fs.writeFileSync(
+      path.join(this.directory, "view-capture-plan.json"),
+      JSON.stringify(plan, null, 2) + "\n",
+      { flag: "wx", mode: 0o600 },
+    );
     await this.#dispatch(
       "original-user-view-capture",
-      captureOriginalView(strictCamera),
+      captureOriginalView(strictCamera, plan),
     );
   }
   async restoreUserView(): Promise<void> {
@@ -309,9 +321,43 @@ export class ScenarioSession {
           );
         return;
       }
+      const capture = this.report.requests.find(
+        (entry) => entry.phase === "original-user-view-capture",
+      );
+      assert.ok(capture);
+      const snapshot =
+        this.backend.qualification === "broker"
+          ? (
+              await verifiedViewCapture(
+                this.directory,
+                this.report.owner,
+                capture,
+                this.backend,
+              )
+            ).snapshot
+          : this.originalView;
+      const current = await this.#dispatch(
+        "original-user-view-observe",
+        programs.snapshot(),
+      );
+      const proofs = discoverOwnedUnsavedFixtureProofs(
+        path.dirname(path.dirname(this.directory)),
+        this.backend,
+      );
+      assertReceiptBoundDocumentInventory(
+        snapshot["documents"],
+        current["documents"],
+        proofs,
+        "User documents changed before view restoration",
+        false,
+      );
+      assert.ok(Array.isArray(snapshot["documents"]));
       const value = await this.#dispatch(
         "original-user-view-restore",
-        restoreOriginalView(this.originalView),
+        restoreOriginalView(snapshot, {
+          baseline: snapshot["documents"].map(record),
+          peers: [...proofs.values()],
+        }),
       );
       assert.equal(
         value["restored"],

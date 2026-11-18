@@ -79,6 +79,22 @@ for (const strict of [false, true]) {
     for (const [phase, source] of [
       ["capture", captureOriginalView(strict)],
       ["restore", restoreOriginalView(snapshot)],
+      [
+        "capture-context",
+        captureOriginalView(strict, {
+          baseline: snapshot.documents,
+          peers: [],
+          roots: {},
+          blocked: [],
+        }),
+      ],
+      [
+        "restore-peers",
+        restoreOriginalView(snapshot, {
+          baseline: snapshot.documents,
+          peers: [],
+        }),
+      ],
     ]) {
       assert.ok(source);
       assert.equal(source.includes("class _FMCADRequest"), false);
