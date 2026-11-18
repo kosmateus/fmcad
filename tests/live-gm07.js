@@ -152,7 +152,7 @@ function fixedContract(runtimeRoot, expectedBuild) {
   const buildHash = runtime.buildHash();
   assert.equal(installedBuild.fingerprint, buildHash, 'Runtime fingerprint differs from installed package identity.');
   assert.equal(buildHash, expectedBuild, 'Build differs from the offline-qualified candidate.');
-  return { runtime, contract, manifest, manifestSha256, scriptSha256, scriptPath, cliPath, buildHash };
+  return { runtimeRoot, runtime, contract, manifest, manifestSha256, scriptSha256, scriptPath, cliPath, buildHash };
 }
 
 function offlineCheck() {

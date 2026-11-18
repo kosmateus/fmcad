@@ -64,6 +64,121 @@ test("fixed GM07 and GM12 public operations retain canonical SDK/document contra
   }
 });
 
+test("GM07 strict contract carries its selected runtime into the durable invocation", (t) => {
+  const runtimeRoot = fs.mkdtempSync(
+    path.join(os.tmpdir(), "gm07-contract-binding-"),
+  );
+  t.after(() => fs.rmSync(runtimeRoot, { recursive: true, force: true }));
+  const fixtureId = "gm07-curves-program-v1";
+  const buildHash = "b".repeat(64);
+  const expectedManifestSha256 =
+    "aef99573a0ce45f852ea6883f0921e20056961a9d0b44bb8ced7654fd0707bb5";
+  const expectedScriptSha256 =
+    "aad7f113451db0784b16235de4d77cf7d8af024c3880338728154274616dbe16";
+  const script = "assets/native-qualification/gm07-curves.py";
+  const manifestPath = path.join(
+    runtimeRoot,
+    "dist/assets/native-qualification/gm07-curves-program.json",
+  );
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+  for (const file of ["gm07-curves-program.json", "gm07-curves.py"])
+    fs.copyFileSync(
+      path.join(root, "assets/native-qualification", file),
+      path.join(path.dirname(manifestPath), file),
+    );
+  fs.mkdirSync(path.join(runtimeRoot, "dist/bin"));
+  fs.writeFileSync(
+    path.join(runtimeRoot, "dist/bin/fmcad.js"),
+    "// offline fixture, never executed\n",
+  );
+  fs.writeFileSync(
+    path.join(runtimeRoot, "dist/runtime-build.json"),
+    JSON.stringify({ fingerprint: buildHash }),
+  );
+  const context = vm.createContext({
+    assert,
+    fs,
+    path,
+    crypto,
+    fixtureId,
+    expectedManifestSha256,
+    expectedScriptSha256,
+    require: (filename: string) => {
+      if (filename === path.join(runtimeRoot, "dist/src/queue-instance.js"))
+        return { buildHash: () => buildHash };
+      assert.equal(
+        filename,
+        path.join(runtimeRoot, "dist/src/queue-native-fixture-grant.js"),
+      );
+      return {
+        fixtureContract: () => ({
+          fixtureId,
+          kind: "fixed-run-v1",
+          helperVersion: "cad-v1",
+          script,
+          manifestSha256: expectedManifestSha256,
+          scriptSha256: expectedScriptSha256,
+        }),
+      };
+    },
+  });
+  const qualify = vm.runInContext(
+    "(" + retainedFunction("live-gm07.js", "fixedContract") + ")",
+    context,
+  ) as (
+    runtime: string,
+    build: string,
+  ) => {
+    runtimeRoot: string;
+    buildHash: string;
+    manifestSha256: string;
+    scriptSha256: string;
+    scriptPath: string;
+    cliPath: string;
+  };
+  const pinned = qualify(runtimeRoot, buildHash);
+  const requestId = "gm07-contract-binding";
+  const document = {
+    name: "FMCAD_GM07_offline",
+    creationId: "12345678-1234-1234-1234-123456789abc",
+  };
+  const command = [
+    pinned.cliPath,
+    "run",
+    pinned.scriptPath,
+    "--doc",
+    document.name,
+    "--doc-id",
+    document.creationId,
+    "--request-id",
+    requestId,
+  ];
+  const intent = prepareNativeInvocation(path.join(runtimeRoot, "intents"), {
+    requestId,
+    clientId: "gm07-offline",
+    document,
+    runtimeRoot: pinned.runtimeRoot,
+    buildHash: pinned.buildHash,
+    fixtureId,
+    manifestSha256: pinned.manifestSha256,
+    scriptSha256: pinned.scriptSha256,
+    command,
+  });
+  assert.equal(
+    readNativeInvocation(intent).binding.runtimeRoot,
+    fs.realpathSync(runtimeRoot),
+  );
+  assert.throws(() => qualify(runtimeRoot, "c".repeat(64)), /Build differs/u);
+  fs.writeFileSync(
+    manifestPath,
+    fs.readFileSync(manifestPath, "utf8").replace(/\n/gu, "\r\n"),
+  );
+  assert.throws(
+    () => qualify(runtimeRoot, buildHash),
+    /Installed GM07 manifest differs/u,
+  );
+});
+
 test("GM07 offline check requires the explicitly selected build fingerprint", (t) => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-gm07-pin-"));
   t.after(() => fs.rmSync(runtimeRoot, { recursive: true, force: true }));
