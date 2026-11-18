@@ -85,8 +85,61 @@ test("reviewed import extraction preserves all 482 old sites and separately bind
   assert.equal(manifest.current.length, 7);
   assert.equal(
     manifest.current.reduce((total, row) => total + row.assertions.length, 0),
-    546,
+    547,
   );
+});
+
+test("saved peer fence review keeps the earlier current observation without qualifying import equivalence", () => {
+  const review = JSON.parse(
+    fs.readFileSync(
+      path.join(root, "tests/live-import-extraction-review.json"),
+      "utf8",
+    ),
+  ) as {
+    current: { source: string; sha256: string; assertions: unknown[] }[];
+    currentSourceTransitions: {
+      source: string;
+      predecessor: string;
+      commit: string;
+      gitParent: string;
+      comparisonBasis: string;
+      qualification: string;
+      comparison: ReturnType<
+        typeof import("./assertion-history").compareAssertionSources
+      >;
+    }[];
+  };
+  const transition = review.currentSourceTransitions[0]!;
+  assert.equal(transition.source, "tests/scenarios/programs.ts");
+  assert.equal(
+    transition.predecessor,
+    "06908330fd309390318b86a807e534fe9f92d665",
+  );
+  assert.equal(transition.commit, "f9edac60a9b531fe006233950752b0b2a8eec43d");
+  assert.equal(
+    transition.gitParent,
+    "d79e4a15b970ae60804e840cfa4f246e06938116",
+  );
+  assert.equal(transition.comparisonBasis, "reviewed-source-span");
+  assert.equal(
+    transition.qualification,
+    "source-reviewed-native-not-qualified",
+  );
+  assert.equal(
+    transition.comparison.before.sha256,
+    "aaca0a88fd1f9995065d75104b9a949505ba555e8f8b402a016485e4df561a9e",
+  );
+  assert.equal(transition.comparison.before.count, 29);
+  assert.equal(
+    digest(JSON.stringify(transition.comparison.removed)),
+    "0ad19f907ec697ba3e694e6eabaa6ecf49dcfb688c0d38cd452e2867128eeab9",
+  );
+  const current = review.current.find(
+    (row) => row.source === transition.source,
+  )!;
+  const latest = review.currentSourceTransitions.at(-1)!;
+  assert.equal(latest.comparison.after.sha256, current.sha256);
+  assert.equal(latest.comparison.after.count, current.assertions.length);
 });
 
 test("reviewed import evidence is checkout-line-ending independent without changing frozen hashes", (t) => {
