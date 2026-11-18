@@ -7,7 +7,10 @@ import type { ScenarioBackend } from "./contracts";
 import { record, text } from "./contracts";
 import { ScenarioSession, runScenarios } from "./runner";
 import { nativeBackendAdapterScenarios } from "./native-backend-adapter-cases";
-import { nativeMcpStdioScenarios } from "./native-mcp-stdio-cases";
+import {
+  nativeMcpStdioEntry,
+  nativeMcpStdioScenarios,
+} from "./native-mcp-stdio-cases";
 import {
   nativeRpcRecoveryScenarios,
   prepareNativeRpcRecoveryBroker,
@@ -57,6 +60,30 @@ test("all native diagnostic factories are pure and reject unsupported ten-owner 
       assert.deepEqual(report.requests, []);
     }
   }
+});
+
+test("native MCP stdio uses the qualified runtime entry and rejects a fingerprint mismatch", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "native-mcp-entry-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const helper = path.join(root, "tests/helpers");
+  fs.mkdirSync(helper, { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "package.json"),
+    JSON.stringify({ name: "fmcad" }),
+  );
+  fs.writeFileSync(
+    path.join(helper, "qualified-live-runtime.js"),
+    `module.exports = { resolveQualifiedLiveRuntime: () => ({ dist: ${JSON.stringify(path.join(root, "qualified", "dist"))}, fingerprint: "qualified-build" }) };\n`,
+  );
+
+  assert.equal(
+    nativeMcpStdioEntry({ root, buildHash: "qualified-build" }),
+    path.join(root, "qualified/dist/bin/fmcad-mcp.js"),
+  );
+  assert.throws(
+    () => nativeMcpStdioEntry({ root, buildHash: "different-build" }),
+    assert.AssertionError,
+  );
 });
 
 test("native adapter timeout keeps retained positive integer bound before dispatch", () => {

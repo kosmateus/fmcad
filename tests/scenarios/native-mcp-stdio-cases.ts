@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import path from "node:path";
 import readline from "node:readline";
 import { spawn, spawnSync } from "node:child_process";
@@ -15,6 +16,20 @@ import {
 
 export const nativeMcpStdioCapability = "native-addin-mcp-stdio";
 
+export function nativeMcpStdioEntry(native: {
+  root: string;
+  buildHash: string;
+}): string {
+  const { resolveQualifiedLiveRuntime } = createRequire(
+    path.join(native.root, "package.json"),
+  )("./tests/helpers/qualified-live-runtime") as {
+    resolveQualifiedLiveRuntime(): { dist: string; fingerprint: string };
+  };
+  const runtime = resolveQualifiedLiveRuntime();
+  assert.equal(runtime.fingerprint, native.buildHash);
+  return path.join(runtime.dist, "bin/fmcad-mcp.js");
+}
+
 /** Retained OpenCode stdio entry and assertions, with original-request recovery. */
 export function nativeMcpStdioScenarios(owners = 10): Scenario[] {
   concurrencyLimit(owners);
@@ -25,7 +40,7 @@ export function nativeMcpStdioScenarios(owners = 10): Scenario[] {
     lifecycle: "read-only",
     async run(session) {
       const native = await nativeDiagnosticQueue(session);
-      const entry = path.join(native.root, "bin/fmcad-mcp.js");
+      const entry = nativeMcpStdioEntry(native);
       const help = spawnSync(process.execPath, [entry, "--help"], {
         cwd: native.root,
         encoding: "utf8",
