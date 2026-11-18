@@ -228,8 +228,19 @@ function spawnSync(command, args, options) {
       const runtime = resolveQualifiedLiveRuntime(liveEnv);
       const loadRuntime = createRequire(path.join(runtime.dist, 'package.json'));
       const { cfg } = loadRuntime('./src/config').loadConfig({ routing: 'queue' });
-      if (cfg.backend !== 'addin' || cfg.url !== 'http://127.0.0.1:8765/mcp' ||
-          cfg.protocolVersion !== '2025-06-18' || cfg.tool !== 'execute_python')
+      const simulatorEndpoint = liveEnv.FMCAD_SCENARIO_SIMULATOR_ENDPOINT;
+      let simulatorUrl;
+      try { simulatorUrl = new URL(cfg.url); } catch {}
+      const privateSimulator = ['mcp', 'addin'].includes(cfg.backend) &&
+        typeof simulatorEndpoint === 'string' && simulatorEndpoint === cfg.url &&
+        simulatorUrl?.protocol === 'http:' && simulatorUrl.hostname === '127.0.0.1' &&
+        Boolean(simulatorUrl.port) && simulatorUrl.pathname === '/mcp' &&
+        !['27182', '8765'].includes(simulatorUrl.port) &&
+        !simulatorUrl.username && !simulatorUrl.password &&
+        !simulatorUrl.search && !simulatorUrl.hash;
+      const qualifiedAddin = cfg.backend === 'addin' && cfg.url === 'http://127.0.0.1:8765/mcp' &&
+        cfg.protocolVersion === '2025-06-18' && cfg.tool === 'execute_python';
+      if (!privateSimulator && !qualifiedAddin)
         throw new Error('Live test commands require the qualified ADDIN endpoint');
       const words = owned ? owned.words : args.slice(1);
       const invocation = queueInvocation(words, identity.clientId, cfg.backend);

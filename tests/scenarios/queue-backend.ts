@@ -62,8 +62,11 @@ export class QueueScenarioBackend implements ScenarioBackend {
     readonly root: string,
     readonly config: Record<string, unknown>,
     readonly pathMapper: (file: string) => string,
+    simulatorRuntime?: { readonly root: string; readonly fingerprint: string },
   ) {
     const load = createRequire(path.join(root, "package.json"));
+    if (simulatorRuntime && mode !== "simulator")
+      throw new Error("Simulator runtime binding cannot be used for Fusion");
     if (mode === "fusion") {
       const { resolveQualifiedLiveRuntime } = load(
         "./tests/helpers/qualified-live-runtime",
@@ -83,6 +86,24 @@ export class QueueScenarioBackend implements ScenarioBackend {
       this.#buildHash = () => runtime.fingerprint;
       this.#queueExec = load("./tests/helpers/live-broker") as QueueExecHelpers;
       this.#cliPath = path.join(runtime.dist, "bin/fmcad.js");
+    } else if (simulatorRuntime) {
+      const { resolveQualifiedLiveRuntime } = load(
+        "./tests/helpers/qualified-live-runtime",
+      ) as {
+        resolveQualifiedLiveRuntime(env: NodeJS.ProcessEnv): {
+          dist: string;
+          fingerprint: string;
+        };
+      };
+      const runtime = resolveQualifiedLiveRuntime({
+        FMCAD_LIVE_RUNTIME_ROOT: simulatorRuntime.root,
+      });
+      if (runtime.fingerprint !== simulatorRuntime.fingerprint)
+        throw new Error("Simulator runtime binding fingerprint changed");
+      this.#module = createRequire(path.join(runtime.dist, "package.json"))(
+        "./src/queue-client",
+      ) as QueueModule;
+      this.#buildHash = () => runtime.fingerprint;
     } else {
       this.#module = load("./src/queue-client") as QueueModule;
       this.#buildHash = (
