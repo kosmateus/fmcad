@@ -1,5 +1,6 @@
 """GM13 offline tests: thread catalog, custom profiles, pair checks and the model.thread extension."""
 import math
+import re
 from pathlib import Path
 import unittest
 import sys
@@ -32,6 +33,22 @@ class ThreadTests(unittest.TestCase):
         self.assertAlmostEqual(entry['pitch']['value'], 1.5)
         self.assertAlmostEqual(entry['lead']['value'], 1.5)
         self.assertAlmostEqual(entry['majorDiameter']['value'], 10.0)
+
+    def test_live_catalog_selector_matches_the_curated_table(self):
+        source = (ROOT / 'tests/live-thread-method.js').read_text()
+        call = re.search(r"cad\('thread.catalog',\s*\{([^}]+)\}\)", source)
+        self.assertIsNotNone(call)
+        query = re.search(r"query:\s*'([^']+)'", call.group(1))
+        starts = re.search(r"starts:\s*(\d+)", call.group(1))
+        self.assertIsNotNone(query)
+        self.assertIsNotNone(starts)
+        result = self.call('thread.catalog', {'schemaVersion': 1, 'frame': 'component',
+            'system': 'iso-metric-coarse', 'query': query.group(1), 'starts': int(starts.group(1))})
+        self.assertTrue(result['curated'])
+        self.assertEqual(len(result['entries']), 1)
+        self.assertEqual(result['entries'][0]['designation'], 'M10')
+        self.assertAlmostEqual(result['entries'][0]['pitch']['value'], 1.5)
+        self.assertAlmostEqual(result['entries'][0]['lead']['value'], 3.0)
 
     def test_custom_profile_lead_is_starts_times_pitch(self):
         result = self.call('thread.custom-profile', {'schemaVersion': 1, 'frame': 'component',

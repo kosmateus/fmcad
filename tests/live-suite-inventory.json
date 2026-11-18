@@ -517,7 +517,7 @@
       "source": "tests/live-thread-method.js",
       "runner": "standalone",
       "model": "partial",
-      "scope": "Thread selection, creation and native feature readback",
+      "scope": "Curated M10 catalog selection, separate native M10x1.5 ThreadInfo selection, creation and feature readback",
       "prerequisites": "Installed matching broker and an isolated owned fixture",
       "baseline": {
         "kind": "later"

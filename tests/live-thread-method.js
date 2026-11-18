@@ -236,8 +236,9 @@ async function main() {
 
     currentCase = 'thread-catalog-custom-profile-and-pair-check';
     const catalogResult = cad('thread.catalog', { schemaVersion: 1, frame: 'component',
-      system: 'iso-metric-coarse', query: 'M10x1.5', starts: 2 });
-    check('thread.catalog', 'curated query returns exactly M10x1.5', catalogResult.entries.length, 1);
+      system: 'iso-metric-coarse', query: 'M10', starts: 2 });
+    check('thread.catalog', 'curated query returns exactly one M10 entry', catalogResult.entries.length, 1);
+    check('thread.catalog', 'curated designation is M10, not a native thread selector', catalogResult.entries[0].designation, 'M10');
     check('thread.catalog', 'catalog result identifies the curated ISO subset', catalogResult.curated, true);
     check('thread.catalog', 'multi-start lead equals two starts times 1.5 mm pitch', catalogResult.entries[0].lead.value, 3, 1e-9);
     validated('thread.catalog');
