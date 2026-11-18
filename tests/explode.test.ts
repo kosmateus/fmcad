@@ -52,16 +52,22 @@ test("GM36 explode catalog and manual cover the same operations with audited con
   }
 });
 
-test("GM36 explode handlers bundle into the CAD script", () => {
-  const script = buildCadScript(
+test("GM36 explode handlers bundle into their CAD scripts", () => {
+  const planScript = buildCadScript(
     "explode.plan",
     catalog["explode.plan"]!.example,
     { doc: "GM36" },
   );
-  assert.ok(script.includes("def explode_plan"));
-  assert.ok(script.includes("def explode_render"));
-  assert.ok(script.includes("'explode.plan': explode_plan"));
-  assert.ok(script.includes("'explode.render': explode_render"));
+  assert.ok(planScript.includes("def explode_plan"));
+  assert.ok(planScript.includes("'explode.plan': explode_plan"));
+
+  const renderScript = buildCadScript(
+    "explode.render",
+    catalog["explode.render"]!.example,
+    { doc: "GM36" },
+  );
+  assert.ok(renderScript.includes("def explode_render"));
+  assert.ok(renderScript.includes("'explode.render': explode_render"));
 });
 
 test("GM36 explode test evidence files exist", () => {
