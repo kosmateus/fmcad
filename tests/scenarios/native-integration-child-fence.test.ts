@@ -49,7 +49,7 @@ test("owned integration CLI settles each child dispatch before the next one", as
     JSON.stringify({
       ...document,
       clientId: owner.clientId,
-      requestId: owner.clientId + ":create",
+      requestId: owner.clientId + ":0",
     }),
     { mode: 0o600 },
   );
