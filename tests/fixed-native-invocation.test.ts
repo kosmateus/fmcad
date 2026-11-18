@@ -13,6 +13,7 @@ import {
 } from "./scenarios/test-support";
 import { runScenarios, type Scenario } from "./scenarios/runner";
 import type { ScenarioBackend, Execution } from "./scenarios/contracts";
+import type { QueueScenarioBackend } from "./scenarios/queue-backend";
 import { program } from "./scenarios/programs";
 import {
   prepareNativeInvocation,
@@ -418,6 +419,7 @@ test("GM07 main composes the qualified shared lifecycle instead of ad hoc docume
     root,
     Set,
     report,
+    uncertain: false,
     coverageOperations: ["curve.fit"],
     reportPath: "gm07-report.json",
     targetOperations: ["curve.fit"],
@@ -445,7 +447,10 @@ test("GM07 main composes the qualified shared lifecycle instead of ad hoc docume
     require: (name: string) => {
       if (name === "../dist/tests/scenarios/queue-backend.js")
         return {
-          QueueScenarioBackend: class {
+          QueueScenarioBackend: class implements Pick<
+            QueueScenarioBackend,
+            "close"
+          > {
             constructor(
               mode: string,
               protocol: string,
@@ -462,7 +467,7 @@ test("GM07 main composes the qualified shared lifecycle instead of ad hoc docume
                 ["documents", "fixture-export", "original-user-view"],
               );
             }
-            dispose() {
+            close() {
               disposed = true;
             }
           },

@@ -475,6 +475,7 @@ async function main() {
     const [owned] = await runScenarios(backend, [gm07OwnedScenario(pinned, fusionVersion, backend)],
       scenarioArtifactRoot(root, 'fusion'), 1);
     report.lifecycle = owned;
+    uncertain ||= owned.cleanup === 'deferred';
     report.fixtureClosed = owned.cleanup === 'complete' && Boolean(owned.document);
     report.remainingOwnedDocuments = report.fixtureClosed ? [] : 'unknown';
     report.cleanup = { status: owned.cleanup, document: owned.document, report: path.join(owned.directory, 'report.json') };
@@ -493,7 +494,7 @@ async function main() {
     console.log('REPORT ' + reportPath);
     console.log('PASS GM07 source-pinned native methods: ' + targetOperations.join(', '));
   } finally {
-    backend.dispose();
+    backend.close();
   }
 }
 
