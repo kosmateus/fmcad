@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 type Modules = {
   "addin-bridge": typeof import("../src/composition/library-addin-bridge");
   backends: typeof import("../src/composition/library-backends");
@@ -165,7 +166,7 @@ test("typed compatibility factory preserves selection and direct-routing denial 
       );
 });
 
-test("typed bridge asset boundary retains checked program bytes and unsupported-operation errors", () => {
+test("typed bridge retains canonical checked bytes, executable parity and unsupported-operation errors", () => {
   const before = historical("addin-bridge"),
     after = load(
       path.join(root, "src/addin-bridge"),
@@ -186,20 +187,103 @@ test("typed bridge asset boundary retains checked program bytes and unsupported-
     ["fusion_mcp_read", { queryType: "document", operation: "open" }],
     [
       "fusion_mcp_read",
+      { queryType: "document", operation: "search", name: "Żółć $&" },
+    ],
+    [
+      "fusion_mcp_read",
       { queryType: "document", operation: "search", query: "Żółć" },
     ],
     ["fusion_mcp_read", { queryType: "activeCommand" }],
     ["fusion_mcp_read", { queryType: "projects" }],
     ["fusion_mcp_read", { queryType: "unsupported" }],
     [
+      "fusion_mcp_execute",
+      { featureType: "script", object: { script: "print('unchanged')" } },
+    ],
+    [
+      "fusion_mcp_execute",
+      {
+        featureType: "document",
+        object: { operation: "open", fileId: "owned-file" },
+      },
+    ],
+    [
+      "fusion_mcp_execute",
+      {
+        featureType: "document",
+        object: { operation: "close", userConfirmedCloseWithoutSave: true },
+      },
+    ],
+    [
       "fusion_mcp_update",
       { featureType: "script", object: { script: "print('unchanged')" } },
     ],
     ["unsupported", {}],
   ];
-  for (const [tool, request] of cases)
-    assert.deepEqual(
-      observe(after, tool, request),
-      observe(before, tool, request),
+  const paths = load(
+    path.join(root, "src/dist/config-platform"),
+  ) as typeof import("../packages/node-adapters/src/config-platform/runtime-paths");
+  const bridge = load(
+    path.join(root, "packages/node-adapters/dist/fusion-transport/bridge"),
+  ) as typeof import("../packages/node-adapters/src/fusion-transport/bridge");
+  const { assets, runtime } = paths.resolveRuntimePaths({
+    anchor: path.join(root, "src/addin-bridge.js"),
+  });
+  const canonicalSource =
+    fs.readFileSync(
+      path.join(runtime, "fmcad/adapters/fusion/identity.py"),
+      "utf8",
+    ) +
+    "\n" +
+    fs.readFileSync(path.join(assets, "addin-bridge.py"), "utf8");
+  assert.equal(after.addinBridgeSource(), canonicalSource);
+  for (const [tool, request] of cases) {
+    const current = observe(after, tool, request);
+    const previous = observe(before, tool, request);
+    if (!("script" in current) || !("script" in previous)) {
+      assert.deepEqual(current, previous);
+      continue;
+    }
+    // This boundary stays byte-exact even when static typing declarations grow.
+    assert.equal(
+      current.script,
+      bridge.buildBridgeScript(tool, request, canonicalSource),
     );
+    if (tool === "fusion_mcp_execute" && request["featureType"] === "script") {
+      assert.deepEqual(current, previous);
+      continue;
+    }
+    // The canonical identity's expanded Protocol members are intentional typing
+    // input, not executable behavior. Keep the historical fixture/hash intact.
+    const parity = spawnSync(
+      "python3",
+      [
+        "-I",
+        "-S",
+        "-B",
+        "-c",
+        `
+import ast, json, sys
+def executable(source):
+    tree = ast.parse(source)
+    imports = tree.body[1]
+    assert isinstance(imports, ast.ImportFrom) and imports.module == 'typing'
+    assert any(item.name == 'TYPE_CHECKING' and item.asname == '_Identity_TYPE_CHECKING' for item in imports.names)
+    guard = tree.body[2]
+    assert isinstance(guard, ast.If) and isinstance(guard.test, ast.Name)
+    assert guard.test.id == '_Identity_TYPE_CHECKING' and not guard.orelse
+    assert all(isinstance(item, ast.ClassDef) for item in guard.body)
+    del tree.body[2]
+    return ast.dump(tree, include_attributes=False)
+before, after = json.load(sys.stdin)
+assert executable(before) == executable(after), 'Executable bridge program changed'
+`,
+      ],
+      {
+        input: JSON.stringify([previous.script, current.script]),
+        encoding: "utf8",
+      },
+    );
+    assert.equal(parity.status, 0, parity.stderr);
+  }
 });
