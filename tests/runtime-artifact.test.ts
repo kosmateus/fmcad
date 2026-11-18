@@ -480,8 +480,8 @@ test("actual npm tarball runs CLI MCP and worker readonly outside checkout with 
     maxBuffer: 16 * 1024 * 1024,
   });
   assert.equal(broker.status, 0, broker.stderr + broker.stdout);
-  assert.match(broker.stdout, /tests 4\b/);
-  assert.match(broker.stdout, /pass 4\b/);
+  assert.match(broker.stdout, /tests 8\b/);
+  assert.match(broker.stdout, /pass 8\b/);
   const project = path.join(cwd, "fake CAD project");
   const queue = path.join(project, "isolated queue");
   const jobs = path.join(queue, "jobs");
