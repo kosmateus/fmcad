@@ -30,6 +30,19 @@ const { readOwnedResult } = load(
 const { readAcceptedInput } = load(
   "../src/dist/node-adapters/persistence/accepted-inputs",
 ) as typeof import("../packages/node-adapters/src/persistence/accepted-inputs.js");
+const { runBoundInstanceProbe } = load(
+  "./fixtures/bound-instance-probe.cjs",
+) as {
+  runBoundInstanceProbe(
+    script: string,
+    identity: {
+      pid: number;
+      birth: string;
+      version: string;
+      activeCommand: string;
+    },
+  ): { text: string };
+};
 
 function acceptedBytes(dir: string, reference: unknown): Buffer {
   // The persisted descriptor is untrusted; let the actual reader validate it.
@@ -81,10 +94,17 @@ test("broker large project RPC/provenance survive restart; foreign owner and sym
         }),
       };
     },
-    async callTool() {
+    async callTool(value) {
+      assert.equal(field(value, "object", "readOnly"), true);
+      // Run the real prepared probe against the existing offline SDK fixture so
+      // its source-bound receipt agrees with the observation, not just its text.
+      const probe = runBoundInstanceProbe(
+        string(field(value, "object", "script")),
+        identity,
+      );
       return {
         failed: false,
-        text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(identity),
+        text: probe.text,
       };
     },
   };
