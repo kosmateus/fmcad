@@ -28,7 +28,7 @@ const { prepareCadScript, executeCad } = load(
 const { cadBundleUnits } = load(
   "../src/dist/python/bundle",
 ) as typeof import("../packages/node-adapters/src/python/bundle.js");
-const { verifyPythonArtifact } = load(
+const { preparePythonArtifact, verifyPythonArtifact } = load(
   "../src/python",
 ) as typeof import("../packages/node-adapters/src/python/artifact.js");
 const context = {
@@ -110,7 +110,23 @@ test("pack preserves artifact hashes, identity, one readonly turn and light stat
   assert.ok(artifact.units.some((unit) => unit.id === "inspection"));
   const light = prepareCadScript("document.status", {}, context);
   assert.ok(!light.units.some((unit) => unit.id === "inspection"));
-  assert.ok(light.bytes.length < artifact.bytes.length / 10);
+  // The original 1:10 budget compared status with the complete CAD inventory.
+  // inspect.pack now selects its own transitive declarations, so shrinking that
+  // independent artifact must not make an unchanged status profile fail.
+  const wrapper = artifact.units.find((unit) => unit.id === "wrapper");
+  assert.ok(wrapper);
+  const complete = preparePythonArtifact(
+    [...cadBundleUnits(process.cwd()), wrapper],
+    { request: artifact.request, context: artifact.context },
+  );
+  assert.ok(
+    light.bytes.length < complete.bytes.length / 10,
+    `status ${light.bytes.length} B exceeds 1:10 full-inventory budget (${complete.bytes.length} B)`,
+  );
+  assert.ok(
+    light.bytes.length < artifact.bytes.length,
+    `status ${light.bytes.length} B must remain smaller than selected inspection ${artifact.bytes.length} B`,
+  );
   let calls = 0;
   const result = await executeCad(
     {
