@@ -14,6 +14,25 @@ import {
 export const nativeFeatureModesCapability = "native-feature-modes-addin";
 const py = (value: unknown): string =>
   `json.loads(${JSON.stringify(JSON.stringify(value))})`;
+export async function guardedFeatureModeProbeSource(
+  identity: { name: string; creationId: string },
+  guard: () => Promise<Record<string, unknown> | undefined>,
+  body: string,
+): Promise<string> {
+  const current = await guard();
+  assert.ok(current, "Feature probe requires a verified current inventory");
+  const foreign = values(current["documents"])
+    .map(record)
+    .filter((doc) => doc["creationId"] !== identity.creationId)
+    .map((doc) => ({
+      name: doc["name"],
+      creationId: doc["creationId"],
+      saved: doc["saved"],
+      modified: doc["modified"],
+    }))
+    .sort((a, b) => text(a.creationId).localeCompare(text(b.creationId)));
+  return featureModeProbeSource(identity, foreign, body);
+}
 export function featureModeProbeSource(
   identity: { name: string; creationId: string },
   foreign: readonly unknown[],
@@ -182,16 +201,7 @@ export function nativeFeatureModesScenarios(owners = 10): Scenario[] {
         [],
         [],
       );
-      const { identity, baseline } = harness;
-      const foreign = values(baseline["documents"])
-        .map(record)
-        .map((doc) => ({
-          name: doc["name"],
-          creationId: doc["creationId"],
-          saved: doc["saved"],
-          modified: doc["modified"],
-        }))
-        .sort((a, b) => text(a.creationId).localeCompare(text(b.creationId)));
+      const { identity } = harness;
       const report = {
         retainedSource: "tests/live-feature-modes.js",
         owner: session.report.owner,
@@ -223,8 +233,11 @@ export function nativeFeatureModesScenarios(owners = 10): Scenario[] {
         body: string,
         options: ScriptOptions = {},
       ): Promise<unknown> {
-        await harness.guard();
-        const source = featureModeProbeSource(identity, foreign, body);
+        const source = await guardedFeatureModeProbeSource(
+          identity,
+          harness.guard,
+          body,
+        );
         const row: Record<string, unknown> = {
           label,
           test: current.name,

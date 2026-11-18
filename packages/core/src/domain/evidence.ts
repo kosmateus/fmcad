@@ -62,6 +62,9 @@ export function classifyEvidence(value: unknown): ValidationStatus {
     .filter((key) => Object.hasOwn(evidence, key))
     .flatMap((key) => {
       const raw = evidence[key];
+      // Coverage can be a domain-specific count report, not a status enum.
+      // It neither establishes validation nor overrides an explicit status.
+      if (key === "coverage" && record(raw)) return [];
       if (typeof raw !== "string") return ["unknown" as const];
       const mapped = statusAliases[raw.toLowerCase()];
       if (mapped) return [mapped];

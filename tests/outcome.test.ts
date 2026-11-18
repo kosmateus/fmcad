@@ -16,7 +16,7 @@ import path from "node:path";
 
 const fixtureDirectory = path.join(process.cwd(), "tests");
 const load = createRequire(path.join(fixtureDirectory, "outcome.test.ts"));
-const { failedOutcome } = load(
+const { failedOutcome, classifyEvidence } = load(
   "../src/outcome",
 ) as typeof import("../packages/core/src/index.js");
 const { catalog, buildCadScript, executeCad } = load(
@@ -32,6 +32,65 @@ const context = {
   projectId: "offline-project",
   preview: false,
 };
+
+test("history.check preserves healthy structured coverage through the public classifier", async () => {
+  const result = {
+    healthy: true,
+    status: "pass",
+    recomputed: false,
+    coverage: { visitedLeaves: 8, unknownLeaves: 0, unvisitedChildren: 0 },
+  };
+  const envelope = {
+    success: true,
+    operation: "history.check",
+    document: context.doc,
+    result,
+    created: [],
+  };
+  const output = await executeCad(
+    {
+      callTool: async () => ({
+        text: "FMCAD_RESULT " + JSON.stringify(envelope),
+      }),
+    },
+    "history.check",
+    {},
+    context,
+  );
+  assert.deepEqual(output, envelope);
+  assert.equal(classifyEvidence(result), "pass");
+  assert.equal(failedOutcome(output), false);
+});
+
+test("structured coverage is metadata, not a positive validation claim", () => {
+  const coverage = { visitedLeaves: 8, unknownLeaves: 0, unvisitedChildren: 0 };
+  assert.equal(classifyEvidence({ coverage }), "not_checked");
+  for (const status of [
+    "fail",
+    "unknown",
+    "partial",
+    "blocked",
+    "unsupported",
+  ] as const)
+    assert.equal(classifyEvidence({ status, coverage }), status);
+  assert.equal(
+    classifyEvidence({ status: "pass", passed: false, coverage }),
+    "fail",
+  );
+  assert.equal(
+    failedOutcome({ success: false, result: { status: "pass", coverage } }),
+    true,
+  );
+});
+
+test("scalar coverage and malformed status fields remain fail-closed", () => {
+  for (const coverage of [null, 0, false, []])
+    assert.equal(classifyEvidence({ status: "pass", coverage }), "unknown");
+  for (const coverage of ["unknown", "partial", "unsupported"] as const)
+    assert.equal(classifyEvidence({ status: "pass", coverage }), coverage);
+  for (const key of ["status", "evidenceStatus", "checkOutcome", "precision"])
+    assert.equal(classifyEvidence({ status: "pass", [key]: {} }), "unknown");
+});
 const metadata = {
   status: "fail",
   passed: false,
