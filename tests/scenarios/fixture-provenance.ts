@@ -391,6 +391,31 @@ export function assertFencedDocumentInventory(
   );
 }
 
+/** Check an unsaved owned close against the same-turn pre/post inventory fence. */
+export function assertFencedClosedDocumentInventory(
+  beforeValue: unknown,
+  afterValue: unknown,
+  target: Document,
+  message: string,
+): void {
+  const before = documentRows(beforeValue),
+    after = documentRows(afterValue);
+  assertOwnedUnsavedDocument(before, target);
+  assert.equal(
+    after.some((document) => document["creationId"] === target.creationId),
+    false,
+    "Owned fixture remains open after cleanup",
+  );
+  const beforeOthers = before.filter(
+    (document) => document["creationId"] !== target.creationId,
+  );
+  assert.deepEqual(
+    stableDocuments(beforeOthers),
+    stableDocuments(after),
+    message,
+  );
+}
+
 /** Admit only exact live peer fixtures or fixtures closed by their exact receipt. */
 export function assertReceiptBoundDocumentInventory(
   beforeValue: unknown,

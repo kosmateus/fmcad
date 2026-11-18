@@ -93,22 +93,46 @@ export function inspect(document: Document): string {
 ${emit("dict(creationId=doc.creationId, count=design.userParameters.count, saved=doc.isSaved)")}`);
 }
 export function close(document: Document): string {
-  return program(`import adsk.core, json
+  return program(
+    `import adsk.core, json
+from collections.abc import Sequence
 from typing import cast
 app = adsk.core.Application.get()
+def _fmcad_close_inventory() -> list[_FmcadCloseInventoryDocument]:
+    rows: list[_FmcadCloseInventoryDocument] = []
+    for d in app.documents:
+        rows.append({
+            'creationId': d.creationId,
+            'name': d.name,
+            'fileId': d.dataFile.id if d.dataFile else None,
+            'saved': d.isSaved,
+            'modified': d.isModified,
+            'active': d == app.activeDocument,
+        })
+    return rows
+def _fmcad_close_stable(rows: Sequence[_FmcadCloseInventoryDocument]) -> list[tuple[str, str, str | None, bool, bool]]:
+    return sorted((row['creationId'], row['name'], row['fileId'], row['saved'], row['modified']) for row in rows)
+_fmcad_before = _fmcad_close_inventory()
 matches = [d for d in app.documents if d.creationId == ${quoted(document.creationId)}]
-assert len(matches) <= 1
-if matches:
-    doc = matches[0]
-    assert doc.name == ${quoted(document.name)}
-    assert app.userInterface.activeCommand in (None, '', 'SelectCommand'), 'Fusion interactive command must be idle before closing a fixture'
-${savedGuard(document)
-  .split("\n")
-  .map((line) => "    " + line)
-  .join("\n")}
-    assert doc.close(False)
+assert len(matches) == 1, 'Owned fixture identity is missing or duplicated'
+doc = matches[0]
+assert doc.name == ${quoted(document.name)}
+assert app.userInterface.activeCommand in (None, '', 'SelectCommand'), 'Fusion interactive command must be idle before closing a fixture'
+${savedGuard(document)}
+assert doc.close(False)
+_fmcad_after = _fmcad_close_inventory()
 assert not any(d.creationId == ${quoted(document.creationId)} for d in app.documents)
-${emit(`dict(creationId=${quoted(document.creationId)}, closed=True)`)}`);
+assert _fmcad_close_stable([d for d in _fmcad_before if d['creationId'] != ${quoted(document.creationId)}]) == _fmcad_close_stable(_fmcad_after), 'A non-target document changed during owned cleanup'
+${emit(`dict(creationId=${quoted(document.creationId)}, closed=True, inventoryFence=dict(version=1, before=_fmcad_before, after=_fmcad_after))`)}`,
+    `from typing import TypedDict
+class _FmcadCloseInventoryDocument(TypedDict):
+    creationId: str
+    name: str
+    fileId: str | None
+    saved: bool
+    modified: bool
+    active: bool`,
+  );
 }
 export function snapshot(): string {
   return program(`import adsk.core, json

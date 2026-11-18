@@ -5,7 +5,9 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Document, ScenarioBackend } from "./contracts";
 import { marker } from "./programs";
+import { runScenarios } from "./runner";
 import {
+  assertFencedClosedDocumentInventory,
   assertFencedDocumentInventory,
   assertOwnedUnsavedDocument,
   assertPreservedDocumentInventory,
@@ -103,6 +105,113 @@ function reportFixture(t: { after(fn: () => void): void }) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return { root, runRoot, indexFile, reportFile, document, report, identity };
 }
+
+test("an unsettled held peer remains in the coordinator baseline", async (t) => {
+  const fixture = reportFixture(t);
+  Object.assign(fixture.report, {
+    cleanup: "deferred",
+    cleanupHold: { requestId: fixture.identity.requestId, reason: "held" },
+  });
+  fs.writeFileSync(fixture.reportFile, JSON.stringify(fixture.report));
+  const user = {
+      creationId: "user-sentinel",
+      name: "User design",
+      saved: false,
+      modified: false,
+      fileId: null,
+    },
+    documents = [
+      {
+        ...fixture.document,
+        saved: false,
+        modified: false,
+        fileId: null,
+      },
+      user,
+    ],
+    liveBackend: ScenarioBackend = {
+      ...backend,
+      capabilities: new Set(),
+      fusionPath: (filename) => filename,
+      execute: async (request) => ({
+        requestId: request.requestId,
+        state: "succeeded",
+        sdkSettled: true,
+        mayHaveMutated: false,
+        stdout: marker + JSON.stringify({ active: null, documents }) + "\n",
+      }),
+    },
+    existingRuns = new Set(fs.readdirSync(fixture.root));
+
+  const reports = await runScenarios(
+    liveBackend,
+    [
+      {
+        id: "readonly-audit",
+        requires: [],
+        scope: "exclusive-instance",
+        lifecycle: "read-only",
+        async run() {},
+      },
+    ],
+    fixture.root,
+    1,
+  );
+
+  assert.equal(reports[0]?.status, "passed", reports[0]?.error);
+  const runId = fs
+    .readdirSync(fixture.root)
+    .find((entry) => !existingRuns.has(entry));
+  assert.ok(runId);
+  const index = JSON.parse(
+    fs.readFileSync(path.join(fixture.root, runId, "index.json"), "utf8"),
+  ) as { before: { documents: Array<{ creationId: string }> } };
+  assert.ok(
+    index.before.documents.some(
+      (document) => document.creationId === fixture.document.creationId,
+    ),
+  );
+});
+
+test("owned unsaved cleanup preserves the same-turn foreign inventory", (t) => {
+  const fixture = reportFixture(t),
+    user = {
+      creationId: "user-sentinel",
+      name: "User design",
+      saved: false,
+      modified: false,
+      fileId: null,
+    },
+    before = [
+      {
+        ...fixture.document,
+        saved: false,
+        modified: true,
+        fileId: null,
+      },
+      user,
+    ],
+    after = [user];
+
+  assert.doesNotThrow(() =>
+    assertFencedClosedDocumentInventory(
+      before,
+      after,
+      fixture.document,
+      "foreign inventory changed",
+    ),
+  );
+  assert.throws(
+    () =>
+      assertFencedClosedDocumentInventory(
+        before,
+        [{ ...user, modified: true }],
+        fixture.document,
+        "foreign inventory changed",
+      ),
+    /foreign inventory changed/u,
+  );
+});
 
 test("only a live owner with its exact settled creation receipt authorizes a peer fixture", (t) => {
   const fixture = reportFixture(t),

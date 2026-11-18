@@ -43,6 +43,7 @@ import { revisionProgram, recoverRevision } from "./revision";
 import { reopenProgram, recoveredReopen } from "./reopen";
 import { auditRecovery } from "./recovery-audit";
 import {
+  assertFencedClosedDocumentInventory,
   assertReceiptBoundDocumentInventory,
   assertFencedDocumentInventory,
   assertOwnedUnsavedDocument,
@@ -441,10 +442,6 @@ export class ScenarioSession {
     )
       throw new Error("Owned target lacks a live settled creation receipt");
     peerFixtures.delete(this.document.creationId);
-    assert.ok(
-      [...peerFixtures.values()].every((proof) => proof.state !== "unsettled"),
-      "A peer fixture has no settled exact cleanup receipt",
-    );
     const openPeers = [...peerFixtures.values()]
         .filter((proof) => proof.state === "open")
         .map((proof) => proof.document),
@@ -458,9 +455,7 @@ export class ScenarioSession {
           this.document,
           operation,
           structuredClone(data),
-          baselineDocuments.filter(
-            (document) => !peerFixtures.has(text(document["creationId"])),
-          ),
+          baselineDocuments,
           openPeers,
           closedPeerIds,
           options.component,
@@ -1490,6 +1485,16 @@ export class ScenarioSession {
         throw new Error(
           "Cleanup result does not prove closure of the owned document",
         );
+      if (this.report.scope === "exclusive-instance" && !this.#document.file) {
+        const fence = record(result["inventoryFence"]);
+        assert.equal(fence["version"], 1);
+        assertFencedClosedDocumentInventory(
+          fence["before"],
+          fence["after"],
+          this.#document,
+          "A non-target document changed during owned cleanup",
+        );
+      }
     }
     fs.rmSync(this.file, { force: true });
     this.report.cleanup = "complete";
@@ -1646,9 +1651,10 @@ export async function runScenarios(
       throw new Error("Missing coordinator document inventory");
     before = {
       ...before,
-      documents: documents
-        .map(record)
-        .filter((document) => !peerFixtures.has(text(document["creationId"]))),
+      documents: documents.map(record).filter((document) => {
+        const proof = peerFixtures.get(text(document["creationId"]));
+        return proof?.state !== "open" && proof?.state !== "closed";
+      }),
     };
   }
   const folders = [

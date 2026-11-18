@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { cadFence } from "./programs";
+import { cadFence, close } from "./programs";
 import { prepareScenarioHelpers } from "./simulator";
 import type { ScriptRequest } from "./contracts";
 
@@ -90,6 +90,27 @@ test("generated fenced CAD run payload passes pinned production admission", asyn
   assert.equal(report.provenance.artifactHash, artifact.artifactHash);
   assert.equal(
     report.provenance.definitionsHash,
+    "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+  );
+
+  const closeArtifact = preparePythonArtifact([
+      {
+        id: "cleanup",
+        filename: "cleanup.py",
+        role: "user",
+        source: close(document) + '\nrun("")\n',
+      },
+    ]),
+    closeReport = await checker.check({
+      artifact: closeArtifact,
+      context: { kind: "run" },
+    });
+  assert.equal(closeReport.status, "passed", JSON.stringify(closeReport));
+  assert.deepEqual(closeReport.diagnostics, []);
+  assert.equal(closeReport.provenance.checker, "basedpyright");
+  assert.equal(closeReport.provenance.checkerVersion, "1.40.2");
+  assert.equal(
+    closeReport.provenance.definitionsHash,
     "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
   );
 });
