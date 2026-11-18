@@ -10,6 +10,11 @@ import type {
 import { ownedLease, writeHandoff } from "./legacy-handoff";
 import { record, text as requiredText, number } from "./contracts";
 import { parsePublicQueueJob } from "../live-import-receipts";
+import {
+  assertReceiptBoundDocumentInventory,
+  discoverOwnedUnsavedFixtureProofs,
+} from "./fixture-provenance";
+import { marker } from "./programs";
 const root = path.resolve(__dirname, "../../..");
 const load = createRequire(path.join(root, "package.json"));
 const { spawnSync, fixture } = load("./tests/helpers/live-broker") as {
@@ -40,6 +45,7 @@ interface LegacyDocument {
   modified: boolean;
   saved: boolean;
   active: boolean;
+  fileId: string | null;
 }
 interface LegacySnapshot {
   documents: LegacyDocument[];
@@ -108,6 +114,7 @@ function documents(value: unknown): LegacyDocument[] {
       modified: d["modified"] === true,
       saved: d["saved"] === true,
       active: d["active"] === true,
+      fileId: d["fileId"] === null ? null : requiredText(d["fileId"]),
     };
   });
 }
@@ -116,12 +123,103 @@ const initial = before["documents"].map((entry): Record<string, unknown> => {
   const d = record(entry);
   return { ...d, active: d["creationId"] === before["active"] };
 });
+// The coordinator filters proven peers out of its protected baseline, but its
+// active identity still refers to the original complete SDK observation.
+const coordinatorDirectory = path.join(lease.directory, "..", "_coordinator");
+function coordinatorRecord(filename: string): Record<string, unknown> {
+  const fd = fs.openSync(
+    path.join(coordinatorDirectory, filename),
+    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
+  );
+  try {
+    const stat = fs.fstatSync(fd);
+    assert.ok(stat.isFile() && stat.size <= 16 * 1024 * 1024);
+    return record(JSON.parse(fs.readFileSync(fd, "utf8")) as unknown);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+const originalBefore = coordinatorRecord("before.result.json"),
+  originalIntent = coordinatorRecord("before.intent.json"),
+  coordinatorClient = `scenario:${lease.owner.runId}:coordinator`,
+  originalRequestId = coordinatorClient + ":before",
+  originalReceipt = record(originalBefore["brokerReceipt"]);
+assert.equal(originalIntent["phase"], "before");
+assert.equal(originalIntent["requestId"], originalRequestId);
+assert.equal(originalBefore["requestId"], originalRequestId);
+assert.equal(originalBefore["state"], "succeeded");
+assert.equal(originalBefore["sdkSettled"], true);
+assert.equal(originalReceipt["requestId"], originalRequestId);
+assert.equal(originalReceipt["clientId"], coordinatorClient);
+assert.equal(originalReceipt["state"], "succeeded");
+requiredText(originalReceipt["jobId"]);
+const originalLines = requiredText(originalBefore["stdout"])
+  .split(/\r?\n/u)
+  .filter((line) => line.startsWith(marker));
+assert.equal(originalLines.length, 1);
+const originalSnapshot = record(
+  JSON.parse(originalLines[0]!.slice(marker.length)) as unknown,
+);
+assert.equal(originalSnapshot["active"], before["active"]);
+assert.ok(Array.isArray(originalSnapshot["documents"]));
+const mode = coordinator["mode"],
+  protocol = coordinator["protocol"];
+assert.ok(mode === "fusion" || mode === "simulator");
+assert.ok(protocol === "mcp" || protocol === "addin");
+assert.equal(protocol, lease.protocol);
+assert.equal(coordinator["qualification"], "broker");
+const originalDocuments = originalSnapshot["documents"].map(record),
+  visibleIds = new Set(
+    originalDocuments.map((row) => requiredText(row["creationId"])),
+  ),
+  peerProofs = new Map(
+    [
+      ...discoverOwnedUnsavedFixtureProofs(
+        path.dirname(path.dirname(lease.directory)),
+        {
+          mode,
+          protocol,
+          qualification: "broker",
+          identity: requiredText(coordinator["backendIdentity"]),
+        },
+      ),
+    ].filter(
+      ([id, proof]) =>
+        visibleIds.has(id) ||
+        (proof.state === "saved" &&
+          visibleIds.has(proof.savedDocument.creationId)),
+    ),
+  );
+assertReceiptBoundDocumentInventory(
+  before["documents"],
+  originalDocuments,
+  peerProofs,
+  "Original legacy snapshot is not explained by its protected baseline and exact peer receipts",
+);
+const originalActive =
+  before["active"] === null
+    ? undefined
+    : originalDocuments.find((row) => row["creationId"] === before["active"]);
+if (before["active"] !== null) {
+  assert.ok(originalActive, "Original legacy active identity is missing");
+  if (!initial.some((row) => row["creationId"] === before["active"])) {
+    const proof = [...peerProofs.values()].find(
+      (candidate) =>
+        candidate.document.creationId === before["active"] ||
+        (candidate.state === "saved" &&
+          candidate.savedDocument.creationId === before["active"]),
+    );
+    assert.ok(
+      proof?.state === "open" ||
+        (proof?.state === "saved" && proof.savedState === "open"),
+      "Filtered original active document lacks an exact open peer proof",
+    );
+  }
+}
 const baseline: LegacySnapshot = {
   documents: documents(initial),
   active:
-    before["active"] === null
-      ? null
-      : requiredText(initial.find((d) => d["active"])?.["name"]),
+    before["active"] === null ? null : requiredText(originalActive?.["name"]),
   timelineCount: 0,
   marker: 0,
   bodies: 0,
@@ -196,13 +294,15 @@ function cli(args: string[]) {
 }
 function snapshot(requireOwned = false) {
   const script = `import adsk.core, adsk.fusion, json
+from typing import cast
 def run(_context: str) -> None:
     app = adsk.core.Application.get()
-    docs = [{"name": d.name, "creationId": d.creationId, "modified": d.isModified, "saved": d.isSaved, "active": d == app.activeDocument} for d in app.documents]
-    state = {"documents": docs, "active": app.activeDocument.name if app.activeDocument else None}
+    docs = [{"name": d.name, "creationId": d.creationId, "modified": d.isModified, "saved": d.isSaved, "fileId": d.dataFile.id if d.dataFile else None, "active": d == app.activeDocument} for d in app.documents]
+    state: dict[str, object] = {"documents": docs, "active": app.activeDocument.name if app.activeDocument else None}
     if state["active"] == ${JSON.stringify(name)}:
-        design = adsk.fusion.Design.cast(app.activeProduct)
-        state["designType"] = int(design.designType)
+        design = app.activeProduct
+        assert isinstance(design, adsk.fusion.Design)
+        state["designType"] = int(cast(int, design.designType))
         state["timelineCount"] = design.timeline.count
         state["marker"] = design.timeline.markerPosition
         state["bodies"] = design.rootComponent.bRepBodies.count
@@ -341,7 +441,35 @@ const created = group(
     assert.equal(receipt["clientId"], lease!.owner.clientId);
     assert.equal(receipt["state"], "succeeded");
     const state = snapshot();
-    assert.equal(state.documents.length, baseline.documents.length + 1);
+    const others = state.documents.filter(
+        (row) => row.creationId !== lease!.document.creationId,
+      ),
+      visible = new Set([
+        ...initial.map((row) => requiredText(row["creationId"])),
+        ...others.map((row) => row.creationId),
+      ]),
+      proofs = discoverOwnedUnsavedFixtureProofs(
+        path.dirname(path.dirname(lease!.directory)),
+        {
+          mode,
+          protocol,
+          qualification: "broker",
+          identity: requiredText(coordinator["backendIdentity"]),
+        },
+      );
+    assertReceiptBoundDocumentInventory(
+      before["documents"],
+      others,
+      new Map(
+        [...proofs].filter(
+          ([id, proof]) =>
+            visible.has(id) ||
+            (proof.state === "saved" &&
+              visible.has(proof.savedDocument.creationId)),
+        ),
+      ),
+      "Legacy creation changed a protected document or introduced an unproven peer",
+    );
     assert.equal(state.documents.filter((d) => d.name === name).length, 1);
     owned = true;
     fixture(name, item(state.documents, (d) => d.name === name).creationId);

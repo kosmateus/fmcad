@@ -5,6 +5,12 @@ import type { Scenario } from "./runner";
 import { record, text } from "./contracts";
 import { program, emit } from "./programs";
 import { concurrencyLimit } from "./scheduling";
+import {
+  assertReceiptBoundDocumentInventory,
+  discoverOwnedUnsavedFixtureProofs,
+  originalActiveDocument,
+} from "./fixture-provenance";
+import { marker } from "./programs";
 
 export const nativeLegacyCapability = "native-legacy-cli-effects";
 export function nativeLegacyScenarios(owners = 10): Scenario[] {
@@ -30,8 +36,8 @@ export function nativeLegacyScenarios(owners = 10): Scenario[] {
             program(`import adsk.core, json
 app = adsk.core.Application.get()
 assert not any(d.creationId == ${JSON.stringify(own.creationId)} for d in app.documents)
-documents = [dict(name=d.name, creationId=d.creationId, modified=d.isModified, saved=d.isSaved, active=d == app.activeDocument) for d in app.documents]
-${emit(`dict(creationId=${JSON.stringify(own.creationId)}, documents=documents, active=app.activeDocument.name if app.activeDocument else None)`)}`),
+documents = [dict(name=d.name, creationId=d.creationId, fileId=d.dataFile.id if d.dataFile else None, modified=d.isModified, saved=d.isSaved, active=d == app.activeDocument) for d in app.documents]
+${emit(`dict(creationId=${JSON.stringify(own.creationId)}, documents=documents, active=app.activeDocument.name if app.activeDocument else None, activeCreationId=app.activeDocument.creationId if app.activeDocument else None)`)}`),
           );
           assert.ok(Array.isArray(after["documents"]));
           const coordinator = record(
@@ -44,23 +50,98 @@ ${emit(`dict(creationId=${JSON.stringify(own.creationId)}, documents=documents, 
           );
           const before = record(coordinator["before"]);
           assert.ok(Array.isArray(before["documents"]));
-          const baseline = {
-            documents: before["documents"].map((value) => {
-              const d = record(value);
-              return {
-                name: d["name"],
-                creationId: d["creationId"],
-                modified: d["modified"],
-                saved: d["saved"],
-                active: d["creationId"] === before["active"],
-              };
-            }),
-          };
+          assert.equal(coordinator["runId"], session.report.owner.runId);
+          const original = record(
+              JSON.parse(
+                fs.readFileSync(
+                  path.join(
+                    session.directory,
+                    "..",
+                    "_coordinator/before.result.json",
+                  ),
+                  "utf8",
+                ),
+              ) as unknown,
+            ),
+            clientId = `scenario:${session.report.owner.runId}:coordinator`,
+            requestId = clientId + ":before",
+            receipt = record(original["brokerReceipt"]);
+          assert.equal(original["requestId"], requestId);
+          assert.equal(original["state"], "succeeded");
+          assert.equal(original["sdkSettled"], true);
+          assert.equal(receipt["requestId"], requestId);
+          assert.equal(receipt["clientId"], clientId);
+          assert.equal(receipt["state"], "succeeded");
+          text(receipt["jobId"]);
+          const lines = text(original["stdout"])
+            .split(/\r?\n/u)
+            .filter((line) => line.startsWith(marker));
+          assert.equal(lines.length, 1);
+          const observed = record(
+            JSON.parse(lines[0]!.slice(marker.length)) as unknown,
+          );
+          assert.equal(observed["active"], before["active"]);
+          assert.ok(Array.isArray(observed["documents"]));
+          const seen = new Set(
+              observed["documents"].map((row) =>
+                text(record(row)["creationId"]),
+              ),
+            ),
+            relevant = new Set([
+              ...seen,
+              ...after["documents"].map((row) =>
+                text(record(row)["creationId"]),
+              ),
+            ]),
+            proofs = new Map(
+              [
+                ...discoverOwnedUnsavedFixtureProofs(
+                  path.dirname(path.dirname(session.directory)),
+                  session.backend,
+                ),
+              ].filter(
+                ([id, proof]) =>
+                  relevant.has(id) ||
+                  (proof.state === "saved" &&
+                    relevant.has(proof.savedDocument.creationId)),
+              ),
+            );
           const testDocumentRemainsOpen = after["documents"]
             .map(record)
             .some((d) => d["name"] === own.name);
           assert.equal(testDocumentRemainsOpen, false);
-          assert.deepEqual(after["documents"], baseline.documents);
+          assertReceiptBoundDocumentInventory(
+            before["documents"],
+            after["documents"],
+            proofs,
+            "Legacy cleanup changed a protected document or an unproven peer",
+            false,
+            seen,
+          );
+          const settledPeers = new Map(
+              [...proofs]
+                .filter(
+                  ([, proof]) =>
+                    proof.state === "open" ||
+                    proof.state === "closed" ||
+                    (proof.state === "saved" &&
+                      proof.savedState !== "unsettled"),
+                )
+                .map(([id, proof]) => [id, proof.document]),
+            ),
+            active = originalActiveDocument(
+              before["active"],
+              before["documents"],
+              settledPeers,
+            );
+          if (active) {
+            assert.equal(
+              after["activeCreationId"],
+              active.creationId,
+              "Original user active document changed",
+            );
+            assert.equal(after["active"], active.name);
+          }
           const completionPath = path.join(
             session.directory,
             "legacy/completion.json",
