@@ -444,6 +444,15 @@ export class ScenarioSession {
     data: Record<string, unknown>,
     options: { component?: string } = {},
   ): Promise<Record<string, unknown>> {
+    return this.#cadFencedAdmission(phase, operation, data, options, false);
+  }
+  async #cadFencedAdmission(
+    phase: string,
+    operation: string,
+    data: Record<string, unknown>,
+    options: { component?: string },
+    readmitted: boolean,
+  ): Promise<Record<string, unknown>> {
     this.signal?.throwIfAborted();
     if (!phase.startsWith("cad-"))
       throw new Error("CAD phase must use cad- prefix");
@@ -473,15 +482,17 @@ export class ScenarioSession {
     try {
       const output = await this.#dispatch(
         phase,
-        programs.cadFence(
-          this.document,
-          operation,
-          structuredClone(data),
-          baselineDocuments,
-          openPeers,
-          closedPeerIds,
-          options.component,
-        ),
+        (requestId) =>
+          programs.cadFence(
+            this.document,
+            operation,
+            structuredClone(data),
+            baselineDocuments,
+            openPeers,
+            closedPeerIds,
+            options.component,
+            requestId,
+          ),
         this.document,
         true,
         "cad-v1",
@@ -508,6 +519,50 @@ export class ScenarioSession {
       assert.equal(output["creationId"], this.document.creationId);
       const fence = record(output["inventoryFence"]);
       assert.equal(fence["version"], 1);
+      if (output["admission"] !== undefined) {
+        const refreshed = new Map(
+          discoverOwnedUnsavedFixtureProofs(
+            path.dirname(path.dirname(this.directory)),
+            this.backend,
+          ),
+        );
+        refreshed.delete(this.document.creationId);
+        for (const [creationId, previous] of peerFixtures) {
+          if (previous.state !== "open") continue;
+          const current = refreshed.get(creationId);
+          assert.ok(
+            current && current.state !== "unsettled",
+            "A previously admitted peer lost its exact lifecycle proof",
+          );
+          assert.deepEqual(current.document, previous.document);
+        }
+        // A no-helper receipt alone never authorizes another request. Every
+        // observed difference must be explained by exact lifecycle receipts.
+        assertFencedDocumentInventory(
+          fence["before"],
+          fence["after"],
+          this.document,
+          baselineDocuments,
+          refreshed,
+          "Inventory re-admission lacks exact peer lifecycle receipts",
+        );
+        assert.notDeepEqual(
+          [...refreshed],
+          [...peerFixtures],
+          "Inventory changed without new lifecycle evidence",
+        );
+        if (readmitted)
+          throw new Error(
+            "ADMISSION_CHANGED: inventory changed again before the admitted CAD turn; no helper executed",
+          );
+        return await this.#cadFencedAdmission(
+          phase + "-readmitted",
+          operation,
+          data,
+          options,
+          true,
+        );
+      }
       assertFencedDocumentInventory(
         fence["before"],
         fence["after"],
@@ -1128,6 +1183,20 @@ export class ScenarioSession {
         if (wrapper["success"] !== true)
           throw new Error("cad-v1 helper turn did not succeed");
         const calls = wrapper["helperCallsOnly"];
+        const value = record(wrapper["result"]);
+        if (value["admission"] !== undefined) {
+          assert.equal(execution.sdkSettled, true);
+          const admission = record(value["admission"]);
+          assert.equal(admission["status"], "inventory-changed");
+          assert.equal(admission["requestId"], execution.requestId);
+          assert.equal(admission["helperCalls"], 0);
+          assert.equal(admission["mutationStarted"], false);
+          assert.deepEqual(calls, []);
+          assert.equal(value["operation"], helperOperation);
+          assert.equal(value["creationId"], target?.creationId);
+          assert.equal(value["document"], target?.name);
+          return value;
+        }
         if (!Array.isArray(calls) || calls.length !== 1)
           throw new Error(
             "Fenced CAD turn must contain exactly one helper call",
@@ -1141,7 +1210,6 @@ export class ScenarioSession {
           throw new Error(
             "Fenced CAD helper receipt differs from its operation",
           );
-        const value = record(wrapper["result"]);
         if (target && value["creationId"] !== target.creationId)
           throw new Error("Fenced CAD result has a foreign target identity");
         return value;

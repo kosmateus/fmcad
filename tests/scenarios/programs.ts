@@ -162,6 +162,7 @@ export function cadFence(
   peers: readonly Document[],
   closedPeerCreationIds: readonly string[],
   component = "root",
+  admissionRequestId?: string,
 ): string {
   if (document.file)
     throw new Error("CAD inventory fence received a saved fixture");
@@ -220,6 +221,8 @@ def _fmcad_check_inventory(rows: Sequence[_FmcadInventoryDocument]) -> None:
     ids: list[str] = [d['creationId'] for d in rows]
     assert len(set(ids)) == len(ids), 'Duplicate document identity in fenced inventory'
     for expected in _fmcad_expected_baseline:
+        if expected['creationId'] in _fmcad_closed_peers or any(peer['creationId'] == expected['creationId'] for peer in _fmcad_expected_peers):
+            continue
         matches = [d for d in rows if d['creationId'] == expected['creationId']]
         assert len(matches) == 1, 'Coordinator baseline document is missing or duplicated'
         assert _fmcad_stable(matches) == _fmcad_stable([expected]), 'Coordinator baseline identity or file provenance changed'
@@ -248,7 +251,6 @@ def _fmcad_json_inventory(rows: Sequence[_FmcadInventoryDocument]) -> list[_Fmca
         encoded.append(encoded_row)
     return encoded
 _fmcad_before = _fmcad_inventory()
-_fmcad_check_inventory(_fmcad_before)
 _fmcad_targets = [d for d in _fmcad_before if d['creationId'] == ${quoted(document.creationId)}]
 assert len(_fmcad_targets) == 1, 'Owned fixture identity is missing or duplicated'
 assert _fmcad_targets[0]['name'] == ${quoted(document.name)}, 'Owned fixture name changed'
@@ -258,6 +260,23 @@ doc = _fmcad_native_targets[0]
 assert doc.name == ${quoted(document.name)}, 'Owned fixture name changed'
 assert sum(d.name == ${quoted(document.name)} for d in app.documents) == 1, 'Owned fixture name is ambiguous'
 assert not doc.isSaved and doc.dataFile is None, 'Owned fixture unexpectedly became saved'
+${
+  admissionRequestId === undefined
+    ? "_fmcad_check_inventory(_fmcad_before)"
+    : `try:
+    _fmcad_check_inventory(_fmcad_before)
+except AssertionError:
+    _fmcad_admission: dict[str, _FmcadJsonValue] = {
+        'success': True,
+        'operation': ${quoted(operation)},
+        'document': doc.name,
+        'creationId': doc.creationId,
+        'admission': {'status': 'inventory-changed', 'requestId': ${quoted(admissionRequestId)}, 'helperCalls': 0, 'mutationStarted': False},
+        'inventoryFence': {'version': 1, 'before': _fmcad_json_inventory(_fmcad_before), 'after': _fmcad_json_inventory(_fmcad_before)},
+    }
+    FMCAD.emit(_fmcad_admission)
+    return`
+}
 _fmcad_result = FMCAD.call(${quoted(operation)}, ${pythonLiteral(data)}, ${scope})
 _fmcad_after = _fmcad_inventory()
 _fmcad_check_inventory(_fmcad_after)

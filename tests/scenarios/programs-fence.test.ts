@@ -60,6 +60,8 @@ test("generated fenced CAD run payload passes pinned production admission", asyn
         ],
         [{ creationId: "peer-creation-id", name: "Peer" }],
         ["closed-peer-creation-id"],
+        "root",
+        "scenario:programs-fence-run:programs-fence-owner:1",
       ),
       directory,
       target: document,
