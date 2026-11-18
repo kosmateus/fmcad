@@ -127,7 +127,7 @@ async function syntheticDefinitions(t: TestContext) {
 function groupedArtifact(markers = true) {
   // Two independent AST bodies just exceed the checker's fixed 75k body-node
   // bin budget together, but each fits alone. This exercises real projection
-  // and aggregation without running the 154-unit production helper.
+  // and aggregation without running the 155-unit production helper.
   const listFor = (marker: string) => {
     const values = Array(40_020).fill("0");
     if (markers) values[0] = JSON.stringify(marker);
@@ -368,7 +368,7 @@ test("real basedpyright verifies retained origin bytes inside a transformed Addi
   );
 });
 
-test("prepared canonical cad-v1 receipt retains all 154 helper units, maps, bytes and both contexts without a full checker run", (t) => {
+test("prepared canonical cad-v1 receipt retains all 155 helper units, maps, bytes and both contexts without a full checker run", (t) => {
   const directory = (load("node:fs") as typeof import("node:fs")).mkdtempSync(
     path.join(os.tmpdir(), "helper-completeness-canonical-"),
   );
@@ -411,8 +411,8 @@ test("prepared canonical cad-v1 receipt retains all 154 helper units, maps, byte
   const final = retainPythonOrigin(receipt, pythonArtifactManifest(original));
   const origin = retainedOrigin(final);
 
-  assert.equal(original.units.length, 154);
-  assert.equal(origin.units.length, 154);
+  assert.equal(original.units.length, 155);
+  assert.equal(origin.units.length, 155);
   assert.ok(Buffer.byteLength(original.script) > 2_000_000);
   assert.equal(origin.artifactHash, original.artifactHash);
   assert.equal(origin.sha256, original.sha256);
@@ -446,8 +446,8 @@ test("prepared canonical cad-v1 receipt retains all 154 helper units, maps, byte
       `source-map bytes changed for ${unit.filename}`,
     );
   }
-  assert.equal(origin.sourceMap.length, 153);
-  assert.equal(mappedIds.size, 153);
+  assert.equal(origin.sourceMap.length, 154);
+  assert.equal(mappedIds.size, 154);
   const unmappedOrigins = origin.units.filter(
     (unit) => !mappedIds.has(unit.id),
   );
@@ -458,7 +458,7 @@ test("prepared canonical cad-v1 receipt retains all 154 helper units, maps, byte
   );
   assert.equal(
     origin.units.filter((unit) => unit.role === "runtime").length,
-    152,
+    153,
   );
   assert.ok(
     origin.units

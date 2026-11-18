@@ -373,6 +373,13 @@ function createSyntheticRuntimeRoot(): string {
     path.join(projectRoot, "runtime/python/entrypoints/dependency_facts.py"),
     parser,
   );
+  copyFileSync(
+    path.join(
+      projectRoot,
+      "runtime/python/entrypoints/lower_domain_imports.py",
+    ),
+    path.join(root, "runtime/python/entrypoints/lower_domain_imports.py"),
+  );
   return root;
 }
 

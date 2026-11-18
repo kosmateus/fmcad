@@ -185,7 +185,7 @@ test("receipt-wrapped canonical catalog source retains runtime, roots, maps and 
     ),
     JSON.stringify(report.diagnostics),
   );
-  assert.equal(units.length, 152);
+  assert.equal(units.length, 153);
 });
 
 test("claimed decoded receipt bytes cannot replace the source in the actual envelope", async (t) => {

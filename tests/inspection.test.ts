@@ -252,6 +252,15 @@ test("source cache reuses only validated graph content and invalidates on source
       path.join(root, "runtime/python/fmcad"),
       { recursive: true },
     );
+    const entrypoints = path.join(root, "runtime/python/entrypoints");
+    fs.mkdirSync(entrypoints, { recursive: true });
+    fs.copyFileSync(
+      path.resolve(
+        fixtureDirectory,
+        "../runtime/python/entrypoints/lower_domain_imports.py",
+      ),
+      path.join(entrypoints, "lower_domain_imports.py"),
+    );
     const first = cadBundleUnits(root);
     assert.strictEqual(cadBundleUnits(root), first);
     for (const id of ["inspection-domain", "inspection"])
