@@ -31,6 +31,10 @@ import {
 import { scopedMap, concurrencyLimit, defaultConcurrency } from "./scheduling";
 import * as savedPrograms from "./saved-programs";
 import {
+  savedIdentityTransition,
+  type SavedIdentityTransition,
+} from "./saved-identity";
+import {
   cleanupSavedFile,
   observeSavedFile,
   recoveredFile,
@@ -74,6 +78,7 @@ export interface ScenarioReport {
   cleanup: "pending" | "complete" | "deferred" | "failed" | "not-created";
   document?: Document;
   originalDocument?: Document;
+  savedIdentityTransition?: SavedIdentityTransition;
   readonly requests: {
     requestId: string;
     phase: string;
@@ -1288,6 +1293,7 @@ export class ScenarioSession {
     if (this.report.fixture) {
       this.signal?.throwIfAborted();
       const folder = this.report.fixture;
+      const saveOrigin = this.document;
       await this.#dispatch(
         "save",
         (requestId) =>
@@ -1298,6 +1304,9 @@ export class ScenarioSession {
             requestId,
             this.backend.fusionPath(
               path.join(this.directory, "save-intent.json"),
+            ),
+            this.backend.fusionPath(
+              path.join(this.directory, "save-transition.json"),
             ),
           ),
         this.document,
@@ -1315,6 +1324,23 @@ export class ScenarioSession {
           intent.folderId !== folder.folderId
         )
           throw new Error("Configured and accepted fixture folders differ");
+        if (this.backend.qualification === "broker") {
+          const transition = savedIdentityTransition(
+            this.directory,
+            saveOrigin,
+            this.report.owner,
+            this.report.requests,
+          );
+          if (transition) {
+            this.report.savedIdentityTransition = transition;
+            this.#document = Object.freeze({
+              creationId: transition.creationId,
+              name: transition.name,
+            });
+            this.report.document = this.#document;
+            this.persist();
+          }
+        }
       } catch (error) {
         this.#uncertain = true;
         throw error;
@@ -1327,6 +1353,8 @@ export class ScenarioSession {
           folder,
           this.#dispatch.bind(this),
           false,
+          undefined,
+          saveOrigin.name,
         );
       } catch (error) {
         if (
@@ -1522,6 +1550,8 @@ export class ScenarioSession {
             folder,
             this.#dispatch.bind(this),
             accepted?.["accepted"] !== true,
+            undefined,
+            text(readCreation(this.directory)["name"]),
           );
           if (file) {
             this.#document = Object.freeze({ ...this.#document, file });
@@ -1534,6 +1564,8 @@ export class ScenarioSession {
             this.#document,
             this.report.requests,
             this.#dispatch.bind(this),
+            undefined,
+            text(readCreation(this.directory)["name"]),
           );
           fs.rmSync(this.file, { force: true });
           this.report.cleanup = "complete";
@@ -2073,6 +2105,16 @@ export async function resumeCleanup(
       throw new Error("Original and durable creation identities differ");
   }
   const folder = saveIntent(directory, document, owner, recovered);
+  const saveOrigin = document;
+  const transition =
+    backend.qualification === "broker"
+      ? savedIdentityTransition(directory, document, owner, recovered)
+      : undefined;
+  if (transition)
+    document = Object.freeze({
+      creationId: transition.creationId,
+      name: transition.name,
+    });
   for (const [index, entry] of recovered.entries())
     if (entry.phase.startsWith("cad-") && entry.result?.stdout.trim()) {
       const saved = folder
@@ -2094,7 +2136,8 @@ export async function resumeCleanup(
   const originalDocument = document;
 
   const report: ScenarioReport = {
-    originalDocument,
+    originalDocument: transition ? saveOrigin : originalDocument,
+    ...(transition ? { savedIdentityTransition: transition } : {}),
     owner: Object.freeze(owner),
     directory,
     mode: backend.mode,
