@@ -3161,7 +3161,7 @@
     },
     {
       "source": "tests/scenarios/programs.ts",
-      "sha256": "aaca0a88fd1f9995065d75104b9a949505ba555e8f8b402a016485e4df561a9e",
+      "sha256": "b18121dd9a9cb926f859ef0551cfda0ebacfa5a9d19d776a8b0da5e03cf16e6a",
       "assertions": [
         {
           "id": "311687a38872abf258cc-1",
@@ -3248,6 +3248,12 @@
           "expression": "\nassert app.userInterface.activeCommand in (None, '', 'SelectCommand'), 'Fusion interactive command must be idle before closing a fixture'\n"
         },
         {
+          "id": "1fa0751123971066ac59-1",
+          "line": 121,
+          "kind": "embedded-python",
+          "expression": "\nassert doc.isModified is "
+        },
+        {
           "id": "c15222e4ed3a6c7971a9-1",
           "line": 121,
           "kind": "embedded-python",
@@ -3278,66 +3284,192 @@
           "expression": " for d in app.documents) == 1, 'Ambiguous owned name'\nassert not doc.isSaved and doc.dataFile is None, 'Owned fixture unexpectedly became saved'\n"
         },
         {
-          "id": "d09c7e5e71b1dce422bd-1",
-          "line": 205,
+          "id": "db8ae34bd344dceccc74-1",
+          "line": 228,
           "kind": "embedded-python",
-          "expression": "\ndef _fmcad_inventory() -> list[_FmcadInventoryDocument]:\n    rows: list[_FmcadInventoryDocument] = []\n    for d in app.documents:\n        rows.append({\n            'creationId': d.creationId,\n            'name': d.name,\n            'fileId': d.dataFile.id if d.dataFile else None,\n            'saved': d.isSaved,\n            'modified': d.isModified,\n            'active': d == app.activeDocument,\n        })\n    return rows\ndef _fmcad_stable(rows: Sequence[_FmcadStableDocument]) -> list[tuple[str, str, str | None, bool, bool]]:\n    return sorted((d['creationId'], d['name'], d['fileId'], d['saved'], d['modified']) for d in rows)\ndef _fmcad_check_inventory(rows: Sequence[_FmcadInventoryDocument]) -> None:\n    ids: list[str] = [d['creationId'] for d in rows]\n    assert len(set(ids)) == len(ids), 'Duplicate document identity in fenced inventory'\n    for expected in _fmcad_expected_baseline:\n        if expected['creationId'] in _fmcad_closed_peers or any(peer['creationId'] == expected['creationId'] for peer in _fmcad_expected_peers):\n            continue\n        matches = [d for d in rows if d['creationId'] == expected['creationId']]\n        assert len(matches) == 1, 'Coordinator baseline document is missing or duplicated'\n        assert _fmcad_stable(matches) == _fmcad_stable([expected]), 'Coordinator baseline identity or file provenance changed'\n    for expected in _fmcad_expected_peers:\n        matches = [d for d in rows if d['creationId'] == expected['creationId']]\n        assert len(matches) == 1, 'Receipt-proven open peer is missing or duplicated'\n        peer = matches[0]\n        assert peer['name'] == expected['name'] and not peer['saved'] and peer['fileId'] is None, 'Receipt-proven peer identity or file provenance changed'\n    for creation_id in _fmcad_closed_peers:\n        assert not any(d['creationId'] == creation_id for d in rows), 'A receipt-closed peer fixture remains open'\n    allowed = {d['creationId'] for d in _fmcad_expected_baseline}\n    allowed.update(d['creationId'] for d in _fmcad_expected_peers)\n    allowed.add("
+          "expression": "\ndef _fmcad_inventory() -> list[_FmcadInventoryDocument]:\n    rows: list[_FmcadInventoryDocument] = []\n    for d in app.documents:\n        rows.append({\n            'creationId': d.creationId,\n            'name': d.name,\n            'fileId': d.dataFile.id if d.dataFile else None,\n            'saved': d.isSaved,\n            'modified': d.isModified,\n            'active': d == app.activeDocument,\n        })\n    return rows\ndef _fmcad_stable(rows: Sequence[_FmcadStableDocument]) -> list[tuple[str, str, str | None, bool, bool]]:\n    return sorted((d['creationId'], d['name'], d['fileId'], d['saved'], d['modified']) for d in rows)\ndef _fmcad_check_inventory(rows: Sequence[_FmcadInventoryDocument]) -> None:\n    ids: list[str] = [d['creationId'] for d in rows]\n    assert len(set(ids)) == len(ids), 'Duplicate document identity in fenced inventory'\n    transferred_ids: set[str] = set()\n    for transfer in _fmcad_saved_transfers:\n        original_id = transfer['originalCreationId']\n        current_id = transfer['creationId']\n        if original_id != current_id:\n            assert original_id not in ids, 'Original identity remains visible after saved transfer'\n        matches = [d for d in rows if d['creationId'] == current_id]\n        if transfer['closed']:\n            assert not matches, 'Receipt-closed saved successor remains visible'\n        else:\n            assert len(matches) == 1, 'Receipt-proven saved successor is missing or duplicated'\n            saved_peer = matches[0]\n            assert saved_peer['name'] == transfer['name'] and saved_peer['saved'] and saved_peer['fileId'] == transfer['fileId'], 'Saved successor identity or file provenance changed'\n        transferred_ids.update((original_id, current_id))\n    for expected in _fmcad_expected_baseline:\n        if expected['creationId'] in transferred_ids or expected['creationId'] in _fmcad_closed_peers or any(peer['creationId'] == expected['creationId'] for peer in _fmcad_expected_peers):\n            continue\n        matches = [d for d in rows if d['creationId'] == expected['creationId']]\n        assert len(matches) == 1, 'Coordinator baseline document is missing or duplicated'\n        assert _fmcad_stable(matches) == _fmcad_stable([expected]), 'Coordinator baseline identity or file provenance changed'\n    for expected in _fmcad_expected_peers:\n        matches = [d for d in rows if d['creationId'] == expected['creationId']]\n        assert len(matches) == 1, 'Receipt-proven open peer is missing or duplicated'\n        peer = matches[0]\n        assert peer['name'] == expected['name'] and not peer['saved'] and peer['fileId'] is None, 'Receipt-proven peer identity or file provenance changed'\n    for creation_id in _fmcad_closed_peers:\n        assert not any(d['creationId'] == creation_id for d in rows), 'A receipt-closed peer fixture remains open'\n    allowed = {d['creationId'] for d in _fmcad_expected_baseline}\n    allowed.update(d['creationId'] for d in _fmcad_expected_peers)\n    allowed.update(t['creationId'] for t in _fmcad_saved_transfers if not t['closed'])\n    allowed.add("
         },
         {
           "id": "c5baca6596bfb4f9cae9-1",
-          "line": 238,
+          "line": 276,
           "kind": "embedded-python",
           "expression": ")\n    assert all(identity in allowed for identity in ids), 'Unproven non-baseline document in fenced inventory'\ndef _fmcad_json_inventory(rows: Sequence[_FmcadInventoryDocument]) -> list[_FmcadJsonValue]:\n    encoded: list[_FmcadJsonValue] = []\n    for row in rows:\n        encoded_row: dict[str, _FmcadJsonValue] = {\n            'creationId': row['creationId'],\n            'name': row['name'],\n            'fileId': row['fileId'],\n            'saved': row['saved'],\n            'modified': row['modified'],\n            'active': row['active'],\n        }\n        encoded.append(encoded_row)\n    return encoded\n_fmcad_before = _fmcad_inventory()\n_fmcad_targets = [d for d in _fmcad_before if d['creationId'] == "
         },
         {
           "id": "44acf4af869c387d7a5c-1",
-          "line": 254,
+          "line": 292,
           "kind": "embedded-python",
           "expression": "]\nassert len(_fmcad_targets) == 1, 'Owned fixture identity is missing or duplicated'\nassert _fmcad_targets[0]['name'] == "
         },
         {
           "id": "90295511faeea1aacdd2-1",
-          "line": 257,
+          "line": 295,
           "kind": "embedded-python",
           "expression": "]\nassert len(_fmcad_native_targets) == 1, 'Owned native fixture identity is missing or duplicated'\ndoc = _fmcad_native_targets[0]\nassert doc.name == "
         },
         {
           "id": "0e3ce40aa40e785aded1-1",
-          "line": 260,
+          "line": 298,
           "kind": "embedded-python",
           "expression": ", 'Owned fixture name changed'\nassert sum(d.name == "
         },
         {
           "id": "7c300640c6fd92385a48-1",
-          "line": 261,
+          "line": 299,
           "kind": "embedded-python",
           "expression": " for d in app.documents) == 1, 'Owned fixture name is ambiguous'\nassert not doc.isSaved and doc.dataFile is None, 'Owned fixture unexpectedly became saved'\n"
         },
         {
           "id": "b664feb4e3e866ba3052-1",
-          "line": 283,
+          "line": 321,
           "kind": "embedded-python",
           "expression": "]\nassert len(_fmcad_after_targets) == 1, 'Owned fixture identity changed during the SDK turn'\nassert _fmcad_after_targets[0]['name'] == "
         },
         {
           "id": "6cf6bfd096d13adcb718-1",
-          "line": 285,
+          "line": 323,
           "kind": "embedded-python",
           "expression": ", 'Owned fixture name changed during the SDK turn'\nassert not _fmcad_after_targets[0]['saved'] and _fmcad_after_targets[0]['fileId'] is None, 'Owned fixture was saved during the SDK turn'\n_fmcad_other_before = [d for d in _fmcad_before if d['creationId'] != "
         },
         {
           "id": "e0edcf7bbb5442ed31f2-1",
-          "line": 288,
+          "line": 326,
           "kind": "embedded-python",
           "expression": "]\nassert _fmcad_stable(_fmcad_other_before) == _fmcad_stable(_fmcad_other_after), 'A non-target document changed during the SDK turn'\n_fmcad_payload: dict[str, _FmcadJsonValue] = {\n    'success': True,\n    'operation': "
         },
         {
           "id": "2e9d2bc94d38af32506f-1",
-          "line": 311,
+          "line": 349,
           "kind": "embedded-python",
           "expression": "]\nassert len(matches) == 1, 'Original active document is unavailable'\nassert matches[0].activate()\nassert app.activeDocument is not None and app.activeDocument.creationId == "
         }
       ]
+    }
+  ],
+  "currentSourceTransitions": [
+    {
+      "source": "tests/scenarios/programs.ts",
+      "commit": "f9edac60a9b531fe006233950752b0b2a8eec43d",
+      "predecessor": "06908330fd309390318b86a807e534fe9f92d665",
+      "gitParent": "d79e4a15b970ae60804e840cfa4f246e06938116",
+      "comparisonBasis": "reviewed-source-span",
+      "comparison": {
+        "before": {
+          "source": "tests/scenarios/programs.ts",
+          "sha256": "aaca0a88fd1f9995065d75104b9a949505ba555e8f8b402a016485e4df561a9e",
+          "count": 29
+        },
+        "after": {
+          "source": "tests/scenarios/programs.ts",
+          "sha256": "eae62d71874cf85cc158293821029d8018fc7ec6ea3fcc37f2b74a541cec0461",
+          "count": 29
+        },
+        "retainedIds": [
+          "311687a38872abf258cc-1",
+          "819e45edba51816ed174-1",
+          "9dc712422aae638e2b90-1",
+          "b6f5f479a98f2352987c-1",
+          "b73a5af197c9a70be31c-1",
+          "a92ab551f3abb7f3d529-1",
+          "db54ac31f03e8cdf62c7-1",
+          "769f2eb05cf5705b59b3-1",
+          "4bcb70994fcc014e2620-1",
+          "197b565b7df6dba3b5f5-1",
+          "f926f6dfcb0bfedaca36-1",
+          "e7378308582714ca489e-1",
+          "aba421269fa555351d65-1",
+          "249dbf91b33317acb4e0-1",
+          "c15222e4ed3a6c7971a9-1",
+          "03af0d32851e77d981a6-1",
+          "311687a38872abf258cc-2",
+          "819e45edba51816ed174-2",
+          "4cb691841eb27e42121b-1",
+          "c5baca6596bfb4f9cae9-1",
+          "44acf4af869c387d7a5c-1",
+          "90295511faeea1aacdd2-1",
+          "0e3ce40aa40e785aded1-1",
+          "7c300640c6fd92385a48-1",
+          "b664feb4e3e866ba3052-1",
+          "6cf6bfd096d13adcb718-1",
+          "e0edcf7bbb5442ed31f2-1",
+          "2e9d2bc94d38af32506f-1"
+        ],
+        "removed": [
+          {
+            "id": "d09c7e5e71b1dce422bd-1",
+            "line": 205,
+            "kind": "embedded-python",
+            "expression": "\ndef _fmcad_inventory() -> list[_FmcadInventoryDocument]:\n    rows: list[_FmcadInventoryDocument] = []\n    for d in app.documents:\n        rows.append({\n            'creationId': d.creationId,\n            'name': d.name,\n            'fileId': d.dataFile.id if d.dataFile else None,\n            'saved': d.isSaved,\n            'modified': d.isModified,\n            'active': d == app.activeDocument,\n        })\n    return rows\ndef _fmcad_stable(rows: Sequence[_FmcadStableDocument]) -> list[tuple[str, str, str | None, bool, bool]]:\n    return sorted((d['creationId'], d['name'], d['fileId'], d['saved'], d['modified']) for d in rows)\ndef _fmcad_check_inventory(rows: Sequence[_FmcadInventoryDocument]) -> None:\n    ids: list[str] = [d['creationId'] for d in rows]\n    assert len(set(ids)) == len(ids), 'Duplicate document identity in fenced inventory'\n    for expected in _fmcad_expected_baseline:\n        if expected['creationId'] in _fmcad_closed_peers or any(peer['creationId'] == expected['creationId'] for peer in _fmcad_expected_peers):\n            continue\n        matches = [d for d in rows if d['creationId'] == expected['creationId']]\n        assert len(matches) == 1, 'Coordinator baseline document is missing or duplicated'\n        assert _fmcad_stable(matches) == _fmcad_stable([expected]), 'Coordinator baseline identity or file provenance changed'\n    for expected in _fmcad_expected_peers:\n        matches = [d for d in rows if d['creationId'] == expected['creationId']]\n        assert len(matches) == 1, 'Receipt-proven open peer is missing or duplicated'\n        peer = matches[0]\n        assert peer['name'] == expected['name'] and not peer['saved'] and peer['fileId'] is None, 'Receipt-proven peer identity or file provenance changed'\n    for creation_id in _fmcad_closed_peers:\n        assert not any(d['creationId'] == creation_id for d in rows), 'A receipt-closed peer fixture remains open'\n    allowed = {d['creationId'] for d in _fmcad_expected_baseline}\n    allowed.update(d['creationId'] for d in _fmcad_expected_peers)\n    allowed.add("
+          }
+        ],
+        "addedIds": ["db8ae34bd344dceccc74-1"]
+      },
+      "review": "Saved-transfer contract change, not blanket import equivalence. Only receipt-proven original/successor pairs may replace baseline identities. The generated same-turn fence rejects a still-visible changed original, missing/duplicated/wrong-name/wrong-file open successors and visible receipt-closed successors. Untransferred baseline exact identity/file/modified comparison, unsaved owner guards, and same-turn before/after foreign equality remain. The caller must prove exact lifecycle receipts before supplying transfers. Same-ID successors are supported; an original ID is not treated as closed merely because it transferred, and unsettled saved transfers supply no exemption. Inventory does not check SDK version, project or folder: these remain source-bound producer/reader receipt checks, not in-turn inventory observations. Owner handoff f9edac6/27f1b19 reports 15 source-backed saved-fence cases and production checker evidence on both Node; new saved physical execution remains NOTRUN. Frozen 482 import observations and all retained hashes are unchanged; static source review and simulator negatives do not qualify native import or saved identity execution.",
+      "evidence": [
+        "tests/scenarios/saved-transfer-fence.test.ts",
+        "tests/scenarios/saved-peer-provenance.test.ts",
+        "tests/scenarios/runner.ts"
+      ],
+      "qualification": "source-reviewed-native-not-qualified"
+    },
+    {
+      "source": "tests/scenarios/programs.ts",
+      "commit": "c5368faa97eddf6b65e9129e6e9c11360cabbbf1",
+      "predecessor": "f9edac60a9b531fe006233950752b0b2a8eec43d",
+      "gitParent": "251d930a7bf083db2b14d98d68ff51b365b7ce63",
+      "comparisonBasis": "reviewed-source-span",
+      "comparison": {
+        "before": {
+          "source": "tests/scenarios/programs.ts",
+          "sha256": "eae62d71874cf85cc158293821029d8018fc7ec6ea3fcc37f2b74a541cec0461",
+          "count": 29
+        },
+        "after": {
+          "source": "tests/scenarios/programs.ts",
+          "sha256": "b18121dd9a9cb926f859ef0551cfda0ebacfa5a9d19d776a8b0da5e03cf16e6a",
+          "count": 30
+        },
+        "retainedIds": [
+          "311687a38872abf258cc-1",
+          "819e45edba51816ed174-1",
+          "9dc712422aae638e2b90-1",
+          "b6f5f479a98f2352987c-1",
+          "b73a5af197c9a70be31c-1",
+          "a92ab551f3abb7f3d529-1",
+          "db54ac31f03e8cdf62c7-1",
+          "769f2eb05cf5705b59b3-1",
+          "4bcb70994fcc014e2620-1",
+          "197b565b7df6dba3b5f5-1",
+          "f926f6dfcb0bfedaca36-1",
+          "e7378308582714ca489e-1",
+          "aba421269fa555351d65-1",
+          "249dbf91b33317acb4e0-1",
+          "c15222e4ed3a6c7971a9-1",
+          "03af0d32851e77d981a6-1",
+          "311687a38872abf258cc-2",
+          "819e45edba51816ed174-2",
+          "4cb691841eb27e42121b-1",
+          "db8ae34bd344dceccc74-1",
+          "c5baca6596bfb4f9cae9-1",
+          "44acf4af869c387d7a5c-1",
+          "90295511faeea1aacdd2-1",
+          "0e3ce40aa40e785aded1-1",
+          "7c300640c6fd92385a48-1",
+          "b664feb4e3e866ba3052-1",
+          "6cf6bfd096d13adcb718-1",
+          "e0edcf7bbb5442ed31f2-1",
+          "2e9d2bc94d38af32506f-1"
+        ],
+        "removed": [],
+        "addedIds": ["1fa0751123971066ac59-1"]
+      },
+      "review": "GM07 phase guard restored at published c5368faa97eddf6b65e9129e6e9c11360cabbbf1. programs.close accepts opt-in expectedModified and emits assert doc.isModified is True/False immediately before doc.close(False), in the same SDK turn. ScenarioSession persists cleanupExpectedModified, rejects phase inference after uncertainty, and passes the exact durable expectation to unsaved close. GM07 sets false for the pristine owned scratch, and true only after registeredRequest returns the exact settled original result. Existing callers default to no phase inference; unknown outcomes still defer cleanup. cleanup-modified.test.ts covers actual runner/generated Python states and default/UNKNOWN; owner guard-removal injection produced two failing mismatch cases on each Node. This is source and offline evidence of restoration, NOT fresh native GM07 or import qualification. Frozen 482 import observations and every earlier reviewed expression remain unchanged.",
+      "evidence": [
+        "tests/scenarios/cleanup-modified.test.ts",
+        "tests/scenarios/runner.ts",
+        "tests/live-gm07.js"
+      ],
+      "qualification": "source-reviewed-native-not-qualified"
     }
   ]
 }

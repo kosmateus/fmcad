@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "scope": "The original frozen comparison is retained; each later exact source and first-parent comparison is appended. Textual transitions do not establish semantic equivalence.",
+  "scope": "Original frozen comparisons and prior transitions are retained. Later reviewed-source-span transitions compare exact archived snapshots; predecessor identifies the compared source commit, while gitParent records the actual first parent. Neither textual review nor native-only/not-run dispositions establish semantic equivalence or execution.",
   "sources": [
     {
       "source": "tests/helpers/live-broker.js",
@@ -25,7 +25,32 @@
       "workingTreeReview": {
         "historicalAfterSha256": "7f5b54c61965d11fb95199dd91283328e8ea732982379c7cb7832741ef31a9b5",
         "reason": "Zero assertion sites remain exactly unchanged. Existing owned CLI handoff remains journaled; read-only diagnostic RPCs persist original intent before admission, preserve exact owner/settlement, and retain the owned-child bypass refusal."
-      }
+      },
+      "transitions": [
+        {
+          "commit": "47487ae8ea302626331d4784f88b91201edad6ed",
+          "predecessor": "9b0be4d981f403def6d3309418a45b8be2f23896",
+          "introduced": false,
+          "comparisonBasis": "reviewed-source-span",
+          "gitParent": "0d6deff7a4b6ac8508b2692c1808d9220a4fe6d7",
+          "review": "Qualified runtime resolution and queue-exec/original receipt handoff replace direct source-module binding. This helper has zero extracted assertion sites before and after; zero is not proof of unchanged transport semantics or live execution.",
+          "comparison": {
+            "before": {
+              "source": "tests/helpers/live-broker.js",
+              "sha256": "df03e4bd0b7596b47c9fd04dcb3f43c07721a9478217e78aab8c2a5cbd1074bb",
+              "count": 0
+            },
+            "after": {
+              "source": "tests/helpers/live-broker.js",
+              "sha256": "6c3b4c52084c981059201ce3e3792bddba835549dde472515f804e53670622ae",
+              "count": 0
+            },
+            "retainedIds": [],
+            "removed": [],
+            "addedIds": []
+          }
+        }
+      ]
     },
     {
       "source": "tests/helpers/live-cli.js",
@@ -75,7 +100,36 @@
           "7b3557348ae99d753291-1",
           "49417cf79f011f52aeb4-1"
         ]
-      }
+      },
+      "transitions": [
+        {
+          "commit": "27baff4718096a4aa1dbe899730b196195b5afa2",
+          "predecessor": "480298512b443680f573053ab2ff8a7b894dae90",
+          "introduced": false,
+          "comparisonBasis": "reviewed-source-span",
+          "gitParent": "79abad992e11fd39946680bec6cd910328709e78",
+          "review": "Only the generated Python import and Document type annotation changed. All three extracted exact owned-document guards are byte-identical.",
+          "comparison": {
+            "before": {
+              "source": "tests/helpers/live-scope.js",
+              "sha256": "bad4a264269dcec3da07563f21a6eb20f1e5ef22859e6f7e74982f23b9be5389",
+              "count": 3
+            },
+            "after": {
+              "source": "tests/helpers/live-scope.js",
+              "sha256": "882272b87c3849449f9927ec32c8c05dadb0900af036aa34ffc6fbfe9517d5a9",
+              "count": 3
+            },
+            "retainedIds": [
+              "5ee1df2cbbbd0421974e-1",
+              "7b3557348ae99d753291-1",
+              "49417cf79f011f52aeb4-1"
+            ],
+            "removed": [],
+            "addedIds": []
+          }
+        }
+      ]
     },
     {
       "source": "tests/live-animation-methods.js",
@@ -293,7 +347,73 @@
         ],
         "removed": [],
         "addedIds": []
-      }
+      },
+      "transitions": [
+        {
+          "commit": "27baff4718096a4aa1dbe899730b196195b5afa2",
+          "predecessor": "480298512b443680f573053ab2ff8a7b894dae90",
+          "introduced": false,
+          "comparisonBasis": "reviewed-source-span",
+          "gitParent": "79abad992e11fd39946680bec6cd910328709e78",
+          "review": "Frame depth uses len(inspect.stack()) instead of manual sys._getframe traversal. All forty retained assertions, including depth and unchanged native inventory observations, remain identical; this review is not native execution evidence.",
+          "comparison": {
+            "before": {
+              "source": "tests/live-backend-adapter.js",
+              "sha256": "b810b7dce7a3080a52fb91bd048a0dd08378951b66f37db3f9aa02f72a65fa25",
+              "count": 40
+            },
+            "after": {
+              "source": "tests/live-backend-adapter.js",
+              "sha256": "6be20b0b0baab53d0f160a1ac6a5bd18dad8d847dabaefdffd74d53331484493",
+              "count": 40
+            },
+            "retainedIds": [
+              "8e6719b696ae329c1c06-1",
+              "5d84736022a9b89ba557-1",
+              "fdaf043267e38e6a24a9-1",
+              "cbbd6fe027a11330a167-1",
+              "0308c10e76d51fb0695a-1",
+              "1c3a0fef51bdcdd868e3-1",
+              "170529ffd1c3a329f324-1",
+              "e700896608679c41215c-1",
+              "091f91a22994d9afcc1d-1",
+              "0962633ae22911721c8f-1",
+              "e3160a8769c135e95104-1",
+              "2512bd2f55b8dc4123aa-1",
+              "ea575a43bab67f7a75b2-1",
+              "8b3a608c0833a83933c9-1",
+              "f664411d5ffd130d651c-1",
+              "61157cdac468e559bd02-1",
+              "9f8e768bbeafd3d2a38b-1",
+              "dcd7e288833ad20e1415-1",
+              "2512bd2f55b8dc4123aa-2",
+              "c5337518a86629ff9b4b-1",
+              "966bfc6d09a999f6bb9d-1",
+              "705d951aad9ef397edad-1",
+              "189684e80e4ef1443bdd-1",
+              "1004277cd4f51bde9337-1",
+              "5a0e7ae37aadd8810747-1",
+              "64cb73ef32a838a2a67a-1",
+              "299124ef8fa22b5451e8-1",
+              "89b1a4c3986686cd3444-1",
+              "f195e36696e1c6417e74-1",
+              "365a81aa20ab2e44ba15-1",
+              "ed9c1e86940873c41c3d-1",
+              "39f8d7c729a3c64f0995-1",
+              "e123b1a59a40f0121c6b-1",
+              "4faec1d581cfde75f0ef-1",
+              "dbf76528cdb9d00c257a-1",
+              "43d3d3f6d4db68421987-1",
+              "734137216efa0ff12464-1",
+              "2dec10209aad45318b1e-1",
+              "9568fe2e5fe4f6711504-1",
+              "2789c84e11e1313291ad-1"
+            ],
+            "removed": [],
+            "addedIds": []
+          }
+        }
+      ]
     },
     {
       "source": "tests/live-batch-reference.js",
@@ -4242,7 +4362,271 @@
       "workingTreeReview": {
         "historicalAfterSha256": "48e1d8ae8b2c993dfbb758d93b6302ddaff75b249b56bd05dd673d6fd1f1882f",
         "reason": "Every retained assertion ID, kind and expression is unchanged. Fixed native invocations now fsync original caller-owned request intent and one-shot fixture claim before child spawn; exact returned receipts are observed without authorizing cleanup or replay."
-      }
+      },
+      "transitions": [
+        {
+          "commit": "c5368faa97eddf6b65e9129e6e9c11360cabbbf1",
+          "predecessor": "e60b521d57b5bb9247101d1d3cc381d1149041be",
+          "introduced": false,
+          "comparisonBasis": "reviewed-source-span",
+          "gitParent": "251d930a7bf083db2b14d98d68ff51b365b7ce63",
+          "review": "GM07 phase guard restored at published c5368faa97eddf6b65e9129e6e9c11360cabbbf1. programs.close accepts opt-in expectedModified and emits assert doc.isModified is True/False immediately before doc.close(False), in the same SDK turn. ScenarioSession persists cleanupExpectedModified, rejects phase inference after uncertainty, and passes the exact durable expectation to unsaved close. GM07 sets false for the pristine owned scratch, and true only after registeredRequest returns the exact settled original result. Existing callers default to no phase inference; unknown outcomes still defer cleanup. cleanup-modified.test.ts covers actual runner/generated Python states and default/UNKNOWN; owner guard-removal injection produced two failing mismatch cases on each Node. This is source and offline evidence of restoration, NOT fresh native GM07 or import qualification. Frozen 482 import observations and every earlier reviewed expression remain unchanged.",
+          "comparison": {
+            "before": {
+              "source": "tests/live-gm07.js",
+              "sha256": "d7a8f1bbb86ec6677ee7ae01956ac8f3377fdbd1cdf31ccdfca4d1fe27c0d62c",
+              "count": 115
+            },
+            "after": {
+              "source": "tests/live-gm07.js",
+              "sha256": "426c1bd5bc3676a7c33ac2b13f5035319371f806aa8871d17724031cc85e450e",
+              "count": 110
+            },
+            "retainedIds": [
+              "e29d010f8cb7d360f380-1",
+              "95d77988eb6a157e34c0-1",
+              "7e1b11760ef234927b71-1",
+              "09627b4129daf85ad130-1",
+              "77f9474dd614eebd772e-1",
+              "217edc5f6d74dac661ce-1",
+              "12ef1323e9ebfbd5d3fb-1",
+              "654621855b7452ed76fb-1",
+              "057d9d840629486f062a-1",
+              "885417ffdbde10414634-1",
+              "81f43f826107661d32fe-1",
+              "e6079a7dbb76b3c34c65-1",
+              "c34afc37915e4f052bc6-1",
+              "545d754e6a3c2ec787e7-1",
+              "6a24bc7356a879157236-1",
+              "d995a2222146e97b180a-1",
+              "01a0322603f12e895ff5-1",
+              "2ba2839d192a3df2be3a-1",
+              "917566fb1c5afc135220-1",
+              "26a1cc1b569ef52b0a40-1",
+              "17996022ae23b8d067a3-1",
+              "daacc81b75794491d40b-1",
+              "21ee34c42ef0d8e989b0-1",
+              "f5de20d7a4005eaab0d8-1",
+              "76599fac49d70d9deaa7-1",
+              "ddd6a74edd2a8d98b478-1",
+              "586b74242de27430442e-1",
+              "f15b8d298ffae074b22e-1",
+              "6c5aeab14634c2ef9955-1",
+              "ea6b1b8d819420a84655-1",
+              "a9a5640d2c3ee28ed29f-1",
+              "ddc244d67df0e09dbf8c-1",
+              "143b15f1cfb6688f58e5-1",
+              "51bfdcf689ee3037ee7c-1",
+              "c1169845a1984f69fb1b-1",
+              "4a4be5e4101c65de926e-1",
+              "a6d00faa04f9d0f6cd9b-1",
+              "7a71abe7b3ed94d19809-1",
+              "dd5681676e96ff822194-1",
+              "45d2e6033537a95166e3-1",
+              "1886badbe2438997f90a-1",
+              "089ad94b34c50df549ec-1",
+              "098e31d98b884bf2d8d0-1",
+              "9756f3bd57261590acfe-1",
+              "c33ddd7ee69b49818613-1",
+              "b626975c0a7e4e3f10ff-1",
+              "378d624ed517e9fafd0c-1",
+              "7766f7d9e8300eafae33-1",
+              "ac2773bb3aef485b0db0-1",
+              "e01c53e55060450ea2fd-1",
+              "dd9e845dfd8909780063-1",
+              "91b241d40c919a1167e1-1",
+              "9f72643f10965b01ac5e-1",
+              "8b4c11eaceea467a0344-1",
+              "5d85344e1233bacfe22a-1",
+              "75942d275fc2e6d4673c-1",
+              "f52dc6285a37b15cc175-1",
+              "ac9137483028cbc8bca9-1",
+              "cd6a112796925914de7d-1",
+              "4b68f27a7e57f1a9e22c-1",
+              "e70d89f3b29d7c7845b2-1",
+              "ebd32f83c2d4ea3189f3-1",
+              "93a7c20000ca8df268e3-1",
+              "1a7ce2123273ee358853-1",
+              "847b3e9a27126308682d-1",
+              "6ccd3104451f432ce473-1",
+              "a33ee91cc0e6ff4888ba-1",
+              "90f3dd3af0975ef99f2a-1",
+              "f2c0832b470abf7fec0f-1",
+              "703eef07264b67e41eca-1",
+              "b6597aa4835a8e4ffd80-1",
+              "186b28ca79a559091635-1",
+              "973178ffbed0a30b1b06-1",
+              "cf4f5ba6f9dc20a7b3d9-1",
+              "d15d62c164d9c4757e86-1",
+              "b74db53bf6302921e7ff-1",
+              "30a2152ff3744de3a467-1",
+              "54a90819cd45a656ecfd-1",
+              "b5838e743e6642573f99-1",
+              "8c605c9cd204ac057932-1",
+              "15b1d0b3a3a8d489c565-1",
+              "d4e7461817ee271fbbc3-1",
+              "eb80c8b5d7f6bafdd4de-1",
+              "a20f1a9b93376df77df4-1",
+              "8ab6f1573f10490d00be-1",
+              "298163c21ff057246514-1",
+              "fc7bbc8814e1b96cda12-1",
+              "9c34df9f30809229e6e1-1",
+              "e3b79cc5fd85363ee486-1",
+              "ed506c8e583f2c79f1e5-1",
+              "8780cad6e5d94150a5fb-1",
+              "59497ba94d153e90492b-1",
+              "2789c84e11e1313291ad-1",
+              "43ab33a8b769968979a0-1"
+            ],
+            "removed": [
+              {
+                "id": "209299d51d490e108c00-1",
+                "line": 151,
+                "kind": "assertion",
+                "expression": "assert.equal(runtimeRoot, expectedRuntimeRoot, 'Use only the source-pinned GM07 candidate for offline checks.')"
+              },
+              {
+                "id": "7d568f6874f3b21d3a8e-1",
+                "line": 152,
+                "kind": "helper",
+                "expression": "fixedContract(runtimeRoot)"
+              },
+              {
+                "id": "861f5d5e317313414fdc-1",
+                "line": 232,
+                "kind": "assertion",
+                "expression": "assert.equal(row.exitCode, 0, row.stderr || row.stdout)"
+              },
+              {
+                "id": "ceae854173886493fae2-1",
+                "line": 248,
+                "kind": "helper",
+                "expression": "lifecycleScript(`app = adsk.core.Application.get()\ndocs = [{\"name\": d.name, \"creationId\": d.creationId, \"fileId\": d.dataFile.id if d.dataFile else None, \"saved\": d.isSaved, \"modified\": d.isModified, \"active\": d == app.activeDocument} for d in app.documents]\nprint('LIVE_GM07 ' + json.dumps({\"version\": app.version, \"documents\": docs}))`)"
+              },
+              {
+                "id": "12bfeca5413a0a38690f-1",
+                "line": 497,
+                "kind": "helper",
+                "expression": "lifecycleScript(`app = adsk.core.Application.get()\nmatches = [d for d in app.documents if d.name == ${JSON.stringify(identity.name)} and d.creationId == ${JSON.stringify(identity.creationId)}]\nassert len(matches) == 1, 'Exact test-owned scratch identity ambiguous; leave open'\ndoc = matches[0]\nassert app.activeDocument == doc, 'Exact test-owned scratch is not active; do not switch documents'\nassert doc.dataFile is None and not doc.isSaved, 'Unexpected saved/cloud scratch; leave open'\nassert doc.isModified is ${expectedModified}, 'Scratch modification state differs from the settled test phase'\nrestore_id = ${JSON.stringify(restoreDocumentId)}\nexpected_others = sorted(tuple(row) for row in json.loads(${JSON.stringify(expectedOtherJson)}))\nbefore_others = sorted((d.name, d.creationId, d.dataFile.id if d.dataFile else None, d.isSaved, d.isModified)\n                       for d in app.documents if d.creationId != doc.creationId)\nassert before_others == expected_others, 'An existing document changed during the GM07 test'\nif restore_id is not None:\n    assert len([d for d in app.documents if d.creationId == restore_id]) == 1, 'Original active document disappeared'\nassert doc.close(False), 'Exact test-owned scratch close failed'\napp = adsk.core.Application.get()\nafter_others = sorted((d.name, d.creationId, d.dataFile.id if d.dataFile else None, d.isSaved, d.isModified)\n                      for d in app.documents)\nassert after_others == expected_others, 'Another document changed during exact scratch cleanup'\nactive_id = app.activeDocument.creationId if app.activeDocument else None\nassert active_id == restore_id, 'Original active document was not restored'\nprint('LIVE_GM07 ' + json.dumps({\"closedCreationId\": ${JSON.stringify(identity.creationId)},\n                                 \"activeCreationId\": active_id, \"remainingDocuments\": len(app.documents)}))`, false)"
+              },
+              {
+                "id": "49fd3273f4c1bae7c60c-1",
+                "line": 498,
+                "kind": "embedded-python",
+                "expression": "]\nassert len(matches) == 1, 'Exact test-owned scratch identity ambiguous; leave open'\ndoc = matches[0]\nassert app.activeDocument == doc, 'Exact test-owned scratch is not active; do not switch documents'\nassert doc.dataFile is None and not doc.isSaved, 'Unexpected saved/cloud scratch; leave open'\nassert doc.isModified is "
+              },
+              {
+                "id": "217a8af1285f5d41678a-1",
+                "line": 505,
+                "kind": "embedded-python",
+                "expression": "))\nbefore_others = sorted((d.name, d.creationId, d.dataFile.id if d.dataFile else None, d.isSaved, d.isModified)\n                       for d in app.documents if d.creationId != doc.creationId)\nassert before_others == expected_others, 'An existing document changed during the GM07 test'\nif restore_id is not None:\n    assert len([d for d in app.documents if d.creationId == restore_id]) == 1, 'Original active document disappeared'\nassert doc.close(False), 'Exact test-owned scratch close failed'\napp = adsk.core.Application.get()\nafter_others = sorted((d.name, d.creationId, d.dataFile.id if d.dataFile else None, d.isSaved, d.isModified)\n                      for d in app.documents)\nassert after_others == expected_others, 'Another document changed during exact scratch cleanup'\nactive_id = app.activeDocument.creationId if app.activeDocument else None\nassert active_id == restore_id, 'Original active document was not restored'\nprint('LIVE_GM07 ' + json.dumps({\"closedCreationId\": "
+              },
+              {
+                "id": "d25f2601ebd2bcbbf195-1",
+                "line": 520,
+                "kind": "assertion",
+                "expression": "assert.equal(closed.closedCreationId, identity.creationId)"
+              },
+              {
+                "id": "9a14543e2ead2a3bb37f-1",
+                "line": 521,
+                "kind": "assertion",
+                "expression": "assert.equal(closed.activeCreationId, restoreDocumentId)"
+              },
+              {
+                "id": "7d568f6874f3b21d3a8e-2",
+                "line": 530,
+                "kind": "helper",
+                "expression": "fixedContract(runtimeRoot)"
+              },
+              {
+                "id": "0b73e31c1044e9849249-1",
+                "line": 536,
+                "kind": "helper",
+                "expression": "state()"
+              },
+              {
+                "id": "f1fdb5ba2d5d88dac61e-1",
+                "line": 539,
+                "kind": "assertion",
+                "expression": "assert.ok(!baseline.documents.some(doc => doc.name === name), 'Random GM07 fixture name already exists.')"
+              },
+              {
+                "id": "0b73e31c1044e9849249-2",
+                "line": 542,
+                "kind": "helper",
+                "expression": "state()"
+              },
+              {
+                "id": "26fdc7c423d7f018e2e8-1",
+                "line": 552,
+                "kind": "assertion",
+                "expression": "assert.equal(identity.name, name, 'CLI created a document with an unexpected name.')"
+              },
+              {
+                "id": "a362cf39ccad973f3c2f-1",
+                "line": 553,
+                "kind": "assertion",
+                "expression": "assert.match(identity.creationId, /^[0-9a-f-]{36}$/i, 'New scratch did not return an exact creationId.')"
+              },
+              {
+                "id": "e5c7cb2b93c3129e06b1-1",
+                "line": 554,
+                "kind": "assertion",
+                "expression": "assert.equal(added[0].fileId, null, 'New scratch unexpectedly has a cloud file ID.')"
+              },
+              {
+                "id": "2f6af638d05425bc9fb1-1",
+                "line": 555,
+                "kind": "assertion",
+                "expression": "assert.equal(added[0].saved, false, 'New scratch unexpectedly saved.')"
+              },
+              {
+                "id": "7d9068864ed66de9e7c9-1",
+                "line": 556,
+                "kind": "assertion",
+                "expression": "assert.equal(added[0].modified, false, 'New scratch was not pristine before the GM07 program.')"
+              },
+              {
+                "id": "7a9f2b9eca04fcb34d31-1",
+                "line": 557,
+                "kind": "assertion",
+                "expression": "assert.equal(added[0].active, true, 'New scratch was not active; do not switch documents.')"
+              },
+              {
+                "id": "592c6c1a67ed8e9a9df4-1",
+                "line": 572,
+                "kind": "helper",
+                "expression": "runFixedProgram(pinned, clientId, fusionVersion)"
+              },
+              {
+                "id": "d1ff0952ca290bc4460d-1",
+                "line": 591,
+                "kind": "helper",
+                "expression": "closeOwned()"
+              }
+            ],
+            "addedIds": [
+              "ad3829845552c91e78e1-1",
+              "27537c0ce07240682f02-1",
+              "ae97034ba34c32b7b1c4-1",
+              "1ebbd52aec0a800133c2-1",
+              "0153dc76c3528174c0e8-1",
+              "0f629caa1904fdb4f553-1",
+              "25a7bab9a1072d69eb36-1",
+              "a61c5f41d9d999aace60-1",
+              "0c42b57971220412ebb0-1",
+              "ae97034ba34c32b7b1c4-2",
+              "1ebbd52aec0a800133c2-2",
+              "9878772a4f92999867a3-1",
+              "702dc1e5dbc0eabefc2a-1",
+              "47ceee0a8890f4e3179e-1",
+              "e590ac7c29784a2241c3-1",
+              "572d180ce4b083ff0fc1-1"
+            ]
+          }
+        }
+      ]
     },
     {
       "source": "tests/live-gm12-spring.js",
@@ -4775,6 +5159,172 @@
       }
     },
     {
+      "source": "tests/live-normal-multidocument-processes.js",
+      "commit": "25e14cb34892278974a9249212af720a55c29a29",
+      "predecessor": "570f9877dfd74f206cd76223008a9abbeda488bb",
+      "introduced": false,
+      "review": "New independent-process orchestration, not a replacement for existing owner cases. Retain all 123 sites separately: distinct PID/birth identities, owner-count reports, exact original job/request/client binding, pending no-dispatch cancellation and dropped response recovery, unchanged historical UNKNOWN count, global SDK maximum=1 and final inventory equality. Every site remains native-only/not-run; static report validation or simulator execution cannot qualify this live profile.",
+      "comparison": {
+        "before": {
+          "source": "tests/live-normal-multidocument-processes.js",
+          "sha256": "447efc9bb72cdc041bf0a294a12ccc134d9d6460c688bdac15628624fb07e451",
+          "count": 113
+        },
+        "after": {
+          "source": "tests/live-normal-multidocument-processes.js",
+          "sha256": "82a3c8b170bee21f0200144d4c37a9dd8752247075c4be40894d8aa3cf517144",
+          "count": 123
+        },
+        "retainedIds": [
+          "50667508ecaedd16446b-1",
+          "bf38cc5a3f21f5812796-1",
+          "5bfc26821b75a6568f1b-1",
+          "ea575a43bab67f7a75b2-1",
+          "3b9ea65613ddaa849de2-1",
+          "8a5bc1552e8ca562f0e8-1",
+          "3fd1870224d2c2f29113-1",
+          "6ea3eb1f2862791fc1e4-1",
+          "bcc0ecff6a023d06eca4-1",
+          "90aacf6e6583957896ec-1",
+          "4b99716a7dfcdc98fd7d-1",
+          "62a812eeea4beb7806cf-1",
+          "6a4c7647634e7f0c79f6-1",
+          "a87e8a6f8ef3a17ebe73-1",
+          "b4bc2df92091eb3cdde2-1",
+          "8a3aa47e2f3a6de840d8-1",
+          "62292a7917089abebb34-1",
+          "1801ca1c93c2dbc181ae-1",
+          "b8217b1e67665908514c-1",
+          "dfa5fc7bfee3b2b0177d-1",
+          "d665df3afb2ab7239ff9-1",
+          "4579b682e3d4d1c36eda-1",
+          "6c932dafe820be048949-1",
+          "91ab34484649ba44bb2f-1",
+          "a83ce3687e66fb741f92-1",
+          "0ba1d99e3c6bc308f008-1",
+          "2d3f70e9ffc555af9a3d-1",
+          "f5c24dbcc02361686853-1",
+          "6af06d36e3506905ce9b-1",
+          "2a903e2248d2b05e8302-1",
+          "fa85cf450fc66bf3df2c-1",
+          "30918207af8c3ee9c6c2-1",
+          "fe94316cff492cb36def-1",
+          "fc00e2aeea317770040b-1",
+          "5f0e89bd5b00f620f9e5-1",
+          "c7a138932ae422f006a4-1",
+          "c4f2fd6593d358c48282-1",
+          "d03dd1b8043b52b6f5ff-1",
+          "77f9bceb6e2b3e3536a5-1",
+          "40bb32eeb208d70f6f4e-1",
+          "4837e4c5b1b8c15bc3aa-1",
+          "2718ab095975ef93d2d4-1",
+          "2cb295129712da9bcb01-1",
+          "fcf95815d03fbc27818d-1",
+          "e961ef9582681ce6202a-1",
+          "849e23022697108c7012-1",
+          "16d1b5158ddeaaf4d7fc-1",
+          "a46e0f1107fd3964bd95-1",
+          "8996c70a4e7ce3cc7982-1",
+          "e7bf12a8d1bd27a45864-1",
+          "e71454cc6e1b2915dc5a-1",
+          "3fe9d73285a5d935d6ab-1",
+          "0c312b8e46432addd2e1-1",
+          "60eb2b3030fa2001a05b-1",
+          "753613a18de112862c31-1",
+          "52fccc5bbd0828dd6174-1",
+          "7a39c8b1c3b05bbcc88f-1",
+          "1131bc3c9039b34d411c-1",
+          "f790442cd61261546e11-1",
+          "0c312b8e46432addd2e1-2",
+          "7e2ea12b3dfa793c0492-1",
+          "bd8786bcd8ad416f14bf-1",
+          "7af6f54bc34ec6cd40f2-1",
+          "ee0e53a5898b1d69e393-1",
+          "12551ccaa62a24febb1c-1",
+          "3561953c60cae364ecc8-1",
+          "c5218851d07e376e4f4d-1",
+          "f9478ed2c870cf86b159-1",
+          "a36934a098d8fe3aba4f-1",
+          "784361cadc72d0d7acf7-1",
+          "ba7dfaf2ec6a8b98c5da-1",
+          "89f5c5c95b3d2b7bed2f-1",
+          "8f16cf1cc0253f653496-1",
+          "983745f82edb09359bb5-1",
+          "c90817cb2b17ddab508d-1",
+          "546c75a755181258a31c-1",
+          "bc6d73546794cbbb9d1b-1",
+          "023e791efd52f35d0fd5-1",
+          "360ea26c98f6006ed7e2-1",
+          "eddb7c20aec168736167-1",
+          "600a67f08f00d43d8e81-1",
+          "ef43524dfedc597e26da-1",
+          "bd667b9d0f0fc6de8d4f-1",
+          "d44a4be49922afe459bc-1",
+          "16977869a26b0d4a0b08-1",
+          "16b5e4ef6039ad443a02-1",
+          "cd5d4e6d6701e2fc74e4-1",
+          "405d828f849936b2dc51-1",
+          "98e9815a7704115d3adf-1",
+          "bdac8d0778a1cf7570f0-1",
+          "93586b3e12072f86609c-1",
+          "c63ff25441cc9ae9ea4e-1",
+          "e45a02cae797b5cd8096-1",
+          "98fe31342a749e6de263-1",
+          "45a76d1c2ce25ca9e235-1",
+          "14423cc418e16b6c4159-1",
+          "84fc99fc378b1bb3b14d-1",
+          "6ad8e9b38ba44cbe1e9e-1",
+          "9112b4b690261460bd2f-1",
+          "c069c1cce1f77b0bc107-1",
+          "8389c01a05ec04b2ea37-1",
+          "556380064ccb054c6019-1",
+          "01ca4c87852dd659494c-1",
+          "305d1b05df682b0cc9c9-1",
+          "e38489bebfcc747209d9-1",
+          "bd691b882dd202ae0233-1",
+          "96b7db076eccca92ab4a-1",
+          "454b2e83d0cbd98a6ed2-1",
+          "e62d8a9fa41f6023d01a-1",
+          "2789c84e11e1313291ad-1"
+        ],
+        "removed": [
+          {
+            "id": "af1da47f71ba338ae1fc-1",
+            "line": 325,
+            "kind": "assertion",
+            "expression": "assert.equal(\n        job.state,\n        \"queued\",\n        \"Runner read must wait behind the hold\",\n      )"
+          },
+          {
+            "id": "35bf48b7b60f6d5a96c9-1",
+            "line": 531,
+            "kind": "helper",
+            "expression": "observeJob(\n      cancelQueue,\n      cancelJob.id,\n      (job) =>\n        job.state === \"queued\" && Number(job.dispatch?.rpcCount || 0) === 0,\n    )"
+          },
+          {
+            "id": "0af5fcf71ae534a4fe7c-1",
+            "line": 628,
+            "kind": "assertion",
+            "expression": "assert.equal(lostResult.job.dispatch?.rpcCount, 1)"
+          }
+        ],
+        "addedIds": [
+          "76a5eaae542ad4a90a32-1",
+          "6bfca22e0f383c5d6c21-1",
+          "c2020b3e5e21a7d178eb-1",
+          "c8b477c8212d284427c5-1",
+          "20f39665a1e28e1b9dc2-1",
+          "b92b2eefe7f6e595979c-1",
+          "0e8520beadd50c1fd2ea-1",
+          "65e7948e2d91ff9399cd-1",
+          "c2020b3e5e21a7d178eb-2",
+          "3653a51867057876102e-1",
+          "be214cce0317d9ff5e8a-1",
+          "cba047be60fdc92f44ae-1",
+          "040787beb413885203b2-1"
+        ]
+      }
+    },
+    {
       "source": "tests/live-normal-multidocument.ts",
       "commit": "8042151fe57351da80c109c176487c38abeb7b04",
       "predecessor": "e6804e66eeea85eb9183ff28186d2ecc95be21b8",
@@ -5233,6 +5783,128 @@
             "removed": [],
             "addedIds": []
           }
+        },
+        {
+          "commit": "abfd2981b657072473875438dc2f67ae525d0048",
+          "predecessor": "135007c1b29b1004f9aa17d688b293a9813ebc95",
+          "introduced": false,
+          "comparisonBasis": "reviewed-source-span",
+          "gitParent": "a6d3e098aa041a4c88d12c3b6ac6aaa1aac8a3bf",
+          "review": "Failure cleanup now visits all owner slots, accepts an absent slot only after an exact failed terminal owner/request/job receipt proves sdkSettled and mayHaveMutated=false, and defers otherwise. The previous document assertion is not equivalent for uncreated slots: its exact obligation is retained historically. The same ownedCleanupSource is still invoked for every known document; indentation changes its extracted helper ID. Cleanup errors continue only after exact settlement; uncertain close stops later cleanup.",
+          "comparison": {
+            "before": {
+              "source": "tests/live-normal-multidocument.ts",
+              "sha256": "982a5d189b9235a80a13eebff75bbbbdab636b6a2010fe875656c135490e2e19",
+              "count": 87
+            },
+            "after": {
+              "source": "tests/live-normal-multidocument.ts",
+              "sha256": "e1abce411fc592c7c283773a0a91d0ff6d1093c050423341acedf40af7604da7",
+              "count": 86
+            },
+            "retainedIds": [
+              "4d9e4cb82cde1d875512-1",
+              "05d21ae604af83747a0a-1",
+              "2fe4233085f4698b9483-1",
+              "ebe73d558ec9ae5eae30-1",
+              "ffb9a2fdc2b21ca8a7f6-1",
+              "5df2642caf84f6cc6563-1",
+              "959e47302e1217e1442d-1",
+              "36e14c9ba6a8df785b2e-1",
+              "9e8d1acde447718b60b3-1",
+              "ef05932378fdbf9f3965-1",
+              "051d11c9160ce329ddf7-1",
+              "2e69062d26c7dedd001c-1",
+              "74d3ed1562d00ec517ff-1",
+              "93c02ed1b2ec681c5c69-1",
+              "79da28fd702bece99ed9-1",
+              "1769b44c44902ab55215-1",
+              "79c7476cae34c626585c-1",
+              "82603a9ce56f92ad512e-1",
+              "4d9e4cb82cde1d875512-2",
+              "e5cf23a5cc4f449925a4-1",
+              "93450d092c71b609417f-1",
+              "add763c63ecf19301f32-1",
+              "2f49616c6b8c4417a494-1",
+              "458ecbff82d1ef2162ca-1",
+              "d7e001015a9292c69722-1",
+              "7744cce3f0059af50ca2-1",
+              "85557291fb09927239db-1",
+              "09ec931bbe2f7488e5eb-1",
+              "a40d3dfdf5c9a51c5290-1",
+              "1952be71084459e9f4b9-1",
+              "3b6a54ef5054da5c6181-1",
+              "c74218979deba0c7e675-1",
+              "849e23022697108c7012-1",
+              "791d0f523c2cb50d61aa-1",
+              "1ee8dbe5c69394106fdd-1",
+              "c3faa95406473eebec99-1",
+              "02cf7a2b235ed94b0b2e-1",
+              "f7bfd3db7f614a142a80-1",
+              "1828869d127ae3b63571-1",
+              "4d7b90527d70242d0213-1",
+              "effd37a4e2af4448d0f6-1",
+              "411d90a80062158fa80b-1",
+              "bb24452d0c813d4f68cc-1",
+              "44d0b35297442b33fa0f-1",
+              "c74218979deba0c7e675-2",
+              "9bd103d2923cdb9c8228-1",
+              "f611ed5b55a4751433fd-1",
+              "90163b31298bd4d5f743-1",
+              "d511e12089c618397b77-1",
+              "8d2e6be1a9abcc9eefcd-1",
+              "cc4f55f5592ef9480c86-1",
+              "12f72a2240947919796f-1",
+              "5fd297efc8095dcdcc89-1",
+              "23fc2996455bb65f5067-1",
+              "f93e4d9f37f1a3efbb0b-1",
+              "487b39c9ca9b5f8e8cbd-1",
+              "d7e001015a9292c69722-2",
+              "fb4c0884c7e2272b3c4b-1",
+              "9c95cee476b7bb985d19-1",
+              "a9cf34af63925341017b-1",
+              "de74e7a8cac5996cbbc0-1",
+              "e6344e6e163a9c5896fd-1",
+              "bcbc5c02e319b8151a7f-1",
+              "80b2a14f1bbeca8909a6-1",
+              "4b6c341d89ea1e0c3793-1",
+              "b1adb9264fd60991d395-1",
+              "d0e50c301d9390c36d89-1",
+              "4060af2c358e62d7d8bc-1",
+              "05813179f7d47a984545-1",
+              "a8a69dcbcc440799265a-1",
+              "5a2521c8898fb2136aa1-1",
+              "84970b77f8eeb6525a9e-1",
+              "c95638494770cfbb17d2-1",
+              "b94376baa64f8526c38a-1",
+              "f5096cef93f02d9429b2-1",
+              "03cacd05a2d8930342bf-1",
+              "e718f410198698d77127-1",
+              "b94376baa64f8526c38a-2",
+              "5957462c947268639f9b-1",
+              "d7e001015a9292c69722-3",
+              "f3d3d619cfb1086018bf-1",
+              "163b2e2b95a15d56ebbd-1",
+              "b6a7a417b2100e9fb3f3-1",
+              "f7bfd3db7f614a142a80-2",
+              "2789c84e11e1313291ad-1"
+            ],
+            "removed": [
+              {
+                "id": "f5096cef93f02d9429b2-2",
+                "line": 615,
+                "kind": "assertion",
+                "expression": "assert.ok(document)"
+              },
+              {
+                "id": "c6f9bcb89a6206f08541-1",
+                "line": 617,
+                "kind": "helper",
+                "expression": "script(\n                  index,\n                  \"failure-close\",\n                  ownedCleanupSource(\n                    document,\n                    report.before.active,\n                    \"FMCAD_RESULT \",\n                  ),\n                )"
+              }
+            ],
+            "addedIds": ["79f9cd8ff42255a0a901-1"]
+          }
         }
       ]
     },
@@ -5456,6 +6128,53 @@
             "after": {
               "source": "tests/live-recovery-ports.ts",
               "sha256": "48c27c0eebb5dd959c0dd818fc165d8074c28ea2d63be2f8e44e9406af090e1a",
+              "count": 23
+            },
+            "retainedIds": [
+              "eeaf1df12460ae2bf403-1",
+              "e2d94a0a4bfa23aeb3de-1",
+              "dd077fc11d730d1e3036-1",
+              "374e93893e58ec09d534-1",
+              "374e93893e58ec09d534-2",
+              "7a8162bcf1cd2e9c71ab-1",
+              "fbb11bf45ddf666e3db0-1",
+              "374e93893e58ec09d534-3",
+              "f8e7e8fb03e00798293e-1",
+              "a79cee6e22f1c061daa2-1",
+              "374e93893e58ec09d534-4",
+              "b978b83f0c87b16296eb-1",
+              "1324aa03264fb47f4bc5-1",
+              "99876222da2bfc272781-1",
+              "ee789a9848c0e29a5c9d-1",
+              "374e93893e58ec09d534-5",
+              "8ce0e113fc151e611c75-1",
+              "80a3aebd4a06755f4354-1",
+              "2d8b4fd5cbd4c1709606-1",
+              "9878fe7203b03be028a8-1",
+              "b973b44b858d57cf9236-1",
+              "6625105e34308deefece-1",
+              "311fd7e189a89d819e08-1"
+            ],
+            "removed": [],
+            "addedIds": []
+          }
+        },
+        {
+          "commit": "abfd2981b657072473875438dc2f67ae525d0048",
+          "predecessor": "135007c1b29b1004f9aa17d688b293a9813ebc95",
+          "introduced": false,
+          "comparisonBasis": "reviewed-source-span",
+          "gitParent": "a6d3e098aa041a4c88d12c3b6ac6aaa1aac8a3bf",
+          "review": "The LiveReport interface adds failureCleanupErrors metadata only. All twenty-three assertion sites remain identical; no runtime observation is removed.",
+          "comparison": {
+            "before": {
+              "source": "tests/live-recovery-ports.ts",
+              "sha256": "48c27c0eebb5dd959c0dd818fc165d8074c28ea2d63be2f8e44e9406af090e1a",
+              "count": 23
+            },
+            "after": {
+              "source": "tests/live-recovery-ports.ts",
+              "sha256": "c8b17b2ab4c4541f555677bb4757c030cf08b3808a8781acbe1ca909b3720bd9",
               "count": 23
             },
             "retainedIds": [
@@ -7496,7 +8215,276 @@
           "4cf3ab17c8c8c7d22a71-1",
           "3f25914d3d8a12202566-1"
         ]
-      }
+      },
+      "transitions": [
+        {
+          "commit": "f5b2244b96ab51814b19c0d0d01a7b346d0739b4",
+          "predecessor": "480298512b443680f573053ab2ff8a7b894dae90",
+          "introduced": false,
+          "comparisonBasis": "reviewed-source-span",
+          "gitParent": "034b99181fde6f277010065898b1b0ee36c57c57",
+          "review": "Compared original JS and retained runner. Creation binds one original request/job/client and exact returned identity; owner provenance guards replace blanket foreign-inventory assertions. Cleanup matches creationId first plus exact name and unsaved status. Native table radius is used for matched threading, while a separate nominal 5 mm cylinder retains nominal resize volume/delta checks. Curated catalog query is M10 with one exact designation, distinct from native selector M10x1.5. Concurrent active restoration accepts only baseline/proven peers instead of requiring one global active identity; preserve historical stricter observations as unqualified obligations rather than claiming identical semantics.",
+          "comparison": {
+            "before": {
+              "source": "tests/live-thread-method.js",
+              "sha256": "dade83d7984337932deb416a5f5a40488d454df6506e31a9ab3144e51c3433a8",
+              "count": 93
+            },
+            "after": {
+              "source": "tests/live-thread-method.js",
+              "sha256": "351f147ccfe7b592b9b67a6162a36f0a9a431c071892f92dc73dfab2d09edead",
+              "count": 115
+            },
+            "retainedIds": [
+              "861f5d5e317313414fdc-1",
+              "c81b99f9e86b7a4f2f90-1",
+              "3ad63007e4bc89cdca57-1",
+              "0b73e31c1044e9849249-1",
+              "8c51a3256c889c7ec592-1",
+              "785456949d5d328d7e91-1",
+              "861f5d5e317313414fdc-2",
+              "e80e43d750deb6633137-1",
+              "a86b9c8cb536c9099fb9-1",
+              "2417342c667ed7890a90-1",
+              "a50586e2f08b9dbe2c31-1",
+              "4eab3368f3207f476e8a-1",
+              "1fcbf956d86e189e2eca-1",
+              "785456949d5d328d7e91-2",
+              "2a48c56f62515c9b94a9-1",
+              "0b73e31c1044e9849249-2",
+              "0b73e31c1044e9849249-3",
+              "785456949d5d328d7e91-3",
+              "5e183349192460d0f237-1",
+              "78b8f2870af4aaf0a29a-1",
+              "d388d7c541bf0657ee33-1",
+              "0b8d7791d8f5ca6cfabb-1",
+              "669098d7ccc44a7afc47-1",
+              "7d3222a1201ebb356770-1",
+              "9d6ac6c174f2725b1a5a-1",
+              "4fe25d865177eb2ce3d6-1",
+              "04cc72cfc9eaf91d7b87-1",
+              "a7a9af8fe4273322a982-1",
+              "c2abe147755597614317-1",
+              "2dd962146b2ccb29a08d-1",
+              "a08865fe7dbf93fe827e-1",
+              "a7de5c0dbae23a958952-1",
+              "a2c3a8af06ef109a0135-1",
+              "4ec081664f32f02f00fc-1",
+              "925dd1021c269a1ff093-1",
+              "6e339b1d611eab82f789-1",
+              "f25787a4bc4cb90504c1-1",
+              "db143ac759184789a946-1",
+              "849031c705097394fcb0-1",
+              "90a8609cd33b71468273-1",
+              "4cf3ab17c8c8c7d22a71-1",
+              "3f25914d3d8a12202566-1",
+              "9d6ac6c174f2725b1a5a-2",
+              "3dea46b986635fe19bcc-1",
+              "9e816376fcec1936c071-1",
+              "7fbbb2f2ca41c0310b85-1",
+              "1609de4e82f5c8575fa6-1",
+              "2a840950abfb0a8d64d5-1",
+              "d4ec5478841cbe87d974-1",
+              "e1f0338737e048f36304-1",
+              "9ebd21b6d9b643d5c368-1",
+              "4e4e9649ba6be2c1b10e-1",
+              "9d6ac6c174f2725b1a5a-3",
+              "bde81fbabe0a1c3a946d-1",
+              "4fe25d865177eb2ce3d6-2",
+              "669098d7ccc44a7afc47-2",
+              "7ee78d391dbde97c0a1b-1",
+              "7d3222a1201ebb356770-2",
+              "bc75c009cf5616bd346e-1",
+              "5fe02b789fe0b1f432be-1",
+              "4e4e9649ba6be2c1b10e-2",
+              "9d6ac6c174f2725b1a5a-4",
+              "20210f03be4a339ddfba-1",
+              "db478c305515475d50c1-1",
+              "4fe25d865177eb2ce3d6-3",
+              "669098d7ccc44a7afc47-3",
+              "cc59e7f7df5c0e7e8b24-1",
+              "7d3222a1201ebb356770-3",
+              "d1ff0952ca290bc4460d-1",
+              "0b73e31c1044e9849249-4",
+              "0249ba91ccb66a7e3a22-1",
+              "2789c84e11e1313291ad-1"
+            ],
+            "removed": [
+              {
+                "id": "63c8affa1cf3e4b3c7c0-1",
+                "line": 117,
+                "kind": "assertion",
+                "expression": "assert.deepEqual(stable(current.documents.filter(doc => doc.creationId !== identity?.creationId)), stable(baseline.documents),\n    'A non-fixture document changed during thread method coverage.')"
+              },
+              {
+                "id": "f8a455f969bc424f7b30-1",
+                "line": 124,
+                "kind": "helper",
+                "expression": "unchangedOthers(current)"
+              },
+              {
+                "id": "d0f78786805fc305d723-1",
+                "line": 126,
+                "kind": "assertion",
+                "expression": "assert.equal(matches.length, 1, 'Fixture name is ambiguous or missing.')"
+              },
+              {
+                "id": "d998d8f9b7f7b7587667-1",
+                "line": 127,
+                "kind": "assertion",
+                "expression": "assert.equal(matches[0].creationId, identity.creationId, 'Fixture name now refers to another document.')"
+              },
+              {
+                "id": "9aa1fd7851883215004b-1",
+                "line": 128,
+                "kind": "assertion",
+                "expression": "assert.equal(matches[0].fileId, null, 'Fixture unexpectedly has a cloud file ID.')"
+              },
+              {
+                "id": "1d76414b5ace57d8d3ef-1",
+                "line": 129,
+                "kind": "assertion",
+                "expression": "assert.equal(matches[0].saved, false, 'Fixture unexpectedly saved.')"
+              },
+              {
+                "id": "df1fef67c1d615764b45-1",
+                "line": 130,
+                "kind": "assertion",
+                "expression": "assert.equal(matches[0].active, true, 'Fixture is not active.')"
+              },
+              {
+                "id": "16883b6755bbe6f38af3-1",
+                "line": 188,
+                "kind": "helper",
+                "expression": "script(`app = adsk.core.Application.get()\nmatches = [d for d in app.documents if d.name == ${JSON.stringify(name)} and d.creationId == ${JSON.stringify(identity.creationId)}]\nassert len(matches) == 1, 'Fixture identity ambiguous; leave open'\ndoc = matches[0]\nassert doc.dataFile is None and not doc.isSaved, 'Saved/cloud fixture; leave open'\nassert doc.close(False), 'Owned unsaved close failed'\nprint('LIVE_THREAD ' + json.dumps({\"closedCreationId\": ${JSON.stringify(identity.creationId)}}))`, false)"
+              },
+              {
+                "id": "918023bdace7a750e207-1",
+                "line": 189,
+                "kind": "embedded-python",
+                "expression": "]\nassert len(matches) == 1, 'Fixture identity ambiguous; leave open'\ndoc = matches[0]\nassert doc.dataFile is None and not doc.isSaved, 'Saved/cloud fixture; leave open'\nassert doc.close(False), 'Owned unsaved close failed'\nprint('LIVE_THREAD ' + json.dumps({\"closedCreationId\": "
+              },
+              {
+                "id": "3cafcb0829bb46d29d72-1",
+                "line": 207,
+                "kind": "assertion",
+                "expression": "assert.ok(!baseline.documents.some(doc => doc.name === name), 'Fixture name already exists.')"
+              },
+              {
+                "id": "7c1ebc5c285e6f78af81-1",
+                "line": 210,
+                "kind": "assertion",
+                "expression": "assert.equal(created.exitCode, 0, created.stderr || created.stdout)"
+              },
+              {
+                "id": "3b7805c6a319d8d455de-1",
+                "line": 213,
+                "kind": "assertion",
+                "expression": "assert.equal(added.length, 1, 'Document creation did not create exactly one fixture.')"
+              },
+              {
+                "id": "91e485bc098e4457be5c-1",
+                "line": 214,
+                "kind": "assertion",
+                "expression": "assert.equal(added[0].name, name)"
+              },
+              {
+                "id": "6cbcd6758995abd56430-1",
+                "line": 215,
+                "kind": "assertion",
+                "expression": "assert.equal(added[0].fileId, null)"
+              },
+              {
+                "id": "6ce91a13c449eb5f4c4d-1",
+                "line": 216,
+                "kind": "assertion",
+                "expression": "assert.equal(added[0].saved, false)"
+              },
+              {
+                "id": "31079a08c172d00812c6-1",
+                "line": 224,
+                "kind": "helper",
+                "expression": "cad('shape.cylinder', { name: 'ThreadCylinder', radius: '5 mm', height: '20 mm' })"
+              },
+              {
+                "id": "05ace9b205548de7a3c8-1",
+                "line": 228,
+                "kind": "helper",
+                "expression": "cad('entity.find', { kind: 'face', filters: { geometry: 'cylinder', radius: '5 mm' }, unique: true })"
+              },
+              {
+                "id": "60a43cb9b0f6c7d27ea7-1",
+                "line": 238,
+                "kind": "helper",
+                "expression": "cad('thread.catalog', { schemaVersion: 1, frame: 'component',\n      system: 'iso-metric-coarse', query: 'M10x1.5', starts: 2 })"
+              },
+              {
+                "id": "c59ccc96d015e71b0711-1",
+                "line": 240,
+                "kind": "helper",
+                "expression": "check('thread.catalog', 'curated query returns exactly M10x1.5', catalogResult.entries.length, 1)"
+              },
+              {
+                "id": "486c8662c505e21f7e77-1",
+                "line": 318,
+                "kind": "helper",
+                "expression": "unchangedOthers(after)"
+              },
+              {
+                "id": "97e53eef9e873e48b52f-1",
+                "line": 323,
+                "kind": "assertion",
+                "expression": "assert.equal(actualActive, expectedActive, 'Original active document was not restored.')"
+              }
+            ],
+            "addedIds": [
+              "6a9e8e72252a64a660a9-1",
+              "98844269c68941790960-1",
+              "b6b17afece4a896ecec7-1",
+              "8d99fcd3d47db0d04ad0-1",
+              "98844269c68941790960-2",
+              "5db21ba625839cad4009-1",
+              "a8f22f9470d01ce94595-1",
+              "0c7f3a44833eac495184-1",
+              "93abec82127034d20553-1",
+              "67d00c9b28a6c148cff3-1",
+              "eeb124b26b0dbb55c2dc-1",
+              "3fd748df4de797514f5d-1",
+              "f6e8fea17a9eb4b65a45-1",
+              "7b935c68489d644df562-1",
+              "899b42a31b71a061a31f-1",
+              "f1755a3fae7db26a3b5e-1",
+              "3eb259087b11c28458fc-1",
+              "e226838574ee1060b382-1",
+              "9eee3e7dc67abd3b3bcc-1",
+              "f8f7467e59cd0499dc88-1",
+              "5c0e0135506f9c1e1e46-1",
+              "ca88fb4fa31cbaaf135f-1",
+              "d0ff829caad7e0f293db-1",
+              "0774bef31b7587fba7c6-1",
+              "91fe063a9a8ee69d84a8-1",
+              "97ac6150af14bee11fac-1",
+              "7a8686e0ba7e15971f53-1",
+              "47b75f130afb7d168948-1",
+              "a93d0946171b4e5659f2-1",
+              "5b0377357de42f9592e7-1",
+              "7ac051ad0b20184b3abb-1",
+              "707cba35194bd8a86b3c-1",
+              "4a0c7f5cd43e17ae3d6d-1",
+              "33933318e64313a383cf-1",
+              "49888da196cb5d5e8fe2-1",
+              "7ac051ad0b20184b3abb-2",
+              "a4339f5e547fba984a98-1",
+              "df3ad3168d293e6499cf-1",
+              "7d3222a1201ebb356770-4",
+              "81a22ded5ead10828753-1",
+              "b800c2d41344b22bd8b8-1",
+              "b6259bec716b481b8e99-1",
+              "9b4e0482fcc2dcc455c1-1"
+            ]
+          }
+        }
+      ]
     },
     {
       "source": "tests/live-ui-host-inspect.js",
