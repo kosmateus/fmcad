@@ -105,6 +105,11 @@ function observedCreationIds(reports: readonly ScenarioReport[]): Set<string> {
           ids.add(text(record(document)["creationId"]));
     }
   }
+  // These owned closures were already validated by each session's cleanup.
+  // Peer disappearance still requires its independently discovered receipt.
+  for (const report of reports)
+    if (report.cleanup === "complete" && report.document)
+      ids.delete(report.document.creationId);
   return ids;
 }
 function creationProof(
