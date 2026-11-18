@@ -92,7 +92,7 @@ export function inspect(document: Document): string {
   return program(`${guard(document)}
 ${emit("dict(creationId=doc.creationId, count=design.userParameters.count, saved=doc.isSaved)")}`);
 }
-export function close(document: Document): string {
+export function close(document: Document, expectedModified?: boolean): string {
   return program(
     `import adsk.core, json
 from collections.abc import Sequence
@@ -118,7 +118,7 @@ assert len(matches) == 1, 'Owned fixture identity is missing or duplicated'
 doc = matches[0]
 assert doc.name == ${quoted(document.name)}
 assert app.userInterface.activeCommand in (None, '', 'SelectCommand'), 'Fusion interactive command must be idle before closing a fixture'
-${savedGuard(document)}
+${savedGuard(document)}${expectedModified === undefined ? "" : `\nassert doc.isModified is ${expectedModified ? "True" : "False"}, 'Owned scratch modification state differs from the settled test phase'`}
 assert doc.close(False)
 _fmcad_after = _fmcad_close_inventory()
 assert not any(d.creationId == ${quoted(document.creationId)} for d in app.documents)

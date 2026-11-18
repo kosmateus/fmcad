@@ -213,7 +213,7 @@ for (const fault of ["none", "missing", "foreign", "unsettled"] as const) {
           if (fault === "none") {
             const switched = await model.execute(
               program(
-                "import adsk.core\napp = adsk.core.Application.get()\nassert app.documents.item(0).name == 'USER_GM07_SENTINEL'\nassert app.documents.item(0).activate()",
+                "import adsk.core\napp = adsk.core.Application.get()\napp.activeDocument.isModified = True\nassert app.documents.item(0).name == 'USER_GM07_SENTINEL'\nassert app.documents.item(0).activate()",
               ),
             );
             assert.equal(switched.success, true);

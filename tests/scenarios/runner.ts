@@ -76,6 +76,7 @@ export interface ScenarioReport {
   scope?: "owned-document" | "exclusive-instance";
   lifecycle?: "read-only";
   cleanup: "pending" | "complete" | "deferred" | "failed" | "not-created";
+  cleanupExpectedModified?: boolean;
   document?: Document;
   originalDocument?: Document;
   savedIdentityTransition?: SavedIdentityTransition;
@@ -193,6 +194,21 @@ export class ScenarioSession {
   }
   get uncertain(): boolean {
     return this.#uncertain;
+  }
+  /** Opt-in phase guard, persisted for exact unsaved cleanup and recovery. */
+  expectCleanupModified(value: boolean): void {
+    assert.equal(
+      this.document.file,
+      undefined,
+      "Modified phase guard requires an unsaved scratch",
+    );
+    assert.equal(
+      this.#uncertain,
+      false,
+      "Cannot infer cleanup phase from an unsettled request",
+    );
+    this.report.cleanupExpectedModified = value;
+    this.persist();
   }
   /** A second real readonly client, linked before creation to this same lifecycle. */
   createReadonlyPeer(label: string): ScenarioSession {
@@ -1648,7 +1664,7 @@ export class ScenarioSession {
       try {
         result = await this.#dispatch(
           "cleanup",
-          programs.close(this.#document),
+          programs.close(this.#document, this.report.cleanupExpectedModified),
           this.#document,
         );
       } catch (error) {

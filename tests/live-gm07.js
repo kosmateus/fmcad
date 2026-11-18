@@ -424,6 +424,7 @@ function gm07OwnedScenario(pinned, fusionVersion, backend) {
     async run(session) {
       identity = session.document;
       assert.equal(identity.file, undefined, 'GM07 requires an unsaved owner scratch');
+      session.expectCleanupModified(false);
       report.name = identity.name;
       report.broker.client = session.report.owner.clientId;
       report.ownedDocuments.push({ ...identity, createdBySuite: true });
@@ -440,6 +441,7 @@ function gm07OwnedScenario(pinned, fusionVersion, backend) {
         assert.equal(execution.brokerReceipt?.clientId, binding.owner.clientId, 'Foreign GM07 original owner');
         return { value, execution };
       });
+      session.expectCleanupModified(true);
       report.fusionVersion = payload.fusionVersion;
       report.fixtureStatusBefore = payload.document.before;
       report.afterNativeRun = payload.document.after;
