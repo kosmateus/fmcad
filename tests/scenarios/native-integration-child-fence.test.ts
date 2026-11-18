@@ -12,7 +12,10 @@ test("owned integration CLI settles each child dispatch before the next one", as
     path.join(os.tmpdir(), "fmcad-native-integration-fence-"),
   );
   const runtime = path.join(directory, "runtime");
-  fs.mkdirSync(path.join(runtime, "dist/src"), { recursive: true });
+  const runtimeDist = path.join(runtime, "dist");
+  fs.mkdirSync(path.join(runtimeDist, "src"), { recursive: true });
+  fs.mkdirSync(path.join(runtimeDist, "bin"), { recursive: true });
+  const fingerprint = "a".repeat(64);
   const runId = randomUUID();
   const owner: Owner = {
     runId,
@@ -34,7 +37,7 @@ test("owned integration CLI settles each child dispatch before the next one", as
     directory,
     mode: "simulator",
     qualification: "broker",
-    protocol: "mcp",
+    protocol: "addin",
     backendIdentity: "owned-integration-fence-test",
     status: "running",
     cleanup: "pending",
@@ -56,7 +59,7 @@ test("owned integration CLI settles each child dispatch before the next one", as
     identity: report.backendIdentity,
     mode: "simulator",
     qualification: "broker",
-    protocol: "mcp",
+    protocol: "addin",
     capabilities: new Set(),
     fusionPath: (value) => value,
     execute: async () => {
@@ -98,31 +101,56 @@ test("owned integration CLI settles each child dispatch before the next one", as
   process.env["FMCAD_LIVE_RUNTIME_ROOT"] = runtime;
   delete process.env["NODE_TEST_CONTEXT"];
   fs.writeFileSync(
-    path.join(runtime, "dist/src/cli.js"),
+    path.join(runtimeDist, "package.json"),
+    JSON.stringify({ name: "fmcad", fmcadRuntimeLayout: 1 }),
+  );
+  fs.writeFileSync(
+    path.join(runtimeDist, "runtime-build.json"),
+    JSON.stringify({
+      version: 1,
+      algorithm: "sha256",
+      fingerprint,
+      entrypoints: {
+        "queue-worker": "worker.js",
+        "queue-autostart-worker": "autostart.js",
+        "queue-broker": "broker.js",
+      },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(runtimeDist, "src/queue-instance.js"),
+    `exports.buildHash = () => ${JSON.stringify(fingerprint)};\n`,
+  );
+  fs.writeFileSync(
+    path.join(runtimeDist, "src/config.js"),
+    `exports.loadConfig = () => ({ cfg: {
+  backend: "addin",
+  url: "http://127.0.0.1:8765/mcp",
+  protocolVersion: "2025-06-18",
+  tool: "execute_python",
+  timeoutMs: 60000
+} });\n`,
+  );
+  fs.writeFileSync(
+    path.join(runtimeDist, "bin/fmcad.js"),
     `"use strict";
-const fs = require("node:fs");
-const path = require("node:path");
-exports.main = async (_argv, { stderr }) => {
-  const filename = process.env.FMCAD_LIVE_COMMAND_INTENT;
-  const current = JSON.parse(fs.readFileSync(filename, "utf8"));
-  const intents = path.dirname(filename);
-  const pending = fs.readdirSync(intents).filter(name => name.endsWith(".json") && path.join(intents, name) !== filename)
-    .map(name => JSON.parse(fs.readFileSync(path.join(intents, name), "utf8")))
-    .filter(value => value.admissionRequested && (!value.settlement || value.settlement.requestId !== value.requestId || value.settlement.clientId !== value.owner.clientId || !value.settlement.jobId || !["succeeded", "failed"].includes(value.settlement.state) || value.settlement.sdkSettled !== true));
-  if (pending.length) {
-    stderr.write("Previous admitted command lacks terminal owner settlement\\n");
-    return 2;
-  }
-  stderr.write("FMCAD_QUEUE_REQUEST " + JSON.stringify({ requestId: current.requestId, clientId: current.owner.clientId }) + "\\n");
-  const lease = JSON.parse(fs.readFileSync(process.env.FMCAD_LIVE_OWNED_SCOPE, "utf8"));
-  process.stdout.write(JSON.stringify({ success: true, result: {
-    creationId: lease.document.creationId,
-    fileId: lease.document.file.fileId,
-    projectId: lease.document.file.projectId,
-    folderId: lease.document.file.folderId
-  }}) + "\\n");
-  return 0;
+const args = process.argv.slice(2);
+const value = (flag) => {
+  const index = args.indexOf(flag);
+  if (index < 0 || !args[index + 1]) throw new Error("Missing " + flag);
+  return args[index + 1];
 };
+if (args[0] !== "queue" || args[1] !== "exec") process.exit(2);
+const requestId = value("--request-id");
+const clientId = value("--client");
+process.stderr.write("FMCAD_QUEUE_REQUEST " + JSON.stringify({ requestId, clientId }) + "\\n");
+process.stderr.write("FMCAD_QUEUE_JOB " + JSON.stringify({ requestId, clientId, jobId: "job-" + requestId }) + "\\n");
+process.stdout.write(JSON.stringify({ success: true, result: {
+  creationId: "fence-document",
+  fileId: "fence-file",
+  projectId: "fence-project",
+  folderId: "fence-folder"
+} }) + "\\n");
 `,
   );
   const session = new ScenarioSession(

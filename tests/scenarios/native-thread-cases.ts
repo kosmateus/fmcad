@@ -102,9 +102,15 @@ export function nativeThreadScenarios(owners = 10): Scenario[] {
       });
       check(
         "thread.catalog",
-        "curated query returns exactly M10x1.5",
+        "curated query returns exactly one M10 entry",
         field(catalogResult, "entries", "length"),
         1,
+      );
+      check(
+        "thread.catalog",
+        "curated designation is M10, not a native thread selector",
+        field(catalogResult, "entries", 0, "designation"),
+        "M10",
       );
       check(
         "thread.catalog",
