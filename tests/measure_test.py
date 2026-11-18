@@ -826,6 +826,24 @@ class MeasureTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.call('check', dict(spec, **extra))
 
+    def test_retained_engineering_volume_check_uses_expression_units(self):
+        source = (ROOT / 'tests/scenarios/native-engineering-cases.ts').read_text()
+        inputs = re.search(r'expected: "(6000 [^"]+)",\s*tolerance: "([^"]+)"', source)
+        self.assertIsNotNone(inputs)
+        self.body.volume = 6
+        spec = {'measurement': {'operation': 'measure.volume',
+                                'data': {'ref': 'BodyA', 'units': 'mm3'}},
+                'expected': inputs[1], 'tolerance': inputs[2]}
+        result = self.call('check', spec)
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['actual']['value'], 6000)
+        self.assertEqual(result['acceptance'],
+                         {'min': 5999.99, 'max': 6000.01, 'units': 'mm3'})
+        self.body.volume = 6.001
+        self.assertFalse(self.call('check', spec)['passed'])
+        with self.assertRaises(ValueError):
+            self.call('check', dict(spec, expected='6000 mm^2'))
+
     def test_compare_bodies_uses_bidirectional_csg_not_equal_volume(self):
         elongated = Body('EqualVolumeDifferentShape', self.root, (0, 0, 0), (0.5, 1, 2))
         self.add(elongated)
