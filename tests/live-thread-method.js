@@ -19,6 +19,7 @@ const { catalog, validateCad } = require('../src/cad');
 const provenance = require('../dist/tests/scenarios/fixture-provenance');
 const queueBackend = require('../dist/tests/scenarios/queue-backend');
 const liveBroker = require('./helpers/live-broker');
+const { threadInfoBody, threadReadbackBody, threadMajorRadiusMm, assertCosmeticCylinder } = require('../dist/tests/scenarios/native-thread-programs');
 const reportPath = path.join(__dirname, 'live-thread-method-report.json');
 const scenarioRoot = path.join(root, '.test-artifacts', 'scenarios');
 const owner = {
@@ -334,11 +335,15 @@ async function main() {
 
   try {
     guard();
-    const cylinder = cad('shape.cylinder', { name: 'ThreadCylinder', radius: '5 mm', height: '20 mm' });
+    const nativeInfo = script(threadInfoBody(identity) + "\nprint('LIVE_THREAD ' + json.dumps(thread_result))");
+    const radiusMm = threadMajorRadiusMm(nativeInfo);
+    const radius = `${radiusMm} mm`;
+    report.nativeThreadDescriptor = nativeInfo;
+    const cylinder = cad('shape.cylinder', { name: 'ThreadCylinder', radius, height: '20 mm' });
     check('shape.cylinder', 'one cylindrical fixture body returned', cylinder.bodies.length, 1);
     validated('shape.cylinder');
     body = cylinder.bodies[0];
-    const face = cad('entity.find', { kind: 'face', filters: { geometry: 'cylinder', radius: '5 mm' }, unique: true });
+    const face = cad('entity.find', { kind: 'face', scope: { body }, filters: { geometry: 'cylinder', radius }, unique: true });
     check('entity.find', 'one exact outer cylindrical face selected', face.kind, 'face');
     validated('entity.find');
 
@@ -412,6 +417,31 @@ async function main() {
     validated('entity.list');
     const volumeAfter = cad('measure.volume', { ref: body, units: 'mm3' });
     check('measure.volume', 'cosmetic thread preserves BRep volume', volumeAfter.value, volumeBefore.value, 0.001);
+    const matchedReadback = script(threadReadbackBody(identity, body.token, tabular.feature.token) +
+      "\nprint('LIVE_THREAD ' + json.dumps(thread_result))", false);
+    assert.equal(matchedReadback.creationId, identity.creationId);
+    assertCosmeticCylinder(matchedReadback, nativeInfo);
+    report.matchedThreadReadback = matchedReadback;
+    validated('measure.volume');
+
+    // A nominal M10 blank is not the table's tolerance-adjusted major diameter.
+    const nominal = cad('shape.cylinder', { name: 'NominalThreadCylinder', radius: '5 mm', height: '20 mm' });
+    const nominalBody = nominal.bodies[0];
+    const nominalFace = cad('entity.find', { kind: 'face', scope: { body: nominalBody },
+      filters: { geometry: 'cylinder', radius: '5 mm' }, unique: true });
+    const nominalBefore = cad('measure.volume', { ref: nominalBody, units: 'mm3' });
+    const resized = cad('model.thread', { name: 'NominalM10', faces: [nominalFace], internal: false,
+      threadType: 'ISO Metric profile', designation: 'M10x1.5', class: '6g', modeled: false, rightHanded: true });
+    const resizedReadback = script(threadReadbackBody(identity, nominalBody.token, resized.feature.token) +
+      "\nprint('LIVE_THREAD ' + json.dumps(thread_result))", false);
+    assert.equal(resizedReadback.creationId, identity.creationId);
+    assertCosmeticCylinder(resizedReadback, nativeInfo);
+    report.nominalThreadReadback = resizedReadback;
+    const nominalAfter = cad('measure.volume', { ref: nominalBody, units: 'mm3' });
+    const expectedVolume = Math.PI * radiusMm ** 2 * 20;
+    check('measure.volume', 'nominal cylinder resizes to the native table diameter', nominalAfter.value, expectedVolume, 0.001);
+    check('measure.volume', 'nominal resize delta matches the table, not a helical cut', nominalAfter.value - nominalBefore.value,
+      Math.PI * 20 * (radiusMm ** 2 - 5 ** 2), 0.001);
     validated('measure.volume');
     report.tests.push({ name: 'native-tabular-cosmetic-thread', status: 'pass', operations: ['model.thread'] });
   } catch (error) {

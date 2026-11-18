@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import type { Scenario } from "./runner";
 import { record, text, number } from "./contracts";
 import { nativeModelingHarness, values } from "./native-modeling-support";
+import { program, emit } from "./programs";
+import {
+  threadInfoBody,
+  threadReadbackBody,
+  threadMajorRadiusMm,
+  assertCosmeticCylinder,
+} from "./native-thread-programs";
 export const nativeThreadCapability = "native-thread-catalog-feature";
 const targetOperations = [
   "thread.catalog",
@@ -60,9 +67,17 @@ export function nativeThreadScenarios(owners = 10): Scenario[] {
       assert.match(rejected.stderr ?? rejected.error ?? "", /query|M10x1.5/u);
       // ORIGINAL_NATIVE_BODY
       await guard();
+      const nativeInfo = await session.observe(
+        "native-thread-descriptor",
+        program(
+          threadInfoBody(session.document) + "\n" + emit("thread_result"),
+        ),
+      );
+      const radiusMm = threadMajorRadiusMm(nativeInfo);
+      const radius = `${radiusMm} mm`;
       const cylinder = await cad("shape.cylinder", {
         name: "ThreadCylinder",
-        radius: "5 mm",
+        radius,
         height: "20 mm",
       });
       check(
@@ -75,7 +90,8 @@ export function nativeThreadScenarios(owners = 10): Scenario[] {
       const body = field(cylinder, "bodies", 0);
       const face = await cad("entity.find", {
         kind: "face",
-        filters: { geometry: "cylinder", radius: "5 mm" },
+        scope: { body },
+        filters: { geometry: "cylinder", radius },
         unique: true,
       });
       check(
@@ -362,6 +378,83 @@ export function nativeThreadScenarios(owners = 10): Scenario[] {
         "cosmetic thread preserves BRep volume",
         field(volumeAfter, "value"),
         field(volumeBefore, "value"),
+        0.001,
+      );
+      const matchedReadback = await session.execute(
+        "native-thread-matched-readback",
+        program(
+          threadReadbackBody(
+            session.document,
+            text(field(body, "token")),
+            text(field(tabular, "feature", "token")),
+          ) +
+            "\n" +
+            emit("thread_result"),
+        ),
+      );
+      assert.equal(matchedReadback["creationId"], session.document.creationId);
+      assertCosmeticCylinder(matchedReadback, nativeInfo);
+      validated("measure.volume");
+
+      // Keep nominal-to-table resizing explicit, separate from matched-seed conservation.
+      const nominal = await cad("shape.cylinder", {
+        name: "NominalThreadCylinder",
+        radius: "5 mm",
+        height: "20 mm",
+      });
+      const nominalBody = field(nominal, "bodies", 0);
+      const nominalFace = await cad("entity.find", {
+        kind: "face",
+        scope: { body: nominalBody },
+        filters: { geometry: "cylinder", radius: "5 mm" },
+        unique: true,
+      });
+      const nominalBefore = await cad("measure.volume", {
+        ref: nominalBody,
+        units: "mm3",
+      });
+      const resized = await cad("model.thread", {
+        name: "NominalM10",
+        faces: [nominalFace],
+        internal: false,
+        threadType: "ISO Metric profile",
+        designation: "M10x1.5",
+        class: "6g",
+        modeled: false,
+        rightHanded: true,
+      });
+      const resizedReadback = await session.execute(
+        "native-thread-nominal-readback",
+        program(
+          threadReadbackBody(
+            session.document,
+            text(field(nominalBody, "token")),
+            text(field(resized, "feature", "token")),
+          ) +
+            "\n" +
+            emit("thread_result"),
+        ),
+      );
+      assert.equal(resizedReadback["creationId"], session.document.creationId);
+      assertCosmeticCylinder(resizedReadback, nativeInfo);
+      const nominalAfter = await cad("measure.volume", {
+        ref: nominalBody,
+        units: "mm3",
+      });
+      const expectedVolume = Math.PI * radiusMm ** 2 * 20;
+      check(
+        "measure.volume",
+        "nominal cylinder resizes to the native table diameter",
+        field(nominalAfter, "value"),
+        expectedVolume,
+        0.001,
+      );
+      check(
+        "measure.volume",
+        "nominal resize delta matches the table, not a helical cut",
+        number(field(nominalAfter, "value")) -
+          number(field(nominalBefore, "value")),
+        Math.PI * 20 * (radiusMm ** 2 - 5 ** 2),
         0.001,
       );
       validated("measure.volume");
