@@ -34,6 +34,47 @@ const suffixes = {
 } as const;
 type FileKey = keyof typeof suffixes;
 
+function nativeFileExportProbeProgram(
+  document: Document,
+  body: string,
+  expression: string,
+): string {
+  return program(`import adsk.core, json, os, hashlib
+app = adsk.core.Application.get()
+matches = [d for d in app.documents if d.creationId == ${JSON.stringify(document.creationId)} and d.name == ${JSON.stringify(document.name)}]
+assert len(matches) == 1, 'Owned identity is ambiguous or missing'
+doc = matches[0]
+assert not doc.isSaved and doc.dataFile is None and app.activeDocument == doc, 'Owned active unsaved guard failed'
+${body}
+${emit(`dict(creationId=doc.creationId, result=${expression})`)}`);
+}
+
+/** Generate the exact binary readback probe sent by the native export scenario. */
+export function nativeFileExportBinaryReadbackProgram(
+  document: Document,
+  files: readonly { readonly native: string }[],
+  stepPath: string,
+): string {
+  const body = `from typing import TypedDict
+
+class FileReadback(TypedDict):
+    path: str
+    bytes: int
+    sha256: str
+    prefix: str
+
+paths = ${JSON.stringify(files.map((file) => file.native))}
+rows: list[FileReadback] = []
+for filename in paths:
+    assert os.path.isfile(filename) and not os.path.islink(filename)
+    with open(filename, 'rb') as stream:
+        content = stream.read()
+    rows.append(FileReadback(path=filename, bytes=len(content), sha256=hashlib.sha256(content).hexdigest(), prefix=content[:16].hex()))
+step: FileReadback = next(row for row in rows if row['path'] == ${JSON.stringify(stepPath)})
+assert bytes.fromhex(step['prefix']).startswith(b'ISO-10303-21;')`;
+  return nativeFileExportProbeProgram(document, body, "dict(files=rows)");
+}
+
 /** Paths are generated from durable owner identity, never supplied by a caller. */
 export function ownedExportPaths(session: {
   directory: string;
@@ -100,21 +141,12 @@ export function nativeFileExportScenarios(owners = 10): Scenario[] {
         );
       persist(); // Ownership intent precedes every file mutation.
       let sequence = 0;
-      const probe = async (
+      const submitProbe = async (
         phase: string,
-        body: string,
-        expression: string,
+        source: string,
         mutation = false,
       ) => {
         await guard();
-        const source = program(`import adsk.core, json, os, hashlib
-app = adsk.core.Application.get()
-matches = [d for d in app.documents if d.creationId == ${JSON.stringify(session.document.creationId)} and d.name == ${JSON.stringify(session.document.name)}]
-assert len(matches) == 1, 'Owned identity is ambiguous or missing'
-doc = matches[0]
-assert not doc.isSaved and doc.dataFile is None and app.activeDocument == doc, 'Owned active unsaved guard failed'
-${body}
-${emit(`dict(creationId=doc.creationId, result=${expression})`)}`);
         const value = mutation
           ? await session.execute(
               "file-exports-" + phase + "-" + sequence++,
@@ -133,6 +165,17 @@ ${emit(`dict(creationId=doc.creationId, result=${expression})`)}`);
         persist();
         return result;
       };
+      const probe = (
+        phase: string,
+        body: string,
+        expression: string,
+        mutation = false,
+      ) =>
+        submitProbe(
+          phase,
+          nativeFileExportProbeProgram(session.document, body, expression),
+          mutation,
+        );
       let ownedPathsAbsent = false;
       let failure: unknown;
       try {
@@ -252,18 +295,13 @@ existing = [filename for filename in targets if os.path.lexists(filename)]`,
         validated("export.parts");
         // The retained script called validated(export.verify) three times for one
         // invocation. Keep its two BRep assertions, and mark that invocation once.
-        const proof = await probe(
+        const proof = await submitProbe(
           "binary-readback",
-          `paths = ${JSON.stringify(owned.files.map((file) => file.native))}
-rows = []
-for filename in paths:
-    assert os.path.isfile(filename) and not os.path.islink(filename)
-    with open(filename, 'rb') as stream:
-        content = stream.read()
-    rows.append(dict(path=filename, bytes=len(content), sha256=hashlib.sha256(content).hexdigest(), prefix=content[:16].hex()))
-step = next(row for row in rows if row['path'] == ${JSON.stringify(paths.step)})
-assert bytes.fromhex(step['prefix']).startswith(b'ISO-10303-21;')`,
-          "dict(files=rows)",
+          nativeFileExportBinaryReadbackProgram(
+            session.document,
+            owned.files,
+            paths.step,
+          ),
         );
         const rows = values(proof["files"]).map(record);
         assert.equal(rows.length, 4);
