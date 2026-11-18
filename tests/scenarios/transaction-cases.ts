@@ -42,7 +42,7 @@ function matching(
     ...(session.document.file
       ? { docFileId: session.document.file.fileId }
       : {}),
-    component: "root",
+    preview: false,
   };
   assert.equal(output["runId"], request["runId"]);
   assert.deepEqual(output["request"], expected);

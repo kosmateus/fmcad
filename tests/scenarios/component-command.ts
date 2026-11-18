@@ -56,7 +56,10 @@ export async function componentCommand(
         ...(request.target.file
           ? { docFileId: request.target.file.fileId }
           : {}),
-        component: request.command.component ?? "root",
+        ...(request.command.component
+          ? { component: request.command.component }
+          : {}),
+        preview: false,
       },
       {
         fusionPath: (value) => {
