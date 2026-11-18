@@ -541,11 +541,14 @@ export class ScenarioSession {
         document: this.document,
         state: "open",
       });
+      // This is a read-only inventory observation. Fenced CAD turns still
+      // reject unsettled peers and compare every non-target document in-turn.
       assertReceiptBoundDocumentInventory(
         before["documents"],
         current["documents"],
         ownedFixtures,
         "A non-fixture document changed during the owned unsaved case",
+        true,
       );
       assertOwnedUnsavedDocument(current["documents"], this.document);
       const active = current["active"];
