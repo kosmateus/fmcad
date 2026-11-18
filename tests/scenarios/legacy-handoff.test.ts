@@ -82,6 +82,17 @@ test("owned child handoff refuses foreign document/file pins before durable subm
   assert.ok(reserved.words.includes(f.document.creationId));
   assert.ok(reserved.words.includes(f.document.file.fileId));
 });
+test("owned child handoff requires the exact creation request identity", (t) => {
+  const f = setup(t),
+    filename = path.join(f.directory, "creation.json"),
+    creation = JSON.parse(fs.readFileSync(filename, "utf8")) as Record<
+      string,
+      unknown
+    >;
+  creation["requestId"] = f.owner.clientId + ":0:foreign";
+  writeHandoff(filename, creation);
+  assert.throws(() => ownedLease(f.env), /original creation receipt/u);
+});
 test("owned unsaved import handoff requires an explicit source mode and refuses cloud pins", (t) => {
   const f = setup(t);
   const scope = f.env.FMCAD_LIVE_OWNED_SCOPE;

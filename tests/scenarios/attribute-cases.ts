@@ -25,11 +25,10 @@ export function unsavedAttributeScenarios(owners = 10): Scenario[] {
       ) => {
         if (mutation)
           await session.verifyOwnedUnsaved("observe-attribute-" + sequence++);
-        const output = await session.cad(
-          "cad-attribute-" + sequence++ + "-" + operation,
-          operation,
-          data,
-        );
+        const phase = "cad-attribute-" + sequence++ + "-" + operation;
+        const output = mutation
+          ? await session.cadFenced(phase, operation, data)
+          : await session.cad(phase, operation, data);
         assert.equal(output["success"], true);
         assert.equal(output["operation"], operation);
         assert.equal(output["document"], session.document.name);

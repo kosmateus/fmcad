@@ -153,7 +153,7 @@ test("attribute handlers preserve pre-refactor values, errors and namespace isol
   const source = readFileSync(
     path.join(root, "tests/fixtures/history/attributes-a262.py.txt"),
     "utf8",
-  );
+  ).replace(/\r\n/gu, "\n");
   const metadata = record(
     JSON.parse(
       readFileSync(

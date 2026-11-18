@@ -302,9 +302,9 @@ function legacyQueueReceipt(
   requestId: string,
 ): string | undefined {
   const prefix = owner.clientId + ":legacy:";
-  if (!requestId.startsWith(prefix)) return undefined;
   const receiptId = requestId.slice(prefix.length);
-  if (!/^[a-f0-9-]{36}$/u.test(receiptId)) return undefined;
+  if (requestId !== prefix + receiptId || !/^[a-f0-9-]{36}$/u.test(receiptId))
+    return undefined;
   const filename = path.join(
     root,
     ".test-artifacts/scenarios",

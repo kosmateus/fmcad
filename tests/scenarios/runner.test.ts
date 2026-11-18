@@ -175,7 +175,9 @@ test("separate worktree processes share explicit receipts and clean only their f
       rejectReady!: (error: Error) => void,
       resolveDone!: (message: Record<string, unknown>) => void,
       rejectDone!: (error: Error) => void,
+      resolveObserved!: () => void,
       hasReady = false,
+      hasObserved = false,
       hasDone = false;
     const readyMessage = new Promise<void>((resolve, reject) => {
       resolveReady = resolve;
@@ -184,6 +186,9 @@ test("separate worktree processes share explicit receipts and clean only their f
     const done = new Promise<Record<string, unknown>>((resolve, reject) => {
       resolveDone = resolve;
       rejectDone = reject;
+    });
+    const observed = new Promise<void>((resolve) => {
+      resolveObserved = resolve;
     });
     void done.catch(() => {});
     const exited = new Promise<{
@@ -199,8 +204,13 @@ test("separate worktree processes share explicit receipts and clean only their f
         hasReady = true;
         resolveReady();
       }
+      if (message["type"] === "observed" && message["tag"] === tag) {
+        hasObserved = true;
+        resolveObserved();
+      }
       if (message["type"] === "done" && message["tag"] === tag) {
         hasDone = true;
+        if (!hasObserved) resolveObserved();
         resolveDone(message);
       }
     });
@@ -218,7 +228,7 @@ test("separate worktree processes share explicit receipts and clean only their f
     t.after(() => {
       if (child.exitCode === null) child.kill();
     });
-    return { child, readyMessage, done, exited };
+    return { child, readyMessage, observed, done, exited };
   };
 
   const first = start("first", "second", firstWorktree);
@@ -255,12 +265,22 @@ test("separate worktree processes share explicit receipts and clean only their f
     overlappingFixtures[1]?.creationId,
   );
   fs.writeFileSync(release, "continue", { flag: "wx", mode: 0o600 });
-  const reports = await Promise.all([first.done, second.done]);
-  const exits = await Promise.all([first.exited, second.exited]);
-  assert.deepEqual(
-    exits.map(({ code }) => code),
-    [0, 0],
-  );
+  await Promise.all([first.observed, second.observed]);
+  fs.writeFileSync(release + "-first", "continue", {
+    flag: "wx",
+    mode: 0o600,
+  });
+  const firstReport = await first.done,
+    firstExit = await first.exited;
+  assert.equal(firstExit.code, 0);
+  fs.writeFileSync(release + "-second", "continue", {
+    flag: "wx",
+    mode: 0o600,
+  });
+  const secondReport = await second.done,
+    secondExit = await second.exited;
+  assert.equal(secondExit.code, 0);
+  const reports = [firstReport, secondReport];
 
   assert.deepEqual(
     reports.map(({ status, cleanup }) => ({ status, cleanup })),
@@ -374,7 +394,7 @@ test("separate worktree processes share explicit receipts and clean only their f
     assert.equal(create.result.sdkSettled, true);
     assert.equal(create.result.mayHaveMutated, true);
     assert.equal(create.result.requestId, create.requestId);
-    assert.ok(create.requestId.startsWith(owner.clientId + ":"));
+    assert.equal(create.requestId, owner.clientId + ":0");
     assert.equal(creation.requestId, create.requestId);
     assert.equal(create.result.brokerReceipt?.requestId, create.requestId);
     assert.equal(create.result.brokerReceipt?.clientId, owner.clientId);

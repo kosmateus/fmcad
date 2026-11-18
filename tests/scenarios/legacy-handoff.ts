@@ -144,7 +144,7 @@ export function ownedLease(
     creation["creationId"] !== document["creationId"] ||
     creation["name"] !== document["name"] ||
     creation["clientId"] !== owner["clientId"] ||
-    !String(creation["requestId"]).startsWith(text(owner["clientId"]) + ":")
+    creation["requestId"] !== owner["clientId"] + ":0"
   )
     throw new Error("Owned legacy scope lacks its original creation receipt");
   const file =

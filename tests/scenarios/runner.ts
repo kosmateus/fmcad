@@ -43,9 +43,12 @@ import { revisionProgram, recoverRevision } from "./revision";
 import { reopenProgram, recoveredReopen } from "./reopen";
 import { auditRecovery } from "./recovery-audit";
 import {
-  assertPreservedDocumentInventory,
+  assertReceiptBoundDocumentInventory,
+  assertFencedDocumentInventory,
+  assertOwnedUnsavedDocument,
   currentProcessIdentity,
-  discoverOwnedUnsavedFixtures,
+  discoverOwnedUnsavedFixtureProofs,
+  exactScenarioRequestId,
 } from "./fixture-provenance";
 
 export interface Scenario {
@@ -395,6 +398,116 @@ export class ScenarioSession {
     this.persist();
     throw new Error(reason);
   }
+  #coordinatorBaseline(): Record<string, unknown> {
+    const filename = path.join(this.directory, "..", "index.json"),
+      stat = fs.lstatSync(filename);
+    assert.ok(stat.isFile() && !stat.isSymbolicLink());
+    const coordinator = record(
+      JSON.parse(fs.readFileSync(filename, "utf8")) as unknown,
+    );
+    assert.equal(coordinator["runId"], this.report.owner.runId);
+    assert.ok(
+      Array.isArray(coordinator["scenarioIds"]) &&
+        coordinator["scenarioIds"].includes(this.report.owner.scenarioId),
+    );
+    const before = record(coordinator["before"]);
+    assert.ok(Array.isArray(before["documents"]));
+    return before;
+  }
+  /** Run a canonical helper call with a checked same-SDK-turn inventory fence. */
+  async cadFenced(
+    phase: string,
+    operation: string,
+    data: Record<string, unknown>,
+    options: { component?: string } = {},
+  ): Promise<Record<string, unknown>> {
+    this.signal?.throwIfAborted();
+    if (!phase.startsWith("cad-"))
+      throw new Error("CAD phase must use cad- prefix");
+    const baseline = this.#coordinatorBaseline(),
+      baselineDocuments = baseline["documents"] as Record<string, unknown>[],
+      peerFixtures = new Map(
+        discoverOwnedUnsavedFixtureProofs(
+          path.dirname(path.dirname(this.directory)),
+          this.backend,
+        ),
+      );
+    const existingTarget = peerFixtures.get(this.document.creationId);
+    if (existingTarget)
+      assert.deepEqual(existingTarget.document, this.document);
+    if (
+      existingTarget?.state === "unsettled" ||
+      existingTarget?.state === "closed"
+    )
+      throw new Error("Owned target lacks a live settled creation receipt");
+    peerFixtures.delete(this.document.creationId);
+    assert.ok(
+      [...peerFixtures.values()].every((proof) => proof.state !== "unsettled"),
+      "A peer fixture has no settled exact cleanup receipt",
+    );
+    const openPeers = [...peerFixtures.values()]
+        .filter((proof) => proof.state === "open")
+        .map((proof) => proof.document),
+      closedPeerIds = [...peerFixtures]
+        .filter(([, proof]) => proof.state === "closed")
+        .map(([creationId]) => creationId);
+    try {
+      const output = await this.#dispatch(
+        phase,
+        programs.cadFence(
+          this.document,
+          operation,
+          structuredClone(data),
+          baselineDocuments.filter(
+            (document) => !peerFixtures.has(text(document["creationId"])),
+          ),
+          openPeers,
+          closedPeerIds,
+          options.component,
+        ),
+        this.document,
+        true,
+        "cad-v1",
+        undefined,
+        undefined,
+        operation,
+      );
+      const entry = this.report.requests.at(-1);
+      assert.ok(entry?.result, "Fenced CAD turn lacks its original receipt");
+      const execution = entry.result;
+      assert.equal(execution.requestId, entry.requestId);
+      assert.equal(execution.state, "succeeded");
+      assert.equal(execution.sdkSettled, true);
+      if (this.backend.qualification === "broker") {
+        const receipt = record(execution.brokerReceipt);
+        assert.equal(receipt["requestId"], entry.requestId);
+        assert.equal(receipt["clientId"], this.report.owner.clientId);
+        assert.equal(receipt["state"], "succeeded");
+        assert.ok(typeof receipt["jobId"] === "string" && receipt["jobId"]);
+      }
+      assert.equal(output["success"], true);
+      assert.equal(output["operation"], operation);
+      assert.equal(output["document"], this.document.name);
+      assert.equal(output["creationId"], this.document.creationId);
+      const fence = record(output["inventoryFence"]);
+      assert.equal(fence["version"], 1);
+      assertFencedDocumentInventory(
+        fence["before"],
+        fence["after"],
+        this.document,
+        baselineDocuments,
+        peerFixtures,
+        "A baseline or non-target document changed during the fenced CAD turn",
+      );
+      return output;
+    } catch (error) {
+      if (this.uncertain) throw error;
+      this.deferCleanup(
+        "Fenced CAD turn failed; leave the owned document for inspection: " +
+          errorText(error),
+      );
+    }
+  }
   /** Observe exact owned state without the CLI activating the target first. */
   async observe(
     phase: string,
@@ -412,34 +525,34 @@ export class ScenarioSession {
         "Full foreign inventory observation requires an exclusive scenario",
       );
     try {
-      const filename = path.join(this.directory, "..", "index.json");
-      const stat = fs.lstatSync(filename);
-      assert.ok(stat.isFile() && !stat.isSymbolicLink());
-      const coordinator = record(
-        JSON.parse(fs.readFileSync(filename, "utf8")) as unknown,
-      );
-      assert.equal(coordinator["runId"], this.report.owner.runId);
-      assert.ok(
-        Array.isArray(coordinator["scenarioIds"]) &&
-          coordinator["scenarioIds"].includes(this.report.owner.scenarioId),
-      );
-      const before = record(coordinator["before"]);
-      const peerFixtures = discoverOwnedUnsavedFixtures(
-        path.dirname(path.dirname(this.directory)),
-        this.backend,
-      );
-      const ownedFixtures = new Map(peerFixtures);
-      ownedFixtures.set(this.document.creationId, this.document);
+      const before = this.#coordinatorBaseline();
       const current = await this.observe(
         phase,
         programs.unsavedState(this.document),
       );
-      assertPreservedDocumentInventory(
+      // Bind the observed inventory to receipts settled by that SDK turn. A
+      // peer may have completed its exact cleanup while this observation ran.
+      const peerFixtures = discoverOwnedUnsavedFixtureProofs(
+        path.dirname(path.dirname(this.directory)),
+        this.backend,
+      );
+      const ownedFixtures = new Map(peerFixtures),
+        ownProof = ownedFixtures.get(this.document.creationId);
+      if (ownProof) {
+        assert.equal(ownProof.state, "open");
+        assert.deepEqual(ownProof.document, this.document);
+      }
+      ownedFixtures.set(this.document.creationId, {
+        document: this.document,
+        state: "open",
+      });
+      assertReceiptBoundDocumentInventory(
         before["documents"],
         current["documents"],
         ownedFixtures,
         "A non-fixture document changed during the owned unsaved case",
       );
+      assertOwnedUnsavedDocument(current["documents"], this.document);
       const active = current["active"];
       assert.ok(
         active === null ||
@@ -896,13 +1009,21 @@ export class ScenarioSession {
     helpers?: "cad-v1",
     command?: ScriptRequest["command"],
     inspectCli?: ScriptRequest["inspectCli"],
+    helperOperation?: string,
   ): Promise<Record<string, unknown>> {
     const execution = await this.#registeredRequest(
       phase,
       {
-        kind: inspectCli ? "inspect-cli" : command ? "cad" : "script",
+        kind: helperOperation
+          ? "cad-fenced"
+          : inspectCli
+            ? "inspect-cli"
+            : command
+              ? "cad"
+              : "script",
         ...(inspectCli ? { readOnly: true } : {}),
         ...(inspectCli ? { command: inspectCli } : {}),
+        ...(helperOperation ? { operation: helperOperation } : {}),
       },
       async ({ owner, requestId, directory }) => {
         const execution = await this.backend.execute({
@@ -973,6 +1094,42 @@ export class ScenarioSession {
     if (execution.state !== "succeeded")
       throw new Error(execution.error || "Fusion operation failed");
     if (inspectCli) return {};
+    if (helperOperation) {
+      try {
+        const helperLines = execution.stdout
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith("FMCAD_RESULT "));
+        if (helperLines.length !== 1)
+          throw new Error("Expected exactly one cad-v1 result marker");
+        const wrapper = record(
+          JSON.parse(helperLines[0]!.slice("FMCAD_RESULT ".length)) as unknown,
+        );
+        if (wrapper["success"] !== true)
+          throw new Error("cad-v1 helper turn did not succeed");
+        const calls = wrapper["helperCallsOnly"];
+        if (!Array.isArray(calls) || calls.length !== 1)
+          throw new Error(
+            "Fenced CAD turn must contain exactly one helper call",
+          );
+        const call = record(calls[0]);
+        if (
+          call["operation"] !== helperOperation ||
+          call["status"] !== "completed" ||
+          call["effects"] !== "observed"
+        )
+          throw new Error(
+            "Fenced CAD helper receipt differs from its operation",
+          );
+        const value = record(wrapper["result"]);
+        if (target && value["creationId"] !== target.creationId)
+          throw new Error("Fenced CAD result has a foreign target identity");
+        return value;
+      } catch (error) {
+        this.#uncertain = true;
+        this.persist();
+        throw error;
+      }
+    }
     const lines = execution.stdout
       .split(/\r?\n/)
       .filter((line) => line.startsWith(programs.marker));
@@ -1477,9 +1634,9 @@ export async function runScenarios(
       : undefined;
   const processIdentity = currentProcessIdentity();
   if (before) {
-    const peerFixtures = discoverOwnedUnsavedFixtures(root, backend),
+    const peerFixtures = discoverOwnedUnsavedFixtureProofs(root, backend),
       documents = before["documents"];
-    assertPreservedDocumentInventory(
+    assertReceiptBoundDocumentInventory(
       documents,
       documents,
       peerFixtures,
@@ -1582,10 +1739,10 @@ export async function runScenarios(
       )
     ) {
       const after = await observation("after", programs.snapshot());
-      assertPreservedDocumentInventory(
+      assertReceiptBoundDocumentInventory(
         before["documents"],
         after["documents"],
-        discoverOwnedUnsavedFixtures(root, backend),
+        discoverOwnedUnsavedFixtureProofs(root, backend),
         "Original documents changed or an unowned scenario document remains after cleanup",
       );
       const files = (value: Record<string, unknown>): string => {
@@ -1698,7 +1855,7 @@ export async function resumeCleanup(
   });
   if (
     new Set(requests.map((r) => r.requestId)).size !== requests.length ||
-    requests.some((r) => !r.requestId.startsWith(owner.clientId + ":"))
+    requests.some((r) => !exactScenarioRequestId(r.requestId, owner.clientId))
   )
     throw new Error("Invalid original request inventory");
   if (raw["cleanupHold"] !== undefined)

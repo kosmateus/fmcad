@@ -175,7 +175,10 @@ function cli(args: string[]) {
       "Legacy CLI receipt",
     );
     assert.equal(receipt.clientId, lease!.owner.clientId);
-    assert.ok(receipt.requestId.startsWith(lease!.owner.clientId + ":legacy:"));
+    const prefix = lease!.owner.clientId + ":legacy:",
+      receiptId = receipt.requestId.slice(prefix.length);
+    assert.equal(receipt.requestId, prefix + receiptId);
+    assert.match(receiptId, /^[a-f0-9-]{36}$/u);
     assert.ok(["succeeded", "failed"].includes(receipt.state));
     assert.equal(receipt.executionOutcome, receipt.state);
     assert.equal(receipt.operationResult["executionOutcome"], receipt.state);

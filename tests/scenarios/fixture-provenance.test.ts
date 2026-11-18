@@ -6,10 +6,13 @@ import { randomUUID } from "node:crypto";
 import type { Document, ScenarioBackend } from "./contracts";
 import { marker } from "./programs";
 import {
+  assertFencedDocumentInventory,
   assertOwnedUnsavedDocument,
   assertPreservedDocumentInventory,
+  assertReceiptBoundDocumentInventory,
   currentProcessIdentity,
   discoverOwnedUnsavedFixtures,
+  discoverOwnedUnsavedFixtureProofs,
   originalActiveDocument,
 } from "./fixture-provenance";
 
@@ -29,7 +32,7 @@ function reportFixture(t: { after(fn: () => void): void }) {
   const root = fs.mkdtempSync(path.join(parent, "fixture-provenance-")),
     runId = randomUUID(),
     scenarioId = "peer-owner",
-    clientId = "client:" + randomUUID(),
+    clientId = "scenario:" + runId + ":" + scenarioId,
     directory = path.join(root, runId, scenarioId),
     runRoot = path.dirname(directory),
     indexFile = path.join(runRoot, "index.json"),
@@ -122,6 +125,46 @@ test("only a live owner with its exact settled creation receipt authorizes a pee
   );
 });
 
+test("an exact pending cleanup intent authorizes only a peer still in inventory", (t) => {
+  const fixture = reportFixture(t),
+    requestId = fixture.identity.clientId + ":1",
+    requests = fixture.report["requests"] as Record<string, unknown>[];
+  requests.push({
+    requestId,
+    phase: "cleanup",
+    intent: { kind: "script" },
+  });
+  fs.writeFileSync(fixture.reportFile, JSON.stringify(fixture.report));
+  const proofs = discoverOwnedUnsavedFixtureProofs(fixture.root, backend),
+    current = [
+      {
+        ...fixture.document,
+        saved: false,
+        modified: false,
+        fileId: null,
+      },
+    ];
+  assert.equal(proofs.get(fixture.document.creationId)?.state, "open");
+  assert.doesNotThrow(() =>
+    assertReceiptBoundDocumentInventory(
+      [],
+      current,
+      proofs,
+      "pending peer cleanup lost its fixture",
+    ),
+  );
+  assert.throws(
+    () =>
+      assertReceiptBoundDocumentInventory(
+        [],
+        [],
+        proofs,
+        "pending peer cleanup lost its fixture",
+      ),
+    /live receipt-proven fixture is missing/u,
+  );
+});
+
 for (const status of ["passed", "failed"] as const) {
   test(`a ${status} scenario remains owned while its live runner cleans it up`, (t) => {
     const fixture = reportFixture(t);
@@ -139,6 +182,11 @@ for (const status of ["passed", "failed"] as const) {
 for (const corruption of [
   "unknown",
   "mismatched-receipt",
+  "mismatched-request",
+  "missing-job",
+  "request-prefix",
+  "duplicate-request",
+  "creation-identity",
   "stale-process",
   "dead-process",
   "cleanup-hold",
@@ -149,6 +197,7 @@ for (const corruption of [
   test(`${corruption} owner evidence cannot authorize a new document`, (t) => {
     const fixture = reportFixture(t),
       requests = fixture.report["requests"] as {
+        requestId: string;
         result: Record<string, unknown>;
       }[];
     if (corruption === "unknown") requests[0]!.result["state"] = "unknown";
@@ -161,6 +210,32 @@ for (const corruption of [
         ...receipt,
         clientId: "another-client",
       };
+    } else if (corruption === "mismatched-request") {
+      const receipt = requests[0]!.result["brokerReceipt"] as Record<
+        string,
+        unknown
+      >;
+      requests[0]!.result["brokerReceipt"] = {
+        ...receipt,
+        requestId: "another-request",
+      };
+    } else if (corruption === "missing-job") {
+      const receipt = requests[0]!.result["brokerReceipt"] as Record<
+        string,
+        unknown
+      >;
+      delete receipt["jobId"];
+    } else if (corruption === "request-prefix") {
+      requests[0]!.requestId += ":unexpected";
+    } else if (corruption === "duplicate-request") {
+      requests.push(Object.assign({}, requests[0]!, { phase: "observe" }));
+    } else if (corruption === "creation-identity") {
+      const result = requests[0]!.result,
+        output = JSON.parse(
+          (result["stdout"] as string).slice(marker.length),
+        ) as Record<string, unknown>;
+      output["creationId"] = randomUUID();
+      result["stdout"] = marker + JSON.stringify(output);
     } else if (corruption === "stale-process") {
       const index = JSON.parse(
         fs.readFileSync(fixture.indexFile, "utf8"),
@@ -370,6 +445,167 @@ test("a proven fixture's current identity and unsaved state remain exact", (t) =
         "baseline changed",
       ),
     /unexpectedly saved/u,
+  );
+});
+
+test("same-turn inventory fence permits a receipt-proven peer but rejects its mutation", () => {
+  const target = { creationId: "owned-target", name: "Owned target" },
+    peer = { creationId: "receipt-proven-peer", name: "Peer fixture" },
+    user = {
+      creationId: "baseline-user",
+      name: "User design",
+      saved: true,
+      modified: false,
+      fileId: "user-cloud-file",
+    },
+    row = (document: Document, modified = false) => ({
+      ...document,
+      saved: false,
+      modified,
+      fileId: null,
+    }),
+    before = [user, row(target), row(peer)],
+    peers = new Map([
+      [peer.creationId, { document: peer, state: "open" as const }],
+    ]);
+  assert.doesNotThrow(() =>
+    assertFencedDocumentInventory(
+      before,
+      [user, row(target, true), row(peer)],
+      target,
+      [user],
+      peers,
+      "foreign same-turn mutation",
+    ),
+  );
+  assert.throws(
+    () =>
+      assertFencedDocumentInventory(
+        before,
+        [user, row(target), row(peer, true)],
+        target,
+        [user],
+        peers,
+        "foreign same-turn mutation",
+      ),
+    /foreign same-turn mutation/u,
+  );
+});
+
+test("fenced inventory rejects unproven documents and baseline file-provenance drift", () => {
+  const target = { creationId: "owned-target", name: "Owned target" },
+    user = {
+      creationId: "baseline-user",
+      name: "User design",
+      saved: true,
+      modified: false,
+      fileId: "user-cloud-file",
+    },
+    row = (document: Document) => ({
+      ...document,
+      saved: false,
+      modified: false,
+      fileId: null,
+    }),
+    baseline = [user],
+    targetRow = row(target),
+    unknown = row({ creationId: "unproven", name: "Unproven fixture" });
+  assert.throws(
+    () =>
+      assertFencedDocumentInventory(
+        [user, targetRow, unknown],
+        [user, targetRow, unknown],
+        target,
+        baseline,
+        new Map(),
+        "Unproven non-baseline document",
+      ),
+    /Unproven non-baseline document/u,
+  );
+  assert.throws(
+    () =>
+      assertReceiptBoundDocumentInventory(
+        baseline,
+        [{ ...user, fileId: "different-cloud-file" }],
+        new Map(),
+        "baseline file provenance changed",
+      ),
+    /baseline file provenance changed/u,
+  );
+});
+
+test("a peer may disappear only after its exact settled close receipt", (t) => {
+  const fixture = reportFixture(t),
+    requestId = fixture.identity.clientId + ":1",
+    jobId = randomUUID(),
+    requests = fixture.report["requests"] as Record<string, unknown>[];
+  requests.push({
+    requestId,
+    phase: "cleanup",
+    intent: { kind: "script" },
+    result: {
+      requestId,
+      state: "succeeded",
+      sdkSettled: true,
+      mayHaveMutated: true,
+      stdout:
+        marker +
+        JSON.stringify({
+          creationId: fixture.document.creationId,
+          closed: true,
+        }),
+      brokerReceipt: {
+        requestId,
+        clientId: fixture.identity.clientId,
+        jobId,
+        state: "succeeded",
+      },
+    },
+  });
+  fixture.report["cleanup"] = "complete";
+  fs.writeFileSync(fixture.reportFile, JSON.stringify(fixture.report));
+  const proofs = discoverOwnedUnsavedFixtureProofs(fixture.root, backend);
+  assert.equal(proofs.get(fixture.document.creationId)?.state, "closed");
+  const baseline = [
+      {
+        creationId: "baseline-user",
+        name: "User design",
+        saved: false,
+        modified: false,
+        fileId: null,
+      },
+    ],
+    current = baseline;
+  assert.doesNotThrow(() =>
+    assertReceiptBoundDocumentInventory(
+      [
+        ...baseline,
+        { ...fixture.document, saved: false, modified: false, fileId: null },
+      ],
+      current,
+      proofs,
+      "peer disappeared without its exact cleanup receipt",
+    ),
+  );
+
+  const close = requests[1]!["result"] as Record<string, unknown>,
+    closeReceipt = close["brokerReceipt"] as Record<string, unknown>;
+  close["brokerReceipt"] = { ...closeReceipt, clientId: "another-client" };
+  fs.writeFileSync(fixture.reportFile, JSON.stringify(fixture.report));
+  const unverified = discoverOwnedUnsavedFixtureProofs(fixture.root, backend);
+  assert.equal(unverified.get(fixture.document.creationId)?.state, "unsettled");
+  assert.throws(
+    () =>
+      assertReceiptBoundDocumentInventory(
+        [
+          ...baseline,
+          { ...fixture.document, saved: false, modified: false, fileId: null },
+        ],
+        current,
+        unverified,
+        "peer disappeared without its exact cleanup receipt",
+      ),
+    /exact cleanup receipt/u,
   );
 });
 

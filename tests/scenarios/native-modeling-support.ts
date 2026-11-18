@@ -5,6 +5,11 @@ import { createRequire } from "node:module";
 import type { ScenarioSession } from "./runner";
 import { record, text } from "./contracts";
 import { emit, program } from "./programs";
+import {
+  assertReceiptBoundDocumentInventory,
+  assertOwnedUnsavedDocument,
+  discoverOwnedUnsavedFixtureProofs,
+} from "./fixture-provenance";
 
 const root = path.resolve(__dirname, "../../..");
 const { catalog, validateCad } = createRequire(path.join(root, "package.json"))(
@@ -44,21 +49,6 @@ interface Readback {
   expected: unknown;
   tolerance: number;
   status: "pass" | "fail";
-}
-
-function stable(documents: unknown): Record<string, unknown>[] {
-  return values(documents)
-    .map(record)
-    .map((document) => ({
-      name: document["name"],
-      creationId: document["creationId"],
-      fileId: document["fileId"],
-      saved: document["saved"],
-      modified: document["modified"],
-    }))
-    .sort((left, right) =>
-      text(left["creationId"]).localeCompare(text(right["creationId"])),
-    );
 }
 
 /** Retained native readback helpers over the one existing owner/receipt lifecycle. */
@@ -148,17 +138,25 @@ ${emit("dict(creationId=owned[0].creationId, version=app.version, documents=docs
       );
     return result;
   };
-  const unchangedOthers = (current: Record<string, unknown>) => {
-    assert.deepEqual(
-      stable(
-        values(current["documents"])
-          .map(record)
-          .filter((doc) => doc["creationId"] !== identity.creationId),
+  const ownedFixtures = () => {
+    const fixtures = new Map(
+      discoverOwnedUnsavedFixtureProofs(
+        path.dirname(path.dirname(session.directory)),
+        session.backend,
       ),
-      stable(baseline["documents"]),
-      "A non-fixture document changed during feature coverage.",
     );
+    const own = fixtures.get(identity.creationId);
+    assert.ok(own && own.state === "open");
+    assert.deepEqual(own.document, identity);
+    return fixtures;
   };
+  const unchangedOthers = (current: Record<string, unknown>) =>
+    assertReceiptBoundDocumentInventory(
+      baseline["documents"],
+      current["documents"],
+      ownedFixtures(),
+      "An original document changed during feature coverage.",
+    );
   const guard = async () => {
     try {
       assert.ok(identity.creationId, "No verified owned creationId.");
@@ -199,12 +197,10 @@ ${emit("dict(creationId=owned[0].creationId, version=app.version, documents=docs
     assert.ok(catalog[operation], "Unknown canonical operation: " + operation);
     validateCad(operation, data);
     if (mutating) await guard();
-    const output = await session.cad(
-      "cad-native-modeling-" + sequence++ + "-" + operation,
-      operation,
-      data,
-      { component: scope },
-    );
+    const phase = "cad-native-modeling-" + sequence++ + "-" + operation;
+    const output = mutating
+      ? await session.cadFenced(phase, operation, data, { component: scope })
+      : await session.cad(phase, operation, data, { component: scope });
     if (nativeResultUncertain(output))
       session.deferCleanup(
         operation + " returned unknown/pending; do not replay.",
@@ -277,20 +273,13 @@ ${emit("dict(creationId=owned[0].creationId, version=app.version, documents=docs
   const afterCreate = await guard();
   report.fusionVersion = text(afterCreate["version"]);
   persist();
-  const baselineIds = new Set(
-    values(baseline["documents"]).map((doc) => record(doc)["creationId"]),
+  assert.ok(
+    !values(baseline["documents"])
+      .map(record)
+      .some((doc) => doc["creationId"] === identity.creationId),
+    "Owned fixture identity already exists in the coordinator baseline.",
   );
-  const added = values(afterCreate["documents"])
-    .map(record)
-    .filter((doc) => !baselineIds.has(doc["creationId"]));
-  assert.equal(
-    added.length,
-    1,
-    "Document creation did not create exactly one fixture.",
-  );
-  assert.equal(record(added[0])["name"], identity.name);
-  assert.equal(record(added[0])["fileId"], null);
-  assert.equal(record(added[0])["saved"], false);
+  assertOwnedUnsavedDocument(afterCreate["documents"], identity);
   return {
     identity,
     baseline,

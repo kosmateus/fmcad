@@ -11,11 +11,30 @@ export interface ProcessIdentity {
   readonly birth: string;
 }
 
+export interface OwnedUnsavedFixtureProof {
+  readonly document: Document;
+  readonly state: "open" | "closed" | "unsettled";
+}
+
 export function currentProcessIdentity(): ProcessIdentity {
   return {
     pid: process.pid,
     birth: childProcessIdentity.processBirth(),
   };
+}
+
+export function exactScenarioRequestId(
+  requestId: string,
+  clientId: string,
+): boolean {
+  const sequence = requestId.slice(clientId.length + 1),
+    number = Number(sequence);
+  return (
+    requestId === clientId + ":" + sequence &&
+    /^(0|[1-9]\d*)$/u.test(sequence) &&
+    Number.isSafeInteger(number) &&
+    String(number) === sequence
+  );
 }
 
 function readJson(filename: string): Record<string, unknown> {
@@ -56,7 +75,7 @@ function verifiedFixture(
     ScenarioBackend,
     "identity" | "mode" | "qualification" | "protocol"
   >,
-): Document | undefined {
+): OwnedUnsavedFixtureProof | undefined {
   try {
     const runId = path.basename(runRoot),
       directory = path.join(runRoot, scenarioId),
@@ -64,14 +83,12 @@ function verifiedFixture(
     if (
       !/^[a-f0-9-]{36}$/u.test(runId) ||
       index["runId"] !== runId ||
-      index["status"] !== "running" ||
       index["mode"] !== backend.mode ||
       index["qualification"] !== backend.qualification ||
       index["protocol"] !== backend.protocol ||
       index["backendIdentity"] !== backend.identity ||
       !Array.isArray(index["scenarioIds"]) ||
-      !index["scenarioIds"].includes(scenarioId) ||
-      !activeProcess(index)
+      !index["scenarioIds"].includes(scenarioId)
     )
       return undefined;
 
@@ -82,11 +99,8 @@ function verifiedFixture(
       path.resolve(text(report["directory"])) !== path.resolve(directory) ||
       owner["runId"] !== runId ||
       owner["scenarioId"] !== scenarioId ||
-      typeof owner["clientId"] !== "string" ||
-      !owner["clientId"] ||
+      owner["clientId"] !== "scenario:" + runId + ":" + scenarioId ||
       !["running", "passed", "failed"].includes(String(report["status"])) ||
-      report["cleanup"] !== "pending" ||
-      report["cleanupHold"] !== undefined ||
       !["owned-document", "exclusive-instance"].includes(
         String(report["scope"]),
       ) ||
@@ -95,6 +109,17 @@ function verifiedFixture(
       report["protocol"] !== backend.protocol ||
       report["backendIdentity"] !== backend.identity ||
       !Array.isArray(requests)
+    )
+      return undefined;
+    const requestIds = requests.map((value: unknown) =>
+      text(record(value)["requestId"]),
+    );
+    if (
+      new Set(requestIds).size !== requestIds.length ||
+      requestIds.some(
+        (requestId) =>
+          !exactScenarioRequestId(requestId, text(owner["clientId"])),
+      )
     )
       return undefined;
 
@@ -107,7 +132,7 @@ function verifiedFixture(
       result = record(create["result"]),
       receipt = record(result["brokerReceipt"]);
     if (
-      !requestId.startsWith(text(owner["clientId"]) + ":") ||
+      requestId !== owner["clientId"] + ":0" ||
       record(create["intent"])["kind"] !== "script" ||
       result["requestId"] !== requestId ||
       result["state"] !== "succeeded" ||
@@ -152,25 +177,114 @@ function verifiedFixture(
       )
     )
       return undefined;
-    if (!activeProcess(index)) return undefined;
-    return Object.freeze(document);
+    const cleanupEntries = requests
+      .map(record)
+      .filter((entry) => entry["phase"] === "cleanup");
+    let state: OwnedUnsavedFixtureProof["state"];
+    if (
+      report["cleanupHold"] === undefined &&
+      cleanupEntries.length === 1 &&
+      exactClosedFixtureReceipt(
+        cleanupEntries[0]!,
+        owner,
+        document.creationId,
+        text(receipt["jobId"]),
+      )
+    ) {
+      state = "closed";
+    } else if (
+      report["cleanup"] === "pending" &&
+      report["cleanupHold"] === undefined &&
+      index["status"] === "running" &&
+      activeProcess(index) &&
+      (cleanupEntries.length === 0 ||
+        (cleanupEntries.length === 1 &&
+          exactPendingCleanupIntent(cleanupEntries[0]!, owner)))
+    ) {
+      state = "open";
+    } else {
+      state = "unsettled";
+    }
+    return Object.freeze({ document: Object.freeze(document), state });
   } catch {
     return undefined;
   }
 }
 
-/** Read only currently running, receipt-bound unsaved fixtures from existing run reports. */
-export function discoverOwnedUnsavedFixtures(
+function exactClosedFixtureReceipt(
+  entry: Record<string, unknown>,
+  owner: Record<string, unknown>,
+  creationId: string,
+  creationJobId: string,
+): boolean {
+  try {
+    const clientId = text(owner["clientId"]),
+      requestId = text(entry["requestId"]),
+      sequence = requestId.slice(clientId.length + 1),
+      result = record(entry["result"]),
+      receipt = record(result["brokerReceipt"]),
+      lines = text(result["stdout"])
+        .split(/\r?\n/u)
+        .filter((line) => line.startsWith(marker));
+    if (
+      !exactScenarioRequestId(requestId, clientId) ||
+      requestId !== clientId + ":" + sequence ||
+      requestId === clientId + ":0" ||
+      entry["phase"] !== "cleanup" ||
+      record(entry["intent"])["kind"] !== "script" ||
+      result["requestId"] !== requestId ||
+      result["state"] !== "succeeded" ||
+      result["sdkSettled"] !== true ||
+      result["mayHaveMutated"] !== true ||
+      receipt["requestId"] !== requestId ||
+      receipt["clientId"] !== clientId ||
+      receipt["state"] !== "succeeded" ||
+      typeof receipt["jobId"] !== "string" ||
+      !receipt["jobId"] ||
+      receipt["jobId"] === creationJobId ||
+      lines.length !== 1
+    )
+      return false;
+    const closed = record(
+      JSON.parse(lines[0]!.slice(marker.length)) as unknown,
+    );
+    return closed["creationId"] === creationId && closed["closed"] === true;
+  } catch {
+    return false;
+  }
+}
+
+function exactPendingCleanupIntent(
+  entry: Record<string, unknown>,
+  owner: Record<string, unknown>,
+): boolean {
+  try {
+    const clientId = text(owner["clientId"]),
+      requestId = text(entry["requestId"]);
+    return (
+      entry["phase"] === "cleanup" &&
+      record(entry["intent"])["kind"] === "script" &&
+      entry["result"] === undefined &&
+      exactScenarioRequestId(requestId, clientId) &&
+      requestId !== clientId + ":0"
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Read exact creation and cleanup receipts from existing scenario reports. */
+export function discoverOwnedUnsavedFixtureProofs(
   root: string,
   backend: Pick<
     ScenarioBackend,
     "identity" | "mode" | "qualification" | "protocol"
   >,
-): ReadonlyMap<string, Document> {
+): ReadonlyMap<string, OwnedUnsavedFixtureProof> {
   const stat = fs.lstatSync(root);
   if (!stat.isDirectory() || stat.isSymbolicLink())
     throw new Error("Expected a regular scenario artifact root");
-  const fixtures = new Map<string, Document>(),
+  const fixtures = new Map<string, OwnedUnsavedFixtureProof>(),
     ambiguous = new Set<string>();
   for (const runId of fs.readdirSync(root)) {
     if (!/^[a-f0-9-]{36}$/u.test(runId)) continue;
@@ -195,14 +309,29 @@ export function discoverOwnedUnsavedFixtures(
       )
         continue;
       const document = verifiedFixture(runRoot, scenarioId, backend);
-      if (!document || ambiguous.has(document.creationId)) continue;
-      if (fixtures.has(document.creationId)) {
-        fixtures.delete(document.creationId);
-        ambiguous.add(document.creationId);
-      } else fixtures.set(document.creationId, document);
+      if (!document || ambiguous.has(document.document.creationId)) continue;
+      if (fixtures.has(document.document.creationId)) {
+        fixtures.delete(document.document.creationId);
+        ambiguous.add(document.document.creationId);
+      } else fixtures.set(document.document.creationId, document);
     }
   }
   return fixtures;
+}
+
+/** Read currently open, receipt-bound fixtures for callers that need live peers. */
+export function discoverOwnedUnsavedFixtures(
+  root: string,
+  backend: Pick<
+    ScenarioBackend,
+    "identity" | "mode" | "qualification" | "protocol"
+  >,
+): ReadonlyMap<string, Document> {
+  return new Map(
+    [...discoverOwnedUnsavedFixtureProofs(root, backend)]
+      .filter(([, proof]) => proof.state === "open")
+      .map(([creationId, proof]) => [creationId, proof.document]),
+  );
 }
 
 function documentRows(value: unknown): Record<string, unknown>[] {
@@ -211,6 +340,89 @@ function documentRows(value: unknown): Record<string, unknown>[] {
     ids = documents.map((document) => text(document["creationId"]));
   assert.equal(new Set(ids).size, ids.length, "Duplicate document identity");
   return documents;
+}
+
+function stableDocuments(documents: Record<string, unknown>[]) {
+  return documents
+    .map((document) => {
+      const stable = { ...document };
+      delete stable["active"];
+      return stable;
+    })
+    .sort((left, right) =>
+      text(left["creationId"]).localeCompare(text(right["creationId"])),
+    );
+}
+
+/** Check causality inside one SDK turn while retaining baseline and target identity. */
+export function assertFencedDocumentInventory(
+  beforeValue: unknown,
+  afterValue: unknown,
+  target: Document,
+  baselineValue: unknown,
+  verifiedPeers: ReadonlyMap<string, OwnedUnsavedFixtureProof>,
+  message: string,
+): void {
+  const before = documentRows(beforeValue),
+    after = documentRows(afterValue),
+    proofs = new Map(verifiedPeers),
+    peerTarget = proofs.get(target.creationId);
+  if (peerTarget) {
+    assert.deepEqual(
+      peerTarget.document,
+      target,
+      "Owned target conflicts with peer receipt",
+    );
+    assert.equal(peerTarget.state, "open", "Owned target has a close receipt");
+  }
+  proofs.set(target.creationId, { document: target, state: "open" });
+  assertOwnedUnsavedDocument(before, target);
+  assertOwnedUnsavedDocument(after, target);
+  assertReceiptBoundDocumentInventory(baselineValue, before, proofs, message);
+  assertReceiptBoundDocumentInventory(baselineValue, after, proofs, message);
+  assert.deepEqual(
+    stableDocuments(
+      before.filter((document) => document["creationId"] !== target.creationId),
+    ),
+    stableDocuments(
+      after.filter((document) => document["creationId"] !== target.creationId),
+    ),
+    message,
+  );
+}
+
+/** Admit only exact live peer fixtures or fixtures closed by their exact receipt. */
+export function assertReceiptBoundDocumentInventory(
+  beforeValue: unknown,
+  currentValue: unknown,
+  proofs: ReadonlyMap<string, OwnedUnsavedFixtureProof>,
+  message: string,
+): void {
+  const before = documentRows(beforeValue),
+    current = documentRows(currentValue);
+  for (const [creationId, proof] of proofs) {
+    assert.equal(proof.document.creationId, creationId);
+    if (proof.state === "unsettled")
+      assert.fail("A peer fixture has no settled exact cleanup receipt");
+    const matches = current.filter(
+      (document) => document["creationId"] === creationId,
+    );
+    if (proof.state === "closed") {
+      assert.equal(matches.length, 0, "A closed peer fixture remains open");
+      continue;
+    }
+    assert.equal(matches.length, 1, "A live receipt-proven fixture is missing");
+    assertOwnedUnsavedDocument(current, proof.document);
+  }
+  assert.deepEqual(
+    stableDocuments(
+      current.filter((document) => !proofs.has(text(document["creationId"]))),
+    ),
+    stableDocuments(
+      before.filter((document) => !proofs.has(text(document["creationId"]))),
+    ),
+    message,
+  );
 }
 
 export function assertOwnedUnsavedDocument(
@@ -281,16 +493,13 @@ export function assertPreservedDocumentInventory(
       "Owned fixture acquired a cloud file",
     );
   }
-  const comparable = (documents: Record<string, unknown>[]) =>
-    documents
-      .filter((document) => !owned.has(text(document["creationId"])))
-      .map((document) => {
-        const stable = { ...document };
-        delete stable["active"];
-        return stable;
-      })
-      .sort((left, right) =>
-        text(left["creationId"]).localeCompare(text(right["creationId"])),
-      );
-  assert.deepEqual(comparable(current), comparable(before), message);
+  assert.deepEqual(
+    stableDocuments(
+      current.filter((document) => !owned.has(text(document["creationId"]))),
+    ),
+    stableDocuments(
+      before.filter((document) => !owned.has(text(document["creationId"]))),
+    ),
+    message,
+  );
 }

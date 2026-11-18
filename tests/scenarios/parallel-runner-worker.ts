@@ -198,6 +198,9 @@ const scenario: Scenario = {
     while (!fs.existsSync(releaseFile))
       await new Promise((resolve) => setTimeout(resolve, 5));
     await session.verifyOwnedUnsaved("observe-cross-process-owned-fixture");
+    process.send?.({ type: "observed", tag });
+    while (!fs.existsSync(releaseFile + "-" + tag))
+      await new Promise((resolve) => setTimeout(resolve, 5));
   },
 };
 

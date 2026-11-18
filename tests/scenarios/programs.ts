@@ -1,4 +1,11 @@
+import { createRequire } from "node:module";
+import path from "node:path";
 import type { Document } from "./contracts";
+
+const root = path.resolve(__dirname, "../../..");
+const { pythonLiteral } = createRequire(path.join(root, "package.json"))(
+  "./src/python",
+) as typeof import("../../packages/node-adapters/src/python/artifact");
 
 export const marker = "FMCAD_SCENARIO ";
 const quoted = (value: string): string => JSON.stringify(value);
@@ -120,6 +127,82 @@ assert doc.name == ${quoted(document.name)}, 'Owned document identity changed'
 assert sum(d.name == ${quoted(document.name)} for d in app.documents) == 1, 'Ambiguous owned name'
 assert not doc.isSaved and doc.dataFile is None, 'Owned fixture unexpectedly became saved'
 ${emit("dict(creationId=doc.creationId, active=app.activeDocument.creationId, documents=[dict(creationId=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified,fileId=d.dataFile.id if d.dataFile else None) for d in app.documents])")}`);
+}
+/** Run one canonical helper operation between same-turn foreign inventory snapshots. */
+export function cadFence(
+  document: Document,
+  operation: string,
+  data: Record<string, unknown>,
+  baseline: readonly Record<string, unknown>[],
+  peers: readonly Document[],
+  closedPeerCreationIds: readonly string[],
+  component = "root",
+): string {
+  if (document.file)
+    throw new Error("CAD inventory fence received a saved fixture");
+  const expected = pythonLiteral(
+      baseline.map((row) => ({
+        creationId: row["creationId"],
+        name: row["name"],
+        fileId: row["fileId"] ?? null,
+        saved: row["saved"],
+        modified: row["modified"],
+      })),
+    ),
+    peerIdentities = pythonLiteral(
+      peers.map(({ creationId, name }) => ({ creationId, name })),
+    ),
+    closedPeers = pythonLiteral([...closedPeerCreationIds]),
+    scope = component === "root" ? "None" : pythonLiteral(component);
+  return program(`import adsk.core, json
+app = adsk.core.Application.get()
+_fmcad_expected_baseline = ${expected}
+_fmcad_expected_peers = ${peerIdentities}
+_fmcad_closed_peers = ${closedPeers}
+def _fmcad_inventory():
+    return [dict(creationId=d.creationId, name=d.name, fileId=d.dataFile.id if d.dataFile else None, saved=d.isSaved, modified=d.isModified, active=d == app.activeDocument) for d in app.documents]
+def _fmcad_stable(rows):
+    return sorted((d['creationId'], d['name'], d['fileId'], d['saved'], d['modified']) for d in rows)
+def _fmcad_check_inventory(rows):
+    ids = [d['creationId'] for d in rows]
+    assert len(set(ids)) == len(ids), 'Duplicate document identity in fenced inventory'
+    for expected in _fmcad_expected_baseline:
+        matches = [d for d in rows if d['creationId'] == expected['creationId']]
+        assert len(matches) == 1, 'Coordinator baseline document is missing or duplicated'
+        assert _fmcad_stable(matches) == _fmcad_stable([expected]), 'Coordinator baseline identity or file provenance changed'
+    for expected in _fmcad_expected_peers:
+        matches = [d for d in rows if d['creationId'] == expected['creationId']]
+        assert len(matches) == 1, 'Receipt-proven open peer is missing or duplicated'
+        peer = matches[0]
+        assert peer['name'] == expected['name'] and not peer['saved'] and peer['fileId'] is None, 'Receipt-proven peer identity or file provenance changed'
+    for creation_id in _fmcad_closed_peers:
+        assert not any(d['creationId'] == creation_id for d in rows), 'A receipt-closed peer fixture remains open'
+    allowed = {d['creationId'] for d in _fmcad_expected_baseline}
+    allowed.update(d['creationId'] for d in _fmcad_expected_peers)
+    allowed.add(${quoted(document.creationId)})
+    assert all(identity in allowed for identity in ids), 'Unproven non-baseline document in fenced inventory'
+_fmcad_before = _fmcad_inventory()
+_fmcad_check_inventory(_fmcad_before)
+_fmcad_targets = [d for d in _fmcad_before if d['creationId'] == ${quoted(document.creationId)}]
+assert len(_fmcad_targets) == 1, 'Owned fixture identity is missing or duplicated'
+assert _fmcad_targets[0]['name'] == ${quoted(document.name)}, 'Owned fixture name changed'
+_fmcad_native_targets = [d for d in app.documents if d.creationId == ${quoted(document.creationId)}]
+assert len(_fmcad_native_targets) == 1, 'Owned native fixture identity is missing or duplicated'
+doc = _fmcad_native_targets[0]
+assert doc.name == ${quoted(document.name)}, 'Owned fixture name changed'
+assert sum(d.name == ${quoted(document.name)} for d in app.documents) == 1, 'Owned fixture name is ambiguous'
+assert not doc.isSaved and doc.dataFile is None, 'Owned fixture unexpectedly became saved'
+_fmcad_result = FMCAD.call(${quoted(operation)}, ${pythonLiteral(data)}, ${scope})
+_fmcad_after = _fmcad_inventory()
+_fmcad_check_inventory(_fmcad_after)
+_fmcad_after_targets = [d for d in _fmcad_after if d['creationId'] == ${quoted(document.creationId)}]
+assert len(_fmcad_after_targets) == 1, 'Owned fixture identity changed during the SDK turn'
+assert _fmcad_after_targets[0]['name'] == ${quoted(document.name)}, 'Owned fixture name changed during the SDK turn'
+assert not _fmcad_after_targets[0]['saved'] and _fmcad_after_targets[0]['fileId'] is None, 'Owned fixture was saved during the SDK turn'
+_fmcad_other_before = [d for d in _fmcad_before if d['creationId'] != ${quoted(document.creationId)}]
+_fmcad_other_after = [d for d in _fmcad_after if d['creationId'] != ${quoted(document.creationId)}]
+assert _fmcad_stable(_fmcad_other_before) == _fmcad_stable(_fmcad_other_after), 'A non-target document changed during the SDK turn'
+FMCAD.emit(dict(success=True, operation=${quoted(operation)}, document=doc.name, creationId=doc.creationId, result=_fmcad_result, inventoryFence=dict(version=1, before=_fmcad_before, after=_fmcad_after)))`);
 }
 export function restoreActive(creationId: string): string {
   return program(`import adsk.core, json
