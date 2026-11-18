@@ -5,7 +5,7 @@
   "sources": [
     {
       "source": "tests/helpers/live-broker.js",
-      "sha256": "df03e4bd0b7596b47c9fd04dcb3f43c07721a9478217e78aab8c2a5cbd1074bb",
+      "sha256": "6c3b4c52084c981059201ce3e3792bddba835549dde472515f804e53670622ae",
       "assertions": []
     },
     {
@@ -15,7 +15,7 @@
     },
     {
       "source": "tests/helpers/live-scope.js",
-      "sha256": "bad4a264269dcec3da07563f21a6eb20f1e5ef22859e6f7e74982f23b9be5389",
+      "sha256": "882272b87c3849449f9927ec32c8c05dadb0900af036aa34ffc6fbfe9517d5a9",
       "assertions": [
         {
           "id": "5ee1df2cbbbd0421974e-1",
@@ -693,245 +693,245 @@
     },
     {
       "source": "tests/live-backend-adapter.js",
-      "sha256": "b810b7dce7a3080a52fb91bd048a0dd08378951b66f37db3f9aa02f72a65fa25",
+      "sha256": "6be20b0b0baab53d0f160a1ac6a5bd18dad8d847dabaefdffd74d53331484493",
       "assertions": [
         {
           "id": "8e6719b696ae329c1c06-1",
-          "line": 27,
+          "line": 23,
           "kind": "assertion",
           "expression": "assert.ok(args.length === 0 || (args.length === 2 && args[0] === '--timeout-ms'),\n    'Usage: node tests/live-backend-adapter.js [--timeout-ms 60000]')"
         },
         {
           "id": "5d84736022a9b89ba557-1",
-          "line": 30,
+          "line": 26,
           "kind": "assertion",
           "expression": "assert.ok(Number.isSafeInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 2147482647,\n    'timeout-ms must be a positive integer at most 2147482647')"
         },
         {
           "id": "fdaf043267e38e6a24a9-1",
-          "line": 60,
+          "line": 56,
           "kind": "assertion",
           "expression": "assert.equal(report.initializeCount, 1, 'Unexpected session reinitialization')"
         },
         {
           "id": "cbbd6fe027a11330a167-1",
-          "line": 62,
+          "line": 58,
           "kind": "assertion",
           "expression": "assert.ok(sessionSeen, 'Request before initialization')"
         },
         {
           "id": "0308c10e76d51fb0695a-1",
-          "line": 63,
+          "line": 59,
           "kind": "assertion",
           "expression": "assert.equal(sessionId, clientSession, 'Client session changed')"
         },
         {
           "id": "1c3a0fef51bdcdd868e3-1",
-          "line": 66,
+          "line": 62,
           "kind": "assertion",
           "expression": "assert.equal(payload.params.name, 'execute_python', 'Unexpected tool or native fallback')"
         },
         {
           "id": "170529ffd1c3a329f324-1",
-          "line": 67,
+          "line": 63,
           "kind": "assertion",
           "expression": "assert.equal(payload.params.arguments.persistent, false)"
         },
         {
           "id": "e700896608679c41215c-1",
-          "line": 109,
+          "line": 105,
           "kind": "assertion",
           "expression": "assert.equal(out.failed, false, out.text)"
         },
         {
           "id": "091f91a22994d9afcc1d-1",
-          "line": 110,
+          "line": 106,
           "kind": "assertion",
           "expression": "assert.equal(out.readOnlyRequested, true)"
         },
         {
           "id": "0962633ae22911721c8f-1",
-          "line": 111,
+          "line": 107,
           "kind": "assertion",
           "expression": "assert.equal(out.readOnlyEnforced, false)"
         },
         {
           "id": "e3160a8769c135e95104-1",
-          "line": 112,
+          "line": 108,
           "kind": "assertion",
           "expression": "assert.equal(out.text.replace(/\\r\\n/g, '\\n'), expected + '\\n')"
         },
         {
           "id": "2512bd2f55b8dc4123aa-1",
-          "line": 134,
+          "line": 130,
           "kind": "helper",
           "expression": "success(out)"
         },
         {
           "id": "ea575a43bab67f7a75b2-1",
-          "line": 136,
+          "line": 132,
           "kind": "assertion",
           "expression": "assert.ok(Array.isArray(data.documents))"
         },
         {
           "id": "8b3a608c0833a83933c9-1",
-          "line": 137,
+          "line": 133,
           "kind": "assertion",
           "expression": "assert.ok(Number.isInteger(data.frameDepth) && data.frameDepth > 0)"
         },
         {
           "id": "f664411d5ffd130d651c-1",
-          "line": 138,
+          "line": 134,
           "kind": "assertion",
           "expression": "assert.equal(typeof data.stdoutType, 'string')"
         },
         {
           "id": "61157cdac468e559bd02-1",
-          "line": 144,
+          "line": 140,
           "kind": "assertion",
           "expression": "assert.equal(report.readOnlyEnforced, false)"
         },
         {
           "id": "9f8e768bbeafd3d2a38b-1",
-          "line": 145,
+          "line": 141,
           "kind": "assertion",
           "expression": "assert.equal(report.automaticFallback, false)"
         },
         {
           "id": "dcd7e288833ad20e1415-1",
-          "line": 146,
+          "line": 142,
           "kind": "helper",
           "expression": "snapshot('before')"
         },
         {
           "id": "2512bd2f55b8dc4123aa-2",
-          "line": 149,
+          "line": 145,
           "kind": "helper",
           "expression": "success(out)"
         },
         {
           "id": "c5337518a86629ff9b4b-1",
-          "line": 150,
+          "line": 146,
           "kind": "assertion",
           "expression": "assert.ok(Array.isArray(out.data?.results), 'Missing bridged document results')"
         },
         {
           "id": "966bfc6d09a999f6bb9d-1",
-          "line": 151,
+          "line": 147,
           "kind": "assertion",
           "expression": "assert.deepEqual(JSON.parse(out.text), out.data)"
         },
         {
           "id": "705d951aad9ef397edad-1",
-          "line": 152,
+          "line": 148,
           "kind": "assertion",
           "expression": "assert.equal(out.data.results.length, report.before.documents.length)"
         },
         {
           "id": "189684e80e4ef1443bdd-1",
-          "line": 158,
+          "line": 154,
           "kind": "helper",
           "expression": "success(await script(`def run(_context: str):\\n print(\"${marker}\")`), marker)"
         },
         {
           "id": "1004277cd4f51bde9337-1",
-          "line": 168,
+          "line": 164,
           "kind": "helper",
           "expression": "success(await script(`def run(_context: str):\\n print(${JSON.stringify(unicode)})`), unicode)"
         },
         {
           "id": "5a0e7ae37aadd8810747-1",
-          "line": 170,
+          "line": 166,
           "kind": "helper",
           "expression": "success(out, 'ADAPTER_STDOUT')"
         },
         {
           "id": "64cb73ef32a838a2a67a-1",
-          "line": 171,
+          "line": 167,
           "kind": "assertion",
           "expression": "assert.equal(out.stderr.replace(/\\r\\n/g, '\\n'), 'ADAPTER_STDERR\\n')"
         },
         {
           "id": "299124ef8fa22b5451e8-1",
-          "line": 175,
+          "line": 171,
           "kind": "assertion",
           "expression": "assert.equal(out.failed, true)"
         },
         {
           "id": "89b1a4c3986686cd3444-1",
-          "line": 176,
+          "line": 172,
           "kind": "assertion",
           "expression": "assert.match(out.text, /ValueError/)"
         },
         {
           "id": "f195e36696e1c6417e74-1",
-          "line": 177,
+          "line": 173,
           "kind": "assertion",
           "expression": "assert.match(out.text, /ADAPTER_EXPECTED_EXCEPTION/)"
         },
         {
           "id": "365a81aa20ab2e44ba15-1",
-          "line": 179,
+          "line": 175,
           "kind": "helper",
           "expression": "success(await script('def run(_context: str):\\n print(\"ADAPTER_AFTER_EXCEPTION\")'), 'ADAPTER_AFTER_EXCEPTION')"
         },
         {
           "id": "ed9c1e86940873c41c3d-1",
-          "line": 189,
+          "line": 185,
           "kind": "assertion",
           "expression": "assert.rejects(call(request, tool), error => {\n          assert.match(error.message, /unsupported|unavailable/i);\n          assert.match(error.message, /--backend mcp/);\n          assert.match(error.message, /no .*fallback/i);\n          report.unsupported.push({ tool, request, error: error.message });\n          return true;\n        })"
         },
         {
           "id": "39f8d7c729a3c64f0995-1",
-          "line": 190,
+          "line": 186,
           "kind": "assertion",
           "expression": "assert.match(error.message, /unsupported|unavailable/i)"
         },
         {
           "id": "e123b1a59a40f0121c6b-1",
-          "line": 191,
+          "line": 187,
           "kind": "assertion",
           "expression": "assert.match(error.message, /--backend mcp/)"
         },
         {
           "id": "4faec1d581cfde75f0ef-1",
-          "line": 192,
+          "line": 188,
           "kind": "assertion",
           "expression": "assert.match(error.message, /no .*fallback/i)"
         },
         {
           "id": "dbf76528cdb9d00c257a-1",
-          "line": 199,
+          "line": 195,
           "kind": "helper",
           "expression": "snapshot('after')"
         },
         {
           "id": "43d3d3f6d4db68421987-1",
-          "line": 200,
+          "line": 196,
           "kind": "assertion",
           "expression": "assert.deepEqual(report.after.documents, report.before.documents)"
         },
         {
           "id": "734137216efa0ff12464-1",
-          "line": 201,
+          "line": 197,
           "kind": "assertion",
           "expression": "assert.equal(report.after.activeCreationId, report.before.activeCreationId)"
         },
         {
           "id": "2dec10209aad45318b1e-1",
-          "line": 202,
+          "line": 198,
           "kind": "assertion",
           "expression": "assert.equal(report.initializeCount, 1)"
         },
         {
           "id": "9568fe2e5fe4f6711504-1",
-          "line": 203,
+          "line": 199,
           "kind": "assertion",
           "expression": "assert.equal(report.markersCompleted, 450)"
         },
         {
           "id": "2789c84e11e1313291ad-1",
-          "line": 223,
+          "line": 219,
           "kind": "helper",
           "expression": "main()"
         }
@@ -13551,695 +13551,665 @@
     },
     {
       "source": "tests/live-gm07.js",
-      "sha256": "d7a8f1bbb86ec6677ee7ae01956ac8f3377fdbd1cdf31ccdfca4d1fe27c0d62c",
+      "sha256": "426c1bd5bc3676a7c33ac2b13f5035319371f806aa8871d17724031cc85e450e",
       "assertions": [
         {
+          "id": "ad3829845552c91e78e1-1",
+          "line": 68,
+          "kind": "assertion",
+          "expression": "assert.ok(path.isAbsolute(selectedRoot), 'FMCAD_LIVE_RUNTIME_ROOT must be an absolute path.')"
+        },
+        {
           "id": "e29d010f8cb7d360f380-1",
-          "line": 93,
+          "line": 95,
           "kind": "assertion",
           "expression": "assert.ok(passed, JSON.stringify(row))"
         },
         {
           "id": "95d77988eb6a157e34c0-1",
-          "line": 98,
+          "line": 100,
           "kind": "assertion",
           "expression": "assert.ok(method, operation + ' has no fixed-run invocation result to validate.')"
         },
         {
           "id": "7e1b11760ef234927b71-1",
-          "line": 106,
+          "line": 108,
           "kind": "assertion",
           "expression": "assert.ok(points.length >= 2, 'Native offset inspection returned too few points.')"
         },
         {
+          "id": "27537c0ce07240682f02-1",
+          "line": 116,
+          "kind": "assertion",
+          "expression": "assert.match(expectedBuild, /^[a-f0-9]{64}$/u, 'FMCAD_LIVE_BUILD_HASH must be a SHA-256 fingerprint.')"
+        },
+        {
           "id": "09627b4129daf85ad130-1",
-          "line": 120,
+          "line": 123,
           "kind": "assertion",
           "expression": "assert.equal(contract.fixtureId, fixtureId)"
         },
         {
           "id": "77f9474dd614eebd772e-1",
-          "line": 121,
+          "line": 124,
           "kind": "assertion",
           "expression": "assert.equal(contract.kind, 'fixed-run-v1')"
         },
         {
           "id": "217edc5f6d74dac661ce-1",
-          "line": 122,
+          "line": 125,
           "kind": "assertion",
           "expression": "assert.equal(contract.helperVersion, 'cad-v1')"
         },
         {
           "id": "12ef1323e9ebfbd5d3fb-1",
-          "line": 123,
+          "line": 126,
           "kind": "assertion",
           "expression": "assert.equal(contract.script, 'assets/native-qualification/gm07-curves.py')"
         },
         {
           "id": "654621855b7452ed76fb-1",
-          "line": 124,
+          "line": 127,
           "kind": "assertion",
           "expression": "assert.equal(contract.manifestSha256, expectedManifestSha256)"
         },
         {
           "id": "057d9d840629486f062a-1",
-          "line": 125,
+          "line": 128,
           "kind": "assertion",
           "expression": "assert.equal(contract.scriptSha256, expectedScriptSha256)"
         },
         {
           "id": "885417ffdbde10414634-1",
-          "line": 126,
+          "line": 129,
           "kind": "assertion",
           "expression": "assert.equal(fs.realpathSync(manifestPath), manifestPath, 'Manifest must come from the selected installed runtime.')"
         },
         {
           "id": "81f43f826107661d32fe-1",
-          "line": 127,
+          "line": 130,
           "kind": "assertion",
           "expression": "assert.equal(fs.realpathSync(scriptPath), scriptPath, 'Fixed source must come from the selected installed runtime.')"
         },
         {
           "id": "e6079a7dbb76b3c34c65-1",
-          "line": 128,
+          "line": 131,
           "kind": "assertion",
           "expression": "assert.equal(fs.realpathSync(cliPath), cliPath, 'CLI must come from the selected installed runtime.')"
         },
         {
           "id": "c34afc37915e4f052bc6-1",
-          "line": 133,
+          "line": 136,
           "kind": "assertion",
           "expression": "assert.equal(manifestSha256, expectedManifestSha256, 'Installed GM07 manifest differs from the pinned source.')"
         },
         {
           "id": "545d754e6a3c2ec787e7-1",
-          "line": 134,
+          "line": 137,
           "kind": "assertion",
           "expression": "assert.equal(scriptSha256, expectedScriptSha256, 'Installed GM07 source differs from the pinned source.')"
         },
         {
           "id": "6a24bc7356a879157236-1",
-          "line": 136,
+          "line": 139,
           "kind": "assertion",
           "expression": "assert.equal(manifest.fixtureId, fixtureId)"
         },
         {
           "id": "d995a2222146e97b180a-1",
-          "line": 137,
+          "line": 140,
           "kind": "assertion",
           "expression": "assert.equal(manifest.kind, 'fixed-run-v1')"
         },
         {
           "id": "01a0322603f12e895ff5-1",
-          "line": 138,
+          "line": 141,
           "kind": "assertion",
           "expression": "assert.equal(manifest.helperVersion, 'cad-v1')"
         },
         {
           "id": "2ba2839d192a3df2be3a-1",
-          "line": 139,
+          "line": 142,
           "kind": "assertion",
           "expression": "assert.deepEqual(manifest.argumentKeys, ['approved', 'creationId', 'expectedFusionVersion', 'fixturePrefix'])"
         },
         {
           "id": "917566fb1c5afc135220-1",
-          "line": 140,
+          "line": 143,
           "kind": "assertion",
           "expression": "assert.equal(manifest.callerCleanupRequired, true)"
         },
         {
           "id": "26a1cc1b569ef52b0a40-1",
-          "line": 141,
+          "line": 144,
           "kind": "assertion",
           "expression": "assert.match(manifest.scope, /exact owner-bound pristine unsaved scratch/)"
         },
         {
           "id": "17996022ae23b8d067a3-1",
-          "line": 144,
+          "line": 147,
           "kind": "assertion",
           "expression": "assert.equal(installedBuild.fingerprint, buildHash, 'Runtime fingerprint differs from installed package identity.')"
         },
         {
           "id": "daacc81b75794491d40b-1",
-          "line": 145,
+          "line": 148,
           "kind": "assertion",
           "expression": "assert.equal(buildHash, expectedBuild, 'Build differs from the offline-qualified candidate.')"
         },
         {
-          "id": "209299d51d490e108c00-1",
-          "line": 151,
-          "kind": "assertion",
-          "expression": "assert.equal(runtimeRoot, expectedRuntimeRoot, 'Use only the source-pinned GM07 candidate for offline checks.')"
+          "id": "ae97034ba34c32b7b1c4-1",
+          "line": 153,
+          "kind": "helper",
+          "expression": "runtimePins()"
         },
         {
-          "id": "7d568f6874f3b21d3a8e-1",
-          "line": 152,
+          "id": "1ebbd52aec0a800133c2-1",
+          "line": 154,
           "kind": "helper",
-          "expression": "fixedContract(runtimeRoot)"
+          "expression": "fixedContract(runtimeRoot, expectedBuildHash)"
         },
         {
           "id": "21ee34c42ef0d8e989b0-1",
-          "line": 156,
+          "line": 158,
           "kind": "assertion",
           "expression": "assert.equal(pythonCheck.status, 0, pythonCheck.stderr || String(pythonCheck.error))"
         },
         {
           "id": "f5de20d7a4005eaab0d8-1",
-          "line": 158,
+          "line": 160,
           "kind": "assertion",
           "expression": "assert.ok(catalog[operation], 'Missing canonical operation ' + operation)"
         },
         {
           "id": "76599fac49d70d9deaa7-1",
-          "line": 160,
+          "line": 162,
           "kind": "assertion",
           "expression": "assert.equal(contract.service.kind, 'python', operation + ' must use the Python SDK service.')"
         },
         {
           "id": "ddd6a74edd2a8d98b478-1",
-          "line": 161,
+          "line": 163,
           "kind": "assertion",
           "expression": "assert.equal(contract.requirements.sdk, 'required', operation + ' must not be local/node-only.')"
         },
         {
           "id": "586b74242de27430442e-1",
-          "line": 162,
+          "line": 164,
           "kind": "assertion",
           "expression": "assert.equal(contract.requirements.document, true, operation + ' must be document-pinned.')"
         },
         {
-          "id": "861f5d5e317313414fdc-1",
-          "line": 232,
-          "kind": "assertion",
-          "expression": "assert.equal(row.exitCode, 0, row.stderr || row.stdout)"
-        },
-        {
-          "id": "ceae854173886493fae2-1",
-          "line": 248,
-          "kind": "helper",
-          "expression": "lifecycleScript(`app = adsk.core.Application.get()\ndocs = [{\"name\": d.name, \"creationId\": d.creationId, \"fileId\": d.dataFile.id if d.dataFile else None, \"saved\": d.isSaved, \"modified\": d.isModified, \"active\": d == app.activeDocument} for d in app.documents]\nprint('LIVE_GM07 ' + json.dumps({\"version\": app.version, \"documents\": docs}))`)"
-        },
-        {
           "id": "f15b8d298ffae074b22e-1",
-          "line": 258,
+          "line": 190,
           "kind": "assertion",
           "expression": "assert.ok(process.argv.includes('--run'), 'Explicit --run is required; the default path never dispatches.')"
         },
         {
           "id": "6c5aeab14634c2ef9955-1",
-          "line": 374,
+          "line": 305,
           "kind": "assertion",
           "expression": "assert.deepEqual(envelope.helperCallsOnly.map(call => call.operation), expectedCalls)"
         },
         {
           "id": "ea6b1b8d819420a84655-1",
-          "line": 375,
+          "line": 306,
           "kind": "assertion",
           "expression": "assert.ok(envelope.helperCallsOnly.every(call => call.status === 'completed' && call.effects === 'observed'))"
         },
         {
           "id": "a9a5640d2c3ee28ed29f-1",
-          "line": 376,
+          "line": 307,
           "kind": "assertion",
           "expression": "assert.ok(envelope.result && typeof envelope.result === 'object')"
         },
         {
           "id": "ddc244d67df0e09dbf8c-1",
-          "line": 386,
+          "line": 316,
           "kind": "assertion",
           "expression": "assert.equal(payload.version, 1)"
         },
         {
           "id": "143b15f1cfb6688f58e5-1",
-          "line": 387,
+          "line": 317,
           "kind": "assertion",
           "expression": "assert.equal(payload.fixturePrefix, fixturePrefix)"
         },
         {
           "id": "51bfdcf689ee3037ee7c-1",
-          "line": 388,
+          "line": 318,
           "kind": "assertion",
           "expression": "assert.equal(payload.document?.creationId, identity.creationId)"
         },
         {
           "id": "c1169845a1984f69fb1b-1",
-          "line": 389,
+          "line": 319,
           "kind": "assertion",
           "expression": "assert.equal(payload.document?.name, identity.name)"
         },
         {
           "id": "4a4be5e4101c65de926e-1",
-          "line": 390,
+          "line": 320,
           "kind": "assertion",
           "expression": "assert.equal(payload.fusionVersion, fusionVersion)"
         },
         {
           "id": "a6d00faa04f9d0f6cd9b-1",
-          "line": 391,
+          "line": 321,
           "kind": "assertion",
           "expression": "assert.equal(payload.modelChangedByFixture, true)"
         },
         {
           "id": "7a71abe7b3ed94d19809-1",
-          "line": 392,
+          "line": 322,
           "kind": "assertion",
           "expression": "assert.equal(payload.nativeGeometry, true)"
         },
         {
           "id": "dd5681676e96ff822194-1",
-          "line": 393,
+          "line": 323,
           "kind": "assertion",
           "expression": "assert.equal(payload.designBefore?.bodyCount, 0)"
         },
         {
           "id": "45d2e6033537a95166e3-1",
-          "line": 394,
+          "line": 324,
           "kind": "assertion",
           "expression": "assert.equal(payload.designBefore?.sketchCount, 0)"
         },
         {
           "id": "1886badbe2438997f90a-1",
-          "line": 395,
+          "line": 325,
           "kind": "assertion",
           "expression": "assert.equal(payload.designBefore?.occurrenceCount, 0)"
         },
         {
           "id": "089ad94b34c50df549ec-1",
-          "line": 396,
+          "line": 326,
           "kind": "assertion",
           "expression": "assert.equal(payload.designBefore?.timelineCount, 0)"
         },
         {
           "id": "098e31d98b884bf2d8d0-1",
-          "line": 397,
+          "line": 327,
           "kind": "assertion",
           "expression": "assert.equal(payload.designBefore?.parameterCount, 0)"
         },
         {
           "id": "9756f3bd57261590acfe-1",
-          "line": 398,
+          "line": 328,
           "kind": "assertion",
           "expression": "assert.equal(payload.designAfter?.bodyCount, 0)"
         },
         {
           "id": "c33ddd7ee69b49818613-1",
-          "line": 399,
+          "line": 329,
           "kind": "assertion",
           "expression": "assert.equal(payload.designAfter?.sketchCount, 1)"
         },
         {
           "id": "b626975c0a7e4e3f10ff-1",
-          "line": 400,
+          "line": 330,
           "kind": "assertion",
           "expression": "assert.equal(payload.designAfter?.occurrenceCount, 0)"
         },
         {
           "id": "378d624ed517e9fafd0c-1",
-          "line": 401,
+          "line": 331,
           "kind": "assertion",
           "expression": "assert.equal(payload.document?.before?.creationId, identity.creationId)"
         },
         {
           "id": "7766f7d9e8300eafae33-1",
-          "line": 402,
+          "line": 332,
           "kind": "assertion",
           "expression": "assert.equal(payload.document?.after?.creationId, identity.creationId)"
         },
         {
           "id": "ac2773bb3aef485b0db0-1",
-          "line": 403,
+          "line": 333,
           "kind": "assertion",
           "expression": "assert.equal(payload.document?.before?.saved, false)"
         },
         {
           "id": "e01c53e55060450ea2fd-1",
-          "line": 404,
+          "line": 334,
           "kind": "assertion",
           "expression": "assert.equal(payload.document?.before?.modified, false)"
         },
         {
           "id": "dd9e845dfd8909780063-1",
-          "line": 405,
+          "line": 335,
           "kind": "assertion",
           "expression": "assert.equal(payload.document?.before?.fileId, null)"
         },
         {
           "id": "91b241d40c919a1167e1-1",
-          "line": 406,
+          "line": 336,
           "kind": "assertion",
           "expression": "assert.equal(payload.document?.after?.saved, false)"
         },
         {
           "id": "9f72643f10965b01ac5e-1",
-          "line": 407,
+          "line": 337,
           "kind": "assertion",
           "expression": "assert.equal(payload.document?.after?.modified, true)"
         },
         {
           "id": "8b4c11eaceea467a0344-1",
-          "line": 408,
+          "line": 338,
           "kind": "assertion",
           "expression": "assert.equal(payload.document?.after?.fileId, null)"
         },
         {
           "id": "5d85344e1233bacfe22a-1",
-          "line": 409,
+          "line": 339,
           "kind": "assertion",
           "expression": "assert.match(payload.cleanup, /owner must close and restore this exact unsaved document/)"
         },
         {
           "id": "75942d275fc2e6d4673c-1",
-          "line": 421,
+          "line": 351,
           "kind": "assertion",
           "expression": "assert.ok(Array.isArray(calls), 'Fixed GM07 result has no operation result list.')"
         },
         {
           "id": "f52dc6285a37b15cc175-1",
-          "line": 424,
+          "line": 354,
           "kind": "assertion",
           "expression": "assert.deepEqual(calls.map(call => call.operation), expected)"
         },
         {
           "id": "ac9137483028cbc8bca9-1",
-          "line": 427,
+          "line": 357,
           "kind": "assertion",
           "expression": "assert.ok(results.length, operation + ' is missing from the fixed GM07 result.')"
         },
         {
           "id": "cd6a112796925914de7d-1",
-          "line": 437,
+          "line": 367,
           "kind": "assertion",
           "expression": "assert.ok(matches[index]?.result, operation + ' result #' + index + ' is missing.')"
         },
         {
           "id": "4b68f27a7e57f1a9e22c-1",
-          "line": 442,
+          "line": 372,
           "kind": "helper",
           "expression": "recordCalls(payload)"
         },
         {
           "id": "e70d89f3b29d7c7845b2-1",
-          "line": 443,
+          "line": 373,
           "kind": "helper",
           "expression": "callResult(calls, 'sketch.create')"
         },
         {
           "id": "ebd32f83c2d4ea3189f3-1",
-          "line": 444,
+          "line": 374,
           "kind": "helper",
           "expression": "pushAssertion('sketch.create', 'fixed source returns one native sketch reference', created.sketch?.kind, 'sketch')"
         },
         {
           "id": "93a7c20000ca8df268e3-1",
-          "line": 445,
+          "line": 375,
           "kind": "helper",
           "expression": "validated('sketch.create', 'Fixed source created the exact named native sketch.')"
         },
         {
           "id": "1a7ce2123273ee358853-1",
-          "line": 447,
+          "line": 377,
           "kind": "helper",
           "expression": "callResult(calls, 'sketch.inspect')"
         },
         {
           "id": "847b3e9a27126308682d-1",
-          "line": 448,
+          "line": 378,
           "kind": "helper",
           "expression": "pushAssertion('sketch.inspect', 'fixed source begins from an empty sketch', empty.curves.length + empty.profiles.length, 0)"
         },
         {
           "id": "6ccd3104451f432ce473-1",
-          "line": 449,
+          "line": 379,
           "kind": "helper",
           "expression": "validated('sketch.inspect', 'Exact sketch baseline read back empty before curve creation.')"
         },
         {
           "id": "a33ee91cc0e6ff4888ba-1",
-          "line": 452,
+          "line": 382,
           "kind": "helper",
           "expression": "callResult(calls, operation)"
         },
         {
           "id": "90f3dd3af0975ef99f2a-1",
-          "line": 453,
+          "line": 383,
           "kind": "helper",
           "expression": "pushAssertion(operation, 'native fit error status', result.fitError.status, 'pass')"
         },
         {
           "id": "f2c0832b470abf7fec0f-1",
-          "line": 454,
+          "line": 384,
           "kind": "helper",
           "expression": "pushAssertion(operation, 'one native curve entity returned', result.entities.length, 1)"
         },
         {
           "id": "703eef07264b67e41eca-1",
-          "line": 455,
+          "line": 385,
           "kind": "helper",
           "expression": "validated(operation, 'Exact fixed open-line fixture returned one native curve.')"
         },
         {
           "id": "b6597aa4835a8e4ffd80-1",
-          "line": 458,
+          "line": 388,
           "kind": "helper",
           "expression": "callResult(calls, 'curve.inspect', 0)"
         },
         {
           "id": "186b28ca79a559091635-1",
-          "line": 459,
+          "line": 389,
           "kind": "helper",
           "expression": "pushAssertion('curve.inspect', 'fitted native curve inspection passes', inspectedFit.status, 'pass')"
         },
         {
           "id": "973178ffbed0a30b1b06-1",
-          "line": 460,
+          "line": 390,
           "kind": "helper",
           "expression": "pushAssertion('curve.inspect', 'one fitted native curve is inspected', inspectedFit.inspection.curves.length, 1)"
         },
         {
           "id": "cf4f5ba6f9dc20a7b3d9-1",
-          "line": 461,
+          "line": 391,
           "kind": "helper",
           "expression": "pushAssertion('curve.inspect', 'fitted native curve has no self-intersections', inspectedFit.inspection.selfIntersections.length, 0)"
         },
         {
           "id": "d15d62c164d9c4757e86-1",
-          "line": 463,
+          "line": 393,
           "kind": "helper",
           "expression": "callResult(calls, 'curve.offset')"
         },
         {
           "id": "b74db53bf6302921e7ff-1",
-          "line": 464,
+          "line": 394,
           "kind": "helper",
           "expression": "pushAssertion('curve.offset', 'native offset operation passes', offset.status, 'pass')"
         },
         {
           "id": "30a2152ff3744de3a467-1",
-          "line": 465,
+          "line": 395,
           "kind": "helper",
           "expression": "pushAssertion('curve.offset', 'one child offset curve is returned', offset.entities.length, 1)"
         },
         {
           "id": "54a90819cd45a656ecfd-1",
-          "line": 466,
+          "line": 396,
           "kind": "helper",
           "expression": "pushAssertion('curve.offset', 'native editable offset parameter is returned',\n    typeof offset.offsetParameter === 'string' && offset.offsetParameter.length > 0, true)"
         },
         {
           "id": "b5838e743e6642573f99-1",
-          "line": 468,
+          "line": 398,
           "kind": "helper",
           "expression": "validated('curve.offset', 'Native offset created and returned its actual editable parameter.')"
         },
         {
           "id": "8c605c9cd204ac057932-1",
-          "line": 470,
+          "line": 400,
           "kind": "helper",
           "expression": "callResult(calls, 'curve.inspect', 1)"
         },
         {
           "id": "15b1d0b3a3a8d489c565-1",
-          "line": 471,
+          "line": 401,
           "kind": "helper",
           "expression": "inspectY(inspectOffsetBefore)"
         },
         {
           "id": "d4e7461817ee271fbbc3-1",
-          "line": 472,
+          "line": 402,
           "kind": "helper",
           "expression": "pushAssertion('curve.inspect', 'native 1 mm offset readback in cm', before.meanAbsY, 0.1, 0.001)"
         },
         {
           "id": "eb80c8b5d7f6bafdd4de-1",
-          "line": 473,
+          "line": 403,
           "kind": "helper",
           "expression": "callResult(calls, 'curve.offset-edit')"
         },
         {
           "id": "a20f1a9b93376df77df4-1",
-          "line": 474,
+          "line": 404,
           "kind": "helper",
           "expression": "pushAssertion('curve.offset-edit', 'edited native parameter expression', edited.after.expression, '2 mm')"
         },
         {
           "id": "8ab6f1573f10490d00be-1",
-          "line": 475,
+          "line": 405,
           "kind": "helper",
           "expression": "pushAssertion('curve.offset-edit', 'edited native parameter value in cm', edited.after.value, 0.2, 0.001)"
         },
         {
           "id": "298163c21ff057246514-1",
-          "line": 476,
+          "line": 406,
           "kind": "helper",
           "expression": "validated('curve.offset-edit', { parameterBefore: edited.before, parameterAfter: edited.after,\n    inspectedOffsetBefore: before })"
         },
         {
           "id": "fc7bbc8814e1b96cda12-1",
-          "line": 479,
+          "line": 409,
           "kind": "helper",
           "expression": "callResult(calls, 'curve.inspect', 2)"
         },
         {
           "id": "9c34df9f30809229e6e1-1",
-          "line": 480,
+          "line": 410,
           "kind": "helper",
           "expression": "inspectY(inspectOffsetAfter)"
         },
         {
           "id": "e3b79cc5fd85363ee486-1",
-          "line": 481,
+          "line": 411,
           "kind": "helper",
           "expression": "pushAssertion('curve.inspect', 'native edited 2 mm offset readback in cm', after.meanAbsY, 0.2, 0.001)"
         },
         {
           "id": "ed506c8e583f2c79f1e5-1",
-          "line": 482,
+          "line": 412,
           "kind": "helper",
           "expression": "validated('curve.inspect', 'One fixed-run invocation read back the fitted curve and both sides of the offset edit.',\n    { fittedCurves: inspectedFit.inspection.curves.length, before, after })"
         },
         {
-          "id": "12bfeca5413a0a38690f-1",
-          "line": 497,
+          "id": "0153dc76c3528174c0e8-1",
+          "line": 426,
+          "kind": "assertion",
+          "expression": "assert.equal(identity.file, undefined, 'GM07 requires an unsaved owner scratch')"
+        },
+        {
+          "id": "0f629caa1904fdb4f553-1",
+          "line": 437,
           "kind": "helper",
-          "expression": "lifecycleScript(`app = adsk.core.Application.get()\nmatches = [d for d in app.documents if d.name == ${JSON.stringify(identity.name)} and d.creationId == ${JSON.stringify(identity.creationId)}]\nassert len(matches) == 1, 'Exact test-owned scratch identity ambiguous; leave open'\ndoc = matches[0]\nassert app.activeDocument == doc, 'Exact test-owned scratch is not active; do not switch documents'\nassert doc.dataFile is None and not doc.isSaved, 'Unexpected saved/cloud scratch; leave open'\nassert doc.isModified is ${expectedModified}, 'Scratch modification state differs from the settled test phase'\nrestore_id = ${JSON.stringify(restoreDocumentId)}\nexpected_others = sorted(tuple(row) for row in json.loads(${JSON.stringify(expectedOtherJson)}))\nbefore_others = sorted((d.name, d.creationId, d.dataFile.id if d.dataFile else None, d.isSaved, d.isModified)\n                       for d in app.documents if d.creationId != doc.creationId)\nassert before_others == expected_others, 'An existing document changed during the GM07 test'\nif restore_id is not None:\n    assert len([d for d in app.documents if d.creationId == restore_id]) == 1, 'Original active document disappeared'\nassert doc.close(False), 'Exact test-owned scratch close failed'\napp = adsk.core.Application.get()\nafter_others = sorted((d.name, d.creationId, d.dataFile.id if d.dataFile else None, d.isSaved, d.isModified)\n                      for d in app.documents)\nassert after_others == expected_others, 'Another document changed during exact scratch cleanup'\nactive_id = app.activeDocument.creationId if app.activeDocument else None\nassert active_id == restore_id, 'Original active document was not restored'\nprint('LIVE_GM07 ' + json.dumps({\"closedCreationId\": ${JSON.stringify(identity.creationId)},\n                                 \"activeCreationId\": active_id, \"remainingDocuments\": len(app.documents)}))`, false)"
+          "expression": "runFixedProgram(pinned, binding.owner.clientId, fusionVersion, binding.requestId)"
         },
         {
-          "id": "49fd3273f4c1bae7c60c-1",
-          "line": 498,
-          "kind": "embedded-python",
-          "expression": "]\nassert len(matches) == 1, 'Exact test-owned scratch identity ambiguous; leave open'\ndoc = matches[0]\nassert app.activeDocument == doc, 'Exact test-owned scratch is not active; do not switch documents'\nassert doc.dataFile is None and not doc.isSaved, 'Unexpected saved/cloud scratch; leave open'\nassert doc.isModified is "
-        },
-        {
-          "id": "217a8af1285f5d41678a-1",
-          "line": 505,
-          "kind": "embedded-python",
-          "expression": "))\nbefore_others = sorted((d.name, d.creationId, d.dataFile.id if d.dataFile else None, d.isSaved, d.isModified)\n                       for d in app.documents if d.creationId != doc.creationId)\nassert before_others == expected_others, 'An existing document changed during the GM07 test'\nif restore_id is not None:\n    assert len([d for d in app.documents if d.creationId == restore_id]) == 1, 'Original active document disappeared'\nassert doc.close(False), 'Exact test-owned scratch close failed'\napp = adsk.core.Application.get()\nafter_others = sorted((d.name, d.creationId, d.dataFile.id if d.dataFile else None, d.isSaved, d.isModified)\n                      for d in app.documents)\nassert after_others == expected_others, 'Another document changed during exact scratch cleanup'\nactive_id = app.activeDocument.creationId if app.activeDocument else None\nassert active_id == restore_id, 'Original active document was not restored'\nprint('LIVE_GM07 ' + json.dumps({\"closedCreationId\": "
-        },
-        {
-          "id": "d25f2601ebd2bcbbf195-1",
-          "line": 520,
+          "id": "25a7bab9a1072d69eb36-1",
+          "line": 439,
           "kind": "assertion",
-          "expression": "assert.equal(closed.closedCreationId, identity.creationId)"
+          "expression": "assert.ok(execution, 'Missing exact original GM07 result; do not replay')"
         },
         {
-          "id": "9a14543e2ead2a3bb37f-1",
-          "line": 521,
+          "id": "a61c5f41d9d999aace60-1",
+          "line": 440,
           "kind": "assertion",
-          "expression": "assert.equal(closed.activeCreationId, restoreDocumentId)"
+          "expression": "assert.equal(execution.brokerReceipt?.jobId, report.nativeRun.jobId, 'Foreign GM07 original job')"
         },
         {
-          "id": "7d568f6874f3b21d3a8e-2",
-          "line": 530,
-          "kind": "helper",
-          "expression": "fixedContract(runtimeRoot)"
-        },
-        {
-          "id": "0b73e31c1044e9849249-1",
-          "line": 536,
-          "kind": "helper",
-          "expression": "state()"
-        },
-        {
-          "id": "f1fdb5ba2d5d88dac61e-1",
-          "line": 539,
+          "id": "0c42b57971220412ebb0-1",
+          "line": 441,
           "kind": "assertion",
-          "expression": "assert.ok(!baseline.documents.some(doc => doc.name === name), 'Random GM07 fixture name already exists.')"
-        },
-        {
-          "id": "0b73e31c1044e9849249-2",
-          "line": 542,
-          "kind": "helper",
-          "expression": "state()"
-        },
-        {
-          "id": "26fdc7c423d7f018e2e8-1",
-          "line": 552,
-          "kind": "assertion",
-          "expression": "assert.equal(identity.name, name, 'CLI created a document with an unexpected name.')"
-        },
-        {
-          "id": "a362cf39ccad973f3c2f-1",
-          "line": 553,
-          "kind": "assertion",
-          "expression": "assert.match(identity.creationId, /^[0-9a-f-]{36}$/i, 'New scratch did not return an exact creationId.')"
-        },
-        {
-          "id": "e5c7cb2b93c3129e06b1-1",
-          "line": 554,
-          "kind": "assertion",
-          "expression": "assert.equal(added[0].fileId, null, 'New scratch unexpectedly has a cloud file ID.')"
-        },
-        {
-          "id": "2f6af638d05425bc9fb1-1",
-          "line": 555,
-          "kind": "assertion",
-          "expression": "assert.equal(added[0].saved, false, 'New scratch unexpectedly saved.')"
-        },
-        {
-          "id": "7d9068864ed66de9e7c9-1",
-          "line": 556,
-          "kind": "assertion",
-          "expression": "assert.equal(added[0].modified, false, 'New scratch was not pristine before the GM07 program.')"
-        },
-        {
-          "id": "7a9f2b9eca04fcb34d31-1",
-          "line": 557,
-          "kind": "assertion",
-          "expression": "assert.equal(added[0].active, true, 'New scratch was not active; do not switch documents.')"
-        },
-        {
-          "id": "592c6c1a67ed8e9a9df4-1",
-          "line": 572,
-          "kind": "helper",
-          "expression": "runFixedProgram(pinned, clientId, fusionVersion)"
+          "expression": "assert.equal(execution.brokerReceipt?.clientId, binding.owner.clientId, 'Foreign GM07 original owner')"
         },
         {
           "id": "8780cad6e5d94150a5fb-1",
-          "line": 579,
+          "line": 451,
           "kind": "helper",
           "expression": "runAssertions(payload)"
         },
         {
-          "id": "d1ff0952ca290bc4460d-1",
-          "line": 591,
+          "id": "ae97034ba34c32b7b1c4-2",
+          "line": 459,
           "kind": "helper",
-          "expression": "closeOwned()"
+          "expression": "runtimePins()"
+        },
+        {
+          "id": "1ebbd52aec0a800133c2-2",
+          "line": 460,
+          "kind": "helper",
+          "expression": "fixedContract(runtimeRoot, expectedBuildHash)"
+        },
+        {
+          "id": "9878772a4f92999867a3-1",
+          "line": 467,
+          "kind": "assertion",
+          "expression": "assert.equal(cfg.backend, 'addin')"
+        },
+        {
+          "id": "702dc1e5dbc0eabefc2a-1",
+          "line": 468,
+          "kind": "assertion",
+          "expression": "assert.equal(cfg.url, 'http://127.0.0.1:8765/mcp')"
+        },
+        {
+          "id": "47ceee0a8890f4e3179e-1",
+          "line": 477,
+          "kind": "helper",
+          "expression": "gm07OwnedScenario(pinned, fusionVersion, backend)"
+        },
+        {
+          "id": "e590ac7c29784a2241c3-1",
+          "line": 494,
+          "kind": "assertion",
+          "expression": "assert.equal(owned.status, 'passed', owned.error || owned.cleanupError || 'GM07 lifecycle failed')"
+        },
+        {
+          "id": "572d180ce4b083ff0fc1-1",
+          "line": 495,
+          "kind": "assertion",
+          "expression": "assert.equal(report.fixtureClosed, true, 'GM07 exact own cleanup incomplete')"
         },
         {
           "id": "59497ba94d153e90492b-1",
-          "line": 626,
+          "line": 509,
           "kind": "helper",
           "expression": "offlineCheck()"
         },
         {
           "id": "2789c84e11e1313291ad-1",
-          "line": 640,
+          "line": 523,
           "kind": "helper",
           "expression": "main()"
         },
         {
           "id": "43ab33a8b769968979a0-1",
-          "line": 643,
+          "line": 526,
           "kind": "helper",
           "expression": "entry()"
         }
@@ -16496,8 +16466,752 @@
       ]
     },
     {
+      "source": "tests/live-normal-multidocument-processes.js",
+      "sha256": "82a3c8b170bee21f0200144d4c37a9dd8752247075c4be40894d8aa3cf517144",
+      "assertions": [
+        {
+          "id": "50667508ecaedd16446b-1",
+          "line": 69,
+          "kind": "assertion",
+          "expression": "assert.ok(value && typeof value === \"object\" && !Array.isArray(value), label)"
+        },
+        {
+          "id": "bf38cc5a3f21f5812796-1",
+          "line": 74,
+          "kind": "helper",
+          "expression": "object(value, \"Expected native document inventory\")"
+        },
+        {
+          "id": "5bfc26821b75a6568f1b-1",
+          "line": 75,
+          "kind": "assertion",
+          "expression": "assert.ok(data.active === null || typeof data.active === \"string\")"
+        },
+        {
+          "id": "ea575a43bab67f7a75b2-1",
+          "line": 76,
+          "kind": "assertion",
+          "expression": "assert.ok(Array.isArray(data.documents))"
+        },
+        {
+          "id": "3b9ea65613ddaa849de2-1",
+          "line": 78,
+          "kind": "helper",
+          "expression": "object(item, \"Expected document row\")"
+        },
+        {
+          "id": "8a5bc1552e8ca562f0e8-1",
+          "line": 79,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row.id, \"string\")"
+        },
+        {
+          "id": "3fd1870224d2c2f29113-1",
+          "line": 80,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row.name, \"string\")"
+        },
+        {
+          "id": "6ea3eb1f2862791fc1e4-1",
+          "line": 81,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row.saved, \"boolean\")"
+        },
+        {
+          "id": "bcc0ecff6a023d06eca4-1",
+          "line": 82,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof row.modified, \"boolean\")"
+        },
+        {
+          "id": "90aacf6e6583957896ec-1",
+          "line": 97,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(state(after), state(before))"
+        },
+        {
+          "id": "4b99716a7dfcdc98fd7d-1",
+          "line": 97,
+          "kind": "helper",
+          "expression": "state(after)"
+        },
+        {
+          "id": "62a812eeea4beb7806cf-1",
+          "line": 97,
+          "kind": "helper",
+          "expression": "state(before)"
+        },
+        {
+          "id": "6a4c7647634e7f0c79f6-1",
+          "line": 125,
+          "kind": "helper",
+          "expression": "state(baseline)"
+        },
+        {
+          "id": "a87e8a6f8ef3a17ebe73-1",
+          "line": 144,
+          "kind": "assertion",
+          "expression": "assert.equal(current, 0)"
+        },
+        {
+          "id": "b4bc2df92091eb3cdde2-1",
+          "line": 149,
+          "kind": "assertion",
+          "expression": "assert.equal(reports.length, manifest.runners.length)"
+        },
+        {
+          "id": "8a3aa47e2f3a6de840d8-1",
+          "line": 150,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    new Set(identities.map((identity) => identity.pid)).size,\n    identities.length,\n    \"Runner PIDs must be distinct\",\n  )"
+        },
+        {
+          "id": "62292a7917089abebb34-1",
+          "line": 155,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    new Set(identities.map((identity) => identity.pid + \":\" + identity.birth))\n      .size,\n    identities.length,\n    \"Runner PID/birth identities must be distinct\",\n  )"
+        },
+        {
+          "id": "1801ca1c93c2dbc181ae-1",
+          "line": 161,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    identities.every(\n      (identity) =>\n        typeof identity.birth === \"string\" && identity.birth.length > 0,\n    ),\n    \"Runner births must be recorded, but clock ticks need not be unique across PIDs\",\n  )"
+        },
+        {
+          "id": "b8217b1e67665908514c-1",
+          "line": 169,
+          "kind": "helper",
+          "expression": "object(reports[index], \"Missing runner report\")"
+        },
+        {
+          "id": "dfa5fc7bfee3b2b0177d-1",
+          "line": 171,
+          "kind": "assertion",
+          "expression": "assert.equal(report.runId, runner.id)"
+        },
+        {
+          "id": "d665df3afb2ab7239ff9-1",
+          "line": 172,
+          "kind": "assertion",
+          "expression": "assert.equal(report.status, \"passed\", report.error || \"Runner failed\")"
+        },
+        {
+          "id": "4579b682e3d4d1c36eda-1",
+          "line": 173,
+          "kind": "assertion",
+          "expression": "assert.equal(report.buildHash, manifest.buildHash)"
+        },
+        {
+          "id": "6c932dafe820be048949-1",
+          "line": 174,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(report.processIdentity, identities[index])"
+        },
+        {
+          "id": "91ab34484649ba44bb2f-1",
+          "line": 175,
+          "kind": "assertion",
+          "expression": "assert.equal(report.processGroup?.id, manifest.id)"
+        },
+        {
+          "id": "a83ce3687e66fb741f92-1",
+          "line": 176,
+          "kind": "assertion",
+          "expression": "assert.equal(report.processGroup?.runnerId, runner.id)"
+        },
+        {
+          "id": "0ba1d99e3c6bc308f008-1",
+          "line": 177,
+          "kind": "assertion",
+          "expression": "assert.equal(report.documents.length, manifest.ownerCount)"
+        },
+        {
+          "id": "2d3f70e9ffc555af9a3d-1",
+          "line": 178,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(\n      report.documents.map((document) => document.name).sort(),\n      [...runner.documentNames].sort(),\n    )"
+        },
+        {
+          "id": "f5c24dbcc02361686853-1",
+          "line": 182,
+          "kind": "assertion",
+          "expression": "assert.equal(report.cleanup?.length, manifest.ownerCount)"
+        },
+        {
+          "id": "6af06d36e3506905ce9b-1",
+          "line": 185,
+          "kind": "helper",
+          "expression": "object(report.cleanup[owner], \"Missing close receipt\")"
+        },
+        {
+          "id": "2a903e2248d2b05e8302-1",
+          "line": 186,
+          "kind": "assertion",
+          "expression": "assert.equal(receipt.closed, true)"
+        },
+        {
+          "id": "fa85cf450fc66bf3df2c-1",
+          "line": 187,
+          "kind": "assertion",
+          "expression": "assert.equal(receipt.creationId, document.creationId)"
+        },
+        {
+          "id": "30918207af8c3ee9c6c2-1",
+          "line": 188,
+          "kind": "assertion",
+          "expression": "assert.equal(receipt.active, manifest.baseline.active)"
+        },
+        {
+          "id": "fe94316cff492cb36def-1",
+          "line": 190,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      report.receipts.every(\n        (receipt) =>\n          receipt.job &&\n          receipt.result?.job?.id === receipt.job.id &&\n          receipt.result?.job?.requestId === receipt.requestId &&\n          receipt.result?.job?.clientId === receipt.clientId &&\n          receipt.result?.execution?.sdkSettled === true,\n      ),\n      \"Every original request must retain its owner-bound terminal receipt\",\n    )"
+        },
+        {
+          "id": "fc00e2aeea317770040b-1",
+          "line": 214,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof stdout, \"string\")"
+        },
+        {
+          "id": "5f0e89bd5b00f620f9e5-1",
+          "line": 218,
+          "kind": "assertion",
+          "expression": "assert.equal(markers.length, 1, \"Expected one read-only snapshot result\")"
+        },
+        {
+          "id": "c7a138932ae422f006a4-1",
+          "line": 219,
+          "kind": "helper",
+          "expression": "state(JSON.parse(markers[0].slice(\"FMCAD_RESULT \".length)))"
+        },
+        {
+          "id": "c4f2fd6593d358c48282-1",
+          "line": 223,
+          "kind": "helper",
+          "expression": "object(await queue.call(\"queue-summary\"))"
+        },
+        {
+          "id": "d03dd1b8043b52b6f5ff-1",
+          "line": 224,
+          "kind": "assertion",
+          "expression": "assert.equal(finalStatus.blocked ?? null, null, \"Broker left blocked work\")"
+        },
+        {
+          "id": "77f9bceb6e2b3e3536a5-1",
+          "line": 225,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    finalStatus.held ?? null,\n    null,\n    \"Broker retained unresolved work\",\n  )"
+        },
+        {
+          "id": "40bb32eeb208d70f6f4e-1",
+          "line": 230,
+          "kind": "assertion",
+          "expression": "assert.equal(finalStatus.nonterminalJobCount, 0)"
+        },
+        {
+          "id": "4837e4c5b1b8c15bc3aa-1",
+          "line": 231,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    finalStatus.historicalUnknownJobCount,\n    historicalUnknownJobCount,\n    \"The multi-runner test must not alter quarantined historical outcomes\",\n  )"
+        },
+        {
+          "id": "2718ab095975ef93d2d4-1",
+          "line": 262,
+          "kind": "assertion",
+          "expression": "assert.equal(result.job.id, job.id)"
+        },
+        {
+          "id": "2cb295129712da9bcb01-1",
+          "line": 263,
+          "kind": "assertion",
+          "expression": "assert.equal(result.job.requestId, requestId)"
+        },
+        {
+          "id": "fcf95815d03fbc27818d-1",
+          "line": 264,
+          "kind": "assertion",
+          "expression": "assert.equal(result.job.clientId, queue.auth.clientId)"
+        },
+        {
+          "id": "e961ef9582681ce6202a-1",
+          "line": 265,
+          "kind": "assertion",
+          "expression": "assert.equal(result.execution.sdkSettled, true)"
+        },
+        {
+          "id": "849e23022697108c7012-1",
+          "line": 266,
+          "kind": "assertion",
+          "expression": "assert.equal(result.job.state, \"succeeded\", JSON.stringify(result))"
+        },
+        {
+          "id": "16d1b5158ddeaaf4d7fc-1",
+          "line": 267,
+          "kind": "helper",
+          "expression": "readMarker(result.stdout)"
+        },
+        {
+          "id": "a46e0f1107fd3964bd95-1",
+          "line": 293,
+          "kind": "helper",
+          "expression": "object(JSON.parse(fs.readFileSync(file, \"utf8\")))"
+        },
+        {
+          "id": "8996c70a4e7ce3cc7982-1",
+          "line": 308,
+          "kind": "helper",
+          "expression": "readReport(path.join(entry.directory, \"report.json\"))"
+        },
+        {
+          "id": "76a5eaae542ad4a90a32-1",
+          "line": 318,
+          "kind": "assertion",
+          "expression": "assert.equal(job.id, receipt.job.id)"
+        },
+        {
+          "id": "6bfca22e0f383c5d6c21-1",
+          "line": 319,
+          "kind": "assertion",
+          "expression": "assert.ok(\n        [\"preparing\", \"processing\", \"queued\"].includes(String(job.state)),\n        \"Runner read must remain pending behind the hold\",\n      )"
+        },
+        {
+          "id": "c2020b3e5e21a7d178eb-1",
+          "line": 323,
+          "kind": "assertion",
+          "expression": "assert.equal(job.startedAt ?? null, null)"
+        },
+        {
+          "id": "e7bf12a8d1bd27a45864-1",
+          "line": 324,
+          "kind": "assertion",
+          "expression": "assert.equal(job.clientId, receipt.clientId)"
+        },
+        {
+          "id": "e71454cc6e1b2915dc5a-1",
+          "line": 325,
+          "kind": "assertion",
+          "expression": "assert.equal(job.requestId, receipt.requestId)"
+        },
+        {
+          "id": "3fe9d73285a5d935d6ab-1",
+          "line": 326,
+          "kind": "assertion",
+          "expression": "assert.equal(rpcCount, 0)"
+        },
+        {
+          "id": "0c312b8e46432addd2e1-1",
+          "line": 361,
+          "kind": "assertion",
+          "expression": "assert.equal(error?.code, \"QUEUE_IPC_RESPONSE_LOST\")"
+        },
+        {
+          "id": "60eb2b3030fa2001a05b-1",
+          "line": 362,
+          "kind": "helper",
+          "expression": "object(\n      await queue.call(\"find-request\", { requestId: input.requestId }),\n    )"
+        },
+        {
+          "id": "753613a18de112862c31-1",
+          "line": 365,
+          "kind": "helper",
+          "expression": "object(original.job)"
+        },
+        {
+          "id": "52fccc5bbd0828dd6174-1",
+          "line": 366,
+          "kind": "assertion",
+          "expression": "assert.equal(job.requestId, input.requestId)"
+        },
+        {
+          "id": "7a39c8b1c3b05bbcc88f-1",
+          "line": 367,
+          "kind": "assertion",
+          "expression": "assert.equal(job.clientId, queue.auth.clientId)"
+        },
+        {
+          "id": "1131bc3c9039b34d411c-1",
+          "line": 423,
+          "kind": "helper",
+          "expression": "object(await queue.call(\"result\", { jobId }))"
+        },
+        {
+          "id": "f790442cd61261546e11-1",
+          "line": 424,
+          "kind": "helper",
+          "expression": "object(value.job)"
+        },
+        {
+          "id": "c8b477c8212d284427c5-1",
+          "line": 436,
+          "kind": "helper",
+          "expression": "observeJob(queue, jobId, (job) => {\n    assert.equal(job.id, jobId);\n    assert.equal(job.clientId, clientId);\n    assert.equal(job.requestId, requestId);\n    assert.ok(\n      [\"preparing\", \"processing\", \"queued\"].includes(String(job.state)),\n      \"Cancel probe must remain pending until it is cancellable\",\n    );\n    assert.equal(job.startedAt ?? null, null);\n    assert.equal(Number(job.dispatch?.rpcCount || 0), 0);\n    return job.state === \"queued\";\n  })"
+        },
+        {
+          "id": "20f39665a1e28e1b9dc2-1",
+          "line": 437,
+          "kind": "assertion",
+          "expression": "assert.equal(job.id, jobId)"
+        },
+        {
+          "id": "b92b2eefe7f6e595979c-1",
+          "line": 438,
+          "kind": "assertion",
+          "expression": "assert.equal(job.clientId, clientId)"
+        },
+        {
+          "id": "0e8520beadd50c1fd2ea-1",
+          "line": 439,
+          "kind": "assertion",
+          "expression": "assert.equal(job.requestId, requestId)"
+        },
+        {
+          "id": "65e7948e2d91ff9399cd-1",
+          "line": 440,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      [\"preparing\", \"processing\", \"queued\"].includes(String(job.state)),\n      \"Cancel probe must remain pending until it is cancellable\",\n    )"
+        },
+        {
+          "id": "c2020b3e5e21a7d178eb-2",
+          "line": 444,
+          "kind": "assertion",
+          "expression": "assert.equal(job.startedAt ?? null, null)"
+        },
+        {
+          "id": "3653a51867057876102e-1",
+          "line": 445,
+          "kind": "assertion",
+          "expression": "assert.equal(Number(job.dispatch?.rpcCount || 0), 0)"
+        },
+        {
+          "id": "0c312b8e46432addd2e1-2",
+          "line": 454,
+          "kind": "assertion",
+          "expression": "assert.equal(error?.code, \"QUEUE_IPC_RESPONSE_LOST\")"
+        },
+        {
+          "id": "7e2ea12b3dfa793c0492-1",
+          "line": 456,
+          "kind": "assertion",
+          "expression": "assert.equal(original?.job?.id, jobId)"
+        },
+        {
+          "id": "bd8786bcd8ad416f14bf-1",
+          "line": 457,
+          "kind": "assertion",
+          "expression": "assert.equal(original.job.requestId, requestId)"
+        },
+        {
+          "id": "7af6f54bc34ec6cd40f2-1",
+          "line": 458,
+          "kind": "assertion",
+          "expression": "assert.equal(original.job.clientId, queue.auth.clientId)"
+        },
+        {
+          "id": "ee0e53a5898b1d69e393-1",
+          "line": 481,
+          "kind": "assertion",
+          "expression": "assert.ok(holdQueue && cancelQueue && lostQueue && continuationQueue)"
+        },
+        {
+          "id": "12551ccaa62a24febb1c-1",
+          "line": 521,
+          "kind": "helper",
+          "expression": "observeJob(\n      holdQueue,\n      holdJob.id,\n      (job) =>\n        [\"running\", \"sending\"].includes(String(job.state)) &&\n        Number(job.dispatch?.rpcCount || 0) > 0,\n    )"
+        },
+        {
+          "id": "3561953c60cae364ecc8-1",
+          "line": 531,
+          "kind": "helper",
+          "expression": "waitForGroupReadJobs(\n      processes,\n      async (receipt) => {\n        let reader = readers.get(receipt.clientId);\n        if (!reader) {\n          reader = new QueueClient(receipt.clientId, {\n            cfg: { ...cfg, queue: { ...cfg.queue, autoStart: false } },\n            existingCredentialsOnly: true,\n          });\n          readers.set(receipt.clientId, reader);\n        }\n        const current = await reader.call(\"result\", { jobId: receipt.job.id });\n        return current.job;\n      },\n    )"
+        },
+        {
+          "id": "c5218851d07e376e4f4d-1",
+          "line": 547,
+          "kind": "assertion",
+          "expression": "assert.rejects(\n      cancelQueue.call(\"cancel\", { jobId: holdJob.id }),\n      (error) => error && error.code === \"NOT_OWNER\",\n      \"A foreign client must not cancel the live owner’s read-only turn\",\n    )"
+        },
+        {
+          "id": "be214cce0317d9ff5e8a-1",
+          "line": 565,
+          "kind": "helper",
+          "expression": "waitForCancelableJob(\n      cancelQueue,\n      cancelJob.id,\n      cancelQueue.auth.clientId,\n      ids.cancel,\n    )"
+        },
+        {
+          "id": "cba047be60fdc92f44ae-1",
+          "line": 571,
+          "kind": "assertion",
+          "expression": "assert.equal(queuedCancel.job.state, \"queued\")"
+        },
+        {
+          "id": "f9478ed2c870cf86b159-1",
+          "line": 572,
+          "kind": "helper",
+          "expression": "object(\n      await cancelQueue.call(\"cancel\", { jobId: cancelJob.id }),\n    )"
+        },
+        {
+          "id": "a36934a098d8fe3aba4f-1",
+          "line": 575,
+          "kind": "assertion",
+          "expression": "assert.equal(cancelled.id, cancelJob.id)"
+        },
+        {
+          "id": "784361cadc72d0d7acf7-1",
+          "line": 576,
+          "kind": "assertion",
+          "expression": "assert.equal(cancelled.clientId, cancelQueue.auth.clientId)"
+        },
+        {
+          "id": "ba7dfaf2ec6a8b98c5da-1",
+          "line": 577,
+          "kind": "assertion",
+          "expression": "assert.equal(cancelled.state, \"cancelled\")"
+        },
+        {
+          "id": "89f5c5c95b3d2b7bed2f-1",
+          "line": 578,
+          "kind": "assertion",
+          "expression": "assert.equal(cancelled.dispatch?.rpcCount || 0, 0)"
+        },
+        {
+          "id": "8f16cf1cc0253f653496-1",
+          "line": 619,
+          "kind": "helper",
+          "expression": "submitWithResponseRecovery(lostQueue, {\n      requestId: ids.lost,\n      ...(() => {\n        const { argv } = readOnlyProgram(\n          directory,\n          ids.lost,\n          'print(\"FMCAD_LOST_RESPONSE_ORIGINAL_JOB\")',\n        );\n        return {\n          kind: \"command\",\n          argv,\n          cwd: directory,\n          timeoutMs: 180000,\n          backend: cfg.backend,\n          buildHash: fingerprint,\n          inputFiles: inputFiles(argv, directory),\n          description:\n            \"Observe one original job after a dropped client response\",\n        };\n      })(),\n    })"
+        },
+        {
+          "id": "983745f82edb09359bb5-1",
+          "line": 640,
+          "kind": "assertion",
+          "expression": "assert.equal(recoveredAdmission.id, originalLostJobId)"
+        },
+        {
+          "id": "c90817cb2b17ddab508d-1",
+          "line": 653,
+          "kind": "helper",
+          "expression": "waitWithResponseRecovery(lostQueue, recoveredAdmission.id, ids.lost)"
+        },
+        {
+          "id": "546c75a755181258a31c-1",
+          "line": 657,
+          "kind": "assertion",
+          "expression": "assert.equal(holdResult.job.state, \"succeeded\")"
+        },
+        {
+          "id": "bc6d73546794cbbb9d1b-1",
+          "line": 658,
+          "kind": "assertion",
+          "expression": "assert.equal(holdResult.execution.sdkSettled, true)"
+        },
+        {
+          "id": "023e791efd52f35d0fd5-1",
+          "line": 659,
+          "kind": "assertion",
+          "expression": "assert.equal(lostResult.job.id, originalLostJobId)"
+        },
+        {
+          "id": "360ea26c98f6006ed7e2-1",
+          "line": 660,
+          "kind": "assertion",
+          "expression": "assert.equal(lostResult.job.requestId, ids.lost)"
+        },
+        {
+          "id": "eddb7c20aec168736167-1",
+          "line": 661,
+          "kind": "assertion",
+          "expression": "assert.equal(lostResult.job.clientId, lostQueue.auth.clientId)"
+        },
+        {
+          "id": "600a67f08f00d43d8e81-1",
+          "line": 662,
+          "kind": "assertion",
+          "expression": "assert.equal(lostResult.job.state, \"succeeded\")"
+        },
+        {
+          "id": "040787beb413885203b2-1",
+          "line": 665,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      lostResult.job.dispatch?.rpcCount,\n      cfg.backend === \"mcp\" ? 3 : 1,\n    )"
+        },
+        {
+          "id": "ef43524dfedc597e26da-1",
+          "line": 669,
+          "kind": "assertion",
+          "expression": "assert.equal(lostResult.execution.sdkSettled, true)"
+        },
+        {
+          "id": "bd667b9d0f0fc6de8d4f-1",
+          "line": 670,
+          "kind": "assertion",
+          "expression": "assert.equal(followerResult.job.clientId, continuationQueue.auth.clientId)"
+        },
+        {
+          "id": "d44a4be49922afe459bc-1",
+          "line": 671,
+          "kind": "assertion",
+          "expression": "assert.equal(followerResult.job.state, \"succeeded\")"
+        },
+        {
+          "id": "16977869a26b0d4a0b08-1",
+          "line": 672,
+          "kind": "assertion",
+          "expression": "assert.equal(followerResult.execution.sdkSettled, true)"
+        },
+        {
+          "id": "16b5e4ef6039ad443a02-1",
+          "line": 673,
+          "kind": "assertion",
+          "expression": "assert.equal(cancelledResult.job.state, \"cancelled\")"
+        },
+        {
+          "id": "cd5d4e6d6701e2fc74e4-1",
+          "line": 674,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(summary.faultProbe.responseDrops, [\"submit\", \"result\"])"
+        },
+        {
+          "id": "405d828f849936b2dc51-1",
+          "line": 703,
+          "kind": "helper",
+          "expression": "readReport(entry.readyFile)"
+        },
+        {
+          "id": "98e9815a7704115d3adf-1",
+          "line": 720,
+          "kind": "assertion",
+          "expression": "assert.ok([\"mcp\", \"addin\"].includes(protocol))"
+        },
+        {
+          "id": "bdac8d0778a1cf7570f0-1",
+          "line": 721,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    cfg.backend,\n    protocol,\n    \"The requested protocol must match configuration; no broker start or switch is attempted\",\n  )"
+        },
+        {
+          "id": "93586b3e12072f86609c-1",
+          "line": 726,
+          "kind": "assertion",
+          "expression": "assert.ok(fs.statSync(runnerScript).isFile(), \"Build live runner first\")"
+        },
+        {
+          "id": "c63ff25441cc9ae9ea4e-1",
+          "line": 756,
+          "kind": "helper",
+          "expression": "object(await queue.call(\"status\"), \"Missing broker status\")"
+        },
+        {
+          "id": "e45a02cae797b5cd8096-1",
+          "line": 757,
+          "kind": "assertion",
+          "expression": "assert.equal(status.buildHash, summary.buildHash)"
+        },
+        {
+          "id": "98fe31342a749e6de263-1",
+          "line": 758,
+          "kind": "assertion",
+          "expression": "assert.equal(status.blocked ?? null, null, \"Broker is blocked\")"
+        },
+        {
+          "id": "45a76d1c2ce25ca9e235-1",
+          "line": 759,
+          "kind": "assertion",
+          "expression": "assert.equal(status.held ?? null, null, \"Broker retains unresolved work\")"
+        },
+        {
+          "id": "14423cc418e16b6c4159-1",
+          "line": 761,
+          "kind": "helper",
+          "expression": "object(\n      await queue.call(\"queue-summary\"),\n      \"Missing broker summary\",\n    )"
+        },
+        {
+          "id": "84fc99fc378b1bb3b14d-1",
+          "line": 765,
+          "kind": "assertion",
+          "expression": "assert.equal(brokerStatus.buildHash, summary.buildHash)"
+        },
+        {
+          "id": "6ad8e9b38ba44cbe1e9e-1",
+          "line": 766,
+          "kind": "assertion",
+          "expression": "assert.equal(brokerStatus.admissionScope, \"normal-multidocument\")"
+        },
+        {
+          "id": "9112b4b690261460bd2f-1",
+          "line": 768,
+          "kind": "helper",
+          "expression": "capture(\n      queue,\n      cfg,\n      root,\n      id + \":baseline\",\n      summary.buildHash,\n    )"
+        },
+        {
+          "id": "c069c1cce1f77b0bc107-1",
+          "line": 777,
+          "kind": "helper",
+          "expression": "groupManifest(\n      id,\n      protocol,\n      summary.buildHash,\n      options.concurrency,\n      baselineCapture.state,\n      options.processes,\n    )"
+        },
+        {
+          "id": "8389c01a05ec04b2ea37-1",
+          "line": 847,
+          "kind": "helper",
+          "expression": "waitForRunnerReadiness(children)"
+        },
+        {
+          "id": "556380064ccb054c6019-1",
+          "line": 848,
+          "kind": "helper",
+          "expression": "runFaultProbe({\n      cfg,\n      directory: root,\n      groupId: id,\n      fingerprint: summary.buildHash,\n      processes: children,\n      releaseRunners,\n      abortRunners,\n      summary,\n      save,\n    })"
+        },
+        {
+          "id": "01ca4c87852dd659494c-1",
+          "line": 865,
+          "kind": "assertion",
+          "expression": "assert.equal(\n        results[index].code,\n        0,\n        \"Runner process failed; inspect its report and logs: \" +\n          entry.directory,\n      )"
+        },
+        {
+          "id": "305d1b05df682b0cc9c9-1",
+          "line": 875,
+          "kind": "helper",
+          "expression": "verifyRunnerReports(\n      manifest,\n      reports,\n      children.map((entry) => entry.processIdentity),\n    )"
+        },
+        {
+          "id": "e38489bebfcc747209d9-1",
+          "line": 886,
+          "kind": "helper",
+          "expression": "globalConcurrency(reports)"
+        },
+        {
+          "id": "bd691b882dd202ae0233-1",
+          "line": 887,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      summary.globalSdkConcurrency.maximum,\n      1,\n      \"Independent processes overlapped SDK work outside the single broker queue\",\n    )"
+        },
+        {
+          "id": "96b7db076eccca92ab4a-1",
+          "line": 892,
+          "kind": "helper",
+          "expression": "capture(\n      queue,\n      cfg,\n      root,\n      id + \":after\",\n      summary.buildHash,\n    )"
+        },
+        {
+          "id": "454b2e83d0cbd98a6ed2-1",
+          "line": 901,
+          "kind": "helper",
+          "expression": "exactState(summary.baseline, afterCapture.state)"
+        },
+        {
+          "id": "e62d8a9fa41f6023d01a-1",
+          "line": 902,
+          "kind": "helper",
+          "expression": "verifyFinalQueue(queue, summary.historicalUnknownJobCount)"
+        },
+        {
+          "id": "2789c84e11e1313291ad-1",
+          "line": 931,
+          "kind": "helper",
+          "expression": "main()"
+        }
+      ]
+    },
+    {
       "source": "tests/live-normal-multidocument.ts",
-      "sha256": "982a5d189b9235a80a13eebff75bbbbdab636b6a2010fe875656c135490e2e19",
+      "sha256": "e1abce411fc592c7c283773a0a91d0ff6d1093c050423341acedf40af7604da7",
       "assertions": [
         {
           "id": "4d9e4cb82cde1d875512-1",
@@ -16999,25 +17713,19 @@
         },
         {
           "id": "f7bfd3db7f614a142a80-2",
-          "line": 605,
+          "line": 643,
           "kind": "assertion",
           "expression": "assert.ok(first)"
         },
         {
-          "id": "f5096cef93f02d9429b2-2",
-          "line": 615,
-          "kind": "assertion",
-          "expression": "assert.ok(document)"
-        },
-        {
-          "id": "c6f9bcb89a6206f08541-1",
-          "line": 617,
+          "id": "79f9cd8ff42255a0a901-1",
+          "line": 657,
           "kind": "helper",
-          "expression": "script(\n                  index,\n                  \"failure-close\",\n                  ownedCleanupSource(\n                    document,\n                    report.before.active,\n                    \"FMCAD_RESULT \",\n                  ),\n                )"
+          "expression": "script(\n                      index,\n                      \"failure-close\",\n                      ownedCleanupSource(\n                        document,\n                        report.before.active,\n                        \"FMCAD_RESULT \",\n                      ),\n                    )"
         },
         {
           "id": "2789c84e11e1313291ad-1",
-          "line": 646,
+          "line": 731,
           "kind": "helper",
           "expression": "main()"
         }
@@ -17619,143 +18327,143 @@
     },
     {
       "source": "tests/live-recovery-ports.ts",
-      "sha256": "48c27c0eebb5dd959c0dd818fc165d8074c28ea2d63be2f8e44e9406af090e1a",
+      "sha256": "c8b17b2ab4c4541f555677bb4757c030cf08b3808a8781acbe1ca909b3720bd9",
       "assertions": [
         {
           "id": "eeaf1df12460ae2bf403-1",
-          "line": 131,
+          "line": 132,
           "kind": "embedded-python",
           "expression": "]\nassert len(owned)<=1\nif owned:\n    d=owned[0]\n    assert d.name=="
         },
         {
           "id": "e2d94a0a4bfa23aeb3de-1",
-          "line": 135,
+          "line": 136,
           "kind": "embedded-python",
           "expression": " and not d.isSaved\n    assert d.close(False)\nprevious=[d for d in a.documents if d.creationId=="
         },
         {
           "id": "dd077fc11d730d1e3036-1",
-          "line": 158,
+          "line": 159,
           "kind": "assertion",
           "expression": "assert.ok(\n    value !== null && typeof value === \"object\" && !Array.isArray(value),\n    \"Expected JSON object\",\n  )"
         },
         {
           "id": "374e93893e58ec09d534-1",
-          "line": 166,
+          "line": 167,
           "kind": "helper",
           "expression": "object(value)"
         },
         {
           "id": "374e93893e58ec09d534-2",
-          "line": 169,
+          "line": 170,
           "kind": "helper",
           "expression": "object(value)"
         },
         {
           "id": "7a8162bcf1cd2e9c71ab-1",
-          "line": 170,
+          "line": 171,
           "kind": "assertion",
           "expression": "assert.equal(typeof data[\"name\"], \"string\")"
         },
         {
           "id": "fbb11bf45ddf666e3db0-1",
-          "line": 171,
+          "line": 172,
           "kind": "assertion",
           "expression": "assert.equal(typeof data[\"creationId\"], \"string\")"
         },
         {
           "id": "374e93893e58ec09d534-3",
-          "line": 181,
+          "line": 182,
           "kind": "helper",
           "expression": "object(value)"
         },
         {
           "id": "f8e7e8fb03e00798293e-1",
-          "line": 182,
+          "line": 183,
           "kind": "assertion",
           "expression": "assert.equal(typeof data[\"buildHash\"], \"string\")"
         },
         {
           "id": "a79cee6e22f1c061daa2-1",
-          "line": 183,
+          "line": 184,
           "kind": "assertion",
           "expression": "assert.equal(typeof data[\"admissionScope\"], \"string\")"
         },
         {
           "id": "374e93893e58ec09d534-4",
-          "line": 190,
+          "line": 191,
           "kind": "helper",
           "expression": "object(value)"
         },
         {
           "id": "b978b83f0c87b16296eb-1",
-          "line": 191,
+          "line": 192,
           "kind": "helper",
           "expression": "object(data[\"job\"])"
         },
         {
           "id": "1324aa03264fb47f4bc5-1",
-          "line": 193,
+          "line": 194,
           "kind": "assertion",
           "expression": "assert.equal(typeof job[key], \"string\")"
         },
         {
           "id": "99876222da2bfc272781-1",
-          "line": 194,
+          "line": 195,
           "kind": "assertion",
           "expression": "assert.equal(typeof data[\"stdout\"], \"string\")"
         },
         {
           "id": "ee789a9848c0e29a5c9d-1",
-          "line": 195,
+          "line": 196,
           "kind": "helper",
           "expression": "object(data[\"execution\"])"
         },
         {
           "id": "374e93893e58ec09d534-5",
-          "line": 199,
+          "line": 200,
           "kind": "helper",
           "expression": "object(value)"
         },
         {
           "id": "8ce0e113fc151e611c75-1",
-          "line": 200,
+          "line": 201,
           "kind": "assertion",
           "expression": "assert.ok(data[\"active\"] === null || typeof data[\"active\"] === \"string\")"
         },
         {
           "id": "80a3aebd4a06755f4354-1",
-          "line": 201,
+          "line": 202,
           "kind": "assertion",
           "expression": "assert.ok(Array.isArray(data[\"documents\"]))"
         },
         {
           "id": "2d8b4fd5cbd4c1709606-1",
-          "line": 203,
+          "line": 204,
           "kind": "helper",
           "expression": "object(item)"
         },
         {
           "id": "9878fe7203b03be028a8-1",
-          "line": 204,
+          "line": 205,
           "kind": "assertion",
           "expression": "assert.equal(typeof row[\"id\"], \"string\")"
         },
         {
           "id": "b973b44b858d57cf9236-1",
-          "line": 205,
+          "line": 206,
           "kind": "assertion",
           "expression": "assert.equal(typeof row[\"name\"], \"string\")"
         },
         {
           "id": "6625105e34308deefece-1",
-          "line": 206,
+          "line": 207,
           "kind": "assertion",
           "expression": "assert.equal(typeof row[\"saved\"], \"boolean\")"
         },
         {
           "id": "311fd7e189a89d819e08-1",
-          "line": 207,
+          "line": 208,
           "kind": "assertion",
           "expression": "assert.equal(typeof row[\"modified\"], \"boolean\")"
         }
@@ -22125,563 +22833,695 @@
     },
     {
       "source": "tests/live-thread-method.js",
-      "sha256": "dade83d7984337932deb416a5f5a40488d454df6506e31a9ab3144e51c3433a8",
+      "sha256": "351f147ccfe7b592b9b67a6162a36f0a9a431c071892f92dc73dfab2d09edead",
       "assertions": [
         {
           "id": "861f5d5e317313414fdc-1",
-          "line": 93,
+          "line": 117,
           "kind": "assertion",
           "expression": "assert.equal(row.exitCode, 0, row.stderr || row.stdout)"
         },
         {
           "id": "c81b99f9e86b7a4f2f90-1",
-          "line": 108,
+          "line": 132,
           "kind": "helper",
           "expression": "script(`app = adsk.core.Application.get()\ndocs = [{\"name\": d.name, \"creationId\": d.creationId, \"fileId\": d.dataFile.id if d.dataFile else None, \"saved\": d.isSaved, \"modified\": d.isModified, \"active\": d == app.activeDocument} for d in app.documents]\nprint('LIVE_THREAD ' + json.dumps({\"version\": app.version, \"documents\": docs}))`)"
         },
         {
-          "id": "63c8affa1cf3e4b3c7c0-1",
-          "line": 117,
-          "kind": "assertion",
-          "expression": "assert.deepEqual(stable(current.documents.filter(doc => doc.creationId !== identity?.creationId)), stable(baseline.documents),\n    'A non-fixture document changed during thread method coverage.')"
-        },
-        {
           "id": "3ad63007e4bc89cdca57-1",
-          "line": 122,
+          "line": 146,
           "kind": "assertion",
           "expression": "assert.ok(identity?.creationId, 'No verified owned fixture ID.')"
         },
         {
           "id": "0b73e31c1044e9849249-1",
-          "line": 123,
+          "line": 147,
           "kind": "helper",
           "expression": "state()"
         },
         {
-          "id": "f8a455f969bc424f7b30-1",
-          "line": 124,
-          "kind": "helper",
-          "expression": "unchangedOthers(current)"
-        },
-        {
-          "id": "d0f78786805fc305d723-1",
-          "line": 126,
-          "kind": "assertion",
-          "expression": "assert.equal(matches.length, 1, 'Fixture name is ambiguous or missing.')"
-        },
-        {
-          "id": "d998d8f9b7f7b7587667-1",
-          "line": 127,
-          "kind": "assertion",
-          "expression": "assert.equal(matches[0].creationId, identity.creationId, 'Fixture name now refers to another document.')"
-        },
-        {
-          "id": "9aa1fd7851883215004b-1",
-          "line": 128,
-          "kind": "assertion",
-          "expression": "assert.equal(matches[0].fileId, null, 'Fixture unexpectedly has a cloud file ID.')"
-        },
-        {
-          "id": "1d76414b5ace57d8d3ef-1",
-          "line": 129,
-          "kind": "assertion",
-          "expression": "assert.equal(matches[0].saved, false, 'Fixture unexpectedly saved.')"
-        },
-        {
-          "id": "df1fef67c1d615764b45-1",
-          "line": 130,
-          "kind": "assertion",
-          "expression": "assert.equal(matches[0].active, true, 'Fixture is not active.')"
-        },
-        {
           "id": "8c51a3256c889c7ec592-1",
-          "line": 134,
+          "line": 153,
           "kind": "assertion",
           "expression": "assert.ok(catalog[operation], 'Unknown canonical operation: ' + operation)"
         },
         {
           "id": "785456949d5d328d7e91-1",
-          "line": 136,
+          "line": 155,
           "kind": "helper",
           "expression": "guard()"
         },
         {
           "id": "861f5d5e317313414fdc-2",
-          "line": 158,
+          "line": 177,
           "kind": "assertion",
           "expression": "assert.equal(row.exitCode, 0, row.stderr || row.stdout)"
         },
         {
           "id": "e80e43d750deb6633137-1",
-          "line": 159,
+          "line": 178,
           "kind": "assertion",
           "expression": "assert.equal(output.success, true, row.stdout)"
         },
         {
           "id": "a86b9c8cb536c9099fb9-1",
-          "line": 160,
+          "line": 179,
           "kind": "assertion",
           "expression": "assert.equal(output.operation, operation)"
         },
         {
           "id": "2417342c667ed7890a90-1",
-          "line": 161,
+          "line": 180,
           "kind": "assertion",
           "expression": "assert.equal(output.document, name)"
         },
         {
           "id": "a50586e2f08b9dbe2c31-1",
-          "line": 162,
+          "line": 181,
           "kind": "assertion",
           "expression": "assert.ok(output.result && typeof output.result === 'object' && Object.keys(output.result).length,\n    operation + ' returned no native result object.')"
         },
         {
           "id": "4eab3368f3207f476e8a-1",
-          "line": 175,
+          "line": 194,
           "kind": "assertion",
           "expression": "assert.ok(passed, label + ': ' + JSON.stringify({ actual, expected, tolerance }))"
         },
         {
           "id": "1fcbf956d86e189e2eca-1",
-          "line": 180,
+          "line": 199,
           "kind": "assertion",
           "expression": "assert.ok(method, operation + ' has no native invocation result to validate.')"
         },
         {
           "id": "785456949d5d328d7e91-2",
-          "line": 187,
+          "line": 206,
           "kind": "helper",
           "expression": "guard()"
         },
         {
-          "id": "16883b6755bbe6f38af3-1",
-          "line": 188,
+          "id": "6a9e8e72252a64a660a9-1",
+          "line": 207,
           "kind": "helper",
-          "expression": "script(`app = adsk.core.Application.get()\nmatches = [d for d in app.documents if d.name == ${JSON.stringify(name)} and d.creationId == ${JSON.stringify(identity.creationId)}]\nassert len(matches) == 1, 'Fixture identity ambiguous; leave open'\ndoc = matches[0]\nassert doc.dataFile is None and not doc.isSaved, 'Saved/cloud fixture; leave open'\nassert doc.close(False), 'Owned unsaved close failed'\nprint('LIVE_THREAD ' + json.dumps({\"closedCreationId\": ${JSON.stringify(identity.creationId)}}))`, false)"
+          "expression": "script(`app = adsk.core.Application.get()\nmatches = [d for d in app.documents if d.creationId == ${JSON.stringify(identity.creationId)}]\nassert len(matches) == 1 and matches[0].name == ${JSON.stringify(identity.name)}, 'Fixture identity ambiguous; leave open'\ndoc = matches[0]\nassert doc.dataFile is None and not doc.isSaved, 'Saved/cloud fixture; leave open'\nassert doc.close(False), 'Owned unsaved close failed'\nprint('LIVE_THREAD ' + json.dumps({\"closedCreationId\": ${JSON.stringify(identity.creationId)}}))`, false)"
         },
         {
-          "id": "918023bdace7a750e207-1",
-          "line": 189,
+          "id": "98844269c68941790960-1",
+          "line": 208,
           "kind": "embedded-python",
-          "expression": "]\nassert len(matches) == 1, 'Fixture identity ambiguous; leave open'\ndoc = matches[0]\nassert doc.dataFile is None and not doc.isSaved, 'Saved/cloud fixture; leave open'\nassert doc.close(False), 'Owned unsaved close failed'\nprint('LIVE_THREAD ' + json.dumps({\"closedCreationId\": "
+          "expression": "]\nassert len(matches) == 1 and matches[0].name == "
+        },
+        {
+          "id": "b6b17afece4a896ecec7-1",
+          "line": 209,
+          "kind": "embedded-python",
+          "expression": ", 'Fixture identity ambiguous; leave open'\ndoc = matches[0]\nassert doc.dataFile is None and not doc.isSaved, 'Saved/cloud fixture; leave open'\nassert doc.close(False), 'Owned unsaved close failed'\nprint('LIVE_THREAD ' + json.dumps({\"closedCreationId\": "
         },
         {
           "id": "2a48c56f62515c9b94a9-1",
-          "line": 195,
+          "line": 214,
           "kind": "assertion",
           "expression": "assert.equal(result.closedCreationId, identity.creationId)"
         },
         {
+          "id": "8d99fcd3d47db0d04ad0-1",
+          "line": 223,
+          "kind": "helper",
+          "expression": "script(`app = adsk.core.Application.get()\nmatches = [d for d in app.documents if d.creationId == ${JSON.stringify(originalActiveCreationId)}]\nassert len(matches) == 1 and matches[0].name == ${JSON.stringify(expected.name)}, 'Original active document identity changed'\nrestored = False\nif app.activeDocument is None:\n    assert matches[0].activate(), 'Original active document restoration failed'\n    restored = True\nprint('LIVE_THREAD ' + json.dumps({\"activeCreationId\": app.activeDocument.creationId if app.activeDocument else None, \"restored\": restored}))`, false)"
+        },
+        {
+          "id": "98844269c68941790960-2",
+          "line": 224,
+          "kind": "embedded-python",
+          "expression": "]\nassert len(matches) == 1 and matches[0].name == "
+        },
+        {
+          "id": "5db21ba625839cad4009-1",
+          "line": 225,
+          "kind": "embedded-python",
+          "expression": ", 'Original active document identity changed'\nrestored = False\nif app.activeDocument is None:\n    assert matches[0].activate(), 'Original active document restoration failed'\n    restored = True\nprint('LIVE_THREAD ' + json.dumps({\"activeCreationId\": app.activeDocument.creationId if app.activeDocument else None, \"restored\": restored}))"
+        },
+        {
+          "id": "a8f22f9470d01ce94595-1",
+          "line": 266,
+          "kind": "helper",
+          "expression": "script(`from typing import cast\napp = adsk.core.Application.get()\ndoc = app.documents.add(cast(adsk.core.DocumentTypes, adsk.core.DocumentTypes.FusionDesignDocumentType))\ndoc.name = ${JSON.stringify(name)}\nprint('LIVE_THREAD ' + json.dumps({\"name\": doc.name, \"creationId\": doc.creationId, \"requestId\": ${JSON.stringify(requestId)}, \"clientId\": ${JSON.stringify(owner.clientId)}, \"activeCreationId\": app.activeDocument.creationId if app.activeDocument else None}))`, false, requestId)"
+        },
+        {
+          "id": "0c7f3a44833eac495184-1",
+          "line": 278,
+          "kind": "assertion",
+          "expression": "assert.equal(result.state, 'succeeded', 'Original creation request did not succeed.')"
+        },
+        {
+          "id": "93abec82127034d20553-1",
+          "line": 279,
+          "kind": "assertion",
+          "expression": "assert.equal(result.sdkSettled, true, 'Original creation SDK request is unsettled.')"
+        },
+        {
+          "id": "67d00c9b28a6c148cff3-1",
+          "line": 280,
+          "kind": "assertion",
+          "expression": "assert.equal(result.mayHaveMutated, true)"
+        },
+        {
+          "id": "eeb124b26b0dbb55c2dc-1",
+          "line": 281,
+          "kind": "assertion",
+          "expression": "assert.equal(result.brokerReceipt.jobId, accepted.jobId)"
+        },
+        {
+          "id": "3fd748df4de797514f5d-1",
+          "line": 282,
+          "kind": "assertion",
+          "expression": "assert.equal(result.brokerReceipt.state, 'succeeded')"
+        },
+        {
+          "id": "f6e8fea17a9eb4b65a45-1",
+          "line": 284,
+          "kind": "assertion",
+          "expression": "assert.equal(lines.length, 1, 'Creation receipt has no exact fixture identity.')"
+        },
+        {
+          "id": "7b935c68489d644df562-1",
+          "line": 286,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(created, value, 'Returned and original creation results differ.')"
+        },
+        {
+          "id": "899b42a31b71a061a31f-1",
+          "line": 287,
+          "kind": "assertion",
+          "expression": "assert.equal(value.name, name)"
+        },
+        {
+          "id": "f1755a3fae7db26a3b5e-1",
+          "line": 288,
+          "kind": "assertion",
+          "expression": "assert.equal(value.requestId, requestId)"
+        },
+        {
+          "id": "3eb259087b11c28458fc-1",
+          "line": 289,
+          "kind": "assertion",
+          "expression": "assert.equal(value.clientId, owner.clientId)"
+        },
+        {
+          "id": "e226838574ee1060b382-1",
+          "line": 290,
+          "kind": "assertion",
+          "expression": "assert.equal(value.activeCreationId, value.creationId)"
+        },
+        {
           "id": "0b73e31c1044e9849249-2",
-          "line": 204,
+          "line": 307,
           "kind": "helper",
           "expression": "state()"
         },
         {
-          "id": "3cafcb0829bb46d29d72-1",
-          "line": 207,
-          "kind": "assertion",
-          "expression": "assert.ok(!baseline.documents.some(doc => doc.name === name), 'Fixture name already exists.')"
-        },
-        {
-          "id": "7c1ebc5c285e6f78af81-1",
-          "line": 210,
-          "kind": "assertion",
-          "expression": "assert.equal(created.exitCode, 0, created.stderr || created.stdout)"
+          "id": "9eee3e7dc67abd3b3bcc-1",
+          "line": 331,
+          "kind": "helper",
+          "expression": "createOwnedFixture(runtime)"
         },
         {
           "id": "0b73e31c1044e9849249-3",
-          "line": 211,
+          "line": 332,
           "kind": "helper",
           "expression": "state()"
         },
         {
-          "id": "3b7805c6a319d8d455de-1",
-          "line": 213,
-          "kind": "assertion",
-          "expression": "assert.equal(added.length, 1, 'Document creation did not create exactly one fixture.')"
-        },
-        {
-          "id": "91e485bc098e4457be5c-1",
-          "line": 214,
-          "kind": "assertion",
-          "expression": "assert.equal(added[0].name, name)"
-        },
-        {
-          "id": "6cbcd6758995abd56430-1",
-          "line": 215,
-          "kind": "assertion",
-          "expression": "assert.equal(added[0].fileId, null)"
-        },
-        {
-          "id": "6ce91a13c449eb5f4c4d-1",
-          "line": 216,
-          "kind": "assertion",
-          "expression": "assert.equal(added[0].saved, false)"
-        },
-        {
           "id": "785456949d5d328d7e91-3",
-          "line": 223,
+          "line": 337,
           "kind": "helper",
           "expression": "guard()"
         },
         {
-          "id": "31079a08c172d00812c6-1",
-          "line": 224,
+          "id": "f8f7467e59cd0499dc88-1",
+          "line": 338,
           "kind": "helper",
-          "expression": "cad('shape.cylinder', { name: 'ThreadCylinder', radius: '5 mm', height: '20 mm' })"
+          "expression": "script(threadInfoBody(identity) + \"\\nprint('LIVE_THREAD ' + json.dumps(thread_result))\")"
+        },
+        {
+          "id": "5c0e0135506f9c1e1e46-1",
+          "line": 342,
+          "kind": "helper",
+          "expression": "cad('shape.cylinder', { name: 'ThreadCylinder', radius, height: '20 mm' })"
         },
         {
           "id": "5e183349192460d0f237-1",
-          "line": 225,
+          "line": 343,
           "kind": "helper",
           "expression": "check('shape.cylinder', 'one cylindrical fixture body returned', cylinder.bodies.length, 1)"
         },
         {
           "id": "78b8f2870af4aaf0a29a-1",
-          "line": 226,
+          "line": 344,
           "kind": "helper",
           "expression": "validated('shape.cylinder')"
         },
         {
-          "id": "05ace9b205548de7a3c8-1",
-          "line": 228,
+          "id": "ca88fb4fa31cbaaf135f-1",
+          "line": 346,
           "kind": "helper",
-          "expression": "cad('entity.find', { kind: 'face', filters: { geometry: 'cylinder', radius: '5 mm' }, unique: true })"
+          "expression": "cad('entity.find', { kind: 'face', scope: { body }, filters: { geometry: 'cylinder', radius }, unique: true })"
         },
         {
           "id": "d388d7c541bf0657ee33-1",
-          "line": 229,
+          "line": 347,
           "kind": "helper",
           "expression": "check('entity.find', 'one exact outer cylindrical face selected', face.kind, 'face')"
         },
         {
           "id": "0b8d7791d8f5ca6cfabb-1",
-          "line": 230,
+          "line": 348,
           "kind": "helper",
           "expression": "validated('entity.find')"
         },
         {
           "id": "669098d7ccc44a7afc47-1",
-          "line": 232,
+          "line": 350,
           "kind": "helper",
           "expression": "cad('measure.volume', { ref: body, units: 'mm3' })"
         },
         {
           "id": "7d3222a1201ebb356770-1",
-          "line": 233,
+          "line": 351,
           "kind": "helper",
           "expression": "validated('measure.volume')"
         },
         {
           "id": "9d6ac6c174f2725b1a5a-1",
-          "line": 234,
+          "line": 352,
           "kind": "helper",
           "expression": "cad('entity.list', { kind: 'feature' })"
         },
         {
           "id": "4fe25d865177eb2ce3d6-1",
-          "line": 235,
+          "line": 353,
           "kind": "helper",
           "expression": "validated('entity.list')"
         },
         {
-          "id": "60a43cb9b0f6c7d27ea7-1",
-          "line": 238,
+          "id": "d0ff829caad7e0f293db-1",
+          "line": 356,
           "kind": "helper",
-          "expression": "cad('thread.catalog', { schemaVersion: 1, frame: 'component',\n      system: 'iso-metric-coarse', query: 'M10x1.5', starts: 2 })"
+          "expression": "cad('thread.catalog', { schemaVersion: 1, frame: 'component',\n      system: 'iso-metric-coarse', query: 'M10', starts: 2 })"
         },
         {
-          "id": "c59ccc96d015e71b0711-1",
-          "line": 240,
+          "id": "0774bef31b7587fba7c6-1",
+          "line": 358,
           "kind": "helper",
-          "expression": "check('thread.catalog', 'curated query returns exactly M10x1.5', catalogResult.entries.length, 1)"
+          "expression": "check('thread.catalog', 'curated query returns exactly one M10 entry', catalogResult.entries.length, 1)"
+        },
+        {
+          "id": "91fe063a9a8ee69d84a8-1",
+          "line": 359,
+          "kind": "helper",
+          "expression": "check('thread.catalog', 'curated designation is M10, not a native thread selector', catalogResult.entries[0].designation, 'M10')"
         },
         {
           "id": "04cc72cfc9eaf91d7b87-1",
-          "line": 241,
+          "line": 360,
           "kind": "helper",
           "expression": "check('thread.catalog', 'catalog result identifies the curated ISO subset', catalogResult.curated, true)"
         },
         {
           "id": "a7a9af8fe4273322a982-1",
-          "line": 242,
+          "line": 361,
           "kind": "helper",
           "expression": "check('thread.catalog', 'multi-start lead equals two starts times 1.5 mm pitch', catalogResult.entries[0].lead.value, 3, 1e-9)"
         },
         {
           "id": "c2abe147755597614317-1",
-          "line": 243,
+          "line": 362,
           "kind": "helper",
           "expression": "validated('thread.catalog')"
         },
         {
           "id": "2dd962146b2ccb29a08d-1",
-          "line": 245,
+          "line": 364,
           "kind": "helper",
           "expression": "cad('thread.custom-profile', { schemaVersion: 1, frame: 'component', majorDiameter: '10 mm',\n      minorDiameter: '8.16 mm', pitch: '1.5 mm', starts: 2, hand: 'left', flankAngle: '60 deg',\n      rootShape: 'rounded', length: '12 mm', runout: '0.5 mm', clearance: '0.1 mm' })"
         },
         {
           "id": "a08865fe7dbf93fe827e-1",
-          "line": 248,
+          "line": 367,
           "kind": "helper",
           "expression": "check('thread.custom-profile', 'custom profile is explicitly a recipe', custom.representation, 'recipe')"
         },
         {
           "id": "a7de5c0dbae23a958952-1",
-          "line": 249,
+          "line": 368,
           "kind": "helper",
           "expression": "check('thread.custom-profile', 'custom profile lead is 3 mm', custom.profile.lead.value, 3, 1e-9)"
         },
         {
           "id": "a2c3a8af06ef109a0135-1",
-          "line": 250,
+          "line": 369,
           "kind": "helper",
           "expression": "check('thread.custom-profile', 'custom profile has 0.92 mm radial depth', custom.profile.depth.value, 0.92, 1e-9)"
         },
         {
           "id": "4ec081664f32f02f00fc-1",
-          "line": 251,
+          "line": 370,
           "kind": "helper",
           "expression": "check('thread.custom-profile', 'custom profile retains left hand and rounded root',\n      custom.profile.hand + '|' + custom.profile.rootShape, 'left|rounded')"
         },
         {
           "id": "925dd1021c269a1ff093-1",
-          "line": 253,
+          "line": 372,
           "kind": "helper",
           "expression": "check('thread.custom-profile', 'turns-per-length is separate from lead', custom.profile.turnsPerLength.value, 1 / 3, 1e-9)"
         },
         {
           "id": "6e339b1d611eab82f789-1",
-          "line": 254,
+          "line": 373,
           "kind": "helper",
           "expression": "validated('thread.custom-profile')"
         },
         {
           "id": "f25787a4bc4cb90504c1-1",
-          "line": 256,
+          "line": 375,
           "kind": "helper",
           "expression": "cad('thread.pair-check', { schemaVersion: 1, frame: 'component',\n      external: { majorDiameter: '10 mm', minorDiameter: '8.16 mm', pitch: '1.5 mm', starts: 1, hand: 'right' },\n      internal: { majorDiameter: '10 mm', minorDiameter: '8.38 mm', pitch: '1.5 mm', starts: 1, hand: 'right' } })"
         },
         {
           "id": "db143ac759184789a946-1",
-          "line": 259,
+          "line": 378,
           "kind": "helper",
           "expression": "check('thread.pair-check', 'matching ISO-style thread pair fits', pair.pairFit, 'pass')"
         },
         {
           "id": "849031c705097394fcb0-1",
-          "line": 260,
+          "line": 379,
           "kind": "helper",
           "expression": "check('thread.pair-check', 'hand, lead, starts, radial fit and engagement checks pass',\n      pair.checks.every(item => item.status === 'pass'), true)"
         },
         {
           "id": "90a8609cd33b71468273-1",
-          "line": 262,
+          "line": 381,
           "kind": "helper",
           "expression": "check('thread.pair-check', 'radial engagement depth is 0.81 mm', pair.engagementDepth.value, 0.81, 1e-9)"
         },
         {
           "id": "4cf3ab17c8c8c7d22a71-1",
-          "line": 263,
+          "line": 382,
           "kind": "helper",
           "expression": "check('thread.pair-check', '60-degree profile is identified as ISO-style V', pair.crossSection.type, 'ISO-style 60-degree V')"
         },
         {
           "id": "3f25914d3d8a12202566-1",
-          "line": 264,
+          "line": 383,
           "kind": "helper",
           "expression": "validated('thread.pair-check')"
         },
         {
           "id": "9d6ac6c174f2725b1a5a-2",
-          "line": 268,
+          "line": 387,
           "kind": "helper",
           "expression": "cad('entity.list', { kind: 'feature' })"
         },
         {
           "id": "3dea46b986635fe19bcc-1",
-          "line": 269,
+          "line": 388,
           "kind": "helper",
           "expression": "cad('model.thread', { name: 'ThreadRecipe', faces: [face], internal: false,\n      profile: { majorDiameter: '10 mm', minorDiameter: '8.16 mm', pitch: '1.5 mm', starts: 2, hand: 'left',\n        flankAngle: '60 deg', rootShape: 'rounded', runout: '0.5 mm', clearance: '0.1 mm' }, length: '12 mm' })"
         },
         {
           "id": "9e816376fcec1936c071-1",
-          "line": 272,
+          "line": 391,
           "kind": "helper",
           "expression": "check('model.thread', 'custom-profile branch returns recipe representation', recipe.representation, 'recipe')"
         },
         {
           "id": "7fbbb2f2ca41c0310b85-1",
-          "line": 273,
+          "line": 392,
           "kind": "helper",
           "expression": "check('model.thread', 'custom-profile branch does not claim a native feature', recipe.feature, null)"
         },
         {
           "id": "1609de4e82f5c8575fa6-1",
-          "line": 274,
+          "line": 393,
           "kind": "helper",
           "expression": "check('model.thread', 'custom-profile recipe lead equals starts × pitch', recipe.lead.value, 3, 1e-8)"
         },
         {
           "id": "2a840950abfb0a8d64d5-1",
-          "line": 275,
+          "line": 394,
           "kind": "helper",
           "expression": "check('model.thread', 'custom-profile recipe preserves left hand', recipe.hand, 'left')"
         },
         {
           "id": "d4ec5478841cbe87d974-1",
-          "line": 276,
+          "line": 395,
           "kind": "helper",
           "expression": "check('model.thread', 'custom-profile depth equals half major-minus-minor diameter', recipe.profile.depth.value, 0.92, 1e-8)"
         },
         {
           "id": "e1f0338737e048f36304-1",
-          "line": 277,
+          "line": 396,
           "kind": "helper",
           "expression": "check('model.thread', 'custom-profile length is returned in mm', recipe.length.value, 12, 1e-8)"
         },
         {
           "id": "9ebd21b6d9b643d5c368-1",
-          "line": 278,
+          "line": 397,
           "kind": "helper",
           "expression": "check('model.thread', 'custom-profile notes the native helical-tooth limitation',\n      recipe.note.includes('no persistent Coil/helical-path API'), true)"
         },
         {
           "id": "4e4e9649ba6be2c1b10e-1",
-          "line": 280,
+          "line": 399,
           "kind": "helper",
           "expression": "validated('model.thread')"
         },
         {
           "id": "9d6ac6c174f2725b1a5a-3",
-          "line": 281,
+          "line": 400,
           "kind": "helper",
           "expression": "cad('entity.list', { kind: 'feature' })"
         },
         {
           "id": "bde81fbabe0a1c3a946d-1",
-          "line": 282,
+          "line": 401,
           "kind": "helper",
           "expression": "check('entity.list', 'recipe branch creates no additional native feature', afterRecipe.entities.length, beforeRecipe.entities.length)"
         },
         {
           "id": "4fe25d865177eb2ce3d6-2",
-          "line": 283,
+          "line": 402,
           "kind": "helper",
           "expression": "validated('entity.list')"
         },
         {
           "id": "669098d7ccc44a7afc47-2",
-          "line": 284,
+          "line": 403,
           "kind": "helper",
           "expression": "cad('measure.volume', { ref: body, units: 'mm3' })"
         },
         {
           "id": "7ee78d391dbde97c0a1b-1",
-          "line": 285,
+          "line": 404,
           "kind": "helper",
           "expression": "check('measure.volume', 'recipe branch leaves native cylinder volume unchanged', recipeVolume.value, volumeBefore.value, 0.001)"
         },
         {
           "id": "7d3222a1201ebb356770-2",
-          "line": 286,
+          "line": 405,
           "kind": "helper",
           "expression": "validated('measure.volume')"
         },
         {
           "id": "bc75c009cf5616bd346e-1",
-          "line": 290,
+          "line": 409,
           "kind": "helper",
           "expression": "cad('model.thread', { name: 'TabularM10', faces: [face], internal: false,\n      threadType: 'ISO Metric profile', designation: 'M10x1.5', class: '6g', modeled: false, rightHanded: true })"
         },
         {
           "id": "5fe02b789fe0b1f432be-1",
-          "line": 292,
+          "line": 411,
           "kind": "helper",
           "expression": "check('model.thread', 'tabular thread returns a feature reference', tabular.feature?.kind, 'feature')"
         },
         {
           "id": "4e4e9649ba6be2c1b10e-2",
-          "line": 293,
+          "line": 412,
           "kind": "helper",
           "expression": "validated('model.thread')"
         },
         {
           "id": "9d6ac6c174f2725b1a5a-4",
-          "line": 294,
+          "line": 413,
           "kind": "helper",
           "expression": "cad('entity.list', { kind: 'feature' })"
         },
         {
           "id": "20210f03be4a339ddfba-1",
-          "line": 295,
+          "line": 414,
           "kind": "helper",
           "expression": "check('entity.list', 'tabular thread adds one feature to the timeline', featureReadback.entities.length, featuresBefore.entities.length + 1)"
         },
         {
           "id": "db478c305515475d50c1-1",
-          "line": 296,
+          "line": 415,
           "kind": "helper",
           "expression": "check('entity.list', 'cosmetic tabular thread is present in feature history',\n      featureReadback.entities.some(item => item.name === 'TabularM10'), true)"
         },
         {
           "id": "4fe25d865177eb2ce3d6-3",
-          "line": 298,
+          "line": 417,
           "kind": "helper",
           "expression": "validated('entity.list')"
         },
         {
           "id": "669098d7ccc44a7afc47-3",
-          "line": 299,
+          "line": 418,
           "kind": "helper",
           "expression": "cad('measure.volume', { ref: body, units: 'mm3' })"
         },
         {
           "id": "cc59e7f7df5c0e7e8b24-1",
-          "line": 300,
+          "line": 419,
           "kind": "helper",
           "expression": "check('measure.volume', 'cosmetic thread preserves BRep volume', volumeAfter.value, volumeBefore.value, 0.001)"
         },
         {
+          "id": "97ac6150af14bee11fac-1",
+          "line": 420,
+          "kind": "helper",
+          "expression": "script(threadReadbackBody(identity, body.token, tabular.feature.token) +\n      \"\\nprint('LIVE_THREAD ' + json.dumps(thread_result))\", false)"
+        },
+        {
+          "id": "7a8686e0ba7e15971f53-1",
+          "line": 422,
+          "kind": "assertion",
+          "expression": "assert.equal(matchedReadback.creationId, identity.creationId)"
+        },
+        {
+          "id": "47b75f130afb7d168948-1",
+          "line": 423,
+          "kind": "helper",
+          "expression": "assertCosmeticCylinder(matchedReadback, nativeInfo)"
+        },
+        {
           "id": "7d3222a1201ebb356770-3",
-          "line": 301,
+          "line": 425,
+          "kind": "helper",
+          "expression": "validated('measure.volume')"
+        },
+        {
+          "id": "a93d0946171b4e5659f2-1",
+          "line": 428,
+          "kind": "helper",
+          "expression": "cad('shape.cylinder', { name: 'NominalThreadCylinder', radius: '5 mm', height: '20 mm' })"
+        },
+        {
+          "id": "5b0377357de42f9592e7-1",
+          "line": 430,
+          "kind": "helper",
+          "expression": "cad('entity.find', { kind: 'face', scope: { body: nominalBody },\n      filters: { geometry: 'cylinder', radius: '5 mm' }, unique: true })"
+        },
+        {
+          "id": "7ac051ad0b20184b3abb-1",
+          "line": 432,
+          "kind": "helper",
+          "expression": "cad('measure.volume', { ref: nominalBody, units: 'mm3' })"
+        },
+        {
+          "id": "707cba35194bd8a86b3c-1",
+          "line": 433,
+          "kind": "helper",
+          "expression": "cad('model.thread', { name: 'NominalM10', faces: [nominalFace], internal: false,\n      threadType: 'ISO Metric profile', designation: 'M10x1.5', class: '6g', modeled: false, rightHanded: true })"
+        },
+        {
+          "id": "4a0c7f5cd43e17ae3d6d-1",
+          "line": 435,
+          "kind": "helper",
+          "expression": "script(threadReadbackBody(identity, nominalBody.token, resized.feature.token) +\n      \"\\nprint('LIVE_THREAD ' + json.dumps(thread_result))\", false)"
+        },
+        {
+          "id": "33933318e64313a383cf-1",
+          "line": 437,
+          "kind": "assertion",
+          "expression": "assert.equal(resizedReadback.creationId, identity.creationId)"
+        },
+        {
+          "id": "49888da196cb5d5e8fe2-1",
+          "line": 438,
+          "kind": "helper",
+          "expression": "assertCosmeticCylinder(resizedReadback, nativeInfo)"
+        },
+        {
+          "id": "7ac051ad0b20184b3abb-2",
+          "line": 440,
+          "kind": "helper",
+          "expression": "cad('measure.volume', { ref: nominalBody, units: 'mm3' })"
+        },
+        {
+          "id": "a4339f5e547fba984a98-1",
+          "line": 442,
+          "kind": "helper",
+          "expression": "check('measure.volume', 'nominal cylinder resizes to the native table diameter', nominalAfter.value, expectedVolume, 0.001)"
+        },
+        {
+          "id": "df3ad3168d293e6499cf-1",
+          "line": 443,
+          "kind": "helper",
+          "expression": "check('measure.volume', 'nominal resize delta matches the table, not a helical cut', nominalAfter.value - nominalBefore.value,\n      Math.PI * 20 * (radiusMm ** 2 - 5 ** 2), 0.001)"
+        },
+        {
+          "id": "7d3222a1201ebb356770-4",
+          "line": 445,
           "kind": "helper",
           "expression": "validated('measure.volume')"
         },
         {
           "id": "d1ff0952ca290bc4460d-1",
-          "line": 310,
+          "line": 454,
           "kind": "helper",
           "expression": "closeOwned()"
         },
         {
+          "id": "81a22ded5ead10828753-1",
+          "line": 466,
+          "kind": "helper",
+          "expression": "restoreOriginalActive()"
+        },
+        {
           "id": "0b73e31c1044e9849249-4",
-          "line": 315,
+          "line": 467,
           "kind": "helper",
           "expression": "state()"
         },
         {
-          "id": "486c8662c505e21f7e77-1",
-          "line": 318,
-          "kind": "helper",
-          "expression": "unchangedOthers(after)"
-        },
-        {
           "id": "0249ba91ccb66a7e3a22-1",
-          "line": 320,
+          "line": 472,
           "kind": "assertion",
           "expression": "assert.deepEqual(report.remainingOwnedDocuments, [], 'Owned thread fixture remains open.')"
         },
         {
-          "id": "97e53eef9e873e48b52f-1",
-          "line": 323,
+          "id": "b800c2d41344b22bd8b8-1",
+          "line": 480,
           "kind": "assertion",
-          "expression": "assert.equal(actualActive, expectedActive, 'Original active document was not restored.')"
+          "expression": "assert.ok(baselineIds.has(actualActive) || peers.has(actualActive),\n            'Active identity is not a baseline document or a receipt-proven peer fixture.')"
+        },
+        {
+          "id": "b6259bec716b481b8e99-1",
+          "line": 483,
+          "kind": "assertion",
+          "expression": "assert.ok(actualActive !== null,\n            'Original active document was not restored after cleanup.')"
+        },
+        {
+          "id": "9b4e0482fcc2dcc455c1-1",
+          "line": 486,
+          "kind": "assertion",
+          "expression": "assert.ok(actualActive === null || baselineIds.has(actualActive) || peers.has(actualActive),\n            'Concurrent active document is not part of the verified inventory.')"
         },
         {
           "id": "2789c84e11e1313291ad-1",
-          "line": 347,
+          "line": 515,
           "kind": "helper",
           "expression": "main()"
         }

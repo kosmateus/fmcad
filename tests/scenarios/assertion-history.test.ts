@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { inventorySources } from "./assertion-inventory";
+import { digest, inventorySources } from "./assertion-inventory";
 import {
   appendLatestSourceTransitions,
   compareAssertionSources,
@@ -167,5 +167,80 @@ test("frozen predecessor evidence partitions every current source and preserves 
       );
       assert.ok(comparison.before.count > 0);
     }
+  }
+});
+
+test("source drift appends history without rewriting any previously frozen comparison", () => {
+  const root = path.resolve(__dirname, "../../..");
+  const history = JSON.parse(
+    fs.readFileSync(
+      path.join(root, "tests/live-assertion-predecessors.json"),
+      "utf8",
+    ),
+  ) as { sources: import("./assertion-history").AssertionHistorySource[] };
+  const original = history.sources
+    .filter(
+      (row) => row.source !== "tests/live-normal-multidocument-processes.js",
+    )
+    .map(({ transitions, ...row }) => {
+      const retainedCount =
+        row.source === "tests/live-normal-multidocument.ts"
+          ? 3
+          : row.source === "tests/live-recovery-ports.ts"
+            ? 2
+            : 0;
+      if (retainedCount)
+        return { ...row, transitions: transitions!.slice(0, retainedCount) };
+      return row;
+    });
+  // Entire pre-.35 history, including all prior transition expressions, not just two hashes.
+  assert.equal(original.length, 39);
+  assert.equal(
+    digest(JSON.stringify(original)),
+    "c141e2c4f5fa40b88d70495b14156d653d5ceaa8dd972c8124e11bd502ef5890",
+  );
+});
+
+test("all 44 removed reviewed sites keep their exact unqualified native obligations", () => {
+  const root = path.resolve(__dirname, "../../..");
+  const ledger = JSON.parse(
+    fs.readFileSync(
+      path.join(
+        root,
+        "tests/scenarios/assertion-dispositions-source-drift.json",
+      ),
+      "utf8",
+    ),
+  ) as {
+    mappings: {
+      source: string;
+      assertionId: string;
+      historicalCommit?: string;
+      requiredObservation: string;
+      disposition: string;
+      qualification: string;
+    }[];
+  };
+  const removed = ledger.mappings.filter(
+    (row) =>
+      row.historicalCommit &&
+      row.source !== "tests/live-normal-multidocument-processes.js",
+  );
+  assert.equal(removed.length, 44);
+  assert.equal(
+    digest(
+      JSON.stringify(
+        removed.map((row) => [
+          row.source,
+          row.assertionId,
+          row.requiredObservation,
+        ]),
+      ),
+    ),
+    "495239ad927f9b8fe8b724e5e56f44ddc67a13b4947f9d2a285c0794c425b6b3",
+  );
+  for (const row of removed) {
+    assert.equal(row.disposition, "native-only");
+    assert.equal(row.qualification, "not-run");
   }
 });

@@ -62,6 +62,22 @@ test("generated fenced CAD run payload passes pinned production admission", asyn
         ["closed-peer-creation-id"],
         "root",
         "scenario:programs-fence-run:programs-fence-owner:1",
+        [
+          {
+            document: { creationId: "saved-original", name: "BeforeSave" },
+            savedDocument: {
+              creationId: "saved-current",
+              name: "AfterSave",
+              file: {
+                fileId: "saved-file",
+                version: 1,
+                projectId: "project",
+                folderId: "folder",
+              },
+            },
+            savedState: "open",
+          },
+        ],
       ),
       directory,
       target: document,

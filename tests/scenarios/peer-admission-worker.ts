@@ -41,6 +41,15 @@ void (async () => {
         id: "peer-admission",
         scope: "exclusive-instance",
         requires: ["documents"],
+        ...(process.env["PEER_ADMISSION_SAVED"] === "1" &&
+        process.env["PEER_ADMISSION_ROLE"] !== "writer"
+          ? {
+              fixture: {
+                projectId: "sim-project:fixtures",
+                folderId: "sim-folder:fixtures",
+              },
+            }
+          : {}),
         async run(session) {
           if (process.env["PEER_ADMISSION_ROLE"] === "writer") {
             await session.cadFenced("cad-peer-admission", "shape.box", {

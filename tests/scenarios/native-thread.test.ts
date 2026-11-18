@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
 import {
   threadMajorRadiusMm,
   assertCosmeticCylinder,
@@ -10,6 +11,12 @@ import {
   threadReadbackBody,
 } from "./native-thread-programs";
 import { program, emit } from "./programs";
+import {
+  nativeThreadCapability,
+  nativeThreadScenarios,
+} from "./native-thread-cases";
+import { runScenarios } from "./runner";
+import { fixture } from "./test-support";
 
 const info = {
   threadType: "ISO Metric profile",
@@ -99,6 +106,91 @@ test("both native thread drivers resolve the table before seeding and retain str
     ])
       assert.ok(source.includes(required), file + ": " + required);
   }
+});
+
+for (const protocol of ["mcp", "addin"] as const) {
+  test(`native thread scenario reaches its descriptor observation via ${protocol}`, async (t) => {
+    const { backend, directory } = await fixture(t, protocol);
+    let descriptorDispatches = 0;
+    const nativeBoundary = {
+      ...backend,
+      capabilities: new Set([...backend.capabilities, nativeThreadCapability]),
+      async execute(request: Parameters<typeof backend.execute>[0]) {
+        if (request.source.includes("adsk.fusion.ThreadInfo.create(")) {
+          descriptorDispatches++;
+          // Stop at the native table boundary; this test covers routing, not
+          // simulated thread geometry or the installed Fusion thread table.
+          return {
+            requestId: request.requestId,
+            state: "failed" as const,
+            sdkSettled: true,
+            mayHaveMutated: false,
+            stdout: "",
+            error: "Native descriptor boundary reached",
+          };
+        }
+        return backend.execute(request);
+      },
+    };
+    const [report] = await runScenarios(
+      nativeBoundary,
+      nativeThreadScenarios(1),
+      directory,
+      1,
+    );
+    assert.ok(report);
+    assert.equal(descriptorDispatches, 1, report.error);
+    assert.match(report.error ?? "", /Native descriptor boundary reached/u);
+    const rejected = report.requests.find(
+      (request) => request.phase === "cad-native-thread-designation-rejected",
+    );
+    assert.equal(rejected?.result?.state, "failed");
+    assert.equal(rejected?.result?.sdkSettled, true);
+    assert.ok(
+      report.requests.some(
+        (request) => request.phase === "observe-native-thread-descriptor",
+      ),
+    );
+  });
+}
+
+test("generated native descriptor returns the observed document identity beside its descriptor", () => {
+  const document = { name: "Owned thread fixture", creationId: "owned-thread" };
+  const source = program(
+    threadInfoBody(document) + "\n" + emit("thread_result"),
+  );
+  // Execute the generated program at the SDK read boundary. This does not
+  // qualify native table contents or thread geometry in Fusion.
+  const output = execFileSync(
+    "python3",
+    [
+      "-c",
+      `import sys, types
+adsk = types.ModuleType('adsk')
+core = types.ModuleType('adsk.core')
+fusion = types.ModuleType('adsk.fusion')
+adsk.core, adsk.fusion = core, fusion
+sys.modules.update({'adsk': adsk, 'adsk.core': core, 'adsk.fusion': fusion})
+doc = types.SimpleNamespace(name='Owned thread fixture', creationId='owned-thread', isSaved=False, dataFile=None,
+    products=types.SimpleNamespace(itemByProductType=lambda _: object()))
+core.Application = types.SimpleNamespace(get=lambda: types.SimpleNamespace(documents=[doc]))
+fusion.Design = object
+class ThreadInfo:
+    @staticmethod
+    def create(*args):
+        return types.SimpleNamespace(isValid=True, threadType='ISO Metric profile', threadDesignation='M10x1.5',
+            threadClass='6g', threadSize='10.0', isInternal=False, isTapered=False, isRightHanded=True,
+            majorDiameter=0.985, minorDiameter=0.8141, pitchDiameter=0.8928, threadPitch=0.15)
+fusion.ThreadInfo = ThreadInfo
+namespace = {}
+exec(sys.stdin.read(), namespace)
+namespace['run']('')`,
+    ],
+    { input: source, encoding: "utf8" },
+  );
+  const observed = JSON.parse(output.trim().slice("FMCAD_SCENARIO ".length));
+  assert.equal(observed.creationId, document.creationId);
+  assert.deepEqual(observed.descriptor, info);
 });
 
 test("native descriptor and physical readback programs pass the pinned strict Python checker", async () => {
