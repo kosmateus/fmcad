@@ -68,7 +68,7 @@ export function nativeThreadScenarios(owners = 10): Scenario[] {
       // ORIGINAL_NATIVE_BODY
       await guard();
       const nativeInfo = await session.observe(
-        "native-thread-descriptor",
+        "observe-native-thread-descriptor",
         program(
           threadInfoBody(session.document) + "\n" + emit("thread_result"),
         ),

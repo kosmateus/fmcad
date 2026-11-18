@@ -10,6 +10,12 @@ import {
   threadReadbackBody,
 } from "./native-thread-programs";
 import { program, emit } from "./programs";
+import {
+  nativeThreadCapability,
+  nativeThreadScenarios,
+} from "./native-thread-cases";
+import { runScenarios } from "./runner";
+import { fixture } from "./test-support";
 
 const info = {
   threadType: "ISO Metric profile",
@@ -100,6 +106,52 @@ test("both native thread drivers resolve the table before seeding and retain str
       assert.ok(source.includes(required), file + ": " + required);
   }
 });
+
+for (const protocol of ["mcp", "addin"] as const) {
+  test(`native thread scenario reaches its descriptor observation via ${protocol}`, async (t) => {
+    const { backend, directory } = await fixture(t, protocol);
+    let descriptorDispatches = 0;
+    const nativeBoundary = {
+      ...backend,
+      capabilities: new Set([...backend.capabilities, nativeThreadCapability]),
+      async execute(request: Parameters<typeof backend.execute>[0]) {
+        if (request.source.includes("adsk.fusion.ThreadInfo.create(")) {
+          descriptorDispatches++;
+          // Stop at the native table boundary; this test covers routing, not
+          // simulated thread geometry or the installed Fusion thread table.
+          return {
+            requestId: request.requestId,
+            state: "failed" as const,
+            sdkSettled: true,
+            mayHaveMutated: false,
+            stdout: "",
+            error: "Native descriptor boundary reached",
+          };
+        }
+        return backend.execute(request);
+      },
+    };
+    const [report] = await runScenarios(
+      nativeBoundary,
+      nativeThreadScenarios(1),
+      directory,
+      1,
+    );
+    assert.ok(report);
+    assert.equal(descriptorDispatches, 1, report.error);
+    assert.match(report.error ?? "", /Native descriptor boundary reached/u);
+    const rejected = report.requests.find(
+      (request) => request.phase === "cad-native-thread-designation-rejected",
+    );
+    assert.equal(rejected?.result?.state, "failed");
+    assert.equal(rejected?.result?.sdkSettled, true);
+    assert.ok(
+      report.requests.some(
+        (request) => request.phase === "observe-native-thread-descriptor",
+      ),
+    );
+  });
+}
 
 test("native descriptor and physical readback programs pass the pinned strict Python checker", async () => {
   const root = path.resolve(__dirname, "../../.."),
