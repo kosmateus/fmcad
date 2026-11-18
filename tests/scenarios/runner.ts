@@ -1959,11 +1959,12 @@ export async function runScenarios(
           (r.status === "not-run" && r.cleanup === "not-created"),
       )
     ) {
-      const after = await observation("after", programs.snapshot());
+      const after = await observation("after", programs.snapshot()),
+        finalPeerProofs = discoverOwnedUnsavedFixtureProofs(root, backend);
       assertReceiptBoundDocumentInventory(
         before["documents"],
         after["documents"],
-        discoverOwnedUnsavedFixtureProofs(root, backend),
+        finalPeerProofs,
         "Original documents changed or an unowned scenario document remains after cleanup",
         true,
         observedCreationIds(reports),
@@ -1997,9 +1998,18 @@ export async function runScenarios(
             text(record(value)["creationId"]),
           )
         : [];
+      const activePeer =
+        typeof before["active"] === "string"
+          ? finalPeerProofs.get(before["active"])
+          : undefined;
+      // This snapshot already validated the exact saved lifecycle. An owned
+      // peer transferred since the initial snapshot is not user baseline focus.
+      const transferredActivePeer =
+        activePeer?.state === "saved" && activePeer.savedState !== "unsettled";
       if (
         typeof before["active"] === "string" &&
-        baselineIds.includes(before["active"])
+        baselineIds.includes(before["active"]) &&
+        !transferredActivePeer
       )
         await observation("restore", programs.restoreActive(before["active"]));
     }

@@ -18,6 +18,9 @@ for (const mode of [
   "saved-close",
   "saved-transition",
   "saved-transition-same",
+  "saved-restore-missing",
+  "saved-restore-unsettled",
+  "saved-restore-user",
   "initial-create",
   "initial-close",
   "refresh-create",
@@ -35,7 +38,9 @@ for (const mode of [
   test(`independent runner inventory admission: ${mode}`, async (t) => {
     const { backend, directory, model } = await fixture(t, "addin");
     const transitioning =
-      mode === "saved-transition" || mode === "saved-transition-same";
+      mode === "saved-transition" ||
+      mode === "saved-transition-same" ||
+      mode.startsWith("saved-restore-");
     if (mode === "saved-changed" || mode === "saved-transition") {
       const configured = await model.execute(
         programs.program(`import adsk.core
@@ -54,7 +59,11 @@ adsk.core.Document.saveAs = changed_save`),
       mode === "close-without-proof" ||
       mode === "initial-close" ||
       mode === "saved-close";
-    if (mode === "baseline-change" || mode === "initial-close") {
+    if (
+      mode === "baseline-change" ||
+      mode === "initial-close" ||
+      mode === "saved-restore-user"
+    ) {
       const created = await model.execute(
         programs.program(
           "import adsk.core\ndoc = adsk.core.Application.get().documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)\ndoc.name = 'UserBaseline'",
@@ -116,6 +125,8 @@ adsk.core.Document.saveAs = changed_save`),
       laterPeerReady = resolve;
     });
     const cadRequestIds: string[] = [];
+    const restoreRequestIds: string[] = [];
+    let peerReport: ScenarioReport | undefined;
     const releasedChildren = new Set<(typeof children)[number]>();
     const completedChildren = new Set<(typeof children)[number]>();
     const releaseChild = (child: (typeof children)[number]) => {
@@ -174,6 +185,7 @@ adsk.core.Document.saveAs = changed_save`),
                 // Release the peer even on RED so the test never leaves a waiting process.
                 if (child === writer) for (const p of peers) releaseChild(p);
                 if (child === peer) {
+                  peerReport = message.reports![0]!;
                   if (mode === "close-without-proof") {
                     const filename = path.join(
                       message.reports![0]!.directory,
@@ -216,6 +228,11 @@ adsk.core.Document.saveAs = changed_save`),
               }
               if (message.request) {
                 const request = message.request;
+                if (
+                  child === writer &&
+                  request.requestId.endsWith(":coordinator:restore")
+                )
+                  restoreRequestIds.push(request.requestId);
                 void (async () => {
                   if (
                     transitioning &&
@@ -265,7 +282,8 @@ adsk.core.Document.saveAs = changed_save`),
                     }
                   }
                   if (
-                    mode === "initial-close" &&
+                    (mode === "initial-close" ||
+                      mode === "saved-restore-user") &&
                     child === writer &&
                     request.requestId.endsWith(":coordinator:before")
                   ) {
@@ -276,6 +294,26 @@ adsk.core.Document.saveAs = changed_save`),
                     );
                   }
                   const result = await backend.execute(request);
+                  if (
+                    (mode === "saved-restore-missing" ||
+                      mode === "saved-restore-unsettled") &&
+                    child === writer &&
+                    request.requestId.endsWith(":coordinator:after")
+                  ) {
+                    await closed;
+                    assert.ok(peerReport);
+                    const filename = path.join(
+                      peerReport.directory,
+                      "report.json",
+                    );
+                    const report = JSON.parse(
+                      fs.readFileSync(filename, "utf8"),
+                    );
+                    if (mode === "saved-restore-missing")
+                      delete report.savedIdentityTransition;
+                    else report.cleanupHold = "Unsettled saved owner";
+                    fs.writeFileSync(filename, JSON.stringify(report));
+                  }
                   if (
                     mode === "initial-close" &&
                     child === writer &&
@@ -343,6 +381,7 @@ adsk.core.Document.saveAs = changed_save`),
     else writer.send({ type: "start" });
     const [writerReports] = await Promise.all(results);
     const positive = [
+      "saved-restore-user",
       "create",
       "saved-same",
       "saved-changed",
@@ -368,12 +407,18 @@ adsk.core.Document.saveAs = changed_save`),
         mode !== "initial-create" &&
         mode !== "initial-close" &&
         mode !== "saved-initial") ||
-        mode === "second-change"
+        mode === "second-change" ||
+        mode === "saved-restore-missing" ||
+        mode === "saved-restore-unsettled"
         ? 2
         : 1,
     );
     assert.equal(new Set(cadRequestIds).size, cadRequestIds.length);
     if (positive) assert.equal(writerReports?.[0]?.cleanup, "complete");
+    if (mode === "saved-restore-user")
+      assert.equal(restoreRequestIds.length, 1);
+    if (mode === "saved-transition" || mode === "saved-transition-same")
+      assert.equal(restoreRequestIds.length, 0);
     if (
       positive &&
       mode !== "initial-create" &&
