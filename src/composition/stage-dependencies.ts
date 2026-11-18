@@ -172,10 +172,20 @@ function workerMetadataSample(brokerDirectory: string) {
       path.join(store, "instance.json"),
     ]),
   ];
+  // The active snapshot's bytes are fenced by authenticated worker-status below.
+  // A concurrent durable commit can replace its inode without changing that proof.
+  // Keep the historical root snapshot and all epoch/backend/instance identity stamps.
+  const attestedQueue = path.join(
+    stores[stores.length - 1]!,
+    "queue-state.json",
+  );
   return {
     hasEpochPointer: pointer !== null,
     pending,
-    signature: files.map((file) => `${file}:${stamp(file)}`).join("\n"),
+    signature: files
+      .filter((file) => file !== attestedQueue)
+      .map((file) => `${file}:${stamp(file)}`)
+      .join("\n"),
   };
 }
 

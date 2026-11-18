@@ -3,18 +3,30 @@ import * as fs from "node:fs";
 import path from "node:path";
 import { childProcessIdentity } from "./legacy-handoff";
 import { record, text } from "./contracts";
-import type { Document, ScenarioBackend } from "./contracts";
+import type { Document, Owner, SavedFile, ScenarioBackend } from "./contracts";
 import { marker } from "./programs";
+import { savedIdentityTransition } from "./saved-identity";
+import {
+  recoveredFile,
+  resultValue,
+  saveIntent,
+  type RequestEvidence,
+} from "./saved-files";
 
 export interface ProcessIdentity {
   readonly pid: number;
   readonly birth: string;
 }
 
-export interface OwnedUnsavedFixtureProof {
-  readonly document: Document;
-  readonly state: "open" | "closed" | "unsettled";
-}
+type FixtureState = "open" | "closed" | "unsettled";
+export type OwnedUnsavedFixtureProof =
+  | { readonly document: Document; readonly state: FixtureState }
+  | {
+      readonly document: Document;
+      readonly state: "saved";
+      readonly savedDocument: Document & { readonly file: SavedFile };
+      readonly savedState: FixtureState;
+    };
 
 export function currentProcessIdentity(): ProcessIdentity {
   return {
@@ -164,9 +176,6 @@ function verifiedFixture(
       identity["requestId"] !== requestId ||
       identity["clientId"] !== owner["clientId"] ||
       identity["activeCreationId"] !== document.creationId ||
-      documentValue["creationId"] !== document.creationId ||
-      documentValue["name"] !== document.name ||
-      documentValue["file"] !== undefined ||
       creation["creationId"] !== document.creationId ||
       creation["name"] !== document.name ||
       creation["requestId"] !== requestId ||
@@ -177,10 +186,55 @@ function verifiedFixture(
       )
     )
       return undefined;
+    const typedOwner: Owner = {
+        runId,
+        scenarioId,
+        clientId: text(owner["clientId"]),
+      },
+      evidence = requests as readonly RequestEvidence[],
+      transition = savedIdentityTransition(
+        directory,
+        document,
+        typedOwner,
+        evidence,
+      );
+    if (transition) {
+      assert.deepEqual(report["savedIdentityTransition"], transition);
+      assert.equal(documentValue["creationId"], transition.creationId);
+      assert.equal(documentValue["name"], transition.name);
+      assert.ok(
+        !baseline["documents"].some(
+          (value: unknown) =>
+            record(value)["creationId"] === transition.creationId,
+        ),
+        "Saved successor already belonged to the creator baseline",
+      );
+      return savedFixtureProof(
+        directory,
+        index,
+        report,
+        document,
+        typedOwner,
+        evidence,
+        text(receipt["jobId"]),
+      );
+    }
+    if (
+      report["savedIdentityTransition"] !== undefined ||
+      documentValue["creationId"] !== document.creationId ||
+      documentValue["name"] !== document.name ||
+      documentValue["file"] !== undefined
+    )
+      return undefined;
+    if (requests.some((entry) => entry["phase"] === "save"))
+      return Object.freeze({
+        document: Object.freeze(document),
+        state: "unsettled",
+      });
     const cleanupEntries = requests
       .map(record)
       .filter((entry) => entry["phase"] === "cleanup");
-    let state: OwnedUnsavedFixtureProof["state"];
+    let state: FixtureState;
     if (
       report["cleanupHold"] === undefined &&
       cleanupEntries.length === 1 &&
@@ -211,11 +265,104 @@ function verifiedFixture(
   }
 }
 
+function savedFixtureProof(
+  directory: string,
+  index: Record<string, unknown>,
+  report: Record<string, unknown>,
+  original: Document,
+  owner: Owner,
+  requests: readonly RequestEvidence[],
+  creationJobId: string,
+): OwnedUnsavedFixtureProof {
+  const partial = (): OwnedUnsavedFixtureProof =>
+    Object.freeze({ document: Object.freeze(original), state: "unsettled" });
+  const declared = record(report["document"]);
+  if (declared["file"] === undefined) return partial();
+  const document = {
+      creationId: text(declared["creationId"]),
+      name: text(declared["name"]),
+    },
+    folder = saveIntent(directory, original, owner, requests);
+  assert.ok(folder, "Saved successor lacks its original save intent");
+  assert.deepEqual(report["fixture"], folder);
+  const save = requests.find((entry) => entry.phase === "save");
+  assert.ok(save?.result?.brokerReceipt);
+  const jobs = new Set([creationJobId, save.result.brokerReceipt.jobId]),
+    readbacks = requests.filter((entry) => entry.phase === "save-observe");
+  assert.equal(jobs.size, 2, "Save reused the original creation job");
+  if (!readbacks.length) return partial();
+  for (const entry of readbacks) {
+    const result = entry.result;
+    if (!result?.sdkSettled || result.state !== "succeeded") return partial();
+    assert.equal(result.requestId, entry.requestId);
+    assert.ok(exactScenarioRequestId(entry.requestId, owner.clientId));
+    assert.ok(
+      Number(entry.requestId.slice(owner.clientId.length + 1)) >
+        Number(save.requestId.slice(owner.clientId.length + 1)),
+    );
+    assert.equal(record(record(entry)["intent"])["kind"], "script");
+    const receipt = record(result.brokerReceipt);
+    assert.equal(receipt["requestId"], entry.requestId);
+    assert.equal(receipt["clientId"], owner.clientId);
+    assert.equal(receipt["state"], "succeeded");
+    const jobId = text(receipt["jobId"]);
+    assert.ok(!jobs.has(jobId), "Saved readback reused another lifecycle job");
+    jobs.add(jobId);
+    const value = resultValue(entry);
+    assert.ok(value);
+    assert.equal(value["creationId"], document.creationId);
+    if (value["fileId"] !== undefined || value["complete"] === true)
+      assert.equal(value["saved"], true);
+  }
+  const file = recoveredFile(document, folder, requests);
+  if (!file) return partial();
+  // Version is pinned by the producer readback, not re-measured by inventory.
+  assert.deepEqual(declared["file"], file);
+  const savedDocument = Object.freeze({ ...document, file }),
+    closeEntries = requests.filter((entry) => entry.phase === "cleanup-close");
+  let savedState: FixtureState;
+  if (
+    report["cleanupHold"] === undefined &&
+    closeEntries.length === 1 &&
+    exactClosedFixtureReceipt(
+      record(closeEntries[0]),
+      record(owner),
+      savedDocument.creationId,
+      creationJobId,
+      "cleanup-close",
+    )
+  ) {
+    assert.ok(!jobs.has(text(closeEntries[0]!.result?.brokerReceipt?.jobId)));
+    savedState = "closed";
+  } else if (
+    report["cleanup"] === "pending" &&
+    report["cleanupHold"] === undefined &&
+    index["status"] === "running" &&
+    activeProcess(index) &&
+    (closeEntries.length === 0 ||
+      (closeEntries.length === 1 &&
+        exactPendingCleanupIntent(
+          record(closeEntries[0]),
+          record(owner),
+          "cleanup-close",
+        )))
+  ) {
+    savedState = "open";
+  } else savedState = "unsettled";
+  return Object.freeze({
+    document: Object.freeze(original),
+    state: "saved",
+    savedDocument,
+    savedState,
+  });
+}
+
 function exactClosedFixtureReceipt(
   entry: Record<string, unknown>,
   owner: Record<string, unknown>,
   creationId: string,
   creationJobId: string,
+  phase: "cleanup" | "cleanup-close" = "cleanup",
 ): boolean {
   try {
     const clientId = text(owner["clientId"]),
@@ -230,7 +377,7 @@ function exactClosedFixtureReceipt(
       !exactScenarioRequestId(requestId, clientId) ||
       requestId !== clientId + ":" + sequence ||
       requestId === clientId + ":0" ||
-      entry["phase"] !== "cleanup" ||
+      entry["phase"] !== phase ||
       record(entry["intent"])["kind"] !== "script" ||
       result["requestId"] !== requestId ||
       result["state"] !== "succeeded" ||
@@ -257,12 +404,13 @@ function exactClosedFixtureReceipt(
 function exactPendingCleanupIntent(
   entry: Record<string, unknown>,
   owner: Record<string, unknown>,
+  phase: "cleanup" | "cleanup-close" = "cleanup",
 ): boolean {
   try {
     const clientId = text(owner["clientId"]),
       requestId = text(entry["requestId"]);
     return (
-      entry["phase"] === "cleanup" &&
+      entry["phase"] === phase &&
       record(entry["intent"])["kind"] === "script" &&
       entry["result"] === undefined &&
       exactScenarioRequestId(requestId, clientId) &&
@@ -354,6 +502,52 @@ function stableDocuments(documents: Record<string, unknown>[]) {
     );
 }
 
+function assertSavedDocument(
+  current: Record<string, unknown>[],
+  expected: Document & { readonly file: SavedFile },
+): void {
+  const matches = current.filter(
+    (document) => document["creationId"] === expected.creationId,
+  );
+  assert.equal(
+    matches.length,
+    1,
+    "Exact saved successor is missing or duplicated",
+  );
+  assert.equal(matches[0]!["name"], expected.name);
+  assert.equal(matches[0]!["saved"], true);
+  assert.equal(matches[0]!["fileId"], expected.file.fileId);
+}
+
+function observedTransfer(
+  creationId: string,
+  current: Record<string, unknown>[],
+  proofs: ReadonlyMap<string, OwnedUnsavedFixtureProof>,
+  allowUnsettled: boolean,
+): boolean {
+  const proof = [...proofs.values()].find(
+    (candidate) =>
+      candidate.state === "saved" &&
+      (candidate.document.creationId === creationId ||
+        candidate.savedDocument.creationId === creationId),
+  );
+  if (proof?.state !== "saved") return false;
+  if (proof.savedState === "closed")
+    return !current.some(
+      (document) =>
+        document["creationId"] === proof.document.creationId ||
+        document["creationId"] === proof.savedDocument.creationId,
+    );
+  if (
+    creationId !== proof.document.creationId ||
+    creationId === proof.savedDocument.creationId ||
+    (proof.savedState !== "open" && !allowUnsettled)
+  )
+    return false;
+  assertSavedDocument(current, proof.savedDocument);
+  return true;
+}
+
 /** Check causality inside one SDK turn while retaining baseline and target identity. */
 export function assertFencedDocumentInventory(
   beforeValue: unknown,
@@ -428,7 +622,10 @@ export function assertReceiptBoundDocumentInventory(
   const before = documentRows(beforeValue),
     current = documentRows(currentValue);
   for (const creationId of observedCreationIds) {
-    if (!current.some((document) => document["creationId"] === creationId))
+    if (
+      !current.some((document) => document["creationId"] === creationId) &&
+      !observedTransfer(creationId, current, proofs, allowVisibleUnsettledPeers)
+    )
       assert.equal(
         proofs.get(creationId)?.state,
         "closed",
@@ -438,6 +635,31 @@ export function assertReceiptBoundDocumentInventory(
   const admittedPeers = new Set<string>();
   for (const [creationId, proof] of proofs) {
     assert.equal(proof.document.creationId, creationId);
+    if (proof.state === "saved") {
+      const successorId = proof.savedDocument.creationId;
+      if (creationId !== successorId)
+        assert.equal(
+          current.some((document) => document["creationId"] === creationId),
+          false,
+          "Both original and saved successor identities remain visible",
+        );
+      if (proof.savedState === "closed") {
+        assert.equal(
+          current.some((document) => document["creationId"] === successorId),
+          false,
+          "The receipt-closed saved successor remains visible",
+        );
+      } else if (
+        proof.savedState === "unsettled" &&
+        (!allowVisibleUnsettledPeers ||
+          !current.some((document) => document["creationId"] === successorId))
+      ) {
+        continue;
+      } else assertSavedDocument(current, proof.savedDocument);
+      admittedPeers.add(creationId);
+      admittedPeers.add(successorId);
+      continue;
+    }
     // An unresolved baseline fixture has no ownership exemption. A read-only
     // observer may admit a new peer only while its exact identity is visible.
     if (proof.state === "unsettled") {

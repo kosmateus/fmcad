@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import path from "node:path";
-import type { Document } from "./contracts";
+import type { Document, SavedFile } from "./contracts";
 
 const root = path.resolve(__dirname, "../../..");
 const { pythonLiteral } = createRequire(path.join(root, "package.json"))(
@@ -154,6 +154,11 @@ assert not doc.isSaved and doc.dataFile is None, 'Owned fixture unexpectedly bec
 ${emit("dict(creationId=doc.creationId, active=app.activeDocument.creationId, documents=[dict(creationId=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified,fileId=d.dataFile.id if d.dataFile else None) for d in app.documents])")}`);
 }
 /** Run one canonical helper operation between same-turn foreign inventory snapshots. */
+export interface SavedPeerTransfer {
+  readonly document: Document;
+  readonly savedDocument: Document & { readonly file: SavedFile };
+  readonly savedState: "open" | "closed";
+}
 export function cadFence(
   document: Document,
   operation: string,
@@ -163,6 +168,7 @@ export function cadFence(
   closedPeerCreationIds: readonly string[],
   component = "root",
   admissionRequestId?: string,
+  savedTransfers: readonly SavedPeerTransfer[] = [],
 ): string {
   if (document.file)
     throw new Error("CAD inventory fence received a saved fixture");
@@ -179,6 +185,15 @@ export function cadFence(
       peers.map(({ creationId, name }) => ({ creationId, name })),
     ),
     closedPeers = pythonLiteral([...closedPeerCreationIds]),
+    transfers = pythonLiteral(
+      savedTransfers.map(({ document, savedDocument, savedState }) => ({
+        originalCreationId: document.creationId,
+        creationId: savedDocument.creationId,
+        name: savedDocument.name,
+        fileId: savedDocument.file.fileId,
+        closed: savedState === "closed",
+      })),
+    ),
     scope = component === "root" ? "None" : pythonLiteral(component);
   return program(
     `import adsk.core, json
@@ -199,10 +214,18 @@ class _FmcadPeerIdentity(TypedDict):
     creationId: str
     name: str
 
+class _FmcadSavedTransfer(TypedDict):
+    originalCreationId: str
+    creationId: str
+    name: str
+    fileId: str
+    closed: bool
+
 app = adsk.core.Application.get()
 _fmcad_expected_baseline: list[_FmcadStableDocument] = ${expected}
 _fmcad_expected_peers: list[_FmcadPeerIdentity] = ${peerIdentities}
 _fmcad_closed_peers: list[str] = ${closedPeers}
+_fmcad_saved_transfers: list[_FmcadSavedTransfer] = ${transfers}
 def _fmcad_inventory() -> list[_FmcadInventoryDocument]:
     rows: list[_FmcadInventoryDocument] = []
     for d in app.documents:
@@ -220,8 +243,22 @@ def _fmcad_stable(rows: Sequence[_FmcadStableDocument]) -> list[tuple[str, str, 
 def _fmcad_check_inventory(rows: Sequence[_FmcadInventoryDocument]) -> None:
     ids: list[str] = [d['creationId'] for d in rows]
     assert len(set(ids)) == len(ids), 'Duplicate document identity in fenced inventory'
+    transferred_ids: set[str] = set()
+    for transfer in _fmcad_saved_transfers:
+        original_id = transfer['originalCreationId']
+        current_id = transfer['creationId']
+        if original_id != current_id:
+            assert original_id not in ids, 'Original identity remains visible after saved transfer'
+        matches = [d for d in rows if d['creationId'] == current_id]
+        if transfer['closed']:
+            assert not matches, 'Receipt-closed saved successor remains visible'
+        else:
+            assert len(matches) == 1, 'Receipt-proven saved successor is missing or duplicated'
+            saved_peer = matches[0]
+            assert saved_peer['name'] == transfer['name'] and saved_peer['saved'] and saved_peer['fileId'] == transfer['fileId'], 'Saved successor identity or file provenance changed'
+        transferred_ids.update((original_id, current_id))
     for expected in _fmcad_expected_baseline:
-        if expected['creationId'] in _fmcad_closed_peers or any(peer['creationId'] == expected['creationId'] for peer in _fmcad_expected_peers):
+        if expected['creationId'] in transferred_ids or expected['creationId'] in _fmcad_closed_peers or any(peer['creationId'] == expected['creationId'] for peer in _fmcad_expected_peers):
             continue
         matches = [d for d in rows if d['creationId'] == expected['creationId']]
         assert len(matches) == 1, 'Coordinator baseline document is missing or duplicated'
@@ -235,6 +272,7 @@ def _fmcad_check_inventory(rows: Sequence[_FmcadInventoryDocument]) -> None:
         assert not any(d['creationId'] == creation_id for d in rows), 'A receipt-closed peer fixture remains open'
     allowed = {d['creationId'] for d in _fmcad_expected_baseline}
     allowed.update(d['creationId'] for d in _fmcad_expected_peers)
+    allowed.update(t['creationId'] for t in _fmcad_saved_transfers if not t['closed'])
     allowed.add(${quoted(document.creationId)})
     assert all(identity in allowed for identity in ids), 'Unproven non-baseline document in fenced inventory'
 def _fmcad_json_inventory(rows: Sequence[_FmcadInventoryDocument]) -> list[_FmcadJsonValue]:
