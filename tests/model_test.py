@@ -1348,6 +1348,14 @@ class ModelTests(unittest.TestCase):
         self.call('model.shell', dict(CATALOG['model.shell']['example'], outsideThickness='1 mm'))
         self.assertIn(('set', 'outsideThickness', ('expression', '1 mm')), TRACE)
 
+    def test_thread_cosmetic_mode_is_forwarded_as_false(self):
+        self.call('model.thread', dict(CATALOG['model.thread']['example'], modeled=False))
+
+        self.assertIn(('threadInfo', False, 'ISO Metric profile', 'M10x1.5', '6g', True), TRACE)
+        modeled = [entry for entry in TRACE if entry[:2] == ('set', 'isModeled')]
+        self.assertEqual(len(modeled), 1)
+        self.assertIs(modeled[0][2], False)
+
     def test_counterbore_and_countersink_modes(self):
         base = CATALOG['model.hole']['example']
         self.call('model.hole', dict(base, type='counterbore', boreDiameter='8 mm', boreDepth='2 mm'))
