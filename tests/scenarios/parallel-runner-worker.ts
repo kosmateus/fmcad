@@ -40,6 +40,13 @@ function readState(): SharedState {
   return JSON.parse(fs.readFileSync(stateFile, "utf8")) as SharedState;
 }
 
+function documentInventory(state: SharedState) {
+  return state.documents.map((document) => ({
+    ...document,
+    active: document.creationId === state.active,
+  }));
+}
+
 async function updateState(
   update: (state: SharedState) => void,
 ): Promise<void> {
@@ -141,16 +148,26 @@ const backend: ScenarioBackend = {
     if (request.source.includes("doc.close(False)")) {
       const creationId = request.target?.creationId;
       if (!creationId) throw new Error("Cleanup request has no target");
+      let before: ReturnType<typeof documentInventory> = [],
+        after: ReturnType<typeof documentInventory> = [];
       await updateState((state) => {
+        before = documentInventory(state);
         state.documents = state.documents.filter(
           (document) => document.creationId !== creationId,
         );
         if (state.active === creationId)
           state.active = state.documents[0]?.creationId ?? null;
+        after = documentInventory(state);
       });
       return execution(
         request,
-        marker + JSON.stringify({ creationId, closed: true }) + "\n",
+        marker +
+          JSON.stringify({
+            creationId,
+            closed: true,
+            inventoryFence: { version: 1, before, after },
+          }) +
+          "\n",
       );
     }
 

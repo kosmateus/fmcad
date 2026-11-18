@@ -81,6 +81,10 @@ import {
 import { nativeCadScenarios, nativeCadCapability } from "./native-cad-cases";
 import { childCliScenarios } from "./child-cli-cases";
 import {
+  installChildCliRuntime,
+  type InstalledChildCliRuntime,
+} from "./child-cli-runtime";
+import {
   isolateScenarioConfiguration,
   writeChildScenarioConfig,
 } from "./child-cli-config";
@@ -633,6 +637,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   let backend: ScenarioBackend;
   let queue: QueueScenarioBackend | undefined;
   let rpcRecovery: NativeRpcRecoveryPreparation | undefined;
+  let childCliRuntime: InstalledChildCliRuntime | undefined;
   const originalEnvironment = new Map<string, string | undefined>();
   const hashSources = (): string =>
     sourceHash({
@@ -754,10 +759,26 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           };
         }
       ).loadConfig();
-      const transport = load("./src/dist/fusion-transport/broker") as {
+      if (options.suite === "child-cli" && !options.cleanup) {
+        childCliRuntime = installChildCliRuntime(root);
+        originalEnvironment.set(
+          "FMCAD_LIVE_RUNTIME_ROOT",
+          process.env["FMCAD_LIVE_RUNTIME_ROOT"],
+        );
+        process.env["FMCAD_LIVE_RUNTIME_ROOT"] = childCliRuntime.root;
+        originalEnvironment.set(
+          "FMCAD_SCENARIO_SIMULATOR_ENDPOINT",
+          process.env["FMCAD_SCENARIO_SIMULATOR_ENDPOINT"],
+        );
+        process.env["FMCAD_SCENARIO_SIMULATOR_ENDPOINT"] = endpoint.url;
+      }
+      const loadBroker = childCliRuntime
+        ? createRequire(path.join(childCliRuntime.root, "dist/package.json"))
+        : load;
+      const transport = loadBroker("./src/dist/fusion-transport/broker") as {
         createBrokerTransport: typeof createBrokerTransport;
       };
-      const module = load("./src/queue-broker") as {
+      const module = loadBroker("./src/queue-broker") as {
         serve(
           config: typeof cfg,
           options: {
@@ -793,6 +814,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         root,
         cfg,
         (file) => file,
+        childCliRuntime,
       );
       backend = queue;
     }
@@ -841,6 +863,14 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         {
           ...options,
           qualification: backend.qualification,
+          ...(childCliRuntime
+            ? {
+                childRuntime: {
+                  root: childCliRuntime.root,
+                  fingerprint: childCliRuntime.fingerprint,
+                },
+              }
+            : {}),
           sourceBefore,
           sourceAfter,
           status: passed ? "passed" : "failed",
@@ -858,20 +888,24 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     );
     return passed ? 0 : 1;
   } finally {
-    queue?.close();
-    await rpcRecovery?.closeOwned();
     try {
-      await broker?.close();
-    } finally {
+      queue?.close();
+      await rpcRecovery?.closeOwned();
       try {
-        await endpoint?.close();
+        await broker?.close();
       } finally {
-        await model?.close();
+        try {
+          await endpoint?.close();
+        } finally {
+          await model?.close();
+        }
       }
+    } finally {
       for (const [key, value] of originalEnvironment) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
+      childCliRuntime?.close();
     }
   }
 }

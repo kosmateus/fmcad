@@ -150,12 +150,14 @@ ${emit("dict(creationId=owned[0].creationId, version=app.version, documents=docs
     assert.deepEqual(own.document, identity);
     return fixtures;
   };
+  // State snapshots are read-only; operation fences remain strict in-turn.
   const unchangedOthers = (current: Record<string, unknown>) =>
     assertReceiptBoundDocumentInventory(
       baseline["documents"],
       current["documents"],
       ownedFixtures(),
       "An original document changed during feature coverage.",
+      true,
     );
   const guard = async () => {
     try {

@@ -422,14 +422,31 @@ export function assertReceiptBoundDocumentInventory(
   currentValue: unknown,
   proofs: ReadonlyMap<string, OwnedUnsavedFixtureProof>,
   message: string,
+  allowVisibleUnsettledPeers = false,
 ): void {
   const before = documentRows(beforeValue),
     current = documentRows(currentValue);
   const admittedPeers = new Set<string>();
   for (const [creationId, proof] of proofs) {
     assert.equal(proof.document.creationId, creationId);
-    // An unresolved historical fixture has no ownership exemption. If it was
-    // already present, the ordinary inventory comparison below protects it.
+    // An unresolved baseline fixture has no ownership exemption. A read-only
+    // observer may admit a new peer only while its exact identity is visible.
+    if (proof.state === "unsettled") {
+      if (
+        !allowVisibleUnsettledPeers ||
+        before.some((document) => document["creationId"] === creationId)
+      )
+        continue;
+      assert.equal(
+        current.filter((document) => document["creationId"] === creationId)
+          .length,
+        1,
+        "An unsettled peer disappeared without its exact close receipt",
+      );
+      assertOwnedUnsavedDocument(current, proof.document);
+      admittedPeers.add(creationId);
+      continue;
+    }
     if (proof.state !== "open" && proof.state !== "closed") continue;
     admittedPeers.add(creationId);
     const matches = current.filter(
