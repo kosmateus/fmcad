@@ -519,14 +519,18 @@ export class ScenarioSession {
     data: Record<string, unknown>,
     options: { component?: string } = {},
   ): Promise<Record<string, unknown>> {
-    return this.#cadFencedAdmission(phase, operation, data, options, false);
+    return this.#cadFencedAdmission(phase, operation, data, options);
   }
   async #cadFencedAdmission(
     phase: string,
     operation: string,
     data: Record<string, unknown>,
     options: { component?: string },
-    readmitted: boolean,
+    readmission?: {
+      deadline: number;
+      attempts: number;
+      remainingClosures: ReadonlySet<string>;
+    },
   ): Promise<Record<string, unknown>> {
     this.signal?.throwIfAborted();
     if (!phase.startsWith("cad-"))
@@ -567,7 +571,24 @@ export class ScenarioSession {
               ]
             : [],
       );
+    const admissionBudget = readmission ?? {
+      deadline: Date.now() + cliSettlementTimeoutMs,
+      attempts: 0,
+      remainingClosures: new Set(
+        [...peerFixtures]
+          .filter(
+            ([, proof]) =>
+              proof.state === "open" ||
+              (proof.state === "saved" && proof.savedState === "open"),
+          )
+          .map(([id]) => id),
+      ),
+    };
     try {
+      assert.ok(
+        Date.now() < admissionBudget.deadline,
+        "ADMISSION_CHANGED: original CLI settlement budget exhausted before another admission turn",
+      );
       const output = await this.#dispatch(
         phase,
         (requestId) =>
@@ -677,16 +698,39 @@ export class ScenarioSession {
           [...peerFixtures],
           "Inventory changed without new lifecycle evidence",
         );
-        if (readmitted)
+        const remainingClosures = new Set(admissionBudget.remainingClosures);
+        let terminalProgress = false;
+        for (const id of admissionBudget.remainingClosures) {
+          const previous = peerFixtures.get(id),
+            current = snapshotProofs.get(id);
+          if (
+            (previous?.state === "open" && current?.state === "closed") ||
+            (previous?.state === "saved" &&
+              previous.savedState === "open" &&
+              current?.state === "saved" &&
+              current.savedState === "closed")
+          ) {
+            remainingClosures.delete(id);
+            terminalProgress = true;
+          }
+        }
+        // Keep the original single refresh for a new lifecycle proof. Further
+        // turns must consume a distinct, initially admitted peer's exact close;
+        // the finite set and one shared deadline cannot grow during retries.
+        if (admissionBudget.attempts > 0 && !terminalProgress)
           throw new Error(
-            "ADMISSION_CHANGED: inventory changed again before the admitted CAD turn; no helper executed",
+            "ADMISSION_CHANGED: no new terminal receipt from the original admitted peers; no helper executed",
           );
         return await this.#cadFencedAdmission(
           phase + "-readmitted",
           operation,
           data,
           options,
-          true,
+          {
+            deadline: admissionBudget.deadline,
+            attempts: admissionBudget.attempts + 1,
+            remainingClosures,
+          },
         );
       }
       assertFencedDocumentInventory(
