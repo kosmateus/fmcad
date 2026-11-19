@@ -10,6 +10,7 @@ import { savedIdentityTransition } from "./saved-identity";
 import {
   validateCleanupResolution,
   validateCleanupResolutionForClose,
+  readCleanupRecoveryRequests,
 } from "./cleanup-hold-resolution";
 import {
   recoveredFile,
@@ -171,8 +172,16 @@ function supplementalOrigin(
   assert.equal(report["mode"], backend.mode);
   assert.equal(report["qualification"], backend.qualification);
   assert.equal(report["protocol"], backend.protocol);
+  const nativeBinding = fs.existsSync(
+    path.join(directory, "cleanup-native-result-binding.json"),
+  );
+  const terminalDisposition = fs.existsSync(
+    path.join(directory, "legacy", "terminal-disposition.json"),
+  );
   const resolution =
-    report["cleanupHold"] === undefined
+    report["cleanupHold"] === undefined &&
+    !nativeBinding &&
+    !terminalDisposition
       ? undefined
       : (() => {
           assert.ok(
@@ -183,7 +192,15 @@ function supplementalOrigin(
         })();
   assert.equal(document["file"], undefined);
   assert.ok(Array.isArray(report["requests"]));
-  const requests = report["requests"].map(record),
+  const requests = nativeBinding
+      ? (() => {
+          assert.ok(
+            resolution && runtime,
+            "Native result overlay requires a fully validated cleanup resolution",
+          );
+          return readCleanupRecoveryRequests(directory, backend, runtime);
+        })()
+      : report["requests"].map(record),
     creates = requests.filter((r) => r["phase"] === "create");
   assert.equal(creates.length, 1);
   for (const entry of requests) {

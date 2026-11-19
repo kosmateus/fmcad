@@ -286,6 +286,35 @@ test("public canonical reader consumes a prepared owner-bound supplemental close
   );
 });
 
+for (const sidecar of [
+  "cleanup-native-result-binding.json",
+  "legacy/terminal-disposition.json",
+]) {
+  test(`a ${sidecar} selector cannot bypass full cleanup resolution validation`, async (t) => {
+    const f = fixture(t);
+    const reportFile = path.join(f.directory, "report.json");
+    const original = fs.readFileSync(reportFile);
+    const file = path.join(f.directory, sidecar);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ permission: "forged" }), {
+      flag: "wx",
+    });
+    await assert.rejects(
+      provenance.prepareSupplementalCloseProof(
+        f.directory,
+        f.backend,
+        f.requestId,
+        f.ports,
+      ),
+    );
+    assert.deepEqual(fs.readFileSync(reportFile), original);
+    assert.equal(
+      fs.existsSync(path.join(f.directory, "supplemental-close.intent.json")),
+      false,
+    );
+  });
+}
+
 const invalidOriginals: ReadonlyArray<
   readonly [
     string,
