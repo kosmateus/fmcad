@@ -2162,7 +2162,10 @@ export async function resumeCleanup(
     requests.some((r) => !exactScenarioRequestId(r.requestId, owner.clientId))
   )
     throw new Error("Invalid original request inventory");
-  if (raw["cleanupHold"] !== undefined) {
+  if (
+    raw["cleanupHold"] !== undefined ||
+    fs.existsSync(path.join(directory, "cleanup-native-result-binding.json"))
+  ) {
     if (!ports)
       throw new Error(
         "Case-specific mutation outcome remains unresolved; original SDK completion alone cannot release its cleanup hold",
