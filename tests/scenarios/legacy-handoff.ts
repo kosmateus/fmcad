@@ -44,6 +44,14 @@ interface CliSettlementFailure {
   reason: "lookup-unavailable" | "lookup-error" | "invalid-terminal-result";
 }
 export const cliSettlementTimeoutMs = 240_000;
+type LegacyCommand = {
+  readonly key: string;
+  readonly flags: Readonly<Record<string, string>>;
+  readonly requiresDoc?: boolean;
+};
+const { findCommand } = createRequire(__filename)("../../src/commands") as {
+  findCommand(argv: string[]): LegacyCommand | undefined;
+};
 type TerminalExecution = Execution & {
   state: "succeeded" | "failed";
   sdkSettled: true;
@@ -206,7 +214,25 @@ export function reserveCli(
       "Previous admitted command lacks terminal owner settlement",
     );
   const words = [...args];
-  const pin = (flag: string, value: string) => {
+  const command = findCommand(words);
+  if (!command) throw new Error("Unknown owned legacy CLI command");
+  const pin = (flag: string, value: string | undefined) => {
+    const supported =
+      command.flags[flag] === "value" ||
+      (flag === "--doc" && command.requiresDoc === true);
+    if (!supported) {
+      if (
+        words.includes(flag) &&
+        flag === "--doc-file-id" &&
+        !lease.document.file
+      )
+        throw new Error("Unsaved owned fixture cannot accept a cloud file pin");
+      if (words.includes(flag))
+        throw new Error("Foreign legacy CLI pin: " + flag);
+      return;
+    }
+    if (value === undefined)
+      throw new Error("Owned legacy fixture lacks required pin: " + flag);
     const positions = words.flatMap((word, index) =>
       word === flag ? [index] : [],
     );

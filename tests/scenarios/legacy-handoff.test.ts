@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import type { ScenarioBackend, Owner } from "./contracts";
 import {
   awaitCliSettlement,
@@ -18,6 +19,13 @@ import {
   writeHandoff,
 } from "./legacy-handoff";
 import type { TestContext } from "node:test";
+const load = createRequire(__filename),
+  { parseFlags, parseCommand } = load(
+    path.join(process.cwd(), "src/cli"),
+  ) as typeof import("../../src/entrypoints/cli"),
+  { findCommand } = load(
+    path.join(process.cwd(), "src/commands"),
+  ) as typeof import("../../src/composition/library-commands");
 function setup(t: TestContext) {
   const directory = fs.mkdtempSync(
     path.join(os.tmpdir(), "fmcad-owned-child-"),
@@ -79,8 +87,54 @@ test("owned child handoff refuses foreign document/file pins before durable subm
   );
   const reserved = reserveCli(["document", "status"], f.env)!;
   assert.ok(fs.existsSync(reserved.filename));
-  assert.ok(reserved.words.includes(f.document.creationId));
-  assert.ok(reserved.words.includes(f.document.file.fileId));
+  assert.ok(reserved.words.includes(f.document.name));
+  assert.equal(reserved.words.includes(f.document.creationId), false);
+  assert.equal(reserved.words.includes(f.document.file.fileId), false);
+});
+test("owned child doc list stays global while document commands keep exact target pins", (t) => {
+  const f = setup(t),
+    list = reserveCli(["doc", "list"], f.env)!;
+  const parsedList = parseFlags(list.words),
+    listCommand = findCommand(parsedList.rest)!;
+  assert.equal(list.words.includes("--routing"), false);
+  assert.equal(list.words.includes("--client"), false);
+  assert.equal(list.words.includes("--backend"), false);
+  assert.equal(list.words.includes("--request-id"), true);
+  assert.equal(parsedList.rest.includes("--doc"), false);
+  assert.equal(parsedList.opts["doc-id"], undefined);
+  assert.doesNotThrow(() =>
+    parseCommand(
+      listCommand,
+      parsedList.rest.slice(listCommand.key.split(" ").length),
+    ),
+  );
+  assert.throws(
+    () => reserveCli(["doc", "list", "--doc", f.document.name], f.env),
+    /Foreign legacy CLI pin/u,
+  );
+
+  const parameter = reserveCli(["param_list"], f.env)!,
+    parsedParameter = parseFlags(parameter.words),
+    parameterCommand = findCommand(parsedParameter.rest)!;
+  assert.equal(
+    parseCommand(
+      parameterCommand,
+      parsedParameter.rest.slice(parameterCommand.key.split(" ").length),
+    ).flags["--doc"],
+    f.document.name,
+  );
+  assert.equal(parameter.words.includes("--request-id"), true);
+
+  const run = reserveCli(["run", "box"], f.env)!,
+    parsedRun = parseFlags(run.words),
+    runCommand = findCommand(parsedRun.rest)!,
+    runFlags = parseCommand(
+      runCommand,
+      parsedRun.rest.slice(runCommand.key.split(" ").length),
+    ).flags;
+  assert.equal(runFlags["--doc"], f.document.name);
+  assert.equal(runFlags["--doc-id"], f.document.creationId);
+  assert.equal(runFlags["--doc-file-id"], f.document.file.fileId);
 });
 test("owned child handoff requires the exact creation request identity", (t) => {
   const f = setup(t),
@@ -113,15 +167,15 @@ test("owned unsaved import handoff requires an explicit source mode and refuses 
   writeHandoff(scope, lease);
   assert.equal(ownedLease(f.env)?.document.file, undefined);
   assert.throws(
-    () => reserveCli(["param", "list", "--doc-file-id", "foreign"], f.env),
+    () => reserveCli(["param_list", "--doc-file-id", "foreign"], f.env),
     /cloud file pin/,
   );
   assert.throws(
-    () => reserveCli(["param", "list", "--doc-id", "foreign"], f.env),
+    () => reserveCli(["param_list", "--doc-id", "foreign"], f.env),
     /Foreign legacy CLI pin/,
   );
-  const reserved = reserveCli(["param", "list"], f.env)!;
-  assert.ok(reserved.words.includes(f.document.creationId));
+  const reserved = reserveCli(["param_list"], f.env)!;
+  assert.ok(reserved.words.includes(f.document.name));
   assert.equal(reserved.words.includes("--doc-file-id"), false);
   assert.ok(fs.existsSync(reserved.filename));
 });
