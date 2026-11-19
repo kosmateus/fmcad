@@ -185,6 +185,19 @@ test("legacy final inventory accepts exact proven peers without changing user ro
   assert.equal(f.cleanupCalls(), 1);
 });
 
+test("legacy final read-only inventory accepts an exact visible peer after its producer ends", async (t) => {
+  const f = fixture(t),
+    file = path.join(f.peerDirectory, "..", "index.json"),
+    index = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+      string,
+      unknown
+    >;
+  index["status"] = "completed";
+  f.write(file, index);
+  await f.run();
+  assert.equal(f.cleanupCalls(), 1);
+});
+
 test("the final legacy cleanup observation passes the complete production checker", async (t) => {
   const f = fixture(t);
   await f.run();
@@ -299,7 +312,7 @@ const invalid: { name: string; change(f: ReturnType<typeof fixture>): void }[] =
       },
     },
     {
-      name: "held peer without settled lifecycle proof",
+      name: "changed held user baseline without settled lifecycle proof",
       change(f) {
         f.peerReport.cleanup = "deferred";
         Reflect.set(f.peerReport, "cleanupHold", {
@@ -307,6 +320,13 @@ const invalid: { name: string; change(f: ReturnType<typeof fixture>): void }[] =
           requestId: f.peerReport.requests[0]!.requestId,
         });
         f.write(path.join(f.peerDirectory, "report.json"), f.peerReport);
+        const file = path.join(f.session.directory, "..", "index.json"),
+          index = JSON.parse(fs.readFileSync(file, "utf8")) as {
+            before: { documents: unknown[] };
+          };
+        index.before.documents.push(f.peer);
+        f.write(file, index);
+        f.after.documents[1]!.modified = false;
       },
     },
     {

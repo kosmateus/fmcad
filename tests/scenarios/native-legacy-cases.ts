@@ -115,7 +115,7 @@ ${emit(`dict(creationId=${JSON.stringify(own.creationId)}, documents=documents, 
             after["documents"],
             proofs,
             "Legacy cleanup changed a protected document or an unproven peer",
-            false,
+            true,
             seen,
           );
           const settledPeers = new Map(
