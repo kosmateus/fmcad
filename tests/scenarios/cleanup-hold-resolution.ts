@@ -29,6 +29,53 @@ export interface CleanupRecoveryPorts {
     jobId: string,
   ): Promise<unknown>;
 }
+export async function recordFailedCleanupInspection(
+  backend: Pick<
+    ScenarioBackend,
+    "identity" | "mode" | "qualification" | "protocol"
+  >,
+  directory: string,
+  ports: CleanupRecoveryPorts,
+  jobId: string,
+): Promise<void> {
+  assert.ok(
+    !fs.existsSync(path.join(directory, canonical)),
+    "Resolution already exists",
+  );
+  assert.ok(
+    !fs.existsSync(path.join(directory, reinspectionIntent)),
+    "Never reset a reinspection attempt",
+  );
+  const c = context(directory, backend),
+    runtime = await ports.readRuntimeBinding();
+  runtimeBinding(runtime, backend);
+  noProducer(directory, c.document);
+  const intent = json(path.join(directory, inspectionIntent));
+  const held = c.requests.at(-1)!,
+    heldReceipt = record(record(held["result"])["brokerReceipt"]);
+  const holdOriginal = await ports.readJobResult(
+    c.owner,
+    text(held["requestId"]),
+    text(heldReceipt["jobId"]),
+  );
+  const requestId = text(intent["requestId"]);
+  const raw = await ports.readJobResult(c.owner, requestId, jobId);
+  const failure = {
+    version: 1,
+    owner: c.owner,
+    requestId,
+    jobId,
+    runtime,
+    reportHash: c.reportHash,
+    intentHash: hash(read(path.join(directory, inspectionIntent))),
+    holdOriginal,
+    raw,
+  };
+  validateFailedInspection(directory, backend, runtime, failure);
+  assert.deepEqual(await ports.readRuntimeBinding(), runtime);
+  noProducer(directory, c.document);
+  immutable(path.join(directory, failedInspection), failure);
+}
 export function createCleanupRecoveryAdapter(
   backend: ScenarioBackend,
   directory: string,
@@ -61,6 +108,18 @@ export function createCleanupRecoveryAdapter(
     jobs.set(requestId, jobId);
   };
   for (const row of c.requests) bind(text(row["requestId"]), row["result"]);
+  if (fs.existsSync(path.join(directory, failedInspection))) {
+    const failure = json(path.join(directory, failedInspection));
+    assert.equal(failure["reportHash"], c.reportHash);
+    assert.deepEqual(failure["owner"], c.owner);
+    const requestId = text(failure["requestId"]);
+    assert.equal(
+      json(path.join(directory, inspectionIntent))["requestId"],
+      requestId,
+    );
+    assert.equal(record(record(failure["raw"])["job"])["id"], failure["jobId"]);
+    bind(requestId, queueExecution(failure["raw"], c.owner, requestId));
+  }
   const readOriginalResult = async (
     owner: Owner,
     requestId: string,
@@ -152,6 +211,9 @@ export interface VerifiedCleanupResolution {
   readonly expiresAt: number;
 }
 const canonical = "cleanup-hold-resolution.json";
+const inspectionIntent = "cleanup-hold-inspection-intent.json";
+const reinspectionIntent = "cleanup-hold-reinspection-intent.json";
+const failedInspection = "cleanup-hold-inspection-failure.json";
 const hash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
 const read = (filename: string): string => {
@@ -502,6 +564,21 @@ function holdProof(c: ReturnType<typeof context>, source: string): HoldProof {
   assert.ok(text(body["token"]));
   return { kind: "owned-observation", bodyToken: text(body["token"]) };
 }
+function holdModified(
+  c: ReturnType<typeof context>,
+  proof: HoldProof,
+): boolean {
+  const result = record(c.requests.at(-1)!["result"]);
+  const observed =
+    proof.kind === "admission-only"
+      ? record(
+          record(marker(result["stdout"], "FMCAD_RESULT ")["result"])[
+            "inventoryFence"
+          ],
+        )["before"]
+      : marker(result["stdout"])["documents"];
+  return inventory(observed, c.document)["modified"] as boolean;
+}
 function noProducer(directory: string, document: Document) {
   // Cleanup is a terminal lifecycle operation. Unknown liveness is not proof of exit.
   const root = path.dirname(path.dirname(directory));
@@ -539,7 +616,11 @@ function noProducer(directory: string, document: Document) {
     );
   }
 }
-function inspectionSource(document: Document, proof: HoldProof) {
+function inspectionSource(
+  document: Document,
+  proof: HoldProof,
+  expectedModified?: boolean,
+) {
   return programs.program(`import adsk.core, adsk.fusion, json
 app = adsk.core.Application.get()
 def inventory() -> list[dict[str, str | bool | None]]:
@@ -551,7 +632,7 @@ doc = matches[0]
 assert doc.name == ${JSON.stringify(document.name)}, 'Owned identity changed'
 assert sum(d.name == doc.name for d in app.documents) == 1, 'Ambiguous owned name'
 assert not doc.isSaved and doc.dataFile is None, 'Owned fixture became saved'
-assert doc.isModified, 'Held modified fixture unexpectedly became clean'
+${expectedModified === undefined ? "assert doc.isModified, 'Held modified fixture unexpectedly became clean'" : `assert doc.isModified == ${expectedModified ? "True" : "False"}, 'Held fixture modified state changed since authenticated hold'`}
 ${
   proof.kind === "owned-observation"
     ? `design = doc.products.itemByProductType('DesignProductType')
@@ -569,6 +650,114 @@ assert abs(body.volume - 1.68) < 0.000001, 'Owned pose body volume changed'`
 after = inventory()
 assert before == after, 'Inventory changed during inspection'
 ${programs.emit(`dict(creationId=doc.creationId,saved=doc.isSaved,modified=doc.isModified,fileId=None,${proof.kind === "owned-observation" ? `body=dict(token=${JSON.stringify(proof.bodyToken)},count=design.rootComponent.bRepBodies.count,volume=body.volume),` : ""}inventoryFence=dict(version=1,before=before,after=after))`)}`);
+}
+function inspectionCheck(raw: Record<string, unknown>) {
+  assert.ok(
+    Array.isArray(raw["pythonChecks"]) && raw["pythonChecks"].length === 1,
+    "Inspection lacks its production checker receipt",
+  );
+  const check = record(raw["pythonChecks"][0]);
+  assert.equal(check["status"], "passed");
+  assert.deepEqual(check["diagnostics"], []);
+  assert.deepEqual(check["reasons"], []);
+  const checker = record(check["provenance"]);
+  assert.equal(checker["checkerVersion"], "1.40.2");
+  assert.equal(
+    checker["definitionsHash"],
+    "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+  );
+}
+function validateFailedInspection(
+  directory: string,
+  backend: Pick<
+    ScenarioBackend,
+    "identity" | "mode" | "qualification" | "protocol"
+  >,
+  runtime: CleanupRuntimeBinding,
+  value: unknown,
+) {
+  const failure = record(value),
+    c = context(directory, backend),
+    intent = json(path.join(directory, inspectionIntent));
+  assert.equal(failure["version"], 1);
+  assert.deepEqual(failure["owner"], c.owner);
+  assert.deepEqual(failure["runtime"], runtime);
+  assert.equal(failure["reportHash"], c.reportHash);
+  assert.equal(
+    failure["intentHash"],
+    hash(read(path.join(directory, inspectionIntent))),
+  );
+  assert.equal(
+    intent["version"],
+    1,
+    "Only the retained modified-only inspection failure is supported",
+  );
+  assert.deepEqual(intent["owner"], c.owner);
+  assert.deepEqual(intent["runtime"], runtime);
+  assert.equal(intent["reportHash"], c.reportHash);
+  const held = original(
+    directory,
+    c.owner,
+    c.requests.at(-1)!,
+    failure["holdOriginal"],
+  );
+  const holdEvidence = holdProof(c, held.source);
+  assert.equal(holdEvidence.kind, "admission-only");
+  assert.equal(
+    holdModified(c, holdEvidence),
+    false,
+    "Unexpected modified-to-clean drift is not a pristine hold",
+  );
+  const requestId = text(intent["requestId"]);
+  assert.equal(failure["requestId"], requestId);
+  assert.ok(requestId.startsWith(c.owner.clientId + ":"));
+  assert.match(requestId.slice(c.owner.clientId.length + 1), /^[0-9]+$/u);
+  assert.ok(
+    Number(requestId.split(":").at(-1)) >
+      Math.max(
+        ...c.requests.map((row) =>
+          Number(text(row["requestId"]).split(":").at(-1)),
+        ),
+      ),
+  );
+  const result = queueExecution(failure["raw"], c.owner, requestId);
+  const proof = original(
+    directory,
+    c.owner,
+    { requestId, result, intent: { kind: "script" } },
+    failure["raw"],
+  );
+  assert.equal(proof.job["id"], failure["jobId"]);
+  assert.equal(
+    proof.job["state"],
+    "failed",
+    "An uncertain or successful inspection is not this failure disposition",
+  );
+  assert.equal(
+    record(proof.value["execution"])["code"],
+    "SDK_EXECUTION_FAILED",
+  );
+  assert.ok(
+    text(proof.value["stdout"]).startsWith(
+      "Held modified fixture unexpectedly became clean\n",
+    ),
+    "Inspection failed for another reason",
+  );
+  const source = inspectionSource(c.document, holdEvidence);
+  assert.equal(
+    proof.source,
+    source,
+    "Failed inspection is not the retained readonly program",
+  );
+  assert.equal(intent["sourceHash"], hash(source));
+  inspectionCheck(proof.value);
+  assert.ok(Number(proof.job["startedAt"]) >= Number(held.job["finishedAt"]));
+  return {
+    requestId,
+    jobId: text(proof.job["id"]),
+    finishedAt: Number(proof.job["finishedAt"]),
+    raw: failure["raw"],
+  };
 }
 export function validateCleanupResolution(
   directory: string,
@@ -610,7 +799,7 @@ function verifiedDecision(
   const decision = record(JSON.parse(bytes) as unknown);
   const c = context(directory, backend);
   runtimeBinding(runtime, backend);
-  assert.equal(decision["version"], 1);
+  assert.ok(decision["version"] === 1 || decision["version"] === 2);
   assert.equal(decision["reportHash"], c.reportHash);
   assert.equal(decision["creationHash"], c.creationHash);
   assert.equal(decision["indexHash"], c.indexHash);
@@ -629,42 +818,68 @@ function verifiedDecision(
   );
   const holdEvidence = holdProof(c, hold.source);
   assert.deepEqual(decision["holdProof"], holdEvidence);
+  const expectedModified = holdModified(c, holdEvidence);
+  if (decision["version"] === 1)
+    assert.equal(
+      expectedModified,
+      true,
+      "Legacy modified-only decision has a pristine hold",
+    );
+  else assert.equal(decision["expectedModified"], expectedModified);
+  const source = inspectionSource(
+    c.document,
+    holdEvidence,
+    decision["version"] === 1 ? undefined : expectedModified,
+  );
   const inspection = record(decision["inspection"]),
     row = record(inspection["row"]);
-  const intent = json(
-    path.join(directory, "cleanup-hold-inspection-intent.json"),
+  const intentFile =
+    decision["version"] === 1
+      ? inspectionIntent
+      : text(inspection["intentFile"]);
+  assert.ok(
+    intentFile === inspectionIntent || intentFile === reinspectionIntent,
   );
-  assert.equal(intent["version"], 1);
+  let priorFinishedAt = 0;
+  if (intentFile === reinspectionIntent) {
+    assert.equal(decision["version"], 2);
+    assert.equal(
+      decision["failedInspectionHash"],
+      hash(read(path.join(directory, failedInspection))),
+    );
+    const prior = validateFailedInspection(
+      directory,
+      backend,
+      runtime,
+      json(path.join(directory, failedInspection)),
+    );
+    assert.ok(
+      Number(text(row["requestId"]).split(":").at(-1)) >
+        Number(prior.requestId.split(":").at(-1)),
+    );
+    assert.notEqual(
+      record(record(inspection["raw"])["job"])["id"],
+      prior.jobId,
+    );
+    priorFinishedAt = prior.finishedAt;
+  } else assert.equal(decision["failedInspectionHash"], undefined);
+  const intent = json(path.join(directory, intentFile));
+  assert.equal(intent["version"], decision["version"]);
   assert.deepEqual(intent["owner"], c.owner);
   assert.deepEqual(intent["runtime"], runtime);
   assert.equal(intent["reportHash"], c.reportHash);
+  if (decision["version"] === 2)
+    assert.equal(intent["expectedModified"], expectedModified);
   assert.equal(intent["requestId"], row["requestId"]);
   assert.ok(text(row["requestId"]).startsWith(c.owner.clientId + ":"));
   assert.ok(
     !c.requests.some((original) => original["requestId"] === row["requestId"]),
   );
-  assert.equal(
-    intent["sourceHash"],
-    hash(inspectionSource(c.document, holdEvidence)),
-  );
+  assert.equal(intent["sourceHash"], hash(source));
   const proof = original(directory, c.owner, row, inspection["raw"]);
-  assert.equal(proof.source, inspectionSource(c.document, holdEvidence));
+  assert.equal(proof.source, source);
   assert.equal(proof.job["state"], "succeeded");
-  assert.ok(
-    Array.isArray(proof.value["pythonChecks"]) &&
-      proof.value["pythonChecks"].length === 1,
-    "Inspection lacks its production checker receipt",
-  );
-  const check = record(proof.value["pythonChecks"][0]);
-  assert.equal(check["status"], "passed");
-  assert.deepEqual(check["diagnostics"], []);
-  assert.deepEqual(check["reasons"], []);
-  const checker = record(check["provenance"]);
-  assert.equal(checker["checkerVersion"], "1.40.2");
-  assert.equal(
-    checker["definitionsHash"],
-    "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
-  );
+  inspectionCheck(proof.value);
   const value = marker(proof.value["stdout"]),
     fence = record(value["inventoryFence"]);
   assert.equal(value["creationId"], c.document.creationId);
@@ -674,7 +889,7 @@ function verifiedDecision(
   assert.equal(fence["version"], 1);
   assert.deepEqual(fence["after"], fence["before"]);
   assert.equal(value["modified"], own["modified"]);
-  assert.equal(value["modified"], true);
+  assert.equal(value["modified"], expectedModified);
   if (holdEvidence.kind === "owned-observation") {
     const body = record(value["body"]);
     assert.equal(body["token"], holdEvidence.bodyToken);
@@ -688,6 +903,7 @@ function verifiedDecision(
     expiresAt = Number(decision["expiresAt"]);
   assert.equal(expiresAt, inspectedAt + 300_000);
   assert.ok(inspectedAt <= Date.now(), "Inspection clock is in the future");
+  assert.ok(Number(proof.job["startedAt"]) >= priorFinishedAt);
   assert.ok(
     Number(proof.job["startedAt"]) >=
       Math.max(
@@ -738,12 +954,33 @@ export async function resolveCleanupHold(
     c,
     original(directory, c.owner, c.requests.at(-1)!, originals.at(-1)).source,
   );
+  const expectedModified = holdModified(c, holdEvidence);
+  const source = inspectionSource(c.document, holdEvidence, expectedModified);
+  const prior = fs.existsSync(path.join(directory, inspectionIntent))
+    ? validateFailedInspection(
+        directory,
+        backend,
+        runtime,
+        json(path.join(directory, failedInspection)),
+      )
+    : undefined;
+  if (prior) {
+    assert.deepEqual(
+      await backend.lookup(c.owner, prior.requestId),
+      queueExecution(prior.raw, c.owner, prior.requestId),
+    );
+    assert.deepEqual(
+      await ports.readOriginalResult(c.owner, prior.requestId),
+      prior.raw,
+    );
+  }
   assert.deepEqual(await ports.readRuntimeBinding(), runtime);
   noProducer(directory, c.document);
   const requestId =
     c.owner.clientId +
     ":" +
     (Math.max(
+      ...(prior ? [Number(prior.requestId.split(":").at(-1))] : []),
       ...c.requests.map((row) =>
         Number(text(row["requestId"]).split(":").at(-1)),
       ),
@@ -754,19 +991,21 @@ export async function resolveCleanupHold(
     null,
     "Inspection ID already exists",
   );
-  immutable(path.join(directory, "cleanup-hold-inspection-intent.json"), {
-    version: 1,
+  const intentFile = prior ? reinspectionIntent : inspectionIntent;
+  immutable(path.join(directory, intentFile), {
+    version: 2,
     nonce: randomUUID(),
     owner: c.owner,
     requestId,
     runtime,
     reportHash: c.reportHash,
-    sourceHash: hash(inspectionSource(c.document, holdEvidence)),
+    expectedModified,
+    sourceHash: hash(source),
   });
   const result = await backend.execute({
     owner: c.owner,
     requestId,
-    source: inspectionSource(c.document, holdEvidence),
+    source,
     target: c.document,
     directory,
   });
@@ -783,7 +1022,7 @@ export async function resolveCleanupHold(
   noProducer(directory, c.document);
   const inspectedAt = Number(record(record(raw)["job"])["finishedAt"]);
   const decision = {
-    version: 1,
+    version: 2,
     owner: c.owner,
     document: c.document,
     reportHash: c.reportHash,
@@ -792,7 +1031,15 @@ export async function resolveCleanupHold(
     runtime,
     originals,
     holdProof: holdEvidence,
-    inspection: { row, raw },
+    expectedModified,
+    ...(prior
+      ? {
+          failedInspectionHash: hash(
+            read(path.join(directory, failedInspection)),
+          ),
+        }
+      : {}),
+    inspection: { row, raw, intentFile },
     expiresAt: inspectedAt + 300_000,
   };
   assert.ok(Date.now() < decision.expiresAt, "Inspection is stale");
