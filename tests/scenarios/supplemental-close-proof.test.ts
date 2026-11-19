@@ -799,7 +799,10 @@ function heldFixture(t: TestContext) {
   Object.assign(index, {
     mode: backend.mode,
     backendIdentity: backend.identity,
-    processIdentity: { pid: 99999999, birth: "verified-absent-process" },
+    processIdentity: {
+      pid: 99999999,
+      birth: provenance.currentProcessIdentity().birth,
+    },
   });
   f.write(indexFile, index);
   return { ...f, backend };
