@@ -8,10 +8,10 @@ import {
   type Document,
   type Owner,
   type ScenarioBackend,
-  type Execution,
 } from "./contracts";
 import * as programs from "./programs";
 import { childProcessIdentity } from "./legacy-handoff";
+import { queueExecution } from "./queue-backend";
 
 export interface CleanupRuntimeBinding {
   readonly buildHash: string;
@@ -20,6 +20,125 @@ export interface CleanupRuntimeBinding {
 export interface CleanupHoldPorts {
   readRuntimeBinding(): Promise<CleanupRuntimeBinding>;
   readOriginalResult(owner: Owner, requestId: string): Promise<unknown>;
+}
+export interface CleanupRecoveryPorts {
+  readRuntimeBinding(): Promise<CleanupRuntimeBinding>;
+  readJobResult(
+    owner: Owner,
+    requestId: string,
+    jobId: string,
+  ): Promise<unknown>;
+}
+export function createCleanupRecoveryAdapter(
+  backend: ScenarioBackend,
+  directory: string,
+  ports: CleanupRecoveryPorts,
+): { backend: ScenarioBackend; ports: CleanupHoldPorts } {
+  assert.ok(backend.lookup, "Underlying original lookup is mandatory");
+  const c = context(directory, backend),
+    jobs = new Map<string, string>(),
+    attempted = new Set<string>();
+  const sameOwner = (owner: Owner) =>
+    assert.deepEqual(owner, c.owner, "Foreign cleanup owner");
+  const sameRequest = (requestId: string) =>
+    assert.ok(
+      requestId.startsWith(c.owner.clientId + ":") &&
+        /^[0-9]+$/u.test(requestId.slice(c.owner.clientId.length + 1)),
+      "Foreign cleanup request",
+    );
+  const bind = (requestId: string, result: unknown) => {
+    sameRequest(requestId);
+    assert.equal(record(result)["requestId"], requestId);
+    const receipt = record(record(result)["brokerReceipt"]);
+    assert.equal(receipt["requestId"], requestId);
+    assert.equal(receipt["clientId"], c.owner.clientId);
+    const jobId = text(receipt["jobId"]);
+    assert.ok(jobId, "Missing exact original job binding");
+    assert.ok(
+      !jobs.has(requestId) || jobs.get(requestId) === jobId,
+      "Original job binding changed",
+    );
+    jobs.set(requestId, jobId);
+  };
+  for (const row of c.requests) bind(text(row["requestId"]), row["result"]);
+  const readOriginalResult = async (
+    owner: Owner,
+    requestId: string,
+  ): Promise<unknown> => {
+    sameOwner(owner);
+    sameRequest(requestId);
+    assert.equal(
+      hash(read(path.join(directory, "report.json"))),
+      c.reportHash,
+      "Original report changed after adapter binding",
+    );
+    if (!jobs.has(requestId)) {
+      const found = await backend.lookup!(owner, requestId);
+      assert.ok(found, "Missing exact admitted job binding; never replay");
+      bind(requestId, found);
+    }
+    const jobId = jobs.get(requestId)!;
+    const raw = await ports.readJobResult(owner, requestId, jobId),
+      job = record(record(raw)["job"]);
+    assert.equal(job["id"], jobId, "Foreign original job");
+    assert.equal(job["requestId"], requestId, "Foreign original request");
+    assert.equal(job["clientId"], owner.clientId, "Foreign original client");
+    return raw;
+  };
+  const recovered: ScenarioBackend = {
+    identity: backend.identity,
+    mode: backend.mode,
+    qualification: backend.qualification,
+    protocol: backend.protocol,
+    capabilities: backend.capabilities,
+    fusionPath: backend.fusionPath.bind(backend),
+    async lookup(owner, requestId) {
+      sameOwner(owner);
+      sameRequest(requestId);
+      if (!jobs.has(requestId)) {
+        const found = await backend.lookup!(owner, requestId);
+        if (!found) {
+          assert.ok(
+            !attempted.has(requestId),
+            "Admitted request outcome is unverified; never replay",
+          );
+          return null;
+        }
+        bind(requestId, found);
+      }
+      return queueExecution(
+        await readOriginalResult(owner, requestId),
+        owner,
+        requestId,
+      );
+    },
+    async execute(request) {
+      sameOwner(request.owner);
+      sameRequest(request.requestId);
+      assert.equal(request.directory, directory);
+      assert.deepEqual(request.target, c.document);
+      assert.ok(
+        !jobs.has(request.requestId) && !attempted.has(request.requestId),
+        "Never replay an original or attempted request",
+      );
+      assert.equal(
+        await backend.lookup!(request.owner, request.requestId),
+        null,
+        "Request is already admitted",
+      );
+      attempted.add(request.requestId);
+      const result = await backend.execute(request);
+      if (result.brokerReceipt) bind(request.requestId, result);
+      return result;
+    },
+  };
+  return {
+    backend: recovered,
+    ports: {
+      readRuntimeBinding: ports.readRuntimeBinding.bind(ports),
+      readOriginalResult,
+    },
+  };
 }
 export interface VerifiedCleanupResolution {
   readonly digest: string;
@@ -298,7 +417,7 @@ function admissionProof(c: ReturnType<typeof context>, source: string) {
     result = record(last["result"]);
   assert.match(
     text(c.hold["reason"]),
-    /^Fenced CAD turn failed; leave the owned document for inspection: Inventory re-admission lacks exact peer lifecycle receipts/u,
+    /^Fenced CAD turn failed; leave the owned document for inspection: (?:Inventory re-admission lacks exact peer lifecycle receipts|A previously admitted peer lost its exact lifecycle proof)(?:\n|$)/u,
   );
   assert.equal(result["state"], "succeeded");
   const output = marker(result["stdout"], "FMCAD_RESULT ");

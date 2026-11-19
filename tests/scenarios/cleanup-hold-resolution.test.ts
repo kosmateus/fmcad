@@ -9,12 +9,14 @@ import {
   resolveCleanupHold,
   validateCleanupResolution,
   validateCleanupResolutionForClose,
+  createCleanupRecoveryAdapter,
   type CleanupHoldPorts,
 } from "./cleanup-hold-resolution";
 import { resumeCleanup } from "./runner";
 import * as programs from "./programs";
 import { childProcessIdentity } from "./legacy-handoff";
 import { createRequire } from "node:module";
+import { queueExecution } from "./queue-backend";
 
 function fixture(t: TestContext, pose = false) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-held-resolution-"));
@@ -750,4 +752,208 @@ test("close authorization requires freshness while historical validation remains
     () => validateCleanupResolutionForClose(f.directory, f.backend, f.runtime),
     /stale/u,
   );
+});
+
+test("historical adapter reads exact original report jobs even when a fresh backend has no lookup ledger", async (t) => {
+  const f = fixture(t);
+  const calls: string[] = [];
+  const adapted = createCleanupRecoveryAdapter(
+    { ...f.backend, lookup: async () => null },
+    f.directory,
+    {
+      readRuntimeBinding: f.ports.readRuntimeBinding,
+      readJobResult: async (owner, requestId, jobId) => {
+        assert.deepEqual(owner, f.report.owner);
+        const raw = record(f.originals.get(requestId));
+        assert.equal(record(raw["job"])["id"], jobId);
+        calls.push(requestId);
+        return raw;
+      },
+    },
+  );
+  const id = f.report.requests[0]!.requestId;
+  const recovered = await adapted.backend.lookup!(f.report.owner, id);
+  assert.equal(
+    recovered?.brokerReceipt?.jobId,
+    f.report.requests[0]!.result.brokerReceipt?.jobId,
+  );
+  assert.deepEqual(calls, [id]);
+  await assert.rejects(
+    adapted.backend.lookup!({ ...f.report.owner, clientId: "foreign" }, id),
+  );
+});
+
+for (const corruption of ["missing", "job", "request", "client"] as const)
+  test(`historical adapter rejects ${corruption} authenticated original evidence without submission`, async (t) => {
+    const f = fixture(t),
+      id = f.report.requests[0]!.requestId;
+    const adapted = createCleanupRecoveryAdapter(
+      { ...f.backend, lookup: async () => null },
+      f.directory,
+      {
+        readRuntimeBinding: f.ports.readRuntimeBinding,
+        readJobResult: async () => {
+          if (corruption === "missing") return null;
+          const raw = structuredClone(record(f.originals.get(id))),
+            job = record(raw["job"]);
+          job[
+            corruption === "job"
+              ? "id"
+              : corruption === "request"
+                ? "requestId"
+                : "clientId"
+          ] = "foreign";
+          return raw;
+        },
+      },
+    );
+    await assert.rejects(adapted.backend.lookup!(f.report.owner, id));
+    assert.equal(f.submissions(), 0);
+  });
+
+test("historical adapter executes the supported full cleanup from authenticated original jobs and never replays originals", async (t) => {
+  const f = fixture(t),
+    originalIds = new Set(f.report.requests.map((row) => row.requestId));
+  for (const row of f.report.requests)
+    row.result = queueExecution(
+      f.originals.get(row.requestId),
+      f.report.owner,
+      row.requestId,
+    );
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const base: ScenarioBackend = {
+    ...f.backend,
+    lookup: async (_owner, id) =>
+      originalIds.has(id) ? null : (f.executions.get(id) ?? null),
+    execute: async (input) => {
+      await f.backend.execute(input);
+      const result = queueExecution(
+        f.originals.get(input.requestId),
+        input.owner,
+        input.requestId,
+      );
+      f.executions.set(input.requestId, result);
+      return result;
+    },
+  };
+  const adapted = createCleanupRecoveryAdapter(base, f.directory, {
+    readRuntimeBinding: f.ports.readRuntimeBinding,
+    readJobResult: async (_owner, id, jobId) => {
+      const raw = record(f.originals.get(id));
+      assert.equal(record(raw["job"])["id"], jobId);
+      return raw;
+    },
+  });
+  const id = f.report.requests[0]!.requestId;
+  await assert.rejects(
+    adapted.backend.execute({
+      owner: f.report.owner,
+      requestId: id,
+      directory: f.directory,
+      target: f.document,
+      source: "forbidden replay",
+    }),
+    /Never replay/u,
+  );
+  const original = fs.readFileSync(path.join(f.directory, "report.json"));
+  const result = await resumeCleanup(
+    adapted.backend,
+    path.join(f.directory, "report.json"),
+    adapted.ports,
+  );
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    original,
+  );
+});
+
+test("the source-backed lost peer lifecycle admission reason is supported without changing history", async (t) => {
+  const f = fixture(t);
+  f.report.cleanupHold.reason =
+    "Fenced CAD turn failed; leave the owned document for inspection: A previously admitted peer lost its exact lifecycle proof";
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const before = fs.readFileSync(path.join(f.directory, "report.json"));
+  await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    before,
+  );
+});
+
+for (const kind of ["unsupported-reason", "helper-mutation"] as const)
+  test(`admission resolution rejects ${kind} without inspection`, async (t) => {
+    const f = fixture(t);
+    if (kind === "unsupported-reason")
+      f.report.cleanupHold.reason =
+        "Fenced CAD turn failed; leave the owned document for inspection: A previously admitted peer lost its exact lifecycle proof but mutation continued";
+    else {
+      const row = f.report.requests.at(-1)!,
+        payload = record(
+          JSON.parse(
+            row.result.stdout.slice("FMCAD_RESULT ".length),
+          ) as unknown,
+        );
+      record(record(payload["result"])["admission"])["mutationStarted"] = true;
+      const result = {
+        ...row.result,
+        stdout: "FMCAD_RESULT " + JSON.stringify(payload),
+      };
+      row.result = result;
+      f.executions.set(row.requestId, result);
+      record(f.originals.get(row.requestId))["stdout"] = result.stdout;
+    }
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(f.submissions(), 0);
+  });
+
+test("the adapter cannot turn an unbound attempted request into null lookup or a replay", async (t) => {
+  const f = fixture(t);
+  let dispatched = 0;
+  const adapted = createCleanupRecoveryAdapter(
+    {
+      ...f.backend,
+      lookup: async () => null,
+      execute: async (input) => {
+        dispatched++;
+        return {
+          requestId: input.requestId,
+          state: "unknown",
+          sdkSettled: false,
+          mayHaveMutated: true,
+          stdout: "",
+        };
+      },
+    },
+    f.directory,
+    {
+      readRuntimeBinding: f.ports.readRuntimeBinding,
+      readJobResult: async () => null,
+    },
+  );
+  const input = {
+    owner: f.report.owner,
+    requestId: f.report.owner.clientId + ":2",
+    directory: f.directory,
+    target: f.document,
+    source: "readonly inspection",
+  };
+  assert.equal((await adapted.backend.execute(input)).state, "unknown");
+  await assert.rejects(
+    adapted.backend.lookup!(input.owner, input.requestId),
+    /never replay/u,
+  );
+  await assert.rejects(adapted.backend.execute(input), /Never replay/u);
+  assert.equal(dispatched, 1);
 });
