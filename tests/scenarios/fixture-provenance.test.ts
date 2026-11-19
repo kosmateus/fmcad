@@ -106,6 +106,86 @@ function reportFixture(t: { after(fn: () => void): void }) {
   return { root, runRoot, indexFile, reportFile, document, report, identity };
 }
 
+for (const failure of [
+  "no-binding",
+  "no-resolution",
+  "forged-resolution",
+  "foreign-request",
+  "not-last",
+  "different-hold",
+] as const) {
+  test(`readonly legacy creator qualification refuses ${failure} rather than allowing a request prefix`, (t) => {
+    const f = reportFixture(t);
+    const requestId =
+      f.report.owner.clientId + ":legacy:76143149-87b4-4285-8b1d-70dda390da6c";
+    const create = f.report.requests[0]!;
+    const legacy = {
+      ...create,
+      phase: "legacy-cli",
+      requestId,
+      result: {
+        ...create.result,
+        requestId,
+        brokerReceipt: {
+          ...create.result.brokerReceipt,
+          requestId,
+            jobId: randomUUID(),
+        },
+      },
+    };
+    f.report.requests.push(legacy);
+    Object.assign(f.report, {
+      cleanup: "deferred",
+      cleanupHold: {
+        requestId,
+        reason:
+          "Native import child retained an uncertain outcome; inspect original requests",
+      },
+    });
+    if (failure !== "no-binding")
+      fs.writeFileSync(
+        path.join(
+          path.dirname(f.reportFile),
+          "cleanup-legacy-readonly-binding.json",
+        ),
+        JSON.stringify({ version: 1, owner: f.report.owner }),
+      );
+    if (failure === "forged-resolution")
+      fs.writeFileSync(
+        path.join(path.dirname(f.reportFile), "cleanup-hold-resolution.json"),
+        JSON.stringify({
+          runtime: { buildHash: "a".repeat(64), instanceId: "forged-runtime" },
+          holdKind: "settled-legacy-doc-list",
+        }),
+      );
+    if (failure === "foreign-request")
+      legacy.requestId = "foreign:" + requestId;
+    if (failure === "not-last")
+      f.report.requests.push({
+        ...create,
+        phase: "observe-after-legacy",
+        requestId: f.report.owner.clientId + ":3",
+      });
+    if (failure === "different-hold")
+      Object.assign(f.report, {
+        cleanupHold: {
+          requestId: create.requestId,
+          reason:
+            "Native import child retained an uncertain outcome; inspect original requests",
+        },
+      });
+    fs.writeFileSync(f.reportFile, JSON.stringify(f.report));
+    const before = fs.readFileSync(f.reportFile);
+    assert.equal(
+      discoverOwnedUnsavedFixtureProofs(f.root, backend).has(
+        f.document.creationId,
+      ),
+      false,
+    );
+    assert.deepEqual(fs.readFileSync(f.reportFile), before);
+  });
+}
+
 test("an unsettled held peer remains in the coordinator baseline", async (t) => {
   const fixture = reportFixture(t);
   Object.assign(fixture.report, {

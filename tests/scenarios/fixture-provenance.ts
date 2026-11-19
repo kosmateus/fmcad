@@ -681,14 +681,47 @@ function verifiedFixture(
     const requestIds = requests.map((value: unknown) =>
       text(record(value)["requestId"]),
     );
+    if (new Set(requestIds).size !== requestIds.length) return undefined;
     if (
-      new Set(requestIds).size !== requestIds.length ||
       requestIds.some(
         (requestId) =>
           !exactScenarioRequestId(requestId, text(owner["clientId"])),
       )
-    )
-      return undefined;
+    ) {
+      const last = record(requests.at(-1)),
+        clientId = text(owner["clientId"]);
+      const id = text(last["requestId"]),
+        prefix = clientId + ":legacy:";
+      if (
+        last["phase"] !== "legacy-cli" ||
+        !id.startsWith(prefix) ||
+        !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(
+          id.slice(prefix.length),
+        ) ||
+        requestIds
+          .slice(0, -1)
+          .some((requestId) => !exactScenarioRequestId(requestId, clientId)) ||
+        record(report["cleanupHold"])["requestId"] !== id ||
+        record(report["cleanupHold"])["reason"] !==
+          "Native import child retained an uncertain outcome; inspect original requests" ||
+        !fs.existsSync(
+          path.join(directory, "cleanup-legacy-readonly-binding.json"),
+        )
+      )
+        return undefined;
+      const runtime = runtimeBinding(
+        readJson(path.join(directory, "cleanup-hold-resolution.json"))[
+          "runtime"
+        ],
+        backend,
+      );
+      const resolution = validateCleanupResolution(directory, backend, runtime);
+      assert.equal(resolution.holdKind, "settled-legacy-doc-list");
+      assert.deepEqual(
+        readCleanupRecoveryRequests(directory, backend, runtime),
+        requests,
+      );
+    }
 
     const creates = requests
       .map(record)
