@@ -97,6 +97,90 @@ test("normal final audit keeps unchanged inventory valid without any peer proofs
   );
 });
 
+test("normal audit admits authenticated current OPEN peers, including a changed baseline peer", () => {
+  const f = auditFixture();
+  const proofs = new Map<string, OwnedUnsavedFixtureProof>([
+    [
+      peer.id,
+      { document: { creationId: peer.id, name: peer.name }, state: "open" },
+    ],
+    [
+      "new-peer",
+      {
+        document: { creationId: "new-peer", name: "New canonical peer" },
+        state: "open",
+      },
+    ],
+  ]);
+  const after = {
+    active: user.id,
+    documents: [
+      user,
+      { ...peer, modified: true },
+      {
+        id: "new-peer",
+        name: "New canonical peer",
+        saved: false,
+        modified: true,
+        fileId: null,
+      },
+    ],
+  };
+  assertNormalFinalInventory(
+    f.before,
+    after,
+    [own],
+    [f.close],
+    proofs,
+    f.window,
+  );
+});
+
+test("normal OPEN-peer admission preserves user, active, identity and unsaved guards without unsettled exemptions", () => {
+  for (const mutation of [
+    "unsettled",
+    "foreign-name",
+    "saved",
+    "file",
+    "user",
+    "active",
+    "missing",
+  ] as const) {
+    const f = auditFixture();
+    const proofs = new Map<string, OwnedUnsavedFixtureProof>([
+      [
+        peer.id,
+        {
+          document: { creationId: peer.id, name: peer.name },
+          state: mutation === "unsettled" ? "unsettled" : "open",
+        },
+      ],
+    ]);
+    const after = {
+      active: user.id,
+      documents: [{ ...user }, { ...peer, modified: true }],
+    };
+    if (mutation === "foreign-name") after.documents[1]!.name = "Foreign";
+    if (mutation === "saved") after.documents[1]!.saved = true;
+    if (mutation === "file") after.documents[1]!.fileId = "unowned-file";
+    if (mutation === "user") after.documents[0]!.modified = true;
+    if (mutation === "active") after.active = peer.id;
+    if (mutation === "missing") after.documents.pop();
+    assert.throws(
+      () =>
+        assertNormalFinalInventory(
+          f.before,
+          after,
+          [own],
+          [f.close],
+          proofs,
+          f.window,
+        ),
+      mutation,
+    );
+  }
+});
+
 test("normal final audit accepts the actual cad-v1 close trailer without confusing it with a second closure", () => {
   const f = auditFixture();
   f.close.result.stdout +=

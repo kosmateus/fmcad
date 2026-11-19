@@ -20,6 +20,7 @@ import type { OwnedDocument, LiveReport } from "./live-recovery-ports";
 import {
   discoverOwnedUnsavedFixtureProofs,
   assertFencedClosedDocumentInventory,
+  assertReceiptBoundDocumentInventory,
 } from "./scenarios/fixture-provenance";
 import type { OwnedUnsavedFixtureProof } from "./scenarios/fixture-provenance";
 import { scenarioArtifactRoot } from "./scenarios/artifact-root";
@@ -135,9 +136,14 @@ export function assertNormalFinalInventory(
       "Own fixture remains open",
     );
   }
+  const openPeers = new Map(
+    [...proofs].filter(([, proof]) => proof.state === "open"),
+  );
+  const closedBaseline = new Set<string>();
   for (const row of before.entries) {
     const current = after.byId.get(row["id"]);
     if (current) {
+      if (openPeers.has(String(row["id"]))) continue;
       assert.deepEqual(
         current,
         row,
@@ -187,12 +193,18 @@ export function assertNormalFinalInventory(
       row,
       "Peer target drifted since baseline",
     );
+    closedBaseline.add(String(row["id"]));
   }
-  for (const row of after.entries)
-    assert.ok(
-      before.byId.has(row["id"]),
-      "Unexpected document appeared during the run",
-    );
+  const canonicalRows = (entries: Record<string, unknown>[]) =>
+    entries.map(({ id, ...row }) => ({ ...row, creationId: id }));
+  assertReceiptBoundDocumentInventory(
+    canonicalRows(
+      before.entries.filter((row) => !closedBaseline.has(String(row["id"]))),
+    ),
+    canonicalRows(after.entries),
+    openPeers,
+    "A user row changed or a new document lacks authenticated OPEN-peer provenance",
+  );
   assert.equal(
     after.snapshot.active,
     before.snapshot.active,
