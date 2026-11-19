@@ -10,6 +10,7 @@ import {
   validateCleanupResolution,
   validateCleanupResolutionForClose,
   createCleanupRecoveryAdapter,
+  recordFailedCleanupInspection,
   type CleanupHoldPorts,
 } from "./cleanup-hold-resolution";
 import { resumeCleanup } from "./runner";
@@ -18,7 +19,7 @@ import { childProcessIdentity } from "./legacy-handoff";
 import { createRequire } from "node:module";
 import { queueExecution } from "./queue-backend";
 
-function fixture(t: TestContext, pose = false) {
+function fixture(t: TestContext, pose = false, modified = true) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-held-resolution-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const runId = randomUUID(),
@@ -135,7 +136,7 @@ function fixture(t: TestContext, pose = false) {
       result,
     };
   };
-  const rows = [{ ...document, saved: false, modified: true, fileId: null }];
+  const rows = [{ ...document, saved: false, modified, fileId: null }];
   const requests = [
     request(0, "create", marker(create), "# original owned create\n"),
     request(
@@ -279,7 +280,7 @@ function fixture(t: TestContext, pose = false) {
           : {
               creationId: document.creationId,
               saved: false,
-              modified: true,
+              modified,
               fileId: null,
               ...(pose
                 ? { body: { token: "pose-owned-body", count: 1, volume: 1.68 } }
@@ -338,6 +339,51 @@ test("supported held resolution preserves the original failed report and binds a
   );
 });
 
+test("pristine admission holds bind the authenticated clean state instead of requiring a mutation", async (t) => {
+  const f = fixture(t, false, false);
+  const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.equal(proof.inspectedModified, false);
+  assert.match(
+    fs.readFileSync(path.join(f.directory, "request-2.py"), "utf8"),
+    /assert doc\.isModified == False/u,
+  );
+  assert.deepEqual(
+    validateCleanupResolution(f.directory, f.backend, f.runtime),
+    proof,
+  );
+});
+
+for (const modified of [false, true])
+  test(`inspection rejects unexpected modified drift from ${modified} to ${!modified}`, async (t) => {
+    const f = fixture(t, false, modified),
+      execute = f.backend.execute.bind(f.backend);
+    f.backend.execute = async (input) => {
+      const result = await execute(input),
+        raw = record(f.originals.get(input.requestId));
+      const value = record(
+        JSON.parse(result.stdout.slice(programs.marker.length)) as unknown,
+      );
+      value["modified"] = !modified;
+      const fence = record(value["inventoryFence"]);
+      for (const key of ["before", "after"])
+        for (const row of fence[key] as Record<string, unknown>[])
+          if (row["creationId"] === f.document.creationId)
+            row["modified"] = !modified;
+      const changed = {
+        ...result,
+        stdout: programs.marker + JSON.stringify(value),
+      };
+      raw["stdout"] = changed.stdout;
+      f.executions.set(input.requestId, changed);
+      return changed;
+    };
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(
+      fs.existsSync(path.join(f.directory, "cleanup-hold-resolution.json")),
+      false,
+    );
+  });
+
 test("pose observation holds resolve using the authenticated owned shape and fresh exact-body inspection", async (t) => {
   const f = fixture(t, true),
     filename = path.join(f.directory, "report.json"),
@@ -376,6 +422,7 @@ test("settled historical failures remain failures and do not require fictional P
   f.executions.set(failed.requestId, result);
   const raw = record(f.originals.get(failed.requestId));
   record(raw["job"])["state"] = "failed";
+  record(record(raw["job"])["operationResult"])["executionOutcome"] = "failed";
   record(raw["execution"])["state"] = "failed";
   f.report.requests.splice(1, 0, failed);
   const filename = path.join(f.directory, "report.json");
@@ -956,4 +1003,290 @@ test("the adapter cannot turn an unbound attempted request into null lookup or a
   );
   await assert.rejects(adapted.backend.execute(input), /Never replay/u);
   assert.equal(dispatched, 1);
+});
+
+// Retained v1 readonly wire program from 66fb, independent of the current generator.
+function legacyInspectionSource(document: {
+  creationId: string;
+  name: string;
+}) {
+  return programs.program(`import adsk.core, adsk.fusion, json
+app = adsk.core.Application.get()
+def inventory() -> list[dict[str, str | bool | None]]:
+    return [dict(creationId=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified,fileId=d.dataFile.id if d.dataFile else None,active=d == app.activeDocument) for d in app.documents]
+before = inventory()
+matches = [d for d in app.documents if d.creationId == ${JSON.stringify(document.creationId)}]
+assert len(matches) == 1, 'Owned creationId is unavailable'
+doc = matches[0]
+assert doc.name == ${JSON.stringify(document.name)}, 'Owned identity changed'
+assert sum(d.name == doc.name for d in app.documents) == 1, 'Ambiguous owned name'
+assert not doc.isSaved and doc.dataFile is None, 'Owned fixture became saved'
+assert doc.isModified, 'Held modified fixture unexpectedly became clean'
+
+after = inventory()
+assert before == after, 'Inventory changed during inspection'
+${programs.emit("dict(creationId=doc.creationId,saved=doc.isSaved,modified=doc.isModified,fileId=None,inventoryFence=dict(version=1,before=before,after=after))")}`);
+}
+function failedInspectionFixture(t: TestContext, modified = false) {
+  const f = fixture(t, false, modified),
+    sha = (value: string | Buffer) =>
+      createHash("sha256").update(value).digest("hex");
+  for (const row of f.report.requests)
+    row.result = queueExecution(
+      f.originals.get(row.requestId),
+      f.report.owner,
+      row.requestId,
+    );
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const source = legacyInspectionSource(f.document),
+    requestId = f.report.owner.clientId + ":2";
+  f.request(
+    2,
+    "inspection",
+    "Held modified fixture unexpectedly became clean\nAssertionError: Held modified fixture unexpectedly became clean\n",
+    source,
+  );
+  const raw = record(f.originals.get(requestId));
+  record(raw["job"])["state"] = "failed";
+  record(record(raw["job"])["operationResult"])["executionOutcome"] = "failed";
+  record(raw["execution"])["state"] = "failed";
+  record(raw["execution"])["code"] = "SDK_EXECUTION_FAILED";
+  record(raw["execution"])["exitCode"] = 1;
+  record(raw["execution"])["publicationOutcome"] = "failed";
+  const jobId = String(record(raw["job"])["id"]);
+  const intent = {
+    version: 1,
+    nonce: randomUUID(),
+    owner: f.report.owner,
+    requestId,
+    runtime: f.runtime,
+    reportHash: sha(fs.readFileSync(path.join(f.directory, "report.json"))),
+    sourceHash: sha(source),
+  };
+  fs.writeFileSync(
+    path.join(f.directory, "cleanup-hold-inspection-intent.json"),
+    JSON.stringify(intent) + "\n",
+  );
+  const recoveryPorts = {
+    readRuntimeBinding: f.ports.readRuntimeBinding,
+    readJobResult: async (
+      _owner: typeof f.report.owner,
+      id: string,
+      job: string,
+    ) => {
+      const result = record(f.originals.get(id));
+      assert.equal(record(result["job"])["id"], job);
+      return result;
+    },
+  };
+  const base: ScenarioBackend = {
+    ...f.backend,
+    execute: async (input) => {
+      await f.backend.execute(input);
+      const result = queueExecution(
+        f.originals.get(input.requestId),
+        input.owner,
+        input.requestId,
+      );
+      f.executions.set(input.requestId, result);
+      return result;
+    },
+  };
+  return {
+    ...f,
+    base,
+    recoveryPorts,
+    failedRaw: raw,
+    failedRequestId: requestId,
+    failedJobId: jobId,
+  };
+}
+
+test("a settled failed readonly v1 inspection gets immutable disposition and a new inspection ID without replay", async (t) => {
+  const f = failedInspectionFixture(t),
+    intentFile = path.join(f.directory, "cleanup-hold-inspection-intent.json"),
+    before = fs.readFileSync(intentFile);
+  await recordFailedCleanupInspection(
+    f.base,
+    f.directory,
+    f.recoveryPorts,
+    f.failedJobId,
+  );
+  const adapted = createCleanupRecoveryAdapter(
+    f.base,
+    f.directory,
+    f.recoveryPorts,
+  );
+  const proof = await resolveCleanupHold(
+    adapted.backend,
+    f.directory,
+    adapted.ports,
+  );
+  assert.equal(proof.inspectionRequestId, f.report.owner.clientId + ":3");
+  assert.equal(proof.inspectedModified, false);
+  assert.deepEqual(fs.readFileSync(intentFile), before);
+  assert.ok(
+    fs.existsSync(
+      path.join(f.directory, "cleanup-hold-inspection-failure.json"),
+    ),
+  );
+  assert.ok(
+    fs.existsSync(
+      path.join(f.directory, "cleanup-hold-reinspection-intent.json"),
+    ),
+  );
+  assert.equal(f.submissions(), 1);
+  assert.equal(record(f.failedRaw["job"])["state"], "failed");
+  const result = await resumeCleanup(
+    adapted.backend,
+    path.join(f.directory, "report.json"),
+    adapted.ports,
+  );
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(fs.readFileSync(intentFile), before);
+});
+
+for (const corruption of [
+  "unsettled",
+  "unknown",
+  "foreign-client",
+  "checker",
+  "source",
+  "other-failure",
+  "modified-drift",
+] as const)
+  test(`failed readonly disposition rejects ${corruption} without another inspection`, async (t) => {
+    const f = failedInspectionFixture(t, corruption === "modified-drift");
+    if (corruption === "unsettled")
+      record(f.failedRaw["execution"])["sdkSettled"] = false;
+    if (corruption === "unknown")
+      record(f.failedRaw["job"])["state"] = "unknown";
+    if (corruption === "foreign-client")
+      record(f.failedRaw["job"])["clientId"] = "foreign";
+    if (corruption === "checker") f.failedRaw["pythonChecks"] = [];
+    if (corruption === "other-failure")
+      f.failedRaw["stdout"] = "Owned identity changed\n";
+    if (corruption === "source") {
+      const file = path.join(f.directory, "request-2.py"),
+        source = fs.readFileSync(file, "utf8") + "# different source\n";
+      fs.writeFileSync(file, source);
+      const input = record(
+        (record(f.failedRaw["provenance"])["inputs"] as unknown[])[0],
+      );
+      input["sha256"] = createHash("sha256").update(source).digest("hex");
+      input["bytes"] = Buffer.byteLength(source);
+    }
+    const intent = fs.readFileSync(
+      path.join(f.directory, "cleanup-hold-inspection-intent.json"),
+    );
+    await assert.rejects(
+      recordFailedCleanupInspection(
+        f.base,
+        f.directory,
+        f.recoveryPorts,
+        f.failedJobId,
+      ),
+    );
+    assert.equal(f.submissions(), 0);
+    assert.equal(
+      fs.existsSync(
+        path.join(f.directory, "cleanup-hold-inspection-failure.json"),
+      ),
+      false,
+    );
+    assert.deepEqual(
+      fs.readFileSync(
+        path.join(f.directory, "cleanup-hold-inspection-intent.json"),
+      ),
+      intent,
+    );
+  });
+
+test("a prior inspection intent without authenticated settled disposition cannot be reset", async (t) => {
+  const f = failedInspectionFixture(t),
+    before = fs.readFileSync(
+      path.join(f.directory, "cleanup-hold-inspection-intent.json"),
+    );
+  const adapted = createCleanupRecoveryAdapter(
+    f.base,
+    f.directory,
+    f.recoveryPorts,
+  );
+  await assert.rejects(
+    resolveCleanupHold(adapted.backend, f.directory, adapted.ports),
+  );
+  assert.equal(f.submissions(), 0);
+  assert.deepEqual(
+    fs.readFileSync(
+      path.join(f.directory, "cleanup-hold-inspection-intent.json"),
+    ),
+    before,
+  );
+});
+
+test("retained v1 modified-only decisions stay valid without rewriting their history", (t) => {
+  const f = fixture(t),
+    requestId = f.report.owner.clientId + ":2",
+    source = legacyInspectionSource(f.document);
+  const rows = [{ ...f.document, saved: false, modified: true, fileId: null }];
+  const row = f.request(
+    2,
+    "inspection",
+    programs.marker +
+      JSON.stringify({
+        creationId: f.document.creationId,
+        saved: false,
+        modified: true,
+        fileId: null,
+        inventoryFence: { version: 1, before: rows, after: rows },
+      }),
+    source,
+  );
+  row.intent = { kind: "script" };
+  const sha = (value: string | Buffer) =>
+    createHash("sha256").update(value).digest("hex");
+  const reportHash = sha(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+  );
+  fs.writeFileSync(
+    path.join(f.directory, "cleanup-hold-inspection-intent.json"),
+    JSON.stringify({
+      version: 1,
+      owner: f.report.owner,
+      runtime: f.runtime,
+      requestId,
+      reportHash,
+      sourceHash: sha(source),
+    }),
+  );
+  const raw = record(f.originals.get(requestId));
+  const decision = {
+    version: 1,
+    owner: f.report.owner,
+    document: f.document,
+    runtime: f.runtime,
+    reportHash,
+    creationHash: sha(fs.readFileSync(path.join(f.directory, "creation.json"))),
+    indexHash: sha(fs.readFileSync(path.join(f.directory, "..", "index.json"))),
+    originals: f.report.requests.map((original) =>
+      f.originals.get(original.requestId),
+    ),
+    holdProof: { kind: "admission-only" },
+    inspection: { row, raw },
+    expiresAt: Number(record(raw["job"])["finishedAt"]) + 300_000,
+  };
+  const file = path.join(f.directory, "cleanup-hold-resolution.json");
+  fs.writeFileSync(file, JSON.stringify(decision));
+  const before = fs.readFileSync(file);
+  t.mock.method(Date, "now", () => decision.expiresAt + 1);
+  assert.equal(
+    validateCleanupResolution(f.directory, f.backend, f.runtime)
+      .inspectedModified,
+    true,
+  );
+  assert.deepEqual(fs.readFileSync(file), before);
 });
