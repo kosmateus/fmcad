@@ -9,6 +9,7 @@ import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 const { createLocalWorker, parseWorkerJson } = runtimeRequire(
   "../packages/node-adapters/dist/python/local-pipeline",
 ) as typeof import("../packages/node-adapters/src/python/local-pipeline");
@@ -50,6 +51,16 @@ function stoppedProcess(stat: string): boolean {
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT")
       return true;
+    // procfs can open stat successfully, then lose its process before read.
+    if (
+      /^\/proc\/[1-9]\d*\/stat$/u.test(stat) &&
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ESRCH" &&
+      "syscall" in error &&
+      error.syscall === "read"
+    )
+      return true;
     throw error;
   }
 }
@@ -70,6 +81,60 @@ test("process observation accepts a proc entry disappearing after its existence 
   fs.writeFileSync(zombie, "123 (owned worker) Z 1 0\n");
   assert.equal(stoppedProcess(zombie), true);
   assert.throws(() => stoppedProcess(root), { code: "EISDIR" });
+});
+
+test("process observation accepts a proc stat opened before the process exits and read after reaping", async (t) => {
+  const child = spawn("python3", ["-c", "import time;time.sleep(60)"], {
+    stdio: "ignore",
+  });
+  t.after(() => child.kill("SIGKILL"));
+  await once(child, "spawn");
+  const stat = `/proc/${child.pid}/stat`,
+    fd = fs.openSync(stat, "r");
+  t.after(() => fs.closeSync(fd));
+  const exited = once(child, "exit");
+  child.kill("SIGKILL");
+  await exited;
+  // Force the actual open/read interleaving without relying on scheduler timing.
+  assert.throws(() => fs.readFileSync(fd, "utf8"), {
+    code: "ESRCH",
+    syscall: "read",
+  });
+  const read = fs.readFileSync;
+  t.mock.method(fs, "readFileSync", (file: fs.PathOrFileDescriptor) =>
+    read(file === stat ? fd : file, "utf8"),
+  );
+  assert.equal(stoppedProcess(stat), true);
+});
+
+test("process observation does not hide unrelated read errors or non-proc ESRCH", (t) => {
+  const failure = Object.assign(new Error("process observation failure"), {
+    code: "ESRCH",
+    syscall: "read",
+  });
+  t.mock.method(fs, "readFileSync", () => {
+    throw failure;
+  });
+  assert.throws(
+    () => stoppedProcess("/tmp/opencode/not-proc-stat"),
+    (error) => error === failure,
+  );
+  failure.code = "EACCES";
+  assert.throws(
+    () => stoppedProcess(`/proc/${process.pid}/stat`),
+    (error) => error === failure,
+  );
+  failure.code = "EIO";
+  assert.throws(
+    () => stoppedProcess(`/proc/${process.pid}/stat`),
+    (error) => error === failure,
+  );
+  failure.code = "ESRCH";
+  failure.syscall = "open";
+  assert.throws(
+    () => stoppedProcess(`/proc/${process.pid}/stat`),
+    (error) => error === failure,
+  );
 });
 
 for (const output of [

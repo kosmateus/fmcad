@@ -8,7 +8,12 @@ import { createRequire } from "node:module";
 import { currentProcessIdentity } from "./fixture-provenance";
 import { marker } from "./programs";
 
-function fixture(t: TestContext, userActive = false, creationReadback = false) {
+function fixture(
+  t: TestContext,
+  userActive = false,
+  creationReadback = false,
+  missingObservedPeer = false,
+) {
   const root = path.resolve(__dirname, "../../.."),
     parent = path.join(root, ".test-artifacts/scenario-unit");
   fs.mkdirSync(parent, { recursive: true });
@@ -183,7 +188,9 @@ function fixture(t: TestContext, userActive = false, creationReadback = false) {
   };
   const state = {
     documents: [
-      ...snapshot.documents,
+      ...snapshot.documents.filter(
+        (row) => !missingObservedPeer || row.creationId !== peer.creationId,
+      ),
       { ...own, saved: false, modified: false, fileId: null },
     ].map((row) => ({ ...row, active: row.creationId === own.creationId })),
     active: own.name,
@@ -284,6 +291,59 @@ test("legacy child preserves the real original user active document", (t) => {
     (result.readback as { before: { active: string } }).before.active,
     f.user.name,
   );
+});
+
+function expirePeer(f: ReturnType<typeof fixture>) {
+  const file = path.join(f.peerDirectory, "..", "index.json"),
+    index = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+      string,
+      unknown
+    >;
+  index["status"] = "completed";
+  f.write(file, index);
+}
+
+test("legacy read-only startup and creation classify an exact visible peer after its producer ends", (t) => {
+  const f = fixture(t, true, true);
+  expirePeer(f);
+  const result = f.run();
+  assert.equal(result.reachedCli, true, result.stderr);
+  const report = result.readback as {
+    tests: { name: string; status: string }[];
+  };
+  assert.equal(
+    report.tests.find((row) => row.name === "doc new and ownership")?.status,
+    "passed",
+  );
+});
+
+test("legacy creation rejects an observed unsettled peer disappearing without exact cleanup", (t) => {
+  const f = fixture(t, true, true, true);
+  expirePeer(f);
+  const result = f.run(),
+    report = result.readback as {
+      tests: { name: string; status: string; error?: string }[];
+    };
+  const creation = report.tests.find(
+    (row) => row.name === "doc new and ownership",
+  );
+  assert.equal(creation?.status, "failed", result.stderr);
+  assert.match(
+    creation.error ?? "",
+    /disappeared without its exact close receipt/u,
+  );
+});
+
+test("legacy startup cannot exempt a changed held user baseline as an unsettled peer", (t) => {
+  const f = fixture(t, true);
+  f.index.before.documents.push({ ...f.peer, modified: true });
+  f.write(path.join(f.directory, "..", "index.json"), f.index);
+  f.peerReport.cleanup = "deferred";
+  Reflect.set(f.peerReport, "cleanupHold", { reason: "unknown" });
+  f.write(path.join(f.peerDirectory, "report.json"), f.peerReport);
+  const result = f.run();
+  assert.equal(result.reachedCli, false, result.stderr);
+  assert.notEqual(result.status, 0);
 });
 
 test("legacy creation compares protected rows and exact peer receipts instead of a filtered document count", (t) => {

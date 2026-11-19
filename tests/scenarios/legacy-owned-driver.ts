@@ -195,6 +195,8 @@ assertReceiptBoundDocumentInventory(
   originalDocuments,
   peerProofs,
   "Original legacy snapshot is not explained by its protected baseline and exact peer receipts",
+  true,
+  visibleIds,
 );
 const originalActive =
   before["active"] === null
@@ -445,6 +447,7 @@ const created = group(
         (row) => row.creationId !== lease!.document.creationId,
       ),
       visible = new Set([
+        ...visibleIds,
         ...initial.map((row) => requiredText(row["creationId"])),
         ...others.map((row) => row.creationId),
       ]),
@@ -469,6 +472,8 @@ const created = group(
         ),
       ),
       "Legacy creation changed a protected document or introduced an unproven peer",
+      true,
+      visibleIds,
     );
     assert.equal(state.documents.filter((d) => d.name === name).length, 1);
     owned = true;
