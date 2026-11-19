@@ -61,7 +61,51 @@ export function savedIdentityTransition(
   assert.equal(creation["creationId"], original.creationId);
   assert.equal(creation["name"], original.name);
   assert.equal(creation["clientId"], owner.clientId);
-  assert.equal(creation["requestId"], owner.clientId + ":0");
+  const creates = requests.filter((request) => request.phase === "create");
+  assert.equal(creates.length, 1, "Expected one original create phase");
+  const create = creates[0]!,
+    created = create.result,
+    createReceipt = created?.brokerReceipt;
+  const createSuffix = create.requestId.slice(owner.clientId.length + 1);
+  assert.equal(create.requestId, owner.clientId + ":" + createSuffix);
+  assert.match(createSuffix, /^(0|[1-9][0-9]*)$/u);
+  assert.equal(
+    requests.filter((request) => request.requestId === create.requestId).length,
+    1,
+    "Original create request is duplicated",
+  );
+  assert.ok(requests.indexOf(create) < requests.indexOf(entry));
+  assert.ok(BigInt(createSuffix) < BigInt(suffix));
+  assert.equal(creation["requestId"], create.requestId);
+  assert.equal(creation["activeCreationId"], original.creationId);
+  assert.ok(created?.sdkSettled && created.state === "succeeded");
+  assert.equal(created.mayHaveMutated, true);
+  assert.ok(created.exitCode === undefined || created.exitCode === 0);
+  assert.equal(created.requestId, create.requestId);
+  assert.ok(createReceipt, "Create lacks its original broker receipt");
+  assert.equal(createReceipt.requestId, create.requestId);
+  assert.equal(createReceipt.clientId, owner.clientId);
+  assert.equal(createReceipt.state, "succeeded");
+  text(createReceipt.jobId);
+  assert.notEqual(createReceipt.jobId, receipt.jobId);
+  if (createReceipt.operationResult != null) {
+    const operation = record(createReceipt.operationResult);
+    assert.equal(operation["version"], 1);
+    assert.equal(operation["requestId"], create.requestId);
+    assert.equal(operation["jobId"], createReceipt.jobId);
+    assert.equal(operation["acceptance"], "accepted");
+    assert.equal(operation["executionOutcome"], "succeeded");
+    assert.equal(operation["mayHaveMutated"], true);
+  }
+  const createLines = created.stdout
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith(marker));
+  assert.equal(createLines.length, 1, "Expected one original create result");
+  assert.deepEqual(
+    record(JSON.parse(text(createLines[0]).slice(marker.length)) as unknown),
+    creation,
+    "Original create result differs from immutable creation evidence",
+  );
   const intent = read(directory, "save-intent.json");
   assert.equal(intent["creationId"], original.creationId);
   assert.equal(intent["name"], original.name);
