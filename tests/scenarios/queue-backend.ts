@@ -9,6 +9,7 @@ import type {
   ScriptRequest,
 } from "./contracts";
 import { record } from "./contracts";
+import { scenarioArtifactRoot } from "./artifact-root";
 import type { ClientModule, Queue } from "../live-recovery-ports";
 
 interface QueueExecProcessResult {
@@ -55,6 +56,7 @@ export class QueueScenarioBackend implements ScenarioBackend {
   readonly #buildHash: () => string;
   readonly #queueExec?: QueueExecHelpers;
   readonly #cliPath?: string;
+  readonly #scenarioRoot: string;
   constructor(
     readonly mode: "fusion" | "simulator",
     readonly protocol: Protocol,
@@ -64,6 +66,7 @@ export class QueueScenarioBackend implements ScenarioBackend {
     readonly pathMapper: (file: string) => string,
     simulatorRuntime?: { readonly root: string; readonly fingerprint: string },
   ) {
+    this.#scenarioRoot = scenarioArtifactRoot(root, mode);
     const load = createRequire(path.join(root, "package.json"));
     if (simulatorRuntime && mode !== "simulator")
       throw new Error("Simulator runtime binding cannot be used for Fusion");
@@ -282,7 +285,7 @@ export class QueueScenarioBackend implements ScenarioBackend {
       const key = requestKey(owner, requestId);
       const jobId =
         this.#jobIds.get(key) ??
-        legacyQueueReceipt(this.root, owner, requestId);
+        scenarioQueueJobId(this.#scenarioRoot, owner, requestId);
       if (!jobId) return null;
       this.#jobIds.set(key, jobId);
       const original = await this.#queueExec!.readQueueResult({
@@ -324,8 +327,8 @@ function requestKey(owner: Owner, requestId: string): string {
   return owner.clientId + "\0" + requestId;
 }
 
-function legacyQueueReceipt(
-  root: string,
+export function legacyQueueReceipt(
+  scenarioRoot: string,
   owner: Owner,
   requestId: string,
 ): string | undefined {
@@ -334,8 +337,7 @@ function legacyQueueReceipt(
   if (requestId !== prefix + receiptId || !/^[a-f0-9-]{36}$/u.test(receiptId))
     return undefined;
   const filename = path.join(
-    root,
-    ".test-artifacts/scenarios",
+    scenarioRoot,
     owner.runId,
     owner.scenarioId,
     "legacy",
@@ -373,6 +375,112 @@ function legacyQueueReceipt(
   )
     throw new Error("Foreign original public queue receipt");
   return value["jobId"];
+}
+
+export function scenarioQueueJobId(
+  scenarioRoot: string,
+  owner: Owner,
+  requestId: string,
+): string | undefined {
+  const legacy = legacyQueueReceipt(scenarioRoot, owner, requestId);
+  if (legacy) return legacy;
+  if (owner.scenarioId === "coordinator") {
+    const prefix = owner.clientId + ":";
+    if (
+      owner.clientId !== "scenario:" + owner.runId + ":coordinator" ||
+      !requestId.startsWith(prefix)
+    )
+      return undefined;
+    const phase = requestId.slice(prefix.length);
+    if (!/^(before|files-before-\d+)$/u.test(phase)) return undefined;
+    const filename = path.join(
+      scenarioRoot,
+      owner.runId,
+      "_coordinator",
+      phase + ".result.json",
+    );
+    let fd: number;
+    try {
+      fd = fs.openSync(
+        filename,
+        fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0),
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    }
+    try {
+      const stat = fs.fstatSync(fd);
+      if (!stat.isFile() || stat.size > 16 * 1024)
+        throw new Error("Invalid original coordinator result");
+      const value = record(JSON.parse(fs.readFileSync(fd, "utf8")) as unknown),
+        receipt = record(value["brokerReceipt"]);
+      if (value["requestId"] !== requestId) return undefined;
+      return queueJobIdFromReceipt(receipt, owner, requestId);
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+  const filename = path.join(
+    scenarioRoot,
+    owner.runId,
+    owner.scenarioId,
+    "report.json",
+  );
+  let fd: number;
+  try {
+    fd = fs.openSync(
+      filename,
+      fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0),
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  let report: Record<string, unknown>;
+  try {
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile() || stat.size > 16 * 1024 * 1024)
+      throw new Error("Invalid original scenario report");
+    report = record(JSON.parse(fs.readFileSync(fd, "utf8")) as unknown);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const reportOwner = record(report["owner"]),
+    requests = report["requests"];
+  if (
+    reportOwner["runId"] !== owner.runId ||
+    reportOwner["scenarioId"] !== owner.scenarioId ||
+    reportOwner["clientId"] !== owner.clientId ||
+    !Array.isArray(requests)
+  )
+    throw new Error("Foreign original scenario report");
+  const matches = requests.filter((entry) => {
+    const row = record(entry);
+    return row["requestId"] === requestId;
+  });
+  if (matches.length === 0) return undefined;
+  if (matches.length !== 1)
+    throw new Error("Duplicate original request report");
+  const result = record(record(matches[0])["result"]),
+    receipt = record(result["brokerReceipt"]);
+  return queueJobIdFromReceipt(receipt, owner, requestId);
+}
+
+function queueJobIdFromReceipt(
+  receipt: Record<string, unknown>,
+  owner: Owner,
+  requestId: string,
+): string | undefined {
+  if (
+    receipt["requestId"] !== requestId ||
+    receipt["clientId"] !== owner.clientId ||
+    !["succeeded", "failed"].includes(String(receipt["state"])) ||
+    typeof receipt["jobId"] !== "string" ||
+    !receipt["jobId"]
+  )
+    return undefined;
+  return receipt["jobId"];
 }
 
 /** Validate the public CLI receipts before reading the original job result. */

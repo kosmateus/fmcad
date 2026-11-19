@@ -280,7 +280,6 @@ function cli(args: string[]) {
     assert.equal(receipt.requestId, prefix + receiptId);
     assert.match(receiptId, /^[a-f0-9-]{36}$/u);
     assert.ok(["succeeded", "failed"].includes(receipt.state));
-    assert.equal(receipt.executionOutcome, receipt.state);
     assert.equal(receipt.operationResult["executionOutcome"], receipt.state);
   } catch (error) {
     unsafe = true;

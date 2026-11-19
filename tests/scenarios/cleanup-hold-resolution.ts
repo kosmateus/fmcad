@@ -621,8 +621,22 @@ function context(
   );
   const ids = requests.map((row) => text(row["requestId"]));
   assert.equal(new Set(ids).size, ids.length);
-  for (const id of ids)
-    assert.match(id, new RegExp("^" + owner.clientId + ":[0-9]+$", "u"));
+  const legacyChild =
+    owner.scenarioId === "native-legacy-0" &&
+    hold["reason"] ===
+      "Native import child retained an uncertain outcome; inspect original requests";
+  for (const [index, row] of requests.entries()) {
+    const id = ids[index]!;
+    if (legacyChild && index === requests.length - 1) {
+      assert.equal(row["phase"], "legacy-cli");
+      assert.match(
+        id,
+        new RegExp("^" + owner.clientId + ":legacy:[a-f0-9-]{36}$", "u"),
+      );
+    } else {
+      assert.match(id, new RegExp("^" + owner.clientId + ":[0-9]+$", "u"));
+    }
+  }
   const creationBytes = read(path.join(directory, "creation.json"));
   const creation = record(JSON.parse(creationBytes) as unknown);
   assert.equal(creation["creationId"], document.creationId);

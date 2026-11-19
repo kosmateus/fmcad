@@ -270,6 +270,21 @@ test("public worker and CLI job DTOs use operationResult and top-level execution
   );
 });
 
+test("legacy CLI result accepts executionOutcome in operationResult without a duplicate top-level field", () => {
+  const result = parsePublicQueueJob(
+    {
+      id: "legacy-job",
+      requestId: "legacy-request",
+      clientId: "legacy-client",
+      state: "succeeded",
+      operationResult: { executionOutcome: "succeeded" },
+    },
+    "legacy CLI job",
+  );
+  assert.equal(result.executionOutcome, undefined);
+  assert.equal(result.operationResult["executionOutcome"], result.state);
+});
+
 test("retained import receipt parsers reject malformed identifiers, operation outcomes and output descriptors", () => {
   const job = {
     id: "owned-job",
