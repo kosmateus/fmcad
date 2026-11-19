@@ -8,6 +8,10 @@ import type { Document, Owner, SavedFile, ScenarioBackend } from "./contracts";
 import { close, marker } from "./programs";
 import { savedIdentityTransition } from "./saved-identity";
 import {
+  validateCleanupResolution,
+  validateCleanupResolutionForClose,
+} from "./cleanup-hold-resolution";
+import {
   recoveredFile,
   resultValue,
   saveIntent,
@@ -154,6 +158,7 @@ function supplementalOrigin(
     ScenarioBackend,
     "identity" | "mode" | "qualification" | "protocol"
   >,
+  runtime?: SupplementalRuntimeBinding,
 ) {
   const report = readJson(path.join(directory, "report.json")),
     owner = record(report["owner"]),
@@ -166,11 +171,16 @@ function supplementalOrigin(
   assert.equal(report["mode"], backend.mode);
   assert.equal(report["qualification"], backend.qualification);
   assert.equal(report["protocol"], backend.protocol);
-  assert.equal(
-    report["cleanupHold"],
-    undefined,
-    "A supplemental close does not resolve cleanupHold",
-  );
+  const resolution =
+    report["cleanupHold"] === undefined
+      ? undefined
+      : (() => {
+          assert.ok(
+            runtime,
+            "A supplemental close does not resolve cleanupHold without a verified resolution",
+          );
+          return validateCleanupResolution(directory, backend, runtime);
+        })();
   assert.equal(document["file"], undefined);
   assert.ok(Array.isArray(report["requests"]));
   const requests = report["requests"].map(record),
@@ -185,6 +195,7 @@ function supplementalOrigin(
     assert.equal(receipt["requestId"], entry["requestId"]);
   }
   return {
+    resolution,
     report,
     owner: {
       runId: text(owner["runId"]),
@@ -259,7 +270,8 @@ export async function prepareSupplementalCloseProof(
   requestId: string,
   ports: SupplementalClosePorts,
 ): Promise<PreparedSupplementalClose> {
-  const origin = supplementalOrigin(directory, backend),
+  const runtime = runtimeBinding(await ports.readRuntimeBinding(), backend),
+    origin = supplementalOrigin(directory, backend, runtime),
     proof = verifiedFixture(
       path.dirname(directory),
       path.basename(directory),
@@ -283,8 +295,19 @@ export async function prepareSupplementalCloseProof(
     null,
     "Never prepare an already admitted request",
   );
-  const runtime = runtimeBinding(await ports.readRuntimeBinding(), backend),
-    source = close(origin.document, false);
+  if (origin.resolution) {
+    assert.deepEqual(
+      validateCleanupResolutionForClose(directory, backend, runtime),
+      origin.resolution,
+    );
+    assert.ok(
+      Number(requestId.split(":").at(-1)) >
+        Number(origin.resolution.inspectionRequestId.split(":").at(-1)),
+      "Close must follow the resolution inspection request",
+    );
+  }
+  const expectedModified = origin.resolution?.inspectedModified ?? false,
+    source = close(origin.document, expectedModified);
   const originals = [];
   for (const entry of origin.requests) {
     const originalId = text(entry["requestId"]),
@@ -300,11 +323,17 @@ export async function prepareSupplementalCloseProof(
       original: await ports.readOriginalResult(origin.owner, originalId),
     });
   }
-  validateSupplementalOriginals(directory, origin, originals);
+  if (!origin.resolution)
+    validateSupplementalOriginals(directory, origin, originals);
   assert.deepEqual(
     runtimeBinding(await ports.readRuntimeBinding(), backend),
     runtime,
   );
+  if (origin.resolution)
+    assert.deepEqual(
+      validateCleanupResolutionForClose(directory, backend, runtime),
+      origin.resolution,
+    );
   const executionSourceFile = path.join(
     directory,
     `request-${requestId.split(":").at(-1)}.py`,
@@ -323,7 +352,9 @@ export async function prepareSupplementalCloseProof(
     sourceReportHash: sha256(boundedBytes(path.join(directory, "report.json"))),
     backendIdentity: backend.identity,
     runtime,
-    originals,
+    originals: origin.resolution ? undefined : originals,
+    resolutionDigest: origin.resolution?.digest,
+    expectedModified: origin.resolution ? expectedModified : undefined,
     requestId,
     sourceHash: sha256(source),
     executionSourceFile,
@@ -354,8 +385,11 @@ function validateSupplementalClose(
   >,
   candidate?: Record<string, unknown>,
 ): SupplementalCloseReceipt {
-  const origin = supplementalOrigin(directory, backend),
-    intent = readJson(path.join(directory, "supplemental-close.intent.json")),
+  const intent = readJson(
+      path.join(directory, "supplemental-close.intent.json"),
+    ),
+    runtime = runtimeBinding(intent["runtime"], backend),
+    origin = supplementalOrigin(directory, backend, runtime),
     proof =
       candidate ?? readJson(path.join(directory, "supplemental-close.json"));
   assert.equal(intent["version"], 1);
@@ -371,8 +405,14 @@ function validateSupplementalClose(
     sha256(boundedBytes(path.join(directory, "report.json"))),
   );
   assert.equal(intent["backendIdentity"], backend.identity);
-  runtimeBinding(intent["runtime"], backend);
-  validateSupplementalOriginals(directory, origin, intent["originals"]);
+  assert.equal(intent["resolutionDigest"], origin.resolution?.digest);
+  const expectedModified = origin.resolution?.inspectedModified ?? false;
+  assert.equal(
+    intent["expectedModified"],
+    origin.resolution ? expectedModified : undefined,
+  );
+  if (!origin.resolution)
+    validateSupplementalOriginals(directory, origin, intent["originals"]);
   assert.equal(
     proof["intentHash"],
     sha256(
@@ -381,7 +421,10 @@ function validateSupplementalClose(
   );
   assert.deepEqual(proof["runtime"], intent["runtime"]);
   const source = boundedBytes(path.join(directory, "supplemental-close.py"));
-  assert.equal(source.toString("utf8"), close(origin.document, false));
+  assert.equal(
+    source.toString("utf8"),
+    close(origin.document, expectedModified),
+  );
   assert.equal(intent["sourceHash"], sha256(source));
   const original = record(proof["original"]),
     job = record(original["job"]),
@@ -448,6 +491,23 @@ function validateSupplementalClose(
       finishedAt <= publishedAt,
     "Cleanup chronology differs from prepared intent",
   );
+  if (origin.resolution) {
+    assert.notEqual(
+      jobId,
+      origin.resolution.inspectionJobId,
+      "Close reused the inspection job",
+    );
+    assert.ok(
+      startedAt >= origin.resolution.inspectedAt &&
+        startedAt <= origin.resolution.expiresAt,
+      "Close falls outside the verified inspection window",
+    );
+    assert.ok(
+      Number(requestId.split(":").at(-1)) >
+        Number(origin.resolution.inspectionRequestId.split(":").at(-1)),
+      "Close reused the inspection request",
+    );
+  }
   const provenance = record(original["provenance"]);
   assert.equal(provenance["status"], "available");
   assert.ok(
@@ -485,7 +545,7 @@ function validateSupplementalClose(
     rows.find((r) => r["creationId"] === origin.document.creationId)?.[
       "modified"
     ],
-    false,
+    expectedModified,
   );
   for (const entries of [rows, documentRows(inventoryFence["after"])])
     assert.equal(
@@ -508,14 +568,14 @@ export async function publishSupplementalCloseProof(
   backend: CloseProofBackend,
   ports: SupplementalClosePorts,
 ): Promise<SupplementalCloseReceipt> {
-  const origin = supplementalOrigin(directory, backend),
+  const runtime = runtimeBinding(await ports.readRuntimeBinding(), backend),
+    origin = supplementalOrigin(directory, backend, runtime),
     intent = readJson(path.join(directory, "supplemental-close.intent.json"));
   const ownerLookup = await backend.lookup(
     origin.owner,
     text(intent["requestId"]),
   );
   assert.ok(ownerLookup, "Original owner cannot retrieve the close receipt");
-  const runtime = runtimeBinding(await ports.readRuntimeBinding(), backend);
   assert.deepEqual(runtime, intent["runtime"]);
   const original = await ports.readOriginalResult(
     origin.owner,

@@ -8,8 +8,12 @@ import type { TestContext } from "node:test";
 import type { Execution, ScenarioBackend } from "./contracts";
 import * as provenance from "./fixture-provenance";
 import { close, create, marker } from "./programs";
+import { cadFence } from "./programs";
+import { resolveCleanupHold } from "./cleanup-hold-resolution";
+import { record } from "./contracts";
+import { createRequire } from "node:module";
 
-function fixture(t: TestContext) {
+function fixture(t: TestContext, closeOrdinal = 1) {
   const root = fs.mkdtempSync(
     path.join(os.tmpdir(), "fmcad-supplemental-close-"),
   );
@@ -23,7 +27,10 @@ function fixture(t: TestContext) {
     scenarioId,
     clientId: "scenario:" + runId + ":" + scenarioId,
   };
-  const document = { creationId: "exact-peer-id", name: "Owned peer" };
+  const document = {
+    creationId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    name: `FMCAD_SCENARIO_${runId}_${scenarioId}`,
+  };
   const identity = {
     ...document,
     activeCreationId: document.creationId,
@@ -138,16 +145,19 @@ function fixture(t: TestContext) {
       return originals.get(id);
     },
   };
-  const requestId = owner.clientId + ":1";
-  const complete = () => {
-    const source = close(document, false);
-    const executionSourceFile = path.join(directory, "request-1.py");
+  const requestId = owner.clientId + ":" + closeOrdinal;
+  const complete = (modified = false) => {
+    const source = close(document, modified);
+    const executionSourceFile = path.join(
+      directory,
+      `request-${closeOrdinal}.py`,
+    );
     fs.writeFileSync(executionSourceFile, source, { flag: "wx", mode: 0o600 });
     const row = {
       ...document,
       fileId: null,
       saved: false,
-      modified: false,
+      modified,
       active: true,
     };
     const foreign = {
@@ -515,7 +525,6 @@ test("prepare never treats a cleanup hold as cleanup authorization", async (t) =
       f.requestId,
       f.ports,
     ),
-    /cleanupHold/u,
   );
   assert.equal(
     fs.existsSync(path.join(f.directory, "supplemental-close.intent.json")),
@@ -635,5 +644,339 @@ test("canonical source records reject symlinks and oversized sidecars", async (t
       .discoverOwnedUnsavedFixtureProofs(f.root, f.backend)
       .get(f.document.creationId)?.state,
     "unsettled",
+  );
+});
+
+function heldFixture(t: TestContext) {
+  const f = fixture(t, 3),
+    runtime = { buildHash: "b".repeat(64), instanceId: "runtime-instance" };
+  const rows = [
+    { ...f.document, fileId: null, saved: false, modified: true, active: true },
+  ];
+  const reportFile = path.join(f.directory, "report.json"),
+    report = record(JSON.parse(fs.readFileSync(reportFile, "utf8")) as unknown);
+  const backend: ScenarioBackend = {
+    ...f.backend,
+    mode: "fusion",
+    identity: "fusion:addin:" + runtime.buildHash,
+    capabilities: new Set(),
+    fusionPath: (filename) => filename,
+    async execute(request) {
+      assert.equal(request.requestId, f.owner.clientId + ":2");
+      return retainedRequest(
+        request.requestId,
+        request.source,
+        marker +
+          JSON.stringify({
+            creationId: f.document.creationId,
+            saved: false,
+            modified: true,
+            fileId: null,
+            inventoryFence: { version: 1, before: rows, after: rows },
+          }),
+      );
+    },
+  };
+  function retainedRequest(
+    requestId: string,
+    source: string,
+    stdout: string,
+  ): Execution {
+    const filename = path.join(
+        f.directory,
+        `request-${requestId.split(":").at(-1)}.py`,
+      ),
+      now = Date.now(),
+      jobId = "job-" + requestId;
+    fs.writeFileSync(filename, source, { flag: "wx", mode: 0o600 });
+    const result: Execution = {
+      requestId,
+      state: "succeeded",
+      sdkSettled: true,
+      mayHaveMutated: true,
+      stdout,
+      brokerReceipt: {
+        requestId,
+        clientId: f.owner.clientId,
+        jobId,
+        state: "succeeded",
+        operationResult: null,
+      },
+    };
+    f.retained.set(requestId, result);
+    f.originals.set(requestId, {
+      job: {
+        id: jobId,
+        requestId,
+        clientId: f.owner.clientId,
+        state: "succeeded",
+        submittedAt: now,
+        startedAt: now,
+        finishedAt: now,
+        operationResult: null,
+      },
+      execution: { state: "succeeded", sdkSettled: true, mayHaveMutated: true },
+      stdout,
+      pythonChecks: [
+        {
+          status: "passed",
+          diagnostics: [],
+          reasons: [],
+          provenance: {
+            checkerVersion: "1.40.2",
+            definitionsHash:
+              "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+          },
+        },
+      ],
+      provenance: {
+        status: "available",
+        inputs: [
+          {
+            kind: "source",
+            originalPath: filename,
+            sha256: createHash("sha256").update(source).digest("hex"),
+            bytes: Buffer.byteLength(source),
+          },
+        ],
+      },
+    });
+    return result;
+  }
+  const originalCreate = record(f.originals.get(f.owner.clientId + ":0")),
+    now = Date.now();
+  Object.assign(record(originalCreate["job"]), {
+    submittedAt: now,
+    startedAt: now,
+    finishedAt: now,
+  });
+  Object.assign(record(originalCreate["execution"]), {
+    state: "succeeded",
+    mayHaveMutated: true,
+  });
+  const admissionId = f.owner.clientId + ":1",
+    admission = retainedRequest(
+      admissionId,
+      cadFence(f.document, "model.thread", {}, [], [], [], "root", admissionId),
+      "FMCAD_RESULT " +
+        JSON.stringify({
+          success: true,
+          helperCallsOnly: [],
+          result: {
+            success: true,
+            operation: "model.thread",
+            document: f.document.name,
+            creationId: f.document.creationId,
+            admission: {
+              status: "inventory-changed",
+              requestId: admissionId,
+              helperCalls: 0,
+              mutationStarted: false,
+            },
+            inventoryFence: { version: 1, before: rows, after: rows },
+          },
+        }),
+    );
+  assert.ok(Array.isArray(report["requests"]));
+  report["requests"].push({
+    requestId: admissionId,
+    phase: "cad-native-modeling-13-model.thread",
+    intent: { kind: "cad-fenced", operation: "model.thread" },
+    result: admission,
+  });
+  Object.assign(report, {
+    mode: backend.mode,
+    backendIdentity: backend.identity,
+    cleanupHold: {
+      requestId: admissionId,
+      reason:
+        "Fenced CAD turn failed; leave the owned document for inspection: Inventory re-admission lacks exact peer lifecycle receipts",
+    },
+  });
+  f.write(reportFile, report);
+  const indexFile = path.join(f.directory, "..", "index.json"),
+    index = record(JSON.parse(fs.readFileSync(indexFile, "utf8")) as unknown);
+  Object.assign(index, {
+    mode: backend.mode,
+    backendIdentity: backend.identity,
+    processIdentity: { pid: 99999999, birth: "verified-absent-process" },
+  });
+  f.write(indexFile, index);
+  return { ...f, backend };
+}
+
+test("verified hold resolution authorizes only its inspected modified state and canonical closure survives TTL", async (t) => {
+  const f = heldFixture(t),
+    reportFile = path.join(f.directory, "report.json"),
+    originalReport = fs.readFileSync(reportFile, "utf8");
+  const resolution = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  const prepared = await provenance.prepareSupplementalCloseProof(
+    f.directory,
+    { ...f.backend, lookup: f.backend.lookup! },
+    f.requestId,
+    f.ports,
+  );
+  assert.equal(prepared.source, close(f.document, true));
+  f.originals.set(f.requestId, f.complete(true));
+  await provenance.publishSupplementalCloseProof(
+    f.directory,
+    { ...f.backend, lookup: f.backend.lookup! },
+    f.ports,
+  );
+  assert.equal(
+    provenance
+      .discoverOwnedUnsavedFixtureProofs(f.root, f.backend)
+      .get(f.document.creationId)?.state,
+    "closed",
+  );
+  t.mock.method(Date, "now", () => resolution.expiresAt + 1000);
+  assert.equal(
+    provenance
+      .discoverOwnedUnsavedFixtureProofs(f.root, f.backend)
+      .get(f.document.creationId)?.state,
+    "closed",
+  );
+  assert.equal(fs.readFileSync(reportFile, "utf8"), originalReport);
+});
+
+test("held prepare rejects the inspection request ID and expired resolution", async (t) => {
+  const f = heldFixture(t),
+    resolution = await resolveCleanupHold(f.backend, f.directory, f.ports),
+    backend = { ...f.backend, lookup: f.backend.lookup! };
+  await assert.rejects(
+    provenance.prepareSupplementalCloseProof(
+      f.directory,
+      backend,
+      resolution.inspectionRequestId,
+      f.ports,
+    ),
+  );
+  t.mock.method(Date, "now", () => resolution.expiresAt + 1);
+  await assert.rejects(
+    provenance.prepareSupplementalCloseProof(
+      f.directory,
+      backend,
+      f.requestId,
+      f.ports,
+    ),
+  );
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.intent.json")),
+    false,
+  );
+});
+
+test("held publisher rejects a close started after the verified inspection window", async (t) => {
+  const f = heldFixture(t),
+    backend = { ...f.backend, lookup: f.backend.lookup! };
+  const resolution = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  await provenance.prepareSupplementalCloseProof(
+    f.directory,
+    backend,
+    f.requestId,
+    f.ports,
+  );
+  t.mock.method(Date, "now", () => resolution.expiresAt + 1);
+  f.originals.set(f.requestId, f.complete(true));
+  await assert.rejects(
+    provenance.publishSupplementalCloseProof(f.directory, backend, f.ports),
+    /inspection window/u,
+  );
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.json")),
+    false,
+  );
+});
+
+test("canonical held closure cannot outlive tampered resolution evidence", async (t) => {
+  const f = heldFixture(t),
+    backend = { ...f.backend, lookup: f.backend.lookup! };
+  await resolveCleanupHold(f.backend, f.directory, f.ports);
+  await provenance.prepareSupplementalCloseProof(
+    f.directory,
+    backend,
+    f.requestId,
+    f.ports,
+  );
+  f.originals.set(f.requestId, f.complete(true));
+  await provenance.publishSupplementalCloseProof(f.directory, backend, f.ports);
+  const filename = path.join(f.directory, "cleanup-hold-resolution.json"),
+    original = fs.readFileSync(filename, "utf8");
+  // Valid JSON with the same semantic content still has a different immutable decision digest.
+  fs.writeFileSync(filename, original + " ");
+  assert.equal(
+    provenance
+      .discoverOwnedUnsavedFixtureProofs(f.root, f.backend)
+      .get(f.document.creationId)?.state,
+    "unsettled",
+  );
+});
+
+test("held prepare rechecks a dependent producer that started after resolution", async (t) => {
+  const f = heldFixture(t);
+  await resolveCleanupHold(f.backend, f.directory, f.ports);
+  const dependentDirectory = path.join(
+    f.root,
+    "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
+  );
+  fs.mkdirSync(dependentDirectory);
+  f.write(path.join(dependentDirectory, "index.json"), {
+    status: "running",
+    processIdentity: provenance.currentProcessIdentity(),
+    before: { documents: [{ ...f.document }] },
+  });
+  await assert.rejects(
+    provenance.prepareSupplementalCloseProof(
+      f.directory,
+      { ...f.backend, lookup: f.backend.lookup! },
+      f.requestId,
+      f.ports,
+    ),
+    /producer/u,
+  );
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.intent.json")),
+    false,
+  );
+});
+
+test("prepared modified held close passes the pinned production Python checker", async (t) => {
+  const f = heldFixture(t);
+  await resolveCleanupHold(f.backend, f.directory, f.ports);
+  const prepared = await provenance.prepareSupplementalCloseProof(
+    f.directory,
+    { ...f.backend, lookup: f.backend.lookup! },
+    f.requestId,
+    f.ports,
+  );
+  const root = path.resolve(__dirname, "../../.."),
+    load = createRequire(path.join(root, "package.json"));
+  const { createPythonChecker } = load(
+    "./packages/node-adapters/dist/python/checker",
+  ) as typeof import("../../packages/node-adapters/src/python/checker");
+  const { preparePythonArtifact } = load(
+    "./packages/node-adapters/dist/python/artifact",
+  ) as typeof import("../../packages/node-adapters/src/python/artifact");
+  const typingRoot = path.join(root, "dist/runtime/python/typing");
+  const checker = createPythonChecker({
+    typingRoot,
+    definitionsRoot: typingRoot,
+    pythonPlatform: "Windows",
+  });
+  const artifact = preparePythonArtifact([
+    {
+      id: "held-close",
+      filename: "held-close.py",
+      role: "user",
+      source: prepared.source + '\nrun("")\n',
+    },
+  ]);
+  const result = await checker.check({ artifact, context: { kind: "run" } });
+  assert.equal(result.status, "passed", JSON.stringify(result));
+  assert.deepEqual(result.diagnostics, []);
+  assert.equal(result.provenance.checkerVersion, "1.40.2");
+  assert.equal(
+    result.provenance.definitionsHash,
+    "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
   );
 });
