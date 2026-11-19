@@ -9,6 +9,8 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { prepareNativeInvocation, observeNativeInvocation } = require('../dist/tests/live-import-receipts.js');
+const { readQueueResult } = require('./helpers/live-broker');
+const { queueExecution } = require('../dist/tests/scenarios/queue-backend.js');
 
 const root = path.resolve(__dirname, '..');
 const name = 'FMCAD_GM07_' + crypto.randomUUID().replaceAll('-', '_');
@@ -186,7 +188,7 @@ function offlineCheck() {
   console.log('OFFLINE CHECK PASS; GM07 Fusion methods remain NOTRUN');
 }
 
-function runFixedProgram(pinned, clientId, fusionVersion, requestId = 'gm07-curves-' + crypto.randomUUID()) {
+async function runFixedProgram(pinned, clientId, fusionVersion, requestId = 'gm07-curves-' + crypto.randomUUID()) {
   assert.ok(process.argv.includes('--run'), 'Explicit --run is required; the default path never dispatches.');
   const fixedArgs = { approved: true, creationId: identity.creationId,
     expectedFusionVersion: fusionVersion, fixturePrefix };
@@ -246,9 +248,39 @@ function runFixedProgram(pinned, clientId, fusionVersion, requestId = 'gm07-curv
     throw new Error('Malformed terminal queue receipt; stop without replay.');
   }
   let jobNotice;
+  let execution;
   try {
     jobNotice = jobLines.length === 1 ? JSON.parse(jobLines[0].slice('FMCAD_QUEUE_JOB '.length)) : null;
-    observeNativeInvocation(intentFile, jobNotice, queueResult);
+    assert.equal(jobNotice?.requestId, requestId);
+    assert.equal(queueResult.requestId, requestId);
+    assert.equal(queueResult.id, jobNotice?.jobId);
+    const original = await readQueueResult({ cliPath: pinned.cliPath, backend: 'addin',
+      clientId, jobId: jobNotice.jobId, cwd: root });
+    execution = queueExecution(original, { clientId }, requestId);
+    assert.equal(original.job.id, jobNotice.jobId);
+    assert.equal(execution.sdkSettled, true);
+    assert.equal(execution.state, queueResult.state);
+    assert.equal(original.stdout, stdout);
+    assert.deepEqual(queueResult.outcome || queueResult.operationResult, original.job.operationResult);
+    if (queueResult.clientId !== undefined) assert.equal(queueResult.clientId, original.job.clientId);
+    if (queueResult.executionOutcome !== undefined) assert.equal(queueResult.executionOutcome, original.job.operationResult.executionOutcome);
+    assert.equal(original.job.operationResult.version, 1);
+    assert.equal(original.job.operationResult.requestId, requestId);
+    assert.equal(original.job.operationResult.jobId, jobNotice.jobId);
+    assert.equal(original.job.operationResult.acceptance, 'accepted');
+    assert.equal(original.job.operationResult.executionOutcome, execution.state);
+    assert.equal(original.provenance.status, 'available');
+    const sources = original.provenance.inputs.filter(input => input.kind === 'source');
+    assert.equal(sources.length, 1);
+    assert.equal(sources[0].sha256, pinned.scriptSha256);
+    assert.equal(sources[0].originalPath, pinned.scriptPath);
+    assert.equal(sources[0].bytes, fs.statSync(pinned.scriptPath).size);
+    command.originalResultFile = intentFile + '.original.json';
+    fs.writeFileSync(command.originalResultFile, JSON.stringify(original, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    // The public CLI emits a thin outcome notice, not a full worker receipt.
+    // All identity and execution fields here come from that original worker.
+    observeNativeInvocation(intentFile, jobNotice, { ...original.job,
+      executionOutcome: original.job.operationResult.executionOutcome });
   } catch (error) {
     uncertain = true; command.status = 'unknown'; command.error = error.message; persist();
     throw new Error('Fixed-run accepted/terminal identity or outcome is unverified; inspect the original request, never replay.', { cause: error });
@@ -343,7 +375,7 @@ function runFixedProgram(pinned, clientId, fusionVersion, requestId = 'gm07-curv
     runtimeRoot: pinned.runtimeRoot, buildHash: pinned.buildHash, fixtureId, manifestSha256: pinned.manifestSha256,
     scriptSha256: pinned.scriptSha256, helperCallsOnly: envelope.helperCallsOnly };
   persist();
-  return payload;
+  return { value: payload, execution };
 }
 
 function recordCalls(payload) {
@@ -416,7 +448,7 @@ function runAssertions(payload) {
   persist();
 }
 
-function gm07OwnedScenario(pinned, fusionVersion, backend) {
+function gm07OwnedScenario(pinned, fusionVersion) {
   return {
     id: 'gm07-source-pinned',
     scope: 'exclusive-instance',
@@ -434,8 +466,7 @@ function gm07OwnedScenario(pinned, fusionVersion, backend) {
         fixtureId, manifestSha256: pinned.manifestSha256, scriptSha256: pinned.scriptSha256,
         buildHash: pinned.buildHash, document: identity,
       }, async (binding) => {
-        const value = runFixedProgram(pinned, binding.owner.clientId, fusionVersion, binding.requestId);
-        const execution = await backend.lookup(binding.owner, binding.requestId);
+        const { value, execution } = await runFixedProgram(pinned, binding.owner.clientId, fusionVersion, binding.requestId);
         assert.ok(execution, 'Missing exact original GM07 result; do not replay');
         assert.equal(execution.brokerReceipt?.jobId, report.nativeRun.jobId, 'Foreign GM07 original job');
         assert.equal(execution.brokerReceipt?.clientId, binding.owner.clientId, 'Foreign GM07 original owner');
@@ -474,7 +505,7 @@ async function main() {
     status: 'RUNTIME-BUILD-VERIFIED; NATIVE-NOTRUN' };
   persist();
   try {
-    const [owned] = await runScenarios(backend, [gm07OwnedScenario(pinned, fusionVersion, backend)],
+    const [owned] = await runScenarios(backend, [gm07OwnedScenario(pinned, fusionVersion)],
       scenarioArtifactRoot(root, 'fusion'), 1);
     report.lifecycle = owned;
     uncertain ||= owned.cleanup === 'deferred';

@@ -13,7 +13,10 @@ import {
 } from "./scenarios/test-support";
 import { runScenarios, type Scenario } from "./scenarios/runner";
 import type { ScenarioBackend, Execution } from "./scenarios/contracts";
-import type { QueueScenarioBackend } from "./scenarios/queue-backend";
+import {
+  queueExecution,
+  type QueueScenarioBackend,
+} from "./scenarios/queue-backend";
 import { program } from "./scenarios/programs";
 import {
   prepareNativeInvocation,
@@ -208,19 +211,10 @@ for (const fault of ["none", "missing", "foreign", "unsettled"] as const) {
     const wrapped: ScenarioBackend = {
       ...backend,
       capabilities: new Set([...backend.capabilities, "original-user-view"]),
-      async lookup(owner, requestId) {
-        if (requestId.includes(":gm07-source-pinned:")) {
-          if (fault === "none") {
-            const switched = await model.execute(
-              program(
-                "import adsk.core\napp = adsk.core.Application.get()\napp.activeDocument.isModified = True\nassert app.documents.item(0).name == 'USER_GM07_SENTINEL'\nassert app.documents.item(0).activate()",
-              ),
-            );
-            assert.equal(switched.success, true);
-          }
-          return fault === "missing" ? null : original;
-        }
-        return backend.lookup!(owner, requestId);
+      async lookup() {
+        throw new Error(
+          "External native jobs must not use the scenario backend's private lookup cache",
+        );
       },
     };
     const context = vm.createContext({
@@ -233,7 +227,7 @@ for (const fault of ["none", "missing", "foreign", "unsettled"] as const) {
       runAssertions() {
         report["assertionsVerified"] = true;
       },
-      runFixedProgram(
+      async runFixedProgram(
         selected: unknown,
         clientId: string,
         version: string,
@@ -273,10 +267,21 @@ for (const fault of ["none", "missing", "foreign", "unsettled"] as const) {
           },
         };
         report["nativeRun"] = { jobId: "gm07-original" };
+        if (fault === "none") {
+          const switched = await model.execute(
+            program(
+              "import adsk.core\napp = adsk.core.Application.get()\napp.activeDocument.isModified = True\nassert app.documents.item(0).name == 'USER_GM07_SENTINEL'\nassert app.documents.item(0).activate()",
+            ),
+          );
+          assert.equal(switched.success, true);
+        }
         return {
-          fusionVersion: version,
-          document: { before: {}, after: {} },
-          designBefore: {},
+          execution: fault === "missing" ? null : original,
+          value: {
+            fusionVersion: version,
+            document: { before: {}, after: {} },
+            designBefore: {},
+          },
         };
       },
     });
@@ -526,8 +531,26 @@ for (const family of ["gm07", "gm12"] as const) {
     "duplicate-job",
     "malformed-terminal",
     "missing-native-result",
+    "thin-public-cli",
+    "thin-public-success",
+    "missing-worker",
+    "foreign-worker",
+    "unsettled-worker",
+    "foreign-source",
   ] as const) {
-    test(`${family} fixed invocation persists intent before spawn and rejects ${fault} without replay`, (t) => {
+    if (
+      family === "gm12" &&
+      [
+        "thin-public-cli",
+        "thin-public-success",
+        "missing-worker",
+        "foreign-worker",
+        "unsettled-worker",
+        "foreign-source",
+      ].includes(fault)
+    )
+      continue;
+    test(`${family} fixed invocation persists intent before spawn and handles ${fault} without replay`, async (t) => {
       const directory = fs.mkdtempSync(
         path.join(os.tmpdir(), "fmcad-fixed-intent-"),
       );
@@ -568,6 +591,7 @@ for (const family of ["gm07", "gm12"] as const) {
       const snapshots: string[] = [];
       let dispatches = 0,
         intentFile = "";
+      let fixedStdout = "";
       const context = vm.createContext({
         assert,
         fs,
@@ -602,6 +626,63 @@ for (const family of ["gm07", "gm12"] as const) {
         persist: () => snapshots.push(JSON.stringify(report)),
         prepareNativeInvocation,
         observeNativeInvocation,
+        queueExecution,
+        readQueueResult: async (input: { clientId: string; jobId: string }) => {
+          if (fault === "missing-worker") return null;
+          const intent = readNativeInvocation(intentFile);
+          assert.equal(input.clientId, intent.binding.clientId);
+          assert.equal(input.jobId, "original-job");
+          const operationResult = {
+            version: 1,
+            requestId: intent.binding.requestId,
+            jobId: "original-job",
+            acceptance: "accepted",
+            executionOutcome: "succeeded",
+            mayHaveMutated: true,
+          };
+          return vm.runInContext(
+            "JSON.parse(" +
+              JSON.stringify(
+                JSON.stringify({
+                  job: {
+                    id: "original-job",
+                    requestId: intent.binding.requestId,
+                    clientId: ["foreign-client", "foreign-worker"].includes(
+                      fault,
+                    )
+                      ? "foreign-client"
+                      : "owned-client",
+                    state: "succeeded",
+                    operationResult,
+                  },
+                  execution: {
+                    state: "succeeded",
+                    sdkSettled: fault !== "unsettled-worker",
+                    mayHaveMutated: true,
+                    exitCode: 0,
+                  },
+                  stdout: fixedStdout,
+                  stderr: "",
+                  provenance: {
+                    status: "available",
+                    inputs: [
+                      {
+                        kind: "source",
+                        sha256:
+                          fault === "foreign-source"
+                            ? "e".repeat(64)
+                            : scriptSha256,
+                        bytes: fs.statSync(scriptPath).size,
+                        originalPath: scriptPath,
+                      },
+                    ],
+                  },
+                }),
+              ) +
+              ")",
+            context,
+          );
+        },
         isExecutionUnknown: (value: unknown) =>
           value !== null &&
           typeof value === "object" &&
@@ -656,21 +737,95 @@ for (const family of ["gm07", "gm12"] as const) {
                 fault === "foreign-client" ? "foreign-client" : "owned-client",
               state: "succeeded",
               executionOutcome: "succeeded",
-              operationResult: { executionOutcome: "succeeded" },
+              operationResult: {
+                version: 1,
+                requestId: accepted.requestId,
+                jobId: accepted.jobId,
+                acceptance: "accepted",
+                executionOutcome: "succeeded",
+                mayHaveMutated: true,
+              },
             };
             const acceptedLine =
               "FMCAD_QUEUE_JOB " + JSON.stringify(accepted) + "\n";
+            if (fault === "thin-public-success") {
+              const before = {
+                creationId: identity.creationId,
+                saved: false,
+                modified: false,
+                fileId: null,
+              };
+              fixedStdout =
+                "FMCAD_RESULT " +
+                JSON.stringify({
+                  success: true,
+                  helperCallsOnly: [
+                    "document.status",
+                    "sketch.create",
+                    "sketch.inspect",
+                    "sketch.profile-file",
+                    "curve.fit",
+                    "curve.inspect",
+                    "curve.offset",
+                    "curve.inspect",
+                    "curve.offset-edit",
+                    "curve.inspect",
+                    "document.status",
+                  ].map((operation) => ({
+                    operation,
+                    status: "completed",
+                    effects: "observed",
+                  })),
+                  result: {
+                    version: 1,
+                    fixturePrefix: "NQGM07CURVE",
+                    fusionVersion: "offline-only",
+                    modelChangedByFixture: true,
+                    nativeGeometry: true,
+                    document: {
+                      creationId: before.creationId,
+                      name: identity.name,
+                      before,
+                      after: { ...before, modified: true },
+                    },
+                    designBefore: {
+                      bodyCount: 0,
+                      sketchCount: 0,
+                      occurrenceCount: 0,
+                      timelineCount: 0,
+                      parameterCount: 0,
+                    },
+                    designAfter: {
+                      bodyCount: 0,
+                      sketchCount: 1,
+                      occurrenceCount: 0,
+                    },
+                    cleanup:
+                      "owner must close and restore this exact unsaved document",
+                  },
+                }) +
+                "\n";
+            }
             return {
               status: 0,
               signal: null,
-              stdout: "",
+              stdout: fixedStdout,
               stderr:
                 acceptedLine +
                 (fault === "duplicate-job" ? acceptedLine : "") +
                 "FMCAD_QUEUE_RESULT " +
                 (fault === "malformed-terminal"
                   ? "{bad"
-                  : JSON.stringify(terminal)) +
+                  : JSON.stringify(
+                      ["thin-public-cli", "thin-public-success"].includes(fault)
+                        ? {
+                            id: terminal.id,
+                            requestId: terminal.requestId,
+                            state: terminal.state,
+                            outcome: terminal.operationResult,
+                          }
+                        : terminal,
+                    )) +
                 "\n",
             };
           },
@@ -692,12 +847,29 @@ for (const family of ["gm07", "gm12"] as const) {
         manifestSha256,
         scriptSha256,
       };
-      assert.throws(
-        () =>
+      if (fault === "thin-public-success") {
+        const result = (await execute(
+          pinned,
+          "owned-client",
+          "offline-only",
+        )) as { execution: Execution; value: unknown };
+        assert.equal(result.execution.sdkSettled, true);
+        assert.equal(result.execution.state, "succeeded");
+        assert.equal(
+          readNativeInvocation(intentFile).state,
+          "terminal-observed",
+        );
+        assert.equal(dispatches, 1);
+        return;
+      }
+      await assert.rejects(
+        async () =>
           family === "gm07"
             ? execute(pinned, "owned-client", "fixture-version")
             : execute(),
-        /lost child|indeterminate|Malformed terminal|unverified|unambiguous result/iu,
+        fault === "thin-public-cli"
+          ? /no unambiguous result marker/iu
+          : /lost child|indeterminate|Malformed terminal|unverified|unambiguous result/iu,
       );
       assert.equal(dispatches, 1);
       assert.equal(context["uncertain"], true);
@@ -705,7 +877,9 @@ for (const family of ["gm07", "gm12"] as const) {
       const intent = readNativeInvocation(intentFile);
       assert.equal(
         intent.state,
-        fault === "missing-native-result" ? "terminal-observed" : "prepared",
+        fault === "missing-native-result" || fault === "thin-public-cli"
+          ? "terminal-observed"
+          : "prepared",
       );
       assert.equal(
         fs.existsSync(scriptPath),
