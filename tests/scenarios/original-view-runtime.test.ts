@@ -5,6 +5,7 @@ import { program } from "./programs";
 import {
   captureOriginalView,
   restoreOriginalView,
+  establishReferenceView,
 } from "./original-view-programs";
 import { runScenarios } from "./runner";
 
@@ -178,6 +179,154 @@ function parseView(stdout: string): Record<string, unknown> {
     string,
     unknown
   >;
+}
+
+test("an explicit operator reference activation establishes a fresh baseline without adopting historical ancestry", async (t) => {
+  const f = await contextFixture(t);
+  const observed = await f.model.execute(
+    program(
+      "import adsk.core\nassert adsk.core.Application.get().documents.item(1).activate()",
+    ),
+  );
+  assert.equal(observed.success, true, observed.error);
+  const target = f.documents.find(
+    (row) => row["creationId"] === f.user["creationId"],
+  )!;
+  const plan = {
+    requestId: "operator-request:1",
+    clientId: "operator-client",
+    target,
+    documents: f.documents,
+  };
+  const result = await f.model.execute(establishReferenceView(plan));
+  assert.equal(result.success, true, result.error);
+  const value = parseView(result.stdout);
+  assert.equal(value["established"], true);
+  assert.equal(value["baselineKind"], "operator-reference");
+  assert.equal(value["requestId"], plan.requestId);
+  assert.equal(value["clientId"], plan.clientId);
+  assert.deepEqual(value["active"], f.user);
+  assert.deepEqual(value["beforeActive"], { ...f.peer, fileId: null });
+  assert.deepEqual(value["documents"], f.documents);
+  assert.deepEqual(value["nativeCamera"], f.snapshot["nativeCamera"]);
+  const canonical = await f.model.execute(captureOriginalView(true));
+  assert.equal(canonical.success, true, canonical.error);
+  assert.deepEqual(parseView(canonical.stdout)["active"], f.user);
+  assert.deepEqual(
+    parseView(canonical.stdout)["nativeCamera"],
+    f.snapshot["nativeCamera"],
+  );
+});
+
+for (const fault of [
+  "wrong-name",
+  "wrong-file",
+  "wrong-saved",
+  "changed-target",
+  "changed-foreign",
+  "new-foreign",
+  "missing-target",
+  "duplicate-inventory",
+  "missing-request",
+  "activation-failed",
+  "camera-read-failed",
+  "recovery-failed",
+  "post-activation-inventory",
+] as const) {
+  test(`operator reference activation rejects ${fault} without granting historical rights`, async (t) => {
+    const f = await contextFixture(t);
+    const target = {
+      ...f.documents.find((row) => row["creationId"] === f.user["creationId"])!,
+    };
+    const plan = {
+      requestId: "operator-request:1",
+      clientId: "operator-client",
+      target,
+      documents: f.documents,
+    };
+    if (fault === "wrong-name") target["name"] = "Unproven name";
+    if (fault === "wrong-file") target["fileId"] = "foreign-file";
+    if (fault === "wrong-saved") target["saved"] = true;
+    if (fault === "duplicate-inventory")
+      plan.documents = [...f.documents, { ...target }];
+    if (fault === "missing-request") plan.requestId = "";
+    const injection =
+      fault === "changed-target"
+        ? "user.isModified = True"
+        : fault === "changed-foreign"
+          ? "peer.isModified = True"
+          : fault === "new-foreign"
+            ? "app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)"
+            : fault === "missing-target"
+              ? "assert user.close(False)"
+              : fault === "activation-failed"
+                ? "user.activate = lambda: False"
+                : ["camera-read-failed", "recovery-failed"].includes(fault)
+                  ? `original_extents = adsk.core.Camera.getExtents
+def failed_extents(camera):
+    return (False,0,0) if app.activeDocument == user else original_extents(camera)
+adsk.core.Camera.getExtents = failed_extents
+${fault === "recovery-failed" ? "peer.activate = lambda: False" : ""}`
+                  : fault === "post-activation-inventory"
+                    ? `original_activate = user.activate
+def changed_activate():
+    ok = original_activate()
+    peer.isModified = True
+    return ok
+user.activate = changed_activate`
+                    : "";
+    const prepared = await f.model.execute(
+      program(`import adsk.core
+app = adsk.core.Application.get()
+user = app.documents.item(0)
+peer = app.documents.item(1)
+assert peer.activate()
+${injection}`),
+    );
+    assert.equal(prepared.success, true, prepared.error);
+    const result = await f.model.execute(establishReferenceView(plan));
+    assert.equal(
+      result.success,
+      false,
+      "Invalid operator handoff must not establish a baseline",
+    );
+    assert.equal(result.stdout.includes('"established": true'), false);
+    if (
+      [
+        "activation-failed",
+        "camera-read-failed",
+        "recovery-failed",
+        "post-activation-inventory",
+      ].includes(fault)
+    ) {
+      assert.match(result.stdout, /operator-reference-activation/u);
+      assert.match(result.stdout, /operator-reference-recovery/u);
+      assert.match(
+        result.stdout,
+        ["recovery-failed", "post-activation-inventory"].includes(fault)
+          ? /"recovered": false/u
+          : /"recovered": true/u,
+      );
+    } else
+      assert.equal(
+        result.stdout.includes("FMCAD_VIEW_EFFECT"),
+        false,
+        "Reject a stale plan before activation effects",
+      );
+    if (
+      !["recovery-failed", "post-activation-inventory", "new-foreign"].includes(
+        fault,
+      )
+    ) {
+      const read = await f.model.execute(
+        program(`import adsk.core, json
+app = adsk.core.Application.get()
+print('FMCAD_SCENARIO ' + json.dumps(dict(active=app.activeDocument.creationId)))`),
+      );
+      assert.equal(read.success, true, read.error);
+      assert.equal(parseView(read.stdout)["active"], f.peer.creationId);
+    }
+  });
 }
 
 test("ScenarioSession uses fresh user context and full restore after owned camera work", async (t) => {

@@ -23,6 +23,72 @@ export interface OriginalViewPolicy {
   readonly baseline: readonly Record<string, unknown>[];
   readonly peers: readonly OwnedUnsavedFixtureProof[];
 }
+
+/** A fresh operator decision, not evidence of historical user-view ancestry. */
+export interface ReferenceViewPlan {
+  readonly requestId: string;
+  readonly clientId: string;
+  readonly target: Record<string, unknown>;
+  readonly documents: readonly Record<string, unknown>[];
+}
+
+export function establishReferenceView(plan: ReferenceViewPlan): string {
+  return (
+    nativeCadRuntime(["camera.save", "camera.restore"]) +
+    "\n" +
+    program(`${inventory}
+${peerGuard}
+${cameraComparison}
+reference_plan: JsonRecord = ${pythonLiteral(plan)}
+request_id = view_text(reference_plan['requestId'])
+client_id = view_text(reference_plan['clientId'])
+expected_rows = view_rows(reference_plan['documents'])
+target_key = object_value(reference_plan['target'])
+target_rows = view_rows([target_key])
+target_id = view_text(target_key['creationId'])
+assert expected_rows.get(target_id) == target_rows[target_id], 'Operator target is not bound to the supplied inventory'
+assert app.userInterface.activeCommand in ('', 'SelectCommand'), 'Close interactive command before establishing a reference view'
+before = doc_rows()
+assert view_rows(before) == expected_rows, 'Documents changed before operator reference activation'
+target = checked_doc({field: target_key[field] for field in ('creationId', 'name', 'fileId')})
+observed = app.activeDocument
+assert observed is not None, 'An existing focus is required for operator reference activation'
+observed_key = identity(observed)
+observed_workspace = app.userInterface.activeWorkspace.id
+observed_native = native_camera()
+reference_complete = False
+state: JsonValue = None
+native: JsonValue = None
+workspace_id = observed_workspace
+try:
+    print('FMCAD_VIEW_EFFECT ' + json.dumps(dict(stage='operator-reference-activation', requestId=request_id, clientId=client_id, beforeActive=observed_key, selectedTarget=target_key)))
+    assert target.activate(), 'Cannot activate the exact operator reference document'
+    assert identity(app.activeDocument) == identity(target) and app.activeViewport.parentDocument == target
+    assert doc_rows() == before, 'Documents changed during operator reference activation'
+    ctx = document_context(target)
+    state = object_value(ctx.call('camera.save', {}))['state']
+    native = native_camera()
+    workspace_id = app.userInterface.activeWorkspace.id
+    assert doc_rows() == before and app.activeDocument == target, 'Reference capture changed document inventory or focus'
+    reference_complete = True
+finally:
+    if not reference_complete:
+        try:
+            if app.activeDocument != observed:
+                assert checked_doc(observed_key).activate(), 'Cannot recover observed focus after reference activation'
+            workspace = app.userInterface.workspaces.itemById(observed_workspace)
+            assert workspace is not None
+            if app.userInterface.activeWorkspace.id != observed_workspace:
+                assert workspace.activate(), 'Cannot recover observed workspace after reference activation'
+            assert identity(app.activeDocument) == observed_key and doc_rows() == before
+            view_same(native_camera(), observed_native, True)
+            print('FMCAD_VIEW_EFFECT ' + json.dumps(dict(stage='operator-reference-recovery', recovered=True, active=identity(app.activeDocument), documents=doc_rows())))
+        except Exception as recovery_error:
+            print('FMCAD_VIEW_EFFECT ' + json.dumps(dict(stage='operator-reference-recovery', recovered=False, error=str(recovery_error), active=identity(app.activeDocument) if app.activeDocument else None, documents=doc_rows())))
+            raise
+${emit("dict(established=True, baselineKind='operator-reference', requestId=request_id, clientId=client_id, selectedTarget=target_key, documents=doc_rows(), active=identity(app.activeDocument), beforeActive=observed_key, beforeWorkspace=observed_workspace, beforeNativeCamera=observed_native, workspace=workspace_id, camera=state, nativeCamera=native, restorationProfile='motion-absolute-1e-7')")}`)
+  );
+}
 export interface CaptureViewPlan extends OriginalViewPolicy {
   readonly roots: Readonly<Record<string, Record<string, unknown>>>;
   readonly blocked: readonly string[];

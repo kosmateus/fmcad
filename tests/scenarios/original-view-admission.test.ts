@@ -8,6 +8,7 @@ import { nativeCadRuntime } from "./native-cad-runtime";
 import {
   captureOriginalView,
   restoreOriginalView,
+  establishReferenceView,
 } from "./original-view-programs";
 
 test("default native probe runtime retains its original document-status profile without wrapper declarations", () => {
@@ -79,6 +80,15 @@ for (const strict of [false, true]) {
     for (const [phase, source] of [
       ["capture", captureOriginalView(strict)],
       ["restore", restoreOriginalView(snapshot)],
+      [
+        "operator-reference",
+        establishReferenceView({
+          requestId: "operator-reference:1",
+          clientId: "operator-reference",
+          target: snapshot.documents[0]!,
+          documents: snapshot.documents,
+        }),
+      ],
       [
         "capture-context",
         captureOriginalView(strict, {
