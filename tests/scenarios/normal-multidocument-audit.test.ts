@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
+import { createRequire } from "node:module";
 import {
   assertNormalFinalInventory,
   normalInventoryExpression,
@@ -288,4 +290,48 @@ test("unexpected, duplicate or unpinned rows and active-document drift are not s
         f.window,
       ),
     );
+});
+
+test("actual normal snapshot source passes pinned production admission with nullable file IDs", async () => {
+  const root = path.resolve(__dirname, "../../.."),
+    load = createRequire(path.join(root, "package.json"));
+  const { createPythonChecker } = load(
+    "./packages/node-adapters/dist/python/checker",
+  ) as typeof import("../../packages/node-adapters/src/python/checker");
+  const { preparePythonArtifact } = load(
+    "./packages/node-adapters/dist/python/artifact",
+  ) as typeof import("../../packages/node-adapters/src/python/artifact");
+  const typingRoot = path.join(root, "dist/runtime/python/typing");
+  const checker = createPythonChecker({
+    typingRoot,
+    definitionsRoot: typingRoot,
+    pythonPlatform: "Windows",
+  });
+  for (const group of [false, true]) {
+    const source = `import adsk.core, adsk.fusion, json, time
+from typing import cast
+DOC_NAME = None
+def run(context: str):
+    a=adsk.core.Application.get()
+    print('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,
+        documents=${normalInventoryExpression(group)})))
+run("")
+`;
+    const artifact = preparePythonArtifact([
+      {
+        id: group ? "group-baseline" : "normal-baseline",
+        filename: "baseline.py",
+        role: "user",
+        source,
+      },
+    ]);
+    const report = await checker.check({ artifact, context: { kind: "run" } });
+    assert.equal(report.status, "passed", JSON.stringify(report));
+    assert.deepEqual(report.diagnostics, []);
+    assert.equal(report.provenance.checkerVersion, "1.40.2");
+    assert.equal(
+      report.provenance.definitionsHash,
+      "83dc3697aa61a47ada93c323e2f719c7be3d72091938415f666089a96b159179",
+    );
+  }
 });

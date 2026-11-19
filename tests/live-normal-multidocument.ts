@@ -28,7 +28,8 @@ const { buildHash, processBirth } = identity;
 
 export function normalInventoryExpression(group: boolean): string {
   const fileId = group ? "" : ",fileId=d.dataFile.id if d.dataFile else None";
-  return `sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified${fileId}) for d in a.documents],key=lambda d:d['id'])`;
+  const key = group ? "d['id']" : "str(d['id'])";
+  return `sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified${fileId}) for d in a.documents],key=lambda d:${key})`;
 }
 
 /** Preserve user rows; only canonical, time-bound peer closes can remove a baseline row. */
