@@ -315,6 +315,46 @@ for (const sidecar of [
   });
 }
 
+test("a legacy UUID original cannot be ignored for close ordering without validated readonly resolution", async (t) => {
+  const f = fixture(t, 3);
+  const reportFile = path.join(f.directory, "report.json");
+  const report = record(JSON.parse(fs.readFileSync(reportFile, "utf8")));
+  const requests = report["requests"];
+  assert.ok(Array.isArray(requests));
+  const first = record(requests[0]);
+  const result = record(first["result"]);
+  const requestId =
+    f.owner.clientId + ":legacy:76143149-87b4-4285-8b1d-70dda390da6c";
+  requests.push({
+    requestId,
+    phase: "legacy-cli",
+    result: {
+      ...result,
+      requestId,
+      brokerReceipt: {
+        ...record(result["brokerReceipt"]),
+        requestId,
+        jobId: "unqualified-legacy-job",
+      },
+    },
+  });
+  fs.writeFileSync(reportFile, JSON.stringify(report));
+  const original = fs.readFileSync(reportFile);
+  await assert.rejects(
+    provenance.prepareSupplementalCloseProof(
+      f.directory,
+      f.backend,
+      f.requestId,
+      f.ports,
+    ),
+  );
+  assert.deepEqual(fs.readFileSync(reportFile), original);
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.intent.json")),
+    false,
+  );
+});
+
 const invalidOriginals: ReadonlyArray<
   readonly [
     string,

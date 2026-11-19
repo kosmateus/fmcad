@@ -302,9 +302,21 @@ export async function prepareSupplementalCloseProof(
   assert.ok(
     Number(requestId.slice(origin.owner.clientId.length + 1)) >
       Math.max(
-        ...origin.requests.map((r) =>
-          Number(text(r["requestId"]).slice(origin.owner.clientId.length + 1)),
-        ),
+        ...origin.requests.flatMap((r) => {
+          if (
+            origin.resolution?.holdKind === "settled-legacy-doc-list" &&
+            r === origin.requests.at(-1) &&
+            r["phase"] === "legacy-cli" &&
+            r["requestId"] === record(origin.report["cleanupHold"])["requestId"]
+          )
+            return [];
+          const originalId = text(r["requestId"]);
+          assert.ok(
+            exactScenarioRequestId(originalId, origin.owner.clientId),
+            "Original close ordering requires numeric request IDs or an exact resolved readonly CLI original",
+          );
+          return [Number(originalId.slice(origin.owner.clientId.length + 1))];
+        }),
       ),
   );
   assert.equal(
