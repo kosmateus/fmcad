@@ -219,6 +219,101 @@ test("an explicit operator reference activation establishes a fresh baseline wit
 });
 
 for (const fault of [
+  "none",
+  "missing-proof",
+  "unsettled-proof",
+  "forged-identity",
+  "target-mutated",
+  "target-closed",
+  "target-substituted",
+  "target-exemption",
+  "policy-baseline",
+  "during-activation",
+] as const) {
+  test(`operator reference policy preserves target and foreign guards: ${fault}`, async (t) => {
+    const f = await contextFixture(t);
+    const target = f.documents.find(
+      (row) => row["creationId"] === f.user["creationId"],
+    )!;
+    const injection =
+      fault === "target-mutated"
+        ? "user.isModified = True"
+        : fault === "target-closed"
+          ? "assert user.close(False)"
+          : fault === "target-substituted"
+            ? "user.creationId = 'foreign-substitute'"
+            : fault === "during-activation"
+              ? `original_activate=user.activate
+def changed_activate():
+    ok=original_activate()
+    peer.isModified=False
+    return ok
+user.activate=changed_activate`
+              : "";
+    const changed = await f.model.execute(
+      program(`import adsk.core
+app=adsk.core.Application.get()
+user=app.documents.item(0)
+peer=app.documents.item(1)
+peer.isModified=True
+assert peer.activate()
+${injection}`),
+    );
+    assert.equal(changed.success, true);
+    const result = await f.model.execute(
+      establishReferenceView(
+        {
+          requestId: "fresh-operator:1",
+          clientId: "fresh-operator",
+          target,
+          documents: f.documents,
+        },
+        {
+          baseline: fault === "policy-baseline" ? [] : f.documents,
+          peers:
+            fault === "missing-proof"
+              ? []
+              : fault === "target-exemption"
+                ? [
+                    {
+                      document: {
+                        creationId: String(f.user["creationId"]),
+                        name: String(f.user["name"]),
+                      },
+                      state: "open",
+                    },
+                  ]
+                : [
+                    {
+                      document:
+                        fault === "forged-identity"
+                          ? { ...f.peer, name: "forged" }
+                          : f.peer,
+                      state: fault === "unsettled-proof" ? "unsettled" : "open",
+                    },
+                  ],
+        },
+      ),
+    );
+    if (fault !== "none") {
+      assert.equal(result.success, false, `Must reject ${fault}`);
+      assert.equal(result.stdout.includes('"established": true'), false);
+      if (fault !== "during-activation")
+        assert.equal(
+          result.stdout.includes("FMCAD_VIEW_EFFECT "),
+          false,
+          "Guard rejects before activation",
+        );
+      return;
+    }
+    assert.equal(result.success, true, result.error);
+    const value = parseView(result.stdout);
+    assert.equal(value["established"], true);
+    assert.deepEqual(value["active"], f.user);
+  });
+}
+
+for (const fault of [
   "wrong-name",
   "wrong-file",
   "wrong-saved",

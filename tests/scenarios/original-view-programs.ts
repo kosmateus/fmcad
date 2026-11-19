@@ -40,7 +40,10 @@ export interface ReferenceViewPlan {
   readonly documents: readonly Record<string, unknown>[];
 }
 
-export function establishReferenceView(plan: ReferenceViewPlan): string {
+export function establishReferenceView(
+  plan: ReferenceViewPlan,
+  policy?: OriginalViewPolicy,
+): string {
   return (
     nativeCadRuntime(["camera.save", "camera.restore"]) +
     "\n" +
@@ -57,7 +60,7 @@ target_id = view_text(target_key['creationId'])
 assert expected_rows.get(target_id) == target_rows[target_id], 'Operator target is not bound to the supplied inventory'
 assert app.userInterface.activeCommand in ('', 'SelectCommand'), 'Close interactive command before establishing a reference view'
 before = doc_rows()
-assert view_rows(before) == expected_rows, 'Documents changed before operator reference activation'
+${policy ? "reference_policy: JsonRecord = " + pythonLiteral(policy) + "\nassert view_rows(reference_policy['baseline']) == expected_rows, 'Operator policy is not bound to the supplied inventory'\nchecked_user_identity(target_key, reference_policy)\nbefore = checked_view_inventory(reference_policy)\nassert view_rows(before).get(target_id) == target_rows[target_id], 'Operator target state changed before activation'" : "assert view_rows(before) == expected_rows, 'Documents changed before operator reference activation'"}
 target = checked_doc({field: target_key[field] for field in ('creationId', 'name', 'fileId')})
 observed = app.activeDocument
 assert observed is not None, 'An existing focus is required for operator reference activation'

@@ -90,6 +90,18 @@ for (const strict of [false, true]) {
         }),
       ],
       [
+        "operator-reference-policy",
+        establishReferenceView(
+          {
+            requestId: "operator-reference:1",
+            clientId: "operator-reference",
+            target: snapshot.documents[0]!,
+            documents: snapshot.documents,
+          },
+          { baseline: snapshot.documents, peers: [] },
+        ),
+      ],
+      [
         "capture-context",
         captureOriginalView(strict, {
           baseline: snapshot.documents,
