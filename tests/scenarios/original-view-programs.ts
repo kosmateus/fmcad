@@ -17,7 +17,15 @@ import {
   type OwnedUnsavedFixtureProof,
 } from "./fixture-provenance";
 import { record, text, type Owner, type ScenarioBackend } from "./contracts";
-import { resultValue, type RequestEvidence } from "./saved-files";
+import {
+  resultValue,
+  saveIntent,
+  poll,
+  defaultCloudPolling,
+  type CloudPolling,
+  type RequestEvidence,
+} from "./saved-files";
+import { childProcessIdentity } from "./legacy-handoff";
 
 export interface OriginalViewPolicy {
   readonly baseline: readonly Record<string, unknown>[];
@@ -102,6 +110,11 @@ export type OriginalViewReader = (
   owner: Owner,
   jobId: string,
 ) => Promise<unknown>;
+
+export interface ViewPreparationOptions {
+  readonly signal?: AbortSignal;
+  readonly polling?: CloudPolling;
+}
 
 function regularBytes(filename: string, limit = 4 * 1024 * 1024): Buffer {
   const fd = fs.openSync(
@@ -228,6 +241,92 @@ function viewClaims(
     }
   }
   return claims;
+}
+
+/** Wait only on an existing producer's SaveAs proof; never occupy the SDK queue. */
+async function settledViewCensus(
+  root: string,
+  backend: ScenarioBackend,
+  baseline: readonly Record<string, unknown>[],
+  options: ViewPreparationOptions,
+): Promise<ReadonlyMap<string, OwnedUnsavedFixtureProof>> {
+  return poll(async () => {
+    options.signal?.throwIfAborted();
+    const peers = discoverOwnedUnsavedFixtureProofs(root, backend);
+    const unresolved = [...peers.values()].filter(
+      (proof) => proof.state === "unsettled",
+    );
+    const claims = viewClaims(root, backend);
+    for (const row of baseline)
+      for (const claim of claims.get(text(row["creationId"])) ?? []) {
+        if (
+          claim.report["backendIdentity"] !== backend.identity ||
+          !Array.isArray(claim.report["requests"])
+        )
+          continue;
+        if (
+          claim.report["requests"]
+            .map(record)
+            .some((entry) => entry["phase"] === "save")
+        )
+          assert.ok(
+            peers.has(text(claim.creation["creationId"])),
+            "Referenced peer SaveAs lost its verified original identity proof",
+          );
+      }
+    for (const proof of unresolved) {
+      const matches = (claims.get(proof.document.creationId) ?? []).filter(
+        (claim) => claim.report["backendIdentity"] === backend.identity,
+      );
+      assert.equal(
+        matches.length,
+        1,
+        "Unsettled view peer has ambiguous original producer",
+      );
+      const claim = matches[0]!,
+        report = claim.report;
+      assert.ok(Array.isArray(report["requests"]));
+      const requests = report["requests"].map(record);
+      if (!requests.some((entry) => entry["phase"] === "save")) continue;
+      const save = requests.find((entry) => entry["phase"] === "save")!;
+      const result =
+        save["result"] === undefined ? undefined : record(save["result"]);
+      if (result)
+        assert.ok(
+          result["sdkSettled"] === true && result["state"] === "succeeded",
+          "Uncertain or failed peer SaveAs cannot admit a view capture",
+        );
+      assert.ok(
+        saveIntent(
+          claim.directory,
+          proof.document,
+          claim.owner,
+          requests as unknown as RequestEvidence[],
+        ),
+        "Peer SaveAs lacks an exact original intent",
+      );
+      const processIdentity = record(claim.index["processIdentity"]);
+      assert.ok(
+        report["status"] === "running" &&
+          report["cleanup"] === "pending" &&
+          report["cleanupHold"] === undefined &&
+          claim.index["status"] === "running",
+        "Held or terminal peer SaveAs cannot admit a view capture",
+      );
+      assert.ok(
+        typeof processIdentity["pid"] === "number" &&
+          Number.isSafeInteger(processIdentity["pid"]) &&
+          typeof processIdentity["birth"] === "string" &&
+          childProcessIdentity.priorProcessAlive({
+            pid: processIdentity["pid"],
+            birth: processIdentity["birth"],
+          }) === true,
+        "Peer SaveAs producer is no longer live",
+      );
+      return undefined;
+    }
+    return peers;
+  }, options.polling ?? defaultCloudPolling);
 }
 
 function viewIdentity(
@@ -365,8 +464,15 @@ export async function prepareCaptureView(
   baseline: readonly Record<string, unknown>[],
   readOriginal: OriginalViewReader = (owner, jobId) =>
     publicOriginalView(owner, jobId, backend),
+  options: ViewPreparationOptions = {},
 ): Promise<CaptureViewPlan> {
-  const peers = discoverOwnedUnsavedFixtureProofs(root, backend),
+  const polling = options.polling ?? defaultCloudPolling;
+  const deadline = Date.now() + polling.timeoutMs;
+  const remaining = (): ViewPreparationOptions => ({
+    ...options,
+    polling: { ...polling, timeoutMs: Math.max(0, deadline - Date.now()) },
+  });
+  const peers = await settledViewCensus(root, backend, baseline, remaining()),
     claims = viewClaims(root, backend);
   const originalResults = new Map<string, Promise<unknown>>();
   const historyProofs = new Map<
@@ -462,7 +568,11 @@ export async function prepareCaptureView(
         "Peer alias lacks an exact saved identity transfer",
       );
     const observed = baseline.find((row) => row["creationId"] === id);
-    if (observed && identityProof.state === "saved") {
+    if (
+      observed &&
+      observed["saved"] === true &&
+      identityProof.state === "saved"
+    ) {
       assert.equal(
         observed["creationId"],
         identityProof.savedDocument.creationId,
@@ -628,9 +738,26 @@ export async function prepareCaptureView(
   }
   for (const id of claims.keys())
     if (!peers.has(id) && !roots[id]) blocked.add(id);
+  const freshPeers = await settledViewCensus(
+    root,
+    backend,
+    baseline,
+    remaining(),
+  );
+  for (const proof of freshPeers.values()) {
+    const original = proof.document.creationId;
+    if (proof.state === "saved" && roots[original]) {
+      roots[proof.savedDocument.creationId] = roots[original];
+      ancestry[proof.savedDocument.creationId] = ancestry[original] ?? [];
+      blocked.delete(proof.savedDocument.creationId);
+      delete blockedReasons[proof.savedDocument.creationId];
+    }
+  }
   return {
     baseline,
-    peers: [...peers.values()],
+    // Original ancestry reads can wait behind public receipt I/O. Their immutable
+    // identity evidence must not freeze the inventory census across that wait.
+    peers: [...freshPeers.values()],
     roots,
     blocked: [...blocked],
     ancestry,

@@ -285,6 +285,8 @@ export class ScenarioSession {
       path.dirname(path.dirname(this.directory)),
       this.backend,
       this.#coordinatorBaseline()["documents"] as Record<string, unknown>[],
+      undefined,
+      this.signal ? { signal: this.signal } : {},
     );
     fs.writeFileSync(
       path.join(this.directory, "view-capture-plan.json"),

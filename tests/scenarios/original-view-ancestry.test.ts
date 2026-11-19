@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
-import { currentProcessIdentity } from "./fixture-provenance";
+import {
+  currentProcessIdentity,
+  discoverOwnedUnsavedFixtureProofs,
+} from "./fixture-provenance";
 import {
   captureOriginalView,
   prepareCaptureView,
@@ -232,10 +235,355 @@ function ancestry(
     original,
     originalCreate,
     originals,
+    entry,
     write,
     read,
   };
 }
+
+function savedAncestry(t: TestContext) {
+  // Match the real saved producer's create:0 and canonical coordinator ancestry.
+  const f = ancestry(t),
+    requestId = f.report.owner.clientId + ":0";
+  const identity = {
+    ...f.document,
+    activeCreationId: f.document.creationId,
+    clientId: f.report.owner.clientId,
+    requestId,
+  };
+  f.create.requestId = requestId;
+  f.create.result.requestId = requestId;
+  f.create.result.stdout = "FMCAD_SCENARIO " + JSON.stringify(identity) + "\n";
+  f.create.result.brokerReceipt.requestId = requestId;
+  f.create.result.brokerReceipt.operationResult.requestId = requestId;
+  f.originalCreate.job.requestId = requestId;
+  f.originalCreate.job.operationResult = structuredClone(
+    f.create.result.brokerReceipt.operationResult,
+  );
+  f.originalCreate.stdout = f.create.result.stdout;
+  const source = createProgram(
+    f.document.name,
+    path.join(f.directory, "creation.json"),
+    { requestId, clientId: f.report.owner.clientId },
+  );
+  fs.writeFileSync(
+    path.join(f.directory, "creation.json"),
+    JSON.stringify(identity),
+  );
+  fs.writeFileSync(path.join(f.directory, "request-0.py"), source);
+  f.originalCreate.provenance.inputs = [
+    {
+      kind: "source",
+      originalPath: path.join(f.directory, "request-0.py"),
+      sha256: createHash("sha256").update(source).digest("hex"),
+      bytes: Buffer.byteLength(source),
+    },
+  ];
+  const coordinator = legacyCoordinator(f);
+  f.report.backendIdentity = f.backend.identity;
+  f.report.cleanup = "pending";
+  f.report.status = "running";
+  f.write();
+  const indexFile = path.join(path.dirname(f.directory), "index.json"),
+    index = JSON.parse(fs.readFileSync(indexFile, "utf8")) as Record<
+      string,
+      unknown
+    >;
+  index["backendIdentity"] = f.backend.identity;
+  fs.writeFileSync(indexFile, JSON.stringify(index));
+  return { ...f, coordinatorJob: coordinator.original.job.id };
+}
+
+function inFlightSave(f: ReturnType<typeof ancestry>) {
+  const file = {
+    projectId: "owned-project",
+    folderId: "owned-folder",
+    fileId: "owned-file",
+    version: 1,
+  };
+  const saved = { creationId: randomUUID(), name: f.document.name + " v0" };
+  const intent = {
+    ...f.document,
+    projectId: file.projectId,
+    folderId: file.folderId,
+    clientId: f.report.owner.clientId,
+    requestId: f.report.owner.clientId + ":2",
+  };
+  const accepted = {
+    ...intent,
+    accepted: true,
+    postCreationId: saved.creationId,
+    postName: saved.name,
+  };
+  f.report.requests.push(f.entry("save", 2, accepted));
+  Object.assign(f.report, {
+    document: saved,
+    fixture: { projectId: file.projectId, folderId: file.folderId },
+    savedIdentityTransition: {
+      version: 1,
+      originalCreationId: f.document.creationId,
+      saveRequestId: intent.requestId,
+      ...saved,
+    },
+  });
+  fs.writeFileSync(
+    path.join(f.directory, "save-intent.json"),
+    JSON.stringify(intent),
+  );
+  fs.writeFileSync(
+    path.join(f.directory, "save-transition.json"),
+    JSON.stringify(accepted),
+  );
+  f.write();
+  assert.equal(
+    discoverOwnedUnsavedFixtureProofs(f.root, f.backend).get(
+      f.document.creationId,
+    )?.state,
+    "unsettled",
+  );
+  return {
+    saved,
+    file,
+    complete() {
+      f.report.requests.push(
+        f.entry("save-observe", 3, {
+          ...saved,
+          ...file,
+          saved: true,
+          complete: true,
+        }),
+      );
+      Object.assign(f.report, { document: { ...saved, file } });
+      f.write();
+      assert.equal(
+        discoverOwnedUnsavedFixtureProofs(f.root, f.backend).get(
+          f.document.creationId,
+        )?.state,
+        "saved",
+      );
+    },
+  };
+}
+
+test("capture inventory proofs refresh after asynchronous ancestry reads settle a peer close", async (t) => {
+  const f = ancestry(t);
+  let closed = false;
+  const plan = await prepareCaptureView(
+    f.root,
+    f.backend,
+    [
+      ...f.snapshot.documents,
+      { ...f.document, fileId: null, saved: false, modified: false },
+    ],
+    async (owner, jobId) => {
+      if (jobId === f.capture.result.brokerReceipt.jobId && !closed) {
+        closed = true;
+        f.report.requests.push(
+          f.entry("cleanup", 2, {
+            creationId: f.document.creationId,
+            closed: true,
+          }),
+        );
+        f.report.status = "passed";
+        f.report.cleanup = "complete";
+        f.write();
+      }
+      return f.read(owner, jobId);
+    },
+  );
+  assert.equal(closed, true);
+  assert.deepEqual(
+    plan.roots[f.document.creationId],
+    f.user,
+    "Immutable ancestry remains valid after a proved closure",
+  );
+  assert.equal(
+    plan.peers.find(
+      (proof) => proof.document.creationId === f.document.creationId,
+    )?.state,
+    "closed",
+    "Do not dispatch a census frozen before the awaited receipt reads",
+  );
+});
+
+test("capture preparation waits for an already accepted peer SaveAs without submitting SDK or granting an unsettled exemption", async (t) => {
+  const f = savedAncestry(t),
+    transfer = inFlightSave(f);
+  let settled = false;
+  const timer = setTimeout(() => {
+    transfer.complete();
+    settled = true;
+  }, 50);
+  t.after(() => clearTimeout(timer));
+  const plan = await prepareCaptureView(
+    f.root,
+    f.backend,
+    [
+      ...f.snapshot.documents,
+      { ...f.document, fileId: null, saved: false, modified: false },
+    ],
+    async (owner, job) => {
+      assert.equal(
+        settled,
+        true,
+        "Original ancestry preparation must not dispatch while its peer save remains unproved",
+      );
+      return f.read(owner, job);
+    },
+  );
+  assert.equal(settled, true);
+  assert.equal(
+    plan.peers.find(
+      (proof) => proof.document.creationId === f.document.creationId,
+    )?.state,
+    "saved",
+  );
+  assert.deepEqual(plan.roots[f.document.creationId], f.user);
+  assert.deepEqual(
+    plan.roots[transfer.saved.creationId],
+    f.user,
+    "Only the newly verified transfer supplies the saved alias ancestry",
+  );
+});
+
+test("a SaveAs settling during original ancestry I/O supplies a fresh verified saved alias", async (t) => {
+  const f = savedAncestry(t);
+  let saved: ReturnType<typeof inFlightSave> | undefined;
+  const plan = await prepareCaptureView(
+    f.root,
+    f.backend,
+    [
+      ...f.snapshot.documents,
+      { ...f.document, fileId: null, saved: false, modified: false },
+    ],
+    async (owner, job) => {
+      if (job === f.coordinatorJob) {
+        saved = inFlightSave(f);
+        saved.complete();
+      }
+      return f.read(owner, job);
+    },
+  );
+  assert.ok(saved);
+  assert.equal(
+    plan.peers.find(
+      (proof) => proof.document.creationId === f.document.creationId,
+    )?.state,
+    "saved",
+  );
+  assert.deepEqual(plan.roots[saved.saved.creationId], f.user);
+  assert.equal(plan.blocked.includes(saved.saved.creationId), false);
+});
+
+for (const fault of [
+  "hold",
+  "dead-owner",
+  "abort",
+  "abort-during-wait",
+  "timeout",
+  "failed-original",
+  "missing-intent",
+] as const) {
+  test(`pending peer SaveAs ${fault} fails closed before capture dispatch`, async (t) => {
+    const f = savedAncestry(t);
+    inFlightSave(f);
+    if (fault === "hold") {
+      Object.assign(f.report, {
+        cleanupHold: {
+          requestId: f.report.owner.clientId + ":2",
+          reason: "preserved",
+        },
+      });
+      f.write();
+    }
+    if (fault === "dead-owner") {
+      const file = path.join(path.dirname(f.directory), "index.json"),
+        index = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+          string,
+          unknown
+        >;
+      index["processIdentity"] = {
+        pid: process.pid,
+        birth: "not-the-current-process-birth",
+      };
+      fs.writeFileSync(file, JSON.stringify(index));
+    }
+    if (fault === "failed-original") {
+      f.report.requests.find((entry) => entry.phase === "save")!.result.state =
+        "failed";
+      f.write();
+    }
+    if (fault === "missing-intent")
+      fs.unlinkSync(path.join(f.directory, "save-intent.json"));
+    const controller = new AbortController();
+    if (fault === "abort")
+      controller.abort(new Error("capture preparation aborted"));
+    const abortTimer =
+      fault === "abort-during-wait"
+        ? setTimeout(
+            () =>
+              controller.abort(
+                new Error("capture preparation aborted during wait"),
+              ),
+            1,
+          )
+        : undefined;
+    t.after(() => clearTimeout(abortTimer));
+    let originalReads = 0;
+    await assert.rejects(
+      prepareCaptureView(
+        f.root,
+        f.backend,
+        [
+          ...f.snapshot.documents,
+          { ...f.document, fileId: null, saved: false, modified: false },
+        ],
+        async (owner, job) => {
+          originalReads++;
+          return f.read(owner, job);
+        },
+        {
+          signal: controller.signal,
+          polling: { timeoutMs: 10, intervalMs: 1 },
+        },
+      ),
+    );
+    assert.equal(
+      originalReads,
+      0,
+      "An unresolved save never reaches SDK capture or original camera ancestry reads",
+    );
+  });
+}
+
+test("ancestry I/O consumes the existing preparation budget instead of resetting it before the final census", async (t) => {
+  const f = savedAncestry(t);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await assert.rejects(
+      prepareCaptureView(
+        f.root,
+        f.backend,
+        [
+          ...f.snapshot.documents,
+          { ...f.document, fileId: null, saved: false, modified: false },
+        ],
+        async (owner, job) => {
+          if (job === f.coordinatorJob) {
+            const transfer = inFlightSave(f);
+            timer = setTimeout(() => transfer.complete(), 30);
+            await new Promise((resolve) => setTimeout(resolve, 25));
+          }
+          return f.read(owner, job);
+        },
+        { polling: { timeoutMs: 10, intervalMs: 1 } },
+      ),
+      /Original cloud operation is not observed complete/u,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+});
 
 test("camera ancestry is source-bound and does not grant held lifecycle rights", async (t) => {
   const f = ancestry(t);
