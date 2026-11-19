@@ -21,6 +21,7 @@ import * as programs from "./programs";
 import { childProcessIdentity } from "./legacy-handoff";
 import { createRequire } from "node:module";
 import { queueExecution } from "./queue-backend";
+import { publishLegacyTerminalDisposition } from "./legacy-terminal-disposition";
 
 function fixture(
   t: TestContext,
@@ -696,9 +697,9 @@ test("an inspection failure cannot publish authorization or be replayed", async 
   assert.equal(f.submissions(), 1);
 });
 
-for (const pose of [false, true])
-  test(`the actual ${pose ? "pose" : "admission"} resolution inspection passes the pinned production checker`, async (t) => {
-    const f = fixture(t, pose);
+for (const kind of ["admission", "pose", "accepted-legacy"])
+  test(`the actual ${kind} resolution inspection passes the pinned production checker`, async (t) => {
+    const f = kind === "accepted-legacy" ? await acceptedLegacyFixture(t) : fixture(t, kind === "pose");
     const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
     const source = fs.readFileSync(
       path.join(
@@ -1548,6 +1549,162 @@ function nativeBindingFixture(t: TestContext) {
     jobId: String(record(raw["job"])["id"]),
   };
 }
+async function acceptedLegacyFixture(t: TestContext) {
+  const f = terminalLegacyFixture(t),
+    id = randomUUID(),
+    requestId = f.report.owner.clientId + ":legacy:" + id,
+    jobId = randomUUID();
+  fs.unlinkSync(f.file);
+  const report = record(f.report);
+  delete report["cleanupHold"];
+  report["scope"] = "exclusive-instance";
+  report["error"] =
+    "Original legacy request remains unsettled; cleanup deferred: " + requestId;
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(report),
+  );
+  const write = (file: string, value: unknown) =>
+    fs.writeFileSync(path.join(f.directory, file), JSON.stringify(value));
+  write("legacy/completion.json", {
+    owner: f.report.owner,
+    document: f.document,
+    status: "failed",
+    safeForCleanup: true,
+    reportPath: path.join(f.legacy, "readback.json"),
+  });
+  write("legacy/readback.json", { status: "failed" });
+  write("legacy/intents/" + id + ".json", {
+    version: 1,
+    owner: f.report.owner,
+    requestId,
+    argvHash: "b".repeat(64),
+    admissionRequested: true,
+    completed: true,
+    exitCode: 1,
+    pid: 2_000_000_000,
+    birth: "dead:1",
+    settlementFailure: {
+      requestId,
+      clientId: f.report.owner.clientId,
+      reason: "lookup-unavailable",
+    },
+  });
+  fs.mkdirSync(path.join(f.legacy, "queue-receipts"));
+  write("legacy/queue-receipts/" + id + ".json", {
+    version: 1,
+    owner: f.report.owner,
+    requestId,
+    jobId,
+  });
+  const raw = {
+    job: {
+      id: jobId,
+      requestId,
+      clientId: f.report.owner.clientId,
+      kind: "command",
+      state: "failed",
+      code: "LOCAL_PREPARATION_FAILED",
+      executionOutcome: "not_started",
+      mayHaveMutated: false,
+      finishedAt: Date.now() - 100,
+      operationResult: {
+        version: 1,
+        requestId,
+        jobId,
+        acceptance: "accepted",
+        executionOutcome: "not_started",
+        mayHaveMutated: false,
+        code: "LOCAL_PREPARATION_FAILED",
+        validation: { status: "not_checked" },
+      },
+    },
+    execution: {
+      state: "failed",
+      code: "LOCAL_PREPARATION_FAILED",
+      executionOutcome: "not_started",
+      mayHaveMutated: false,
+      sdkSettled: true,
+    },
+    stdout: "",
+    stderr: "preparation failed",
+    pythonChecks: [],
+  };
+  const sourceHashes: Record<string, { path: string; sha256: string }> = {};
+  for (const base of ["runner", "legacy-owned-driver", "legacy-handoff"])
+    for (const file of [
+      `tests/scenarios/${base}.ts`,
+      `dist/tests/scenarios/${base}.js`,
+    ]) {
+      const filename = path.join(
+        f.directory,
+        "source-" + file.replaceAll("/", "_"),
+      );
+      fs.writeFileSync(filename, "retained bound source\n");
+      sourceHashes[file] = {
+        path: filename,
+        sha256: createHash("sha256")
+          .update(fs.readFileSync(filename))
+          .digest("hex"),
+      };
+    }
+  await publishLegacyTerminalDisposition(
+    f.directory,
+    { identity: f.backend.identity, mode: "fusion", protocol: "addin" },
+    {
+      readOriginal: async () => raw,
+      producerAlive: () => false,
+      sourceBinding: {
+        driverSource: "a".repeat(40),
+        buildHash: f.runtime.buildHash,
+        sourceHashes,
+      },
+    },
+  );
+  return { ...f, requestId, raw };
+}
+test("accepted terminal legacy disposition authorizes a new pristine inspection without rewriting history", async (t) => {
+  const f = await acceptedLegacyFixture(t),
+    filename = path.join(f.directory, "report.json"),
+    before = fs.readFileSync(filename),
+    completion = fs.readFileSync(path.join(f.legacy, "completion.json"));
+  const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.equal(proof.inspectedModified, false);
+  assert.equal(proof.inspectionRequestId, f.report.owner.clientId + ":2");
+  assert.deepEqual(fs.readFileSync(filename), before);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.legacy, "completion.json")),
+    completion,
+  );
+  assert.equal(f.submissions(), 1);
+});
+for (const kind of ["missing", "raw", "intent", "report"] as const)
+  test(`accepted terminal legacy recovery refuses ${kind} evidence before dispatch`, async (t) => {
+    const f = await acceptedLegacyFixture(t),
+      file = path.join(f.legacy, "terminal-disposition.json");
+    if (kind === "missing") fs.unlinkSync(file);
+    if (kind === "raw") {
+      const proof = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+        string,
+        unknown
+      >;
+      record(record(proof["raw"])["execution"])["mayHaveMutated"] = true;
+      fs.writeFileSync(file, JSON.stringify(proof));
+    }
+    if (kind === "intent")
+      fs.appendFileSync(
+        path.join(
+          f.legacy,
+          "intents",
+          f.requestId.split(":").at(-1)! + ".json",
+        ),
+        " ",
+      );
+    if (kind === "report")
+      fs.appendFileSync(path.join(f.directory, "report.json"), " ");
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(f.submissions(), 0);
+  });
 test("missing authoritative native result cannot enter cleanup before its immutable binding", async (t) => {
   const f = nativeBindingFixture(t);
   await assert.rejects(
@@ -1678,6 +1835,68 @@ test("native result still requires typed ports and cannot use generic report-rew
   assert.deepEqual(
     fs.readFileSync(path.join(f.directory, "report.json")),
     before,
+  );
+});
+
+test("accepted legacy recovery publishes a pristine close without replacing its failed completion", async (t) => {
+  const f = await acceptedLegacyFixture(t),
+    file = path.join(f.directory, "report.json");
+  const before = fs.readFileSync(file),
+    completion = fs.readFileSync(path.join(f.legacy, "completion.json"));
+  const result = await resumeCleanup(f.backend, file, f.ports);
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(fs.readFileSync(file), before);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.legacy, "completion.json")),
+    completion,
+  );
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.json")),
+    true,
+  );
+  const close = record(
+    JSON.parse(
+      fs.readFileSync(
+        path.join(f.directory, "supplemental-close.intent.json"),
+        "utf8",
+      ),
+    ) as unknown,
+  );
+  assert.equal(close["expectedModified"], false);
+  assert.equal(typeof close["resolutionDigest"], "string");
+});
+
+test("native recovery publishes an exact modified close without rewriting the failed report", async (t) => {
+  const f = nativeBindingFixture(t);
+  const filename = path.join(f.directory, "report.json");
+  const before = fs.readFileSync(filename);
+  const originalIntent = fs.readFileSync(f.intentFile);
+  await recordNativeCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.intentFile,
+    f.jobId,
+  );
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  const result = await resumeCleanup(adapted.backend, filename, adapted.ports);
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(fs.readFileSync(filename), before);
+  assert.deepEqual(fs.readFileSync(f.intentFile), originalIntent);
+  const close = record(
+    JSON.parse(
+      fs.readFileSync(
+        path.join(f.directory, "supplemental-close.intent.json"),
+        "utf8",
+      ),
+    ) as unknown,
+  );
+  assert.equal(close["expectedModified"], true);
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.json")),
+    true,
   );
 });
 

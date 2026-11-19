@@ -12,6 +12,7 @@ import {
 import * as programs from "./programs";
 import { childProcessIdentity } from "./legacy-handoff";
 import { queueExecution } from "./queue-backend";
+import { validateLegacyTerminalDisposition } from "./legacy-terminal-disposition";
 
 export interface CleanupRuntimeBinding {
   readonly buildHash: string;
@@ -587,15 +588,26 @@ function context(
     `FMCAD_SCENARIO_${owner.runId}_${owner.scenarioId}`,
   );
   assert.equal(doc["file"], undefined);
+  const recoveringAcceptedLegacy =
+    report["cleanupHold"] === undefined &&
+    owner.scenarioId === "native-legacy-0" &&
+    text(report["error"]).startsWith(
+      "Original legacy request remains unsettled; cleanup deferred: ",
+    );
   const recoveringNative =
     report["cleanupHold"] === undefined &&
     owner.scenarioId === "gm07-source-pinned";
-  const hold = recoveringNative
+  const hold = recoveringAcceptedLegacy
     ? {
-        requestId: owner.clientId + ":4",
-        reason: "Authoritative native result requires guarded cleanup",
+        requestId: owner.clientId + ":1",
+        reason: "Accepted terminal legacy result requires guarded cleanup",
       }
-    : record(report["cleanupHold"]);
+    : recoveringNative
+      ? {
+          requestId: owner.clientId + ":4",
+          reason: "Authoritative native result requires guarded cleanup",
+        }
+      : record(report["cleanupHold"]);
   assert.ok(
     text(hold["requestId"]) && text(hold["reason"]),
     "Missing cleanup hold",
@@ -822,6 +834,11 @@ function admissionProof(c: ReturnType<typeof context>, source: string) {
   );
 }
 type HoldProof =
+  | {
+      kind: "accepted-terminal-legacy";
+      dispositionHash: string;
+      finishedAt: number;
+    }
   | { kind: "native-result-binding"; bindingHash: string }
   | { kind: "admission-only" }
   | { kind: "owned-observation"; bodyToken: string }
@@ -940,6 +957,53 @@ function validateLegacyChild(
 }
 function holdProof(c: ReturnType<typeof context>, source: string): HoldProof {
   if (
+    c.hold["reason"] ===
+    "Accepted terminal legacy result requires guarded cleanup"
+  ) {
+    const directory = text(c.report["directory"]);
+    const disposition = validateLegacyTerminalDisposition(directory, {
+      identity: text(c.report["backendIdentity"]),
+      mode: "fusion",
+      protocol: "addin",
+    });
+    assert.deepEqual(disposition.owner, c.owner);
+    assert.deepEqual(disposition.document, c.document);
+    assert.equal(
+      c.report["error"],
+      "Original legacy request remains unsettled; cleanup deferred: " +
+        disposition.requestId,
+    );
+    assert.equal(c.requests.length, 2);
+    assert.deepEqual(
+      c.requests.map((row) => row["phase"]),
+      ["create", "export"],
+    );
+    for (const row of c.requests) {
+      assert.equal(record(row["intent"])["kind"], "script");
+      assert.equal(record(row["result"])["state"], "succeeded");
+    }
+    assert.equal(disposition.expectedModified, false);
+    assert.equal(disposition.originalRequest.result.sdkSettled, true);
+    assert.equal(disposition.originalRequest.result.state, "failed");
+    assert.equal(disposition.originalRequest.result.mayHaveMutated, false);
+    const output = marker(record(c.requests.at(-1)!["result"])["stdout"]);
+    assert.equal(output["creationId"], c.document.creationId);
+    assert.equal(output["exported"], true);
+    const match = /createFusionArchiveExportOptions\(([^\n]+)\)/u.exec(source);
+    assert.ok(match);
+    const filename = text(JSON.parse(match[1]!) as unknown);
+    assert.ok(
+      filename === path.join(directory, "fixture.f3d") ||
+        filename.endsWith(directory.replaceAll("/", "\\") + "\\fixture.f3d"),
+    );
+    assert.equal(source, programs.exportFile(c.document, filename));
+    return {
+      kind: "accepted-terminal-legacy",
+      dispositionHash: disposition.dispositionHash,
+      finishedAt: Date.parse(disposition.finishedAt),
+    };
+  }
+  if (
     c.hold["reason"] === "Authoritative native result requires guarded cleanup"
   ) {
     const directory = text(c.report["directory"]),
@@ -1035,6 +1099,7 @@ function holdModified(
   c: ReturnType<typeof context>,
   proof: HoldProof,
 ): boolean {
+  if (proof.kind === "accepted-terminal-legacy") return false;
   if (proof.kind === "native-result-binding") return true;
   if (proof.kind === "terminal-legacy-no-dispatch") return false;
   const result = record(c.requests.at(-1)!["result"]);
@@ -1291,6 +1356,15 @@ function verifiedDecision(
     decision["originals"].at(-1),
   );
   const holdEvidence = holdProof(c, hold.source);
+  if (holdEvidence.kind === "accepted-terminal-legacy")
+    assert.ok(
+      Number(
+        record(record(record(decision["inspection"])["raw"])["job"])[
+          "startedAt"
+        ],
+      ) >= holdEvidence.finishedAt,
+      "Inspection predates accepted terminal disposition",
+    );
   assert.deepEqual(decision["holdProof"], holdEvidence);
   const expectedModified = holdModified(c, holdEvidence);
   if (decision["version"] === 1)
