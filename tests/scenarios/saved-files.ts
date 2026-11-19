@@ -31,6 +31,7 @@ export interface CloudPolling {
   readonly intervalMs: number;
 }
 const defaultPolling: CloudPolling = { timeoutMs: 120_000, intervalMs: 50 };
+export { defaultPolling as defaultCloudPolling };
 
 export function resultValue(
   entry: RequestEvidence | undefined,
