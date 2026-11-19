@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import {
   clientModule,
   config,
@@ -22,6 +23,7 @@ import {
 } from "./scenarios/fixture-provenance";
 import type { OwnedUnsavedFixtureProof } from "./scenarios/fixture-provenance";
 import { scenarioArtifactRoot } from "./scenarios/artifact-root";
+import { NormalFixtureProducer } from "./scenarios/normal-fixture-producer";
 const { QueueClient, inputFiles } = clientModule;
 const { loadConfig } = config;
 const { buildHash, processBirth } = identity;
@@ -393,6 +395,20 @@ async function main() {
     receipts: [],
     documents: [],
   };
+  // Only new qualified ADDIN nongroup runs adopt the canonical producer identity.
+  // Historical reports, grouped requests and resume credentials are unchanged.
+  const producer =
+    !group && !resume && cfg.backend === "addin"
+      ? new NormalFixtureProducer(
+          scenarioArtifactRoot(path.resolve(__dirname, "../.."), "fusion"),
+          runId,
+          ownerCount,
+          report.buildHash,
+        )
+      : undefined;
+  const platform = createRequire(path.resolve(__dirname, "../../package.json"))(
+    "./src/dist/config-platform",
+  ) as typeof import("../packages/node-adapters/src/config-platform/platform");
   const persist = () => {
     const file = path.join(root, "report.json"),
       temporary = file + ".new";
@@ -406,7 +422,8 @@ async function main() {
     { length: ownerCount },
     (_, index) =>
       new QueueClient(
-        "live:multidocument:" + (resume?.["runId"] || runId) + ":" + index,
+        producer?.owners[index]?.clientId ??
+          "live:multidocument:" + (resume?.["runId"] || runId) + ":" + index,
         {
           cfg: { ...cfg, queue: { ...cfg.queue, autoStart: false } },
           existingCredentialsOnly: !!resume,
@@ -445,6 +462,16 @@ async function main() {
   ): Promise<Record<string, unknown>> {
     const queue = clients[index];
     assert.ok(queue);
+    const requestId =
+      producer?.begin(index, phase) ?? runId + ":" + index + ":" + phase;
+    if (producer && phase === "create")
+      body += producer.creationTail(index, requestId, (file) =>
+        platform.toWindowsPath(file, platform.detectPlatform()),
+      );
+    if (producer && phase === "close") {
+      assert.ok(document);
+      body += producer.closeTail(document);
+    }
     const file = path.join(root, index + "-" + phase + ".py");
     fs.writeFileSync(
       file,
@@ -470,7 +497,6 @@ async function main() {
           ]
         : []),
     ];
-    const requestId = runId + ":" + index + ":" + phase;
     report.receipts.push({ requestId, phase, clientId: queue.auth.clientId });
     persist();
     const job = await queue.submit({
@@ -515,6 +541,10 @@ async function main() {
         "Original multidocument request identity or settlement differs; retain both fixtures",
       );
     assert.equal(result.job.state, "succeeded", JSON.stringify(result));
+    if (producer)
+      await producer.publish(index, requestId, job.id, file, () =>
+        queue.call("result", { jobId: job.id }),
+      );
     const marker = result.stdout
       .split(/\r?\n/)
       .find((line) => line.startsWith("FMCAD_RESULT "));
@@ -602,6 +632,12 @@ assert design is not None`;
       report.before = group
         ? group.baseline
         : nativeState(await snapshot("baseline"));
+      producer?.baseline(
+        report.before.documents.map(({ id, ...row }) => ({
+          ...row,
+          creationId: id,
+        })),
+      );
       if (group) {
         const observed = nativeState(await snapshot("group-before"));
         assert.ok(groupRunner);
@@ -814,7 +850,13 @@ print('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.ac
           ).filter((index) => !report.documents[index]),
           provenUncreated = (index: number): boolean => {
             const queue = clients[index],
-              requestId = runId + ":" + index + ":create",
+              requestId = producer
+                ? report.receipts.find(
+                    (receipt) =>
+                      receipt.clientId === queue?.auth.clientId &&
+                      receipt.phase === "create",
+                  )?.requestId
+                : runId + ":" + index + ":create",
               matches = report.receipts.filter(
                 (receipt) => receipt.requestId === requestId,
               );
@@ -882,7 +924,14 @@ print('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.ac
                     creationId: document.creationId,
                     message,
                   });
-                  const requestId = runId + ":" + index + ":failure-close",
+                  const requestId = producer
+                      ? report.receipts.find(
+                          (receipt) =>
+                            receipt.clientId ===
+                              clients[index]?.auth.clientId &&
+                            receipt.phase === "failure-close",
+                        )?.requestId
+                      : runId + ":" + index + ":failure-close",
                     receipts = report.receipts.filter(
                       (receipt) => receipt.requestId === requestId,
                     ),
@@ -928,6 +977,7 @@ print('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.ac
     }
     throw error;
   } finally {
+    producer?.finish(report.status === "passed");
     clients.forEach((client) => client.dispose());
     report.finishedAt = new Date().toISOString();
     persist();
