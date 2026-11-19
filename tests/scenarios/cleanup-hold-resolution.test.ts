@@ -699,7 +699,10 @@ test("an inspection failure cannot publish authorization or be replayed", async 
 
 for (const kind of ["admission", "pose", "accepted-legacy"])
   test(`the actual ${kind} resolution inspection passes the pinned production checker`, async (t) => {
-    const f = kind === "accepted-legacy" ? await acceptedLegacyFixture(t) : fixture(t, kind === "pose");
+    const f =
+      kind === "accepted-legacy"
+        ? await acceptedLegacyFixture(t)
+        : fixture(t, kind === "pose");
     const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
     const source = fs.readFileSync(
       path.join(
@@ -950,6 +953,89 @@ test("the source-backed lost peer lifecycle admission reason is supported withou
     before,
   );
 });
+
+function readmittedFixture(t: TestContext) {
+  const f = fixture(t),
+    prior = f.report.requests[1]!;
+  const payload = JSON.parse(
+    prior.result.stdout.slice("FMCAD_RESULT ".length),
+  ) as Record<string, unknown>;
+  record(record(payload["result"])["admission"])["requestId"] =
+    f.report.owner.clientId + ":2";
+  const row = f.request(
+    2,
+    prior.phase + "-readmitted",
+    "FMCAD_RESULT " + JSON.stringify(payload),
+    programs.cadFence(
+      f.document,
+      "model.thread",
+      {},
+      [],
+      [],
+      [],
+      "root",
+      f.report.owner.clientId + ":2",
+    ),
+  );
+  f.report.requests.push(row);
+  f.report.cleanupHold = {
+    requestId: row.requestId,
+    reason:
+      "Fenced CAD turn failed; leave the owned document for inspection: ADMISSION_CHANGED: inventory changed again before the admitted CAD turn; no helper executed",
+  };
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  return f;
+}
+test("readmitted admission-only hold binds both original no-helper turns before guarded cleanup", async (t) => {
+  const f = readmittedFixture(t),
+    filename = path.join(f.directory, "report.json"),
+    before = fs.readFileSync(filename);
+  const result = await resumeCleanup(f.backend, filename, f.ports);
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(fs.readFileSync(filename), before);
+});
+for (const kind of [
+  "prior-mutation",
+  "prior-helper",
+  "prior-operation",
+  "not-readmitted",
+  "prior-source",
+] as const)
+  test(`readmitted admission hold refuses ${kind} before inspection`, async (t) => {
+    const f = readmittedFixture(t),
+      prior = f.report.requests[1]!,
+      row = f.report.requests[2]!;
+    if (kind === "not-readmitted") row.phase = "cad-unbound";
+    if (kind === "prior-source")
+      fs.appendFileSync(path.join(f.directory, "request-1.py"), "# changed\n");
+    if (kind.startsWith("prior-") && kind !== "prior-source") {
+      const payload = JSON.parse(
+          prior.result.stdout.slice("FMCAD_RESULT ".length),
+        ) as Record<string, unknown>,
+        result = record(payload["result"]),
+        admission = record(result["admission"]);
+      if (kind === "prior-mutation") admission["mutationStarted"] = true;
+      if (kind === "prior-helper") admission["helperCalls"] = 1;
+      if (kind === "prior-operation") result["operation"] = "shape.box";
+      const changed = {
+        ...prior.result,
+        stdout: "FMCAD_RESULT " + JSON.stringify(payload),
+      };
+      prior.result = changed;
+      f.executions.set(prior.requestId, changed);
+      record(f.originals.get(prior.requestId))["stdout"] = changed.stdout;
+    }
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(f.submissions(), 0);
+  });
 
 for (const kind of ["unsupported-reason", "helper-mutation"] as const)
   test(`admission resolution rejects ${kind} without inspection`, async (t) => {

@@ -807,7 +807,7 @@ function admissionProof(c: ReturnType<typeof context>, source: string) {
     result = record(last["result"]);
   assert.match(
     text(c.hold["reason"]),
-    /^Fenced CAD turn failed; leave the owned document for inspection: (?:Inventory re-admission lacks exact peer lifecycle receipts|A previously admitted peer lost its exact lifecycle proof)(?:\n|$)/u,
+    /^Fenced CAD turn failed; leave the owned document for inspection: (?:Inventory re-admission lacks exact peer lifecycle receipts|A previously admitted peer lost its exact lifecycle proof|ADMISSION_CHANGED: inventory changed again before the admitted CAD turn; no helper executed)(?:\n|$)/u,
   );
   assert.equal(result["state"], "succeeded");
   const output = marker(result["stdout"], "FMCAD_RESULT ");
@@ -832,6 +832,57 @@ function admissionProof(c: ReturnType<typeof context>, source: string) {
     text(payload["operation"]),
     text(last["requestId"]),
   );
+  if (text(c.hold["reason"]).includes("ADMISSION_CHANGED:")) {
+    assert.ok(
+      text(last["phase"]).endsWith("-readmitted"),
+      "Unbound readmitted turn",
+    );
+    const prior = c.requests.at(-2)!;
+    assert.equal(
+      prior["phase"],
+      text(last["phase"]).slice(0, -"-readmitted".length),
+    );
+    assert.equal(record(prior["intent"])["kind"], "cad-fenced");
+    assert.equal(record(last["intent"])["kind"], "cad-fenced");
+    assert.equal(record(prior["intent"])["operation"], payload["operation"]);
+    assert.equal(record(last["intent"])["operation"], payload["operation"]);
+    const previous = record(prior["result"]);
+    assert.equal(previous["state"], "succeeded");
+    assert.equal(previous["sdkSettled"], true);
+    const outputBefore = marker(previous["stdout"], "FMCAD_RESULT ");
+    assert.equal(outputBefore["success"], true);
+    assert.deepEqual(outputBefore["helperCallsOnly"], []);
+    const payloadBefore = record(outputBefore["result"]),
+      admissionBefore = record(payloadBefore["admission"]),
+      fenceBefore = record(payloadBefore["inventoryFence"]);
+    assert.equal(payloadBefore["success"], true);
+    assert.equal(payloadBefore["operation"], payload["operation"]);
+    assert.equal(payloadBefore["document"], c.document.name);
+    assert.equal(payloadBefore["creationId"], c.document.creationId);
+    assert.equal(admissionBefore["status"], "inventory-changed");
+    assert.equal(admissionBefore["requestId"], prior["requestId"]);
+    assert.equal(admissionBefore["helperCalls"], 0);
+    assert.equal(admissionBefore["mutationStarted"], false);
+    assert.equal(fenceBefore["version"], 1);
+    assert.equal(
+      inventory(fenceBefore["before"], c.document)["modified"],
+      inventory(fence["before"], c.document)["modified"],
+      "Owned state changed between no-helper turns",
+    );
+    assert.deepEqual(fenceBefore["before"], fenceBefore["after"]);
+    const priorSource = read(
+      path.join(
+        text(c.report["directory"]),
+        `request-${text(prior["requestId"]).split(":").at(-1)}.py`,
+      ),
+    );
+    admissionSource(
+      priorSource,
+      c.document,
+      text(payloadBefore["operation"]),
+      text(prior["requestId"]),
+    );
+  }
 }
 type HoldProof =
   | {
