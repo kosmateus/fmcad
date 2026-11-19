@@ -11,6 +11,10 @@ import {
   type LegacyLease,
 } from "./legacy-handoff";
 import { commandResult } from "./command-result";
+import {
+  resolveCleanupHold,
+  type CleanupHoldPorts,
+} from "./cleanup-hold-resolution";
 import * as fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -56,6 +60,8 @@ import {
   currentProcessIdentity,
   discoverOwnedUnsavedFixtureProofs,
   exactScenarioRequestId,
+  prepareSupplementalCloseProof,
+  publishSupplementalCloseProof,
 } from "./fixture-provenance";
 
 export interface Scenario {
@@ -2106,6 +2112,7 @@ export async function runScenarios(
 export async function resumeCleanup(
   backend: ScenarioBackend,
   filename: string,
+  ports?: CleanupHoldPorts,
 ): Promise<ScenarioReport> {
   if (!backend.lookup)
     throw new Error("Backend cannot recover original request evidence");
@@ -2153,10 +2160,74 @@ export async function resumeCleanup(
     requests.some((r) => !exactScenarioRequestId(r.requestId, owner.clientId))
   )
     throw new Error("Invalid original request inventory");
-  if (raw["cleanupHold"] !== undefined)
-    throw new Error(
-      "Case-specific mutation outcome remains unresolved; original SDK completion alone cannot release its cleanup hold",
-    );
+  if (raw["cleanupHold"] !== undefined) {
+    if (!ports)
+      throw new Error(
+        "Case-specific mutation outcome remains unresolved; original SDK completion alone cannot release its cleanup hold",
+      );
+    const proofBackend = {
+      identity: backend.identity,
+      mode: backend.mode,
+      qualification: backend.qualification,
+      protocol: backend.protocol,
+      lookup: backend.lookup.bind(backend),
+    };
+    const held = record(raw["document"]);
+    const document: Document = {
+      creationId: text(held["creationId"]),
+      name: text(held["name"]),
+    };
+    if (fs.existsSync(path.join(directory, "supplemental-close.json"))) {
+      const closed = discoverOwnedUnsavedFixtureProofs(
+        path.dirname(path.dirname(directory)),
+        backend,
+      ).get(document.creationId);
+      assert.equal(
+        closed?.state,
+        "closed",
+        "Existing held closure is unverified",
+      );
+      assert.deepEqual(closed.document, document);
+    } else if (
+      fs.existsSync(path.join(directory, "supplemental-close.intent.json"))
+    ) {
+      // Recover publication from the original close receipt only. An admitted or
+      // uncertain close must never cause another inspection or close submission.
+      await publishSupplementalCloseProof(directory, proofBackend, ports);
+    } else {
+      const resolution = await resolveCleanupHold(backend, directory, ports);
+      const ordinal =
+        Number(resolution.inspectionRequestId.split(":").at(-1)) + 1;
+      assert.ok(Number.isSafeInteger(ordinal));
+      const prepared = await prepareSupplementalCloseProof(
+        directory,
+        proofBackend,
+        owner.clientId + ":" + ordinal,
+        ports,
+      );
+      const result = await backend.execute({
+        owner: prepared.owner,
+        requestId: prepared.requestId,
+        source: prepared.source,
+        target: prepared.document,
+        directory: prepared.directory,
+      });
+      assert.equal(
+        result.state,
+        "succeeded",
+        "Held cleanup did not succeed; preserve original evidence",
+      );
+      assert.equal(
+        result.sdkSettled,
+        true,
+        "Held cleanup is unsettled; never replay",
+      );
+      await publishSupplementalCloseProof(directory, proofBackend, ports);
+    }
+    // The historical report/hold is immutable. Only the returned cleanup view changes;
+    // canonical resolution and closure sidecars carry the new receipts.
+    return { ...raw, cleanup: "complete" } as unknown as ScenarioReport;
+  }
   // A crashed parent may not yet have appended the child's durable original request IDs.
   const legacy = await recoverLegacyInvocations(backend, directory, owner);
   for (const entry of legacy)

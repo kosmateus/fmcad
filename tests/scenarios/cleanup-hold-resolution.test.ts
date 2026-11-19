@@ -39,6 +39,7 @@ function fixture(t: TestContext, pose = false) {
     "FMCAD_SCENARIO " + JSON.stringify(value) + "\n";
   const create = {
     ...document,
+    activeCreationId: document.creationId,
     requestId: owner.clientId + ":0",
     clientId: owner.clientId,
   };
@@ -52,18 +53,27 @@ function fixture(t: TestContext, pose = false) {
     const filename = path.join(directory, `request-${ordinal}.py`);
     fs.writeFileSync(filename, source);
     const jobId = randomUUID();
+    const operationResult = {
+      version: 1,
+      requestId,
+      jobId,
+      acceptance: "accepted",
+      executionOutcome: "succeeded",
+      mayHaveMutated: true,
+    };
     const result: Execution = {
       requestId,
       state: "succeeded",
       sdkSettled: true,
       mayHaveMutated: true,
       stdout,
+      exitCode: 0,
       brokerReceipt: {
         requestId,
         jobId,
         clientId: owner.clientId,
         state: "succeeded",
-        operationResult: {},
+        operationResult,
       },
     };
     executions.set(requestId, result);
@@ -74,13 +84,21 @@ function fixture(t: TestContext, pose = false) {
         requestId,
         clientId: owner.clientId,
         state: "succeeded",
-        submittedAt: now - 2,
-        startedAt: now - 1,
+        kind: "command",
+        operationResult,
+        submittedAt: now,
+        startedAt: now,
         finishedAt: now,
       },
       stdout,
       stderr: "",
-      execution: { state: "succeeded", sdkSettled: true, mayHaveMutated: true },
+      execution: {
+        state: "succeeded",
+        sdkSettled: true,
+        mayHaveMutated: true,
+        exitCode: 0,
+        publicationOutcome: "published",
+      },
       pythonChecks: [
         {
           status: "passed",
@@ -225,6 +243,11 @@ function fixture(t: TestContext, pose = false) {
     JSON.stringify({
       runId,
       status: "failed",
+      mode: report.mode,
+      qualification: report.qualification,
+      protocol: report.protocol,
+      backendIdentity: report.backendIdentity,
+      scenarioIds: [scenarioId],
       processIdentity: {
         pid: 99999999,
         birth: childProcessIdentity.processBirth(),
@@ -243,16 +266,25 @@ function fixture(t: TestContext, pose = false) {
     lookup: async (_owner, id) => executions.get(id) ?? null,
     async execute(input) {
       submissions++;
-      const stdout = marker({
-        creationId: document.creationId,
-        saved: false,
-        modified: true,
-        fileId: null,
-        ...(pose
-          ? { body: { token: "pose-owned-body", count: 1, volume: 1.68 } }
-          : {}),
-        inventoryFence: { version: 1, before: rows, after: rows },
-      });
+      const closing = input.source.includes("doc.close(False)");
+      const stdout = marker(
+        closing
+          ? {
+              creationId: document.creationId,
+              closed: true,
+              inventoryFence: { version: 1, before: rows, after: [] },
+            }
+          : {
+              creationId: document.creationId,
+              saved: false,
+              modified: true,
+              fileId: null,
+              ...(pose
+                ? { body: { token: "pose-owned-body", count: 1, volume: 1.68 } }
+                : {}),
+              inventoryFence: { version: 1, before: rows, after: rows },
+            },
+      );
       const entry = request(
         Number(input.requestId.split(":").at(-1)),
         "inspection",
@@ -292,6 +324,15 @@ test("supported held resolution preserves the original failed report and binds a
   assert.deepEqual(
     validateCleanupResolution(f.directory, f.backend, f.runtime),
     decision,
+  );
+  assert.deepEqual(
+    await resolveCleanupHold(f.backend, f.directory, f.ports),
+    decision,
+  );
+  assert.equal(
+    f.submissions(),
+    1,
+    "A verified inspection must not be replayed",
   );
 });
 
@@ -357,6 +398,114 @@ test("existing default cleanup still refuses a case-specific hold without submit
     /cleanup hold/u,
   );
   assert.equal(f.submissions(), 0);
+});
+
+for (const pose of [false, true])
+  test(`resumeCleanup uses supported ${pose ? "pose" : "admission"} resolution and the canonical publisher without rewriting original FAIL or hold`, async (t) => {
+    const f = fixture(t, pose),
+      filename = path.join(f.directory, "report.json"),
+      before = fs.readFileSync(filename);
+    const result = await resumeCleanup(f.backend, filename, f.ports);
+    assert.equal(result.status, "failed");
+    assert.equal(result.cleanup, "complete");
+    assert.equal(f.submissions(), 2);
+    assert.deepEqual(fs.readFileSync(filename), before);
+    assert.ok(
+      fs.existsSync(path.join(f.directory, "cleanup-hold-resolution.json")),
+    );
+    assert.ok(fs.existsSync(path.join(f.directory, "supplemental-close.json")));
+    const again = await resumeCleanup(f.backend, filename, f.ports);
+    assert.equal(again.cleanup, "complete");
+    assert.equal(
+      f.submissions(),
+      2,
+      "Canonical closure recovery must not submit work",
+    );
+  });
+
+test("resumeCleanup recovers an original settled close publication without submitting it twice", async (t) => {
+  const f = fixture(t),
+    execute = f.backend.execute.bind(f.backend);
+  f.backend.execute = async (input) => {
+    const result = await execute(input);
+    return input.source.includes("doc.close(False)")
+      ? { ...result, state: "unknown", sdkSettled: false }
+      : result;
+  };
+  const filename = path.join(f.directory, "report.json"),
+    before = fs.readFileSync(filename);
+  await assert.rejects(
+    resumeCleanup(f.backend, filename, f.ports),
+    /Held cleanup did not succeed/u,
+  );
+  assert.equal(f.submissions(), 2);
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.json")),
+    false,
+  );
+  const recovered = await resumeCleanup(f.backend, filename, f.ports);
+  assert.equal(recovered.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(fs.readFileSync(filename), before);
+});
+
+test("resumeCleanup cannot publish an unknown original close or replay the admitted intent", async (t) => {
+  const f = fixture(t),
+    execute = f.backend.execute.bind(f.backend);
+  f.backend.execute = async (input) => {
+    const result = await execute(input);
+    if (!input.source.includes("doc.close(False)")) return result;
+    const raw = record(f.originals.get(input.requestId));
+    record(raw["execution"])["sdkSettled"] = false;
+    const unknown = { ...result, state: "unknown" as const, sdkSettled: false };
+    f.executions.set(input.requestId, unknown);
+    return unknown;
+  };
+  const filename = path.join(f.directory, "report.json");
+  await assert.rejects(resumeCleanup(f.backend, filename, f.ports));
+  await assert.rejects(resumeCleanup(f.backend, filename, f.ports));
+  assert.equal(f.submissions(), 2);
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.json")),
+    false,
+  );
+});
+
+test("an existing resolution does not weaken default resume refusal", async (t) => {
+  const f = fixture(t);
+  await resolveCleanupHold(f.backend, f.directory, f.ports);
+  await assert.rejects(
+    resumeCleanup(f.backend, path.join(f.directory, "report.json")),
+    /cleanup hold/u,
+  );
+  assert.equal(f.submissions(), 1);
+});
+
+test("resume rechecks a live dependent before closing from an existing resolution", async (t) => {
+  const f = fixture(t);
+  await resolveCleanupHold(f.backend, f.directory, f.ports);
+  const peer = path.join(path.dirname(path.dirname(f.directory)), randomUUID());
+  fs.mkdirSync(peer);
+  fs.writeFileSync(
+    path.join(peer, "index.json"),
+    JSON.stringify({
+      status: "running",
+      processIdentity: {
+        pid: process.pid,
+        birth: childProcessIdentity.processBirth(),
+      },
+      before: { documents: [f.document] },
+    }),
+  );
+  await assert.rejects(
+    resumeCleanup(f.backend, path.join(f.directory, "report.json"), f.ports),
+    /producer is active/u,
+  );
+  assert.equal(f.submissions(), 1);
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.intent.json")),
+    false,
+  );
 });
 
 test("unknown original evidence cannot authorize even the inspection", async (t) => {
