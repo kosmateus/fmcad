@@ -475,8 +475,35 @@ export async function prepareCaptureView(
     ...options,
     polling: { ...polling, timeoutMs: Math.max(0, deadline - Date.now()) },
   });
-  const peers = await settledViewCensus(root, backend, baseline, remaining()),
+  let peers = await settledViewCensus(root, backend, baseline, remaining()),
     claims = viewClaims(root, backend);
+  const censusIdentity = () =>
+    JSON.stringify([
+      [...peers.values()].map((proof) => [
+        proof.document,
+        proof.state,
+        proof.state === "saved"
+          ? [proof.savedDocument, proof.savedState]
+          : null,
+      ]),
+      [...claims].map(([id, matches]) => [
+        id,
+        matches.map((claim) => [
+          claim.directory,
+          claim.index["backendIdentity"],
+          claim.creation,
+          Array.isArray(claim.report["requests"])
+            ? claim.report["requests"]
+                .map(record)
+                .filter((entry) =>
+                  ["create", "original-user-view-capture"].includes(
+                    String(entry["phase"]),
+                  ),
+                )
+            : null,
+        ]),
+      ]),
+    ]);
   const originalResults = new Map<string, Promise<unknown>>();
   const historyProofs = new Map<
     string,
@@ -715,57 +742,75 @@ export async function prepareCaptureView(
     if (!claims.has(userId)) return user;
     return resolve(userId, new Set([...seen, id]), chain);
   };
-  const candidates = new Set([
-    ...peers.keys(),
-    ...baseline.map((row) => text(row["creationId"])),
-  ]);
-  for (const id of candidates) {
-    if (!claims.has(id) && !peers.has(id)) continue;
-    const proof = peers.get(id);
-    const ids =
-      proof?.state === "saved" ? [id, proof.savedDocument.creationId] : [id];
-    try {
-      const chain: Record<string, unknown>[] = [],
-        user = await resolve(id, new Set(), chain);
-      for (const key of ids) {
-        roots[key] = user;
-        ancestry[key] = chain;
-      }
-    } catch (error) {
-      for (const key of ids) {
-        blocked.add(key);
-        blockedReasons[key] =
-          error instanceof Error ? error.message : String(error);
+  for (;;) {
+    options.signal?.throwIfAborted();
+    const beforeCensus = censusIdentity();
+    historyProofs.clear();
+    for (const key of Object.keys(roots)) delete roots[key];
+    for (const key of Object.keys(ancestry)) delete ancestry[key];
+    for (const key of Object.keys(blockedReasons)) delete blockedReasons[key];
+    blocked.clear();
+    const candidates = new Set([
+      ...peers.keys(),
+      ...baseline.map((row) => text(row["creationId"])),
+    ]);
+    for (const id of candidates) {
+      if (!claims.has(id) && !peers.has(id)) continue;
+      const proof = peers.get(id);
+      const ids =
+        proof?.state === "saved" ? [id, proof.savedDocument.creationId] : [id];
+      try {
+        const chain: Record<string, unknown>[] = [],
+          user = await resolve(id, new Set(), chain);
+        for (const key of ids) {
+          roots[key] = user;
+          ancestry[key] = chain;
+        }
+      } catch (error) {
+        for (const key of ids) {
+          blocked.add(key);
+          blockedReasons[key] =
+            error instanceof Error ? error.message : String(error);
+        }
       }
     }
-  }
-  for (const id of claims.keys())
-    if (!peers.has(id) && !roots[id]) blocked.add(id);
-  const freshPeers = await settledViewCensus(
-    root,
-    backend,
-    baseline,
-    remaining(),
-  );
-  for (const proof of freshPeers.values()) {
-    const original = proof.document.creationId;
-    if (proof.state === "saved" && roots[original]) {
-      roots[proof.savedDocument.creationId] = roots[original];
-      ancestry[proof.savedDocument.creationId] = ancestry[original] ?? [];
-      blocked.delete(proof.savedDocument.creationId);
-      delete blockedReasons[proof.savedDocument.creationId];
+    for (const id of claims.keys())
+      if (!peers.has(id) && !roots[id]) blocked.add(id);
+    const freshPeers = await settledViewCensus(
+      root,
+      backend,
+      baseline,
+      remaining(),
+    );
+    for (const proof of freshPeers.values()) {
+      const original = proof.document.creationId;
+      if (proof.state === "saved" && roots[original]) {
+        roots[proof.savedDocument.creationId] = roots[original];
+        ancestry[proof.savedDocument.creationId] = ancestry[original] ?? [];
+        blocked.delete(proof.savedDocument.creationId);
+        delete blockedReasons[proof.savedDocument.creationId];
+      }
     }
+    peers = freshPeers;
+    claims = viewClaims(root, backend);
+    if (censusIdentity() !== beforeCensus) {
+      assert.ok(
+        Date.now() < deadline,
+        "Peer identity census changed before ancestry stabilized; capture preparation budget exhausted",
+      );
+      continue;
+    }
+    return {
+      baseline,
+      // Original ancestry reads can wait behind public receipt I/O. Their immutable
+      // identity evidence must not freeze the inventory census across that wait.
+      peers: [...freshPeers.values()],
+      roots,
+      blocked: [...blocked],
+      ancestry,
+      blockedReasons,
+    };
   }
-  return {
-    baseline,
-    // Original ancestry reads can wait behind public receipt I/O. Their immutable
-    // identity evidence must not freeze the inventory census across that wait.
-    peers: [...freshPeers.values()],
-    roots,
-    blocked: [...blocked],
-    ancestry,
-    blockedReasons,
-  };
 }
 
 const inventory = `import adsk.core, adsk.fusion, json, math

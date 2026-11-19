@@ -241,6 +241,98 @@ function ancestry(
   };
 }
 
+test("a newly created peer discovered after ancestry I/O also receives verified user ancestry", async (t) => {
+  const f = ancestry(t);
+  let newcomer: ReturnType<typeof ancestry> | undefined;
+  const plan = await prepareCaptureView(
+    f.root,
+    f.backend,
+    f.snapshot.documents,
+    async (owner, job) => {
+      if (job === f.capture.result.brokerReceipt.jobId && !newcomer)
+        newcomer = ancestry(t, f.root, f.user);
+      return owner.clientId === f.report.owner.clientId
+        ? f.read(owner, job)
+        : newcomer!.read(owner, job);
+    },
+  );
+  assert.ok(newcomer);
+  const newcomerId = newcomer.document.creationId;
+  assert.equal(
+    plan.peers.find((proof) => proof.document.creationId === newcomerId)?.state,
+    "open",
+  );
+  assert.deepEqual(
+    plan.roots[newcomerId],
+    f.user,
+    "Do not add a peer exemption without resolving its immutable camera ancestry",
+  );
+});
+
+for (const fault of [
+  "second-new-peer",
+  "missing-original",
+  "abort",
+  "deadline",
+] as const) {
+  test(`fresh peer ancestry stabilization remains bounded and receipt-bound: ${fault}`, async (t) => {
+    const first = ancestry(t),
+      fixtures = [first],
+      reads = new Map<string, number>(),
+      cancellation = new AbortController();
+    const execute = () =>
+      prepareCaptureView(
+        first.root,
+        first.backend,
+        first.snapshot.documents,
+        async (owner, job) => {
+          const f = fixtures.find(
+            (f) => f.report.owner.clientId === owner.clientId,
+          )!;
+          reads.set(job, (reads.get(job) ?? 0) + 1);
+          if (
+            job === f.capture.result.brokerReceipt.jobId &&
+            fixtures.length < (fault === "second-new-peer" ? 3 : 2)
+          ) {
+            fixtures.push(ancestry(t, first.root, first.user));
+            if (fault === "abort")
+              cancellation.abort(new Error("stop ancestry stabilization"));
+          }
+          if (fault === "missing-original" && f !== first)
+            throw new Error("missing new peer original capture");
+          return f.read(owner, job);
+        },
+        {
+          signal: cancellation.signal,
+          polling: {
+            timeoutMs: fault === "deadline" ? 0 : 10000,
+            intervalMs: 1,
+          },
+        },
+      );
+    if (fault === "abort" || fault === "deadline") {
+      await assert.rejects(
+        execute(),
+        fault === "abort"
+          ? /stop ancestry stabilization/u
+          : /budget exhausted/u,
+      );
+    } else {
+      const plan = await execute();
+      for (const f of fixtures.slice(1)) {
+        if (fault === "missing-original") {
+          assert.equal(plan.roots[f.document.creationId], undefined);
+          assert.ok(plan.blocked.includes(f.document.creationId));
+        } else assert.deepEqual(plan.roots[f.document.creationId], first.user);
+      }
+    }
+    assert.ok(
+      [...reads.values()].every((count) => count === 1),
+      "Immutable original receipts are cached, never re-executed or repeatedly queried during stabilization",
+    );
+  });
+}
+
 function savedAncestry(t: TestContext) {
   // Match the real saved producer's create:0 and canonical coordinator ancestry.
   const f = ancestry(t),
