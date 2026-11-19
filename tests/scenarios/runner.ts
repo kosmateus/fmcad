@@ -2203,7 +2203,26 @@ export async function resumeCleanup(
   });
   if (
     new Set(requests.map((r) => r.requestId)).size !== requests.length ||
-    requests.some((r) => !exactScenarioRequestId(r.requestId, owner.clientId))
+    requests.some(
+      (r, index) =>
+        !exactScenarioRequestId(r.requestId, owner.clientId) &&
+        !(
+          index === requests.length - 1 &&
+          r.phase === "legacy-cli" &&
+          owner.scenarioId === "native-legacy-0" &&
+          raw["cleanupHold"] !== undefined &&
+          record(raw["cleanupHold"])["requestId"] === r.requestId &&
+          record(raw["cleanupHold"])["reason"] ===
+            "Native import child retained an uncertain outcome; inspect original requests" &&
+          r.requestId.startsWith(owner.clientId + ":legacy:") &&
+          /^[a-f0-9-]{36}$/u.test(
+            r.requestId.slice((owner.clientId + ":legacy:").length),
+          ) &&
+          fs.existsSync(
+            path.join(directory, "cleanup-legacy-readonly-binding.json"),
+          )
+        ),
+    )
   )
     throw new Error("Invalid original request inventory");
   if (

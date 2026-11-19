@@ -13,6 +13,7 @@ import {
   recordFailedCleanupInspection,
   recordTerminalLegacyChildEvidence,
   recordNativeCleanupResult,
+  recordLegacyReadonlyCleanupResult,
   readCleanupRecoveryRequests,
   type CleanupHoldPorts,
 } from "./cleanup-hold-resolution";
@@ -1489,6 +1490,390 @@ function terminalLegacyFixture(t: TestContext) {
   fs.writeFileSync(file, JSON.stringify(value));
   return { ...f, legacy, value, file };
 }
+function readonlyLegacyFixture(t: TestContext) {
+  const f = terminalLegacyFixture(t);
+  fs.unlinkSync(f.file);
+  f.runtime.buildHash =
+    "d3fcfc77da8e96102c4bc578066edf4701322705b2f45318e46abada4139edd8";
+  f.report.backendIdentity = "fusion:addin:" + f.runtime.buildHash;
+  const backend = { ...f.backend, identity: f.report.backendIdentity };
+  const indexFile = path.join(f.directory, "..", "index.json"),
+    index = JSON.parse(fs.readFileSync(indexFile, "utf8")) as Record<
+      string,
+      unknown
+    >;
+  index["backendIdentity"] = backend.identity;
+  fs.writeFileSync(indexFile, JSON.stringify(index));
+  const id = randomUUID(),
+    requestId = f.report.owner.clientId + ":legacy:" + id;
+  const row = f.request(
+    2,
+    "legacy-cli",
+    `DOC name=${f.document.name} creationId=${f.document.creationId} isActive=true isModified=false isSaved=false\nDONE\n`,
+    "",
+  );
+  const raw = record(f.originals.get(row.requestId)),
+    job = record(raw["job"]),
+    op = record(job["operationResult"]);
+  const oldId = row.requestId;
+  f.executions.delete(oldId);
+  f.originals.delete(oldId);
+  fs.unlinkSync(path.join(f.directory, "request-2.py"));
+  row.requestId = requestId;
+  job["requestId"] = requestId;
+  op["requestId"] = requestId;
+  job["physicalTurns"] = 1;
+  job["code"] = "EXECUTION_COMPLETE";
+  const cwd = path.join(f.directory, "original-driver"),
+    runtimeRoot = path.join(f.directory, "runtime");
+  fs.mkdirSync(
+    path.join(runtimeRoot, "dist/src/dist/core/application/documents"),
+    { recursive: true },
+  );
+  fs.mkdirSync(path.join(runtimeRoot, "dist/assets"), { recursive: true });
+  const root = path.resolve(__dirname, "../../..");
+  fs.copyFileSync(
+    path.join(root, "packages/core/dist/application/documents/commands.js"),
+    path.join(
+      runtimeRoot,
+      "dist/src/dist/core/application/documents/commands.js",
+    ),
+  );
+  fs.copyFileSync(
+    path.join(root, "assets/addin-bridge.py"),
+    path.join(runtimeRoot, "dist/assets/addin-bridge.py"),
+  );
+  raw["provenance"] = {
+    status: "available",
+    inputs: [],
+    inputIdentity: createHash("sha256")
+      .update(JSON.stringify({ cwd, inputFiles: [], payload: null }))
+      .digest("hex"),
+  };
+  row.result = queueExecution(raw, f.report.owner, requestId);
+  f.executions.set(requestId, row.result);
+  f.originals.set(requestId, raw);
+  f.report.requests.push(row);
+  f.report.cleanupHold = {
+    requestId,
+    reason:
+      "Native import child retained an uncertain outcome; inspect original requests",
+  };
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const write = (name: string, value: unknown) =>
+    fs.writeFileSync(path.join(f.legacy, name), JSON.stringify(value));
+  const intent = {
+    version: 1,
+    owner: f.report.owner,
+    requestId,
+    argvHash: createHash("sha256")
+      .update(
+        JSON.stringify([
+          "doc",
+          "list",
+          "--timeout",
+          "30000",
+          "--request-id",
+          requestId,
+        ]),
+      )
+      .digest("hex"),
+    admissionRequested: true,
+    completed: true,
+    pid: 2_000_000_000,
+    birth: "dead:1",
+    exitCode: 0,
+    settlement: {
+      requestId,
+      clientId: f.report.owner.clientId,
+      jobId: job["id"],
+      state: "succeeded",
+      sdkSettled: true,
+    },
+  };
+  write("intents/" + id + ".json", intent);
+  fs.mkdirSync(path.join(f.legacy, "queue-receipts"));
+  write("queue-receipts/" + id + ".json", {
+    version: 1,
+    owner: f.report.owner,
+    requestId,
+    jobId: job["id"],
+  });
+  const failure =
+    "Expected values to be strictly equal:\n+ actual - expected\n\n+ undefined\n- 'succeeded'\n";
+  write("readback.json", {
+    name: f.document.name,
+    scope: "owned-unsaved-only",
+    commands: [
+      {
+        args: ["doc", "list"],
+        status: 0,
+        stdout: raw["stdout"],
+        stderr:
+          "FMCAD_QUEUE_REQUEST " +
+          JSON.stringify({ requestId, clientId: f.report.owner.clientId }) +
+          "\nFMCAD_QUEUE_RESULT " +
+          JSON.stringify(job) +
+          "\n",
+      },
+    ],
+    files: [],
+    tests: [
+      { name: "doc list and baseline", status: "failed", error: failure },
+      { name: "remaining domains", status: "not-tested" },
+    ],
+    testDocumentRemainsOpen: "unknown",
+  });
+  write("completion.json", {
+    owner: f.report.owner,
+    document: f.document,
+    status: "failed",
+    safeForCleanup: false,
+    reportPath: path.join(f.legacy, "readback.json"),
+  });
+  for (const prior of f.report.requests.slice(0, -1)) {
+    prior.result = queueExecution(
+      f.originals.get(prior.requestId),
+      f.report.owner,
+      prior.requestId,
+    );
+    f.executions.set(prior.requestId, prior.result);
+  }
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const execute = backend.execute.bind(backend);
+  backend.execute = async (input) => {
+    await execute(input);
+    const result = queueExecution(
+      f.originals.get(input.requestId),
+      input.owner,
+      input.requestId,
+    );
+    f.executions.set(input.requestId, result);
+    return result;
+  };
+  const ports = {
+    readRuntimeBinding: f.ports.readRuntimeBinding,
+    readJobResult: async (_owner: unknown, id: string, jobId: string) => {
+      const value = record(f.originals.get(id));
+      assert.equal(record(value["job"])["id"], jobId);
+      return value;
+    },
+  };
+  return {
+    ...f,
+    backend,
+    ports,
+    sources: { cwd, runtimeRoot },
+    raw,
+    requestId,
+  };
+}
+test("settled readonly legacy doc-list releases only a separately bound cleanup, not its failed completion", async (t) => {
+  const f = readonlyLegacyFixture(t),
+    reportFile = path.join(f.directory, "report.json"),
+    before = fs.readFileSync(reportFile),
+    completion = fs.readFileSync(path.join(f.legacy, "completion.json"));
+  await recordLegacyReadonlyCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  const result = await resolveCleanupHold(
+    adapted.backend,
+    f.directory,
+    adapted.ports,
+  );
+  assert.equal(result.holdKind, "settled-legacy-doc-list");
+  assert.equal(f.submissions(), 1);
+  assert.deepEqual(fs.readFileSync(reportFile), before);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.legacy, "completion.json")),
+    completion,
+  );
+  const resolution = JSON.parse(
+    fs.readFileSync(
+      path.join(f.directory, "cleanup-hold-resolution.json"),
+      "utf8",
+    ),
+  ) as Record<string, unknown>;
+  assert.equal(resolution["expectedModified"], false);
+  assert.equal(
+    record(record(resolution["inspection"])["row"])["requestId"],
+    f.report.owner.clientId + ":2",
+  );
+});
+for (const kind of [
+  "foreign-client",
+  "foreign-request",
+  "foreign-job",
+  "unknown",
+  "checker",
+  "missing-receipt",
+  "argv",
+  "mutating-command",
+  "source",
+  "cwd",
+  "extra-intent",
+  "completion",
+  "readback",
+  "active-child",
+] as const)
+  test(`readonly legacy binding refuses ${kind} without inspection or close`, async (t) => {
+    const f = readonlyLegacyFixture(t),
+      job = record(f.raw["job"]),
+      id = f.requestId.split(":").at(-1)!;
+    const change = (
+      name: string,
+      edit: (value: Record<string, unknown>) => void,
+    ) => {
+      const file = path.join(f.legacy, name),
+        value = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+          string,
+          unknown
+        >;
+      edit(value);
+      fs.writeFileSync(file, JSON.stringify(value));
+    };
+    if (kind === "foreign-client") job["clientId"] = "foreign";
+    if (kind === "foreign-request") job["requestId"] = "foreign";
+    if (kind === "foreign-job") job["id"] = randomUUID();
+    if (kind === "unknown") record(f.raw["execution"])["sdkSettled"] = false;
+    if (kind === "checker") f.raw["pythonChecks"] = [];
+    if (kind === "missing-receipt")
+      fs.unlinkSync(path.join(f.legacy, "queue-receipts", id + ".json"));
+    if (kind === "argv")
+      change(`intents/${id}.json`, (value) => {
+        value["argvHash"] = "f".repeat(64);
+      });
+    if (kind === "mutating-command")
+      change("readback.json", (value) => {
+        record((value["commands"] as unknown[])[0])["args"] = ["doc", "close"];
+      });
+    if (kind === "source")
+      fs.appendFileSync(
+        path.join(f.sources.runtimeRoot, "dist/assets/addin-bridge.py"),
+        "\napp.activeDocument.close(False)\n",
+      );
+    if (kind === "cwd") f.sources.cwd = path.join(f.directory, "foreign-cwd");
+    if (kind === "extra-intent")
+      fs.writeFileSync(
+        path.join(f.legacy, "intents", randomUUID() + ".json"),
+        "{}",
+      );
+    if (kind === "completion")
+      change("completion.json", (value) => {
+        value["safeForCleanup"] = true;
+      });
+    if (kind === "readback")
+      change("readback.json", (value) => {
+        record((value["commands"] as unknown[])[0])["stdout"] =
+          "foreign output";
+      });
+    if (kind === "active-child")
+      change("launch.json", (value) => {
+        value["pid"] = process.pid;
+        value["birth"] = childProcessIdentity.processBirth();
+      });
+    await assert.rejects(
+      recordLegacyReadonlyCleanupResult(
+        f.backend,
+        f.directory,
+        f.ports,
+        f.sources,
+      ),
+    );
+    assert.equal(f.submissions(), 0);
+    assert.equal(
+      fs.existsSync(
+        path.join(f.directory, "cleanup-legacy-readonly-binding.json"),
+      ),
+      false,
+    );
+  });
+for (const kind of [
+  "completion",
+  "readback",
+  "intent",
+  "source",
+  "runtime",
+] as const)
+  test(`readonly legacy recovery refuses changed ${kind} after binding before dispatch`, async (t) => {
+    const f = readonlyLegacyFixture(t);
+    await recordLegacyReadonlyCleanupResult(
+      f.backend,
+      f.directory,
+      f.ports,
+      f.sources,
+    );
+    if (kind === "runtime") f.runtime.instanceId = randomUUID();
+    else if (kind === "source")
+      fs.appendFileSync(
+        path.join(f.sources.runtimeRoot, "dist/assets/addin-bridge.py"),
+        "# changed\n",
+      );
+    else
+      fs.appendFileSync(
+        path.join(
+          f.legacy,
+          kind === "intent"
+            ? `intents/${f.requestId.split(":").at(-1)}.json`
+            : `${kind}.json`,
+        ),
+        " ",
+      );
+    const adapted = createCleanupRecoveryAdapter(
+      f.backend,
+      f.directory,
+      f.ports,
+    );
+    await assert.rejects(
+      resolveCleanupHold(adapted.backend, f.directory, adapted.ports),
+    );
+    assert.equal(f.submissions(), 0);
+  });
+test("readonly legacy binding cannot replay the original UUID child through the cleanup adapter", async (t) => {
+  const f = readonlyLegacyFixture(t);
+  await recordLegacyReadonlyCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  await assert.rejects(
+    adapted.backend.execute({
+      owner: f.report.owner,
+      requestId: f.requestId,
+      source: "# no replay",
+      directory: f.directory,
+      target: f.document,
+    }),
+  );
+  assert.equal(f.submissions(), 0);
+});
+test("readonly legacy binding never authorizes the untyped default cleanup path", async (t) => {
+  const f = readonlyLegacyFixture(t);
+  await recordLegacyReadonlyCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  await assert.rejects(
+    resumeCleanup(f.backend, path.join(f.directory, "report.json")),
+    /Case-specific mutation outcome/u,
+  );
+  assert.equal(f.submissions(), 0);
+});
+
 function nativeBindingFixture(t: TestContext) {
   const f = fixture(t, false, true, "gm07"),
     root = path.join(f.directory, "runtime");

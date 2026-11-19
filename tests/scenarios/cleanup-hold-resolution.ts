@@ -30,6 +30,282 @@ export interface CleanupRecoveryPorts {
     jobId: string,
   ): Promise<unknown>;
 }
+export async function recordLegacyReadonlyCleanupResult(
+  backend: Pick<
+    ScenarioBackend,
+    "identity" | "mode" | "qualification" | "protocol"
+  >,
+  directory: string,
+  ports: CleanupRecoveryPorts,
+  sources: { cwd: string; runtimeRoot: string },
+): Promise<void> {
+  const c = context(directory, backend),
+    runtime = await ports.readRuntimeBinding();
+  runtimeBinding(runtime, backend);
+  noProducer(directory, c.document);
+  const row = c.requests.at(-1)!,
+    receipt = record(record(row["result"])["brokerReceipt"]);
+  const raw = await ports.readJobResult(
+    c.owner,
+    text(row["requestId"]),
+    text(receipt["jobId"]),
+  );
+  const binding = {
+    version: 1,
+    runtime,
+    owner: c.owner,
+    document: c.document,
+    sources,
+    files: readonlyLegacyFiles(directory, c),
+    raw,
+  };
+  validateReadonlyLegacy(directory, c, binding);
+  assert.deepEqual(await ports.readRuntimeBinding(), runtime);
+  noProducer(directory, c.document);
+  immutable(path.join(directory, legacyReadonlyBinding), binding);
+}
+const legacyReadonlyBinding = "cleanup-legacy-readonly-binding.json";
+function readonlyLegacyFiles(directory: string, c: ReturnType<typeof context>) {
+  const id = text(c.requests.at(-1)!["requestId"]).split(":").at(-1)!;
+  assert.match(id, /^[a-f0-9-]{36}$/u);
+  return Object.fromEntries(
+    [
+      "report.json",
+      "creation.json",
+      "../index.json",
+      "legacy/lease.json",
+      "legacy/launch.json",
+      "legacy/completion.json",
+      "legacy/readback.json",
+      "legacy/stdout.log",
+      "legacy/stderr.log",
+      `legacy/intents/${id}.json`,
+      `legacy/queue-receipts/${id}.json`,
+    ].map((file) => [file, hash(read(path.join(directory, file)))]),
+  );
+}
+function validateReadonlyLegacy(
+  directory: string,
+  c: ReturnType<typeof context>,
+  value: unknown,
+) {
+  const binding = record(value),
+    runtime = record(binding["runtime"]),
+    sources = record(binding["sources"]);
+  assert.equal(binding["version"], 1);
+  assert.deepEqual(binding["owner"], c.owner);
+  assert.deepEqual(binding["document"], c.document);
+  assert.equal(c.owner.scenarioId, "native-legacy-0");
+  assert.equal(c.report["scope"], "exclusive-instance");
+  assert.equal(
+    c.hold["reason"],
+    "Native import child retained an uncertain outcome; inspect original requests",
+  );
+  assert.equal(
+    runtime["buildHash"],
+    "d3fcfc77da8e96102c4bc578066edf4701322705b2f45318e46abada4139edd8",
+  );
+  assert.equal(
+    c.report["backendIdentity"],
+    "fusion:addin:" + String(runtime["buildHash"]),
+  );
+  // These two approved runtime sources implement exactly document/open read and
+  // format its rows. The conservative mayHaveMutated flag is NOT a readonly proof.
+  const runtimeRoot = text(sources["runtimeRoot"]),
+    cwd = text(sources["cwd"]);
+  assert.ok(path.isAbsolute(runtimeRoot) && path.isAbsolute(cwd));
+  for (const [file, expected] of [
+    [
+      "dist/src/dist/core/application/documents/commands.js",
+      "2a79c1a723373f859ae001c0dad485b1fc0a5a3307a680913e68b6fd5147a5d5",
+    ],
+    [
+      "dist/assets/addin-bridge.py",
+      "f039cd3602230e827ce36d713809d6479aa4288a4b8b9a620dc530b789c12e3d",
+    ],
+  ])
+    assert.equal(
+      hash(read(path.join(runtimeRoot, file!)).replaceAll("\r\n", "\n")),
+      expected,
+      "Unqualified readonly command source",
+    );
+  assert.equal(c.requests.length, 3);
+  assert.deepEqual(
+    c.requests.map((row) => row["phase"]),
+    ["create", "export", "legacy-cli"],
+  );
+  assert.deepEqual(
+    c.requests.slice(0, 2).map((row) => row["requestId"]),
+    [c.owner.clientId + ":0", c.owner.clientId + ":1"],
+  );
+  for (const row of c.requests)
+    assert.equal(record(row["result"])["state"], "succeeded");
+  const row = c.requests[2]!,
+    requestId = text(row["requestId"]),
+    id = requestId.split(":").at(-1)!;
+  assert.equal(c.hold["requestId"], requestId);
+  assert.equal(requestId, c.owner.clientId + ":legacy:" + id);
+  assert.deepEqual(
+    fs.readdirSync(path.join(directory, "legacy/intents")).sort(),
+    [id + ".json"],
+  );
+  assert.deepEqual(
+    fs.readdirSync(path.join(directory, "legacy/queue-receipts")).sort(),
+    [id + ".json"],
+  );
+  assert.deepEqual(
+    binding["files"],
+    readonlyLegacyFiles(directory, c),
+    "Original legacy evidence changed",
+  );
+  const files = record(binding["files"]);
+  assert.equal(files["report.json"], c.reportHash);
+  assert.equal(files["creation.json"], c.creationHash);
+  assert.equal(files["../index.json"], c.indexHash);
+  const exportedSource = read(path.join(directory, "request-1.py")),
+    exportMatch = /createFusionArchiveExportOptions\(([^\n]+)\)/u.exec(
+      exportedSource,
+    );
+  assert.ok(exportMatch);
+  const exportedFile = text(JSON.parse(exportMatch[1]!) as unknown);
+  assert.ok(
+    exportedFile === path.join(directory, "fixture.f3d") ||
+      exportedFile.endsWith(directory.replaceAll("/", "\\") + "\\fixture.f3d"),
+  );
+  assert.equal(exportedSource, programs.exportFile(c.document, exportedFile));
+  const lease = json(path.join(directory, "legacy/lease.json")),
+    launch = json(path.join(directory, "legacy/launch.json")),
+    intent = json(path.join(directory, `legacy/intents/${id}.json`)),
+    receipt = json(path.join(directory, `legacy/queue-receipts/${id}.json`)),
+    completion = json(path.join(directory, "legacy/completion.json")),
+    readback = json(path.join(directory, "legacy/readback.json"));
+  for (const item of [lease, intent, receipt, completion]) {
+    assert.deepEqual(item["owner"], c.owner);
+  }
+  for (const item of [lease, completion])
+    assert.deepEqual(item["document"], c.document);
+  assert.equal(lease["directory"], directory);
+  assert.equal(lease["mode"], "owned-unsaved-script");
+  assert.equal(lease["source"], "tests/scenarios/legacy-owned-driver.ts");
+  assert.equal(lease["protocol"], "addin");
+  assert.equal(launch["state"], "completed");
+  assert.equal(launch["code"], 1);
+  for (const producer of [launch, intent]) {
+    assert.ok(
+      Number.isSafeInteger(producer["pid"]) && Number(producer["pid"]) > 0,
+    );
+    assert.equal(
+      childProcessIdentity.priorProcessAlive({
+        pid: Number(producer["pid"]),
+        birth: text(producer["birth"]),
+      }),
+      false,
+      "Legacy producer may still submit work",
+    );
+  }
+  assert.equal(completion["status"], "failed");
+  assert.equal(completion["safeForCleanup"], false);
+  assert.equal(
+    completion["reportPath"],
+    path.join(directory, "legacy/readback.json"),
+  );
+  assert.equal(intent["version"], 1);
+  assert.equal(intent["requestId"], requestId);
+  assert.equal(intent["admissionRequested"], true);
+  assert.equal(intent["completed"], true);
+  assert.equal(intent["exitCode"], 0);
+  assert.equal(intent["settlementFailure"], undefined);
+  assert.equal(
+    intent["argvHash"],
+    hash(
+      JSON.stringify([
+        "doc",
+        "list",
+        "--timeout",
+        "30000",
+        "--request-id",
+        requestId,
+      ]),
+    ),
+    "Original argv is not the exact readonly command",
+  );
+  const raw = record(binding["raw"]),
+    job = record(raw["job"]),
+    execution = record(raw["execution"]),
+    op = record(job["operationResult"]);
+  assert.equal(job["kind"], "command");
+  assert.equal(job["state"], "succeeded");
+  assert.equal(job["physicalTurns"], 1);
+  assert.equal(execution["state"], "succeeded");
+  assert.equal(execution["sdkSettled"], true);
+  assert.equal(execution["exitCode"], 0);
+  assert.equal(execution["publicationOutcome"], "published");
+  assert.ok(
+    execution["executionOutcome"] === undefined ||
+      execution["executionOutcome"] === "succeeded",
+  );
+  assert.equal(raw["stderr"], "");
+  assert.equal(job["code"], "EXECUTION_COMPLETE");
+  assert.equal(op["requestId"], requestId);
+  assert.equal(op["jobId"], job["id"]);
+  assert.equal(op["acceptance"], "accepted");
+  assert.equal(op["executionOutcome"], "succeeded");
+  assert.deepEqual(queueExecution(raw, c.owner, requestId), row["result"]);
+  assert.deepEqual(intent["settlement"], {
+    requestId,
+    clientId: c.owner.clientId,
+    jobId: job["id"],
+    state: "succeeded",
+    sdkSettled: true,
+  });
+  assert.equal(receipt["version"], 1);
+  assert.equal(receipt["requestId"], requestId);
+  assert.equal(receipt["jobId"], job["id"]);
+  const provenance = record(raw["provenance"]);
+  assert.equal(provenance["status"], "available");
+  assert.deepEqual(provenance["inputs"], []);
+  assert.equal(
+    provenance["inputIdentity"],
+    hash(JSON.stringify({ cwd, inputFiles: [], payload: null })),
+    "Original accepted command context differs",
+  );
+  inspectionCheck(raw);
+  assert.equal(readback["name"], c.document.name);
+  assert.equal(readback["scope"], "owned-unsaved-only");
+  assert.deepEqual(readback["files"], []);
+  assert.equal(readback["testDocumentRemainsOpen"], "unknown");
+  assert.ok(Array.isArray(readback["commands"]));
+  assert.equal(readback["commands"].length, 1);
+  const command = record(readback["commands"][0]);
+  assert.deepEqual(command["args"], ["doc", "list"]);
+  assert.equal(command["status"], 0);
+  assert.equal(command["error"], undefined);
+  assert.equal(command["stdout"], raw["stdout"]);
+  const lines = text(command["stderr"]).trim().split(/\r?\n/u);
+  assert.equal(lines.length, 2);
+  assert.deepEqual(marker(command["stderr"], "FMCAD_QUEUE_REQUEST "), {
+    requestId,
+    clientId: c.owner.clientId,
+  });
+  assert.deepEqual(marker(command["stderr"], "FMCAD_QUEUE_RESULT "), job);
+  const ownLine = `DOC name=${c.document.name} creationId=${c.document.creationId} isActive=true isModified=false isSaved=false`;
+  assert.equal(
+    text(raw["stdout"])
+      .split(/\r?\n/u)
+      .filter((line) => line === ownLine).length,
+    1,
+    "Original readonly output does not prove a clean unsaved target",
+  );
+  assert.ok(Array.isArray(readback["tests"]) && readback["tests"].length > 0);
+  const tests = readback["tests"].map(record);
+  assert.equal(tests[0]!["name"], "doc list and baseline");
+  assert.equal(tests[0]!["status"], "failed");
+  assert.equal(
+    tests[0]!["error"],
+    "Expected values to be strictly equal:\n+ actual - expected\n\n+ undefined\n- 'succeeded'\n",
+  );
+  assert.ok(tests.slice(1).every((test) => test["status"] === "not-tested"));
+}
 export async function recordFailedCleanupInspection(
   backend: Pick<
     ScenarioBackend,
@@ -91,7 +367,11 @@ export function createCleanupRecoveryAdapter(
   const sameRequest = (requestId: string) =>
     assert.ok(
       requestId.startsWith(c.owner.clientId + ":") &&
-        /^[0-9]+$/u.test(requestId.slice(c.owner.clientId.length + 1)),
+        (/^[0-9]+$/u.test(requestId.slice(c.owner.clientId.length + 1)) ||
+          c.requests.some(
+            (row) =>
+              row["phase"] === "legacy-cli" && row["requestId"] === requestId,
+          )),
       "Foreign cleanup request",
     );
   const bind = (requestId: string, result: unknown) => {
@@ -175,6 +455,11 @@ export function createCleanupRecoveryAdapter(
     async execute(request) {
       sameOwner(request.owner);
       sameRequest(request.requestId);
+      assert.match(
+        request.requestId.slice(c.owner.clientId.length + 1),
+        /^[0-9]+$/u,
+        "Only new numeric cleanup requests may be submitted",
+      );
       assert.equal(request.directory, directory);
       assert.deepEqual(request.target, c.document);
       assert.ok(
@@ -201,6 +486,7 @@ export function createCleanupRecoveryAdapter(
   };
 }
 export interface VerifiedCleanupResolution {
+  readonly holdKind: HoldProof["kind"];
   readonly digest: string;
   readonly owner: Owner;
   readonly document: Document;
@@ -225,12 +511,25 @@ export function readCleanupRecoveryRequests(
   runtime: CleanupRuntimeBinding,
 ): Record<string, unknown>[] {
   runtimeBinding(runtime, backend);
+  if (fs.existsSync(path.join(directory, legacyReadonlyBinding)))
+    assert.deepEqual(
+      json(path.join(directory, legacyReadonlyBinding))["runtime"],
+      runtime,
+      "Readonly result runtime changed",
+    );
   if (fs.existsSync(path.join(directory, nativeBinding)))
     assert.deepEqual(
       json(path.join(directory, nativeBinding))["runtime"],
       runtime,
     );
-  return context(directory, backend).requests;
+  const c = context(directory, backend);
+  if (fs.existsSync(path.join(directory, legacyReadonlyBinding)))
+    validateReadonlyLegacy(
+      directory,
+      c,
+      json(path.join(directory, legacyReadonlyBinding)),
+    );
+  return c.requests;
 }
 export async function recordNativeCleanupResult(
   backend: Pick<
@@ -672,6 +971,18 @@ function context(
   }
   return c;
 }
+function numericCleanupOrdinal(
+  c: ReturnType<typeof context>,
+  row: Record<string, unknown>,
+): number {
+  if (row["phase"] === "legacy-cli") {
+    assert.equal(row["requestId"], c.hold["requestId"]);
+    return -1; // The original UUID child is observed, never a cleanup ordinal.
+  }
+  const ordinal = Number(text(row["requestId"]).split(":").at(-1));
+  assert.ok(Number.isSafeInteger(ordinal) && ordinal >= 0);
+  return ordinal;
+}
 function runtimeBinding(
   value: CleanupRuntimeBinding,
   backend: Pick<ScenarioBackend, "identity">,
@@ -730,6 +1041,20 @@ function original(
       job,
       value,
     };
+  }
+  if (row["phase"] === "legacy-cli") {
+    const c = context(directory, {
+      identity: text(
+        json(path.join(directory, "report.json"))["backendIdentity"],
+      ),
+      mode: "fusion",
+      qualification: "broker",
+      protocol: "addin",
+    });
+    const binding = json(path.join(directory, legacyReadonlyBinding));
+    validateReadonlyLegacy(directory, c, binding);
+    assert.deepEqual(binding["raw"], raw);
+    return { source: "", job, value };
   }
   const sourceFile = path.join(directory, `request-${id.split(":").at(-1)}.py`),
     source = read(sourceFile);
@@ -899,6 +1224,7 @@ function admissionProof(c: ReturnType<typeof context>, source: string) {
   }
 }
 type HoldProof =
+  | { kind: "settled-legacy-doc-list"; bindingHash: string }
   | {
       kind: "accepted-terminal-legacy";
       dispositionHash: string;
@@ -1021,6 +1347,18 @@ function validateLegacyChild(
   assert.equal(read(path.join(directory, "legacy/stdout.log")), "");
 }
 function holdProof(c: ReturnType<typeof context>, source: string): HoldProof {
+  if (
+    c.hold["reason"] ===
+    "Native import child retained an uncertain outcome; inspect original requests"
+  ) {
+    const directory = text(c.report["directory"]),
+      bindingFile = path.join(directory, legacyReadonlyBinding);
+    validateReadonlyLegacy(directory, c, json(bindingFile));
+    return {
+      kind: "settled-legacy-doc-list",
+      bindingHash: hash(read(bindingFile)),
+    };
+  }
   if (
     c.hold["reason"] ===
     "Accepted terminal legacy result requires guarded cleanup"
@@ -1164,6 +1502,7 @@ function holdModified(
   c: ReturnType<typeof context>,
   proof: HoldProof,
 ): boolean {
+  if (proof.kind === "settled-legacy-doc-list") return false;
   if (proof.kind === "accepted-terminal-legacy") return false;
   if (proof.kind === "native-result-binding") return true;
   if (proof.kind === "terminal-legacy-no-dispatch") return false;
@@ -1313,11 +1652,7 @@ function validateFailedInspection(
   assert.match(requestId.slice(c.owner.clientId.length + 1), /^[0-9]+$/u);
   assert.ok(
     Number(requestId.split(":").at(-1)) >
-      Math.max(
-        ...c.requests.map((row) =>
-          Number(text(row["requestId"]).split(":").at(-1)),
-        ),
-      ),
+      Math.max(...c.requests.map((row) => numericCleanupOrdinal(c, row))),
   );
   const result = queueExecution(failure["raw"], c.owner, requestId);
   const proof = original(
@@ -1398,6 +1733,12 @@ function verifiedDecision(
   const decision = record(JSON.parse(bytes) as unknown);
   const c = context(directory, backend);
   runtimeBinding(runtime, backend);
+  if (fs.existsSync(path.join(directory, legacyReadonlyBinding)))
+    assert.deepEqual(
+      json(path.join(directory, legacyReadonlyBinding))["runtime"],
+      runtime,
+      "Readonly result runtime changed",
+    );
   if (fs.existsSync(path.join(directory, nativeBinding)))
     assert.deepEqual(
       json(path.join(directory, nativeBinding))["runtime"],
@@ -1527,6 +1868,7 @@ function verifiedDecision(
   );
   return {
     digest: hash(bytes),
+    holdKind: holdEvidence.kind,
     owner: c.owner,
     document: c.document,
     runtime,
@@ -1546,6 +1888,12 @@ export async function resolveCleanupHold(
   const c = context(directory, backend),
     runtime = await ports.readRuntimeBinding();
   runtimeBinding(runtime, backend);
+  if (fs.existsSync(path.join(directory, legacyReadonlyBinding)))
+    assert.deepEqual(
+      json(path.join(directory, legacyReadonlyBinding))["runtime"],
+      runtime,
+      "Readonly result runtime changed",
+    );
   noProducer(directory, c.document);
   if (fs.existsSync(path.join(directory, canonical))) {
     return validateCleanupResolutionForClose(directory, backend, runtime);
@@ -1594,9 +1942,7 @@ export async function resolveCleanupHold(
     ":" +
     (Math.max(
       ...(prior ? [Number(prior.requestId.split(":").at(-1))] : []),
-      ...c.requests.map((row) =>
-        Number(text(row["requestId"]).split(":").at(-1)),
-      ),
+      ...c.requests.map((row) => numericCleanupOrdinal(c, row)),
     ) +
       1);
   assert.equal(
