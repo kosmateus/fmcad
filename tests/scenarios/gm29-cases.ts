@@ -427,6 +427,20 @@ async function texture(
   phase: string,
   data: Record<string, unknown>,
 ) {
+  if (session.backend.mode === "simulator") {
+    // This fixture qualifies host-file handler behavior, not the Windows CLI
+    // path adapter. The simulator owns a local filesystem; live keeps CAD below.
+    const output = await session.execute(
+      "cad-" + phase,
+      cadCommand(session.document, "texture.heightmap", data),
+      session.document,
+      "cad-v1",
+    );
+    assert.equal(output["error"], null, JSON.stringify(output));
+    // cadCommand retains the raw handler result; its explicit null error is the
+    // success assertion here, not a fabricated CLI success envelope.
+    return record(output["result"]);
+  }
   const output = await session.cad("cad-" + phase, "texture.heightmap", data);
   assert.equal(output["success"], true, JSON.stringify(output));
   return record(output["result"]);
