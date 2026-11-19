@@ -12,6 +12,8 @@ import {
   createCleanupRecoveryAdapter,
   recordFailedCleanupInspection,
   recordTerminalLegacyChildEvidence,
+  recordNativeCleanupResult,
+  readCleanupRecoveryRequests,
   type CleanupHoldPorts,
 } from "./cleanup-hold-resolution";
 import { resumeCleanup } from "./runner";
@@ -24,16 +26,19 @@ function fixture(
   t: TestContext,
   pose = false,
   modified = true,
-  legacy = false,
+  legacy: boolean | "gm07" = false,
 ) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-held-resolution-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const runId = randomUUID(),
-    scenarioId = legacy
-      ? "native-legacy-0"
-      : pose
-        ? "native-pose-methods-0"
-        : "native-thread-1";
+    scenarioId =
+      legacy === "gm07"
+        ? "gm07-source-pinned"
+        : legacy
+          ? "native-legacy-0"
+          : pose
+            ? "native-pose-methods-0"
+            : "native-thread-1";
   const owner = {
     runId,
     scenarioId,
@@ -1397,6 +1402,285 @@ function terminalLegacyFixture(t: TestContext) {
   fs.writeFileSync(file, JSON.stringify(value));
   return { ...f, legacy, value, file };
 }
+function nativeBindingFixture(t: TestContext) {
+  const f = fixture(t, false, true, "gm07"),
+    root = path.join(f.directory, "runtime");
+  const sourceFile = path.join(
+    root,
+    "dist/assets/native-qualification/gm07-curves.py",
+  );
+  fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+  fs.copyFileSync(
+    path.resolve(
+      __dirname,
+      "../../../assets/native-qualification/gm07-curves.py",
+    ),
+    sourceFile,
+  );
+  const scriptSha256 = createHash("sha256")
+      .update(fs.readFileSync(sourceFile))
+      .digest("hex"),
+    manifestSha256 =
+      "aef99573a0ce45f852ea6883f0921e20056961a9d0b44bb8ced7654fd0707bb5";
+  for (let n = 2; n <= 3; n++)
+    f.report.requests.push(
+      f.request(
+        n,
+        "observe",
+        programs.marker + JSON.stringify({ creationId: f.document.creationId }),
+        "# original observation\n",
+      ),
+    );
+  const status = { ...f.document, saved: false, fileId: null };
+  const native = f.request(
+    4,
+    "gm07-fixed-run",
+    "FMCAD_RESULT " +
+      JSON.stringify({
+        success: true,
+        result: {
+          document: {
+            ...f.document,
+            before: { ...status, modified: false },
+            after: { ...status, modified: true },
+          },
+          modelChangedByFixture: true,
+          nativeGeometry: true,
+        },
+      }),
+    fs.readFileSync(sourceFile, "utf8"),
+  );
+  const raw = record(f.originals.get(native.requestId));
+  record((record(raw["provenance"])["inputs"] as unknown[])[0])[
+    "originalPath"
+  ] = sourceFile;
+  fs.unlinkSync(path.join(f.directory, "request-4.py"));
+  const metadata = {
+    fixtureId: "gm07-curves-program-v1",
+    manifestSha256,
+    scriptSha256,
+    buildHash: f.runtime.buildHash,
+    document: f.document,
+  };
+  f.report.requests.push({
+    requestId: native.requestId,
+    phase: "gm07-fixed-run",
+    intent: metadata,
+  } as unknown as typeof native);
+  for (const row of f.report.requests.slice(0, -1))
+    row.result = queueExecution(
+      f.originals.get(row.requestId),
+      f.report.owner,
+      row.requestId,
+    );
+  const report = record(f.report);
+  delete report["cleanupHold"];
+  report["scope"] = "exclusive-instance";
+  report["cleanupExpectedModified"] = false;
+  report["error"] =
+    "Fixed-run accepted/terminal identity or outcome is unverified; inspect the original request, never replay.";
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const command = [
+    path.join(root, "dist/bin/fmcad.js"),
+    "run",
+    sourceFile,
+    "--helpers",
+    "cad-v1",
+    "--args",
+    JSON.stringify({
+      approved: true,
+      creationId: f.document.creationId,
+      expectedFusionVersion: "2706.1.17",
+      fixturePrefix: "NQGM07CURVE01",
+    }),
+    "--doc",
+    f.document.name,
+    "--doc-id",
+    f.document.creationId,
+    "--request-id",
+    native.requestId,
+    "--timeout",
+    "180000",
+  ];
+  const intent = {
+    version: 1,
+    state: "prepared",
+    binding: {
+      ...metadata,
+      requestId: native.requestId,
+      clientId: f.report.owner.clientId,
+      runtimeRoot: root,
+      command,
+    },
+    commandSha256: createHash("sha256")
+      .update(JSON.stringify(command))
+      .digest("hex"),
+  };
+  const intentFile = path.join(f.directory, "native-intent.json");
+  fs.writeFileSync(intentFile, JSON.stringify(intent));
+  const ports = {
+    readRuntimeBinding: f.ports.readRuntimeBinding,
+    readJobResult: async (_owner: unknown, id: string, jobId: string) => {
+      const value = record(f.originals.get(id));
+      assert.equal(record(value["job"])["id"], jobId);
+      return value;
+    },
+  };
+  const execute = f.backend.execute.bind(f.backend);
+  f.backend.execute = async (input) => {
+    await execute(input);
+    const result = queueExecution(
+      f.originals.get(input.requestId),
+      input.owner,
+      input.requestId,
+    );
+    f.executions.set(input.requestId, result);
+    return result;
+  };
+  return {
+    ...f,
+    raw,
+    intentFile,
+    ports,
+    jobId: String(record(raw["job"])["id"]),
+  };
+}
+test("missing authoritative native result cannot enter cleanup before its immutable binding", async (t) => {
+  const f = nativeBindingFixture(t);
+  await assert.rejects(
+    resolveCleanupHold(f.backend, f.directory, {
+      readRuntimeBinding: f.ports.readRuntimeBinding,
+      readOriginalResult: async (_owner, id) => f.originals.get(id),
+    }),
+  );
+  assert.equal(f.submissions(), 0);
+});
+test("authoritative native binding preserves FAIL and prepared intent while authorizing modified inspection", async (t) => {
+  const f = nativeBindingFixture(t),
+    report = fs.readFileSync(path.join(f.directory, "report.json")),
+    intent = fs.readFileSync(f.intentFile);
+  await recordNativeCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.intentFile,
+    f.jobId,
+  );
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  const proof = await resolveCleanupHold(
+    adapted.backend,
+    f.directory,
+    adapted.ports,
+  );
+  assert.equal(proof.inspectedModified, true);
+  assert.equal(proof.inspectionRequestId, f.report.owner.clientId + ":5");
+  assert.equal(
+    readCleanupRecoveryRequests(f.directory, f.backend, f.runtime).at(-1)![
+      "result"
+    ] !== undefined,
+    true,
+  );
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    report,
+  );
+  assert.deepEqual(fs.readFileSync(f.intentFile), intent);
+});
+for (const kind of [
+  "foreign-client",
+  "foreign-request",
+  "foreign-job",
+  "source",
+  "checker",
+  "unknown",
+] as const)
+  test(`native binding refuses ${kind} without cleanup`, async (t) => {
+    const f = nativeBindingFixture(t),
+      job = record(f.raw["job"]);
+    if (kind === "foreign-client") job["clientId"] = "foreign";
+    if (kind === "foreign-request") job["requestId"] = "foreign";
+    if (kind === "foreign-job") job["id"] = "foreign";
+    if (kind === "source")
+      record((record(f.raw["provenance"])["inputs"] as unknown[])[0])[
+        "sha256"
+      ] = "f".repeat(64);
+    if (kind === "checker") f.raw["pythonChecks"] = [];
+    if (kind === "unknown") record(f.raw["execution"])["sdkSettled"] = false;
+    await assert.rejects(
+      recordNativeCleanupResult(
+        f.backend,
+        f.directory,
+        f.ports,
+        f.intentFile,
+        f.jobId,
+      ),
+    );
+    assert.equal(f.submissions(), 0);
+    assert.equal(
+      fs.existsSync(
+        path.join(f.directory, "cleanup-native-result-binding.json"),
+      ),
+      false,
+    );
+  });
+for (const kind of ["report", "intent", "forged-result", "runtime"] as const)
+  test(`native binding refuses changed ${kind} before dispatch`, async (t) => {
+    const f = nativeBindingFixture(t);
+    await recordNativeCleanupResult(
+      f.backend,
+      f.directory,
+      f.ports,
+      f.intentFile,
+      f.jobId,
+    );
+    if (kind === "report")
+      fs.appendFileSync(path.join(f.directory, "report.json"), " ");
+    if (kind === "intent") fs.appendFileSync(f.intentFile, " ");
+    if (kind === "forged-result") {
+      const file = path.join(f.directory, "cleanup-native-result-binding.json"),
+        binding = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+          string,
+          unknown
+        >;
+      record(record(binding["raw"])["execution"])["sdkSettled"] = false;
+      fs.writeFileSync(file, JSON.stringify(binding));
+    }
+    if (kind === "runtime") f.runtime.instanceId = randomUUID();
+    await assert.rejects(async () => {
+      readCleanupRecoveryRequests(f.directory, f.backend, f.runtime);
+      const adapted = createCleanupRecoveryAdapter(
+        f.backend,
+        f.directory,
+        f.ports,
+      );
+      await resolveCleanupHold(adapted.backend, f.directory, adapted.ports);
+    });
+    assert.equal(f.submissions(), 0);
+  });
+test("native result still requires typed ports and cannot use generic report-rewriting cleanup", async (t) => {
+  const f = nativeBindingFixture(t);
+  await recordNativeCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.intentFile,
+    f.jobId,
+  );
+  const before = fs.readFileSync(path.join(f.directory, "report.json"));
+  await assert.rejects(
+    resumeCleanup(f.backend, path.join(f.directory, "report.json")),
+    /Case-specific mutation outcome/u,
+  );
+  assert.equal(f.submissions(), 0);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    before,
+  );
+});
+
 test("source-bound terminal legacy child without dispatch resolves without creating completion or replay", async (t) => {
   const f = terminalLegacyFixture(t),
     original = fs.readFileSync(path.join(f.directory, "report.json"));

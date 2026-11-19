@@ -214,6 +214,202 @@ const canonical = "cleanup-hold-resolution.json";
 const inspectionIntent = "cleanup-hold-inspection-intent.json";
 const reinspectionIntent = "cleanup-hold-reinspection-intent.json";
 const failedInspection = "cleanup-hold-inspection-failure.json";
+const nativeBinding = "cleanup-native-result-binding.json";
+export function readCleanupRecoveryRequests(
+  directory: string,
+  backend: Pick<
+    ScenarioBackend,
+    "identity" | "mode" | "qualification" | "protocol"
+  >,
+  runtime: CleanupRuntimeBinding,
+): Record<string, unknown>[] {
+  runtimeBinding(runtime, backend);
+  if (fs.existsSync(path.join(directory, nativeBinding)))
+    assert.deepEqual(
+      json(path.join(directory, nativeBinding))["runtime"],
+      runtime,
+    );
+  return context(directory, backend).requests;
+}
+export async function recordNativeCleanupResult(
+  backend: Pick<
+    ScenarioBackend,
+    "identity" | "mode" | "qualification" | "protocol"
+  >,
+  directory: string,
+  ports: CleanupRecoveryPorts,
+  intentFile: string,
+  jobId: string,
+): Promise<void> {
+  const c = context(directory, backend),
+    runtime = await ports.readRuntimeBinding();
+  runtimeBinding(runtime, backend);
+  noProducer(directory, c.document);
+  const intent = json(intentFile),
+    row = c.requests.at(-1)!;
+  assert.equal(
+    row["result"],
+    undefined,
+    "Only a missing original result may be bound",
+  );
+  const raw = await ports.readJobResult(c.owner, text(row["requestId"]), jobId);
+  const value = {
+    version: 1,
+    owner: c.owner,
+    document: c.document,
+    reportHash: c.reportHash,
+    runtime,
+    intentFile,
+    intentHash: hash(read(intentFile)),
+    intent,
+    raw,
+    jobId,
+  };
+  validateNativeBinding(directory, c, value);
+  assert.deepEqual(await ports.readRuntimeBinding(), runtime);
+  noProducer(directory, c.document);
+  immutable(path.join(directory, nativeBinding), value);
+}
+function validateNativeBinding(
+  directory: string,
+  c: {
+    owner: Owner;
+    document: Document;
+    report: Record<string, unknown>;
+    requests: Record<string, unknown>[];
+    reportHash: string;
+  },
+  value: unknown,
+): Record<string, unknown> {
+  const binding = record(value),
+    row = c.requests.at(-1)!,
+    intent = record(binding["intent"]),
+    prepared = record(intent["binding"]),
+    raw = record(binding["raw"]),
+    job = record(raw["job"]);
+  assert.equal(binding["version"], 1);
+  assert.deepEqual(binding["owner"], c.owner);
+  assert.deepEqual(binding["document"], c.document);
+  assert.equal(binding["reportHash"], c.reportHash);
+  assert.equal(c.owner.scenarioId, "gm07-source-pinned");
+  assert.equal(c.report["scope"], "exclusive-instance");
+  assert.equal(c.report["cleanupExpectedModified"], false);
+  assert.equal(
+    c.report["error"],
+    "Fixed-run accepted/terminal identity or outcome is unverified; inspect the original request, never replay.",
+  );
+  assert.equal(row["phase"], "gm07-fixed-run");
+  assert.equal(c.requests.length, 5);
+  assert.equal(text(row["requestId"]), c.owner.clientId + ":4");
+  assert.equal(binding["intentHash"], hash(read(text(binding["intentFile"]))));
+  assert.deepEqual(json(text(binding["intentFile"])), intent);
+  assert.equal(intent["version"], 1);
+  assert.equal(intent["state"], "prepared");
+  assert.equal(prepared["requestId"], row["requestId"]);
+  assert.equal(prepared["clientId"], c.owner.clientId);
+  assert.deepEqual(prepared["document"], c.document);
+  const metadata = record(row["intent"]);
+  for (const key of [
+    "fixtureId",
+    "manifestSha256",
+    "scriptSha256",
+    "buildHash",
+  ])
+    assert.equal(prepared[key], metadata[key]);
+  assert.deepEqual(metadata["document"], c.document);
+  assert.equal(metadata["fixtureId"], "gm07-curves-program-v1");
+  assert.equal(
+    metadata["scriptSha256"],
+    "aad7f113451db0784b16235de4d77cf7d8af024c3880338728154274616dbe16",
+  );
+  assert.equal(
+    metadata["manifestSha256"],
+    "aef99573a0ce45f852ea6883f0921e20056961a9d0b44bb8ced7654fd0707bb5",
+  );
+  assert.equal(record(binding["runtime"])["buildHash"], metadata["buildHash"]);
+  assert.ok(Array.isArray(prepared["command"]));
+  assert.equal(
+    intent["commandSha256"],
+    hash(JSON.stringify(prepared["command"])),
+  );
+  const command = prepared["command"].map(text),
+    root = text(prepared["runtimeRoot"]),
+    sourceFile = path.join(
+      root,
+      "dist/assets/native-qualification/gm07-curves.py",
+    );
+  assert.deepEqual(command, [
+    path.join(root, "dist/bin/fmcad.js"),
+    "run",
+    sourceFile,
+    "--helpers",
+    "cad-v1",
+    "--args",
+    JSON.stringify({
+      approved: true,
+      creationId: c.document.creationId,
+      expectedFusionVersion: "2706.1.17",
+      fixturePrefix: "NQGM07CURVE01",
+    }),
+    "--doc",
+    c.document.name,
+    "--doc-id",
+    c.document.creationId,
+    "--request-id",
+    row["requestId"],
+    "--timeout",
+    "180000",
+  ]);
+  assert.equal(job["id"], binding["jobId"]);
+  assert.equal(job["state"], "succeeded");
+  const result = queueExecution(raw, c.owner, text(row["requestId"]));
+  assert.equal(result.sdkSettled, true);
+  assert.equal(result.state, "succeeded");
+  const op = record(job["operationResult"]);
+  assert.equal(op["requestId"], row["requestId"]);
+  assert.equal(op["jobId"], job["id"]);
+  assert.equal(op["executionOutcome"], "succeeded");
+  assert.equal(op["acceptance"], "accepted");
+  inspectionCheck(raw);
+  const provenance = record(raw["provenance"]);
+  assert.equal(provenance["status"], "available");
+  assert.ok(Array.isArray(provenance["inputs"]));
+  const sources = provenance["inputs"]
+    .map(record)
+    .filter(
+      (input) =>
+        input["kind"] === "source" && input["originalPath"] === sourceFile,
+    );
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0]!["sha256"], metadata["scriptSha256"]);
+  assert.equal(sources[0]!["bytes"], 7937);
+  assert.equal(hash(read(sourceFile)), metadata["scriptSha256"]);
+  const output = marker(raw["stdout"], "FMCAD_RESULT ");
+  assert.equal(output["success"], true);
+  const payload = record(output["result"]),
+    document = record(payload["document"]),
+    after = record(document["after"]),
+    before = record(document["before"]);
+  for (const observed of [document, before, after]) {
+    assert.equal(observed["creationId"], c.document.creationId);
+    assert.equal(observed["name"], c.document.name);
+  }
+  for (const observed of [before, after]) {
+    assert.equal(observed["saved"], false);
+    assert.equal(observed["fileId"], null);
+  }
+  assert.equal(before["modified"], false);
+  assert.equal(after["modified"], true);
+  assert.equal(payload["modelChangedByFixture"], true);
+  assert.equal(payload["nativeGeometry"], true);
+  for (const field of ["submittedAt", "startedAt", "finishedAt"])
+    assert.ok(typeof job[field] === "number" && Number(job[field]) > 0);
+  assert.ok(
+    Number(job["submittedAt"]) <= Number(job["startedAt"]) &&
+      Number(job["startedAt"]) <= Number(job["finishedAt"]),
+  );
+  return { ...row, result };
+}
 const legacyChildProof = "cleanup-legacy-child-terminal.json";
 // Reviewed aa942 source/build continuity, not a captured emitted-JS fingerprint.
 const legacySourcePins = {
@@ -391,7 +587,15 @@ function context(
     `FMCAD_SCENARIO_${owner.runId}_${owner.scenarioId}`,
   );
   assert.equal(doc["file"], undefined);
-  const hold = record(report["cleanupHold"]);
+  const recoveringNative =
+    report["cleanupHold"] === undefined &&
+    owner.scenarioId === "gm07-source-pinned";
+  const hold = recoveringNative
+    ? {
+        requestId: owner.clientId + ":4",
+        reason: "Authoritative native result requires guarded cleanup",
+      }
+    : record(report["cleanupHold"]);
   assert.ok(
     text(hold["requestId"]) && text(hold["reason"]),
     "Missing cleanup hold",
@@ -421,7 +625,7 @@ function context(
   );
   assert.equal(creation["requestId"], creates[0]!["requestId"]);
   assert.deepEqual(marker(record(creates[0]!["result"])["stdout"]), creation);
-  return {
+  const c = {
     owner,
     document,
     report,
@@ -431,6 +635,16 @@ function context(
     creationHash: hash(creationBytes),
     indexHash: hash(indexBytes),
   };
+  if (recoveringNative && fs.existsSync(path.join(directory, nativeBinding))) {
+    const recovered = validateNativeBinding(
+      directory,
+      c,
+      json(path.join(directory, nativeBinding)),
+    );
+    assert.equal(c.requests.at(-1)!["result"], undefined);
+    c.requests[c.requests.length - 1] = recovered;
+  }
+  return c;
 }
 function runtimeBinding(
   value: CleanupRuntimeBinding,
@@ -476,6 +690,21 @@ function original(
     Number(job["submittedAt"]) <= Number(job["startedAt"]) &&
       Number(job["startedAt"]) <= Number(job["finishedAt"]),
   );
+  if (row["phase"] === "gm07-fixed-run") {
+    const bound = json(path.join(directory, nativeBinding));
+    assert.deepEqual(bound["raw"], raw);
+    const prepared = record(record(bound["intent"])["binding"]);
+    return {
+      source: read(
+        path.join(
+          text(prepared["runtimeRoot"]),
+          "dist/assets/native-qualification/gm07-curves.py",
+        ),
+      ),
+      job,
+      value,
+    };
+  }
   const sourceFile = path.join(directory, `request-${id.split(":").at(-1)}.py`),
     source = read(sourceFile);
   const provenance = record(value["provenance"]);
@@ -593,6 +822,7 @@ function admissionProof(c: ReturnType<typeof context>, source: string) {
   );
 }
 type HoldProof =
+  | { kind: "native-result-binding"; bindingHash: string }
   | { kind: "admission-only" }
   | { kind: "owned-observation"; bodyToken: string }
   | { kind: "terminal-legacy-no-dispatch"; evidenceHash: string };
@@ -710,6 +940,14 @@ function validateLegacyChild(
 }
 function holdProof(c: ReturnType<typeof context>, source: string): HoldProof {
   if (
+    c.hold["reason"] === "Authoritative native result requires guarded cleanup"
+  ) {
+    const directory = text(c.report["directory"]),
+      file = path.join(directory, nativeBinding);
+    validateNativeBinding(directory, c, json(file));
+    return { kind: "native-result-binding", bindingHash: hash(read(file)) };
+  }
+  if (
     c.hold["reason"] ===
     "Native import child lacks its durable completion disposition; inspect original requests"
   ) {
@@ -797,6 +1035,7 @@ function holdModified(
   c: ReturnType<typeof context>,
   proof: HoldProof,
 ): boolean {
+  if (proof.kind === "native-result-binding") return true;
   if (proof.kind === "terminal-legacy-no-dispatch") return false;
   const result = record(c.requests.at(-1)!["result"]);
   const observed =
@@ -1029,6 +1268,11 @@ function verifiedDecision(
   const decision = record(JSON.parse(bytes) as unknown);
   const c = context(directory, backend);
   runtimeBinding(runtime, backend);
+  if (fs.existsSync(path.join(directory, nativeBinding)))
+    assert.deepEqual(
+      json(path.join(directory, nativeBinding))["runtime"],
+      runtime,
+    );
   assert.ok(decision["version"] === 1 || decision["version"] === 2);
   assert.equal(decision["reportHash"], c.reportHash);
   assert.equal(decision["creationHash"], c.creationHash);
