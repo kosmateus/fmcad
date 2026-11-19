@@ -169,6 +169,11 @@ test("separate worktree processes share explicit receipts and clean only their f
     );
     fs.symlinkSync(path.join(root, "src"), path.join(worktree, "src"), "dir");
     fs.symlinkSync(
+      path.join(root, "packages"),
+      path.join(worktree, "packages"),
+      "dir",
+    );
+    fs.symlinkSync(
       path.join(root, "node_modules"),
       path.join(worktree, "node_modules"),
       "dir",
