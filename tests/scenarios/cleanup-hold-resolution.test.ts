@@ -11,6 +11,7 @@ import {
   validateCleanupResolutionForClose,
   createCleanupRecoveryAdapter,
   recordFailedCleanupInspection,
+  recordTerminalLegacyChildEvidence,
   type CleanupHoldPorts,
 } from "./cleanup-hold-resolution";
 import { resumeCleanup } from "./runner";
@@ -19,11 +20,20 @@ import { childProcessIdentity } from "./legacy-handoff";
 import { createRequire } from "node:module";
 import { queueExecution } from "./queue-backend";
 
-function fixture(t: TestContext, pose = false, modified = true) {
+function fixture(
+  t: TestContext,
+  pose = false,
+  modified = true,
+  legacy = false,
+) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-held-resolution-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const runId = randomUUID(),
-    scenarioId = pose ? "native-pose-methods-0" : "native-thread-1";
+    scenarioId = legacy
+      ? "native-legacy-0"
+      : pose
+        ? "native-pose-methods-0"
+        : "native-thread-1";
   const owner = {
     runId,
     scenarioId,
@@ -1289,4 +1299,223 @@ test("retained v1 modified-only decisions stay valid without rewriting their his
     true,
   );
   assert.deepEqual(fs.readFileSync(file), before);
+});
+
+function terminalLegacyFixture(t: TestContext) {
+  const f = fixture(t, false, false, true),
+    sha = (v: string) => createHash("sha256").update(v).digest("hex");
+  const legacy = path.join(f.directory, "legacy");
+  fs.mkdirSync(path.join(legacy, "intents"), { recursive: true });
+  const lease = {
+    version: 1,
+    owner: f.report.owner,
+    document: f.document,
+    directory: f.directory,
+    source: "tests/scenarios/legacy-owned-driver.ts",
+    testCase: "native-legacy-cli",
+    protocol: "addin",
+    mode: "owned-unsaved-script",
+  };
+  const launch = {
+    state: "completed",
+    pid: 2_000_000_000,
+    birth: "known-dead-child:1",
+    code: 1,
+  };
+  const stderr =
+    "AssertionError [ERR_ASSERTION]: Original legacy snapshot is not explained by its protected baseline and exact peer receipts\n    at Object.<anonymous> (/original/dist/tests/scenarios/legacy-owned-driver.js:112:62)\n";
+  fs.writeFileSync(path.join(legacy, "lease.json"), JSON.stringify(lease));
+  fs.writeFileSync(path.join(legacy, "launch.json"), JSON.stringify(launch));
+  fs.writeFileSync(path.join(legacy, "stderr.log"), stderr);
+  fs.writeFileSync(path.join(legacy, "stdout.log"), "");
+  const exported = f.request(
+    1,
+    "export",
+    programs.marker +
+      JSON.stringify({ creationId: f.document.creationId, exported: true }),
+    programs.exportFile(f.document, path.join(f.directory, "fixture.f3d")),
+  );
+  exported.intent = { kind: "script" };
+  f.report.requests[1] = exported;
+  f.report.cleanupHold.reason =
+    "Native import child lacks its durable completion disposition; inspect original requests";
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const sourcePins = {
+    "tests/scenarios/runner.ts":
+      "6b061c40f87bd073d676947a222d50b802ef14b954eeac3fdf3379a4be3e7393",
+    "tests/scenarios/legacy-owned-driver.ts":
+      "b8c9891cef4943a4a5d53379cd6c5d7f45cedacf6600cad0e21087a24c6c8e56",
+    "tests/helpers/live-broker.js":
+      "6c3b4c52084c981059201ce3e3792bddba835549dde472515f804e53670622ae",
+    "tests/scenarios/legacy-handoff.ts":
+      "24b074d85b3ff1dd2337bd7078f04ad56fa26a82eb9abf0bb9e148f5f2af71eb",
+  };
+  const evidence = {
+    driverSource: "aa942f37710e872ef3f1997c9110d4fc2631328f",
+    owner: f.report.owner,
+    document: f.document,
+    reportHold: f.report.cleanupHold,
+    launch,
+    intents: [],
+    completionFileExists: false,
+    artifactEvidence: Object.fromEntries(
+      [
+        "report.json",
+        "creation.json",
+        "legacy/lease.json",
+        "legacy/launch.json",
+        "legacy/stderr.log",
+        "legacy/stdout.log",
+      ].map((file) => [
+        file,
+        {
+          path: path.join(f.directory, file),
+          sha256: sha(fs.readFileSync(path.join(f.directory, file), "utf8")),
+        },
+      ]),
+    ),
+  };
+  const value = {
+    version: 1,
+    evidence,
+    sourcePins,
+    continuity: {
+      driverSource: evidence.driverSource,
+      sourceBefore:
+        "10a34a896bde9dc2c4901a46afa7a77f9a03ad3ed562ba9cf5493099db038365",
+      sourceAfter:
+        "10a34a896bde9dc2c4901a46afa7a77f9a03ad3ed562ba9cf5493099db038365",
+      preflightHash: "a".repeat(64),
+      terminalHash: "b".repeat(64),
+      buildHash: "c".repeat(64),
+    },
+  };
+  const file = path.join(f.directory, "cleanup-legacy-child-terminal.json");
+  fs.writeFileSync(file, JSON.stringify(value));
+  return { ...f, legacy, value, file };
+}
+test("source-bound terminal legacy child without dispatch resolves without creating completion or replay", async (t) => {
+  const f = terminalLegacyFixture(t),
+    original = fs.readFileSync(path.join(f.directory, "report.json"));
+  const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.equal(proof.inspectedModified, false);
+  assert.equal(f.submissions(), 1);
+  assert.equal(fs.existsSync(path.join(f.legacy, "completion.json")), false);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    original,
+  );
+  const result = await resumeCleanup(
+    f.backend,
+    path.join(f.directory, "report.json"),
+    f.ports,
+  );
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    original,
+  );
+});
+for (const corruption of [
+  "missing-proof",
+  "foreign-lease",
+  "active-child",
+  "intent",
+  "completion",
+  "source",
+  "changed-artifact",
+  "unknown-original",
+] as const)
+  test(`legacy no-dispatch resolution rejects ${corruption} before inspection`, async (t) => {
+    const f = terminalLegacyFixture(t);
+    if (corruption === "missing-proof") fs.unlinkSync(f.file);
+    if (corruption === "foreign-lease")
+      fs.writeFileSync(
+        path.join(f.legacy, "lease.json"),
+        JSON.stringify({ ...f.value.evidence, owner: { clientId: "foreign" } }),
+      );
+    if (corruption === "active-child")
+      fs.writeFileSync(
+        path.join(f.legacy, "launch.json"),
+        JSON.stringify({ state: "running", pid: process.pid }),
+      );
+    if (corruption === "intent")
+      fs.writeFileSync(path.join(f.legacy, "intents", "accepted.json"), "{}");
+    if (corruption === "completion")
+      fs.writeFileSync(path.join(f.legacy, "completion.json"), "{}");
+    if (corruption === "source") {
+      f.value.sourcePins["tests/helpers/live-broker.js"] = "f".repeat(64);
+      fs.writeFileSync(f.file, JSON.stringify(f.value));
+    }
+    if (corruption === "changed-artifact")
+      fs.appendFileSync(path.join(f.legacy, "stderr.log"), "changed");
+    if (corruption === "unknown-original")
+      record(
+        record(f.originals.get(f.report.requests[1]!.requestId))["execution"],
+      )["sdkSettled"] = false;
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(f.submissions(), 0);
+  });
+test("legacy evidence recording refuses unbound input rather than trusting a dead PID", (t) => {
+  const f = terminalLegacyFixture(t);
+  fs.unlinkSync(f.file);
+  assert.throws(() =>
+    recordTerminalLegacyChildEvidence(
+      f.backend,
+      f.directory,
+      path.join(f.legacy, "launch.json"),
+      {
+        preflight: path.join(f.legacy, "lease.json"),
+        terminal: path.join(f.legacy, "launch.json"),
+        buildLog: path.join(f.legacy, "stdout.log"),
+      },
+    ),
+  );
+  assert.equal(fs.existsSync(f.file), false);
+});
+
+test("a rehashed live child launch still cannot authorize legacy cleanup", async (t) => {
+  const f = terminalLegacyFixture(t);
+  const queue = createRequire(
+    path.resolve(__dirname, "../../..", "package.json"),
+  )("./src/queue-instance") as { processBirth(): string };
+  f.value.evidence.launch.pid = process.pid;
+  f.value.evidence.launch.birth = queue.processBirth();
+  const filename = path.join(f.legacy, "launch.json"),
+    bytes = JSON.stringify(f.value.evidence.launch);
+  fs.writeFileSync(filename, bytes);
+  f.value.evidence.artifactEvidence["legacy/launch.json"]!.sha256 = createHash(
+    "sha256",
+  )
+    .update(bytes)
+    .digest("hex");
+  fs.writeFileSync(f.file, JSON.stringify(f.value));
+  await assert.rejects(
+    resolveCleanupHold(f.backend, f.directory, f.ports),
+    /Child exit is unverified/u,
+  );
+  assert.equal(f.submissions(), 0);
+});
+test("an export-shaped legacy mutation does not qualify as no-dispatch proof", async (t) => {
+  const f = terminalLegacyFixture(t),
+    id = f.report.requests[1]!.requestId;
+  const filename = path.join(f.directory, "request-1.py"),
+    source = fs.readFileSync(filename, "utf8") + "# changed program\n";
+  fs.writeFileSync(filename, source);
+  const input = record(
+    (
+      record(record(f.originals.get(id))["provenance"])["inputs"] as unknown[]
+    )[0],
+  );
+  input["sha256"] = createHash("sha256").update(source).digest("hex");
+  input["bytes"] = Buffer.byteLength(source);
+  await assert.rejects(
+    resolveCleanupHold(f.backend, f.directory, f.ports),
+    /exact non-mutating program/u,
+  );
+  assert.equal(f.submissions(), 0);
 });
