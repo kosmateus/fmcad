@@ -103,7 +103,15 @@ export function assertNormalFinalInventory(
     const markers = (result["stdout"] as string)
       .split(/\r?\n/u)
       .filter((line) => line.startsWith("FMCAD_RESULT "));
-    assert.equal(markers.length, 1);
+    assert.ok(
+      markers.length === 1 || markers.length === 2,
+      "Own close output has ambiguous markers",
+    );
+    if (markers.length === 2)
+      assert.deepEqual(parse(markers[1]!.slice("FMCAD_RESULT ".length)), {
+        success: true,
+        helperCallsOnly: [],
+      });
     const value = parse(markers[0]!.slice("FMCAD_RESULT ".length));
     assert.equal(value["closed"], true);
     const document = documents.find(

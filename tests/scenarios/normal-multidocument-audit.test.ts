@@ -97,6 +97,42 @@ test("normal final audit keeps unchanged inventory valid without any peer proofs
   );
 });
 
+test("normal final audit accepts the actual cad-v1 close trailer without confusing it with a second closure", () => {
+  const f = auditFixture();
+  f.close.result.stdout +=
+    '\nFMCAD_RESULT {"success":true,"helperCallsOnly":[]}\n';
+  assertNormalFinalInventory(
+    f.before,
+    f.after,
+    [own],
+    [f.close],
+    f.proofs,
+    f.window,
+  );
+});
+
+test("normal close rejects a duplicate closure, failed helper, nonempty helper calls or an unknown extra marker", () => {
+  for (const trailer of [
+    '{"creationId":"own","closed":true}',
+    '{"success":false,"helperCallsOnly":[]}',
+    '{"success":true,"helperCallsOnly":["foreign.operation"]}',
+    '{"unrelated":true}',
+  ]) {
+    const f = auditFixture();
+    f.close.result.stdout += "\nFMCAD_RESULT " + trailer;
+    assert.throws(() =>
+      assertNormalFinalInventory(
+        f.before,
+        f.after,
+        [own],
+        [f.close],
+        f.proofs,
+        f.window,
+      ),
+    );
+  }
+});
+
 test("nongroup snapshots include file identity while group retains its original expression", () => {
   assert.equal(
     normalInventoryExpression(true),

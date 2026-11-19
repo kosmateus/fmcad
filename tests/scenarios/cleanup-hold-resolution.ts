@@ -214,6 +214,93 @@ const canonical = "cleanup-hold-resolution.json";
 const inspectionIntent = "cleanup-hold-inspection-intent.json";
 const reinspectionIntent = "cleanup-hold-reinspection-intent.json";
 const failedInspection = "cleanup-hold-inspection-failure.json";
+const legacyChildProof = "cleanup-legacy-child-terminal.json";
+// Reviewed aa942 source/build continuity, not a captured emitted-JS fingerprint.
+const legacySourcePins = {
+  "tests/scenarios/runner.ts":
+    "6b061c40f87bd073d676947a222d50b802ef14b954eeac3fdf3379a4be3e7393",
+  "tests/scenarios/legacy-owned-driver.ts":
+    "b8c9891cef4943a4a5d53379cd6c5d7f45cedacf6600cad0e21087a24c6c8e56",
+  "tests/helpers/live-broker.js":
+    "6c3b4c52084c981059201ce3e3792bddba835549dde472515f804e53670622ae",
+  "tests/scenarios/legacy-handoff.ts":
+    "24b074d85b3ff1dd2337bd7078f04ad56fa26a82eb9abf0bb9e148f5f2af71eb",
+};
+export function recordTerminalLegacyChildEvidence(
+  backend: Pick<
+    ScenarioBackend,
+    "identity" | "mode" | "qualification" | "protocol"
+  >,
+  directory: string,
+  evidenceFile: string,
+  continuity: { preflight: string; terminal: string; buildLog: string },
+): void {
+  const evidence = json(evidenceFile),
+    preflight = json(continuity.preflight),
+    terminal = json(continuity.terminal);
+  const c = context(directory, backend);
+  assert.equal(
+    preflight["driverSource"],
+    "aa942f37710e872ef3f1997c9110d4fc2631328f",
+  );
+  assert.equal(
+    terminal["sourceBefore"],
+    "10a34a896bde9dc2c4901a46afa7a77f9a03ad3ed562ba9cf5493099db038365",
+  );
+  assert.equal(terminal["sourceAfter"], terminal["sourceBefore"]);
+  assert.equal(terminal["status"], "failed");
+  assert.equal(preflight["backend"], "addin");
+  assert.equal(preflight["port"], 8765);
+  assert.equal(
+    "fusion:addin:" + text(preflight["buildHash"]),
+    backend.identity,
+  );
+  assert.equal(preflight["matchingBuild"], continuity.buildLog);
+  assert.equal(
+    preflight["campaignRoot"],
+    path.dirname(path.dirname(directory)),
+  );
+  assert.equal(terminal["suite"], "native-legacy");
+  assert.ok(Array.isArray(terminal["reports"]));
+  const reports = terminal["reports"]
+    .map(record)
+    .filter((row) => row["report"] === path.join(directory, "report.json"));
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0]!["id"], c.owner.scenarioId);
+  assert.equal(reports[0]!["status"], "failed");
+  assert.equal(reports[0]!["lastPhase"], "export");
+  assert.equal(reports[0]!["sdkSettled"], true);
+  assert.ok(read(continuity.buildLog).includes("> fmcad@0.1.0 build"));
+  for (const [file, digest] of Object.entries(legacySourcePins)) {
+    const entry = record(record(evidence["sourceEvidence"])[file]);
+    assert.equal(
+      entry["gitSource"],
+      "aa942f37710e872ef3f1997c9110d4fc2631328f:" + file,
+    );
+    assert.equal(entry["sha256"], digest);
+    assert.equal(
+      hash(read(text(entry["captured"]))),
+      digest,
+      "Historical source reconstruction changed",
+    );
+  }
+  const value = {
+    version: 1,
+    evidence,
+    sourcePins: legacySourcePins,
+    continuity: {
+      preflightHash: hash(read(continuity.preflight)),
+      terminalHash: hash(read(continuity.terminal)),
+      buildHash: hash(read(continuity.buildLog)),
+      sourceBefore: terminal["sourceBefore"],
+      sourceAfter: terminal["sourceAfter"],
+      driverSource: preflight["driverSource"],
+    },
+  };
+  noProducer(directory, c.document);
+  validateLegacyChild(c, directory, value);
+  immutable(path.join(directory, legacyChildProof), value);
+}
 const hash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
 const read = (filename: string): string => {
@@ -506,8 +593,150 @@ function admissionProof(c: ReturnType<typeof context>, source: string) {
   );
 }
 type HoldProof =
-  { kind: "admission-only" } | { kind: "owned-observation"; bodyToken: string };
+  | { kind: "admission-only" }
+  | { kind: "owned-observation"; bodyToken: string }
+  | { kind: "terminal-legacy-no-dispatch"; evidenceHash: string };
+function validateLegacyChild(
+  c: ReturnType<typeof context>,
+  directory: string,
+  value: unknown,
+): void {
+  const proof = record(value),
+    evidence = record(proof["evidence"]),
+    continuity = record(proof["continuity"]);
+  assert.equal(proof["version"], 1);
+  assert.deepEqual(
+    proof["sourcePins"],
+    legacySourcePins,
+    "Unreviewed child dispatch contract",
+  );
+  assert.equal(
+    evidence["driverSource"],
+    "aa942f37710e872ef3f1997c9110d4fc2631328f",
+  );
+  assert.equal(continuity["driverSource"], evidence["driverSource"]);
+  assert.equal(
+    continuity["sourceBefore"],
+    "10a34a896bde9dc2c4901a46afa7a77f9a03ad3ed562ba9cf5493099db038365",
+  );
+  assert.equal(continuity["sourceAfter"], continuity["sourceBefore"]);
+  for (const field of ["preflightHash", "terminalHash", "buildHash"])
+    assert.match(text(continuity[field]), /^[a-f0-9]{64}$/u);
+  assert.equal(c.owner.scenarioId, "native-legacy-0");
+  assert.deepEqual(evidence["owner"], c.owner);
+  assert.deepEqual(evidence["document"], c.document);
+  assert.deepEqual(evidence["reportHold"], c.hold);
+  assert.equal(
+    c.hold["reason"],
+    "Native import child lacks its durable completion disposition; inspect original requests",
+  );
+  assert.equal(
+    c.requests.length,
+    2,
+    "Legacy child may have dispatched additional requests",
+  );
+  assert.deepEqual(
+    c.requests.map((row) => row["phase"]),
+    ["create", "export"],
+  );
+  for (const row of c.requests) {
+    assert.equal(record(row["intent"])["kind"], "script");
+    assert.equal(record(row["result"])["state"], "succeeded");
+  }
+  const artifacts = record(evidence["artifactEvidence"]);
+  for (const file of [
+    "report.json",
+    "creation.json",
+    "legacy/lease.json",
+    "legacy/launch.json",
+    "legacy/stderr.log",
+    "legacy/stdout.log",
+  ]) {
+    const entry = record(artifacts[file]);
+    assert.equal(entry["path"], path.join(directory, file));
+    assert.equal(
+      hash(read(text(entry["path"]))),
+      entry["sha256"],
+      "Original legacy artifact changed: " + file,
+    );
+  }
+  const lease = json(path.join(directory, "legacy/lease.json")),
+    launch = json(path.join(directory, "legacy/launch.json"));
+  assert.equal(lease["version"], 1);
+  assert.deepEqual(lease["owner"], c.owner);
+  assert.deepEqual(lease["document"], c.document);
+  assert.equal(lease["directory"], directory);
+  assert.equal(lease["source"], "tests/scenarios/legacy-owned-driver.ts");
+  assert.equal(lease["testCase"], "native-legacy-cli");
+  assert.equal(lease["protocol"], "addin");
+  assert.equal(lease["mode"], "owned-unsaved-script");
+  assert.deepEqual(launch, evidence["launch"]);
+  assert.equal(launch["state"], "completed");
+  assert.equal(launch["code"], 1);
+  assert.ok(Number.isSafeInteger(launch["pid"]) && Number(launch["pid"]) > 0);
+  assert.ok(text(launch["birth"]));
+  assert.equal(
+    childProcessIdentity.priorProcessAlive({
+      pid: Number(launch["pid"]),
+      birth: text(launch["birth"]),
+    }),
+    false,
+    "Child exit is unverified",
+  );
+  assert.deepEqual(evidence["intents"], []);
+  assert.equal(evidence["completionFileExists"], false);
+  assert.equal(
+    fs.readdirSync(path.join(directory, "legacy")).includes("completion.json"),
+    false,
+    "Missing completion must not be fabricated",
+  );
+  const intents = path.join(directory, "legacy/intents");
+  assert.equal(fs.realpathSync(intents), intents);
+  assert.deepEqual(
+    fs.readdirSync(intents),
+    [],
+    "Possible dispatch: durable child intent exists",
+  );
+  const stderr = read(path.join(directory, "legacy/stderr.log"));
+  assert.match(
+    stderr,
+    /AssertionError \[ERR_ASSERTION\]: Original legacy snapshot is not explained by its protected baseline and exact peer receipts/u,
+  );
+  assert.match(
+    stderr,
+    /at Object\.<anonymous> \([^\n]+\/dist\/tests\/scenarios\/legacy-owned-driver\.js:112:62\)/u,
+  );
+  assert.equal(read(path.join(directory, "legacy/stdout.log")), "");
+}
 function holdProof(c: ReturnType<typeof context>, source: string): HoldProof {
+  if (
+    c.hold["reason"] ===
+    "Native import child lacks its durable completion disposition; inspect original requests"
+  ) {
+    const directory = text(c.report["directory"]),
+      file = path.join(directory, legacyChildProof);
+    validateLegacyChild(c, directory, json(file));
+    const exported = marker(record(c.requests.at(-1)!["result"])["stdout"]);
+    assert.equal(exported["creationId"], c.document.creationId);
+    assert.equal(exported["exported"], true);
+    const match = /createFusionArchiveExportOptions\(([^\n]+)\)/u.exec(source);
+    assert.ok(match);
+    const filename = text(JSON.parse(match[1]!) as unknown);
+    assert.ok(
+      filename === path.join(directory, "fixture.f3d") ||
+        filename.endsWith(directory.replaceAll("/", "\\") + "\\fixture.f3d"),
+      "Export path does not belong to this fixture",
+    );
+    assert.equal(
+      source,
+      programs.exportFile(c.document, filename),
+      "Legacy original export is not the exact non-mutating program",
+    );
+    return {
+      kind: "terminal-legacy-no-dispatch",
+      evidenceHash: hash(read(file)),
+    };
+  }
   if (text(c.hold["reason"]).startsWith("Fenced CAD turn failed;")) {
     admissionProof(c, source);
     return { kind: "admission-only" };
@@ -568,6 +797,7 @@ function holdModified(
   c: ReturnType<typeof context>,
   proof: HoldProof,
 ): boolean {
+  if (proof.kind === "terminal-legacy-no-dispatch") return false;
   const result = record(c.requests.at(-1)!["result"]);
   const observed =
     proof.kind === "admission-only"
