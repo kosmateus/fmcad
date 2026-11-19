@@ -30,7 +30,7 @@ test("first save reads the same retained document identity after saveAs", () => 
   assert.doesNotMatch(afterSave, /doc\.dataFile/u);
 });
 
-function fixture(t: TestContext) {
+function fixture(t: TestContext, createOrdinal = 0) {
   const directory = fs.mkdtempSync(
     path.join(os.tmpdir(), "fmcad-save-identity-"),
   );
@@ -58,11 +58,13 @@ function fixture(t: TestContext) {
     fs.writeFileSync(path.join(directory, name), JSON.stringify(value), {
       mode: 0o600,
     });
-  write("creation.json", {
+  const creation = {
     ...original,
+    activeCreationId: original.creationId,
     clientId: owner.clientId,
-    requestId: owner.clientId + ":0",
-  });
+    requestId: owner.clientId + ":" + createOrdinal,
+  };
+  write("creation.json", creation);
   write("save-intent.json", intent);
   write("save-transition.json", accepted);
   const result: Execution = {
@@ -79,8 +81,217 @@ function fixture(t: TestContext) {
       operationResult: null,
     },
   };
-  const requests = [{ requestId: intent.requestId, phase: "save", result }];
-  return { directory, owner, original, intent, accepted, requests, write };
+  const createResult: Execution = {
+    ...result,
+    requestId: creation.requestId,
+    stdout: marker + JSON.stringify(creation) + "\n",
+    brokerReceipt: {
+      ...result.brokerReceipt!,
+      requestId: creation.requestId,
+      jobId: "original-create-job",
+    },
+  };
+  const requests = [
+    ...(createOrdinal
+      ? [
+          {
+            requestId: owner.clientId + ":0",
+            phase: "original-user-view-capture",
+            result: {
+              ...createResult,
+              requestId: owner.clientId + ":0",
+              stdout: "",
+              brokerReceipt: {
+                ...createResult.brokerReceipt!,
+                requestId: owner.clientId + ":0",
+                jobId: "capture-job",
+              },
+            },
+          },
+        ]
+      : []),
+    { requestId: creation.requestId, phase: "create", result: createResult },
+    { requestId: intent.requestId, phase: "save", result },
+  ];
+  return {
+    directory,
+    owner,
+    original,
+    intent,
+    accepted,
+    creation,
+    requests,
+    write,
+  };
+}
+
+test("save bridge binds unique original create after capture:0/create:1", (t) => {
+  const f = fixture(t, 1);
+  const create = f.requests.find((entry) => entry.phase === "create")!;
+  create.result = {
+    ...create.result,
+    brokerReceipt: {
+      ...create.result.brokerReceipt!,
+      operationResult: {
+        version: 1,
+        requestId: create.requestId,
+        jobId: create.result.brokerReceipt!.jobId,
+        acceptance: "accepted",
+        executionOutcome: "succeeded",
+        mayHaveMutated: true,
+      },
+    },
+  };
+  const before = fs.readFileSync(
+    path.join(f.directory, "creation.json"),
+    "utf8",
+  );
+  assert.equal(
+    savedIdentityTransition(f.directory, f.original, f.owner, f.requests)
+      ?.creationId,
+    "after-id",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(f.directory, "creation.json"), "utf8"),
+    before,
+  );
+});
+
+for (const kind of [
+  "capture-phase",
+  "capture-result",
+  "missing-create",
+  "duplicate-create",
+  "duplicate-request",
+  "foreign-request",
+  "noncanonical-request",
+  "foreign-client",
+  "foreign-result-request",
+  "foreign-receipt-request",
+  "missing-result",
+  "missing-receipt",
+  "missing-job",
+  "reused-save-job",
+  "unknown",
+  "unsettled",
+  "failed-receipt",
+  "non-mutating",
+  "nonzero-exit",
+  "substituted-stdout",
+  "duplicate-marker",
+  "foreign-creation",
+  "foreign-active",
+  "foreign-operation-job",
+  "foreign-operation-request",
+  "failed-operation",
+  "missing-creation",
+  "create-after-save",
+] as const) {
+  test("save bridge rejects original create " + kind, (t) => {
+    const f = fixture(t, kind === "capture-result" ? 1 : 0),
+      entry = f.requests.find((value) => value.phase === "create")!,
+      result = entry.result,
+      receipt = result.brokerReceipt!;
+    if (kind === "capture-phase") entry.phase = "original-user-view-capture";
+    if (kind === "capture-result") entry.result = f.requests[0]!.result;
+    if (kind === "missing-create")
+      f.requests.splice(f.requests.indexOf(entry), 1);
+    if (kind === "duplicate-create")
+      f.requests.push({ ...entry, requestId: f.owner.clientId + ":3" });
+    if (kind === "duplicate-request")
+      f.requests.find((value) => value.phase === "save")!.requestId =
+        entry.requestId;
+    if (kind === "missing-creation")
+      fs.unlinkSync(path.join(f.directory, "creation.json"));
+    if (kind === "create-after-save") {
+      f.requests.splice(f.requests.indexOf(entry), 1);
+      f.requests.push(entry);
+    }
+    if (kind === "foreign-request" || kind === "noncanonical-request") {
+      const requestId =
+        kind === "foreign-request" ? "foreign:1" : f.owner.clientId + ":01";
+      entry.requestId = requestId;
+      entry.result = {
+        ...result,
+        requestId,
+        brokerReceipt: { ...receipt, requestId },
+        stdout: marker + JSON.stringify({ ...f.creation, requestId }),
+      };
+      f.write("creation.json", { ...f.creation, requestId });
+    }
+    if (kind === "foreign-client")
+      entry.result = {
+        ...result,
+        brokerReceipt: { ...receipt, clientId: "foreign" },
+      };
+    if (kind === "foreign-result-request")
+      entry.result = { ...result, requestId: "foreign" };
+    if (kind === "foreign-receipt-request")
+      entry.result = {
+        ...result,
+        brokerReceipt: { ...receipt, requestId: "foreign" },
+      };
+    if (kind === "missing-result") Reflect.deleteProperty(entry, "result");
+    if (kind === "missing-receipt")
+      Reflect.deleteProperty(result, "brokerReceipt");
+    if (kind === "missing-job")
+      entry.result = { ...result, brokerReceipt: { ...receipt, jobId: "" } };
+    if (kind === "reused-save-job")
+      entry.result = {
+        ...result,
+        brokerReceipt: { ...receipt, jobId: "original-save-job" },
+      };
+    if (kind === "unknown") entry.result = { ...result, state: "unknown" };
+    if (kind === "unsettled") entry.result = { ...result, sdkSettled: false };
+    if (kind === "failed-receipt")
+      entry.result = {
+        ...result,
+        brokerReceipt: { ...receipt, state: "failed" },
+      };
+    if (kind === "non-mutating")
+      entry.result = { ...result, mayHaveMutated: false };
+    if (kind === "nonzero-exit") entry.result = { ...result, exitCode: 1 };
+    if (kind === "substituted-stdout")
+      entry.result = {
+        ...result,
+        stdout:
+          marker + JSON.stringify({ ...f.creation, creationId: "foreign" }),
+      };
+    if (kind === "duplicate-marker")
+      entry.result = { ...result, stdout: result.stdout + result.stdout };
+    if (kind === "foreign-creation" || kind === "foreign-active") {
+      const creation = {
+        ...f.creation,
+        ...(kind === "foreign-creation"
+          ? { creationId: "foreign" }
+          : { activeCreationId: "foreign" }),
+      };
+      f.write("creation.json", creation);
+      entry.result = { ...result, stdout: marker + JSON.stringify(creation) };
+    }
+    if (kind.startsWith("foreign-operation") || kind === "failed-operation")
+      entry.result = {
+        ...result,
+        brokerReceipt: {
+          ...receipt,
+          operationResult: {
+            version: 1,
+            requestId:
+              kind === "foreign-operation-request"
+                ? "foreign"
+                : entry.requestId,
+            jobId: kind === "foreign-operation-job" ? "foreign" : receipt.jobId,
+            acceptance: "accepted",
+            executionOutcome:
+              kind === "failed-operation" ? "failed" : "succeeded",
+            mayHaveMutated: true,
+          },
+        },
+      };
+    assert.throws(() =>
+      savedIdentityTransition(f.directory, f.original, f.owner, f.requests),
+    );
+  });
 }
 
 for (const recover of [false, true]) {
@@ -233,7 +444,7 @@ for (const kind of [
 ] as const) {
   test("save bridge refuses " + kind, (t) => {
     const f = fixture(t),
-      entry = f.requests[0]!;
+      entry = f.requests.find((entry) => entry.phase === "save")!;
     if (kind === "unknown")
       entry.result = { ...entry.result, state: "unknown" };
     if (kind === "unsettled")

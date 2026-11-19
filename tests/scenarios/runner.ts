@@ -2208,6 +2208,7 @@ export async function resumeCleanup(
     throw new Error("Invalid original request inventory");
   if (
     raw["cleanupHold"] !== undefined ||
+    fs.existsSync(path.join(directory, "legacy/terminal-disposition.json")) ||
     fs.existsSync(path.join(directory, "cleanup-native-result-binding.json"))
   ) {
     if (!ports)
