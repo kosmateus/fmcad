@@ -39,6 +39,18 @@ export async function recordLegacyReadonlyCleanupResult(
   ports: CleanupRecoveryPorts,
   sources: { cwd: string; runtimeRoot: string },
 ): Promise<void> {
+  for (const file of [
+    legacyReadonlyBinding,
+    canonical,
+    inspectionIntent,
+    reinspectionIntent,
+    "supplemental-close.intent.json",
+    "supplemental-close.json",
+  ])
+    assert.ok(
+      !fs.existsSync(path.join(directory, file)),
+      "Existing cleanup evidence must be recovered, never rebound or replayed",
+    );
   const c = context(directory, backend),
     runtime = await ports.readRuntimeBinding();
   runtimeBinding(runtime, backend);

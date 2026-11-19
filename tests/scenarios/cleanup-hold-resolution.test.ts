@@ -23,6 +23,7 @@ import { childProcessIdentity } from "./legacy-handoff";
 import { createRequire } from "node:module";
 import { queueExecution } from "./queue-backend";
 import { publishLegacyTerminalDisposition } from "./legacy-terminal-disposition";
+import { discoverOwnedUnsavedFixtureProofs } from "./fixture-provenance";
 
 function fixture(
   t: TestContext,
@@ -1859,6 +1860,46 @@ test("readonly legacy binding cannot replay the original UUID child through the 
   );
   assert.equal(f.submissions(), 0);
 });
+test("readonly legacy close preserves the original unsafe completion and publishes canonical closed proof", async (t) => {
+  const f = readonlyLegacyFixture(t),
+    reportFile = path.join(f.directory, "report.json");
+  const originals = [
+    reportFile,
+    path.join(f.legacy, "completion.json"),
+    path.join(f.legacy, "readback.json"),
+    path.join(f.legacy, "intents", f.requestId.split(":").at(-1)! + ".json"),
+  ].map((filename) => [filename, fs.readFileSync(filename)] as const);
+  await recordLegacyReadonlyCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  const result = await resumeCleanup(
+    adapted.backend,
+    reportFile,
+    adapted.ports,
+  );
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  for (const [filename, bytes] of originals)
+    assert.deepEqual(fs.readFileSync(filename), bytes);
+  const close = JSON.parse(
+    fs.readFileSync(
+      path.join(f.directory, "supplemental-close.intent.json"),
+      "utf8",
+    ),
+  ) as Record<string, unknown>;
+  assert.equal(close["expectedModified"], false);
+  assert.equal(typeof close["resolutionDigest"], "string");
+  const proof = discoverOwnedUnsavedFixtureProofs(
+    path.dirname(path.dirname(f.directory)),
+    f.backend,
+  ).get(f.document.creationId);
+  assert.equal(proof?.state, "closed");
+});
+
 test("readonly legacy binding never authorizes the untyped default cleanup path", async (t) => {
   const f = readonlyLegacyFixture(t);
   await recordLegacyReadonlyCleanupResult(
@@ -1873,6 +1914,36 @@ test("readonly legacy binding never authorizes the untyped default cleanup path"
   );
   assert.equal(f.submissions(), 0);
 });
+for (const existing of [
+  "cleanup-legacy-readonly-binding.json",
+  "cleanup-hold-inspection-intent.json",
+  "supplemental-close.intent.json",
+])
+  test(`readonly legacy recording refuses existing ${existing} without resetting or querying it`, async (t) => {
+    const f = readonlyLegacyFixture(t),
+      file = path.join(f.directory, existing),
+      before = "preserved uncertain evidence\n";
+    fs.writeFileSync(file, before);
+    let queried = false;
+    await assert.rejects(
+      recordLegacyReadonlyCleanupResult(
+        f.backend,
+        f.directory,
+        {
+          ...f.ports,
+          readJobResult: async () => {
+            queried = true;
+            throw new Error("must not query");
+          },
+        },
+        f.sources,
+      ),
+      /must be recovered/u,
+    );
+    assert.equal(queried, false);
+    assert.equal(f.submissions(), 0);
+    assert.equal(fs.readFileSync(file, "utf8"), before);
+  });
 
 function nativeBindingFixture(t: TestContext) {
   const f = fixture(t, false, true, "gm07"),
