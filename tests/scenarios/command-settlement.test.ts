@@ -8,7 +8,181 @@ import { simulatorFolder } from "./simulator";
 import { transactionScenarios } from "./transaction-cases";
 import { runScenarios, resumeCleanup } from "./runner";
 import { queueExecution } from "./queue-backend";
-import { commandResult } from "./command-result";
+import { commandResult, recoveredCommandResult } from "./command-result";
+
+test("recovery distinguishes fenced helper results from CLI command JSON", () => {
+  const target = { name: "owned", creationId: "document-1" };
+  const output = {
+    success: true,
+    helperCallsOnly: [
+      {
+        operation: "component.create",
+        status: "completed",
+        effects: "observed",
+      },
+    ],
+    result: {
+      success: true,
+      operation: "component.create",
+      document: target.name,
+      creationId: target.creationId,
+    },
+  };
+  const intent = { kind: "cad-fenced", operation: "component.create" };
+  const stdout = "FMCAD_RESULT " + JSON.stringify(output);
+  assert.deepEqual(
+    recoveredCommandResult(stdout, intent, "request-4", [target]),
+    output.result,
+  );
+  for (const bad of [
+    { ...output, success: false },
+    { ...output, helperCallsOnly: [] },
+    {
+      ...output,
+      helperCallsOnly: [
+        { operation: "other", status: "completed", effects: "observed" },
+      ],
+    },
+    { ...output, result: { ...output.result, creationId: "foreign" } },
+    { ...output, result: { ...output.result, operation: "other" } },
+    { ...output, result: { ...output.result, status: "unknown" } },
+  ])
+    assert.throws(() =>
+      recoveredCommandResult(
+        "FMCAD_RESULT " + JSON.stringify(bad),
+        intent,
+        "request-4",
+        [target],
+      ),
+    );
+  assert.throws(() =>
+    recoveredCommandResult(stdout + "\n" + stdout, intent, "request-4", [
+      target,
+    ]),
+  );
+  assert.throws(() =>
+    recoveredCommandResult(stdout, { kind: "cad" }, "request-4", [target]),
+  );
+  assert.deepEqual(
+    recoveredCommandResult(
+      JSON.stringify(output.result),
+      { kind: "cad", command: { operation: "component.create" } },
+      "request-4",
+    ),
+    output.result,
+  );
+});
+
+test("fenced no-mutation admission remains bound to its original request", () => {
+  const intent = { kind: "cad-fenced", operation: "component.create" };
+  const admission = {
+    status: "inventory-changed",
+    requestId: "original",
+    helperCalls: 0,
+    mutationStarted: false,
+  };
+  const envelope = (proof: typeof admission, calls: unknown[] = []) =>
+    "FMCAD_RESULT " +
+    JSON.stringify({
+      success: true,
+      helperCallsOnly: calls,
+      result: { operation: intent.operation, admission: proof },
+    });
+  assert.doesNotThrow(() =>
+    recoveredCommandResult(envelope(admission), intent, "original"),
+  );
+  for (const change of [
+    { status: "unknown" },
+    { requestId: "foreign" },
+    { helperCalls: 1 },
+    { mutationStarted: true },
+  ])
+    assert.throws(() =>
+      recoveredCommandResult(
+        envelope({ ...admission, ...change }),
+        intent,
+        "original",
+      ),
+    );
+  assert.throws(() =>
+    recoveredCommandResult(envelope(admission, [{}]), intent, "original"),
+  );
+});
+
+test("generic resumeCleanup validates stored fenced envelopes before owned cleanup", async (t) => {
+  const { backend, model, directory } = await fixture(t, "addin");
+  let operation = "";
+  const lost = {
+    ...backend,
+    async execute(request: Parameters<typeof backend.execute>[0]) {
+      const result = await backend.execute(request);
+      if (request.command) {
+        operation = request.command.operation;
+        throw new Error("Lost command reply");
+      }
+      return result;
+    },
+  };
+  const [report] = await runScenarios(
+    lost,
+    transactionScenarios(simulatorFolder, 1),
+    directory,
+    1,
+  );
+  assert.ok(report);
+  assert.equal(report.cleanup, "deferred");
+  const filename = path.join(report.directory, "report.json");
+  const saved = JSON.parse(fs.readFileSync(filename, "utf8"));
+  const entry = saved.requests.find((request: { phase: string }) =>
+    request.phase.startsWith("cad-"),
+  );
+  assert.ok(operation);
+  entry.intent = { kind: "cad-fenced", operation };
+  fs.writeFileSync(filename, JSON.stringify(saved));
+  let recoveryRequests = 0;
+  const recovering = {
+    ...backend,
+    async execute(request: Parameters<typeof backend.execute>[0]) {
+      assert.equal(
+        request.command,
+        undefined,
+        "Recovery must not replay the CAD command",
+      );
+      recoveryRequests++;
+      return backend.execute(request);
+    },
+    async lookup(
+      owner: Parameters<NonNullable<typeof backend.lookup>>[0],
+      requestId: string,
+    ) {
+      const result = await backend.lookup!(owner, requestId);
+      if (!result || requestId !== entry.requestId) return result;
+      const value = JSON.parse(result.stdout);
+      return {
+        ...result,
+        stdout:
+          "FMCAD_RESULT " +
+          JSON.stringify({
+            success: true,
+            helperCallsOnly: [
+              { operation, status: "completed", effects: "observed" },
+            ],
+            result: {
+              ...value,
+              operation,
+              document: report.document!.name,
+              creationId: report.document!.creationId,
+            },
+          }),
+      };
+    },
+  };
+  const restored = await resumeCleanup(recovering, filename);
+  assert.equal(restored.cleanup, "complete");
+  assert.equal(restored.status, "failed");
+  assert.ok(recoveryRequests > 0, "The owned cleanup actually ran");
+  assert.deepEqual(await remaining(model), { active: null, documents: [] });
+});
 
 for (const protocol of ["mcp", "addin"] as const) {
   for (const defect of ["unknown", "foreign", "missing-execution"] as const) {

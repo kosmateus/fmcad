@@ -10,7 +10,7 @@ import {
   childProcessIdentity,
   type LegacyLease,
 } from "./legacy-handoff";
-import { commandResult } from "./command-result";
+import { commandResult, recoveredCommandResult } from "./command-result";
 import {
   resolveCleanupHold,
   type CleanupHoldPorts,
@@ -141,12 +141,6 @@ function creationProof(
       "Creation receipt does not belong to this scenario request",
     );
   return Object.freeze({ name, creationId: text(value["creationId"]) });
-}
-function commandOperation(
-  intent?: Record<string, unknown>,
-): string | undefined {
-  const command = intent?.["command"];
-  return command === undefined ? undefined : text(record(command)["operation"]);
 }
 function readCreation(directory: string): Record<string, unknown> {
   const file = path.join(directory, "creation.json");
@@ -2317,7 +2311,7 @@ export async function resumeCleanup(
           entry.requestId,
       );
     if (entry.phase.startsWith("cad-") && result.stdout.trim())
-      commandResult(result.stdout, undefined, commandOperation(entry.intent));
+      recoveredCommandResult(result.stdout, entry.intent, entry.requestId);
     recovered.push({ ...entry, result });
   }
   const creation = recovered.filter((entry) => entry.phase === "create");
@@ -2424,10 +2418,11 @@ export async function resumeCleanup(
       const target = saved
         ? Object.freeze({ ...document, file: saved })
         : document;
-      commandResult(
+      recoveredCommandResult(
         entry.result.stdout,
+        entry.intent,
+        entry.requestId,
         [target],
-        commandOperation(entry.intent),
       );
     }
   if (folder) {
@@ -2467,10 +2462,11 @@ export async function resumeCleanup(
   try {
     for (const entry of recovered)
       if (entry.phase.startsWith("cad-") && entry.result?.stdout.trim())
-        commandResult(
+        recoveredCommandResult(
           entry.result.stdout,
+          entry.intent,
+          entry.requestId,
           [originalDocument, session.document],
-          commandOperation(entry.intent),
         );
   } catch (error) {
     report.cleanup = "deferred";
