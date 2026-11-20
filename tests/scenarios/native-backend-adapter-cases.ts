@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import type {
   ObjectValue,
   ToolResult,
@@ -6,6 +7,15 @@ import type {
 import type { Scenario } from "./runner";
 import { record, text, number } from "./contracts";
 import { concurrencyLimit } from "./scheduling";
+import {
+  adapterReadonlyFence,
+  assertAdapterActive,
+  assertAdapterBridge,
+} from "./adapter-readonly-fence";
+import {
+  assertReceiptBoundDocumentInventory,
+  discoverOwnedUnsavedFixtureProofs,
+} from "./fixture-provenance";
 import {
   nativeDiagnosticQueue,
   diagnosticAddinClient,
@@ -19,7 +29,8 @@ def run(_context: str):
     app = adsk.core.Application.get()
     frame_depth = len(inspect.stack())
     documents = sorted([{"creationId": d.creationId, "name": d.name,
-        "isSaved": d.isSaved, "isModified": d.isModified} for d in app.documents if _fmcad_live_visible(d)],
+        "isSaved": d.isSaved, "isModified": d.isModified,
+        "fileId": d.dataFile.id if d.dataFile else None} for d in app.documents],
         key=lambda d: d["creationId"])
     print(json.dumps({"documents": documents,
         "activeCreationId": app.activeDocument.creationId if app.activeDocument else None,
@@ -135,8 +146,14 @@ export function nativeBackendAdapterScenarios(
       const script = (source: string) =>
         call({
           featureType: "script",
-          object: { readOnly: true, script: source },
+          object: { readOnly: true, script: adapterReadonlyFence(source) },
         });
+      const peerProofs = () =>
+        discoverOwnedUnsavedFixtureProofs(
+          path.dirname(path.dirname(session.directory)),
+          session.backend,
+        );
+      const observedCreationIds = new Set<string>();
       const success = (out: ToolResult, expected?: string) => {
         assert.equal(out.failed, false, out.text);
         assert.equal(out.readOnlyRequested, true);
@@ -199,7 +216,9 @@ export function nativeBackendAdapterScenarios(
           assert.deepEqual(JSON.parse(out.text), data);
           const documents = record(report["before"])["documents"];
           assert.ok(Array.isArray(documents));
-          assert.equal(data["results"].length, documents.length);
+          assertAdapterBridge(documents, data["results"], peerProofs());
+          for (const value of data["results"])
+            observedCreationIds.add(text(record(value)["creationId"]));
           report["documentList"] = data;
         });
         await stage("450 sequential markers", async () => {
@@ -265,13 +284,32 @@ export function nativeBackendAdapterScenarios(
         });
         await stage("after and unchanged documents", async () => {
           await snapshot("after");
-          assert.deepEqual(
-            record(report["after"])["documents"],
-            record(report["before"])["documents"],
+          const normalized = (value: unknown) => {
+            assert.ok(Array.isArray(value));
+            return value.map((entry) => {
+              const row = record(entry);
+              return {
+                creationId: row["creationId"],
+                name: row["name"],
+                saved: row["isSaved"],
+                modified: row["isModified"],
+                fileId: row["fileId"],
+              };
+            });
+          };
+          const proofs = peerProofs();
+          assertReceiptBoundDocumentInventory(
+            normalized(record(report["before"])["documents"]),
+            normalized(record(report["after"])["documents"]),
+            proofs,
+            "Adapter changed non-peer documents",
+            true,
+            observedCreationIds,
           );
-          assert.equal(
-            record(report["after"])["activeCreationId"],
+          assertAdapterActive(
             record(report["before"])["activeCreationId"],
+            record(report["after"])["activeCreationId"],
+            proofs,
           );
           assert.equal(report["initializeCount"], 1);
           assert.equal(report["markersCompleted"], 450);
