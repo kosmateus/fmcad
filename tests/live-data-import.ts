@@ -418,7 +418,7 @@ async function state() {
 documents = [dict(creationId=d.creationId, name=d.name, saved=d.isSaved, modified=d.isModified,
                   fileId=d.dataFile.id if d.isSaved and d.dataFile else None)
              for d in app.documents]
-print(json.dumps(dict(documents=sorted(documents, key=lambda d: d['creationId']),
+print(json.dumps(dict(documents=sorted(documents, key=lambda d: str(d['creationId'])),
                       activeCreationId=app.activeDocument.creationId if app.activeDocument else None)))`);
   return parseDocumentSnapshot(current, "Fusion document inventory");
 }

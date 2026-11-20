@@ -77,6 +77,53 @@ interface TypingPointer extends JsonRecord {
 
 const projectRoot = path.resolve(__dirname, "..", "..");
 const runtimeRequire = createRequire(__filename);
+test("the actual retained data-import inventory observation passes production checking", async () => {
+  const source = fs.readFileSync(
+    path.join(projectRoot, "tests/live-data-import.ts"),
+    "utf8",
+  );
+  const match =
+    /async function state\(\) \{\s+const current = await script\(`([\s\S]*?)`\);/u.exec(
+      source,
+    );
+  assert.ok(match, "Missing actual data-import inventory program");
+  assert.ok(
+    !match[1]!.includes("${"),
+    "Inventory interpolation requires an explicit fixture",
+  );
+  const load = createRequire(path.join(projectRoot, "package.json"));
+  const { createPythonChecker } = load(
+    "./packages/node-adapters/dist/python/checker",
+  ) as typeof import("../packages/node-adapters/src/python/checker");
+  const { preparePythonArtifact } = load(
+    "./packages/node-adapters/dist/python/artifact",
+  ) as typeof import("../packages/node-adapters/src/python/artifact");
+  const typingRoot = path.join(projectRoot, "dist/runtime/python/typing");
+  const checker = createPythonChecker({
+    typingRoot,
+    definitionsRoot: typingRoot,
+    pythonPlatform: "Windows",
+  });
+  const program =
+    "DOC_NAME = None\nimport adsk.core, json\ndef run(_context: str) -> None:\n" +
+    match[1]!
+      .split("\n")
+      .map((line) => "    " + line)
+      .join("\n") +
+    '\nrun("")\n';
+  const artifact = preparePythonArtifact([
+    {
+      id: "data-import-inventory",
+      filename: "observation.py",
+      role: "user",
+      source: program,
+    },
+  ]);
+  const result = await checker.check({ artifact, context: { kind: "run" } });
+  assert.equal(result.status, "passed", JSON.stringify(result));
+  assert.deepEqual(result.diagnostics, []);
+  assert.equal(result.provenance.checkerVersion, "1.40.2");
+});
 const programs: readonly FixedProgram[] = [
   "containment",
   "sections",
