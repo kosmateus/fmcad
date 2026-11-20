@@ -11,8 +11,13 @@ fixture does not connect to Fusion or use user data.
 
 The companion `control-center-production-browser.test.mts` uses the installed
 root composition and real temporary registry/SQLite histories. It verifies
-project isolation, authenticated alias writes, reload and registered-ID URL
-selection. It switches through all 25 locales on retained task/overview screens,
+project isolation, authenticated alias writes/reset, reload and registered-ID URL
+selection. Archive is refused with `FRESH_STATE_UNAVAILABLE` when the production
+fresh-state source is absent. A separately seeded archived synthetic project is
+restored through the browser with `PROJECT_RESTORED`; every POST remains a project
+action, never a job submission. Retained output and queue sentinels stay unchanged.
+This does not claim a successful archive without an authoritative activity fence.
+It switches through all 25 locales on retained task/overview screens,
 checks representative mobile layouts and loads both packaged Greek/Cyrillic
 fallback font weights. Console errors, request failures, HTTP errors, screenshots
 and a Playwright trace are retained even when an assertion fails.

@@ -10,13 +10,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 import test from "node:test";
 import { chromium } from "playwright";
+import type { ProjectActionResponse } from "../packages/control-center/dist/web/agents-projects.js";
 
 const load = createRequire(import.meta.url);
 const repository = process.cwd();
 const { LOCALE_CODES } = load(
   path.join(repository, "packages/control-center/dist/web/locale-catalogs.js"),
 ) as typeof import("../packages/control-center/dist/web/locale-catalogs.js");
-const { setupProjects } = load(
+const { setupProjects, openHistory, registeredProject, FIXTURE_NOW } = load(
   path.join(repository, "dist/tests/control-center-test-support.js"),
 ) as typeof import("./control-center-test-support.js");
 const { createControlCenterComposition } = load(
@@ -54,6 +55,8 @@ test(
     const browserLaunchErrors: string[] = [];
     const failedRequests: { url: string; error: string }[] = [];
     const badResponses: { url: string; status: number }[] = [];
+    const postRequests: string[] = [];
+    const projectActionResults: ProjectActionResponse[] = [];
     const cleanup: {
       composition?: ReturnType<typeof createControlCenterComposition>;
       server?: ReturnType<typeof createControlCenterHttpServer>;
@@ -89,7 +92,14 @@ test(
             fs.writeFileSync(
               path.join(artifacts, "report.json"),
               JSON.stringify(
-                { browserLaunchErrors, errors, failedRequests, badResponses },
+                {
+                  browserLaunchErrors,
+                  errors,
+                  failedRequests,
+                  badResponses,
+                  postRequests,
+                  projectActionResults,
+                },
                 null,
                 2,
               ),
@@ -101,7 +111,30 @@ test(
     const fixture = setupProjects(t, [
       "browser-project-a",
       "browser-project-b",
+      "browser-project-archived",
     ]);
+    const archivedProject = registeredProject(
+      fixture.registry,
+      "browser-project-archived",
+    );
+    const archivedHistory = openHistory(fixture.registry, archivedProject);
+    archivedHistory.setLifecycle({
+      monitoring: false,
+      archivedAtMs: FIXTURE_NOW,
+      updatedAtMs: FIXTURE_NOW,
+    });
+    archivedHistory.close();
+    fixture.registry.setLifecycle(archivedProject.projectId, {
+      monitoring: false,
+      archivedAtMs: FIXTURE_NOW,
+      nowMs: FIXTURE_NOW,
+    });
+    const retainedFiles = [...fixture.projects.values()].flatMap((project) =>
+      [project.queueStatePath, project.outputPath].map((file) => ({
+        file,
+        bytes: fs.readFileSync(file),
+      })),
+    );
     const port = await availablePort();
     const composition = createControlCenterComposition(
       {
@@ -164,6 +197,9 @@ test(
         error: request.failure()?.errorText ?? "unknown",
       }),
     );
+    page.on("request", (request) => {
+      if (request.method() === "POST") postRequests.push(request.url());
+    });
     page.on("response", (response) => {
       if (response.status() >= 400)
         badResponses.push({ url: response.url(), status: response.status() });
@@ -246,6 +282,111 @@ test(
         .textContent(),
       "Production browser alias",
     );
+    await page.locator('[data-action="view"][data-view="projects"]').click();
+    const reset = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/console/project-actions") &&
+        response.request().method() === "POST",
+    );
+    await form.locator('[data-action="project-alias-reset"]').click();
+    const resetResult: ProjectActionResponse = await (await reset).json();
+    projectActionResults.push(resetResult);
+    assert.equal(resetResult.state, "ok");
+    assert.equal(resetResult.code, "PROJECT_ALIAS_UPDATED");
+    assert.equal(resetResult.alias, null);
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector(
+            'aside [data-action="scope"][data-id="browser-project-a"] .project-name',
+          )
+          ?.textContent?.trim() === "browser-project-a",
+    );
+    await page.reload();
+    await page.locator('[data-action="view"][data-view="projects"]').click();
+    await form.waitFor();
+    assert.equal(
+      await form.locator('input[name="alias"]').inputValue(),
+      "browser-project-a",
+    );
+    const beforeArchive = registeredProject(
+      fixture.registry,
+      "browser-project-a",
+    );
+    await page
+      .locator(
+        '[data-action="project-archive-open"][data-project="browser-project-a"]',
+      )
+      .click();
+    const archive = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/console/project-actions") &&
+        response.request().method() === "POST",
+    );
+    await page.locator('[data-action="project-action-confirm"]').click();
+    const archiveResult: ProjectActionResponse = await (await archive).json();
+    projectActionResults.push(archiveResult);
+    assert.equal(archiveResult.state, "unavailable");
+    assert.equal(archiveResult.code, "FRESH_STATE_UNAVAILABLE");
+    await page
+      .locator('[data-project-action-dialog="archive"] [role="status"]')
+      .waitFor();
+    assert.deepEqual(
+      registeredProject(fixture.registry, "browser-project-a"),
+      beforeArchive,
+    );
+    await page.screenshot({
+      path: path.join(artifacts, "production-archive-guard.png"),
+      fullPage: true,
+    });
+    await page.locator('[data-action="project-action-cancel"]').first().click();
+    await page
+      .locator('[data-action="project-filter"][data-filter="archived"]')
+      .click();
+    await page
+      .locator(
+        '[data-action="project-restore-open"][data-project="browser-project-archived"]',
+      )
+      .click();
+    const restore = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/console/project-actions") &&
+        response.request().method() === "POST",
+    );
+    const postsBeforeRestore = postRequests.length;
+    await page.locator('[data-action="project-action-confirm"]').click();
+    const restoreResult: ProjectActionResponse = await (await restore).json();
+    projectActionResults.push(restoreResult);
+    assert.equal(restoreResult.state, "ok");
+    assert.equal(restoreResult.code, "PROJECT_RESTORED");
+    assert.equal(restoreResult.monitoring, true);
+    assert.equal(restoreResult.archivedAtMs, null);
+    await page
+      .locator('[data-project-action-dialog="restore"] [role="status"]')
+      .waitFor();
+    assert.equal(
+      registeredProject(fixture.registry, archivedProject.projectId).monitoring,
+      true,
+    );
+    assert.equal(
+      registeredProject(fixture.registry, archivedProject.projectId)
+        .archivedAtMs,
+      null,
+    );
+    assert.deepEqual(
+      postRequests
+        .slice(postsBeforeRestore)
+        .map((url) => new URL(url).pathname)
+        .filter((pathname) => pathname !== "/api/v1/console/query"),
+      ["/api/v1/console/project-actions"],
+      "restoring monitoring must not submit or replay a job",
+    );
+    await page.screenshot({
+      path: path.join(artifacts, "production-project-restored.png"),
+      fullPage: true,
+    });
+    await page.locator('[data-action="project-action-cancel"]').first().click();
+    await page.goto(`http://localhost:${port}/?project=browser-project-a`);
     for (const locale of LOCALE_CODES) {
       await page.locator("#locale-selector-trigger").click();
       await page
@@ -305,6 +446,15 @@ test(
       [],
     );
     assert.equal(fs.existsSync(path.join(fixture.root, "absent-queue")), false);
+    assert.deepEqual(
+      postRequests
+        .map((url) => new URL(url).pathname)
+        .filter((pathname) => pathname !== "/api/v1/console/query"),
+      Array(4).fill("/api/v1/console/project-actions"),
+      "project display and lifecycle actions must never POST jobs",
+    );
+    for (const { file, bytes } of retainedFiles)
+      assert.deepEqual(fs.readFileSync(file), bytes);
   },
 );
 
