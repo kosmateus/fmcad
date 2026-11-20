@@ -42,7 +42,7 @@ async function availablePort(): Promise<number> {
 
 test(
   "browser reads real registered SQLite histories through the installed production composition",
-  { timeout: 0 },
+  { timeout: undefined },
   async (t) => {
     const artifacts = path.resolve(
       process.env["FMCAD_CONTROL_CENTER_E2E_ARTIFACTS"] ??
@@ -51,17 +51,19 @@ test(
     );
     fs.mkdirSync(artifacts, { recursive: true });
     const errors: string[] = [];
+    const browserLaunchErrors: string[] = [];
     const failedRequests: { url: string; error: string }[] = [];
     const badResponses: { url: string; status: number }[] = [];
-    let composition:
-      ReturnType<typeof createControlCenterComposition> | undefined;
-    let server: ReturnType<typeof createControlCenterHttpServer> | undefined;
-    let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+    const cleanup: {
+      composition?: ReturnType<typeof createControlCenterComposition>;
+      server?: ReturnType<typeof createControlCenterHttpServer>;
+      browser?: Awaited<ReturnType<typeof chromium.launch>>;
+    } = {};
     t.after(async () => {
       try {
         try {
-          if (browser) {
-            const context = browser.contexts()[0];
+          if (cleanup.browser) {
+            const context = cleanup.browser.contexts()[0];
             const page = context?.pages()[0];
             if (page && !page.isClosed())
               await page
@@ -75,18 +77,22 @@ test(
             });
           }
         } finally {
-          await browser?.close();
+          await cleanup.browser?.close();
         }
       } finally {
         try {
-          await server?.close();
+          await cleanup.server?.close();
         } finally {
           try {
-            await composition?.close?.();
+            await cleanup.composition?.close?.();
           } finally {
             fs.writeFileSync(
               path.join(artifacts, "report.json"),
-              JSON.stringify({ errors, failedRequests, badResponses }, null, 2),
+              JSON.stringify(
+                { browserLaunchErrors, errors, failedRequests, badResponses },
+                null,
+                2,
+              ),
             );
           }
         }
@@ -97,7 +103,7 @@ test(
       "browser-project-b",
     ]);
     const port = await availablePort();
-    composition = createControlCenterComposition(
+    const composition = createControlCenterComposition(
       {
         port,
         installationRoot: path.join(repository, "dist"),
@@ -112,7 +118,8 @@ test(
         openCodePresenceDirectory: path.join(fixture.root, "absent-presence"),
       },
     );
-    server = createControlCenterHttpServer({
+    cleanup.composition = composition;
+    const server = createControlCenterHttpServer({
       identity: {
         port,
         protocolVersion: 1,
@@ -129,8 +136,19 @@ test(
         : {}),
       resolvePrincipal: composition.resolvePrincipal,
     });
+    cleanup.server = server;
     await server.start();
-    browser = await chromium.launch({ headless: true });
+    const browser = await chromium
+      .launch({ headless: true })
+      .catch((error: unknown) => {
+        browserLaunchErrors.push(
+          error instanceof Error
+            ? (error.stack ?? `${error.name}: ${error.message}`)
+            : String(error),
+        );
+        throw error;
+      });
+    cleanup.browser = browser;
     const page = await browser.newPage({
       locale: "pl-PL",
       viewport: { width: 1440, height: 960 },
@@ -292,16 +310,18 @@ test(
 
 test(
   "browser System controls reach authenticated lifecycle IPC and retain original receipts",
-  { timeout: 0 },
+  { timeout: undefined },
   async (t) => {
     const root = fs.mkdtempSync(
       path.join(os.tmpdir(), "fmcad-system-browser-"),
     );
     const children: ChildProcess[] = [];
-    let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+    const cleanup: {
+      browser?: Awaited<ReturnType<typeof chromium.launch>>;
+    } = {};
     t.after(async () => {
       try {
-        await browser?.close();
+        await cleanup.browser?.close();
       } finally {
         for (const child of children.reverse()) {
           if (child.exitCode === null && child.signalCode === null) {
@@ -362,7 +382,8 @@ test(
     const ready = once(control.child, "message");
     control.child.send({ action: "run", port, browser: true });
     assert.equal((await ready)[0].browserReady, true);
-    browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({ headless: true });
+    cleanup.browser = browser;
     const page = await browser.newPage({ locale: "en-US" });
     page.setDefaultTimeout(0);
     page.setDefaultNavigationTimeout(0);

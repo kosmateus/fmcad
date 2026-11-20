@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import { chromium } from "playwright";
 import {
   createBrowserFixture,
@@ -135,9 +135,23 @@ async function waitForCount(locator: Locator, count: number): Promise<void> {
   await locator.nth(count).waitFor({ state: "detached" });
 }
 
+async function launchTestBrowser(
+  t: TestContext,
+  http: { close(): Promise<void> },
+): Promise<Browser> {
+  const cleanup: { browser?: Browser } = {};
+  t.after(async () => {
+    await cleanup.browser?.close().catch(() => {});
+    await http.close();
+  });
+  const browser = await chromium.launch({ headless: true });
+  cleanup.browser = browser;
+  return browser;
+}
+
 test(
   "Control Center interactions work in headless Chromium against an isolated query fixture",
-  { timeout: 0 },
+  { timeout: undefined },
   async (t) => {
     fs.mkdirSync(artifactsRoot, { recursive: true });
     const runId = `${new Date().toISOString().replaceAll(":", "-")}-${process.pid}`;
@@ -168,6 +182,7 @@ test(
     const expectedNetworkFailures: string[] = [];
     const badResponses: string[] = [];
     const assertions: string[] = [];
+    const browserLaunchErrors: string[] = [];
     // Real registry/SQLite composition is covered by the companion production browser test.
     const unmetRequirements: string[] = [];
     const observedControls = new Map<string, ObservedControl>();
@@ -212,6 +227,7 @@ test(
             viewport: { desktop: [1440, 960], mobile: [390, 844] },
             mobileLayout,
             assertions,
+            browserLaunchErrors,
             unmetRequirements,
             unsupported,
             controls: {
@@ -258,7 +274,16 @@ test(
       writeReport();
     });
 
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium
+      .launch({ headless: true })
+      .catch((error: unknown) => {
+        browserLaunchErrors.push(
+          error instanceof Error
+            ? (error.stack ?? `${error.name}: ${error.message}`)
+            : String(error),
+        );
+        throw error;
+      });
     cleanup.browser = browser;
     browserVersion = browser.version();
     const context = await browser.newContext({
@@ -1479,13 +1504,11 @@ test(
 
 test(
   "disposed browser mounts cannot restart reads or subscriptions",
-  { timeout: 0 },
+  { timeout: undefined },
   async (t) => {
     const fixture = createBrowserFixture();
     const http = await fixture.start();
-    t.after(() => http.close());
-    const browser = await chromium.launch({ headless: true });
-    t.after(() => browser.close());
+    const browser = await launchTestBrowser(t, http);
     const page = disablePageTimeouts(await browser.newPage());
     await page.route("**/web/index.js", (route) =>
       route.fulfill({ contentType: "text/javascript", body: "" }),
@@ -1545,13 +1568,11 @@ test(
 
 test(
   "closing task details rejects their delayed refresh",
-  { timeout: 0 },
+  { timeout: undefined },
   async (t) => {
     const fixture = createBrowserFixture();
     const http = await fixture.start();
-    t.after(() => http.close());
-    const browser = await chromium.launch({ headless: true });
-    t.after(() => browser.close());
+    const browser = await launchTestBrowser(t, http);
     const page = disablePageTimeouts(await browser.newPage());
     await page.goto(http.origin);
     await page.locator('[data-action="task"]').first().click();
@@ -1597,13 +1618,11 @@ test(
 
 test(
   "a delayed global session response cannot replace the selected project's sessions",
-  { timeout: 0 },
+  { timeout: undefined },
   async (t) => {
     const fixture = createBrowserFixture();
     const http = await fixture.start();
-    t.after(() => http.close());
-    const browser = await chromium.launch({ headless: true });
-    t.after(() => browser.close());
+    const browser = await launchTestBrowser(t, http);
     const page = disablePageTimeouts(
       await browser.newPage({ locale: "pl-PL" }),
     );
@@ -1684,13 +1703,11 @@ test(
 
 test(
   "expired table snapshots refresh once and preserve the selected agent filter",
-  { timeout: 0 },
+  { timeout: undefined },
   async (t) => {
     const fixture = createBrowserFixture();
     const http = await fixture.start();
-    t.after(() => http.close());
-    const browser = await chromium.launch({ headless: true });
-    t.after(() => browser.close());
+    const browser = await launchTestBrowser(t, http);
     const page = disablePageTimeouts(
       await browser.newPage({ locale: "pl-PL" }),
     );
@@ -1754,13 +1771,11 @@ test(
 
 test(
   "background query completion preserves the open locale menu and keyboard focus",
-  { timeout: 0 },
+  { timeout: undefined },
   async (t) => {
     const fixture = createBrowserFixture();
     const http = await fixture.start();
-    t.after(() => http.close());
-    const browser = await chromium.launch({ headless: true });
-    t.after(() => browser.close());
+    const browser = await launchTestBrowser(t, http);
     const page = disablePageTimeouts(await browser.newPage());
     await page.route("**/web/index.js", (route) =>
       route.fulfill({ contentType: "text/javascript", body: "" }),
