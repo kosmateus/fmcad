@@ -8,7 +8,7 @@ import type { DrawingApi, DrawingFixture } from "./drawing-test-support";
 const load = createRequire(
   path.join(process.cwd(), "tests/drawing-migration.test.ts"),
 );
-const history = load("./fixtures/file-workflows/load.cjs") as (
+const history = load("../dist/tests/fixtures/file-workflows/load.cjs") as (
   label: string,
   file: string,
   overrides?: Record<string, unknown>,

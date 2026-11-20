@@ -50,6 +50,7 @@
     "tests/mcp-console-start.test.ts",
     "tests/fixtures/historical-module.cts",
     "tests/fixtures/python-literal.cts",
+    "tests/fixtures/file-workflows/load.cts",
     "tests/legacy-inspect-admission.test.ts",
     "tests/legacy-parameters-admission.test.ts",
     "tests/legacy-document-admission.test.ts",

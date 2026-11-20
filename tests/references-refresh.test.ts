@@ -2378,10 +2378,9 @@ test("unknown native command leaves the owned .11 watcher armed for reconciliati
   assert.equal(events.includes("save"), false);
 });
 
-const referenceHistory = load("./fixtures/file-workflows/load.cjs") as (
-  label: string,
-  file: string,
-) => ReferenceApi;
+const referenceHistory = load(
+  "../dist/tests/fixtures/file-workflows/load.cjs",
+) as (label: string, file: string) => ReferenceApi;
 const referenceVersions: [string, ReferenceApi][] = [
   ["pre-refactor", referenceHistory("baseline", "src/references-refresh.js")],
   [

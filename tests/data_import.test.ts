@@ -713,7 +713,9 @@ test("generated adapter request compiles, carries normalized model paths, and pa
   );
 });
 
-const importHistory = load("./fixtures/file-workflows/load.cjs") as (
+const importHistory = load(
+  "../dist/tests/fixtures/file-workflows/load.cjs",
+) as (
   label: string,
   file: string,
   overrides?: Record<string, unknown>,
