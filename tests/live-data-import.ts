@@ -22,6 +22,7 @@ import {
 // Opt-in live coverage for the existing versioned data-import operations.
 // All writes are confined to one exact, unsaved document created by this run.
 import assert from "node:assert/strict";
+import { readImportBaseline } from "./scenarios/import-baseline";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createRequire } from "node:module";
@@ -268,6 +269,7 @@ const report: LiveReport = {
 let receiptClient: QueueClientPort | undefined;
 let identity: DocumentIdentity | null = null;
 let baseline: LiveDocumentSnapshot | null = null;
+let protectedDocuments: LiveDocumentSnapshot["documents"] | null = null;
 let unsafe = false;
 let importedCatalogInstances: CatalogInstance[] | null = null;
 let importedCatalogIdMap: Record<string, CatalogIdMapEntry> | null = null;
@@ -460,8 +462,12 @@ async function ownedState(): Promise<LiveDocumentSnapshot> {
 
 async function guard(): Promise<LiveDocumentSnapshot> {
   const current = await ownedState();
+  assert.ok(
+    protectedDocuments,
+    "Protected document baseline has not been captured",
+  );
   assertProtectedBaselineDocuments(
-    originalDocuments(),
+    { documents: protectedDocuments },
     current,
     "During the owned fixture lifecycle",
   );
@@ -1028,11 +1034,13 @@ async function main(): Promise<void> {
         lease!.owner.scenarioId,
       ),
     );
-    const before = asRecord(coordinator["before"], "Coordinator baseline");
-    baseline = parseDocumentSnapshot(
-      { documents: before.documents, activeCreationId: before["active"] },
-      "Original pre-creation inventory",
+    const importedBaseline = readImportBaseline(
+      lease!.directory,
+      lease!.owner,
+      `fusion:${lease!.protocol}:${selectedRuntime.buildHash}`,
     );
+    baseline = importedBaseline.original;
+    protectedDocuments = importedBaseline.protectedDocuments;
     report.before = baseline;
     assert.ok(
       !baseline.documents.some((doc) => doc.name === name),

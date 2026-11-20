@@ -6,6 +6,7 @@ import { emit, program } from "./programs";
 import { record, text } from "./contracts";
 import { concurrencyLimit } from "./scheduling";
 import { parseDocumentSnapshot } from "../import-result-contracts";
+import { readImportBaseline } from "./import-baseline";
 import {
   assertActiveDocumentRestored,
   assertProtectedBaselineDocuments,
@@ -28,22 +29,12 @@ export function nativeImportScenarios(owners = 10): Scenario[] {
       } finally {
         await session.cleanup();
         if (session.report.cleanup === "complete") {
-          const index = record(
-            JSON.parse(
-              fs.readFileSync(
-                path.join(session.directory, "..", "index.json"),
-                "utf8",
-              ),
-            ) as unknown,
+          const baseline = readImportBaseline(
+            session.directory,
+            session.report.owner,
+            session.report.backendIdentity,
           );
-          const baseline = record(index["before"]);
-          const original = parseDocumentSnapshot(
-            {
-              documents: baseline["documents"],
-              activeCreationId: baseline["active"],
-            },
-            "Original import baseline",
-          );
+          const original = baseline.original;
           const closed = await session.observe(
             "observe-import-after-cleanup",
             program(`import adsk.core, json
@@ -63,7 +54,7 @@ ${emit(`dict(creationId=${JSON.stringify(own.creationId)}, closedCreationId=${JS
             "Close(False) did not remove the exact owned document",
           );
           assertProtectedBaselineDocuments(
-            original,
+            { documents: baseline.protectedDocuments },
             after,
             "After closing the owned fixture",
           );

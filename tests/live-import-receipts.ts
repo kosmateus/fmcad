@@ -309,7 +309,7 @@ export interface LiveDocumentSnapshot {
 }
 
 export function assertProtectedBaselineDocuments(
-  baseline: LiveDocumentSnapshot,
+  baseline: Pick<LiveDocumentSnapshot, "documents">,
   current: LiveDocumentSnapshot,
   label: string,
 ): void {
