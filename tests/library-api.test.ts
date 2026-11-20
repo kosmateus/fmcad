@@ -871,6 +871,7 @@ function relocateHistoricalTestEvidence(value: unknown): unknown {
       "console-services",
       "mcp-stdio",
       "queue-scheduling",
+      "phased-queue",
       "queue-probe-recovery",
       "batch-local",
       "shot",
