@@ -357,7 +357,10 @@ test("one candidate build feeds CI and offline regression consumers", () => {
   );
   assert.match(offline, /name: build-\$\{\{ github\.sha \}\}/);
   assert.match(offline, /ci-restore-build-artifact\.cjs/);
-  assert.match(offline, /timeout-minutes: 35/);
+  assert.match(
+    offline,
+    /timeout-minutes: \$\{\{ matrix\.shard == '17' && 75 \|\| 35 \}\}/,
+  );
   for (const name of [
     "broker-regressions",
     "contracts",

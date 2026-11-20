@@ -13,8 +13,8 @@ jobs:
   offline-regressions:
     runs-on: ubuntu-24.04
     # Explicitly reviewed offline sources per shard; keep the real checker
-    # and installed-consumer contracts. Initial budget awaits retained CI timing.
-    timeout-minutes: 35
+    # and installed-consumer contracts. Full CAD passed locally in 58m41s.
+    timeout-minutes: ${{ matrix.shard == '17' && 75 || 35 }}
     env:
       npm_config_cache: /tmp/fmcad-npm-cache
       PYTHONPATH: ${{ github.workspace }}/runtime/python
