@@ -114,6 +114,17 @@ async function fixture(
   const composition = localRequire(
     path.join(pkg, "dist/src/dist/composition/opencode.js"),
   ) as { dependencies: () => Dependencies };
+  const oldStateHome = process.env["XDG_STATE_HOME"];
+  process.env["XDG_STATE_HOME"] = path.join(directory, "state");
+  t.after(() => {
+    if (oldStateHome === undefined) delete process.env["XDG_STATE_HOME"];
+    else process.env["XDG_STATE_HOME"] = oldStateHome;
+  });
+  const installedPresence = composition
+    .dependencies()
+    .presence(path.join(directory, "project"));
+  assert(installedPresence);
+  await installedPresence.close();
   const publicApi = localRequire(
     path.join(pkg, "dist/src/dist/api/index.js"),
   ) as typeof import("../src/api");
