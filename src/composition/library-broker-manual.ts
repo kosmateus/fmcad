@@ -107,7 +107,7 @@ export const manuals: Record<string, CommandManual> = Object.fromEntries(
         tests: [
           "tests/queue-scheduling.test.ts",
           "tests/console-pause.test.ts",
-          "tests/phased-queue.test.js",
+          "tests/phased-queue.test.ts",
           "tests/queue-probe-recovery.test.ts",
           ...(["authorize-normal-successor", "record-normal-producers-retired", "retire-normal-metadata-producer", "authorize-normal-currentfacts-retry", "retire-normal-currentfacts-producer"].includes(action) ? ["tests/normal-currentstore-successor.test.ts"] : []),
         ],
