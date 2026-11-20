@@ -9,6 +9,7 @@ import type { createBrokerTransport } from "../../packages/node-adapters/src/fus
 import type { ScenarioBackend, Document } from "./contracts";
 import { simulatorEndpoint } from "./simulator";
 import { runScenarios, resumeCleanup, type Scenario } from "./runner";
+import { queueExecution } from "./queue-backend";
 import { foundationScenarios, lifecycle, parameterScenario } from "./cases";
 import * as programs from "./programs";
 import {
@@ -494,6 +495,76 @@ test("settled operation failure and assertion failure both close documents and r
   assert.match(reports[1]?.error ?? "", /intentional assertion failure/);
   assert.deepEqual(await remaining(model), { active: null, documents: [] });
 });
+test("generic cleanup rereads a missing no-dispatch result without a case-specific hold", async (t) => {
+  const { directory, model, backend } = await fixture(t);
+  let requests = 0;
+  let missingRequest = "";
+  const losing: ScenarioBackend = {
+    ...backend,
+    async execute(request) {
+      if (request.owner.scenarioId !== "coordinator" && ++requests === 3) {
+        missingRequest = request.requestId;
+        throw new Error("Local worker lost before dispatch");
+      }
+      return backend.execute(request);
+    },
+    async lookup(owner, requestId) {
+      if (requestId !== missingRequest)
+        return backend.lookup!(owner, requestId);
+      return queueExecution(
+        {
+          job: {
+            id: "undispatched-job",
+            clientId: owner.clientId,
+            requestId,
+            state: "failed",
+            code: "NOT_DISPATCHED",
+            operationResult: {
+              version: 1,
+              jobId: "undispatched-job",
+              requestId,
+              acceptance: "accepted",
+              executionOutcome: "not_started",
+              mayHaveMutated: false,
+              code: "NOT_DISPATCHED",
+            },
+          },
+          execution: {
+            state: "failed",
+            code: "NOT_DISPATCHED",
+            executionOutcome: "not_started",
+            userScriptSubmitted: false,
+            mayHaveMutated: false,
+            preflightCompleted: true,
+            source: "durable-preflight-evidence",
+          },
+        },
+        owner,
+        requestId,
+      );
+    },
+  };
+  const [report] = await runScenarios(
+    losing,
+    [parameterScenario(0)],
+    directory,
+    1,
+  );
+  assert.ok(report);
+  assert.equal(report.cleanup, "deferred");
+  assert.equal(report.cleanupHold, undefined);
+  assert.equal(report.requests.at(-1)?.result, undefined);
+  const previousExecutions = model.executions;
+  const restored = await resumeCleanup(
+    losing,
+    path.join(report.directory, "report.json"),
+  );
+  assert.equal(restored.cleanup, "complete");
+  assert.equal(restored.status, "failed");
+  assert.equal(model.executions, previousExecutions + 2);
+  assert.deepEqual(await remaining(model), { active: null, documents: [] });
+});
+
 test("lost response remains unknown, persists original request and never dispatches cleanup or replay", async (t) => {
   const { directory, model, backend } = await fixture(t);
   let requests = 0;

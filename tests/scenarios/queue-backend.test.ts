@@ -87,6 +87,78 @@ test("queue decoding preserves affirmative SDK evidence and exact original ident
     );
 });
 
+test("durable preflight no-dispatch proof settles only its exact accepted failed job", () => {
+  const original = {
+    job: {
+      ...job,
+      id: "job-1",
+      state: "failed",
+      code: "NOT_DISPATCHED",
+      operationResult: {
+        version: 1,
+        requestId: "original",
+        jobId: "job-1",
+        acceptance: "accepted",
+        executionOutcome: "not_started",
+        mayHaveMutated: false,
+        code: "NOT_DISPATCHED",
+      },
+    },
+    execution: {
+      state: "failed",
+      code: "NOT_DISPATCHED",
+      executionOutcome: "not_started",
+      userScriptSubmitted: false,
+      mayHaveMutated: false,
+      preflightCompleted: true,
+      source: "durable-preflight-evidence",
+    },
+  };
+  const result = queueExecution(original, owner, "original");
+  assert.equal(result.state, "failed");
+  assert.equal(result.sdkSettled, true);
+  assert.equal(result.mayHaveMutated, false);
+  for (const [section, key, value] of [
+    ["execution", "sdkSettled", false],
+    ["execution", "source", undefined],
+    ["execution", "preflightCompleted", false],
+    ["execution", "userScriptSubmitted", true],
+    ["execution", "mayHaveMutated", true],
+    ["execution", "executionOutcome", "unknown"],
+    ["execution", "code", "OTHER"],
+    ["execution", "state", "unknown"],
+    ["job", "state", "running"],
+    ["job", "code", "OTHER"],
+    ["job", "id", ""],
+    ["job", "dispatch", { rpcCount: 1 }],
+    ["job", "physicalTurns", 1],
+    ["operationResult", "jobId", "foreign"],
+    ["operationResult", "requestId", "foreign"],
+    ["operationResult", "acceptance", "rejected"],
+    ["operationResult", "version", 2],
+    ["operationResult", "executionOutcome", "unknown"],
+    ["operationResult", "mayHaveMutated", true],
+    ["operationResult", "code", "OTHER"],
+  ] as const) {
+    const changed =
+      section === "operationResult"
+        ? {
+            ...original,
+            job: {
+              ...original.job,
+              operationResult: {
+                ...original.job.operationResult,
+                [key]: value,
+              },
+            },
+          }
+        : { ...original, [section]: { ...original[section], [key]: value } };
+    const refused = queueExecution(changed, owner, "original");
+    assert.equal(refused.state, "unknown", `${section}.${key}`);
+    assert.equal(refused.sdkSettled, false, `${section}.${key}`);
+  }
+});
+
 test("legacy child receipt lookup uses the selected scenario artifact root", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "legacy-queue-receipt-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

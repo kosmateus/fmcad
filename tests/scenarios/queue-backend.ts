@@ -547,7 +547,39 @@ export function queueExecution(
     raw !== null && typeof raw === "object" && !Array.isArray(raw)
       ? record(raw)
       : {};
-  const sdkSettled = execution["sdkSettled"] === true;
+  const operation = job["operationResult"];
+  const receipt =
+    operation !== null &&
+    typeof operation === "object" &&
+    !Array.isArray(operation)
+      ? record(operation)
+      : {};
+  // Older brokers omit sdkSettled on this authoritative preflight-only outcome.
+  // A failed state alone is insufficient: require both bound result envelopes,
+  // affirmative no-submission evidence and no contradictory dispatch evidence.
+  const notDispatched =
+    execution["sdkSettled"] === undefined &&
+    typeof job["id"] === "string" &&
+    job["id"].length > 0 &&
+    job["state"] === "failed" &&
+    job["code"] === "NOT_DISPATCHED" &&
+    job["dispatch"] == null &&
+    (job["physicalTurns"] === undefined || job["physicalTurns"] === 0) &&
+    execution["state"] === "failed" &&
+    execution["code"] === "NOT_DISPATCHED" &&
+    execution["executionOutcome"] === "not_started" &&
+    execution["userScriptSubmitted"] === false &&
+    execution["mayHaveMutated"] === false &&
+    execution["preflightCompleted"] === true &&
+    execution["source"] === "durable-preflight-evidence" &&
+    receipt["version"] === 1 &&
+    receipt["jobId"] === job["id"] &&
+    receipt["requestId"] === requestId &&
+    receipt["acceptance"] === "accepted" &&
+    receipt["executionOutcome"] === "not_started" &&
+    receipt["mayHaveMutated"] === false &&
+    receipt["code"] === "NOT_DISPATCHED";
+  const sdkSettled = execution["sdkSettled"] === true || notDispatched;
   const state =
     sdkSettled && job["state"] === "succeeded"
       ? "succeeded"
