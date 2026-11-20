@@ -24,14 +24,14 @@ import {
 } from "./native-transport-support";
 
 export const nativeBackendAdapterCapability = "native-addin-adapter-soak";
-const snapshotScript = `import adsk.core, inspect, json, sys
+export const snapshotScript = `import adsk.core, inspect, json, sys
 def run(_context: str):
     app = adsk.core.Application.get()
     frame_depth = len(inspect.stack())
     documents = sorted([{"creationId": d.creationId, "name": d.name,
         "isSaved": d.isSaved, "isModified": d.isModified,
         "fileId": d.dataFile.id if d.dataFile else None} for d in app.documents],
-        key=lambda d: d["creationId"])
+        key=lambda d: str(d["creationId"]))
     print(json.dumps({"documents": documents,
         "activeCreationId": app.activeDocument.creationId if app.activeDocument else None,
         "stdoutType": type(sys.stdout).__name__, "frameDepth": frame_depth}))

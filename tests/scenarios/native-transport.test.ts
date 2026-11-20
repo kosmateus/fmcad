@@ -11,7 +11,11 @@ import { createRequire } from "node:module";
 import type { ScenarioBackend } from "./contracts";
 import { record, text } from "./contracts";
 import { ScenarioSession, runScenarios } from "./runner";
-import { nativeBackendAdapterScenarios } from "./native-backend-adapter-cases";
+import {
+  nativeBackendAdapterScenarios,
+  snapshotScript,
+} from "./native-backend-adapter-cases";
+import { adapterReadonlyFence } from "./adapter-readonly-fence";
 import {
   nativeMcpStdioArguments,
   nativeMcpStdioClient,
@@ -31,6 +35,34 @@ import type { Job, Result } from "../live-recovery-ports";
 import type { ObjectValue } from "../../packages/node-adapters/src/fusion-transport/contracts";
 
 const root = path.resolve(__dirname, "../../..");
+
+test("actual adapter before/after snapshot passes the production Python admission checker", async () => {
+  const load = createRequire(path.join(root, "package.json"));
+  const { createPythonChecker } = load(
+    "./packages/node-adapters/dist/python/checker",
+  ) as typeof import("../../packages/node-adapters/src/python/checker");
+  const { preparePythonArtifact } = load(
+    "./packages/node-adapters/dist/python/artifact",
+  ) as typeof import("../../packages/node-adapters/src/python/artifact");
+  const typingRoot = path.join(root, "dist/runtime/python/typing");
+  const checker = createPythonChecker({
+    typingRoot,
+    definitionsRoot: typingRoot,
+    pythonPlatform: "Windows",
+  });
+  const artifact = preparePythonArtifact([
+    {
+      id: "adapter-snapshot",
+      filename: "adapter-snapshot.py",
+      role: "user",
+      source: adapterReadonlyFence(snapshotScript) + '\nrun("")\n',
+    },
+  ]);
+  const result = await checker.check({ artifact, context: { kind: "run" } });
+  assert.equal(result.status, "passed", JSON.stringify(result));
+  assert.deepEqual(result.diagnostics, []);
+  assert.equal(result.provenance.checkerVersion, "1.40.2");
+});
 
 function startMcpChild(
   args: string[],
