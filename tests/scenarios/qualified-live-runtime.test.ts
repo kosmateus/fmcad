@@ -198,6 +198,114 @@ test("Fusion queue backend binds its client and identity to the qualified instal
   assert.equal(fs.existsSync(project.queueClientMarker), false);
 });
 
+test("Fusion lookup recovers a lost report receipt through authenticated request lookup without dispatch", async (t) => {
+  const runtime = runtimeFixture(t);
+  const project = projectFixture(t);
+  setRuntimeRoot(t, runtime.root);
+  const artifacts = directory(t, "fmcad-missing-receipt-");
+  const previous = process.env["FMCAD_LIVE_SCENARIO_ARTIFACT_ROOT"];
+  process.env["FMCAD_LIVE_SCENARIO_ARTIFACT_ROOT"] = artifacts;
+  t.after(() => {
+    if (previous === undefined)
+      delete process.env["FMCAD_LIVE_SCENARIO_ARTIFACT_ROOT"];
+    else process.env["FMCAD_LIVE_SCENARIO_ARTIFACT_ROOT"] = previous;
+  });
+  const runId = randomUUID();
+  const owner = {
+    runId,
+    scenarioId: "native-feature-modes-1",
+    clientId: `scenario:${runId}:native-feature-modes-1`,
+  };
+  const requestId = owner.clientId + ":493";
+  const reportDirectory = path.join(artifacts, runId, owner.scenarioId);
+  fs.mkdirSync(reportDirectory, { recursive: true });
+  const reportFile = path.join(reportDirectory, "report.json");
+  const reportBytes = JSON.stringify({
+    owner,
+    requests: [{ requestId, phase: "cad" }],
+  });
+  fs.writeFileSync(reportFile, reportBytes);
+  const responseFile = path.join(artifacts, "response.json");
+  const readMarker = path.join(artifacts, "public-result-read");
+  const original = {
+    job: {
+      id: "original-job",
+      clientId: owner.clientId,
+      requestId,
+      state: "failed",
+    },
+    execution: { sdkSettled: true, mayHaveMutated: false },
+  };
+  fs.writeFileSync(responseFile, JSON.stringify(original));
+  fs.writeFileSync(
+    path.join(runtime.dist, "src/queue-client.js"),
+    `
+const fs = require("node:fs"), assert = require("node:assert/strict");
+module.exports.QueueClient = class {
+  constructor(id, options) {
+    assert.equal(id, ${JSON.stringify(owner.clientId)});
+    assert.equal(options.existingCredentialsOnly, true);
+  }
+  async register(options) { assert.equal(options.autoStart, false); }
+  async findRequest(id) {
+    assert.equal(id, ${JSON.stringify(requestId)});
+    return JSON.parse(fs.readFileSync(${JSON.stringify(responseFile)}, "utf8"));
+  }
+  dispose() {}
+};
+`,
+  );
+  fs.writeFileSync(
+    path.join(project.root, "tests/helpers/live-broker.js"),
+    `
+const fs = require("node:fs"), assert = require("node:assert/strict");
+exports.readQueueResult = async options => {
+  assert.equal(options.clientId, ${JSON.stringify(owner.clientId)});
+  assert.equal(options.jobId, "original-job");
+  assert.equal(options.cliPath, ${JSON.stringify(path.join(runtime.dist, "bin/fmcad.js"))});
+  fs.appendFileSync(${JSON.stringify(readMarker)}, "read\\n");
+  return JSON.parse(fs.readFileSync(${JSON.stringify(responseFile)}, "utf8"));
+};
+`,
+  );
+  const backend = () =>
+    new QueueScenarioBackend(
+      "fusion",
+      "addin",
+      new Set(),
+      project.root,
+      {},
+      (file) => file,
+    );
+  const first = backend();
+  assert.equal((await first.lookup(owner, requestId))?.state, "failed");
+  first.close();
+  assert.equal(fs.readFileSync(readMarker, "utf8"), "read\n");
+  assert.equal(fs.readFileSync(reportFile, "utf8"), reportBytes);
+  for (const mismatch of [
+    { clientId: "foreign" },
+    { requestId: "foreign" },
+    { id: "" },
+  ]) {
+    fs.writeFileSync(
+      responseFile,
+      JSON.stringify({ ...original, job: { ...original.job, ...mismatch } }),
+    );
+    const rejected = backend();
+    await assert.rejects(
+      rejected.lookup(owner, requestId),
+      /Foreign original request lookup/,
+    );
+    rejected.close();
+  }
+  assert.equal(fs.readFileSync(readMarker, "utf8"), "read\n");
+  fs.writeFileSync(responseFile, "null");
+  const absent = backend();
+  assert.equal(await absent.lookup(owner, requestId), null);
+  absent.close();
+  assert.equal(fs.readFileSync(reportFile, "utf8"), reportBytes);
+});
+
 test("simulator queue provenance cannot discover a peer from another endpoint", (t) => {
   const project = projectFixture(t);
   const simulator = (url: string) =>

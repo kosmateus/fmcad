@@ -283,10 +283,22 @@ export class QueueScenarioBackend implements ScenarioBackend {
   async lookup(owner: Owner, requestId: string): Promise<Execution | null> {
     if (this.mode === "fusion") {
       const key = requestKey(owner, requestId);
-      const jobId =
+      let jobId =
         this.#jobIds.get(key) ??
         scenarioQueueJobId(this.#scenarioRoot, owner, requestId);
-      if (!jobId) return null;
+      if (!jobId) {
+        const found = await this.findOriginalRequest(owner, requestId);
+        if (found === null || !record(found)["job"]) return null;
+        const job = record(record(found)["job"]);
+        if (
+          job["clientId"] !== owner.clientId ||
+          job["requestId"] !== requestId ||
+          typeof job["id"] !== "string" ||
+          !job["id"]
+        )
+          throw new Error("Foreign original request lookup");
+        jobId = job["id"];
+      }
       this.#jobIds.set(key, jobId);
       const original = await this.#queueExec!.readQueueResult({
         cliPath: this.#cliPath!,
@@ -301,6 +313,16 @@ export class QueueScenarioBackend implements ScenarioBackend {
         );
       return queueExecution(original, owner, requestId);
     }
+    const original = await this.findOriginalRequest(owner, requestId);
+    if (original === null) return null;
+    const value = record(original);
+    if (!value["job"]) return null;
+    return queueExecution(value, owner, requestId);
+  }
+  private async findOriginalRequest(
+    owner: Owner,
+    requestId: string,
+  ): Promise<unknown> {
     let client = this.#clients.get(owner.clientId);
     if (!client) {
       client = new this.#module.QueueClient(owner.clientId, {
@@ -310,11 +332,7 @@ export class QueueScenarioBackend implements ScenarioBackend {
       this.#clients.set(owner.clientId, client);
       await client.register({ autoStart: false });
     }
-    const original = await client.findRequest(requestId);
-    if (original === null) return null;
-    const value = record(original);
-    if (!value["job"]) return null;
-    return queueExecution(value, owner, requestId);
+    return client.findRequest(requestId);
   }
   close(): void {
     for (const client of this.#clients.values()) client.dispose();
@@ -462,7 +480,9 @@ export function scenarioQueueJobId(
   if (matches.length === 0) return undefined;
   if (matches.length !== 1)
     throw new Error("Duplicate original request report");
-  const result = record(record(matches[0])["result"]),
+  const rawResult = record(matches[0])["result"];
+  if (rawResult === undefined || rawResult === null) return undefined;
+  const result = record(rawResult),
     receipt = record(result["brokerReceipt"]);
   return queueJobIdFromReceipt(receipt, owner, requestId);
 }
