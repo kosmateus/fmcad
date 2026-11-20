@@ -66,6 +66,7 @@ export type OwnedUnsavedFixtureProof =
       /** Visible peer only: neither a live target nor cleanup authority. */
       readonly state: "retained";
       readonly supplementalClose?: never;
+      readonly closeReceipt?: never;
       readonly terminalReceipt: {
         readonly requestId: string;
         readonly jobId: string;
@@ -75,6 +76,7 @@ export type OwnedUnsavedFixtureProof =
       readonly document: Document;
       readonly state: FixtureState;
       readonly supplementalClose?: SupplementalCloseReceipt;
+      readonly closeReceipt?: SupplementalCloseReceipt;
       /** Admission frontier only; never authorizes a close or a mutation. */
       readonly lastSettledReceipt?: {
         readonly requestId: string;
@@ -87,6 +89,7 @@ export type OwnedUnsavedFixtureProof =
       readonly savedDocument: Document & { readonly file: SavedFile };
       readonly savedState: FixtureState;
       readonly supplementalClose?: never;
+      readonly closeReceipt?: never;
     };
 
 export function currentProcessIdentity(): ProcessIdentity {
@@ -1035,9 +1038,14 @@ function verifiedFixture(
             jobId: text(record(lastReceipt)["jobId"]),
           })
         : undefined;
+    const closeReceipt =
+      state === "closed"
+        ? regularCloseReceipt(cleanupEntries[0]!, document)
+        : undefined;
     return Object.freeze({
       document: Object.freeze(document),
       state,
+      ...(closeReceipt ? { closeReceipt } : {}),
       ...(lastSettledReceipt ? { lastSettledReceipt } : {}),
     });
   } catch {
@@ -1135,6 +1143,56 @@ function savedFixtureProof(
     savedDocument,
     savedState,
   });
+}
+
+function regularCloseReceipt(
+  entry: Record<string, unknown>,
+  document: Document,
+): SupplementalCloseReceipt | undefined {
+  try {
+    const result = record(entry["result"]),
+      receipt = record(result["brokerReceipt"]);
+    const original = record(entry["original"]),
+      job = record(original["job"]);
+    assert.equal(job["id"], receipt["jobId"]);
+    assert.equal(job["requestId"], receipt["requestId"]);
+    assert.equal(job["clientId"], receipt["clientId"]);
+    assert.equal(job["state"], "succeeded");
+    assert.equal(record(original["execution"])["sdkSettled"], true);
+    assert.equal(original["stdout"], result["stdout"]);
+    const startedAt = job["startedAt"],
+      finishedAt = job["finishedAt"];
+    assert.ok(typeof startedAt === "number" && Number.isFinite(startedAt));
+    assert.ok(
+      typeof finishedAt === "number" &&
+        Number.isFinite(finishedAt) &&
+        finishedAt >= startedAt,
+    );
+    const lines = text(result["stdout"])
+      .split(/\r?\n/u)
+      .filter((line) => line.startsWith(marker));
+    assert.equal(lines.length, 1);
+    const value = record(JSON.parse(lines[0]!.slice(marker.length)));
+    assert.equal(value["alreadyAbsent"] === true, false);
+    const inventoryFence = record(value["inventoryFence"]);
+    assert.equal(inventoryFence["version"], 1);
+    assertFencedClosedDocumentInventory(
+      inventoryFence["before"],
+      inventoryFence["after"],
+      document,
+      "Regular close changed another document",
+    );
+    return Object.freeze({
+      requestId: text(receipt["requestId"]),
+      clientId: text(receipt["clientId"]),
+      jobId: text(receipt["jobId"]),
+      startedAt,
+      finishedAt,
+      inventoryFence,
+    });
+  } catch {
+    return undefined;
+  }
 }
 
 function exactClosedFixtureReceipt(

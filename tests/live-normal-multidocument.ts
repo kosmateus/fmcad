@@ -91,6 +91,21 @@ export function normalInventoryExpression(group: boolean): string {
   return `sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified${fileId}) for d in a.documents],key=lambda d:${key})`;
 }
 
+export function normalCloseSource(
+  document: OwnedDocument,
+  guardSource: string,
+): string {
+  const inventory = normalInventoryExpression(false)
+    .replaceAll("dict(id=", "dict(creationId=")
+    .replaceAll("d['id']", "d['creationId']");
+  return `${guardSource}
+before=${inventory}
+assert d.close(False)
+after=${inventory}
+assert after == [row for row in before if row['creationId'] != ${JSON.stringify(document.creationId)}], 'Close changed another document'
+print('FMCAD_RESULT '+json.dumps(dict(closed=True,creationId=${JSON.stringify(document.creationId)},inventoryFence=dict(version=1,before=before,after=after))))`;
+}
+
 /** Preserve user rows; only canonical, time-bound peer closes can remove a baseline row. */
 export function assertNormalFinalInventory(
   beforeValue: unknown,
@@ -215,8 +230,8 @@ export function assertNormalFinalInventory(
       "closed",
       "Baseline document disappeared without a canonical close",
     );
-    const close = proof?.supplementalClose;
-    assert.ok(proof && close, "Missing time-bound supplemental close proof");
+    const close = proof?.supplementalClose ?? proof?.closeReceipt;
+    assert.ok(proof && close, "Missing time-bound close proof");
     assert.ok(
       close.startedAt >= window.baselineFinishedAt &&
         close.finishedAt <= window.restoreStartedAt &&
@@ -844,9 +859,7 @@ print('FMCAD_RESULT '+json.dumps(dict(creationId=d.creationId,count=design.userP
           "close",
           group
             ? `${guard(document)}\n${ownedCleanupSource(document, report.before.active, "FMCAD_RESULT ")}`
-            : `${guard(document)}
-assert d.close(False)
-print('FMCAD_RESULT '+json.dumps(dict(closed=True,creationId=${JSON.stringify(document.creationId)})))`,
+            : normalCloseSource(document, guard(document)),
           document,
         ),
       );

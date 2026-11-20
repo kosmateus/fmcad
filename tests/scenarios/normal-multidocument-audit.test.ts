@@ -4,6 +4,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import {
   assertNormalFinalInventory,
+  normalCloseSource,
   normalInventoryExpression,
 } from "../live-normal-multidocument";
 import type { OwnedUnsavedFixtureProof } from "./fixture-provenance";
@@ -95,6 +96,42 @@ test("normal final audit keeps unchanged inventory valid without any peer proofs
     new Map(),
     f.window,
   );
+});
+
+test("regular close evidence preserves time, identity and inventory guards", () => {
+  for (const mutation of ["none", "missing", "stale", "foreign"] as const) {
+    const f = auditFixture(),
+      proof = f.proofs.get(peer.id)!;
+    assert.equal(proof.state, "closed");
+    const close = proof.supplementalClose!;
+    f.proofs.set(peer.id, {
+      document: proof.document,
+      state: "closed",
+      ...(mutation === "missing"
+        ? {}
+        : {
+            closeReceipt: {
+              ...close,
+              startedAt: mutation === "stale" ? 99 : close.startedAt,
+              inventoryFence:
+                mutation === "foreign"
+                  ? { ...close.inventoryFence, after: [] }
+                  : close.inventoryFence,
+            },
+          }),
+    });
+    const audit = () =>
+      assertNormalFinalInventory(
+        f.before,
+        f.after,
+        [own],
+        [f.close],
+        f.proofs,
+        f.window,
+      );
+    if (mutation === "none") assert.doesNotThrow(audit);
+    else assert.throws(audit);
+  }
 });
 
 for (const state of ["open", "retained"] as const)
@@ -438,6 +475,33 @@ test("actual normal snapshot source passes pinned production admission with null
     definitionsRoot: typingRoot,
     pythonPlatform: "Windows",
   });
+  const closeSource = normalCloseSource(
+    own,
+    `a=adsk.core.Application.get()
+owned=[d for d in a.documents if d.creationId=="own"]
+assert len(owned)==1 and owned[0].name=="Own normal document" and not owned[0].isSaved
+d=owned[0]`,
+  );
+  const closeArtifact = preparePythonArtifact([
+    {
+      id: "normal-close",
+      filename: "close.py",
+      role: "user",
+      source: `import adsk.core, json
+def run(context: str):
+${closeSource
+  .split("\n")
+  .map((line) => "    " + line)
+  .join("\n")}
+run("")
+`,
+    },
+  ]);
+  const closeCheck = await checker.check({
+    artifact: closeArtifact,
+    context: { kind: "run" },
+  });
+  assert.equal(closeCheck.status, "passed", JSON.stringify(closeCheck));
   for (const group of [false, true]) {
     const source = `import adsk.core, adsk.fusion, json, time
 from typing import cast

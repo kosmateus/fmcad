@@ -1000,6 +1000,112 @@ test("fenced inventory rejects unproven documents and baseline file-provenance d
   );
 });
 
+test("regular cleanup retains its authenticated time-bound inventory fence", (t) => {
+  const fixture = reportFixture(t);
+  const requestId = fixture.identity.clientId + ":1",
+    jobId = randomUUID();
+  const before = [
+    { ...fixture.document, saved: false, modified: false, fileId: null },
+  ];
+  const stdout =
+    marker +
+    JSON.stringify({
+      creationId: fixture.document.creationId,
+      closed: true,
+      inventoryFence: { version: 1, before, after: [] },
+    });
+  const result = {
+    requestId,
+    state: "succeeded",
+    sdkSettled: true,
+    mayHaveMutated: true,
+    stdout,
+    brokerReceipt: {
+      requestId,
+      clientId: fixture.identity.clientId,
+      jobId,
+      state: "succeeded",
+    },
+  };
+  (fixture.report["requests"] as Record<string, unknown>[]).push({
+    requestId,
+    phase: "cleanup",
+    intent: { kind: "script" },
+    result,
+    original: {
+      job: {
+        id: jobId,
+        requestId,
+        clientId: fixture.identity.clientId,
+        state: "succeeded",
+        startedAt: 200,
+        finishedAt: 300,
+      },
+      stdout,
+      execution: { sdkSettled: true },
+    },
+  });
+  fixture.report["cleanup"] = "complete";
+  fs.writeFileSync(fixture.reportFile, JSON.stringify(fixture.report));
+  const proof = discoverOwnedUnsavedFixtureProofs(fixture.root, backend).get(
+    fixture.document.creationId,
+  );
+  assert.equal(proof?.state, "closed");
+  assert.ok(
+    proof && "closeReceipt" in proof,
+    "Regular close loses its time-bound inventory fence",
+  );
+  assert.deepEqual(proof.closeReceipt, {
+    requestId,
+    clientId: fixture.identity.clientId,
+    jobId,
+    startedAt: 200,
+    finishedAt: 300,
+    inventoryFence: { version: 1, before, after: [] },
+  });
+  const entries = fixture.report["requests"] as Record<string, unknown>[];
+  const valid = JSON.stringify(entries.at(-1));
+  for (const mutation of [
+    "client",
+    "job",
+    "time",
+    "settlement",
+    "stdout",
+    "foreign",
+    "missing-fence",
+  ] as const) {
+    const changed = JSON.parse(valid!) as {
+      result: { stdout: string };
+      original: {
+        job: { clientId: string; id: string; finishedAt: number };
+        execution: { sdkSettled: boolean };
+        stdout: string;
+      };
+    };
+    if (mutation === "client") changed["original"].job.clientId = "foreign";
+    if (mutation === "job") changed["original"].job.id = "foreign";
+    if (mutation === "time") changed["original"].job.finishedAt = 199;
+    if (mutation === "settlement")
+      changed["original"].execution.sdkSettled = false;
+    if (mutation === "stdout") changed["original"].stdout = "different";
+    if (mutation === "foreign" || mutation === "missing-fence") {
+      const payload = JSON.parse(changed["result"].stdout.slice(marker.length));
+      if (mutation === "foreign")
+        payload.inventoryFence.after = [{ creationId: "foreign" }];
+      else delete payload.inventoryFence;
+      changed["result"].stdout = changed["original"].stdout =
+        marker + JSON.stringify(payload);
+    }
+    entries[entries.length - 1] = changed;
+    fs.writeFileSync(fixture.reportFile, JSON.stringify(fixture.report));
+    const invalid = discoverOwnedUnsavedFixtureProofs(
+      fixture.root,
+      backend,
+    ).get(fixture.document.creationId);
+    assert.equal(invalid?.closeReceipt, undefined, mutation);
+  }
+});
+
 test("a peer may disappear only after its exact settled close receipt", (t) => {
   const fixture = reportFixture(t),
     requestId = fixture.identity.clientId + ":1",
