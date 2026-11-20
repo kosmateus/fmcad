@@ -8133,6 +8133,50 @@
             "removed": [],
             "addedIds": []
           }
+        },
+        {
+          "commit": "76540cc139fbd0a208a10ad35dec61c6ce0f10f4",
+          "predecessor": "30be2297555c517c295378d2dc3c04c25aba436d",
+          "introduced": false,
+          "comparison": {
+            "before": {
+              "source": "tests/live-recovery-ports.ts",
+              "sha256": "c8b17b2ab4c4541f555677bb4757c030cf08b3808a8781acbe1ca909b3720bd9",
+              "count": 23
+            },
+            "after": {
+              "source": "tests/live-recovery-ports.ts",
+              "sha256": "cd36f28203094a98b771111e614e7873766e5eeb3a3b6f9ab9206fea730f2512",
+              "count": 23
+            },
+            "retainedIds": [
+              "eeaf1df12460ae2bf403-1",
+              "e2d94a0a4bfa23aeb3de-1",
+              "dd077fc11d730d1e3036-1",
+              "374e93893e58ec09d534-1",
+              "374e93893e58ec09d534-2",
+              "7a8162bcf1cd2e9c71ab-1",
+              "fbb11bf45ddf666e3db0-1",
+              "374e93893e58ec09d534-3",
+              "f8e7e8fb03e00798293e-1",
+              "a79cee6e22f1c061daa2-1",
+              "374e93893e58ec09d534-4",
+              "b978b83f0c87b16296eb-1",
+              "1324aa03264fb47f4bc5-1",
+              "99876222da2bfc272781-1",
+              "ee789a9848c0e29a5c9d-1",
+              "374e93893e58ec09d534-5",
+              "8ce0e113fc151e611c75-1",
+              "80a3aebd4a06755f4354-1",
+              "2d8b4fd5cbd4c1709606-1",
+              "9878fe7203b03be028a8-1",
+              "b973b44b858d57cf9236-1",
+              "6625105e34308deefece-1",
+              "311fd7e189a89d819e08-1"
+            ],
+            "removed": [],
+            "addedIds": []
+          }
         }
       ]
     },
@@ -8197,7 +8241,77 @@
       "workingTreeReview": {
         "reason": "All retained assertion IDs and expressions are unchanged; exact original request/job/client/SDK-settlement binding and durable pre-admission intent now cover every phase.",
         "historicalAfterSha256": "5a14248ca77e41471195c0a31abb04d15e675586a7541a8ef2304ec4662b48d7"
-      }
+      },
+      "transitions": [
+        {
+          "commit": "76540cc139fbd0a208a10ad35dec61c6ce0f10f4",
+          "predecessor": "30be2297555c517c295378d2dc3c04c25aba436d",
+          "introduced": false,
+          "comparison": {
+            "before": {
+              "source": "tests/live-response-recovery.ts",
+              "sha256": "12bf7450f297042afcef11f0d82e2e8ee987335097878c2ca852a66f3b0c132c",
+              "count": 36
+            },
+            "after": {
+              "source": "tests/live-response-recovery.ts",
+              "sha256": "484579264f3b8b56363c380216da51800cbc4329ef94ffec104841daac7fa5f7",
+              "count": 34
+            },
+            "retainedIds": [
+              "e5cf23a5cc4f449925a4-1",
+              "c57fb11e2d9a4c2f8d6d-1",
+              "b4a68947697a6a268a65-1",
+              "f08ceed0bcea58c33851-1",
+              "8a1ac10539b3827592fb-1",
+              "8a7dc0c59b7ea681a470-1",
+              "9dd958b800d1f3252fbd-1",
+              "657e601da1120512c27e-1",
+              "147450512f744990098f-1",
+              "849e23022697108c7012-1",
+              "8d8b42a9983f80d0ce44-1",
+              "1faf87391ea42c1bb1dc-1",
+              "560a9cfea44a6a7b1009-1",
+              "62fbae66ab80ef8e2b79-1",
+              "0b73e31c1044e9849249-1",
+              "5fab71e7da67d085ff88-1",
+              "13a5aacc0587493e514e-1",
+              "c3faa95406473eebec99-1",
+              "02cf7a2b235ed94b0b2e-1",
+              "121e8ca253f8f9f119c5-1",
+              "38d0a3f04a057a84bd17-1",
+              "474e7260f747533e9d5c-1",
+              "4c18da2bcc9cc3f13c4f-1",
+              "ec4c21812e035a5bb7a1-1",
+              "661e0c7460683afeab12-1",
+              "ee38ace9b5ad24f24aa0-1",
+              "0b73e31c1044e9849249-2",
+              "a3a4db805be6be29465e-1",
+              "5513af1f1fe30657c282-1",
+              "b86c1d84079778511ed6-1",
+              "4a5aff334d366beef15d-1",
+              "17b724937bbbf556bb05-1",
+              "425655f27b02bb8f7497-1",
+              "2789c84e11e1313291ad-1"
+            ],
+            "removed": [
+              {
+                "id": "0e80c211271774ad3e28-1",
+                "line": 125,
+                "kind": "assertion",
+                "expression": "assert.equal(typeof job[\"state\"], \"string\")"
+              },
+              {
+                "id": "5eabb4d69f85dbcbfd56-1",
+                "line": 143,
+                "kind": "helper",
+                "expression": "observe(mutationJob.id)"
+              }
+            ],
+            "addedIds": []
+          }
+        }
+      ]
     },
     {
       "source": "tests/live-rpc-recovery.js",

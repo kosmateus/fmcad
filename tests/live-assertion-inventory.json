@@ -18471,221 +18471,209 @@
     },
     {
       "source": "tests/live-response-recovery.ts",
-      "sha256": "12bf7450f297042afcef11f0d82e2e8ee987335097878c2ca852a66f3b0c132c",
+      "sha256": "484579264f3b8b56363c380216da51800cbc4329ef94ffec104841daac7fa5f7",
       "assertions": [
         {
           "id": "e5cf23a5cc4f449925a4-1",
-          "line": 70,
+          "line": 71,
           "kind": "assertion",
           "expression": "assert.ok(process.argv.includes(\"--run\"), \"Explicit --run required\")"
         },
         {
-          "id": "0e80c211271774ad3e28-1",
-          "line": 125,
-          "kind": "assertion",
-          "expression": "assert.equal(typeof job[\"state\"], \"string\")"
-        },
-        {
           "id": "c57fb11e2d9a4c2f8d6d-1",
-          "line": 138,
+          "line": 128,
           "kind": "assertion",
           "expression": "assert.equal(typeof admitted[\"id\"], \"string\")"
         },
         {
           "id": "b4a68947697a6a268a65-1",
-          "line": 139,
+          "line": 129,
           "kind": "assertion",
           "expression": "assert.equal(typeof admitted[\"requestId\"], \"string\")"
         },
         {
-          "id": "5eabb4d69f85dbcbfd56-1",
-          "line": 143,
-          "kind": "helper",
-          "expression": "observe(mutationJob.id)"
-        },
-        {
           "id": "f08ceed0bcea58c33851-1",
-          "line": 155,
+          "line": 149,
           "kind": "assertion",
           "expression": "assert.equal(\n        settled.job.state,\n        \"succeeded\",\n        \"Fault requires proven native success\",\n      )"
         },
         {
           "id": "8a1ac10539b3827592fb-1",
-          "line": 160,
+          "line": 154,
           "kind": "assertion",
           "expression": "assert.equal(\n        settled.job.dispatch?.rpcCount,\n        1,\n        \"Synthetic mutation must have exactly one native SDK dispatch\",\n      )"
         },
         {
           "id": "8a7dc0c59b7ea681a470-1",
-          "line": 250,
+          "line": 244,
           "kind": "assertion",
           "expression": "assert.ok(mutationJob)"
         },
         {
           "id": "9dd958b800d1f3252fbd-1",
-          "line": 251,
+          "line": 245,
           "kind": "assertion",
           "expression": "assert.equal(\n        result.job.id,\n        mutationJob.id,\n        \"Recovery must return the original admitted job\",\n      )"
         },
         {
           "id": "657e601da1120512c27e-1",
-          "line": 256,
+          "line": 250,
           "kind": "assertion",
           "expression": "assert.equal(\n        result.job.requestId,\n        mutationJob.requestId,\n        \"Recovery must retain the stable request identity\",\n      )"
         },
         {
           "id": "147450512f744990098f-1",
-          "line": 261,
+          "line": 255,
           "kind": "assertion",
           "expression": "assert.equal(result.job.dispatch?.rpcCount, 1)"
         },
         {
           "id": "849e23022697108c7012-1",
-          "line": 265,
+          "line": 259,
           "kind": "assertion",
           "expression": "assert.equal(result.job.state, \"succeeded\", JSON.stringify(result))"
         },
         {
           "id": "8d8b42a9983f80d0ce44-1",
-          "line": 269,
+          "line": 263,
           "kind": "assertion",
           "expression": "assert.ok(nativeOutput, \"Missing native test output\")"
         },
         {
           "id": "1faf87391ea42c1bb1dc-1",
-          "line": 273,
+          "line": 267,
           "kind": "helper",
           "expression": "script(\n      'a=adsk.core.Application.get()\\nprint(json.dumps(dict(documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d[\"id\"]))))',\n    )"
         },
         {
           "id": "560a9cfea44a6a7b1009-1",
-          "line": 279,
+          "line": 273,
           "kind": "assertion",
           "expression": "assert.equal(\n      report.broker.buildHash,\n      buildHash(),\n      \"Coordinate matching installed runtime before LIVE; no reload attempted\",\n    )"
         },
         {
           "id": "62fbae66ab80ef8e2b79-1",
-          "line": 284,
+          "line": 278,
           "kind": "assertion",
           "expression": "assert.equal(\n      report.broker.admissionScope,\n      \"normal-multidocument\",\n      \"Normal owned-document lifecycle is required\",\n    )"
         },
         {
           "id": "0b73e31c1044e9849249-1",
-          "line": 290,
+          "line": 284,
           "kind": "helper",
           "expression": "state()"
         },
         {
           "id": "5fab71e7da67d085ff88-1",
-          "line": 292,
+          "line": 286,
           "kind": "helper",
           "expression": "script(`a=adsk.core.Application.get()\nassert not any(d.name == ${JSON.stringify(name)} for d in a.documents)\nprevious=a.activeDocument.creationId if a.activeDocument else None\nd=a.documents.add(cast(adsk.core.DocumentTypes, adsk.core.DocumentTypes.FusionDesignDocumentType))\nd.name=${JSON.stringify(name)}\nprint(json.dumps(dict(name=d.name,creationId=d.creationId,previous=previous)))`)"
         },
         {
           "id": "13a5aacc0587493e514e-1",
-          "line": 292,
+          "line": 286,
           "kind": "embedded-python",
           "expression": "a=adsk.core.Application.get()\nassert not any(d.name == "
         },
         {
           "id": "c3faa95406473eebec99-1",
-          "line": 301,
+          "line": 295,
           "kind": "embedded-python",
           "expression": "]\nassert len(owned)==1 and owned[0].name=="
         },
         {
           "id": "02cf7a2b235ed94b0b2e-1",
-          "line": 302,
+          "line": 296,
           "kind": "embedded-python",
           "expression": " and not owned[0].isSaved\nd=owned[0]\ndesign=cast(adsk.fusion.Design, d.products.itemByProductType('DesignProductType'))\nassert design is not None"
         },
         {
           "id": "121e8ca253f8f9f119c5-1",
-          "line": 309,
+          "line": 303,
           "kind": "helper",
           "expression": "script(`${ownedGuard}\nassert design.userParameters.count == 0\np=design.userParameters.add('LostAckCounter', adsk.core.ValueInput.createByString('7 mm'), 'mm', 'owned response recovery test')\nassert p is not None\nprint(json.dumps(dict(count=design.userParameters.count,value=p.value)))`)"
         },
         {
           "id": "38d0a3f04a057a84bd17-1",
-          "line": 309,
+          "line": 303,
           "kind": "embedded-python",
           "expression": "\nassert design.userParameters.count == 0\np=design.userParameters.add('LostAckCounter', adsk.core.ValueInput.createByString('7 mm'), 'mm', 'owned response recovery test')\nassert p is not None\nprint(json.dumps(dict(count=design.userParameters.count,value=p.value)))"
         },
         {
           "id": "474e7260f747533e9d5c-1",
-          "line": 330,
+          "line": 324,
           "kind": "assertion",
           "expression": "assert.equal(\n        object(object(report.manualObservation)[\"job\"])[\"id\"],\n        mutationJob.id,\n      )"
         },
         {
           "id": "4c18da2bcc9cc3f13c4f-1",
-          "line": 338,
+          "line": 332,
           "kind": "helper",
           "expression": "script(`${ownedGuard}\np=design.userParameters.itemByName('LostAckCounter')\nassert p is not None and design.userParameters.count == 1\nassert abs(p.value - 0.7) < 1e-9\nprint(json.dumps(dict(count=design.userParameters.count,value=p.value)))`)"
         },
         {
           "id": "ec4c21812e035a5bb7a1-1",
-          "line": 338,
+          "line": 332,
           "kind": "embedded-python",
           "expression": "\np=design.userParameters.itemByName('LostAckCounter')\nassert p is not None and design.userParameters.count == 1\nassert abs(p.value - 0.7) < 1e-9\nprint(json.dumps(dict(count=design.userParameters.count,value=p.value)))"
         },
         {
           "id": "661e0c7460683afeab12-1",
-          "line": 344,
+          "line": 338,
           "kind": "helper",
           "expression": "script(`${ownedGuard}\nassert d.close(False)\nprevious=[item for item in a.documents if item.creationId==${report.identity.previous ? JSON.stringify(report.identity.previous) : \"None\"}]\nif previous: assert previous[0].activate()\nprint(json.dumps(dict(closed=True,active=a.activeDocument.creationId if a.activeDocument else None)))`)"
         },
         {
           "id": "ee38ace9b5ad24f24aa0-1",
-          "line": 344,
+          "line": 338,
           "kind": "embedded-python",
           "expression": "\nassert d.close(False)\nprevious=[item for item in a.documents if item.creationId=="
         },
         {
           "id": "0b73e31c1044e9849249-2",
-          "line": 349,
+          "line": 343,
           "kind": "helper",
           "expression": "state()"
         },
         {
           "id": "a3a4db805be6be29465e-1",
-          "line": 350,
+          "line": 344,
           "kind": "assertion",
           "expression": "assert.deepEqual(\n      report.after,\n      report.before,\n      \"Foreign document state changed\",\n    )"
         },
         {
           "id": "5513af1f1fe30657c282-1",
-          "line": 355,
+          "line": 349,
           "kind": "assertion",
           "expression": "assert.equal(\n      report.cleanup[\"active\"],\n      report.identity.previous,\n      \"Active document restore failed\",\n    )"
         },
         {
           "id": "b86c1d84079778511ed6-1",
-          "line": 360,
+          "line": 354,
           "kind": "assertion",
           "expression": "assert.equal(report.mutationsSubmitted, 1)"
         },
         {
           "id": "4a5aff334d366beef15d-1",
-          "line": 361,
+          "line": 355,
           "kind": "assertion",
           "expression": "assert.equal(\n      report.automaticRecovery,\n      true,\n      \"Native mutation succeeded once, but client failed to recover its lost response\",\n    )"
         },
         {
           "id": "17b724937bbbf556bb05-1",
-          "line": 366,
+          "line": 360,
           "kind": "assertion",
           "expression": "assert.deepEqual(report.dropped, [\"submit\", \"result\"])"
         },
         {
           "id": "425655f27b02bb8f7497-1",
-          "line": 388,
+          "line": 382,
           "kind": "helper",
           "expression": "script(\n              ownedCleanupSource(\n                report.identity,\n                report.identity.previous ?? null,\n                \"\",\n              ),\n              false,\n            )"
         },
         {
           "id": "2789c84e11e1313291ad-1",
-          "line": 416,
+          "line": 410,
           "kind": "helper",
           "expression": "main()"
         }
