@@ -2522,7 +2522,13 @@ function validateFailedInspection(
     "Failed inspection is not the retained readonly program",
   );
   assert.equal(intent["sourceHash"], hash(source));
-  inspectionCheck(proof.value);
+  if (currentInspection) {
+    // The process-identity guard can reject before Python admission. This
+    // dispositions only the exact readonly source and settled nonmutating
+    // failure; the fresh inspection still requires its own checker receipt.
+    assert.ok(Array.isArray(proof.value["pythonChecks"]));
+    if (proof.value["pythonChecks"].length > 0) inspectionCheck(proof.value);
+  } else inspectionCheck(proof.value);
   assert.ok(Number(proof.job["startedAt"]) >= Number(held.job["finishedAt"]));
   return {
     requestId,

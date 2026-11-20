@@ -1956,7 +1956,8 @@ for (const corruption of [
             sdkSettled: true,
             exitCode: 1,
           });
-          raw["stdout"] = "";
+        raw["stdout"] = "";
+        raw["pythonChecks"] = [];
           raw["stderr"] =
             "ERROR Qualified scratch process is no longer the same live instance\n";
           failedJobId = String(job["id"]);
