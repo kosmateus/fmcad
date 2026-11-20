@@ -1,11 +1,40 @@
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const net = require("node:net");
-const os = require("node:os");
-const path = require("node:path");
-const { spawn } = require("node:child_process");
-const { randomUUID } = require("node:crypto");
-const test = require("node:test");
+import assert from "node:assert/strict";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import * as fs from "node:fs";
+import { createRequire } from "node:module";
+import * as net from "node:net";
+import * as os from "node:os";
+import * as path from "node:path";
+import type { Readable } from "node:stream";
+import test, { type TestContext } from "node:test";
+
+import type {
+  DebugTraceContext,
+  DebugTraceEvent,
+} from "../packages/node-adapters/src/telemetry/diagnostic-log";
+
+interface TraceRecord extends Record<string, unknown> {
+  abortReason?: unknown;
+  action?: unknown;
+  at?: unknown;
+  buildHash?: unknown;
+  code?: unknown;
+  deadlineMonotonicMs?: unknown;
+  durationMs?: unknown;
+  ipcStage?: unknown;
+  jobId?: unknown;
+  messageId?: unknown;
+  monotonicEndMs?: unknown;
+  monotonicStartMs?: unknown;
+  pid?: unknown;
+  requestId?: unknown;
+  source?: unknown;
+  stage?: unknown;
+}
+
+const root = path.resolve(__dirname, "../..");
+const load = createRequire(path.resolve(__dirname, "../../package.json"));
 
 const {
   createDebugTraceContext,
@@ -14,11 +43,17 @@ const {
   flushDebugTrace,
   readDebugTrace,
   writeDebugTrace,
-} = require("../packages/node-adapters/dist/telemetry/diagnostic-log.js");
+} = load(
+  "./packages/node-adapters/dist/telemetry/diagnostic-log",
+) as typeof import("../packages/node-adapters/src/telemetry/diagnostic-log");
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
-async function waitFor(predicate, timeoutMs = 3000) {
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 3000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (predicate()) return;
@@ -27,21 +62,25 @@ async function waitFor(predicate, timeoutMs = 3000) {
   assert.fail(`Condition was not met within ${timeoutMs} ms`);
 }
 
-async function within(promise, timeoutMs, message) {
-  let timer;
+async function within<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
       promise,
-      new Promise((_, reject) => {
+      new Promise<T>((_, reject) => {
         timer = setTimeout(() => reject(new Error(message)), timeoutMs);
       }),
     ]);
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 }
 
-test("debug JSONL keeps correlated IPC timing and redacts credentials", async (t) => {
+test("debug JSONL keeps correlated IPC timing and redacts credentials", async (t: TestContext) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "queue-ipc-trace-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const context = createDebugTraceContext(
@@ -69,7 +108,7 @@ test("debug JSONL keeps correlated IPC timing and redacts credentials", async (t
     buildHash: "a".repeat(64),
     monotonicStartMs: 12.5,
     deadlineMonotonicMs: 30_012.5,
-  };
+  } satisfies DebugTraceEvent;
   writer.write(context, {
     ...common,
     ipcStage: "request-written",
@@ -83,7 +122,7 @@ test("debug JSONL keeps correlated IPC timing and redacts credentials", async (t
     durationMs: 30_000,
     code: "QUEUE_IPC_TIMEOUT",
   });
-  writer.write(context, {
+  const abortEvent = {
     ...common,
     ipcStage: "abort",
     status: "failed",
@@ -92,26 +131,36 @@ test("debug JSONL keeps correlated IPC timing and redacts credentials", async (t
       workerToken: "must-not-be-written",
       payload: "must-not-be-written",
     },
-  });
+  } satisfies DebugTraceEvent & {
+    payload: string;
+    workerToken: string;
+  };
+  writer.write(context, abortEvent);
   await sink.flush();
 
-  const events = readDebugTrace(context.traceId, { directory });
+  const events = readDebugTrace(context.traceId, {
+    directory,
+  }) as TraceRecord[];
   assert.equal(events.length, 2);
-  assert.equal(events[0].stage, "ipc");
-  assert.equal(events[0].ipcStage, "request-written");
-  assert.equal(events[0].action, "worker-status");
-  assert.equal(events[0].messageId, common.messageId);
-  assert.equal(events[0].jobId, common.jobId);
-  assert.equal(events[0].requestId, context.requestId);
-  assert.equal(events[0].source, "cli");
-  assert.equal(events[0].pid, 4242);
-  assert.equal(events[0].buildHash, common.buildHash);
-  assert.equal(events[0].monotonicStartMs, 12.5);
-  assert.equal(events[0].deadlineMonotonicMs, 30_012.5);
-  assert.equal(events[1].ipcStage, "timeout");
-  assert.equal(events[1].monotonicEndMs, 30_012.5);
-  assert.equal(events[1].durationMs, 30_000);
-  assert.equal(events[1].code, "QUEUE_IPC_TIMEOUT");
+  const firstEvent = events[0];
+  const secondEvent = events[1];
+  assert.ok(firstEvent);
+  assert.ok(secondEvent);
+  assert.equal(firstEvent.stage, "ipc");
+  assert.equal(firstEvent.ipcStage, "request-written");
+  assert.equal(firstEvent.action, "worker-status");
+  assert.equal(firstEvent.messageId, common.messageId);
+  assert.equal(firstEvent.jobId, common.jobId);
+  assert.equal(firstEvent.requestId, context.requestId);
+  assert.equal(firstEvent.source, "cli");
+  assert.equal(firstEvent.pid, 4242);
+  assert.equal(firstEvent.buildHash, common.buildHash);
+  assert.equal(firstEvent.monotonicStartMs, 12.5);
+  assert.equal(firstEvent.deadlineMonotonicMs, 30_012.5);
+  assert.equal(secondEvent.ipcStage, "timeout");
+  assert.equal(secondEvent.monotonicEndMs, 30_012.5);
+  assert.equal(secondEvent.durationMs, 30_000);
+  assert.equal(secondEvent.code, "QUEUE_IPC_TIMEOUT");
   const contents = fs
     .readdirSync(directory)
     .map((name) => fs.readFileSync(path.join(directory, name), "utf8"))
@@ -119,24 +168,37 @@ test("debug JSONL keeps correlated IPC timing and redacts credentials", async (t
   assert.doesNotMatch(contents, /must-not-be-written/);
 });
 
-test("independent accepted workers trace one backend each and do not replay after heartbeat timeout", async (t) => {
+test("independent accepted workers trace one backend each and do not replay after heartbeat timeout", async (t: TestContext) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "queue-ipc-repro-"));
   const socketPath = path.join(directory, "broker.sock");
   const workerFixture = path.join(
-    __dirname,
+    root,
+    "tests",
     "fixtures",
     "queue-ipc-debug-trace-client.cjs",
   );
-  const diagnosticModule = path.resolve(
-    __dirname,
-    "../packages/node-adapters/dist/telemetry/diagnostic-log.js",
+  const diagnosticModule = path.join(
+    root,
+    "packages/node-adapters/dist/telemetry/diagnostic-log.js",
   );
-  const contexts = new Map();
-  const counts = new Map();
-  const sockets = new Map();
-  const heldBackend = new Map();
-  const children = new Map();
-  const traceIds = new Map();
+  const contexts = new Map<string, DebugTraceContext>();
+  const counts = new Map<string, number>();
+  const sockets = new Map<string, net.Socket>();
+  const heldBackend = new Map<string, (result: unknown) => void>();
+  type ChildResult = {
+    code: number | null;
+    signal: NodeJS.Signals | null;
+    output: string;
+    stderr: string;
+  };
+  type TracedChild = {
+    process: ChildProcessByStdio<null, Readable, Readable>;
+    readonly output: string;
+    readonly stderrOutput: string;
+    completion: Promise<ChildResult>;
+  };
+  const children = new Map<string, TracedChild>();
+  const traceIds = new Map<string, string>();
   const buildHash = "b".repeat(64);
   const runId = randomUUID();
   const failureJob = `queue-ipc-timeout-${runId}`;
@@ -147,11 +209,18 @@ test("independent accepted workers trace one backend each and do not replay afte
       buffer += chunk.toString("utf8");
       const newline = buffer.indexOf("\n");
       if (newline < 0) return;
-      const message = JSON.parse(buffer.slice(0, newline));
+      const message = JSON.parse(buffer.slice(0, newline)) as {
+        action: NonNullable<DebugTraceEvent["action"]>;
+        jobId: string;
+        debugTraceMessageId?: string;
+      };
       const context = contexts.get(message.jobId);
       const messageId = message.debugTraceMessageId;
       const startedAt = performance.now();
-      const trace = (ipcStage, fields = {}) => {
+      const trace = (
+        ipcStage: NonNullable<DebugTraceEvent["ipcStage"]>,
+        fields: Partial<DebugTraceEvent> = {},
+      ) => {
         writeDebugTrace(context, {
           stage: "ipc",
           ipcStage,
@@ -163,7 +232,7 @@ test("independent accepted workers trace one backend each and do not replay afte
           ...fields,
         });
       };
-      const reply = (result) => {
+      const reply = (result: unknown) => {
         trace("reply-emitted", {
           status: "passed",
           monotonicStartMs: startedAt,
@@ -206,20 +275,22 @@ test("independent accepted workers trace one backend each and do not replay afte
     });
   });
 
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(socketPath, resolve);
   });
   t.after(async () => {
-    for (const child of children.values()) child.kill();
+    for (const child of children.values()) child.process.kill();
     for (const socket of sockets.values()) socket.destroy();
-    await new Promise((resolve) => server.close(resolve));
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
     fs.rmSync(directory, { recursive: true, force: true });
   });
 
   for (const [jobId, clientId] of [
-    [failureJob, `ipc-failure-${runId}`],
-    [successJob, `ipc-success-${runId}`],
+    [failureJob, `ipc-failure-${runId}`] as const,
+    [successJob, `ipc-success-${runId}`] as const,
   ]) {
     const context = createDebugTraceContext(jobId, clientId, "cli", true);
     assert.ok(context);
@@ -233,9 +304,9 @@ test("independent accepted workers trace one backend each and do not replay afte
         FMCAD_TEST_JOB_ID: jobId,
         FMCAD_TEST_WORKER_TOKEN: `private-worker-token-${jobId}`,
         FMCAD_TEST_TRACE_CONTEXT: JSON.stringify(context),
-        FMCAD_TEST_CONNECTION_MODULE: path.resolve(
-          __dirname,
-          "../src/queue-connection.js",
+        FMCAD_TEST_CONNECTION_MODULE: path.join(
+          root,
+          "src/queue-connection.js",
         ),
         FMCAD_TEST_DIAGNOSTIC_MODULE: diagnosticModule,
         FMCAD_TEST_BUILD_HASH: buildHash,
@@ -244,66 +315,90 @@ test("independent accepted workers trace one backend each and do not replay afte
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
+    let output = "";
+    let stderrOutput = "";
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.output = "";
-    child.stderrOutput = "";
-    child.stdout.on("data", (chunk) => (child.output += chunk));
-    child.stderr.on("data", (chunk) => (child.stderrOutput += chunk));
-    child.completion = new Promise((resolve, reject) => {
+    child.stdout.on("data", (chunk: string) => (output += chunk));
+    child.stderr.on("data", (chunk: string) => (stderrOutput += chunk));
+    const completion = new Promise<ChildResult>((resolve, reject) => {
       child.once("error", reject);
       child.once("close", (code, signal) =>
         resolve({
           code,
           signal,
-          output: child.output,
-          stderr: child.stderrOutput,
+          output,
+          stderr: stderrOutput,
         }),
       );
     });
-    children.set(jobId, child);
+    children.set(jobId, {
+      process: child,
+      get output() {
+        return output;
+      },
+      get stderrOutput() {
+        return stderrOutput;
+      },
+      completion,
+    });
   }
 
   await waitFor(
     () =>
       (counts.get(`backend:${failureJob}`) === 1 &&
         counts.get(`backend:${successJob}`) === 1) ||
-      [...children.values()].every((child) => child.exitCode !== null),
+      [...children.values()].every((child) => child.process.exitCode !== null),
   );
   assert.equal(
     counts.get(`backend:${failureJob}`),
     1,
     [...children.values()]
       .map(
-        (child) => `${child.exitCode}: ${child.output} ${child.stderrOutput}`,
+        (child) =>
+          `${child.process.exitCode}: ${child.output} ${child.stderrOutput}`,
       )
       .join("\n"),
   );
   assert.equal(counts.get(`backend:${successJob}`), 1);
+  const failureChild = children.get(failureJob);
+  assert.ok(failureChild);
   const failureResult = await within(
-    children.get(failureJob).completion,
+    failureChild.completion,
     2500,
     "Heartbeat fault did not time out",
   );
   assert.equal(failureResult.code, 0, failureResult.stderr);
-  assert.equal(JSON.parse(failureResult.output).code, "QUEUE_IPC_TIMEOUT");
+  const failureOutput = JSON.parse(failureResult.output) as {
+    code?: unknown;
+  };
+  assert.equal(failureOutput.code, "QUEUE_IPC_TIMEOUT");
   await waitFor(() => (counts.get(`worker-status:${successJob}`) || 0) >= 2);
-  heldBackend.get(successJob)({ value: "synthetic-success" });
+  const replyBackend = heldBackend.get(successJob);
+  assert.ok(replyBackend);
+  replyBackend({ value: "synthetic-success" });
+  const successChild = children.get(successJob);
+  assert.ok(successChild);
   const successResult = await within(
-    children.get(successJob).completion,
+    successChild.completion,
     2500,
     "Accepted backend did not return",
   );
   assert.equal(successResult.code, 0, successResult.stderr);
-  assert.equal(JSON.parse(successResult.output).ok, true);
+  const successOutput = JSON.parse(successResult.output) as { ok?: unknown };
+  assert.equal(successOutput.ok, true);
   assert.equal(counts.get(`backend:${failureJob}`), 1);
   assert.equal(counts.get(`backend:${successJob}`), 1);
   assert.equal(counts.get(`worker-status:${failureJob}`), 1);
 
   await new Promise((resolve) => setTimeout(resolve, 25));
   await flushDebugTrace();
-  const failureTrace = readDebugTrace(traceIds.get(failureJob));
-  const successTrace = readDebugTrace(traceIds.get(successJob));
+  const failureTraceId = traceIds.get(failureJob);
+  const successTraceId = traceIds.get(successJob);
+  assert.ok(failureTraceId);
+  assert.ok(successTraceId);
+  const failureTrace = readDebugTrace(failureTraceId) as TraceRecord[];
+  const successTrace = readDebugTrace(successTraceId) as TraceRecord[];
   const allEvents = [...failureTrace, ...successTrace];
   const failureBackendId = failureTrace.find(
     (event) =>
@@ -315,6 +410,8 @@ test("independent accepted workers trace one backend each and do not replay afte
   )?.messageId;
   assert.equal(typeof failureBackendId, "string");
   assert.equal(typeof failureHeartbeatId, "string");
+  assert.ok(typeof failureBackendId === "string");
+  assert.ok(typeof failureHeartbeatId === "string");
   assert(
     failureTrace.some(
       (event) =>
@@ -327,10 +424,13 @@ test("independent accepted workers trace one backend each and do not replay afte
   for (const [trace, messageId, action] of [
     [failureTrace, failureBackendId, "backend"],
     [failureTrace, failureHeartbeatId, "worker-status"],
-  ]) {
+  ] as const) {
     const records = trace
       .filter((event) => event.messageId === messageId)
-      .sort((left, right) => Date.parse(left.at) - Date.parse(right.at));
+      .sort(
+        (left, right) =>
+          Date.parse(String(left.at)) - Date.parse(String(right.at)),
+      );
     assert(
       records.some(
         (event) =>
