@@ -85,7 +85,7 @@ function harness(code = 0) {
           '{"success":true,"operation":"image.trace","result":{"custom":1}}\n',
         );
         child.stderr.write("worker diagnostic\n");
-        child.exitCode = code;
+        Object.defineProperty(child, "exitCode", { value: code });
         child.emit("exit", code, null);
         child.emit("close", code, null);
       });
