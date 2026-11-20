@@ -683,677 +683,677 @@
     },
     {
       "source": "tests/live-data-import-fixed.ts",
-      "sha256": "9317a5f77539171ddfb2c859e40882053f64ba528262bcb6c8ef476db99f7fdd",
+      "sha256": "ac3e7b3a5963fec296a6e140dea6cc0dc5c3301b0e8454ddc16be3b71326f537",
       "assertions": [
         {
           "id": "d74afe4237c1ac6c123c-1",
-          "line": 252,
+          "line": 245,
           "kind": "assertion",
           "expression": "assert.ok(\n    typeof value === \"string\" && value.trim(),\n    `${name} must be supplied by the existing owner-scoped fixed-run handoff.`,\n  )"
         },
         {
           "id": "9f565b7b18271e4b5742-1",
-          "line": 277,
+          "line": 270,
           "kind": "assertion",
           "expression": "assert.equal(status, \"pass\", `${label} did not pass.`)"
         },
         {
           "id": "3d195929085a2756d2d8-1",
-          "line": 278,
+          "line": 271,
           "kind": "assertion",
           "expression": "assert.deepEqual(\n    actual,\n    expected,\n    `${label}: actual=${JSON.stringify(actual)}, expected=${JSON.stringify(expected)}`,\n  )"
         },
         {
           "id": "4790685acdd6a70dddc0-1",
-          "line": 290,
+          "line": 283,
           "kind": "helper",
           "expression": "note(label, actual, expected)"
         },
         {
           "id": "ad914413d3dd2f955ae3-1",
-          "line": 294,
+          "line": 287,
           "kind": "helper",
           "expression": "requiredEnv(\"FMCAD_LIVE_RUNTIME_ROOT\")"
         },
         {
           "id": "caa406aa492420365fa1-1",
-          "line": 322,
+          "line": 315,
           "kind": "assertion",
           "expression": "assert.equal(\n      fs.realpathSync(file),\n      file,\n      `Fixed runtime path is not canonical: ${file}`,\n    )"
         },
         {
           "id": "1edccde2188f63d28b42-1",
-          "line": 347,
+          "line": 340,
           "kind": "helper",
           "expression": "fixedNote(\"fixed fixture id\", fixture.fixtureId, fixtureId)"
         },
         {
           "id": "e2a5e2fc1dea85cefb95-1",
-          "line": 348,
+          "line": 341,
           "kind": "helper",
           "expression": "fixedNote(\"fixed-run kind\", fixture.kind, \"fixed-run-v1\")"
         },
         {
           "id": "19c3f6ddd7fbf763ce52-1",
-          "line": 349,
+          "line": 342,
           "kind": "helper",
           "expression": "fixedNote(\"fixed source path\", fixture.script, scriptPathFromRuntime)"
         },
         {
           "id": "bcbe21c7bf4f513550aa-1",
-          "line": 350,
+          "line": 343,
           "kind": "helper",
           "expression": "fixedNote(\"fixed helper version\", fixture.helperVersion, \"cad-v1\")"
         },
         {
           "id": "e5f49c648564cc6d86bc-1",
-          "line": 351,
+          "line": 344,
           "kind": "helper",
           "expression": "fixedNote(\n    \"installed source SHA256\",\n    sha256(scriptPath),\n    expectedScriptSha256,\n  )"
         },
         {
           "id": "28abac411cc2823e1ba4-1",
-          "line": 356,
+          "line": 349,
           "kind": "helper",
           "expression": "fixedNote(\n    \"installed manifest SHA256\",\n    sha256(manifestPath),\n    expectedManifestSha256,\n  )"
         },
         {
           "id": "f83c72b49ac7e7f6d03d-1",
-          "line": 361,
+          "line": 354,
           "kind": "helper",
           "expression": "fixedNote(\n    \"runtime registry source SHA256\",\n    fixture.scriptSha256,\n    expectedScriptSha256,\n  )"
         },
         {
           "id": "923a46cd62e4200b6704-1",
-          "line": 366,
+          "line": 359,
           "kind": "helper",
           "expression": "fixedNote(\n    \"runtime registry manifest SHA256\",\n    fixture.manifestSha256,\n    expectedManifestSha256,\n  )"
         },
         {
           "id": "73386a2fa21ca988284f-1",
-          "line": 371,
+          "line": 364,
           "kind": "helper",
           "expression": "fixedNote(\n    \"worktree canonical source SHA256\",\n    canonicalSourceSha256(localScript),\n    expectedScriptSha256,\n  )"
         },
         {
           "id": "33321063c09ef03d50bf-1",
-          "line": 376,
+          "line": 369,
           "kind": "helper",
           "expression": "fixedNote(\n    \"worktree canonical manifest SHA256\",\n    canonicalSourceSha256(localManifest),\n    expectedManifestSha256,\n  )"
         },
         {
           "id": "d0930373dd230bd8c4e3-1",
-          "line": 381,
+          "line": 374,
           "kind": "helper",
           "expression": "fixedNote(\"manifest argument contract\", manifest[\"argumentKeys\"], [\n    \"approved\",\n    \"creationId\",\n    \"expectedFusionVersion\",\n    \"fixturePrefix\",\n  ])"
         },
         {
           "id": "2d885f19f6327355bdc2-1",
-          "line": 387,
+          "line": 380,
           "kind": "helper",
           "expression": "fixedNote(\n    \"manifest caller cleanup contract\",\n    manifest[\"callerCleanupRequired\"],\n    true,\n  )"
         },
         {
           "id": "36ce41f56fe998ef162d-1",
-          "line": 392,
+          "line": 385,
           "kind": "assertion",
           "expression": "assert.equal(typeof manifest[\"scope\"], \"string\")"
         },
         {
           "id": "1ab7440de4d79326ef6a-1",
-          "line": 393,
+          "line": 386,
           "kind": "assertion",
           "expression": "assert.match(\n    manifest[\"scope\"] as string,\n    /Do not issue expected-throw negative calls through cad-v1/,\n  )"
         },
         {
           "id": "620f0959f8560e010dec-1",
-          "line": 397,
+          "line": 390,
           "kind": "helper",
           "expression": "fixedNote(\"installed build fingerprint\", runtimeBuild.fingerprint, buildHash)"
         },
         {
           "id": "ece67d61df677fc05934-1",
-          "line": 411,
+          "line": 404,
           "kind": "assertion",
           "expression": "assert.ok(identity, \"Fixed run has no verified owner document identity\")"
         },
         {
           "id": "78196a5ac489a95a3c4b-1",
-          "line": 422,
+          "line": 415,
           "kind": "helper",
           "expression": "note(`${operation} native result status`, result.status, expectedStatus)"
         },
         {
           "id": "7c84e7ca4a812868cd64-1",
-          "line": 424,
+          "line": 417,
           "kind": "helper",
           "expression": "note(`${operation} result operation`, result.operation, operation)"
         },
         {
           "id": "e2401643996744d36c2e-1",
-          "line": 425,
+          "line": 418,
           "kind": "helper",
           "expression": "note(\n    `${operation} exact document identity`,\n    result.documentIdentity?.creationId,\n    creationId,\n  )"
         },
         {
           "id": "5fa6e8e4a74fe4f86b7f-1",
-          "line": 444,
+          "line": 437,
           "kind": "helper",
           "expression": "currentIdentity()"
         },
         {
           "id": "ea0f015478af37e71bda-1",
-          "line": 446,
+          "line": 439,
           "kind": "assertion",
           "expression": "assert.ok(\n    payload && typeof payload === \"object\",\n    \"Fixed-run report payload is missing.\",\n  )"
         },
         {
           "id": "7c54ab5b48bac69947c9-1",
-          "line": 450,
+          "line": 443,
           "kind": "helper",
           "expression": "note(\"fixed-run payload version\", payload.version, 1)"
         },
         {
           "id": "2d5555f5dc726c974af5-1",
-          "line": 451,
+          "line": 444,
           "kind": "helper",
           "expression": "note(\"fixed-run document name\", payload.document.name, own.name)"
         },
         {
           "id": "bf5d7ffe086cf82ce14c-1",
-          "line": 452,
+          "line": 445,
           "kind": "helper",
           "expression": "note(\n    \"fixed-run document creationId\",\n    payload.document.creationId,\n    own.creationId,\n  )"
         },
         {
           "id": "a813e00583e3e9a7de48-1",
-          "line": 457,
+          "line": 450,
           "kind": "helper",
           "expression": "note(\"fixed-run Fusion version\", payload.fusionVersion, fusionVersion)"
         },
         {
           "id": "9894be9baf5c279bde08-1",
-          "line": 458,
+          "line": 451,
           "kind": "helper",
           "expression": "note(\n    \"fixed-run source ownership approval\",\n    payload.fixturePrefix,\n    fixturePrefix,\n  )"
         },
         {
           "id": "c0b899a55d3114616579-1",
-          "line": 463,
+          "line": 456,
           "kind": "helper",
           "expression": "note(\n    \"fixed run changed only its declared model\",\n    payload.modelChangedByFixture,\n    true,\n  )"
         },
         {
           "id": "51ebe609339f94129ea6-1",
-          "line": 468,
+          "line": 461,
           "kind": "helper",
           "expression": "note(\"fixed run created native geometry\", payload.nativeGeometry, true)"
         },
         {
           "id": "fe185aa1313568cc8cf6-1",
-          "line": 472,
+          "line": 465,
           "kind": "assertion",
           "expression": "assert.ok(before && after, \"Exact document status readbacks are required.\")"
         },
         {
           "id": "4b2ad7d354863db2a271-1",
-          "line": 473,
+          "line": 466,
           "kind": "helper",
           "expression": "note(\"initial document creationId\", before.creationId, own.creationId)"
         },
         {
           "id": "1c2b4cdada7bd72252a3-1",
-          "line": 474,
+          "line": 467,
           "kind": "helper",
           "expression": "note(\"initial document name\", before.name, own.name)"
         },
         {
           "id": "fd9289c93bd847106a2e-1",
-          "line": 475,
+          "line": 468,
           "kind": "helper",
           "expression": "note(\"initial document unsaved\", before.saved, false)"
         },
         {
           "id": "2716f7687ffb6f85900f-1",
-          "line": 476,
+          "line": 469,
           "kind": "helper",
           "expression": "note(\"initial document unmodified\", before.modified, false)"
         },
         {
           "id": "53b01a675169d5c73b9e-1",
-          "line": 477,
+          "line": 470,
           "kind": "helper",
           "expression": "note(\"initial document has no cloud file id\", before.fileId, null)"
         },
         {
           "id": "a50133fb1d11ab9df3ed-1",
-          "line": 478,
+          "line": 471,
           "kind": "helper",
           "expression": "note(\"final document creationId\", after.creationId, own.creationId)"
         },
         {
           "id": "c6ad7f33ec4d1a30f58c-1",
-          "line": 479,
+          "line": 472,
           "kind": "helper",
           "expression": "note(\"final document name\", after.name, own.name)"
         },
         {
           "id": "24d3ccffcae871e128a4-1",
-          "line": 480,
+          "line": 473,
           "kind": "helper",
           "expression": "note(\"final document remains unsaved\", after.saved, false)"
         },
         {
           "id": "762bd2ec5a6753bbcef2-1",
-          "line": 481,
+          "line": 474,
           "kind": "helper",
           "expression": "note(\"final document has no cloud file id\", after.fileId, null)"
         },
         {
           "id": "81254634cc09ba124590-1",
-          "line": 489,
+          "line": 482,
           "kind": "assertion",
           "expression": "assert.ok(\n    designBefore && typeof designBefore === \"object\",\n    \"Empty-design baseline is missing.\",\n  )"
         },
         {
           "id": "e44d61f0082355fe1ab0-1",
-          "line": 499,
+          "line": 492,
           "kind": "helper",
           "expression": "note(`pristine scratch ${key}`, designBefore[key], 0)"
         },
         {
           "id": "b7803b02542ec49d2321-1",
-          "line": 503,
+          "line": 496,
           "kind": "assertion",
           "expression": "assert.ok(Array.isArray(calls), \"Native helper call readbacks are missing.\")"
         },
         {
           "id": "5007349eb913c095969b-1",
-          "line": 505,
+          "line": 498,
           "kind": "helper",
           "expression": "note(\n    \"fixed source helper-call sequence\",\n    operationsRead,\n    expectedHelperOperations,\n  )"
         },
         {
           "id": "4d752b3172c8bec5d99f-1",
-          "line": 511,
+          "line": 504,
           "kind": "helper",
           "expression": "assertMethodResult(\n    payload,\n    \"param.import\",\n    \"pass\",\n    own.creationId,\n  )"
         },
         {
           "id": "1ab0511911884b048a88-1",
-          "line": 517,
+          "line": 510,
           "kind": "helper",
           "expression": "assertMethodResult(\n    payload,\n    \"catalog.import\",\n    \"pass\",\n    own.creationId,\n  )"
         },
         {
           "id": "567418acb7dd74a96220-1",
-          "line": 523,
+          "line": 516,
           "kind": "helper",
           "expression": "assertMethodResult(\n    payload,\n    \"catalog.check\",\n    \"pass\",\n    own.creationId,\n  )"
         },
         {
           "id": "4a84c380a6b9b7ce2684-1",
-          "line": 529,
+          "line": 522,
           "kind": "helper",
           "expression": "assertMethodResult(\n    payload,\n    \"placement.import\",\n    \"pass\",\n    own.creationId,\n  )"
         },
         {
           "id": "ab8f43bb01175657e9ff-1",
-          "line": 535,
+          "line": 528,
           "kind": "helper",
           "expression": "assertMethodResult(\n    payload,\n    \"placement.check\",\n    \"pass\",\n    own.creationId,\n  )"
         },
         {
           "id": "e9f0eef599b4c2766b69-1",
-          "line": 541,
+          "line": 534,
           "kind": "helper",
           "expression": "assertMethodResult(\n    payload,\n    \"cots.replace\",\n    \"unknown\",\n    own.creationId,\n  )"
         },
         {
           "id": "9a7532a19d900e8ce81c-1",
-          "line": 556,
+          "line": 549,
           "kind": "assertion",
           "expression": "assert.equal(payload.paramReadback.length, expectedParameters.length)"
         },
         {
           "id": "8cfce21ed86c7a7c291d-1",
-          "line": 559,
+          "line": 552,
           "kind": "assertion",
           "expression": "assert.ok(row)"
         },
         {
           "id": "1cddab50b76ef6ba61d7-1",
-          "line": 560,
+          "line": 553,
           "kind": "helper",
           "expression": "note(`parameter ${index} exact name`, row.name, expected.name)"
         },
         {
           "id": "d0b6f1aa386a809be773-1",
-          "line": 561,
+          "line": 554,
           "kind": "helper",
           "expression": "note(\n      `parameter ${index} native expression`,\n      row.expression,\n      expected.expression,\n    )"
         },
         {
           "id": "8c9273a718d02089e2cb-1",
-          "line": 566,
+          "line": 559,
           "kind": "assertion",
           "expression": "assert.ok(\n      Number.isFinite(row.value),\n      `Parameter ${row.name} value is not numeric.`,\n    )"
         },
         {
           "id": "99f85f3c2622635b8638-1",
-          "line": 570,
+          "line": 563,
           "kind": "assertion",
           "expression": "assert.ok(\n      Math.abs(row.value - expected.value) <= 1e-9,\n      `Parameter ${row.name} value ${row.value} differs from ${expected.value} cm.`,\n    )"
         },
         {
           "id": "f2efe8add2ad92a3371a-1",
-          "line": 583,
+          "line": 576,
           "kind": "helper",
           "expression": "note(\"native catalog occurrence IDs\", actualInstanceIds, expectedInstanceIds)"
         },
         {
           "id": "27b120cf28f7e801a0e0-1",
-          "line": 584,
+          "line": 577,
           "kind": "helper",
           "expression": "note(\"native catalog checker differences\", payload.catalogDifferences, [])"
         },
         {
           "id": "c876ea28349794f2e02a-1",
-          "line": 585,
+          "line": 578,
           "kind": "assertion",
           "expression": "assert.equal(catalogImport.instances?.length, 3)"
         },
         {
           "id": "63d1657aaec554b5b320-1",
-          "line": 586,
+          "line": 579,
           "kind": "assertion",
           "expression": "assert.equal(catalogCheck.instances?.length, 3)"
         },
         {
           "id": "749385472595b893473d-1",
-          "line": 593,
+          "line": 586,
           "kind": "assertion",
           "expression": "assert.equal(placementRows.length, 1)"
         },
         {
           "id": "49bed86daf81a2427a77-1",
-          "line": 595,
+          "line": 588,
           "kind": "assertion",
           "expression": "assert.ok(placementRow)"
         },
         {
           "id": "541224bf4b7c734aeb16-1",
-          "line": 597,
+          "line": 590,
           "kind": "assertion",
           "expression": "assert.ok(typeof nativeX === \"number\" && Number.isFinite(nativeX))"
         },
         {
           "id": "a6bbf3fc9ed10811bd19-1",
-          "line": 598,
+          "line": 591,
           "kind": "helper",
           "expression": "note(\"native placement checker status\", placementRow.status, \"pass\")"
         },
         {
           "id": "f984a0dd259577603e04-1",
-          "line": 599,
+          "line": 592,
           "kind": "assertion",
           "expression": "assert.ok(\n    Math.abs(nativeX - 2.5) <= 1e-9,\n    `Native assembly X translation ${nativeX} cm differs from 25 mm.`,\n  )"
         },
         {
           "id": "5995feb8863a02212c6a-1",
-          "line": 606,
+          "line": 599,
           "kind": "assertion",
           "expression": "assert.ok(\n    unresolved.some(\n      (row) =>\n        row.id === \"synthetic-cots\" &&\n        row.field === \"replacement.material\" &&\n        row.status === \"unknown\",\n    ),\n    \"COTS replacement must retain the explicit unknown material limitation.\",\n  )"
         },
         {
           "id": "b090f9d8ec7f521f38c8-1",
-          "line": 616,
+          "line": 609,
           "kind": "assertion",
           "expression": "assert.equal(datumChecks?.length, 1)"
         },
         {
           "id": "cac127636f6e389a3207-1",
-          "line": 618,
+          "line": 611,
           "kind": "assertion",
           "expression": "assert.ok(datumCheck)"
         },
         {
           "id": "837ea403119e85a2e6e1-1",
-          "line": 619,
+          "line": 612,
           "kind": "helper",
           "expression": "note(\"COTS native datum preservation\", datumCheck.status, \"pass\")"
         },
         {
           "id": "21e52f0ebce6e596d4fe-1",
-          "line": 621,
+          "line": 614,
           "kind": "assertion",
           "expression": "assert.ok(cots && typeof cots === \"object\")"
         },
         {
           "id": "fc4d6faed2d40397efd3-1",
-          "line": 622,
+          "line": 615,
           "kind": "helper",
           "expression": "note(\"COTS material product status\", cots.materialStatus, \"unknown\")"
         },
         {
           "id": "20767e243228aff28234-1",
-          "line": 623,
+          "line": 616,
           "kind": "assertion",
           "expression": "assert.ok(typeof cots.oldPath === \"string\" && cots.oldPath)"
         },
         {
           "id": "cc0d20b765cb711777d5-1",
-          "line": 624,
+          "line": 617,
           "kind": "assertion",
           "expression": "assert.ok(typeof cots.newPath === \"string\" && cots.newPath)"
         },
         {
           "id": "3bd4fae1ebf91cd89cd2-1",
-          "line": 625,
+          "line": 618,
           "kind": "assertion",
           "expression": "assert.notEqual(cots.oldPath, cots.newPath)"
         },
         {
           "id": "8e2a3e9e1acede9076f9-1",
-          "line": 626,
+          "line": 619,
           "kind": "assertion",
           "expression": "assert.ok(\n    Number.isFinite(cots.sourceVolumeMm3) &&\n      Number.isFinite(cots.replacementVolumeMm3),\n  )"
         },
         {
           "id": "9fb23da0d0fc4825da5b-1",
-          "line": 630,
+          "line": 623,
           "kind": "assertion",
           "expression": "assert.ok(Math.abs(cots.sourceVolumeMm3 - 385) <= 0.01)"
         },
         {
           "id": "cabb0f1b6a0240f73a12-1",
-          "line": 631,
+          "line": 624,
           "kind": "assertion",
           "expression": "assert.ok(Math.abs(cots.replacementVolumeMm3 - cots.sourceVolumeMm3) <= 0.05)"
         },
         {
           "id": "0ff3ea26397c8c619ce9-1",
-          "line": 637,
+          "line": 630,
           "kind": "assertion",
           "expression": "assert.equal(\n    components.length,\n    5,\n    \"Catalog definitions, STEP source, and COTS replacement require native component readbacks.\",\n  )"
         },
         {
           "id": "d291ac17fbd195d98ea2-1",
-          "line": 643,
+          "line": 636,
           "kind": "assertion",
           "expression": "assert.ok(replacementComponent)"
         },
         {
           "id": "f7b16ca469ed829676fc-1",
-          "line": 644,
+          "line": 637,
           "kind": "assertion",
           "expression": "assert.equal(\n    replacementComponent.result.component?.name,\n    `FMCAD_DI_${fixturePrefix}_Sensor [cots-r2]`,\n  )"
         },
         {
           "id": "e5af4be04d2e1faab553-1",
-          "line": 648,
+          "line": 641,
           "kind": "assertion",
           "expression": "assert.equal(replacementComponent.result.bodies?.length, 1)"
         },
         {
           "id": "b7de7a318ecb833cea6d-1",
-          "line": 650,
+          "line": 643,
           "kind": "helper",
           "expression": "note(\n    \"fixed source cleanup removed its exact STEP artifacts\",\n    payload.removedFiles,\n    payload.artifactPaths,\n  )"
         },
         {
           "id": "73e7c9f82eb3fde7eb00-1",
-          "line": 655,
+          "line": 648,
           "kind": "helper",
           "expression": "note(\n    \"fixed source cleanup removed its owned artifact directory\",\n    payload.artifactDirectoryRemoved,\n    true,\n  )"
         },
         {
           "id": "ab9f320072a32361f562-1",
-          "line": 660,
+          "line": 653,
           "kind": "assertion",
           "expression": "assert.ok(\n    String(payload.artifactDirectory).includes(\n      fixturePrefix + \"_\" + own.creationId.replaceAll(\"-\", \"\"),\n    ),\n    \"Fixed temporary STEP directory is not bound to the exact document and fixture prefix.\",\n  )"
         },
         {
           "id": "49bbe27b76444e41d968-1",
-          "line": 666,
+          "line": 659,
           "kind": "assertion",
           "expression": "assert.equal(payload.artifactPaths.length, 1)"
         },
         {
           "id": "4ce7c63f6a3bf82b4ed2-1",
-          "line": 667,
+          "line": 660,
           "kind": "assertion",
           "expression": "assert.equal(\n    payload.negativeCases,\n    expectedNegativeLimitation,\n    \"Expected-throw native cases must remain explicitly not-run through cad-v1.\",\n  )"
         },
         {
           "id": "ab94342aebfa2f443610-1",
-          "line": 723,
+          "line": 716,
           "kind": "assertion",
           "expression": "assert.ok(\n    process.argv.includes(\"--run\"),\n    \"Explicit --run is required for the exact owner-scoped fixed program.\",\n  )"
         },
         {
           "id": "e19b1648479996b8bc1b-1",
-          "line": 727,
+          "line": 720,
           "kind": "helper",
           "expression": "note(\"live route\", process.env[\"FMCAD_LIVE_ROUTING\"], \"queue\")"
         },
         {
           "id": "f4b412719063658b294b-1",
-          "line": 728,
+          "line": 721,
           "kind": "helper",
           "expression": "requiredEnv(\"FMCAD_LIVE_CLIENT\")"
         },
         {
           "id": "ad914413d3dd2f955ae3-2",
-          "line": 729,
+          "line": 722,
           "kind": "helper",
           "expression": "requiredEnv(\"FMCAD_LIVE_RUNTIME_ROOT\")"
         },
         {
           "id": "6cf0798d54166b9898c9-1",
-          "line": 731,
+          "line": 724,
           "kind": "helper",
           "expression": "requiredEnv(\"FMCAD_LIVE_DOC_NAME\")"
         },
         {
           "id": "d5bd92992c89c1bf6028-1",
-          "line": 732,
+          "line": 725,
           "kind": "helper",
           "expression": "requiredEnv(\"FMCAD_LIVE_DOC_ID\")"
         },
         {
           "id": "5fa6e8e4a74fe4f86b7f-2",
-          "line": 734,
+          "line": 727,
           "kind": "helper",
           "expression": "currentIdentity()"
         },
         {
           "id": "5d8bdb69cdcb1b383ec7-1",
-          "line": 735,
+          "line": 728,
           "kind": "helper",
           "expression": "requiredEnv(\"FMCAD_LIVE_FUSION_VERSION\")"
         },
         {
           "id": "12a37da06e58feb028ec-1",
-          "line": 736,
+          "line": 729,
           "kind": "assertion",
           "expression": "assert.match(\n    own.creationId,\n    /^[0-9a-f-]{36}$/i,\n    \"An exact owner creationId is required.\",\n  )"
         },
         {
           "id": "3d5ba744e96164e3f1ba-1",
-          "line": 742,
+          "line": 735,
           "kind": "helper",
           "expression": "resolveFixedRuntime()"
         },
         {
           "id": "b790c5bd6262106beb3b-1",
-          "line": 743,
+          "line": 736,
           "kind": "helper",
           "expression": "fixedNote(\"fixed runtime root\", installed.runtimeRoot, runtimeRoot)"
         },
         {
           "id": "95c26690a503d2ca0992-1",
-          "line": 856,
+          "line": 849,
           "kind": "assertion",
           "expression": "assert.ok(terminalLine)"
         },
         {
           "id": "5e7f32b2faa4b8b3d8f5-1",
-          "line": 876,
+          "line": 869,
           "kind": "assertion",
           "expression": "assert.equal(typeof accepted[\"jobId\"], \"string\")"
         },
         {
           "id": "59d05f105fe71318029c-1",
-          "line": 915,
+          "line": 908,
           "kind": "assertion",
           "expression": "assert.equal(queueResult.state, \"succeeded\", stderr || stdout)"
         },
         {
           "id": "f3ad06301b450a277376-1",
-          "line": 928,
+          "line": 921,
           "kind": "assertion",
           "expression": "assert.ok(marker)"
         },
         {
           "id": "d8b953a4e068675aaf71-1",
-          "line": 938,
+          "line": 931,
           "kind": "assertion",
           "expression": "assert.equal(result.status, 0, stderr || stdout)"
         },
         {
           "id": "0bf0ec49435c311a141e-1",
-          "line": 939,
+          "line": 932,
           "kind": "assertion",
           "expression": "assert.equal(envelope.success, true, stdout)"
         },
         {
           "id": "78f4d2bb2d19e54f9a4f-1",
-          "line": 940,
+          "line": 933,
           "kind": "assertion",
           "expression": "assert.deepEqual(\n    envelope.helperCallsOnly.map((call: HelperCall) => call.operation),\n    expectedHelperOperations,\n  )"
         },
         {
           "id": "d0979d985f49894741e3-1",
-          "line": 944,
+          "line": 937,
           "kind": "assertion",
           "expression": "assert.ok(\n    envelope.helperCallsOnly.every(\n      (call: HelperCall) =>\n        call.status === \"completed\" && call.effects === \"observed\",\n    ),\n    \"Every fixed helper call requires a settled native observation.\",\n  )"
         },
         {
           "id": "d261c6ec82e2c5223f97-1",
-          "line": 955,
+          "line": 948,
           "kind": "helper",
           "expression": "validateFixedResult(envelope, fusionVersion)"
         },
         {
           "id": "b02f65d0c0ce59b0b121-1",
-          "line": 981,
+          "line": 974,
           "kind": "helper",
           "expression": "runFixedProgram()"
         },
         {
           "id": "2789c84e11e1313291ad-1",
-          "line": 1006,
+          "line": 999,
           "kind": "helper",
           "expression": "main()"
         }
@@ -1361,7 +1361,7 @@
     },
     {
       "source": "tests/live-data-import.ts",
-      "sha256": "ed4de6dc203fed99ff8fe5df106d0b5e86a29b9c605a718708f23083c5fb6e54",
+      "sha256": "e40f8588523e01b1c92609bbfcf74867d1c6bd30be268d8b6171f545623b4763",
       "assertions": [
         {
           "id": "379df681fc72d7410a77-1",
@@ -1460,10 +1460,10 @@
           "expression": "assert.equal(\n      lines.length,\n      1,\n      \"Observation must return exactly one JSON record\",\n    )"
         },
         {
-          "id": "79debacd643991d23e05-1",
+          "id": "b09d45d093cf7a9f59bf-1",
           "line": 417,
           "kind": "helper",
-          "expression": "script(`app = adsk.core.Application.get()\ndocuments = [dict(creationId=d.creationId, name=d.name, saved=d.isSaved, modified=d.isModified,\n                  fileId=d.dataFile.id if d.isSaved and d.dataFile else None)\n             for d in app.documents]\nprint(json.dumps(dict(documents=sorted(documents, key=lambda d: d['creationId']),\n                      activeCreationId=app.activeDocument.creationId if app.activeDocument else None)))`)"
+          "expression": "script(`app = adsk.core.Application.get()\ndocuments = [dict(creationId=d.creationId, name=d.name, saved=d.isSaved, modified=d.isModified,\n                  fileId=d.dataFile.id if d.isSaved and d.dataFile else None)\n             for d in app.documents]\nprint(json.dumps(dict(documents=sorted(documents, key=lambda d: str(d['creationId'])),\n                      activeCreationId=app.activeDocument.creationId if app.activeDocument else None)))`)"
         },
         {
           "id": "32e7931b126112e7416a-1",

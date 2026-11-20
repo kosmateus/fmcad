@@ -2,11 +2,29 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { digest, inventorySources } from "./assertion-inventory";
+import {
+  digest,
+  inventorySources,
+  reviewedImportSnapshots,
+} from "./assertion-inventory";
 import {
   appendLatestSourceTransitions,
   compareAssertionSources,
 } from "./assertion-history";
+
+test("reviewed current import evidence preserves the three frozen source obligations", () => {
+  const snapshots = reviewedImportSnapshots(
+    path.resolve(__dirname, "../../.."),
+  );
+  assert.deepEqual(
+    [...snapshots.keys()],
+    [
+      "tests/live-data-import-fixed.ts",
+      "tests/live-data-import.ts",
+      "tests/live-import-receipts.ts",
+    ],
+  );
+});
 
 test("predecessor comparison retains removed expectations and duplicate multiplicity across source ports", () => {
   const result = compareAssertionSources(

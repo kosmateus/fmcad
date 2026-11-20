@@ -4922,7 +4922,7 @@
       "scenario": "native-import-*",
       "capabilities": ["documents", "owned-child-cli"],
       "evidence": "tests/live-data-import.ts",
-      "evidenceAssertion": "script(`app = adsk.core.Application.get()\ndocuments = [dict(creationId=d.creationId, name=d.name, saved=d.isSaved, modified=d.isModified,\n                  fileId=d.dataFile.id if d.isSaved and d.dataFile else None)\n             for d in app.documents]\nprint(json.dumps(dict(documents=sorted(documents, key=lambda d: d['creationId']),\n                      activeCreationId=app.activeDocument.creationId if app.activeDocument else None)))`)",
+      "evidenceAssertion": "script(`app = adsk.core.Application.get()\ndocuments = [dict(creationId=d.creationId, name=d.name, saved=d.isSaved, modified=d.isModified,\n                  fileId=d.dataFile.id if d.isSaved and d.dataFile else None)\n             for d in app.documents]\nprint(json.dumps(dict(documents=sorted(documents, key=lambda d: str(d['creationId'])),\n                      activeCreationId=app.activeDocument.creationId if app.activeDocument else None)))`)",
       "reason": "Observe the exact owned unsaved document and all protected pre-existing document identities before mutations; any renamed, saved, missing, ambiguous or foreign active document must stop the run.",
       "qualification": "not-run",
       "nativeObligation": "owned-unsaved-guard:79debacd643991d23e05-1",
