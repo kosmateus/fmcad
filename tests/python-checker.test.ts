@@ -19,6 +19,9 @@ const { createPythonChecker } = load(
 const { preparePythonArtifact } = load(
   "./packages/node-adapters/dist/python/artifact",
 ) as typeof import("../packages/node-adapters/src/python/artifact");
+const { prepareAtomicScript } = load(
+  "./dist/src/batch-atomic",
+) as typeof import("../src/composition/batch-atomic");
 const { pythonUnitContexts } = load(
   "./packages/node-adapters/dist/python/context-binding",
 ) as typeof import("../packages/node-adapters/src/python/context-binding");
@@ -93,6 +96,59 @@ async function check(
     ...extra,
   });
 }
+
+test("production checker accepts the retained atomic batch-reference wrapper", async (t) => {
+  const documentName =
+    "FMCAD_SCENARIO_7e508362-91d0-42fc-b98f-0d4d37469ee1_native-batch-reference-0";
+  const creationId = "5907eaca-be4f-47da-839e-9fbc0401654a";
+  const generated = prepareAtomicScript({
+    operation: "atomic_resolve",
+    commandId: "fmcad_atomic_b22fa24f785ebbc301630ee866c7c6aa",
+    runId: "ref_7e508362_91d0_42fc_b98f_0d4d37469ee1_0",
+    requestHash:
+      "5312a763dceedc305d96d7e74caa6e4f2c507bfbbf0e076a7b10c2be8653b7e1",
+    sessionNonce: "2c30520d303d9020dcb01dca3cd3e8b6",
+    backend: "addin",
+    doc: documentName,
+    component: null,
+    projectId: null,
+    docId: creationId,
+    docFileId: null,
+    documentIdentity: {
+      expected: { fileId: null, creationId, name: documentName },
+      resolved: null,
+      assertionsOnly: true,
+    },
+  });
+  const wrapper = generated.units.find((unit) => unit.id === "wrapper");
+  assert.ok(wrapper, "prepared atomic artifact must contain its wrapper unit");
+  const artifact = preparePythonArtifact([
+    {
+      id: "atomic-runtime",
+      filename: "atomic-runtime.py",
+      role: "runtime",
+      source:
+        "JsonObject = dict[str, object]\n" +
+        "def execute(request: JsonObject) -> dict[str, object]:\n" +
+        "    return {}\n",
+    },
+    {
+      id: wrapper.id,
+      filename: wrapper.filename,
+      role: "wrapper",
+      source: wrapper.source,
+    },
+  ]);
+  const { root } = await definitions(t);
+  const result = await createPythonChecker({
+    typingRoot,
+    definitionsRoot: root,
+  }).check({ artifact, context: { kind: "raw", entrypoint: "run" } });
+
+  assert.equal(result.provenance.checker, "basedpyright");
+  assert.equal(result.provenance.checkerVersion, "1.40.2");
+  assert.equal(result.status, "passed", JSON.stringify(result));
+});
 
 test("real engine detects argument, nullable access and nonexistent member with original positions", async (t) => {
   const { root } = await definitions(t);

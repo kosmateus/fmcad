@@ -13,7 +13,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import decodePythonLiteral = require("./fixtures/python-literal.cjs");
+import decodePythonLiteral from "./fixtures/python-literal.cjs";
 const repository = path.resolve(__dirname, "../..");
 const load = createRequire(
   path.join(repository, "tests", "python-context-binding.test.js"),
