@@ -1375,11 +1375,11 @@
       "scenario": "native-normal-multidocument-*",
       "qualification": "not-run",
       "evidence": "tests/live-normal-multidocument.ts",
-      "evidenceAssertion": "script(\n        0,\n        \"restore\",\n        `a=adsk.core.Application.get()\nprevious=[d for d in a.documents if d.creationId==${report.before.active === null ? \"None\" : JSON.stringify(report.before.active)}]\nif previous: assert previous[0].activate()\nprint('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,\n    documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d['id']))))`,\n      )",
+      "evidenceAssertion": "script(\n        0,\n        \"restore\",\n        `a=adsk.core.Application.get()\nprevious=[d for d in a.documents if d.creationId==${report.before.active === null ? \"None\" : JSON.stringify(report.before.active)}]\nif previous: assert previous[0].activate()\nprint('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,\n    documents=${normalInventoryExpression(!!group)})))`,\n      )",
       "requiredObservation": "script(\n        0,\n        \"restore\",\n        `a=adsk.core.Application.get()\nprevious=[d for d in a.documents if d.creationId==${report.before.active === null ? \"None\" : JSON.stringify(report.before.active)}]\nif previous: assert previous[0].activate()\nprint('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,\n    documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d['id']))))`,\n      )",
       "reviewedContext": "owned-close-and-full-baseline-restoration",
       "sourceSha256": "1bcf6831378c871c31c0c902e2b2807cdaa53d44aef5d08086f619ae0d8ffb54",
-      "reason": "The owned-close-and-full-baseline-restoration observation belongs to the existing typed original-receipt runner. Preserve its exact retained observation and actual client/job/request/native document context, including no replay and no cleanup before known settlement; the native execution remains not-run.",
+      "reason": "The owned-close-and-full-baseline-restoration observation belongs to the existing typed original-receipt runner. Preserve its exact retained observation and actual client/job/request/native document context, including no replay and no cleanup before known settlement; the native execution remains not-run. Current evidence uses the typed inventory helper and receipt-bound final audit; frozen requiredObservation and historical source identity remain unchanged. This is source evidence, not live qualification.",
       "runnerSource": "tests/live-normal-multidocument.ts",
       "nativeObligation": "owned-close-and-full-baseline-restoration:5957462c947268639f9b-1",
       "requiredCapabilities": [
@@ -1396,7 +1396,9 @@
         "original request/job/client identity and sdkSettled evidence",
         "native parameter values and measured SDK intervals or single dispatch count",
         "owned cleanup and unchanged full foreign document baseline"
-      ]
+      ],
+      "currentSourceSha256": "c50621cf4788e5714f55af0ee1aa4aff6d0073ebc0f8fa8b40a63328c1808a24",
+      "reviewedBinding": "The current typed inventory helper and receipt-bound final audit preserve the frozen observation through authenticated close receipts and unchanged foreign document checks. This is source evidence, not live qualification."
     },
     {
       "source": "tests/live-normal-multidocument.ts",
@@ -1407,11 +1409,11 @@
       "scenario": "native-normal-multidocument-*",
       "qualification": "not-run",
       "evidence": "tests/live-normal-multidocument.ts",
-      "evidenceAssertion": "assert.deepEqual(report.after, report.before)",
+      "evidenceAssertion": "assertNormalFinalInventory(\n        report.before,\n        report.after,\n        report.documents,\n        report.receipts.filter((receipt) => receipt.phase === \"close\"),\n        peers,\n        { baselineFinishedAt, restoreStartedAt },\n      )",
       "requiredObservation": "assert.deepEqual(report.after, report.before)",
       "reviewedContext": "owned-close-and-full-baseline-restoration",
       "sourceSha256": "1bcf6831378c871c31c0c902e2b2807cdaa53d44aef5d08086f619ae0d8ffb54",
-      "reason": "The owned-close-and-full-baseline-restoration observation belongs to the existing typed original-receipt runner. Preserve its exact retained observation and actual client/job/request/native document context, including no replay and no cleanup before known settlement; the native execution remains not-run.",
+      "reason": "The owned-close-and-full-baseline-restoration observation belongs to the existing typed original-receipt runner. Preserve its exact retained observation and actual client/job/request/native document context, including no replay and no cleanup before known settlement; the native execution remains not-run. Current evidence uses the typed inventory helper and receipt-bound final audit; frozen requiredObservation and historical source identity remain unchanged. This is source evidence, not live qualification.",
       "runnerSource": "tests/live-normal-multidocument.ts",
       "nativeObligation": "owned-close-and-full-baseline-restoration:b6a7a417b2100e9fb3f3-1",
       "requiredCapabilities": [
@@ -1428,7 +1430,9 @@
         "original request/job/client identity and sdkSettled evidence",
         "native parameter values and measured SDK intervals or single dispatch count",
         "owned cleanup and unchanged full foreign document baseline"
-      ]
+      ],
+      "currentSourceSha256": "c50621cf4788e5714f55af0ee1aa4aff6d0073ebc0f8fa8b40a63328c1808a24",
+      "reviewedBinding": "The current typed inventory helper and receipt-bound final audit preserve the frozen observation through authenticated close receipts and unchanged foreign document checks. This is source evidence, not live qualification."
     },
     {
       "source": "tests/live-normal-multidocument.ts",
@@ -2489,13 +2493,13 @@
       "scenario": "native-normal-multidocument-*",
       "qualification": "not-run",
       "evidence": "tests/live-normal-multidocument.ts",
-      "evidenceAssertion": "script(\n      0,\n      phase,\n      `a=adsk.core.Application.get()\nprint('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,\n    documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d['id']))))`,\n    )",
+      "evidenceAssertion": "script(\n      0,\n      phase,\n      `a=adsk.core.Application.get()\nprint('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,\n    documents=${normalInventoryExpression(!!group)})))`,\n    )",
       "requiredObservation": "script(\n      0,\n      phase,\n      `a=adsk.core.Application.get()\nprint('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,\n    documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d['id']))))`,\n    )",
       "reviewedContext": "original-creation-and-not-started-write-resume",
       "sourceSha256": "68926370b6ec88795ffeabea7f4dce7907fa22220246023ed80cf2cf00f69c06",
       "currentSourceSha256": "c50621cf4788e5714f55af0ee1aa4aff6d0073ebc0f8fa8b40a63328c1808a24",
-      "reviewedBinding": "Added by exact source transition 3badcefbfe2c3e43a050cf02bba235e6d0333ef0 from 6f32da55bdb4b8114720add67451c3adc20dab1f; this full site remains unchanged in current source commit 135007c1b29b1004f9aa17d688b293a9813ebc95. Static presence is not native proof and qualification remains not-run. Source-span review: Failure cleanup now visits all owner slots, accepts an absent slot only after an exact failed terminal owner/request/job receipt proves sdkSettled and mayHaveMutated=false, and defers otherwise. The previous document assertion is not equivalent for uncreated slots: its exact obligation is retained historically. The same ownedCleanupSource is still invoked for every known document; indentation changes its extracted helper ID. Cleanup errors continue only after exact settlement; uncertain close stops later cleanup.",
-      "reason": "The original-creation-and-not-started-write-resume site belongs to the existing typed original-receipt runner. Preserve its full call-site expression and actual client/job/request/native-document context; native execution remains not-run.",
+      "reviewedBinding": "The current typed inventory helper and receipt-bound final audit preserve the frozen observation through authenticated close receipts and unchanged foreign document checks. This is source evidence, not live qualification.",
+      "reason": "The original-creation-and-not-started-write-resume site belongs to the existing typed original-receipt runner. Preserve its full call-site expression and actual client/job/request/native-document context; native execution remains not-run. Current evidence uses the typed inventory helper and receipt-bound final audit; frozen requiredObservation and historical source identity remain unchanged. This is source evidence, not live qualification.",
       "runnerSource": "tests/live-normal-multidocument.ts",
       "nativeObligation": "original-creation-and-not-started-write-resume:1ee8dbe5c69394106fdd-1",
       "requiredCapabilities": [

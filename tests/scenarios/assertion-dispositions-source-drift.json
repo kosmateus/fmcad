@@ -8141,7 +8141,7 @@
       "scenario": "native-gm07-fixed-program",
       "qualification": "not-run",
       "evidence": "tests/live-gm07.js",
-      "evidenceAssertion": "gm07OwnedScenario(pinned, fusionVersion, backend)",
+      "evidenceAssertion": "gm07OwnedScenario(pinned, fusionVersion)",
       "requiredObservation": "gm07OwnedScenario(pinned, fusionVersion, backend)",
       "sourceSha256": "426c1bd5bc3676a7c33ac2b13f5035319371f806aa8871d17724031cc85e450e",
       "reason": "GM07 phase guard restored at published c5368faa97eddf6b65e9129e6e9c11360cabbbf1. programs.close accepts opt-in expectedModified and emits assert doc.isModified is True/False immediately before doc.close(False), in the same SDK turn. ScenarioSession persists cleanupExpectedModified, rejects phase inference after uncertainty, and passes the exact durable expectation to unsaved close. GM07 sets false for the pristine owned scratch, and true only after registeredRequest returns the exact settled original result. Existing callers default to no phase inference; unknown outcomes still defer cleanup. cleanup-modified.test.ts covers actual runner/generated Python states and default/UNKNOWN; owner guard-removal injection produced two failing mismatch cases on each Node. This is source and offline evidence of restoration, NOT fresh native GM07 or import qualification. Frozen 482 import observations and every earlier reviewed expression remain unchanged.",

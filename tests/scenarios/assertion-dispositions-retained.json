@@ -3346,7 +3346,7 @@
       "disposition": "native-only",
       "scenario": "native-engineering-*",
       "evidence": "tests/live-engineering-analytics.js",
-      "evidenceAssertion": "cad('report', { checks: [{ measurement: { operation: 'measure.volume', data: { ref: body, units: 'mm3' } },\n      min: '5999 mm3' }], metadata: { reviewer: 'coverage-test' } })",
+      "evidenceAssertion": "cad('report', { checks: [{ measurement: { operation: 'measure.volume', data: { ref: body, units: 'mm3' } },\n      min: '5999 mm^3' }], metadata: { reviewer: 'coverage-test' } })",
       "requiredObservation": "cad('report', { checks: [{ measurement: { operation: 'measure.volume', data: { ref: body, units: 'mm3' } },\n      min: '5999 mm3' }], metadata: { reviewer: 'coverage-test' } })",
       "reason": "Preserve the snapshot-diff-status-audit-and-check-report native obligation for report in its original owned fixture context, with the exact frozen observation below. The typed tests/scenarios/native-engineering-cases.ts port retains the body/readback and uses shared original-request receipts and guarded cleanup. Native execution and the current lifecycle safety gates are still required.",
       "qualification": "not-run",
