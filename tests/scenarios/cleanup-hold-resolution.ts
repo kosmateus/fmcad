@@ -1037,7 +1037,8 @@ function original(
     );
   assert.ok(Number(job["submittedAt"]) <= Number(job["finishedAt"]));
   if (job["startedAt"] === undefined) {
-    // Phased local rejections have no SDK start. Preserve that fact rather
+    // Phased local rejections and saved definition replays have no SDK start.
+    // Preserve that fact rather
     // than inventing one; only their exact authoritative terminal contract
     // can take this branch, never a generic failed or unknown SDK result.
     const operation = record(job["operationResult"]);
@@ -1047,20 +1048,50 @@ function original(
     assert.equal(operation["jobId"], job["id"]);
     assert.equal(operation["acceptance"], "accepted");
     assert.equal(job["kind"], "command");
-    assert.equal(job["state"], "failed");
     for (const value of [job, execution, result, operation])
       assert.equal(value["mayHaveMutated"], false);
     const code = text(job["code"]);
     assert.equal(execution["code"], code);
     assert.equal(operation["code"], code);
-    assert.ok(
-      code === "PYTHON_CHECK_REJECTED" ||
-        code === "LOCAL_PREPARATION_FAILED" ||
-        code === "LOCAL_EXECUTION_FAILED",
-      "Missing SDK start is not an authoritative local terminal rejection",
-    );
-    const outcome =
-      code === "LOCAL_EXECUTION_FAILED" ? "failed" : "not_started";
+    let outcome: string;
+    if (job["state"] === "succeeded") {
+      assert.equal(code, "EXECUTION_COMPLETE");
+      assert.match(
+        text(owner["scenarioId"]),
+        /^definition-transaction-unsaved-\d+$/u,
+      );
+      assert.equal(row["phase"], "cad-replay");
+      assert.equal(record(row["intent"])["kind"], "cad");
+      const replay = record(JSON.parse(text(result["stdout"])) as unknown);
+      assert.equal(replay["version"], 1);
+      assert.equal(replay["operation"], "definition.instantiate");
+      assert.equal(replay["success"], true);
+      assert.equal(replay["status"], "success");
+      assert.equal(replay["replayed"], true);
+      assert.equal(replay["runId"], "literal");
+      const document = record(
+        json(path.join(directory, "report.json"))["document"],
+      );
+      assert.equal(record(replay["context"])["docId"], document["creationId"]);
+      assert.equal(record(replay["context"])["doc"], document["name"]);
+      assert.equal(record(replay["context"])["preview"], false);
+      assert.deepEqual(replay["documentIdentity"], {
+        fileId: null,
+        creationId: document["creationId"],
+        name: document["name"],
+        assertionsOnly: true,
+      });
+      outcome = "succeeded";
+    } else {
+      assert.equal(job["state"], "failed");
+      assert.ok(
+        code === "PYTHON_CHECK_REJECTED" ||
+          code === "LOCAL_PREPARATION_FAILED" ||
+          code === "LOCAL_EXECUTION_FAILED",
+        "Missing SDK start is not an authoritative local terminal rejection",
+      );
+      outcome = code === "LOCAL_EXECUTION_FAILED" ? "failed" : "not_started";
+    }
     assert.equal(operation["executionOutcome"], outcome);
     for (const value of [job, execution]) {
       if (value["executionOutcome"] !== undefined)
@@ -1200,7 +1231,7 @@ function admissionProof(c: ReturnType<typeof context>, source: string) {
     result = record(last["result"]);
   assert.match(
     text(c.hold["reason"]),
-    /^Fenced CAD turn failed; leave the owned document for inspection: (?:Inventory re-admission lacks exact peer lifecycle receipts|A previously admitted peer lost its exact lifecycle proof|ADMISSION_CHANGED: inventory changed again before the admitted CAD turn; no helper executed)(?:\n|$)/u,
+    /^Fenced CAD turn failed; leave the owned document for inspection: (?:Inventory re-admission lacks exact peer lifecycle receipts|A previously admitted peer lost its exact lifecycle proof|ADMISSION_CHANGED: inventory changed again before the admitted CAD turn; no helper executed|ADMISSION_CHANGED: no new terminal receipt from the original admitted peers; no helper executed)(?:\n|$)/u,
   );
   assert.equal(result["state"], "succeeded");
   const output = marker(result["stdout"], "FMCAD_RESULT ");

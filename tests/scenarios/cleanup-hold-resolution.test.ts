@@ -452,6 +452,92 @@ for (const bad of [
   });
 }
 
+function definitionReplayFixture(t: TestContext) {
+  const f = withLocalTerminal(
+    t,
+    "LOCAL_EXECUTION_FAILED",
+    "failed",
+    "definition-transaction-unsaved-4",
+  );
+  f.rejected.phase = "cad-replay";
+  const replay = {
+    version: 1,
+    operation: "definition.instantiate",
+    success: true,
+    status: "success",
+    replayed: true,
+    runId: "literal",
+    context: {
+      doc: f.document.name,
+      docId: f.document.creationId,
+      preview: false,
+    },
+    documentIdentity: { fileId: null, ...f.document, assertionsOnly: true },
+  };
+  Object.assign(f.job, { state: "succeeded", code: "EXECUTION_COMPLETE" });
+  Object.assign(record(f.job["operationResult"]), {
+    executionOutcome: "succeeded",
+    code: "EXECUTION_COMPLETE",
+  });
+  Object.assign(record(f.raw["execution"]), {
+    state: "succeeded",
+    code: "EXECUTION_COMPLETE",
+    exitCode: 0,
+  });
+  Object.assign(f.rejected.result, {
+    state: "succeeded",
+    exitCode: 0,
+    stdout: JSON.stringify(replay),
+    brokerReceipt: { ...f.rejected.result.brokerReceipt!, state: "succeeded" },
+  });
+  f.raw["stdout"] = f.rejected.result.stdout;
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  return { ...f, replay };
+}
+
+test("authenticated local definition replay without SDK start permits guarded cleanup", async (t) => {
+  const f = definitionReplayFixture(t);
+  const result = await resumeCleanup(
+    f.backend,
+    path.join(f.directory, "report.json"),
+    f.ports,
+  );
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+});
+for (const bad of [
+  "not-replayed",
+  "foreign-document",
+  "different-operation",
+  "missing-identity",
+  "rpc",
+  "mutated",
+  "wrong-phase",
+] as const)
+  test(`local replay without SDK start rejects ${bad}`, async (t) => {
+    const f = definitionReplayFixture(t);
+    if (bad === "not-replayed") f.replay.replayed = false;
+    if (bad === "foreign-document") f.replay.context.docId = randomUUID();
+    if (bad === "different-operation") f.replay.operation = "shape.box";
+    if (bad === "missing-identity") f.replay.documentIdentity.name = "";
+    if (bad === "rpc") f.job["dispatch"] = { rpcCount: 1 };
+    if (bad === "mutated") f.job["mayHaveMutated"] = true;
+    if (bad === "wrong-phase") f.rejected.phase = "cad-definition";
+    Object.assign(f.rejected.result, { stdout: JSON.stringify(f.replay) });
+    f.raw["stdout"] = f.rejected.result.stdout;
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    await assert.rejects(
+      resumeCleanup(f.backend, path.join(f.directory, "report.json"), f.ports),
+    );
+    assert.equal(f.submissions(), 0);
+  });
+
 function observationFixture(t: TestContext, family = "native-extended-0") {
   const f = fixture(t, false, true, false, family);
   const modeling = family.startsWith("native-");
@@ -1299,7 +1385,7 @@ test("the source-backed lost peer lifecycle admission reason is supported withou
   );
 });
 
-function readmittedFixture(t: TestContext) {
+function readmittedFixture(t: TestContext, exhaustedPeers = false) {
   const f = fixture(t),
     prior = f.report.requests[1]!;
   const payload = JSON.parse(
@@ -1325,8 +1411,9 @@ function readmittedFixture(t: TestContext) {
   f.report.requests.push(row);
   f.report.cleanupHold = {
     requestId: row.requestId,
-    reason:
-      "Fenced CAD turn failed; leave the owned document for inspection: ADMISSION_CHANGED: inventory changed again before the admitted CAD turn; no helper executed",
+    reason: exhaustedPeers
+      ? "Fenced CAD turn failed; leave the owned document for inspection: ADMISSION_CHANGED: no new terminal receipt from the original admitted peers; no helper executed"
+      : "Fenced CAD turn failed; leave the owned document for inspection: ADMISSION_CHANGED: inventory changed again before the admitted CAD turn; no helper executed",
   };
   fs.writeFileSync(
     path.join(f.directory, "report.json"),
@@ -1343,6 +1430,57 @@ test("readmitted admission-only hold binds both original no-helper turns before 
   assert.equal(f.submissions(), 2);
   assert.deepEqual(fs.readFileSync(filename), before);
 });
+test("exact exhausted-peer admission hold binds both no-helper receipts without changing the failed report", async (t) => {
+  const f = readmittedFixture(t, true);
+  const file = path.join(f.directory, "report.json");
+  const before = fs.readFileSync(file);
+  const result = await resumeCleanup(f.backend, file, f.ports);
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(fs.readFileSync(file), before);
+});
+for (const bad of [
+  "near-reason",
+  "missing-prior",
+  "mutation",
+  "foreign-request",
+  "unknown-prior",
+] as const)
+  test(`exhausted-peer admission cleanup rejects ${bad} before inspection`, async (t) => {
+    const f = readmittedFixture(t, true);
+    const prior = f.report.requests[1]!;
+    if (bad === "near-reason")
+      f.report.cleanupHold.reason += " but another helper executed";
+    if (bad === "missing-prior") f.report.requests.splice(1, 1);
+    if (bad === "unknown-prior") {
+      Object.assign(prior.result, { state: "unknown", sdkSettled: false });
+      record(f.originals.get(prior.requestId))["execution"] = {
+        state: "unknown",
+        sdkSettled: false,
+      };
+    }
+    if (bad === "mutation" || bad === "foreign-request") {
+      const value = record(
+        JSON.parse(
+          prior.result.stdout.slice("FMCAD_RESULT ".length),
+        ) as unknown,
+      );
+      const admission = record(record(value["result"])["admission"]);
+      if (bad === "mutation") admission["mutationStarted"] = true;
+      else admission["requestId"] = "foreign";
+      const stdout = "FMCAD_RESULT " + JSON.stringify(value);
+      Object.assign(prior.result, { stdout });
+      record(f.originals.get(prior.requestId))["stdout"] = stdout;
+    }
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    await assert.rejects(
+      resumeCleanup(f.backend, path.join(f.directory, "report.json"), f.ports),
+    );
+    assert.equal(f.submissions(), 0);
+  });
 for (const kind of [
   "prior-mutation",
   "prior-helper",
