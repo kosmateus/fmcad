@@ -1824,10 +1824,14 @@ function inventory(value: unknown, document: Document) {
 function admissionProof(c: ReturnType<typeof context>, source: string) {
   const last = c.requests.at(-1)!,
     result = record(last["result"]);
-  assert.match(
-    text(c.hold["reason"]),
-    /^Fenced CAD turn failed; leave the owned document for inspection: (?:Inventory re-admission lacks exact peer lifecycle receipts|A previously admitted peer lost its exact lifecycle proof|ADMISSION_CHANGED: inventory changed again before the admitted CAD turn; no helper executed|ADMISSION_CHANGED: no new terminal receipt from the original admitted peers; no helper executed)(?:\n|$)/u,
-  );
+  const budgetExhausted =
+    c.hold["reason"] ===
+    "Fenced CAD turn failed; leave the owned document for inspection: ADMISSION_CHANGED: original CLI settlement budget exhausted before another admission turn";
+  if (!budgetExhausted)
+    assert.match(
+      text(c.hold["reason"]),
+      /^Fenced CAD turn failed; leave the owned document for inspection: (?:Inventory re-admission lacks exact peer lifecycle receipts|A previously admitted peer lost its exact lifecycle proof|ADMISSION_CHANGED: inventory changed again before the admitted CAD turn; no helper executed|ADMISSION_CHANGED: no new terminal receipt from the original admitted peers; no helper executed)(?:\n|$)/u,
+    );
   assert.equal(result["state"], "succeeded");
   const output = marker(result["stdout"], "FMCAD_RESULT ");
   assert.equal(output["success"], true);
@@ -1851,7 +1855,13 @@ function admissionProof(c: ReturnType<typeof context>, source: string) {
     text(payload["operation"]),
     text(last["requestId"]),
   );
-  if (text(c.hold["reason"]).includes("ADMISSION_CHANGED:")) {
+  // Budget exhaustion happens before dispatching the next turn. The last
+  // authenticated no-helper receipt remains authoritative; a second receipt
+  // must not be invented for a turn that was never submitted.
+  if (
+    text(c.hold["reason"]).includes("ADMISSION_CHANGED:") &&
+    !budgetExhausted
+  ) {
     assert.ok(
       text(last["phase"]).endsWith("-readmitted"),
       "Unbound readmitted turn",

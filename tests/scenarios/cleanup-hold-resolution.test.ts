@@ -777,6 +777,56 @@ test("supported held resolution preserves the original failed report and binds a
   );
 });
 
+test("exhausted readmission budget preserves the last authenticated no-helper turn", async (t) => {
+  const f = fixture(t);
+  f.report.cleanupHold.reason =
+    "Fenced CAD turn failed; leave the owned document for inspection: ADMISSION_CHANGED: original CLI settlement budget exhausted before another admission turn";
+  const filename = path.join(f.directory, "report.json");
+  fs.writeFileSync(filename, JSON.stringify(f.report));
+  const before = fs.readFileSync(filename);
+  const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.equal(proof.inspectedModified, true);
+  assert.equal(f.submissions(), 1);
+  assert.deepEqual(fs.readFileSync(filename), before);
+  assert.deepEqual(
+    validateCleanupResolution(f.directory, f.backend, f.runtime),
+    proof,
+  );
+});
+
+for (const corruption of [
+  "helper-called",
+  "mutation-started",
+  "request-mismatch",
+]) {
+  test(`exhausted readmission budget rejects ${corruption} before inspection`, async (t) => {
+    const f = fixture(t);
+    f.report.cleanupHold.reason =
+      "Fenced CAD turn failed; leave the owned document for inspection: ADMISSION_CHANGED: original CLI settlement budget exhausted before another admission turn";
+    const last = f.report.requests.at(-1)!;
+    const output = record(
+      JSON.parse(last.result.stdout.slice("FMCAD_RESULT ".length)),
+    );
+    const admission = record(record(output["result"])["admission"]);
+    if (corruption === "helper-called") admission["helperCalls"] = 1;
+    if (corruption === "mutation-started") admission["mutationStarted"] = true;
+    if (corruption === "request-mismatch")
+      admission["requestId"] = "foreign-request";
+    last.result = {
+      ...last.result,
+      stdout: "FMCAD_RESULT " + JSON.stringify(output),
+    };
+    f.executions.set(last.requestId, last.result);
+    record(f.originals.get(last.requestId))["stdout"] = last.result.stdout;
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(f.submissions(), 0);
+  });
+}
+
 test("pristine admission holds bind the authenticated clean state instead of requiring a mutation", async (t) => {
   const f = fixture(t, false, false);
   const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
