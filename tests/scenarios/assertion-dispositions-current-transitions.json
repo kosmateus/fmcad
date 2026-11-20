@@ -86,7 +86,7 @@
       "requiredObservation": "script(\n      0,\n      phase,\n      `a=adsk.core.Application.get()\nprint('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,\n    documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d['id']))))`,\n    )",
       "reviewedContext": "original-creation-and-not-started-write-resume",
       "sourceSha256": "e1abce411fc592c7c283773a0a91d0ff6d1093c050423341acedf40af7604da7",
-      "currentSourceSha256": "a14b8c397c573b0d7a2254083e3bd8198771ffdfb0b4000ebfc894bd1c6b15c8",
+      "currentSourceSha256": "4ee623ecb2f41fd183abd2faffbb212aa030e64ed3e7a23d6ec76166290a68a3",
       "reviewedBinding": "The exact frozen observation remains preserved below; the current evidence binds the committed replacement without claiming native success.",
       "reason": "The exact frozen observation remains preserved below; the current evidence binds the committed replacement without claiming native success.",
       "runnerSource": "tests/live-normal-multidocument.ts",
@@ -139,7 +139,7 @@
         "native parameter values and measured SDK intervals or single dispatch count",
         "owned cleanup and unchanged full foreign document baseline"
       ],
-      "currentSourceSha256": "a14b8c397c573b0d7a2254083e3bd8198771ffdfb0b4000ebfc894bd1c6b15c8",
+      "currentSourceSha256": "4ee623ecb2f41fd183abd2faffbb212aa030e64ed3e7a23d6ec76166290a68a3",
       "reviewedBinding": "The exact frozen observation remains preserved below; the current evidence binds the committed replacement without claiming native success.",
       "historicalCommit": "e986452a15ad13cbd7215b423eb9de94a6026d33"
     },
@@ -174,7 +174,7 @@
         "native parameter values and measured SDK intervals or single dispatch count",
         "owned cleanup and unchanged full foreign document baseline"
       ],
-      "currentSourceSha256": "a14b8c397c573b0d7a2254083e3bd8198771ffdfb0b4000ebfc894bd1c6b15c8",
+      "currentSourceSha256": "4ee623ecb2f41fd183abd2faffbb212aa030e64ed3e7a23d6ec76166290a68a3",
       "reviewedBinding": "The exact frozen observation remains preserved below; the current evidence binds the committed replacement without claiming native success.",
       "historicalCommit": "e986452a15ad13cbd7215b423eb9de94a6026d33"
     },
@@ -210,7 +210,7 @@
         "owned cleanup and unchanged full foreign document baseline"
       ],
       "historicalCommit": "68def11c9b10b71ab6cac7bd68784c27f82704ea",
-      "currentSourceSha256": "a14b8c397c573b0d7a2254083e3bd8198771ffdfb0b4000ebfc894bd1c6b15c8",
+      "currentSourceSha256": "4ee623ecb2f41fd183abd2faffbb212aa030e64ed3e7a23d6ec76166290a68a3",
       "reviewedBinding": "The replacement accepts one result or exactly one additional helper footer, whose full payload is asserted to be success=true and helperCallsOnly=[]. Other marker counts and foreign footer data are rejected."
     },
     {
@@ -245,7 +245,7 @@
         "owned cleanup and unchanged full foreign document baseline"
       ],
       "historicalCommit": "0c266a05952978d8675c1c0281e8d2f90a78e7ac",
-      "currentSourceSha256": "a14b8c397c573b0d7a2254083e3bd8198771ffdfb0b4000ebfc894bd1c6b15c8",
+      "currentSourceSha256": "4ee623ecb2f41fd183abd2faffbb212aa030e64ed3e7a23d6ec76166290a68a3",
       "reviewedBinding": "New documents require authenticated OPEN-peer provenance through the existing receipt-bound inventory validator; unchanged user rows and original active document restoration remain required. Unauthenticated extra documents still fail."
     },
     {
@@ -280,8 +280,113 @@
         "owned cleanup and unchanged full foreign document baseline"
       ],
       "historicalCommit": "188411c11d6c52951e3bd4b826ddc8f886432ac4",
-      "currentSourceSha256": "a14b8c397c573b0d7a2254083e3bd8198771ffdfb0b4000ebfc894bd1c6b15c8",
+      "currentSourceSha256": "4ee623ecb2f41fd183abd2faffbb212aa030e64ed3e7a23d6ec76166290a68a3",
       "reviewedBinding": "The same receipt-bound validator now receives canonical OPEN and retained peers. Retained proof grants visibility only, never mutation or cleanup; unsettled, foreign, saved and missing documents remain rejected."
+    },
+    {
+      "source": "tests/live-normal-multidocument.ts",
+      "assertionId": "c5328b82bedbfb7d7944-1",
+      "sourceLine": 219,
+      "sourceKind": "assertion",
+      "disposition": "native-only",
+      "scenario": "native-normal-multidocument-*",
+      "qualification": "not-run",
+      "evidence": "tests/live-normal-multidocument.ts",
+      "evidenceAssertion": "assert.ok(proof && close, \"Missing time-bound close proof\")",
+      "requiredObservation": "assert.ok(proof && close, \"Missing time-bound supplemental close proof\")",
+      "reviewedContext": "live-shared-executor-observations",
+      "sourceSha256": "a14b8c397c573b0d7a2254083e3bd8198771ffdfb0b4000ebfc894bd1c6b15c8",
+      "reason": "New documents require authenticated OPEN-peer provenance through the existing receipt-bound inventory validator; unchanged user rows and original active document restoration remain required. Unauthenticated extra documents still fail.",
+      "runnerSource": "tests/live-normal-multidocument.ts",
+      "nativeObligation": "regular-close-fence:c5328b82bedbfb7d7944-1",
+      "requiredCapabilities": [
+        "normal-multidocument-admission",
+        "original-request-receipts",
+        "native-owned-document-lifecycle"
+      ],
+      "retainedSource": "tests/live-normal-multidocument.ts",
+      "runnerStatus": "migration-required",
+      "migrationRequirement": "The typed existing runner is retained; bounded durable pre-admission intent and exact result binding are source-complete. Current contract tests and exact-commit checks precede ready status.",
+      "blocker": "docs/refactor-agents/B_RETAINED_ASSERTION_OBLIGATIONS.md",
+      "nativeEvidenceRequired": [
+        "exact installed build and admissionScope normal-multidocument",
+        "original request/job/client identity and sdkSettled evidence",
+        "native parameter values and measured SDK intervals or single dispatch count",
+        "owned cleanup and unchanged full foreign document baseline"
+      ],
+      "historicalCommit": "4fb56ac51c2fa2ae969c6e23ee7f616df077cfec",
+      "currentSourceSha256": "4ee623ecb2f41fd183abd2faffbb212aa030e64ed3e7a23d6ec76166290a68a3",
+      "reviewedBinding": "Regular close now emits before/after inventory fences. Its original settled receipt binds client/request/job and time; the same audit requires the unchanged foreign inventory and observation window. Missing or invalid fences remain rejected. Historical expressions and NOTRUN qualification are preserved."
+    },
+    {
+      "source": "tests/live-normal-multidocument.ts",
+      "assertionId": "03cacd05a2d8930342bf-1",
+      "sourceLine": 842,
+      "sourceKind": "helper",
+      "disposition": "native-only",
+      "scenario": "native-normal-multidocument-*",
+      "qualification": "not-run",
+      "evidence": "tests/live-normal-multidocument.ts",
+      "evidenceAssertion": "script(\n          index,\n          \"close\",\n          group\n            ? `${guard(document)}\\n${ownedCleanupSource(document, report.before.active, \"FMCAD_RESULT \")}`\n            : normalCloseSource(document, guard(document)),\n          document,\n        )",
+      "requiredObservation": "script(\n          index,\n          \"close\",\n          group\n            ? `${guard(document)}\\n${ownedCleanupSource(document, report.before.active, \"FMCAD_RESULT \")}`\n            : `${guard(document)}\nassert d.close(False)\nprint('FMCAD_RESULT '+json.dumps(dict(closed=True,creationId=${JSON.stringify(document.creationId)})))`,\n          document,\n        )",
+      "reviewedContext": "live-shared-executor-observations",
+      "sourceSha256": "a14b8c397c573b0d7a2254083e3bd8198771ffdfb0b4000ebfc894bd1c6b15c8",
+      "reason": "New documents require authenticated OPEN-peer provenance through the existing receipt-bound inventory validator; unchanged user rows and original active document restoration remain required. Unauthenticated extra documents still fail.",
+      "runnerSource": "tests/live-normal-multidocument.ts",
+      "nativeObligation": "regular-close-fence:03cacd05a2d8930342bf-1",
+      "requiredCapabilities": [
+        "normal-multidocument-admission",
+        "original-request-receipts",
+        "native-owned-document-lifecycle"
+      ],
+      "retainedSource": "tests/live-normal-multidocument.ts",
+      "runnerStatus": "migration-required",
+      "migrationRequirement": "The typed existing runner is retained; bounded durable pre-admission intent and exact result binding are source-complete. Current contract tests and exact-commit checks precede ready status.",
+      "blocker": "docs/refactor-agents/B_RETAINED_ASSERTION_OBLIGATIONS.md",
+      "nativeEvidenceRequired": [
+        "exact installed build and admissionScope normal-multidocument",
+        "original request/job/client identity and sdkSettled evidence",
+        "native parameter values and measured SDK intervals or single dispatch count",
+        "owned cleanup and unchanged full foreign document baseline"
+      ],
+      "historicalCommit": "4fb56ac51c2fa2ae969c6e23ee7f616df077cfec",
+      "currentSourceSha256": "4ee623ecb2f41fd183abd2faffbb212aa030e64ed3e7a23d6ec76166290a68a3",
+      "reviewedBinding": "Regular close now emits before/after inventory fences. Its original settled receipt binds client/request/job and time; the same audit requires the unchanged foreign inventory and observation window. Missing or invalid fences remain rejected. Historical expressions and NOTRUN qualification are preserved."
+    },
+    {
+      "source": "tests/live-normal-multidocument.ts",
+      "assertionId": "e718f410198698d77127-1",
+      "sourceLine": 847,
+      "sourceKind": "embedded-python",
+      "disposition": "native-only",
+      "scenario": "native-normal-multidocument-*",
+      "qualification": "not-run",
+      "evidence": "tests/live-normal-multidocument.ts",
+      "evidenceAssertion": "assert d.close(False)",
+      "requiredObservation": "\nassert d.close(False)\nprint('FMCAD_RESULT '+json.dumps(dict(closed=True,creationId=",
+      "reviewedContext": "live-shared-executor-observations",
+      "sourceSha256": "a14b8c397c573b0d7a2254083e3bd8198771ffdfb0b4000ebfc894bd1c6b15c8",
+      "reason": "New documents require authenticated OPEN-peer provenance through the existing receipt-bound inventory validator; unchanged user rows and original active document restoration remain required. Unauthenticated extra documents still fail.",
+      "runnerSource": "tests/live-normal-multidocument.ts",
+      "nativeObligation": "regular-close-fence:e718f410198698d77127-1",
+      "requiredCapabilities": [
+        "normal-multidocument-admission",
+        "original-request-receipts",
+        "native-owned-document-lifecycle"
+      ],
+      "retainedSource": "tests/live-normal-multidocument.ts",
+      "runnerStatus": "migration-required",
+      "migrationRequirement": "The typed existing runner is retained; bounded durable pre-admission intent and exact result binding are source-complete. Current contract tests and exact-commit checks precede ready status.",
+      "blocker": "docs/refactor-agents/B_RETAINED_ASSERTION_OBLIGATIONS.md",
+      "nativeEvidenceRequired": [
+        "exact installed build and admissionScope normal-multidocument",
+        "original request/job/client identity and sdkSettled evidence",
+        "native parameter values and measured SDK intervals or single dispatch count",
+        "owned cleanup and unchanged full foreign document baseline"
+      ],
+      "historicalCommit": "4fb56ac51c2fa2ae969c6e23ee7f616df077cfec",
+      "currentSourceSha256": "4ee623ecb2f41fd183abd2faffbb212aa030e64ed3e7a23d6ec76166290a68a3",
+      "reviewedBinding": "Regular close now emits before/after inventory fences. Its original settled receipt binds client/request/job and time; the same audit requires the unchanged foreign inventory and observation window. Missing or invalid fences remain rejected. Historical expressions and NOTRUN qualification are preserved."
     }
   ]
 }
