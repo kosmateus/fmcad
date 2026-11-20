@@ -422,7 +422,7 @@ test(
 );
 
 test(
-  "owner stop composes a settled dead MCP SDK restart with one ADDIN probe and separate resume",
+  "owner stop composes a dead SDK transition and recovers orphan work through its authenticated live backend",
   { timeout: 30000 },
   async (t) => {
     const processBirth = (
@@ -827,6 +827,55 @@ test(
         ]),
       ),
       jobsAtTransition,
+    );
+    await handle.close();
+    delete resources.handle;
+    const { openIsolatedEpoch } = load("./queue-isolated-epoch") as {
+      openIsolatedEpoch(dir: string, options?: { recover: false }): P.State;
+    };
+    const current = openIsolatedEpoch(f.dir, { recover: false });
+    const job = current.submit({
+      kind: "rpc",
+      requestId: "interrupted-after-authenticated-backend-transition",
+      clientId: f.clientId,
+      timeoutMs: 1000,
+      payload: { jsonrpc: "2.0", id: "orphan-write", method: "tools/call" },
+    });
+    const jobId = job["id"];
+    assert.ok(typeof jobId === "string");
+    assert.equal(current.next()?.id, jobId);
+    assert.equal(current.status(jobId)["state"], "running");
+    const currentFile = path.join(f.epoch.root, "queue-state.json");
+    const interruptedBytes = fs.readFileSync(currentFile);
+    const retained = [
+      path.join(f.dir, "queue-state.json"),
+      path.join(f.dir, "instance.json"),
+      path.join(f.epoch.root, "instance.json"),
+      path.join(f.dir, "isolated-admission-epoch.json"),
+      path.join(f.dir, "physical-backend-head.json"),
+      head.identity.path,
+    ].map((file) => ({ file, bytes: fs.readFileSync(file) }));
+    const readonly = openIsolatedEpoch(f.dir, { recover: false });
+    assert.equal(readonly.status(jobId)["state"], "running");
+    assert.deepEqual(fs.readFileSync(currentFile), interruptedBytes);
+    const backend = lifecycle.resolveBackendHead(f.dir, () => readonly).current;
+    assert.ok(backend);
+    assert.equal(backend.identity.instance.pid, targetIdentity.pid);
+    assert.equal(backend.identity.instance.birth, targetIdentity.birth);
+    assert.notEqual(backend.identity.instance.pid, f.epoch.currentInstance.pid);
+    const reopened = openIsolatedEpoch(f.dir);
+    assert.equal(reopened.status(jobId)["state"], "needs_reconciliation");
+    assert.equal(reopened.summary().blocked?.id, jobId);
+    assert.equal(
+      targetProbes,
+      2,
+      "metadata recovery neither probes Fusion nor replays dispatched work",
+    );
+    for (const { file, bytes } of retained)
+      assert.deepEqual(fs.readFileSync(file), bytes);
+    assert.deepEqual(
+      fs.readFileSync(path.join(f.dir, "queue-state.json")),
+      originalHistory,
     );
   },
 );
