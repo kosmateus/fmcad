@@ -16,7 +16,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import decodePythonLiteral = require("./fixtures/python-literal.cjs");
+import decodePythonLiteral from "./fixtures/python-literal.cjs";
 
 const fixtureDirectory = path.join(process.cwd(), "tests");
 const load = createRequire(path.join(fixtureDirectory, "batch-atomic.test.ts"));
@@ -92,11 +92,11 @@ async function withPerformanceTicks<T>(
 }
 
 function extractAtomicRequest(script: string) {
-  const marker = "_ATOMIC_REQUEST = ";
-  const start = script.indexOf(marker);
-  assert.ok(start >= 0, "missing _ATOMIC_REQUEST");
-  const lineEnd = script.indexOf("\n", start + marker.length);
-  const line = script.slice(start + marker.length, lineEnd);
+  const assignment = /_ATOMIC_REQUEST(?:: "JsonObject")? = /u.exec(script);
+  assert.ok(assignment, "missing _ATOMIC_REQUEST");
+  const valueStart = assignment.index + assignment[0].length;
+  const lineEnd = script.indexOf("\n", valueStart);
+  const line = script.slice(valueStart, lineEnd);
   return object(decodePythonLiteral(line));
 }
 
