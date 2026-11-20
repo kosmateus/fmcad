@@ -12,7 +12,7 @@ env:
 jobs:
   offline-regressions:
     runs-on: ubuntu-24.04
-    # Ten explicitly reviewed offline sources per shard; keep the real checker
+    # Explicitly reviewed offline sources per shard; keep the real checker
     # and installed-consumer contracts. Initial budget awaits retained CI timing.
     timeout-minutes: 35
     env:
@@ -40,6 +40,7 @@ jobs:
             "14",
             "15",
             "16",
+            "17",
           ]
     steps:
       - uses: actions/checkout@v4
@@ -127,6 +128,10 @@ jobs:
         run: |
           set -o pipefail
           npm run test:offline-gap:16 2>&1 | tee .test-artifacts/offline-regressions/results.log
+      - if: matrix.shard == '17'
+        run: |
+          set -o pipefail
+          npm run test:offline-gap:17 2>&1 | tee .test-artifacts/offline-regressions/results.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

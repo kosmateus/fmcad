@@ -327,8 +327,30 @@ test("one candidate build feeds CI and offline regression consumers", () => {
     jobs["offline-regressions"],
     /uses: \.\/\.github\/workflows\/offline-regressions\.yml/,
   );
-  assert.match(offline, /node: \["22\.13\.0", "24\.x"\][\s\S]*"16"/);
-  assert.equal((offline.match(/npm run test:offline-gap:/g) || []).length, 16);
+  assert.match(offline, /node: \["22\.13\.0", "24\.x"\][\s\S]*"17"/);
+  assert.equal((offline.match(/npm run test:offline-gap:/g) || []).length, 17);
+  assert.equal(
+    scripts["test:offline-gap:17"],
+    "node --experimental-strip-types --test --test-concurrency=1 dist/tests/cad.test.js",
+  );
+  assert.deepEqual(
+    scripts["test:offline-gap:03"].match(/dist\/tests\/[\w-]+\.test\.js/g),
+    [
+      "checking",
+      "client-presence",
+      "closed-epoch-broker",
+      "closed-epoch-proof",
+      "console-bounded-read",
+      "console-components",
+      "console-data",
+      "console-details",
+      "console-document",
+    ].map((name) => `dist/tests/${name}.test.js`),
+  );
+  assert.match(
+    offline,
+    /if: matrix\.shard == '17'[\s\S]*npm run test:offline-gap:17/,
+  );
   assert.equal(
     (offline.match(/actions\/download-artifact@v4/g) || []).length,
     1,
