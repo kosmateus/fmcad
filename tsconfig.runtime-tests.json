@@ -93,6 +93,7 @@
     "tests/mcp-client-context.test.ts",
     "tests/installed-launcher-runtime.test.ts",
     "tests/opencode-presence.test.ts",
+    "tests/queue-ipc-debug-trace.test.ts",
     "tests/opencode-presence-migration.test.ts",
     "tests/project-events-migration.test.ts",
     "tests/library-api-review.test.ts",
