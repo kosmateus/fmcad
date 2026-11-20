@@ -11,6 +11,129 @@ import { record } from "./contracts";
 import { cliSettlementTimeoutMs } from "./legacy-handoff";
 import { program, emit } from "./programs";
 
+test("captureUserView readmits after a canonical peer closes between prepare and SDK", async (t) => {
+  const f = await fixture(t);
+  const user = await f.model.execute(
+    program(`import adsk.core
+app = adsk.core.Application.get()
+doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
+doc.name = 'Original user'
+class Workspace:
+    id = 'FusionSolidEnvironment'
+    def activate(self):
+        app.userInterface.activeWorkspace = self
+        return True
+class Workspaces:
+    def itemById(self, key):
+        assert key == 'FusionSolidEnvironment'
+        return Workspace()
+app.userInterface.activeWorkspace = Workspace()
+app.userInterface.workspaces = Workspaces()`),
+  );
+  assert.equal(user.success, true, user.error);
+  let peer!: ScenarioSession;
+  let ready!: () => void, release!: () => void;
+  const peerReady = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let captures = 0;
+  const backend: ScenarioBackend = {
+    ...f.backend,
+    capabilities: new Set([...f.backend.capabilities, "original-user-view"]),
+    async execute(request) {
+      if (
+        request.owner.scenarioId === "capture-subject" &&
+        request.source.includes("view_plan: JsonRecord")
+      ) {
+        if (captures++ === 0) await peer.cleanup();
+      }
+      const execution = await f.backend.execute(request);
+      const jobId = randomUUID();
+      return {
+        ...execution,
+        brokerReceipt: {
+          jobId,
+          requestId: request.requestId,
+          clientId: request.owner.clientId,
+          state: execution.state,
+          operationResult: {
+            version: 1,
+            jobId,
+            requestId: request.requestId,
+            acceptance: "accepted",
+            executionOutcome: execution.state,
+            mayHaveMutated: execution.mayHaveMutated,
+          },
+        },
+      };
+    },
+  };
+  const peers = runScenarios(
+    backend,
+    [
+      {
+        id: "closing-view-peer",
+        requires: [],
+        async run(session) {
+          peer = session;
+          session.expectCleanupModified(false);
+          await session.observe(
+            "observe-restore-user-focus",
+            program(`import adsk.core, json
+assert adsk.core.Application.get().documents.item(0).activate()
+${emit(`dict(restored=True, creationId=${JSON.stringify(session.document.creationId)})`)}`),
+          );
+          ready();
+          await released;
+        },
+      },
+    ],
+    f.directory,
+    1,
+  );
+  try {
+    await Promise.race([
+      peerReady,
+      peers.then((reports) => {
+        throw new Error(
+          "Peer failed before capture: " + JSON.stringify(reports),
+        );
+      }),
+    ]);
+    const reports = await runScenarios(
+      backend,
+      [
+        {
+          id: "capture-subject",
+          scope: "exclusive-instance",
+          requires: ["original-user-view"],
+          async run(session) {
+            session.expectCleanupModified(false);
+          },
+        },
+      ],
+      f.directory,
+      1,
+    );
+    assert.equal(reports[0]!.status, "passed", reports[0]!.error);
+    assert.equal(captures, 2);
+    const attempts = reports[0]!.requests.filter((entry) =>
+      entry.phase.startsWith("original-user-view-capture"),
+    );
+    assert.equal(attempts.length, 2);
+    assert.notEqual(attempts[0]!.requestId, attempts[1]!.requestId);
+    assert.match(attempts[0]!.result!.stdout, /"viewAdmissionChanged": true/u);
+    assert.doesNotMatch(attempts[0]!.result!.stdout, /FMCAD_VIEW_EFFECT/u);
+    assert.equal(reports[0]!.cleanup, "complete");
+  } finally {
+    release();
+    await peers;
+  }
+});
+
 async function exercise(
   t: TestContext,
   mode:

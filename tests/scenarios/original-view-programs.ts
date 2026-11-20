@@ -109,6 +109,82 @@ export interface CaptureViewPlan extends OriginalViewPolicy {
   readonly blockedReasons?: Readonly<Record<string, string>>;
 }
 
+export function isViewCapturePhase(phase: unknown): boolean {
+  return (
+    phase === "original-user-view-capture" ||
+    phase === "original-user-view-capture-readmitted"
+  );
+}
+
+export function selectViewCapture(
+  entries: readonly RequestEvidence[],
+): RequestEvidence | undefined {
+  const captures = entries.filter((entry) => isViewCapturePhase(entry.phase));
+  const actual = captures.filter(
+    (entry) => resultValue(entry)?.["viewAdmissionChanged"] !== true,
+  );
+  assert.ok(actual.length <= 1, "Ambiguous original camera capture");
+  if (actual.length)
+    assert.equal(
+      actual[0],
+      captures.at(-1),
+      "Capture cannot precede another attempt",
+    );
+  return actual[0];
+}
+
+export function viewCapturePlanFile(
+  directory: string,
+  requestId: string,
+): string {
+  const ordinal = requestId.slice(requestId.lastIndexOf(":") + 1);
+  assert.match(ordinal, /^(0|[1-9][0-9]*)$/u);
+  return path.join(directory, `view-capture-plan-${ordinal}.json`);
+}
+
+function storedCapturePlan(
+  directory: string,
+  requestId: string,
+): CaptureViewPlan | undefined {
+  for (const filename of [
+    viewCapturePlanFile(directory, requestId),
+    path.join(directory, "view-capture-plan.json"),
+  ]) {
+    try {
+      return readRecord(filename) as unknown as CaptureViewPlan;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return undefined;
+}
+
+/** Absence is not authority. Only a newly proven close permits fresh preparation. */
+export function assertViewReadmission(
+  prior: CaptureViewPlan,
+  next: CaptureViewPlan,
+  refusal: Record<string, unknown>,
+): string {
+  assert.equal(refusal["viewAdmissionChanged"], true);
+  assert.equal(refusal["bodyCalls"], 0);
+  assert.equal(refusal["mutationStarted"], false);
+  const key = text(refusal["missingPeer"]);
+  const previous = prior.peers.filter(
+    (peer) => peer.document.creationId === key,
+  );
+  const current = next.peers.filter((peer) => peer.document.creationId === key);
+  assert.equal(previous.length, 1);
+  assert.equal(current.length, 1);
+  assert.equal(previous[0]!.state, "open");
+  assert.equal(
+    current[0]!.state,
+    "closed",
+    "Missing peer has no canonical close",
+  );
+  assert.deepEqual(current[0]!.document, previous[0]!.document);
+  return key;
+}
+
 export type OriginalViewReader = (
   owner: Owner,
   jobId: string,
@@ -420,6 +496,45 @@ async function boundViewRecord(
 }
 
 /** Bind a stored capture to its original public result and immutable source. */
+export async function verifiedViewRefusal(
+  directory: string,
+  owner: Owner,
+  entry: RequestEvidence,
+  backend: ScenarioBackend,
+  readOriginal: OriginalViewReader = (who, jobId) =>
+    publicOriginalView(who, jobId, backend),
+): Promise<Record<string, unknown>> {
+  assert.ok(isViewCapturePhase(entry.phase));
+  const { snapshot, binding } = await boundViewRecord(
+    directory,
+    owner,
+    entry,
+    readOriginal,
+  );
+  assert.equal(snapshot["viewAdmissionChanged"], true);
+  assert.equal(snapshot["bodyCalls"], 0);
+  assert.equal(snapshot["mutationStarted"], false);
+  assert.equal(typeof snapshot["strictCamera"], "boolean");
+  const plan = storedCapturePlan(directory, entry.requestId);
+  assert.ok(plan);
+  assert.deepEqual(snapshot, {
+    viewAdmissionChanged: true,
+    missingPeer: text(snapshot["missingPeer"]),
+    bodyCalls: 0,
+    mutationStarted: false,
+    strictCamera: snapshot["strictCamera"],
+  });
+  assert.equal(
+    binding["source"],
+    captureOriginalView(snapshot["strictCamera"] === true, plan),
+  );
+  assert.doesNotMatch(
+    text(record(entry.result)["stdout"]),
+    /FMCAD_VIEW_EFFECT/u,
+  );
+  return snapshot;
+}
+
 export async function verifiedViewCapture(
   directory: string,
   owner: Owner,
@@ -431,7 +546,7 @@ export async function verifiedViewCapture(
   snapshot: Record<string, unknown>;
   binding: Record<string, unknown>;
 }> {
-  assert.equal(capture.phase, "original-user-view-capture");
+  assert.ok(isViewCapturePhase(capture.phase));
   const { snapshot, binding } = await boundViewRecord(
     directory,
     owner,
@@ -440,17 +555,61 @@ export async function verifiedViewCapture(
   );
   const strict = snapshot["restorationProfile"] === "motion-absolute-1e-7";
   assert.ok(strict || snapshot["restorationProfile"] === "style-relative-1e-5");
-  let plan: CaptureViewPlan | undefined;
-  try {
-    plan = readRecord(
-      path.join(directory, "view-capture-plan.json"),
-    ) as unknown as CaptureViewPlan;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  const plan = storedCapturePlan(directory, capture.requestId);
+  if (capture.phase === "original-user-view-capture-readmitted") {
+    const report = readRecord(path.join(directory, "report.json"));
+    assert.deepEqual(report["owner"], owner);
+    assert.ok(Array.isArray(report["requests"]));
+    const attempts = report["requests"]
+      .map(record)
+      .filter((entry) =>
+        isViewCapturePhase(entry["phase"]),
+      ) as unknown as RequestEvidence[];
+    assert.equal(attempts.at(-1)?.requestId, capture.requestId);
+    assert.equal(attempts[0]?.phase, "original-user-view-capture");
+    assert.ok(attempts.length > 1);
+    const initialPlan = storedCapturePlan(directory, attempts[0]!.requestId);
+    assert.ok(initialPlan);
+    const admitted = new Set(
+      initialPlan.peers
+        .filter((peer) => peer.state === "open")
+        .map((peer) => peer.document.creationId),
+    );
+    assert.ok(attempts.length <= admitted.size + 1);
+    const consumed = new Set<string>();
+    for (let i = 0; i < attempts.length - 1; i++) {
+      const prior = attempts[i]!,
+        next = attempts[i + 1]!;
+      assert.equal(next.phase, "original-user-view-capture-readmitted");
+      const refusal = await verifiedViewRefusal(
+        directory,
+        owner,
+        prior,
+        backend,
+        readOriginal,
+      );
+      const priorPlan = storedCapturePlan(directory, prior.requestId);
+      const nextPlan = storedCapturePlan(directory, next.requestId);
+      assert.ok(priorPlan && nextPlan);
+      assert.equal(refusal["strictCamera"], strict);
+      const key = assertViewReadmission(priorPlan, nextPlan, refusal);
+      assert.ok(
+        admitted.has(key),
+        "A new view peer cannot extend the original admission",
+      );
+      assert.ok(
+        !consumed.has(key),
+        "A view peer close cannot renew admission twice",
+      );
+      consumed.add(key);
+    }
   }
-  assert.equal(
-    binding["source"],
-    captureOriginalView(strict, plan),
+  const expected = captureOriginalView(strict, plan);
+  assert.ok(
+    binding["source"] === expected ||
+      (capture.phase === "original-user-view-capture" &&
+        plan !== undefined &&
+        binding["source"] === captureUserContext(strict, plan, false)),
     "Original camera capture source changed",
   );
   viewIdentity(snapshot);
@@ -495,10 +654,10 @@ export async function prepareCaptureView(
           Array.isArray(claim.report["requests"])
             ? claim.report["requests"]
                 .map(record)
-                .filter((entry) =>
-                  ["create", "original-user-view-capture"].includes(
-                    String(entry["phase"]),
-                  ),
+                .filter(
+                  (entry) =>
+                    entry["phase"] === "create" ||
+                    isViewCapturePhase(entry["phase"]),
                 )
             : null,
         ]),
@@ -555,9 +714,10 @@ export async function prepareCaptureView(
     assert.ok(Array.isArray(report["requests"]));
     const entries = report["requests"].map(record);
     const creates = entries.filter((entry) => entry["phase"] === "create"),
-      captures = entries.filter(
-        (entry) => entry["phase"] === "original-user-view-capture",
-      );
+      selectedCapture = selectViewCapture(
+        entries as unknown as RequestEvidence[],
+      ),
+      captures = selectedCapture ? [selectedCapture] : [];
     assert.equal(creates.length, 1);
     assert.ok(captures.length <= 1, "Ambiguous original camera capture");
     const create = creates[0]!;
@@ -643,7 +803,7 @@ export async function prepareCaptureView(
       },
       user: Record<string, unknown>;
     if (captures.length) {
-      const capture = captures[0]!;
+      const capture = record(captures[0]);
       assert.equal(record(capture["intent"])["kind"], "script");
       assert.ok(
         Number(
@@ -963,12 +1123,27 @@ def view_same(actual: JsonValue, expected: JsonValue, strict: bool = False) -> N
 function captureUserContext(
   strictCamera: boolean,
   plan: CaptureViewPlan,
+  admission = true,
 ): string {
+  const captureGuard = admission
+    ? "\nclass ViewAdmissionChanged(Exception):\n    pass\n" +
+      peerGuard.replace(
+        "            row = rows[key]",
+        "            if key not in rows:\n                raise ViewAdmissionChanged(key)\n            row = rows[key]",
+      )
+    : peerGuard;
+  const admissionCheck = admission
+    ? `try:
+    before = checked_view_inventory(view_plan)
+except ViewAdmissionChanged as changed:
+    ${emit("dict(viewAdmissionChanged=True, missingPeer=str(changed), bodyCalls=0, mutationStarted=False, strictCamera=" + (strictCamera ? "True" : "False") + ")")}
+    return`
+    : "before = checked_view_inventory(view_plan)";
   return (
     nativeCadRuntime(["camera.save", "camera.restore"]) +
     "\n" +
     program(`${inventory}
-${peerGuard}
+${captureGuard}
 ${cameraComparison}
 view_plan: JsonRecord = ${pythonLiteral(plan)}
 assert app.userInterface.activeCommand in ('', 'SelectCommand'), 'Close interactive command first'
@@ -977,7 +1152,7 @@ observed = app.activeDocument
 observed_key = identity(observed)
 observed_id = observed.creationId
 assert observed_id not in sequence_value(view_plan['blocked']), 'Active peer lacks source-bound user view ancestry'
-before = checked_view_inventory(view_plan)
+${admissionCheck}
 observed_native = native_camera()
 observed_workspace = app.userInterface.activeWorkspace.id
 roots = object_value(view_plan['roots'])

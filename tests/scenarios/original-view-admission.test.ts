@@ -9,7 +9,58 @@ import {
   captureOriginalView,
   restoreOriginalView,
   establishReferenceView,
+  assertViewReadmission,
+  type CaptureViewPlan,
 } from "./original-view-programs";
+
+test("view readmission requires the exact prior open peer to become closed", () => {
+  const document = { creationId: "peer", name: "owned-peer" };
+  const prior: CaptureViewPlan = {
+    baseline: [],
+    peers: [{ document, state: "open" }],
+    roots: {},
+    blocked: [],
+  };
+  const next: CaptureViewPlan = {
+    ...prior,
+    peers: [{ document, state: "closed" }],
+  };
+  const refusal = {
+    viewAdmissionChanged: true,
+    missingPeer: "peer",
+    bodyCalls: 0,
+    mutationStarted: false,
+  };
+  assert.equal(assertViewReadmission(prior, next, refusal), "peer");
+  for (const value of [
+    { ...refusal, missingPeer: "foreign" },
+    { ...refusal, bodyCalls: 1 },
+    { ...refusal, mutationStarted: true },
+    { ...refusal, viewAdmissionChanged: false },
+  ])
+    assert.throws(() => assertViewReadmission(prior, next, value));
+  for (const state of ["open", "unsettled"] as const)
+    assert.throws(() =>
+      assertViewReadmission(
+        prior,
+        { ...next, peers: [{ document, state }] },
+        refusal,
+      ),
+    );
+  assert.throws(() =>
+    assertViewReadmission(
+      prior,
+      {
+        ...next,
+        peers: [
+          { document: { ...document, name: "foreign" }, state: "closed" },
+        ],
+      },
+      refusal,
+    ),
+  );
+  assert.throws(() => assertViewReadmission(next, next, refusal));
+});
 
 test("default native probe runtime retains its original document-status profile without wrapper declarations", () => {
   const load = createRequire(path.join(process.cwd(), "package.json"));

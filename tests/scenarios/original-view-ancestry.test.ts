@@ -10,8 +10,11 @@ import {
 import {
   captureOriginalView,
   prepareCaptureView,
+  verifiedViewCapture,
+  viewCapturePlanFile,
+  type CaptureViewPlan,
 } from "./original-view-programs";
-import type { ScenarioBackend, Owner } from "./contracts";
+import type { ScenarioBackend, Owner, Execution } from "./contracts";
 import {
   create as createProgram,
   snapshot as inventorySnapshot,
@@ -89,7 +92,7 @@ function ancestry(
       intent: { kind: "script" },
       result: {
         requestId,
-        state: "succeeded",
+        state: "succeeded" as Execution["state"],
         sdkSettled: true,
         mayHaveMutated: true,
         stdout: "FMCAD_SCENARIO " + JSON.stringify(value) + "\n",
@@ -239,6 +242,154 @@ function ancestry(
     write,
     read,
   };
+}
+
+test("a source-bound successful capture from before admission refresh remains verifiable", async (t) => {
+  const f = ancestry(t);
+  const plan: CaptureViewPlan = {
+    baseline: f.snapshot.documents,
+    peers: [],
+    roots: {},
+    blocked: [],
+  };
+  const current = captureOriginalView(false, plan);
+  const legacy = current
+    .replace(
+      "    \n    class ViewAdmissionChanged(Exception):\n        pass\n",
+      "",
+    )
+    .replace(
+      "                if key not in rows:\n                    raise ViewAdmissionChanged(key)\n",
+      "",
+    )
+    .replace(
+      /    try:\n        before = checked_view_inventory\(view_plan\)\n    except ViewAdmissionChanged as changed:\n        [^\n]+\n        return/u,
+      "    before = checked_view_inventory(view_plan)",
+    );
+  assert.notEqual(legacy, current);
+  fs.writeFileSync(f.sourceFile, legacy);
+  fs.writeFileSync(
+    viewCapturePlanFile(f.directory, f.capture.requestId),
+    JSON.stringify(plan),
+  );
+  f.original.provenance.inputs[0]!.sha256 = createHash("sha256")
+    .update(legacy)
+    .digest("hex");
+  f.original.provenance.inputs[0]!.bytes = Buffer.byteLength(legacy);
+  assert.deepEqual(
+    (
+      await verifiedViewCapture(
+        f.directory,
+        f.report.owner,
+        f.capture,
+        f.backend,
+        f.read,
+      )
+    ).snapshot,
+    f.snapshot,
+  );
+  fs.appendFileSync(f.sourceFile, "\n# foreign change");
+  await assert.rejects(() =>
+    verifiedViewCapture(
+      f.directory,
+      f.report.owner,
+      f.capture,
+      f.backend,
+      f.read,
+    ),
+  );
+});
+
+for (const fault of [
+  "none",
+  "unknown",
+  "foreign",
+  "effect",
+  "source",
+  "not-closed",
+] as const) {
+  test(`readmitted capture authenticates the immutable refusal chain: ${fault}`, async (t) => {
+    const f = ancestry(t);
+    const prior: CaptureViewPlan = {
+      baseline: f.snapshot.documents,
+      peers: [{ document: f.document, state: "open" }],
+      roots: {},
+      blocked: [],
+    };
+    const next: CaptureViewPlan = {
+      ...prior,
+      peers: [
+        {
+          document: f.document,
+          state: fault === "not-closed" ? "open" : "closed",
+        },
+      ],
+    };
+    const refusal = {
+      viewAdmissionChanged: true,
+      missingPeer: f.document.creationId,
+      bodyCalls: fault === "effect" ? 1 : 0,
+      mutationStarted: false,
+      strictCamera: false,
+    };
+    f.capture.result.stdout =
+      "FMCAD_SCENARIO " + JSON.stringify(refusal) + "\n";
+    f.original.stdout = f.capture.result.stdout;
+    const priorSource = captureOriginalView(false, prior);
+    fs.writeFileSync(f.sourceFile, priorSource);
+    f.original.provenance.inputs[0]!.sha256 = createHash("sha256")
+      .update(priorSource)
+      .digest("hex");
+    f.original.provenance.inputs[0]!.bytes = Buffer.byteLength(priorSource);
+    const capture = f.entry(
+      "original-user-view-capture-readmitted",
+      2,
+      f.snapshot,
+    );
+    const filename = path.join(f.directory, "request-2.py");
+    const source = captureOriginalView(false, next);
+    fs.writeFileSync(filename, source);
+    fs.writeFileSync(
+      viewCapturePlanFile(f.directory, f.capture.requestId),
+      JSON.stringify(prior),
+    );
+    fs.writeFileSync(
+      viewCapturePlanFile(f.directory, capture.requestId),
+      JSON.stringify(next),
+    );
+    const original = structuredClone(f.original);
+    original.job.id = capture.result.brokerReceipt.jobId;
+    original.job.requestId = capture.requestId;
+    original.job.operationResult = structuredClone(
+      capture.result.brokerReceipt.operationResult,
+    );
+    original.stdout = capture.result.stdout;
+    original.provenance.inputs = [
+      {
+        kind: "source",
+        originalPath: filename,
+        sha256: createHash("sha256").update(source).digest("hex"),
+        bytes: Buffer.byteLength(source),
+      },
+    ];
+    f.originals.set(original.job.id, original);
+    f.report.requests = [f.capture, capture];
+    f.write();
+    if (fault === "unknown") f.original.execution.sdkSettled = false;
+    if (fault === "foreign") f.original.job.clientId = "foreign";
+    if (fault === "source") fs.appendFileSync(f.sourceFile, "\n# changed");
+    const verify = () =>
+      verifiedViewCapture(
+        f.directory,
+        f.report.owner,
+        capture,
+        f.backend,
+        f.read,
+      );
+    if (fault === "none")
+      assert.deepEqual((await verify()).snapshot, f.snapshot);
+    else await assert.rejects(verify);
+  });
 }
 
 test("a newly created peer discovered after ancestry I/O also receives verified user ancestry", async (t) => {

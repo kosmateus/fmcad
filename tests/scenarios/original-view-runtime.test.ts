@@ -218,6 +218,31 @@ test("an explicit operator reference activation establishes a fresh baseline wit
   );
 });
 
+test("capture defers a stale open peer before any camera or focus effect", async (t) => {
+  const f = await contextFixture(t);
+  const plan = {
+    baseline: f.documents,
+    peers: [{ document: f.peer, state: "open" as const }],
+    roots: { [f.peer.creationId]: f.user },
+    blocked: [],
+  };
+  const closed = await f.model.execute(
+    program(`import adsk.core
+app = adsk.core.Application.get()
+assert app.documents.item(1).close(False)
+assert app.documents.item(0).activate()`),
+  );
+  assert.equal(closed.success, true, closed.error);
+  const result = await f.model.execute(captureOriginalView(true, plan));
+  assert.equal(result.success, true, result.error);
+  const admission = parseView(result.stdout);
+  assert.equal(admission["viewAdmissionChanged"], true);
+  assert.equal(admission["missingPeer"], f.peer.creationId);
+  assert.equal(admission["bodyCalls"], 0);
+  assert.equal(admission["mutationStarted"], false);
+  assert.doesNotMatch(result.stdout, /FMCAD_VIEW_EFFECT/u);
+});
+
 for (const fault of [
   "none",
   "missing-proof",

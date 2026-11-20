@@ -33,6 +33,10 @@ import {
   restoreOriginalView,
   prepareCaptureView,
   verifiedViewCapture,
+  verifiedViewRefusal,
+  selectViewCapture,
+  viewCapturePlanFile,
+  assertViewReadmission,
 } from "./original-view-programs";
 import { scopedMap, concurrencyLimit, defaultConcurrency } from "./scheduling";
 import * as savedPrograms from "./saved-programs";
@@ -45,6 +49,7 @@ import {
   observeSavedFile,
   recoveredFile,
   resultValue,
+  defaultCloudPolling,
   saveIntent,
   UnsettledCloudOperation,
   SavedEvidenceError,
@@ -254,9 +259,7 @@ export class ScenarioSession {
     return peer;
   }
   get originalView(): Record<string, unknown> {
-    const result = this.report.requests.find(
-      (entry) => entry.phase === "original-user-view-capture",
-    )?.result;
+    const result = selectViewCapture(this.report.requests)?.result;
     if (!result?.sdkSettled || result.state !== "succeeded")
       throw new Error(
         "Original user view has no successful bound capture receipt",
@@ -275,22 +278,74 @@ export class ScenarioSession {
       throw new Error(
         "Original view capture requires an exclusive scenario before fixture creation",
       );
-    const plan = await prepareCaptureView(
-      path.dirname(path.dirname(this.directory)),
-      this.backend,
-      this.#coordinatorBaseline()["documents"] as Record<string, unknown>[],
-      undefined,
-      this.signal ? { signal: this.signal } : {},
+    const deadline = Date.now() + defaultCloudPolling.timeoutMs;
+    const prepare = () =>
+      prepareCaptureView(
+        path.dirname(path.dirname(this.directory)),
+        this.backend,
+        this.#coordinatorBaseline()["documents"] as Record<string, unknown>[],
+        undefined,
+        {
+          ...(this.signal ? { signal: this.signal } : {}),
+          polling: {
+            ...defaultCloudPolling,
+            timeoutMs: Math.max(0, deadline - Date.now()),
+          },
+        },
+      );
+    let plan = await prepare();
+    const consumed = new Set<string>();
+    const admitted = new Set(
+      plan.peers
+        .filter((peer) => peer.state === "open")
+        .map((peer) => peer.document.creationId),
     );
-    fs.writeFileSync(
-      path.join(this.directory, "view-capture-plan.json"),
-      JSON.stringify(plan, null, 2) + "\n",
-      { flag: "wx", mode: 0o600 },
-    );
-    await this.#dispatch(
-      "original-user-view-capture",
-      captureOriginalView(strictCamera, plan),
-    );
+    const maximum = admitted.size;
+    for (;;) {
+      assert.ok(
+        Date.now() < deadline,
+        "View capture admission deadline exceeded",
+      );
+      this.signal?.throwIfAborted();
+      const value = await this.#dispatch(
+        consumed.size
+          ? "original-user-view-capture-readmitted"
+          : "original-user-view-capture",
+        (requestId) => {
+          fs.writeFileSync(
+            viewCapturePlanFile(this.directory, requestId),
+            JSON.stringify(plan, null, 2) + "\n",
+            { flag: "wx", mode: 0o600 },
+          );
+          return captureOriginalView(strictCamera, plan);
+        },
+      );
+      if (value["viewAdmissionChanged"] !== true) return;
+      assert.ok(
+        consumed.size < maximum,
+        "View capture cannot renew admission indefinitely",
+      );
+      const attempt = this.report.requests.at(-1)!;
+      if (this.backend.qualification === "broker")
+        assert.deepEqual(
+          await verifiedViewRefusal(
+            this.directory,
+            this.report.owner,
+            attempt,
+            this.backend,
+          ),
+          value,
+        );
+      const next = await prepare();
+      const key = assertViewReadmission(plan, next, value);
+      assert.ok(
+        admitted.has(key),
+        "New peers cannot extend the original capture budget",
+      );
+      assert.ok(!consumed.has(key), "View peer close already consumed");
+      consumed.add(key);
+      plan = next;
+    }
   }
   async restoreUserView(): Promise<void> {
     if (
@@ -323,9 +378,7 @@ export class ScenarioSession {
           );
         return;
       }
-      const capture = this.report.requests.find(
-        (entry) => entry.phase === "original-user-view-capture",
-      );
+      const capture = selectViewCapture(this.report.requests);
       assert.ok(capture);
       const snapshot =
         this.backend.qualification === "broker"
