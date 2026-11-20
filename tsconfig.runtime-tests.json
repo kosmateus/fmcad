@@ -49,6 +49,7 @@
     "tests/control-center-production-runtime.test.ts",
     "tests/mcp-console-start.test.ts",
     "tests/fixtures/historical-module.cts",
+    "tests/fixtures/python-literal.cts",
     "tests/legacy-inspect-admission.test.ts",
     "tests/legacy-parameters-admission.test.ts",
     "tests/legacy-document-admission.test.ts",

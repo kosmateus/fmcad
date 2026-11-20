@@ -6,6 +6,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import type { AtomicClient } from "../src/composition/batch-atomic.js";
 import type { BatchCatalog, CadData } from "@fmcad/core";
+import decodePythonLiteral = require("./fixtures/python-literal.cjs");
 
 const root = path.resolve(__dirname, "../..");
 const load = createRequire(path.join(root, "package.json"));
@@ -27,9 +28,7 @@ const { validateBatch } = load("./src/batch.js") as {
   validateBatch: typeof import("../packages/core/src/application/cad/batch-plan.js").validateBatch;
 };
 const { catalog } = load("./src/cad.js") as { catalog: BatchCatalog };
-const literal = load("./tests/fixtures/python-literal.cjs") as (
-  source: string,
-) => unknown;
+const literal = decodePythonLiteral;
 function requestData(source: string): unknown {
   // The baseline used a JSON string wrapper. Decode only its data, never Python.
   const prefix = "__import__('json').loads(";

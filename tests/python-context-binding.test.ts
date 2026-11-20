@@ -13,6 +13,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import decodePythonLiteral = require("./fixtures/python-literal.cjs");
 const repository = path.resolve(__dirname, "../..");
 const load = createRequire(
   path.join(repository, "tests", "python-context-binding.test.js"),
@@ -638,9 +639,7 @@ test("generated typed literals preserve JSON values and do not introduce dynamic
     typeof import("../packages/node-adapters/src/python/context-binding") &
     typeof import("../packages/node-adapters/src/python/checker") &
     typeof import("../packages/node-adapters/src/python/admission");
-  const decode = load("./fixtures/python-literal.cjs") as (
-    source: string,
-  ) => unknown;
+  const decode = decodePythonLiteral;
   for (const value of [
     {
       unicode: "😀 日本語",

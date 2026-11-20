@@ -16,6 +16,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import decodePythonLiteral = require("./fixtures/python-literal.cjs");
 
 const fixtureDirectory = path.join(process.cwd(), "tests");
 const load = createRequire(path.join(fixtureDirectory, "batch-atomic.test.ts"));
@@ -96,9 +97,7 @@ function extractAtomicRequest(script: string) {
   assert.ok(start >= 0, "missing _ATOMIC_REQUEST");
   const lineEnd = script.indexOf("\n", start + marker.length);
   const line = script.slice(start + marker.length, lineEnd);
-  return object(
-    (load("./fixtures/python-literal.cjs") as (line: string) => unknown)(line),
-  );
+  return object(decodePythonLiteral(line));
 }
 
 // A fake addin client that answers the atomic lifecycle with scripted state.
