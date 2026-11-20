@@ -121,6 +121,7 @@ export function assertNormalFinalInventory(
     readonly baselineFinishedAt: number;
     readonly restoreStartedAt: number;
   },
+  scope: "global-audit" | "owned-lifecycle" = "global-audit",
 ): void {
   const rows = (value: unknown) => {
     const snapshot = nativeState(value);
@@ -206,7 +207,16 @@ export function assertNormalFinalInventory(
       false,
       "Own fixture remains open",
     );
+    if (scope === "owned-lifecycle") {
+      const fence = object(value["inventoryFence"]);
+      assert.equal(fence["version"], 1);
+      assertFencedClosedDocumentInventory(
+        fence["before"], fence["after"], document,
+        "Owned close changed a non-target document within its SDK turn",
+      );
+    }
   }
+  if (scope === "owned-lifecycle") return;
   const visiblePeers = new Map(
     [...proofs].filter(
       ([, proof]) => proof.state === "open" || proof.state === "retained",
@@ -466,6 +476,8 @@ async function main() {
     runId,
     buildHash: buildHash(),
     status: "running",
+    functionalStatus: "not-run",
+    harnessStatus: "running",
     processIdentity: { pid: process.pid, birth: processBirth() },
     ...(group && groupRunner
       ? {
@@ -778,6 +790,8 @@ print('FMCAD_RESULT '+json.dumps(dict(name=d.name,creationId=d.creationId,saved=
       new Set(report.documents.map((document) => document.creationId)).size,
       ownerCount,
     );
+    report.harnessStatus = "passed";
+    report.functionalStatus = "running";
     report.writes = await Promise.all(
       report.documents.map((document, index) =>
         script(
@@ -847,6 +861,7 @@ print('FMCAD_RESULT '+json.dumps(dict(creationId=d.creationId,count=design.userP
     );
     assert.equal(concurrent, 0);
     report.maxOwnScriptConcurrency = maximum;
+    report.functionalStatus = "passed";
     // Cleanup is serial and exact. No uncertain mutation is retried or closed.
     assert.ok(report.before);
     report.cleanup = [];
@@ -922,12 +937,18 @@ print('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.ac
         report.receipts.filter((receipt) => receipt.phase === "close"),
         peers,
         { baselineFinishedAt, restoreStartedAt },
+        "owned-lifecycle",
       );
     }
     report.status = "passed";
   } catch (error) {
     report.status = "failed";
     report.error = String(error instanceof Error ? error.stack : error);
+    if (report.functionalStatus === "running") report.functionalStatus = "failed";
+    else {
+      report.harnessStatus = "failed";
+      report.harnessError = report.error;
+    }
     if (report.before) {
       const allSettled = knownSettlement(
         report.receipts.map((receipt) => receipt.result),

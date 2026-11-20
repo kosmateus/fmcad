@@ -86,6 +86,55 @@ test("normal final audit admits only a canonical peer close inside its observati
   );
 });
 
+test("owned lifecycle accepts between-turn peer changes but rejects same-turn damage", () => {
+  const f = auditFixture();
+  const ownedRow = { ...own, saved: false, modified: true, fileId: null };
+  const peerRow = { ...peer, creationId: peer.id };
+  const after = { active: peer.id, documents: [peer] };
+  for (const damage of [false, true]) {
+    const close = {
+      ...f.close,
+      result: {
+        ...f.close.result,
+        stdout:
+          "FMCAD_RESULT " +
+          JSON.stringify({
+            creationId: own.creationId,
+            closed: true,
+            inventoryFence: {
+              version: 1,
+              before: [ownedRow, peerRow],
+              after: [{ ...peerRow, modified: damage }],
+            },
+          }),
+      },
+    };
+    const audit = () =>
+      assertNormalFinalInventory(
+        f.before,
+        after,
+        [own],
+        [close],
+        new Map(),
+        f.window,
+        "owned-lifecycle",
+      );
+    if (damage) assert.throws(audit, /non-target document/);
+    else assert.doesNotThrow(audit);
+  }
+  assert.throws(() =>
+    assertNormalFinalInventory(
+      f.before,
+      after,
+      [own],
+      [f.close],
+      new Map(),
+      f.window,
+      "owned-lifecycle",
+    ),
+  );
+});
+
 test("normal final audit keeps unchanged inventory valid without any peer proofs", () => {
   const f = auditFixture();
   assertNormalFinalInventory(

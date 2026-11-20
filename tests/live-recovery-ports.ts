@@ -61,6 +61,9 @@ export interface LiveReport {
   runId: string;
   buildHash: string;
   status: string;
+  functionalStatus?: "not-run" | "running" | "passed" | "failed";
+  harnessStatus?: "not-run" | "running" | "passed" | "failed";
+  harnessError?: string;
   processIdentity?: { pid: number; birth: string };
   processGroup?: {
     id: string;
