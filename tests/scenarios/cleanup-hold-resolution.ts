@@ -2447,11 +2447,8 @@ function validateFailedInspection(
     failure["intentHash"],
     hash(read(path.join(directory, inspectionIntent))),
   );
-  assert.equal(
-    intent["version"],
-    1,
-    "Only the retained modified-only inspection failure is supported",
-  );
+  assert.ok(intent["version"] === 1 || intent["version"] === 2);
+  const currentInspection = intent["version"] === 2;
   assert.deepEqual(intent["owner"], c.owner);
   assert.deepEqual(intent["runtime"], runtime);
   assert.equal(intent["reportHash"], c.reportHash);
@@ -2463,11 +2460,15 @@ function validateFailedInspection(
   );
   const holdEvidence = holdProof(c, held.source);
   assert.equal(holdEvidence.kind, "admission-only");
-  assert.equal(
-    holdModified(c, holdEvidence),
-    false,
-    "Unexpected modified-to-clean drift is not a pristine hold",
-  );
+  const expectedModified = holdModified(c, holdEvidence);
+  if (currentInspection)
+    assert.equal(intent["expectedModified"], expectedModified);
+  else
+    assert.equal(
+      expectedModified,
+      false,
+      "Unexpected modified-to-clean drift is not a pristine hold",
+    );
   const requestId = text(intent["requestId"]);
   assert.equal(failure["requestId"], requestId);
   assert.ok(requestId.startsWith(c.owner.clientId + ":"));
@@ -2489,17 +2490,32 @@ function validateFailedInspection(
     "failed",
     "An uncertain or successful inspection is not this failure disposition",
   );
-  assert.equal(
-    record(proof.value["execution"])["code"],
-    "SDK_EXECUTION_FAILED",
+  const execution = record(proof.value["execution"]);
+  if (currentInspection) {
+    assert.equal(proof.job["code"], "INSTANCE_CHANGED");
+    assert.equal(execution["code"], "INSTANCE_CHANGED");
+    assert.equal(execution["sdkSettled"], true);
+    assert.equal(execution["mayHaveMutated"], false);
+    assert.equal(proof.job["mayHaveMutated"], false);
+    const operation = record(proof.job["operationResult"]);
+    assert.equal(operation["executionOutcome"], "failed");
+    assert.equal(operation["code"], "INSTANCE_CHANGED");
+    assert.equal(operation["mayHaveMutated"], false);
+    assert.equal(proof.value["stdout"], "");
+  } else {
+    assert.equal(execution["code"], "SDK_EXECUTION_FAILED");
+    assert.ok(
+      text(proof.value["stdout"]).startsWith(
+        "Held modified fixture unexpectedly became clean\n",
+      ),
+      "Inspection failed for another reason",
+    );
+  }
+  const source = inspectionSource(
+    c.document,
+    holdEvidence,
+    currentInspection ? expectedModified : undefined,
   );
-  assert.ok(
-    text(proof.value["stdout"]).startsWith(
-      "Held modified fixture unexpectedly became clean\n",
-    ),
-    "Inspection failed for another reason",
-  );
-  const source = inspectionSource(c.document, holdEvidence);
   assert.equal(
     proof.source,
     source,

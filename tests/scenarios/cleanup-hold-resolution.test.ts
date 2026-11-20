@@ -1911,6 +1911,112 @@ function failedInspectionFixture(t: TestContext, modified = false) {
   };
 }
 
+for (const corruption of [
+  "none",
+  "mutated",
+  "unsettled",
+  "wrong-code",
+  "source",
+]) {
+  test(`nonmutating INSTANCE_CHANGED inspection recovery: ${corruption}`, async (t) => {
+    const f = fixture(t);
+    for (const row of f.report.requests) {
+      row.result = queueExecution(
+        f.originals.get(row.requestId),
+        f.report.owner,
+        row.requestId,
+      );
+      f.executions.set(row.requestId, row.result);
+    }
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    let fail = true;
+    let failedJobId = "";
+    const base: ScenarioBackend = {
+      ...f.backend,
+      execute: async (input) => {
+        await f.backend.execute(input);
+        const raw = record(f.originals.get(input.requestId));
+        if (fail) {
+          const job = record(raw["job"]);
+          job["state"] = "failed";
+          job["code"] = "INSTANCE_CHANGED";
+          job["mayHaveMutated"] = false;
+          const operation = record(job["operationResult"]);
+          operation["executionOutcome"] = "failed";
+          operation["code"] = "INSTANCE_CHANGED";
+          operation["mayHaveMutated"] = false;
+          const execution = record(raw["execution"]);
+          Object.assign(execution, {
+            state: "failed",
+            code: "INSTANCE_CHANGED",
+            mayHaveMutated: false,
+            sdkSettled: true,
+            exitCode: 1,
+          });
+          raw["stdout"] = "";
+          raw["stderr"] =
+            "ERROR Qualified scratch process is no longer the same live instance\n";
+          failedJobId = String(job["id"]);
+        }
+        const result = queueExecution(raw, input.owner, input.requestId);
+        f.executions.set(input.requestId, result);
+        return result;
+      },
+    };
+    const ports = {
+      readRuntimeBinding: f.ports.readRuntimeBinding,
+      readJobResult: async (
+        _owner: typeof f.report.owner,
+        requestId: string,
+        jobId: string,
+      ) => {
+        const raw = record(f.originals.get(requestId));
+        assert.equal(record(raw["job"])["id"], jobId);
+        return raw;
+      },
+    };
+    await assert.rejects(resolveCleanupHold(base, f.directory, f.ports));
+    assert.equal(f.submissions(), 1);
+    if (corruption !== "none") {
+      const raw = record(f.originals.get(f.report.owner.clientId + ":2"));
+      const execution = record(raw["execution"]);
+      if (corruption === "mutated") execution["mayHaveMutated"] = true;
+      if (corruption === "unsettled") execution["sdkSettled"] = false;
+      if (corruption === "wrong-code")
+        execution["code"] = "SDK_EXECUTION_FAILED";
+      if (corruption === "source")
+        fs.appendFileSync(
+          path.join(f.directory, "request-2.py"),
+          "\n# changed\n",
+        );
+      await assert.rejects(
+        recordFailedCleanupInspection(base, f.directory, ports, failedJobId),
+      );
+      assert.equal(f.submissions(), 1);
+      return;
+    }
+    await recordFailedCleanupInspection(base, f.directory, ports, failedJobId);
+    fail = false;
+    const adapted = createCleanupRecoveryAdapter(base, f.directory, ports);
+    const result = await resolveCleanupHold(
+      adapted.backend,
+      f.directory,
+      adapted.ports,
+    );
+    assert.equal(result.inspectionRequestId, f.report.owner.clientId + ":3");
+    assert.equal(f.submissions(), 2);
+    assert.equal(
+      record(record(f.originals.get(f.report.owner.clientId + ":2"))["job"])[
+        "state"
+      ],
+      "failed",
+    );
+  });
+}
+
 test("a settled failed readonly v1 inspection gets immutable disposition and a new inspection ID without replay", async (t) => {
   const f = failedInspectionFixture(t),
     intentFile = path.join(f.directory, "cleanup-hold-inspection-intent.json"),
