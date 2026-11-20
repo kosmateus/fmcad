@@ -286,6 +286,40 @@ test("public canonical reader consumes a prepared owner-bound supplemental close
   );
 });
 
+test("supplemental close hashes and validates the entire large original report", async (t) => {
+  const f = fixture(t);
+  const filename = path.join(f.directory, "report.json");
+  const original = fs.readFileSync(filename, "utf8") + " ".repeat(1024 * 1024);
+  fs.writeFileSync(filename, original);
+  await provenance.prepareSupplementalCloseProof(
+    f.directory,
+    f.backend,
+    f.requestId,
+    f.ports,
+  );
+  f.originals.set(f.requestId, f.complete());
+  await provenance.publishSupplementalCloseProof(
+    f.directory,
+    f.backend,
+    f.ports,
+  );
+  assert.equal(
+    provenance
+      .discoverOwnedUnsavedFixtureProofs(f.root, f.backend)
+      .get(f.document.creationId)?.state,
+    "closed",
+  );
+  assert.equal(fs.readFileSync(filename, "utf8"), original);
+  // Even bytes past the old one-MiB boundary remain part of the binding.
+  fs.appendFileSync(filename, " ");
+  assert.notEqual(
+    provenance
+      .discoverOwnedUnsavedFixtureProofs(f.root, f.backend)
+      .get(f.document.creationId)?.state,
+    "closed",
+  );
+});
+
 for (const sidecar of [
   "cleanup-native-result-binding.json",
   "legacy/terminal-disposition.json",

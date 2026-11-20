@@ -131,14 +131,14 @@ function readJson(
   }
 }
 
-function boundedBytes(filename: string): Buffer {
+function boundedBytes(filename: string, maxBytes = 1024 * 1024): Buffer {
   const fd = fs.openSync(
     filename,
     fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
   );
   try {
     const stat = fs.fstatSync(fd);
-    assert.ok(stat.isFile() && stat.size <= 1024 * 1024);
+    assert.ok(stat.isFile() && stat.size <= maxBytes);
     return fs.readFileSync(fd);
   } finally {
     fs.closeSync(fd);
@@ -402,7 +402,9 @@ export async function prepareSupplementalCloseProof(
     document: origin.document,
     creationJobId: origin.creationJobId,
     creationHash: sha256(boundedBytes(path.join(directory, "creation.json"))),
-    sourceReportHash: sha256(boundedBytes(path.join(directory, "report.json"))),
+    sourceReportHash: sha256(
+      boundedBytes(path.join(directory, "report.json"), scenarioReportMaxBytes),
+    ),
     backendIdentity: backend.identity,
     runtime,
     originals: origin.resolution ? undefined : originals,
@@ -455,7 +457,9 @@ function validateSupplementalClose(
   );
   assert.equal(
     intent["sourceReportHash"],
-    sha256(boundedBytes(path.join(directory, "report.json"))),
+    sha256(
+      boundedBytes(path.join(directory, "report.json"), scenarioReportMaxBytes),
+    ),
   );
   assert.equal(intent["backendIdentity"], backend.identity);
   assert.equal(intent["resolutionDigest"], origin.resolution?.digest);
