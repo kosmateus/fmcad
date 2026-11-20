@@ -265,7 +265,13 @@ test(
       version: "fake-fusion",
       activeCommand: "SelectCommand",
       documents: [
-        { id: "scratch-creation", fileId: "scratch-file", name: "Synthetic" },
+        {
+          id: "scratch-creation",
+          fileId: "scratch-file",
+          name: "Synthetic",
+          isSaved: false,
+          isModified: false,
+        },
       ],
       documentState: {
         status: "complete",
@@ -349,6 +355,10 @@ test(
         ...record,
         terminal: true,
         outcome: "succeeded",
+        probeObservation: {
+          schema: "fmcad-instance-probe-v1",
+          identity: instance,
+        },
         instance,
       });
       if (script.includes("FMCAD_QUEUE_INSTANCE")) {
@@ -611,7 +621,8 @@ test(
       if (!jobId) return value;
       const api = apis.at(-1);
       assert.ok(api);
-      for (let attempt = 0; attempt < 1000; attempt++) {
+      const deadline = Date.now() + brokerCommandTimeoutMs;
+      while (Date.now() < deadline) {
         const receipt = await api.query.result(jobId);
         if (
           [
