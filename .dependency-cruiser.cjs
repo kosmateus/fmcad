@@ -13,6 +13,12 @@ module.exports = {
       },
     },
     {
+      name: "ports-must-not-import-application",
+      severity: "error",
+      from: { path: "^packages/core/src/ports/" },
+      to: { path: "^packages/core/src/application/" },
+    },
+    {
       name: "packages-must-not-import-composition",
       severity: "error",
       from: { path: "^packages/[^/]+/src/" },

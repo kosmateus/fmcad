@@ -75,12 +75,4 @@ export default tseslint.config(
       "@typescript-eslint/no-require-imports": "off",
     },
   },
-  {
-    files: ["src/opencode/execution.ts"],
-    rules: {
-      "@typescript-eslint/no-explicit-any": "off",
-      "@typescript-eslint/no-unused-vars": "off",
-      "prefer-const": "off",
-    },
-  },
 );

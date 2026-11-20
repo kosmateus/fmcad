@@ -1,11 +1,12 @@
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const { spawnSync } = require("node:child_process");
-const { test } = require("node:test");
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { test } from "node:test";
 
-const root = path.resolve(__dirname, "..");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(
   root,
   "node_modules",
@@ -15,7 +16,36 @@ const cli = path.join(
 );
 const config = path.join(root, ".dependency-cruiser.cjs");
 
-function cruise(cwd, configPath, entries, outputType = "json") {
+type DependencyCruiseReport = {
+  modules: Array<{
+    source: string;
+    dependencies: Array<{
+      resolved?: string;
+      dependencyTypes?: string[];
+    }>;
+  }>;
+  summary: {
+    advisedExitCode: number;
+    totalCruised: number;
+    totalDependenciesCruised: number;
+    violations: Array<{ rule: { name: string } }>;
+  };
+};
+
+type PackageScripts = {
+  scripts: {
+    "check:dependencies": string;
+    prebuild: string;
+    prepack: string;
+  };
+};
+
+function cruise(
+  cwd: string,
+  configPath: string,
+  entries: string[],
+  outputType: "json" | "err-long" = "json",
+) {
   const result = spawnSync(
     process.execPath,
     [cli, "--config", configPath, "--output-type", outputType, ...entries],
@@ -25,13 +55,17 @@ function cruise(cwd, configPath, entries, outputType = "json") {
   assert.ifError(result.error);
   assert.ok(result.stdout, result.stderr);
 
-  return {
-    ...result,
-    ...(outputType === "json" ? { report: JSON.parse(result.stdout) } : {}),
+  const response = {
+    status: result.status,
+    stderr: result.stderr ?? "",
+    ...(outputType === "json"
+      ? { report: JSON.parse(result.stdout) as DependencyCruiseReport }
+      : {}),
   };
+  return response;
 }
 
-function createFixture(files) {
+function createFixture(files: Record<string, string>) {
   const fixtureRoot = fs.mkdtempSync(
     path.join(os.tmpdir(), "fmcad-dependency-guard-"),
   );
@@ -53,6 +87,7 @@ function createFixture(files) {
 
 test("the configured source graph has real modules and no forbidden edges", () => {
   const { status, report, stderr } = cruise(root, config, ["src", "packages"]);
+  assert.ok(report);
   const sources = report.modules.map((module) => module.source);
 
   assert.equal(status, 0, stderr || JSON.stringify(report.summary.violations));
@@ -95,12 +130,16 @@ test("the configured source graph has real modules and no forbidden edges", () =
 test("build, CI, and package lifecycles run the dependency guard", () => {
   const packageJson = JSON.parse(
     fs.readFileSync(path.join(root, "package.json"), "utf8"),
-  );
+  ) as PackageScripts;
   const ci = fs.readFileSync(
     path.join(root, ".github/workflows/ci-tests.yml"),
     "utf8",
   );
 
+  assert.equal(
+    packageJson.scripts["check:dependencies"],
+    "node --experimental-strip-types --test tests/dependency-guards.test.mts",
+  );
   assert.equal(
     packageJson.scripts.prebuild,
     "npm run check:dependencies && npm run check:python-domain-imports",
@@ -121,6 +160,7 @@ test("a core-to-node-adapter import fails the layer guard", () => {
     const { report } = cruise(fixtureRoot, fixtureConfig, [
       "packages/core/src/entry.ts",
     ]);
+    assert.ok(report);
     const edge = report.modules
       .find((module) => module.source === "packages/core/src/entry.ts")
       ?.dependencies.find(
@@ -156,6 +196,41 @@ test("a core-to-node-adapter import fails the layer guard", () => {
   }
 });
 
+test("a core port cannot depend on an application implementation", () => {
+  const { fixtureRoot, fixtureConfig } = createFixture({
+    "packages/core/src/ports/port.ts":
+      'import type { Service } from "../application/service.ts";\nexport type PortService = Service;\n',
+    "packages/core/src/application/service.ts":
+      "export interface Service { ready: true; }\n",
+  });
+
+  try {
+    const { report } = cruise(fixtureRoot, fixtureConfig, [
+      "packages/core/src/ports/port.ts",
+    ]);
+    assert.ok(report);
+    assert.ok(
+      report.summary.violations.some(
+        (violation) =>
+          violation.rule.name === "ports-must-not-import-application",
+      ),
+      "the port-to-application fixture did not trigger the hexagonal boundary rule",
+    );
+    assert.notEqual(
+      cruise(
+        fixtureRoot,
+        fixtureConfig,
+        ["packages/core/src/ports/port.ts"],
+        "err-long",
+      ).status,
+      0,
+      "dependency-cruiser did not fail the port-to-application import",
+    );
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 test("a source cycle fails the cycle guard", () => {
   const { fixtureRoot, fixtureConfig } = createFixture({
     "packages/core/src/first.ts":
@@ -168,6 +243,7 @@ test("a source cycle fails the cycle guard", () => {
     const { report } = cruise(fixtureRoot, fixtureConfig, [
       "packages/core/src/first.ts",
     ]);
+    assert.ok(report);
 
     assert.ok(
       report.summary.advisedExitCode > 0,
@@ -206,13 +282,14 @@ test("a type-only cycle is excluded from emitted-JS cycle checks", () => {
     const { report } = cruise(fixtureRoot, fixtureConfig, [
       "packages/core/src/first.ts",
     ]);
+    assert.ok(report);
     const dependencies = report.modules.flatMap(
       (module) => module.dependencies,
     );
 
     assert.ok(
       dependencies.some((dependency) =>
-        dependency.dependencyTypes.includes("pre-compilation-only"),
+        dependency.dependencyTypes?.includes("pre-compilation-only"),
       ),
       "the fixture must contain real compile-time-only edges",
     );
