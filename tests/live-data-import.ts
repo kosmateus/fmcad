@@ -581,7 +581,8 @@ async function cli(
   }
   if (
     !["succeeded", "failed"].includes(worker.state) ||
-    worker.executionOutcome !== worker.state ||
+    (worker.executionOutcome !== undefined &&
+      worker.executionOutcome !== worker.state) ||
     worker.operationResult["executionOutcome"] !== worker.state
   ) {
     unsafe = true;
@@ -803,11 +804,12 @@ function assertWorkerTerminal(call: CallReport): PublicQueueJob {
     ["succeeded", "failed"].includes(receipt.state),
     `${call.label} worker outcome is not terminal: ${receipt.state}`,
   );
-  assert.equal(
-    receipt.executionOutcome,
-    receipt.state,
-    `${call.label} worker execution outcome differs from its terminal state`,
-  );
+  if (receipt.executionOutcome !== undefined)
+    assert.equal(
+      receipt.executionOutcome,
+      receipt.state,
+      `${call.label} worker execution outcome differs from its terminal state`,
+    );
   assert.equal(
     receipt.operationResult["executionOutcome"],
     receipt.state,
@@ -834,7 +836,7 @@ function assertWorkerState(
   const receipt = assertWorkerTerminal(call);
   assert.equal(receipt.state, state, `${call.label} worker state`);
   assert.equal(
-    receipt.executionOutcome,
+    receipt.operationResult["executionOutcome"],
     executionOutcome,
     `${call.label} worker execution outcome`,
   );
@@ -886,7 +888,7 @@ function recordNegativeAfterState(
   );
   assert.equal(failedResult.workerEvidence?.receipt?.state, "failed");
   assert.equal(
-    failedResult.workerEvidence?.receipt?.executionOutcome,
+    failedResult.workerEvidence?.receipt?.operationResult["executionOutcome"],
     "failed",
   );
   assert.ok(failedResult.workerEvidence);

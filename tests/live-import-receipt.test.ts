@@ -76,9 +76,9 @@ test("fixed native invocation intent survives lost replies and recovery only rea
     requestId: binding.requestId,
     clientId: binding.clientId,
     state: "succeeded",
-    executionOutcome: "succeeded",
     operationResult: { executionOutcome: "succeeded" },
   };
+  assert.equal(Object.hasOwn(terminal, "executionOutcome"), false);
   let lookups = 0;
   const lookup = async (original: NativeInvocationBinding) => {
     lookups++;
@@ -148,6 +148,28 @@ test("fixed native invocation intent survives lost replies and recovery only rea
       terminal,
     ),
   );
+  for (const malformed of [
+    { ...terminal, executionOutcome: "failed" },
+    { ...terminal, executionOutcome: "succeeded", operationResult: {} },
+    { ...terminal, operationResult: { executionOutcome: "failed" } },
+    { ...terminal, operationResult: { executionOutcome: "not_started" } },
+  ]) {
+    assert.throws(() =>
+      observeNativeInvocation(
+        filename,
+        { jobId: "job", requestId: binding.requestId },
+        malformed,
+      ),
+    );
+    await assert.rejects(
+      recoverNativeInvocation(
+        filename,
+        async () => ({ job: malformed, execution: { sdkSettled: true } }),
+        () => false,
+      ),
+    );
+    assert.equal(readNativeInvocation(filename).state, "prepared");
+  }
   observeNativeInvocation(
     filename,
     { jobId: "job", requestId: binding.requestId },

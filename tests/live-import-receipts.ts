@@ -196,7 +196,8 @@ export function observeNativeInvocation(
   assert.equal(terminal.requestId, intent.binding.requestId);
   assert.equal(terminal.clientId, intent.binding.clientId);
   assert.ok(["succeeded", "failed"].includes(terminal.state));
-  assert.equal(terminal.executionOutcome, terminal.state);
+  if (terminal.executionOutcome !== undefined)
+    assert.equal(terminal.executionOutcome, terminal.state);
   assert.equal(terminal.operationResult["executionOutcome"], terminal.state);
   if (intent.terminal)
     assertWorkerMatchesCli(
@@ -246,7 +247,8 @@ export async function recoverNativeInvocation(
     ["succeeded", "failed"].includes(job.state),
     "Original execution remains unsettled; never replay",
   );
-  assert.equal(job.executionOutcome, job.state);
+  if (job.executionOutcome !== undefined)
+    assert.equal(job.executionOutcome, job.state);
   assert.equal(job.operationResult["executionOutcome"], job.state);
   if (intent.terminal)
     assertWorkerMatchesCli(
