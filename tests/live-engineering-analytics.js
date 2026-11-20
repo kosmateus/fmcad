@@ -319,7 +319,7 @@ async function main() {
     validated('check');
 
     const reportResult = cad('report', { checks: [{ measurement: { operation: 'measure.volume', data: { ref: body, units: 'mm3' } },
-      min: '5999 mm3' }], metadata: { reviewer: 'coverage-test' } });
+      min: '5999 mm^3' }], metadata: { reviewer: 'coverage-test' } });
     check('report', 'report evaluates the supplied scalar check', reportResult.checkOutcome, 'pass');
     check('report', 'reported observed status remains not-evaluated', reportResult.status.acceptance, 'notEvaluated');
     check('report', 'user metadata is preserved but not treated as verified', reportResult.metadataVerified, false);

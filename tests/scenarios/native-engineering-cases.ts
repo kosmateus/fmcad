@@ -501,7 +501,7 @@ export function nativeEngineeringScenarios(
                   operation: "measure.volume",
                   data: { ref: body, units: "mm3" },
                 },
-                min: "5999 mm3",
+                min: "5999 mm^3",
               },
             ],
             metadata: { reviewer: "coverage-test" },
