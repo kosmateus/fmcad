@@ -177,6 +177,59 @@ test("MCP discovery budget and explicit observation abort fail without resubmiss
   assert.equal(trace.at(-1)?.["timeoutMs"], null);
 });
 
+test(
+  "MCP queued response outlives discovery budget and is observed exactly once",
+  { timeout: 10_000 },
+  async (t) => {
+    const child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `
+    const readline = require("node:readline");
+    readline.createInterface({ input: process.stdin }).on("line", line => {
+      const request = JSON.parse(line);
+      setTimeout(() => process.stdout.write(JSON.stringify({
+        jsonrpc: "2.0", id: request.id, result: { original: request.params._meta.fmcad.requestId }
+      }) + "\\n"), 60);
+    });
+  `,
+      ],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    );
+    const closed = once(child, "close");
+    const trace: Record<string, unknown>[] = [];
+    const client = nativeMcpStdioClient(
+      child,
+      (event) => trace.push(event),
+      undefined,
+      20,
+    );
+    t.after(async () => {
+      client.dispose();
+      child.kill();
+      await closed;
+    });
+    const result = await client.request("tools/call", {
+      name: "execute_python",
+      _meta: { fmcad: { requestId: "original-request" } },
+    });
+    assert.equal(result["original"], "original-request");
+    assert.deepEqual(
+      trace.map((event) => event["stage"]),
+      ["write", "response"],
+    );
+    assert.ok(Number(trace.at(-1)?.["elapsedMs"]) > 20);
+    assert.ok(
+      trace.every(
+        (event) =>
+          event["timeoutMs"] === null &&
+          event["requestId"] === "original-request",
+      ),
+    );
+  },
+);
+
 test("MCP child closure rejects an outstanding observation without replay or settlement", async (t) => {
   const child = spawn(
     process.execPath,
