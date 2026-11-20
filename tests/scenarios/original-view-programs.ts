@@ -1067,7 +1067,8 @@ def checked_view_inventory(policy: Mapping[str, JsonValue]) -> list[JsonRecord]:
         key = view_text(expected['creationId'])
         assert key not in admitted, 'Ambiguous view peer identity'
         state = proof['state']
-        if state == 'unsettled':
+        if state in ('unsettled', 'retained'):
+            # Retained documents remain protected baseline rows, not exemptions.
             continue
         if state == 'saved':
             successor = object_value(proof['savedDocument'])

@@ -218,6 +218,45 @@ test("an explicit operator reference activation establishes a fresh baseline wit
   );
 });
 
+for (const change of ["unchanged", "modified", "closed"] as const)
+  test(`retained peer remains a protected baseline row during capture: ${change}`, async (t) => {
+    const f = await contextFixture(t);
+    const plan = {
+      baseline: f.documents,
+      peers: [
+        {
+          document: f.peer,
+          state: "retained" as const,
+          terminalReceipt: {
+            requestId: "retained-request",
+            jobId: "retained-job",
+          },
+        },
+      ],
+      roots: {},
+      blocked: [f.peer.creationId],
+    };
+    if (change !== "unchanged") {
+      const changed = await f.model.execute(
+        program(`import adsk.core
+app = adsk.core.Application.get()
+peer = app.documents.item(1)
+${change === "modified" ? "peer.isModified = True" : "assert peer.close(False)"}
+assert app.documents.item(0).activate()`),
+      );
+      assert.equal(changed.success, true, changed.error);
+    }
+    const result = await f.model.execute(captureOriginalView(true, plan));
+    if (change === "unchanged") {
+      assert.equal(result.success, true, result.error);
+      assert.deepEqual(parseView(result.stdout)["active"], f.user);
+    } else {
+      assert.equal(result.success, false);
+      assert.match(result.error, /Unproven user document transition/u);
+      assert.doesNotMatch(result.stdout, /FMCAD_VIEW_EFFECT/u);
+    }
+  });
+
 test("capture defers a stale open peer before any camera or focus effect", async (t) => {
   const f = await contextFixture(t);
   const plan = {
@@ -240,6 +279,34 @@ assert app.documents.item(0).activate()`),
   assert.equal(admission["missingPeer"], f.peer.creationId);
   assert.equal(admission["bodyCalls"], 0);
   assert.equal(admission["mutationStarted"], false);
+  assert.doesNotMatch(result.stdout, /FMCAD_VIEW_EFFECT/u);
+});
+
+test("a retained active peer does not acquire user-view ancestry", async (t) => {
+  const f = await contextFixture(t);
+  const activated = await f.model.execute(
+    program(`import adsk.core
+assert adsk.core.Application.get().documents.item(1).activate()`),
+  );
+  assert.equal(activated.success, true, activated.error);
+  const result = await f.model.execute(
+    captureOriginalView(true, {
+      baseline: f.documents,
+      peers: [
+        {
+          document: f.peer,
+          state: "retained",
+          terminalReceipt: {
+            requestId: "retained-request",
+            jobId: "retained-job",
+          },
+        },
+      ],
+      roots: {},
+      blocked: [f.peer.creationId],
+    }),
+  );
+  assert.equal(result.success, false);
   assert.doesNotMatch(result.stdout, /FMCAD_VIEW_EFFECT/u);
 });
 
