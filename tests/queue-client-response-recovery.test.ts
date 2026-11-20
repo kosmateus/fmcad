@@ -379,6 +379,93 @@ test("real IPC EOF after admission recovers durable original result with one sub
   }
 });
 
+for (const response of ["reply", "connection-loss"] as const)
+  test(
+    `raw submission observes preparation beyond metadata IPC budget without replay: ${response}`,
+    { timeout: 10_000 },
+    async (t) => {
+      const connection = runtimeRequire(
+        "./queue-connection",
+      ) as typeof import("../src/entrypoints/queue-connection");
+      const originalRequest = connection.request;
+      const directory = fs.mkdtempSync(
+        path.join(tmpdir(), "fmcad-slow-admission-"),
+      );
+      const requestId = randomUUID();
+      const job = {
+        id: randomUUID(),
+        requestId,
+        clientId: "slow-admission-owner",
+        state: "queued",
+      };
+      const actions: string[] = [];
+      const sockets = new Set<net.Socket>();
+      let accepted = false;
+      t.mock.method(connection, "queueDirectory", () => directory);
+      t.mock.method(
+        connection,
+        "request",
+        (...[dir, message, options]: Parameters<typeof originalRequest>) =>
+          originalRequest(dir, message, {
+            ...options,
+            timeoutMs: options?.timeoutMs ?? 20,
+          }),
+      );
+      delete runtimeRequire.cache[runtimeRequire.resolve("./queue-client")];
+      const { QueueClient } = runtimeRequire(
+        "./queue-client",
+      ) as typeof import("../src/queue-client");
+      const queue = new QueueClient(job.clientId, {
+        cfg: { routing: "queue", queue: { autoStart: false } },
+      });
+      const server = net.createServer((socket) => {
+        sockets.add(socket);
+        socket.on("error", () => {});
+        socket.on("close", () => sockets.delete(socket));
+        let buffer = "";
+        socket.on("data", (chunk: Buffer) => {
+          buffer += chunk.toString();
+          if (!buffer.includes("\n")) return;
+          const message = JSON.parse(buffer) as { action: string };
+          actions.push(message.action);
+          const reply = (result: unknown) =>
+            socket.end(JSON.stringify({ ok: true, result }) + "\n");
+          if (message.action === "submit") {
+            setTimeout(() => {
+              accepted = true;
+              if (response === "connection-loss") socket.destroy();
+              else reply(job);
+            }, 60);
+          } else if (message.action === "find-request") {
+            reply({ job: accepted ? job : null, requestMatched: accepted });
+          } else reply({});
+        });
+      });
+      await new Promise<void>((resolve) =>
+        server.listen(connection.queueSocket(directory), resolve),
+      );
+      t.after(async () => {
+        queue.dispose();
+        for (const socket of sockets) socket.destroy();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        fs.rmSync(directory, { recursive: true, force: true });
+      });
+      const result = await queue.submit({
+        kind: "rpc",
+        requestId,
+        payload: {},
+      });
+      assert.deepEqual(result, job);
+      assert.deepEqual(
+        actions,
+        response === "reply"
+          ? ["register", "submit"]
+          : ["register", "submit", "find-request"],
+      );
+      assert.equal(accepted, true);
+    },
+  );
+
 for (const fault of [
   "submit",
   "result",

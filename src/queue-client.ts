@@ -459,7 +459,20 @@ class QueueClient {
     return request(
       this.dir,
       { ...values, action, auth: this.auth },
-      trace,
+      {
+        ...trace,
+        // Raw RPC admission prepares and checks Python before publishing the
+        // job. That work is not a metadata lookup and can exceed its deadline.
+        // Observe this one submission until reply or connection loss; never
+        // resend it merely because preparation outlives the IPC lookup budget.
+        ...(action === "submit" &&
+        input &&
+        typeof input === "object" &&
+        "kind" in input &&
+        input.kind === "rpc"
+          ? { timeoutMs: 0 }
+          : {}),
+      },
     ).then((value) => {
       if (trace && requestId && value && typeof value === "object") {
         const job = "job" in value ? value.job : value;
