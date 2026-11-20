@@ -30,18 +30,20 @@ function fixture(
   pose = false,
   modified = true,
   legacy: boolean | "gm07" = false,
+  scenarioOverride?: string,
 ) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-held-resolution-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const runId = randomUUID(),
     scenarioId =
-      legacy === "gm07"
+      scenarioOverride ??
+      (legacy === "gm07"
         ? "gm07-source-pinned"
         : legacy
           ? "native-legacy-0"
           : pose
             ? "native-pose-methods-0"
-            : "native-thread-1";
+            : "native-thread-1");
   const owner = {
     runId,
     scenarioId,
@@ -331,6 +333,337 @@ function fixture(
     request,
     submissions: () => submissions,
   };
+}
+
+function withLocalTerminal(
+  t: TestContext,
+  code = "PYTHON_CHECK_REJECTED",
+  outcome = "not_started",
+  scenarioId?: string,
+  modified = true,
+) {
+  const f = fixture(t, false, modified, false, scenarioId);
+  const prior = f.report.requests[1]!;
+  const following = f.request(
+    2,
+    prior.phase,
+    prior.result.stdout.replaceAll(
+      prior.requestId,
+      f.report.owner.clientId + ":2",
+    ),
+    fs
+      .readFileSync(path.join(f.directory, "request-1.py"), "utf8")
+      .replaceAll(prior.requestId, f.report.owner.clientId + ":2"),
+  );
+  const rejected = f.request(1, "cad-local-rejected", "", "");
+  rejected.intent = { kind: "cad" };
+  const raw = record(f.originals.get(rejected.requestId));
+  record(raw["provenance"])["inputIdentity"] = "d".repeat(64);
+  const job = record(raw["job"]);
+  delete job["startedAt"];
+  Object.assign(job, {
+    state: "failed",
+    code,
+    mayHaveMutated: false,
+    ...(outcome === "not_started" ? { executionOutcome: outcome } : {}),
+  });
+  const operation = record(job["operationResult"]);
+  Object.assign(operation, {
+    executionOutcome: outcome,
+    mayHaveMutated: false,
+    code,
+  });
+  Object.assign(record(raw["execution"]), {
+    state: "failed",
+    code,
+    mayHaveMutated: false,
+    exitCode: 1,
+    ...(outcome === "not_started" ? { executionOutcome: outcome } : {}),
+  });
+  rejected.result = {
+    ...rejected.result,
+    state: "failed",
+    mayHaveMutated: false,
+    exitCode: 1,
+    brokerReceipt: { ...rejected.result.brokerReceipt!, state: "failed" },
+  };
+  f.executions.set(rejected.requestId, rejected.result);
+  f.report.requests.splice(1, 1, rejected, following);
+  f.report.cleanupHold.requestId = following.requestId;
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  return { ...f, rejected, raw, job };
+}
+
+for (const [code, outcome] of [
+  ["PYTHON_CHECK_REJECTED", "not_started"],
+  ["LOCAL_PREPARATION_FAILED", "not_started"],
+  ["LOCAL_EXECUTION_FAILED", "failed"],
+]) {
+  test(`authenticated terminal ${code} without SDK startedAt permits the existing guarded cleanup`, async (t) => {
+    const f = withLocalTerminal(t, code, outcome);
+    const result = await resumeCleanup(
+      f.backend,
+      path.join(f.directory, "report.json"),
+      f.ports,
+    );
+    assert.equal(result.cleanup, "complete");
+    assert.equal(f.submissions(), 2);
+  });
+}
+
+for (const bad of [
+  "unknown",
+  "unsettled",
+  "missing-operation",
+  "foreign-operation",
+  "mutated",
+  "submitted-script",
+  "physical-turn",
+  "rpc-turn",
+  "sdk-failure",
+  "missing-submitted",
+  "reversed-times",
+] as const) {
+  test(`missing startedAt cannot release cleanup with ${bad} evidence`, async (t) => {
+    const f = withLocalTerminal(t);
+    const execution = record(f.raw["execution"]);
+    const operation = record(f.job["operationResult"]);
+    if (bad === "unknown") execution["state"] = "unknown";
+    if (bad === "unsettled") execution["sdkSettled"] = false;
+    if (bad === "missing-operation") delete f.job["operationResult"];
+    if (bad === "foreign-operation") operation["jobId"] = randomUUID();
+    if (bad === "mutated") execution["mayHaveMutated"] = true;
+    if (bad === "submitted-script") f.job["userScriptSubmitted"] = true;
+    if (bad === "physical-turn") f.job["physicalTurns"] = 1;
+    if (bad === "rpc-turn") f.job["dispatch"] = { rpcCount: 1 };
+    if (bad === "sdk-failure")
+      for (const row of [f.job, execution, operation])
+        row["code"] = "SDK_EXECUTION_FAILED";
+    if (bad === "missing-submitted") delete f.job["submittedAt"];
+    if (bad === "reversed-times")
+      f.job["finishedAt"] = Number(f.job["submittedAt"]) - 1;
+    await assert.rejects(
+      resumeCleanup(f.backend, path.join(f.directory, "report.json"), f.ports),
+    );
+    assert.equal(f.submissions(), 0);
+  });
+}
+
+function observationFixture(t: TestContext, family = "native-extended-0") {
+  const f = fixture(t, false, true, false, family);
+  const modeling = family.startsWith("native-");
+  const source = modeling
+    ? programs.program(`import adsk.core, json, tempfile, os
+app = adsk.core.Application.get()
+owned = [d for d in app.documents if d.creationId == ${JSON.stringify(f.document.creationId)}]
+assert len(owned) == 1, 'Owned fixture is unavailable or ambiguous'
+docs = [dict(name=d.name, creationId=d.creationId, fileId=d.dataFile.id if d.dataFile else None, saved=d.isSaved, modified=d.isModified, active=d == app.activeDocument) for d in app.documents]
+${programs.emit("dict(creationId=owned[0].creationId, version=app.version, documents=docs, tempDir=tempfile.gettempdir(), tempExists=os.path.isdir(tempfile.gettempdir()))")}`)
+    : programs.unsavedState(f.document);
+  const row = f.request(
+    1,
+    modeling ? "observe-native-modeling-state-52" : "observe-definition-7",
+    programs.marker +
+      JSON.stringify({
+        creationId: f.document.creationId,
+        documents: [
+          { ...f.document, saved: false, fileId: null, modified: true },
+        ],
+      }),
+    source,
+  );
+  row.intent = { kind: "script" };
+  f.report.requests.splice(1, 1, row);
+  f.report.cleanupHold = {
+    requestId: row.requestId,
+    reason: modeling
+      ? "Owned native fixture guard failed; leave the document for inspection: AssertionError [ERR_ASSERTION]: An original document changed during feature coverage.\n+ actual - expected"
+      : "Owned unsaved fixture guard failed; inspect original identity before cleanup: A non-fixture document changed during the owned unsaved case\n+ actual - expected",
+  };
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  return { ...f, row };
+}
+
+for (const family of [
+  "native-extended-0",
+  "native-cad-0",
+  "definition-transaction-unsaved-4",
+]) {
+  test(`exact ${family} readonly observation hold uses existing guarded inspection and close`, async (t) => {
+    const f = observationFixture(t, family);
+    const result = await resumeCleanup(
+      f.backend,
+      path.join(f.directory, "report.json"),
+      f.ports,
+    );
+    assert.equal(result.cleanup, "complete");
+    assert.equal(f.submissions(), 2);
+  });
+}
+
+for (const bad of [
+  "source",
+  "reason",
+  "phase",
+  "foreign-document",
+  "saved",
+  "unknown",
+] as const) {
+  test(`extended observation cleanup rejects ${bad} before inspection`, async (t) => {
+    const f = observationFixture(t);
+    if (bad === "source")
+      fs.appendFileSync(
+        path.join(f.directory, "request-1.py"),
+        "\nprint('unreviewed')\n",
+      );
+    if (bad === "reason")
+      f.report.cleanupHold.reason = f.report.cleanupHold.reason.replace(
+        "feature coverage.",
+        "feature coverage but mutation continued.",
+      );
+    if (bad === "phase") f.row.phase = "cad-mutation";
+    if (bad === "unknown")
+      Object.assign(f.row.result, { state: "unknown", sdkSettled: false });
+    if (bad === "foreign-document" || bad === "saved") {
+      const value = JSON.parse(
+        f.row.result.stdout.slice(programs.marker.length),
+      ) as { documents: Record<string, unknown>[] };
+      Object.assign(
+        value.documents[0]!,
+        bad === "saved" ? { saved: true } : { creationId: randomUUID() },
+      );
+      const stdout = programs.marker + JSON.stringify(value);
+      Object.assign(f.row.result, { stdout });
+      record(f.originals.get(f.row.requestId))["stdout"] = stdout;
+    }
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    await assert.rejects(
+      resumeCleanup(f.backend, path.join(f.directory, "report.json"), f.ports),
+    );
+    assert.equal(f.submissions(), 0);
+  });
+}
+
+function rejectedBatchFixture(t: TestContext) {
+  const f = withLocalTerminal(
+    t,
+    "PYTHON_CHECK_REJECTED",
+    "not_started",
+    "native-batch-reference-0",
+    false,
+  );
+  const unused = f.report.requests.pop()!;
+  f.originals.delete(unused.requestId);
+  f.executions.delete(unused.requestId);
+  fs.unlinkSync(path.join(f.directory, "request-2.py"));
+  const runId = "ref_" + f.report.owner.runId.replaceAll("-", "_") + "_0";
+  const output = {
+    version: 2,
+    operation: "batch.run",
+    success: false,
+    status: "failed",
+    outcome: "rejected",
+    mutated: false,
+    runId,
+    context: { doc: f.document.name, docId: f.document.creationId },
+    documentIdentity: {
+      expected: { fileId: null, ...f.document },
+      resolved: null,
+    },
+    request: {
+      runId,
+      atomic: true,
+      operations: [
+        {
+          id: "seed",
+          operation: "shape.box",
+          data: {
+            name: "OwnedRefBox",
+            width: "2 mm",
+            depth: "3 mm",
+            height: "4 mm",
+          },
+        },
+        {
+          id: "gate",
+          operation: "check",
+          data: {
+            measurement: {
+              operation: "measure.volume",
+              data: { ref: { $ref: "seed.result.bodies.0" }, units: "mm3" },
+            },
+            expected: "24 mm^3",
+            tolerance: "0.001 mm^3",
+          },
+        },
+      ],
+    },
+    steps: [
+      { id: "seed", operation: "shape.box", status: "pending" },
+      { id: "gate", operation: "check", status: "pending" },
+    ],
+  };
+  f.rejected.phase = "cad-batch-reference";
+  Object.assign(f.rejected.result, { stdout: JSON.stringify(output) });
+  f.raw["stdout"] = JSON.stringify(output);
+  f.report.cleanupHold = {
+    requestId: f.rejected.requestId,
+    reason:
+      "Native atomic reference outcome is uncertain; preserve the original fixture and receipts without replay",
+  };
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  return { ...f, output };
+}
+
+test("exact rejected not-started batch retains its failure and uses existing pristine cleanup", async (t) => {
+  const f = rejectedBatchFixture(t);
+  const result = await resumeCleanup(
+    f.backend,
+    path.join(f.directory, "report.json"),
+    f.ports,
+  );
+  assert.equal(result.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+});
+
+for (const bad of [
+  "mutated",
+  "completed-step",
+  "foreign-target",
+  "different-recipe",
+  "unknown-outcome",
+] as const) {
+  test(`rejected batch cleanup refuses ${bad}`, async (t) => {
+    const f = rejectedBatchFixture(t);
+    if (bad === "mutated") f.output.mutated = true;
+    if (bad === "completed-step") f.output.steps[0]!.status = "success";
+    if (bad === "foreign-target") f.output.context.docId = randomUUID();
+    if (bad === "different-recipe")
+      f.output.request.operations[0]!.operation = "model.delete";
+    if (bad === "unknown-outcome") f.output.outcome = "unknown";
+    Object.assign(f.rejected.result, { stdout: JSON.stringify(f.output) });
+    f.raw["stdout"] = JSON.stringify(f.output);
+    fs.writeFileSync(
+      path.join(f.directory, "report.json"),
+      JSON.stringify(f.report),
+    );
+    await assert.rejects(
+      resumeCleanup(f.backend, path.join(f.directory, "report.json"), f.ports),
+    );
+    assert.equal(f.submissions(), 0);
+  });
 }
 
 test("supported held resolution preserves the original failed report and binds a new inspection", async (t) => {
@@ -699,12 +1032,22 @@ test("an inspection failure cannot publish authorization or be replayed", async 
   assert.equal(f.submissions(), 1);
 });
 
-for (const kind of ["admission", "pose", "accepted-legacy"])
+for (const kind of [
+  "admission",
+  "pose",
+  "accepted-legacy",
+  "extended",
+  "rejected-batch",
+])
   test(`the actual ${kind} resolution inspection passes the pinned production checker`, async (t) => {
     const f =
       kind === "accepted-legacy"
         ? await acceptedLegacyFixture(t)
-        : fixture(t, kind === "pose");
+        : kind === "extended"
+          ? observationFixture(t)
+          : kind === "rejected-batch"
+            ? rejectedBatchFixture(t)
+            : fixture(t, kind === "pose");
     const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
     const source = fs.readFileSync(
       path.join(

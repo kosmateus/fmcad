@@ -1031,14 +1031,56 @@ function original(
   assert.equal(execution["state"], job["state"]);
   assert.equal(receipt["state"], job["state"]);
   assert.equal(value["stdout"], result["stdout"]);
-  for (const key of ["submittedAt", "startedAt", "finishedAt"])
+  for (const key of ["submittedAt", "finishedAt"])
     assert.ok(
       typeof job[key] === "number" && Number.isFinite(job[key]) && job[key] > 0,
     );
-  assert.ok(
-    Number(job["submittedAt"]) <= Number(job["startedAt"]) &&
-      Number(job["startedAt"]) <= Number(job["finishedAt"]),
-  );
+  assert.ok(Number(job["submittedAt"]) <= Number(job["finishedAt"]));
+  if (job["startedAt"] === undefined) {
+    // Phased local rejections have no SDK start. Preserve that fact rather
+    // than inventing one; only their exact authoritative terminal contract
+    // can take this branch, never a generic failed or unknown SDK result.
+    const operation = record(job["operationResult"]);
+    assert.deepEqual(operation, receipt["operationResult"]);
+    assert.equal(operation["version"], 1);
+    assert.equal(operation["requestId"], id);
+    assert.equal(operation["jobId"], job["id"]);
+    assert.equal(operation["acceptance"], "accepted");
+    assert.equal(job["kind"], "command");
+    assert.equal(job["state"], "failed");
+    for (const value of [job, execution, result, operation])
+      assert.equal(value["mayHaveMutated"], false);
+    const code = text(job["code"]);
+    assert.equal(execution["code"], code);
+    assert.equal(operation["code"], code);
+    assert.ok(
+      code === "PYTHON_CHECK_REJECTED" ||
+        code === "LOCAL_PREPARATION_FAILED" ||
+        code === "LOCAL_EXECUTION_FAILED",
+      "Missing SDK start is not an authoritative local terminal rejection",
+    );
+    const outcome =
+      code === "LOCAL_EXECUTION_FAILED" ? "failed" : "not_started";
+    assert.equal(operation["executionOutcome"], outcome);
+    for (const value of [job, execution]) {
+      if (value["executionOutcome"] !== undefined)
+        assert.equal(value["executionOutcome"], outcome);
+      if (value["userScriptSubmitted"] !== undefined)
+        assert.equal(value["userScriptSubmitted"], false);
+    }
+    if (job["dispatch"] !== undefined)
+      assert.equal(record(job["dispatch"])["rpcCount"], 0);
+    if (job["physicalTurns"] !== undefined)
+      assert.equal(job["physicalTurns"], 0);
+  } else {
+    assert.ok(
+      typeof job["startedAt"] === "number" &&
+        Number.isFinite(job["startedAt"]) &&
+        Number(job["startedAt"]) > 0 &&
+        Number(job["submittedAt"]) <= Number(job["startedAt"]) &&
+        Number(job["startedAt"]) <= Number(job["finishedAt"]),
+    );
+  }
   if (row["phase"] === "gm07-fixed-run") {
     const bound = json(path.join(directory, nativeBinding));
     assert.deepEqual(bound["raw"], raw);
@@ -1244,6 +1286,8 @@ type HoldProof =
     }
   | { kind: "native-result-binding"; bindingHash: string }
   | { kind: "admission-only" }
+  | { kind: "fixture-observation" }
+  | { kind: "rejected-batch" }
   | { kind: "owned-observation"; bodyToken: string }
   | { kind: "terminal-legacy-no-dispatch"; evidenceHash: string };
 function validateLegacyChild(
@@ -1458,6 +1502,122 @@ function holdProof(c: ReturnType<typeof context>, source: string): HoldProof {
     admissionProof(c, source);
     return { kind: "admission-only" };
   }
+  const last = c.requests.at(-1)!;
+  if (
+    /^native-(?:extended|cad)-\d+$/u.test(c.owner.scenarioId) ||
+    /^definition-transaction-unsaved-\d+$/u.test(c.owner.scenarioId)
+  ) {
+    const modeling = c.owner.scenarioId.startsWith("native-");
+    assert.match(
+      text(c.hold["reason"]),
+      modeling
+        ? /^Owned native fixture guard failed; leave the document for inspection: AssertionError \[ERR_ASSERTION\]: An original document changed during feature coverage\.(?:\n|$)/u
+        : /^Owned unsaved fixture guard failed; inspect original identity before cleanup: A non-fixture document changed during the owned unsaved case(?:\n|$)/u,
+    );
+    assert.match(
+      text(last["phase"]),
+      modeling
+        ? /^observe-native-modeling-state-\d+$/u
+        : /^observe-definition-\d+$/u,
+    );
+    assert.equal(record(last["intent"])["kind"], "script");
+    assert.equal(record(last["result"])["state"], "succeeded");
+    // Exact retained readonly program, not an arbitrary script with the same marker.
+    const expected = modeling
+      ? programs.program(`import adsk.core, json, tempfile, os
+app = adsk.core.Application.get()
+owned = [d for d in app.documents if d.creationId == ${JSON.stringify(c.document.creationId)}]
+assert len(owned) == 1, 'Owned fixture is unavailable or ambiguous'
+docs = [dict(name=d.name, creationId=d.creationId, fileId=d.dataFile.id if d.dataFile else None, saved=d.isSaved, modified=d.isModified, active=d == app.activeDocument) for d in app.documents]
+${programs.emit("dict(creationId=owned[0].creationId, version=app.version, documents=docs, tempDir=tempfile.gettempdir(), tempExists=os.path.isdir(tempfile.gettempdir()))")}`)
+      : programs.unsavedState(c.document);
+    assert.equal(
+      source,
+      expected,
+      "Observation is not the exact owned readonly guard",
+    );
+    const observation = marker(record(last["result"])["stdout"]);
+    assert.equal(observation["creationId"], c.document.creationId);
+    inventory(observation["documents"], c.document);
+    return { kind: "fixture-observation" };
+  }
+  if (/^native-batch-reference-\d+$/u.test(c.owner.scenarioId)) {
+    assert.equal(
+      c.hold["reason"],
+      "Native atomic reference outcome is uncertain; preserve the original fixture and receipts without replay",
+    );
+    assert.equal(last["phase"], "cad-batch-reference");
+    assert.equal(record(last["intent"])["kind"], "cad");
+    assert.equal(source, "");
+    const result = record(last["result"]);
+    const operation = record(
+      record(result["brokerReceipt"])["operationResult"],
+    );
+    assert.equal(result["state"], "failed");
+    assert.equal(result["mayHaveMutated"], false);
+    assert.equal(operation["executionOutcome"], "not_started");
+    assert.equal(operation["mayHaveMutated"], false);
+    assert.ok(
+      ["PYTHON_CHECK_REJECTED", "LOCAL_PREPARATION_FAILED"].includes(
+        text(operation["code"]),
+      ),
+    );
+    const output = record(JSON.parse(text(result["stdout"])) as unknown);
+    assert.equal(output["version"], 2);
+    assert.equal(output["operation"], "batch.run");
+    assert.equal(output["success"], false);
+    assert.equal(output["status"], "failed");
+    assert.equal(output["outcome"], "rejected");
+    assert.equal(output["mutated"], false);
+    const expected = {
+      fileId: null,
+      creationId: c.document.creationId,
+      name: c.document.name,
+    };
+    assert.deepEqual(record(output["documentIdentity"])["expected"], expected);
+    assert.equal(record(output["documentIdentity"])["resolved"], null);
+    assert.equal(record(output["context"])["docId"], c.document.creationId);
+    assert.equal(record(output["context"])["doc"], c.document.name);
+    const runId =
+      "ref_" +
+      c.owner.runId.replaceAll("-", "_") +
+      "_" +
+      c.owner.scenarioId.split("-").at(-1);
+    assert.equal(output["runId"], runId);
+    assert.deepEqual(output["request"], {
+      operations: [
+        {
+          id: "seed",
+          operation: "shape.box",
+          data: {
+            name: "OwnedRefBox",
+            width: "2 mm",
+            depth: "3 mm",
+            height: "4 mm",
+          },
+        },
+        {
+          id: "gate",
+          operation: "check",
+          data: {
+            measurement: {
+              operation: "measure.volume",
+              data: { ref: { $ref: "seed.result.bodies.0" }, units: "mm3" },
+            },
+            expected: "24 mm^3",
+            tolerance: "0.001 mm^3",
+          },
+        },
+      ],
+      runId,
+      atomic: true,
+    });
+    assert.deepEqual(output["steps"], [
+      { id: "seed", operation: "shape.box", status: "pending" },
+      { id: "gate", operation: "check", status: "pending" },
+    ]);
+    return { kind: "rejected-batch" };
+  }
   assert.equal(
     c.owner.scenarioId,
     "native-pose-methods-0",
@@ -1467,7 +1627,6 @@ function holdProof(c: ReturnType<typeof context>, source: string): HoldProof {
     text(c.hold["reason"]),
     /^Owned unsaved fixture guard failed; inspect original identity before cleanup: A non-fixture document changed during the owned unsaved case/u,
   );
-  const last = c.requests.at(-1)!;
   assert.equal(last["phase"], "observe-native-pose-methods-guard-3");
   assert.equal(record(last["result"])["state"], "succeeded");
   assert.equal(
@@ -1518,6 +1677,7 @@ function holdModified(
   if (proof.kind === "accepted-terminal-legacy") return false;
   if (proof.kind === "native-result-binding") return true;
   if (proof.kind === "terminal-legacy-no-dispatch") return false;
+  if (proof.kind === "rejected-batch") return false;
   const result = record(c.requests.at(-1)!["result"]);
   const observed =
     proof.kind === "admission-only"
