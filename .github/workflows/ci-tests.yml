@@ -404,7 +404,9 @@ jobs:
   refactor-regressions:
     needs: prepare
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # The serial 96-file suite reached only file 40/96 in 13m39s on Node 22.
+    # Allow the measured full-run cost while keeping a finite job-level bound.
+    timeout-minutes: 45
     env:
       npm_config_cache: /tmp/fmcad-npm-cache
     strategy:

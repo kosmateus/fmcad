@@ -375,6 +375,7 @@ test("one candidate build feeds CI and offline regression consumers", () => {
     ])
       assert.equal(lifecycle?.[hook], undefined, `${file} ${hook}`);
   }
+  assert.match(jobs["refactor-regressions"], /timeout-minutes: 45/);
   assert.match(jobs["scenario-model"], /timeout-minutes: 90/);
   assert.match(jobs["scenario-model"], /python-version: "3\.12"/);
   assert.match(jobs["modeling-admission"], /timeout-minutes: 90/);
