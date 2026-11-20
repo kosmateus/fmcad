@@ -348,6 +348,16 @@ test("bounded process: timeout, memory/output, wrong JSON/exit and missing tools
     [
       ['console.log("not json")', {}, /JSON|Unexpected/],
       ["process.exit(7)", {}, /exit: 7/],
+      ...(process.platform === "win32"
+        ? []
+        : ([
+            ['process.kill(process.pid, "SIGTERM")', {}, /signal: SIGTERM/],
+            ['process.kill(process.pid, "SIGKILL")', {}, /signal: SIGKILL/],
+          ] satisfies [
+            string,
+            NonNullable<PythonCheckerOptions["limits"]>,
+            RegExp,
+          ][])),
       ["setTimeout(()=>{},10000)", { timeoutMs: 200 }, /timeout/],
       [
         'console.log("x".repeat(3000000))',
@@ -410,6 +420,26 @@ test("bounded process: timeout, memory/output, wrong JSON/exit and missing tools
   );
   assert.equal(result.problem, "timeout");
 });
+
+test(
+  "checker subprocess retains external termination signals",
+  {
+    skip: process.platform === "win32",
+  },
+  async (t) => {
+    const root = await temporary(t);
+    for (const signal of ["SIGTERM", "SIGKILL"]) {
+      const result = await runCheckerProcess(
+        process.execPath,
+        ["-e", `process.kill(process.pid, ${JSON.stringify(signal)})`],
+        root,
+        { timeoutMs: 5000, outputBytes: 1024, memoryBytes: 768 * 1024 * 1024 },
+      );
+      assert.equal(result.code, null);
+      assert.equal(result.problem, `signal: ${signal}`);
+    }
+  },
+);
 
 test("cancelled checker subprocess is killed and reported as aborted", async (t) => {
   const root = await temporary(t);
