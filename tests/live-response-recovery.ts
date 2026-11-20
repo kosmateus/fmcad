@@ -59,12 +59,30 @@ interface Report {
   cleanup?: Record<string, unknown>;
   after?: Record<string, unknown>;
   status?: string;
+  functionalStatus?: "not-run" | "running" | "passed" | "failed";
+  harnessStatus?: "running" | "passed" | "failed";
+  harnessError?: string;
   error?: string;
   finishedAt?: string;
   attemptedMutation?: boolean;
   failureCleanup?: Record<string, unknown>;
   cleanupError?: string;
   cleanupDeferredReason?: string;
+}
+
+export function responseRecoveryTurnSource(
+  body: string,
+  creationId: string,
+): string {
+  const others = `sorted((item.creationId, item.name, item.isSaved, item.isModified, item.dataFile.id if item.dataFile else None) for item in adsk.core.Application.get().documents if item.creationId != ${JSON.stringify(creationId)})`;
+  return `_recovery_others_before = ${others}
+try:
+${body
+  .split("\n")
+  .map((line) => "    " + line)
+  .join("\n")}
+finally:
+    assert ${others} == _recovery_others_before, 'Non-target document changed during recovery SDK turn'`;
 }
 
 async function main() {
@@ -183,6 +201,8 @@ async function main() {
     pinFixture = true,
   ): Promise<Record<string, unknown>> => {
     const file = path.join(directory, "phase-" + ++phase + ".py");
+    if (report.identity)
+      body = responseRecoveryTurnSource(body, report.identity.creationId);
     fs.writeFileSync(
       file,
       "import adsk.core, adsk.fusion, json\nfrom typing import cast\nDOC_NAME = None\ndef run(context: str):\n" +
@@ -298,6 +318,8 @@ d=owned[0]
 design=cast(adsk.fusion.Design, d.products.itemByProductType('DesignProductType'))
 assert design is not None`;
     report.attemptedMutation = true;
+    report.functionalStatus = "running";
+    report.harnessStatus = "passed";
     armed = true;
     try {
       report.mutation = await script(`${ownedGuard}
@@ -335,22 +357,6 @@ assert p is not None and design.userParameters.count == 1
 assert abs(p.value - 0.7) < 1e-9
 print(json.dumps(dict(count=design.userParameters.count,value=p.value)))`);
     report.native = true;
-    report.cleanup = await script(`${ownedGuard}
-assert d.close(False)
-previous=[item for item in a.documents if item.creationId==${report.identity.previous ? JSON.stringify(report.identity.previous) : "None"}]
-if previous: assert previous[0].activate()
-print(json.dumps(dict(closed=True,active=a.activeDocument.creationId if a.activeDocument else None)))`);
-    report.after = await state();
-    assert.deepEqual(
-      report.after,
-      report.before,
-      "Foreign document state changed",
-    );
-    assert.equal(
-      report.cleanup["active"],
-      report.identity.previous,
-      "Active document restore failed",
-    );
     assert.equal(report.mutationsSubmitted, 1);
     assert.equal(
       report.automaticRecovery,
@@ -358,9 +364,30 @@ print(json.dumps(dict(closed=True,active=a.activeDocument.creationId if a.active
       "Native mutation succeeded once, but client failed to recover its lost response",
     );
     assert.deepEqual(report.dropped, ["submit", "result"]);
+    report.functionalStatus = "passed";
+    report.cleanup = await script(`${ownedGuard}
+assert d.close(False)
+previous=[item for item in a.documents if item.creationId==${report.identity.previous ? JSON.stringify(report.identity.previous) : "None"}]
+if previous:
+    assert previous[0].activate()
+    assert a.activeDocument == previous[0], 'Exact previous document restore failed'
+assert not any(item.creationId == ${JSON.stringify(report.identity.creationId)} for item in a.documents)
+print(json.dumps(dict(closed=True,creationId=${JSON.stringify(report.identity.creationId)},active=a.activeDocument.creationId if a.activeDocument else None)))`);
+    report.after = await state();
+    assert.equal(
+      report.cleanup["creationId"],
+      report.identity.creationId,
+      "Cleanup closed a different target",
+    );
     report.status = "passed";
   } catch (error) {
     report.status = "failed";
+    if (report.functionalStatus === "running")
+      report.functionalStatus = "failed";
+    else {
+      report.harnessStatus = "failed";
+      report.harnessError = String(error);
+    }
     report.error = String(error instanceof Error ? error.stack : error);
     if (report.identity && report.cleanup?.["closed"] !== true) {
       const settled = knownSettlement([
