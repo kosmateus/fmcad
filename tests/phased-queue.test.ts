@@ -1009,6 +1009,7 @@ test(
     const f = await fixture(t, {
       async checkPrepared(_payload, options) {
         checks++;
+        if (checks > 1) return;
         capturedSignal = options?.signal;
         checked();
         await new Promise<void>((_resolve, reject) => {
@@ -1072,6 +1073,12 @@ test(
       "Receipt lookup does not repeat even the aborted preparation",
     );
     assert.deepEqual(f.trace, []);
+    const next = await f.submit(f.b, "fast.py");
+    await f.complete(f.b, next.id);
+    assert.equal(f.broker.status().blocked, null);
+    assert.equal(f.trace.filter((item) => item === "sdk-start-A").length, 0);
+    assert.equal(f.trace.filter((item) => item === "sdk-start-B").length, 1);
+    assert.equal(f.maximum(), 1);
   },
 );
 
