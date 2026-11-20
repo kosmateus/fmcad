@@ -2296,9 +2296,16 @@ export async function resumeCleanup(
           /^[a-f0-9-]{36}$/u.test(
             r.requestId.slice((owner.clientId + ":legacy:").length),
           ) &&
-          fs.existsSync(
+          (fs.existsSync(
             path.join(directory, "cleanup-legacy-readonly-binding.json"),
-          )
+          ) ||
+            (/^native-import-\d+$/u.test(owner.scenarioId) &&
+              fs.existsSync(
+                path.join(
+                  directory,
+                  "cleanup-succeeded-import-observation-binding.json",
+                ),
+              )))
         ),
     )
   )

@@ -332,7 +332,8 @@ export async function prepareSupplementalCloseProof(
         ...origin.requests.flatMap((r) => {
           if (
             (origin.resolution?.holdKind === "settled-legacy-doc-list" ||
-              origin.resolution?.holdKind === "rejected-import-observation") &&
+              origin.resolution?.holdKind === "rejected-import-observation" ||
+              origin.resolution?.holdKind === "succeeded-import-observation") &&
             r === origin.requests.at(-1) &&
             r["phase"] === "legacy-cli" &&
             r["requestId"] === record(origin.report["cleanupHold"])["requestId"]
@@ -824,9 +825,15 @@ function verifiedFixture(
         record(report["cleanupHold"])["requestId"] !== id ||
         record(report["cleanupHold"])["reason"] !==
           "Native import child retained an uncertain outcome; inspect original requests" ||
-        !fs.existsSync(
+        (!fs.existsSync(
           path.join(directory, "cleanup-legacy-readonly-binding.json"),
-        )
+        ) &&
+          !fs.existsSync(
+            path.join(
+              directory,
+              "cleanup-succeeded-import-observation-binding.json",
+            ),
+          ))
       )
         return undefined;
       const runtime = runtimeBinding(
@@ -839,7 +846,14 @@ function verifiedFixture(
       assert.equal(
         resolution.holdKind,
         /^native-import-\d+$/u.test(scenarioId)
-          ? "rejected-import-observation"
+          ? fs.existsSync(
+              path.join(
+                directory,
+                "cleanup-succeeded-import-observation-binding.json",
+              ),
+            )
+            ? "succeeded-import-observation"
+            : "rejected-import-observation"
           : "settled-legacy-doc-list",
       );
       assert.deepEqual(

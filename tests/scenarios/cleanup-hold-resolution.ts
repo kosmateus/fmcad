@@ -41,6 +41,7 @@ export async function recordLegacyReadonlyCleanupResult(
 ): Promise<void> {
   for (const file of [
     legacyReadonlyBinding,
+    succeededImportBinding,
     canonical,
     inspectionIntent,
     reinspectionIntent,
@@ -79,6 +80,79 @@ export async function recordLegacyReadonlyCleanupResult(
   immutable(path.join(directory, legacyReadonlyBinding), binding);
 }
 const legacyReadonlyBinding = "cleanup-legacy-readonly-binding.json";
+const succeededImportBinding =
+  "cleanup-succeeded-import-observation-binding.json";
+function readonlyBindingFile(directory: string): string {
+  if (fs.existsSync(path.join(directory, succeededImportBinding))) {
+    assert.ok(
+      !fs.existsSync(path.join(directory, legacyReadonlyBinding)),
+      "Conflicting readonly cleanup bindings",
+    );
+    return succeededImportBinding;
+  }
+  return legacyReadonlyBinding;
+}
+
+/** Bind only the completed first readonly import observation, never replay it. */
+export async function recordSucceededImportObservationCleanupResult(
+  backend: Pick<
+    ScenarioBackend,
+    "identity" | "mode" | "qualification" | "protocol"
+  >,
+  directory: string,
+  ports: CleanupRecoveryPorts,
+  sources: { cwd: string; runtimeRoot: string },
+): Promise<void> {
+  for (const file of [
+    succeededImportBinding,
+    legacyReadonlyBinding,
+    canonical,
+    inspectionIntent,
+    reinspectionIntent,
+    "supplemental-close.intent.json",
+    "supplemental-close.json",
+  ])
+    assert.ok(
+      !fs.existsSync(path.join(directory, file)),
+      "Existing cleanup evidence must be recovered, never rebound or replayed",
+    );
+  const c = context(directory, backend),
+    runtime = await ports.readRuntimeBinding();
+  runtimeBinding(runtime, backend);
+  noProducer(directory, c.document);
+  const row = c.requests.at(-1)!,
+    receipt = record(record(row["result"])["brokerReceipt"]);
+  const binding = {
+    version: 1,
+    kind: "succeeded-import-observation",
+    runtime,
+    owner: c.owner,
+    document: c.document,
+    sources,
+    files: rejectedImportFiles(directory, c, sources),
+    raw: await ports.readJobResult(
+      c.owner,
+      text(row["requestId"]),
+      text(receipt["jobId"]),
+    ),
+  };
+  validateSucceededImport(directory, c, binding);
+  assert.deepEqual(await ports.readRuntimeBinding(), runtime);
+  noProducer(directory, c.document);
+  immutable(path.join(directory, succeededImportBinding), binding);
+}
+
+function validateReadonlyBinding(
+  directory: string,
+  c: ReturnType<typeof context>,
+) {
+  const file = readonlyBindingFile(directory),
+    binding = json(path.join(directory, file));
+  if (file === succeededImportBinding)
+    validateSucceededImport(directory, c, binding);
+  else validateReadonlyLegacy(directory, c, binding);
+  return binding;
+}
 function rejectedImportPaths(directory: string) {
   const completion = json(path.join(directory, "legacy/completion.json"));
   const reportFile = text(completion["reportPath"]);
@@ -348,6 +422,255 @@ def run(_context: str) -> None:
       ),
     ].includes(source),
     "Rejected import source is not the exact owned observation",
+  );
+}
+function validateSucceededImport(
+  directory: string,
+  c: ReturnType<typeof context>,
+  binding: Record<string, unknown>,
+) {
+  assert.equal(binding["version"], 1);
+  assert.equal(binding["kind"], "succeeded-import-observation");
+  assert.match(c.owner.scenarioId, /^native-import-\d+$/u);
+  assert.deepEqual(binding["owner"], c.owner);
+  assert.deepEqual(binding["document"], c.document);
+  assert.equal(c.report["scope"], "exclusive-instance");
+  assert.equal(
+    c.hold["reason"],
+    "Native import child retained an uncertain outcome; inspect original requests",
+  );
+  const runtime = record(binding["runtime"]),
+    sourceRecord = record(binding["sources"]);
+  const sources = {
+    cwd: text(sourceRecord["cwd"]),
+    runtimeRoot: text(sourceRecord["runtimeRoot"]),
+  };
+  runtimeBinding(
+    {
+      buildHash: text(runtime["buildHash"]),
+      instanceId: text(runtime["instanceId"]),
+    },
+    { identity: text(c.report["backendIdentity"]) },
+  );
+  assert.equal(
+    json(path.join(sources.runtimeRoot, "dist/runtime-build.json"))[
+      "fingerprint"
+    ],
+    runtime["buildHash"],
+  );
+  assert.deepEqual(
+    binding["files"],
+    rejectedImportFiles(directory, c, sources),
+    "Original succeeded import observation evidence changed",
+  );
+  assert.deepEqual(
+    c.requests.map((row) => row["phase"]),
+    ["create", "export", "legacy-cli"],
+  );
+  for (const row of c.requests.slice(0, 2)) {
+    assert.equal(record(row["result"])["state"], "succeeded");
+    assert.equal(record(row["result"])["sdkSettled"], true);
+  }
+  const exportedSource = read(path.join(directory, "request-1.py"));
+  const exportMatch = /createFusionArchiveExportOptions\(([^\n]+)\)/u.exec(
+    exportedSource,
+  );
+  assert.ok(exportMatch);
+  const exportedFile = text(JSON.parse(exportMatch[1]!) as unknown);
+  assert.ok(
+    exportedFile === path.join(directory, "fixture.f3d") ||
+      exportedFile.endsWith(directory.replaceAll("/", "\\") + "\\fixture.f3d"),
+  );
+  assert.equal(exportedSource, programs.exportFile(c.document, exportedFile));
+  const row = c.requests[2]!,
+    requestId = text(row["requestId"]),
+    id = requestId.split(":").at(-1)!;
+  assert.match(id, /^[a-f0-9-]{36}$/u);
+  assert.equal(requestId, c.owner.clientId + ":legacy:" + id);
+  assert.equal(c.hold["requestId"], requestId);
+  for (const subdir of ["intents", "queue-receipts"])
+    assert.deepEqual(fs.readdirSync(path.join(directory, "legacy", subdir)), [
+      id + ".json",
+    ]);
+  const lease = json(path.join(directory, "legacy/lease.json")),
+    launch = json(path.join(directory, "legacy/launch.json")),
+    completion = json(path.join(directory, "legacy/completion.json")),
+    intent = json(path.join(directory, "legacy/intents", id + ".json")),
+    receipt = json(path.join(directory, "legacy/queue-receipts", id + ".json"));
+  for (const value of [lease, completion, intent, receipt])
+    assert.deepEqual(value["owner"], c.owner);
+  for (const value of [lease, completion])
+    assert.deepEqual(value["document"], c.document);
+  assert.equal(lease["version"], 1);
+  assert.equal(lease["directory"], directory);
+  assert.equal(lease["source"], "tests/live-data-import.ts");
+  assert.equal(lease["testCase"], "native-data-import");
+  assert.equal(lease["mode"], "owned-unsaved-script");
+  assert.equal(lease["protocol"], "addin");
+  assert.equal(launch["state"], "completed");
+  assert.equal(launch["code"], 1);
+  for (const producer of [launch, intent])
+    assert.equal(
+      childProcessIdentity.priorProcessAlive({
+        pid: Number(producer["pid"]),
+        birth: text(producer["birth"]),
+      }),
+      false,
+      "Original import producer may still submit work",
+    );
+  assert.equal(completion["status"], "failed");
+  assert.equal(completion["safeForCleanup"], false);
+  const original = rejectedImportPaths(directory);
+  assert.equal(original.child["suite"], "data-import");
+  assert.equal(original.child["status"], "failed");
+  assert.equal(original.child["owner"], c.owner.clientId);
+  assert.equal(original.child["name"], c.document.name);
+  assert.equal(
+    original.child["artifactRoot"],
+    path.dirname(original.reportFile),
+  );
+  assert.equal(original.child["runtimeRoot"], sources.runtimeRoot);
+  assert.equal(original.child["runtimeBuildHash"], runtime["buildHash"]);
+  assert.deepEqual(original.child["tests"], []);
+  assert.match(
+    text(original.child["error"]),
+    /^Error: owned observation did not produce a known terminal execution outcome\./u,
+  );
+  assert.equal(original.call["label"], "owned observation");
+  assert.equal(original.call["exitCode"], 0);
+  assert.equal(original.call["signal"], null);
+  assert.equal(original.call["receiptStatus"], "execution-outcome-not-settled");
+  assert.deepEqual(original.args, [
+    "run",
+    original.sourceFile,
+    "--doc",
+    c.document.name,
+    "--doc-id",
+    c.document.creationId,
+    "--timeout",
+    "60000",
+  ]);
+  assert.equal(intent["version"], 1);
+  assert.equal(receipt["version"], 1);
+  assert.equal(intent["requestId"], requestId);
+  assert.equal(receipt["requestId"], requestId);
+  assert.equal(
+    intent["argvHash"],
+    hash(JSON.stringify([...original.args, "--request-id", requestId])),
+  );
+  assert.equal(intent["admissionRequested"], true);
+  assert.equal(intent["completed"], true);
+  assert.equal(intent["exitCode"], 0);
+  assert.equal(intent["settlementFailure"], undefined);
+  const raw = record(binding["raw"]),
+    job = record(raw["job"]),
+    execution = record(raw["execution"]),
+    operation = record(job["operationResult"]);
+  assert.equal(receipt["jobId"], job["id"]);
+  assert.equal(job["requestId"], requestId);
+  assert.equal(job["clientId"], c.owner.clientId);
+  assert.equal(job["kind"], "command");
+  assert.deepEqual(intent["settlement"], {
+    requestId,
+    clientId: c.owner.clientId,
+    jobId: job["id"],
+    state: "succeeded",
+    sdkSettled: true,
+  });
+  for (const value of [job, execution]) {
+    assert.equal(value["state"], "succeeded");
+    assert.equal(value["code"], "EXECUTION_COMPLETE");
+    assert.equal(value["mayHaveMutated"], true);
+    if (value["executionOutcome"] !== undefined)
+      assert.equal(value["executionOutcome"], "succeeded");
+    if (value["userScriptSubmitted"] !== undefined)
+      assert.equal(value["userScriptSubmitted"], true);
+  }
+  assert.equal(execution["exitCode"], 0);
+  assert.equal(execution["sdkSettled"], true);
+  assert.equal(job["physicalTurns"], 1);
+  assert.equal(record(job["dispatch"])["rpcCount"], 1);
+  assert.equal(record(job["dispatch"])["completedCount"], 1);
+  for (const key of ["submittedAt", "startedAt", "finishedAt"])
+    assert.ok(
+      typeof job[key] === "number" &&
+        Number.isFinite(job[key]) &&
+        Number(job[key]) > 0,
+    );
+  assert.ok(
+    Number(job["submittedAt"]) <= Number(job["startedAt"]) &&
+      Number(job["startedAt"]) <= Number(job["finishedAt"]),
+  );
+  assert.equal(operation["version"], 1);
+  assert.equal(operation["requestId"], requestId);
+  assert.equal(operation["jobId"], job["id"]);
+  assert.equal(operation["acceptance"], "accepted");
+  assert.equal(operation["executionOutcome"], "succeeded");
+  assert.equal(operation["mayHaveMutated"], true);
+  assert.equal(operation["code"], "EXECUTION_COMPLETE");
+  assert.equal(record(operation["validation"])["status"], "not_checked");
+  assert.deepEqual(queueExecution(raw, c.owner, requestId), row["result"]);
+  assert.equal(original.call["stdout"], raw["stdout"]);
+  const output = record(JSON.parse(text(raw["stdout"])) as unknown);
+  assert.equal(output["activeCreationId"], c.document.creationId);
+  assert.ok(Array.isArray(output["documents"]));
+  const matches = output["documents"]
+    .map(record)
+    .filter((doc) => doc["creationId"] === c.document.creationId);
+  assert.deepEqual(matches, [
+    { ...c.document, saved: false, modified: false, fileId: null },
+  ]);
+  const stderr = text(original.call["stderr"]);
+  const accepted = stderr
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith("FMCAD_QUEUE_JOB "));
+  const terminal = stderr
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith("FMCAD_QUEUE_RESULT "));
+  assert.equal(accepted.length, 1);
+  assert.equal(terminal.length, 1);
+  assert.deepEqual(
+    JSON.parse(accepted[0]!.slice("FMCAD_QUEUE_JOB ".length)) as unknown,
+    { jobId: job["id"], requestId },
+  );
+  assert.deepEqual(
+    JSON.parse(terminal[0]!.slice("FMCAD_QUEUE_RESULT ".length)) as unknown,
+    job,
+  );
+  const provenance = record(raw["provenance"]),
+    source = read(original.sourceFile);
+  assert.equal(provenance["status"], "available");
+  assert.match(text(provenance["inputIdentity"]), /^[a-f0-9]{64}$/u);
+  assert.ok(
+    Array.isArray(provenance["inputs"]) && provenance["inputs"].length === 1,
+  );
+  assert.deepEqual(record(provenance["inputs"][0]), {
+    ...(record(provenance["inputs"][0])["version"] === undefined
+      ? {}
+      : { version: 1 }),
+    kind: "source",
+    originalPath: original.sourceFile,
+    sha256: hash(source),
+    bytes: Buffer.byteLength(source),
+  });
+  assert.ok(
+    Array.isArray(raw["pythonChecks"]) && raw["pythonChecks"].length === 1,
+  );
+  assert.equal(record(raw["pythonChecks"][0])["status"], "passed");
+  // Conservative mayHaveMutated is NOT a readonly proof. Only this exact,
+  // authenticated first observation body is admitted; it cannot mutate a model.
+  assert.equal(
+    source,
+    `DOC_NAME = None
+import adsk.core, json
+def run(_context: str) -> None:
+    app = adsk.core.Application.get()
+    documents = [dict(creationId=d.creationId, name=d.name, saved=d.isSaved, modified=d.isModified,
+                      fileId=d.dataFile.id if d.isSaved and d.dataFile else None)
+                 for d in app.documents]
+    print(json.dumps(dict(documents=sorted(documents, key=lambda d: str(d['creationId'])),
+                          activeCreationId=app.activeDocument.creationId if app.activeDocument else None)))
+`,
   );
 }
 function readonlyLegacyFiles(directory: string, c: ReturnType<typeof context>) {
@@ -799,9 +1122,9 @@ export function readCleanupRecoveryRequests(
   runtime: CleanupRuntimeBinding,
 ): Record<string, unknown>[] {
   runtimeBinding(runtime, backend);
-  if (fs.existsSync(path.join(directory, legacyReadonlyBinding)))
+  if (fs.existsSync(path.join(directory, readonlyBindingFile(directory))))
     assert.deepEqual(
-      json(path.join(directory, legacyReadonlyBinding))["runtime"],
+      json(path.join(directory, readonlyBindingFile(directory)))["runtime"],
       runtime,
       "Readonly result runtime changed",
     );
@@ -811,12 +1134,8 @@ export function readCleanupRecoveryRequests(
       runtime,
     );
   const c = context(directory, backend);
-  if (fs.existsSync(path.join(directory, legacyReadonlyBinding)))
-    validateReadonlyLegacy(
-      directory,
-      c,
-      json(path.join(directory, legacyReadonlyBinding)),
-    );
+  if (fs.existsSync(path.join(directory, readonlyBindingFile(directory))))
+    validateReadonlyBinding(directory, c);
   return c.requests;
 }
 export async function recordNativeCleanupResult(
@@ -1413,8 +1732,7 @@ function original(
       qualification: "broker",
       protocol: "addin",
     });
-    const binding = json(path.join(directory, legacyReadonlyBinding));
-    validateReadonlyLegacy(directory, c, binding);
+    const binding = validateReadonlyBinding(directory, c);
     assert.deepEqual(binding["raw"], raw);
     return { source: "", job, value };
   }
@@ -1586,6 +1904,7 @@ function admissionProof(c: ReturnType<typeof context>, source: string) {
   }
 }
 type HoldProof =
+  | { kind: "succeeded-import-observation"; bindingHash: string }
   | { kind: "rejected-import-observation"; bindingHash: string }
   | { kind: "settled-legacy-doc-list"; bindingHash: string }
   | {
@@ -1717,7 +2036,14 @@ function holdProof(c: ReturnType<typeof context>, source: string): HoldProof {
     "Native import child retained an uncertain outcome; inspect original requests"
   ) {
     const directory = text(c.report["directory"]),
-      bindingFile = path.join(directory, legacyReadonlyBinding);
+      bindingFile = path.join(directory, readonlyBindingFile(directory));
+    if (path.basename(bindingFile) === succeededImportBinding) {
+      validateSucceededImport(directory, c, json(bindingFile));
+      return {
+        kind: "succeeded-import-observation",
+        bindingHash: hash(read(bindingFile)),
+      };
+    }
     validateReadonlyLegacy(directory, c, json(bindingFile));
     return {
       kind:
@@ -1991,6 +2317,7 @@ function holdModified(
   if (proof.kind === "terminal-legacy-no-dispatch") return false;
   if (proof.kind === "rejected-batch") return false;
   if (proof.kind === "rejected-import-observation") return false;
+  if (proof.kind === "succeeded-import-observation") return false;
   const result = record(c.requests.at(-1)!["result"]);
   const observed =
     proof.kind === "admission-only"
@@ -2225,9 +2552,9 @@ function verifiedDecision(
   const decision = record(JSON.parse(bytes) as unknown);
   const c = context(directory, backend);
   runtimeBinding(runtime, backend);
-  if (fs.existsSync(path.join(directory, legacyReadonlyBinding)))
+  if (fs.existsSync(path.join(directory, readonlyBindingFile(directory))))
     assert.deepEqual(
-      json(path.join(directory, legacyReadonlyBinding))["runtime"],
+      json(path.join(directory, readonlyBindingFile(directory)))["runtime"],
       runtime,
       "Readonly result runtime changed",
     );
@@ -2411,9 +2738,9 @@ export async function resolveCleanupHold(
   const c = context(directory, backend),
     runtime = await ports.readRuntimeBinding();
   runtimeBinding(runtime, backend);
-  if (fs.existsSync(path.join(directory, legacyReadonlyBinding)))
+  if (fs.existsSync(path.join(directory, readonlyBindingFile(directory))))
     assert.deepEqual(
-      json(path.join(directory, legacyReadonlyBinding))["runtime"],
+      json(path.join(directory, readonlyBindingFile(directory)))["runtime"],
       runtime,
       "Readonly result runtime changed",
     );
