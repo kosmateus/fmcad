@@ -222,7 +222,7 @@ export function generate(directory: string) {
 export function main(argv: readonly string[] = process.argv.slice(2)): void {
   if (argv.length !== 1)
     throw new Error(
-      "Usage: node tests/data_import-fixtures.js <new-directory>",
+      "Usage: node dist/tests/data_import-fixtures.js <new-directory>",
     );
   console.log(JSON.stringify(generate(argv[0]!)));
 }

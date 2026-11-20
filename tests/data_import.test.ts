@@ -670,10 +670,13 @@ test("scalar model path maps to an envelope model; non-path placeholders carry n
 
 test("native handoff generator creates only new offline inputs, never fake STEP geometry or overwritten evidence", () => {
   const out = path.join(directory, "handoff");
-  const result = load("./data_import-fixtures").generate(out);
+  const result = load("../dist/tests/data_import-fixtures.js").generate(out);
   assert.equal(result.nativeExecuted, false);
   assert.equal(fs.existsSync(path.join(out, "old.step")), false);
-  assert.throws(() => load("./data_import-fixtures").generate(out), /EEXIST/);
+  assert.throws(
+    () => load("../dist/tests/data_import-fixtures.js").generate(out),
+    /EEXIST/,
+  );
   const input = JSON.parse(
     fs.readFileSync(path.join(out, "replace-board-preserve.json"), "utf8"),
   );
