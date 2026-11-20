@@ -393,7 +393,10 @@ test("actual prepared typed service keeps input/reset/document drift fences and 
     assert.equal(
       firstResult.job.state,
       "succeeded",
-      JSON.stringify(firstResult.execution),
+      JSON.stringify({
+        job: firstResult.job,
+        stdout: firstResult.stdout,
+      }),
     );
     assert.equal((await peerTerminal).job.state, "succeeded");
   } finally {
