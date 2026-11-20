@@ -510,6 +510,7 @@ export interface VerifiedCleanupResolution {
   readonly expiresAt: number;
 }
 const canonical = "cleanup-hold-resolution.json";
+const refreshedResolution = "cleanup-hold-reinspection-resolution.json";
 const inspectionIntent = "cleanup-hold-inspection-intent.json";
 const reinspectionIntent = "cleanup-hold-reinspection-intent.json";
 const failedInspection = "cleanup-hold-inspection-failure.json";
@@ -1904,7 +1905,14 @@ export function validateCleanupResolution(
   >,
   runtime: CleanupRuntimeBinding,
 ): VerifiedCleanupResolution {
-  const bytes = read(path.join(directory, canonical));
+  const bytes = read(
+    path.join(
+      directory,
+      fs.existsSync(path.join(directory, refreshedResolution))
+        ? refreshedResolution
+        : canonical,
+    ),
+  );
   return verifiedDecision(directory, backend, runtime, bytes);
 }
 /** Authoring-only guard. Historical closure readers must use the validator above. */
@@ -2000,26 +2008,57 @@ function verifiedDecision(
   let priorFinishedAt = 0;
   if (intentFile === reinspectionIntent) {
     assert.equal(decision["version"], 2);
-    assert.equal(
-      decision["failedInspectionHash"],
-      hash(read(path.join(directory, failedInspection))),
-    );
-    const prior = validateFailedInspection(
-      directory,
-      backend,
-      runtime,
-      json(path.join(directory, failedInspection)),
-    );
-    assert.ok(
-      Number(text(row["requestId"]).split(":").at(-1)) >
-        Number(prior.requestId.split(":").at(-1)),
-    );
-    assert.notEqual(
-      record(record(inspection["raw"])["job"])["id"],
-      prior.jobId,
-    );
-    priorFinishedAt = prior.finishedAt;
-  } else assert.equal(decision["failedInspectionHash"], undefined);
+    if (decision["priorResolutionHash"] !== undefined) {
+      const previousBytes = read(path.join(directory, canonical));
+      assert.equal(decision["priorResolutionHash"], hash(previousBytes));
+      assert.equal(
+        record(JSON.parse(previousBytes) as unknown)["priorResolutionHash"],
+        undefined,
+      );
+      const previous = verifiedDecision(
+        directory,
+        backend,
+        runtime,
+        previousBytes,
+      );
+      const intent = json(path.join(directory, reinspectionIntent));
+      assert.equal(intent["priorResolutionHash"], previous.digest);
+      assert.ok(Number(intent["preparedAt"]) >= previous.expiresAt);
+      assert.equal(decision["failedInspectionHash"], undefined);
+      assert.ok(
+        Number(text(row["requestId"]).split(":").at(-1)) >
+          Number(previous.inspectionRequestId.split(":").at(-1)),
+      );
+      assert.notEqual(
+        record(record(inspection["raw"])["job"])["id"],
+        previous.inspectionJobId,
+      );
+      priorFinishedAt = previous.expiresAt;
+    } else {
+      assert.equal(
+        decision["failedInspectionHash"],
+        hash(read(path.join(directory, failedInspection))),
+      );
+      const prior = validateFailedInspection(
+        directory,
+        backend,
+        runtime,
+        json(path.join(directory, failedInspection)),
+      );
+      assert.ok(
+        Number(text(row["requestId"]).split(":").at(-1)) >
+          Number(prior.requestId.split(":").at(-1)),
+      );
+      assert.notEqual(
+        record(record(inspection["raw"])["job"])["id"],
+        prior.jobId,
+      );
+      priorFinishedAt = prior.finishedAt;
+    }
+  } else {
+    assert.equal(decision["failedInspectionHash"], undefined);
+    assert.equal(decision["priorResolutionHash"], undefined);
+  }
   const intent = json(path.join(directory, intentFile));
   assert.equal(intent["version"], decision["version"]);
   assert.deepEqual(intent["owner"], c.owner);
@@ -2098,8 +2137,39 @@ export async function resolveCleanupHold(
       "Readonly result runtime changed",
     );
   noProducer(directory, c.document);
+  let expired: VerifiedCleanupResolution | undefined;
   if (fs.existsSync(path.join(directory, canonical))) {
-    return validateCleanupResolutionForClose(directory, backend, runtime);
+    const previous = validateCleanupResolution(directory, backend, runtime);
+    if (Date.now() < previous.expiresAt)
+      return validateCleanupResolutionForClose(directory, backend, runtime);
+    assert.equal(
+      fs.existsSync(path.join(directory, refreshedResolution)),
+      false,
+      "Never repeat an expired reinspection",
+    );
+    for (const file of [
+      "supplemental-close.intent.json",
+      "supplemental-close.json",
+      reinspectionIntent,
+    ])
+      assert.equal(
+        fs.existsSync(path.join(directory, file)),
+        false,
+        "An existing close or reinspection must be recovered, never replayed",
+      );
+    // Authenticate the successful old inspection again; an UNKNOWN, pending or
+    // rebound receipt cannot authorize a fresh turn.
+    const old = record(json(path.join(directory, canonical))["inspection"]);
+    const oldRow = record(old["row"]);
+    assert.deepEqual(
+      await backend.lookup(c.owner, previous.inspectionRequestId),
+      oldRow["result"],
+    );
+    assert.deepEqual(
+      await ports.readOriginalResult(c.owner, previous.inspectionRequestId),
+      old["raw"],
+    );
+    expired = previous;
   }
   const originals: unknown[] = [];
   for (const row of c.requests) {
@@ -2120,14 +2190,15 @@ export async function resolveCleanupHold(
   );
   const expectedModified = holdModified(c, holdEvidence);
   const source = inspectionSource(c.document, holdEvidence, expectedModified);
-  const prior = fs.existsSync(path.join(directory, inspectionIntent))
-    ? validateFailedInspection(
-        directory,
-        backend,
-        runtime,
-        json(path.join(directory, failedInspection)),
-      )
-    : undefined;
+  const prior =
+    !expired && fs.existsSync(path.join(directory, inspectionIntent))
+      ? validateFailedInspection(
+          directory,
+          backend,
+          runtime,
+          json(path.join(directory, failedInspection)),
+        )
+      : undefined;
   if (prior) {
     assert.deepEqual(
       await backend.lookup(c.owner, prior.requestId),
@@ -2145,6 +2216,9 @@ export async function resolveCleanupHold(
     ":" +
     (Math.max(
       ...(prior ? [Number(prior.requestId.split(":").at(-1))] : []),
+      ...(expired
+        ? [Number(expired.inspectionRequestId.split(":").at(-1))]
+        : []),
       ...c.requests.map((row) => numericCleanupOrdinal(c, row)),
     ) +
       1);
@@ -2153,7 +2227,7 @@ export async function resolveCleanupHold(
     null,
     "Inspection ID already exists",
   );
-  const intentFile = prior ? reinspectionIntent : inspectionIntent;
+  const intentFile = prior || expired ? reinspectionIntent : inspectionIntent;
   immutable(path.join(directory, intentFile), {
     version: 2,
     nonce: randomUUID(),
@@ -2163,6 +2237,9 @@ export async function resolveCleanupHold(
     reportHash: c.reportHash,
     expectedModified,
     sourceHash: hash(source),
+    ...(expired
+      ? { priorResolutionHash: expired.digest, preparedAt: Date.now() }
+      : {}),
   });
   const result = await backend.execute({
     owner: c.owner,
@@ -2194,6 +2271,7 @@ export async function resolveCleanupHold(
     originals,
     holdProof: holdEvidence,
     expectedModified,
+    ...(expired ? { priorResolutionHash: expired.digest } : {}),
     ...(prior
       ? {
           failedInspectionHash: hash(
@@ -2212,6 +2290,9 @@ export async function resolveCleanupHold(
     runtime,
     JSON.stringify(decision) + "\n",
   );
-  immutable(path.join(directory, canonical), decision);
+  immutable(
+    path.join(directory, expired ? refreshedResolution : canonical),
+    decision,
+  );
   return validateCleanupResolution(directory, backend, runtime);
 }

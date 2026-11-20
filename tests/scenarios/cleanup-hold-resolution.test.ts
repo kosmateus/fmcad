@@ -1124,6 +1124,7 @@ for (const kind of [
   "accepted-legacy",
   "extended",
   "rejected-batch",
+  "expired",
 ])
   test(`the actual ${kind} resolution inspection passes the pinned production checker`, async (t) => {
     const f =
@@ -1134,6 +1135,10 @@ for (const kind of [
           : kind === "rejected-batch"
             ? rejectedBatchFixture(t)
             : fixture(t, kind === "pose");
+    if (kind === "expired") {
+      const prior = await resolveCleanupHold(f.backend, f.directory, f.ports);
+      t.mock.method(Date, "now", () => prior.expiresAt + 1);
+    }
     const proof = await resolveCleanupHold(f.backend, f.directory, f.ports);
     const source = fs.readFileSync(
       path.join(
@@ -1250,6 +1255,144 @@ test("close authorization requires freshness while historical validation remains
     /stale/u,
   );
 });
+
+test("expired successful inspection is freshly reinspected without replacing the original authorization", async (t) => {
+  const f = fixture(t);
+  const old = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  const canonical = path.join(f.directory, "cleanup-hold-resolution.json");
+  const original = fs.readFileSync(canonical);
+  t.mock.method(Date, "now", () => old.expiresAt + 1);
+  const fresh = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  assert.equal(f.submissions(), 2);
+  assert.equal(fresh.inspectionRequestId, f.report.owner.clientId + ":3");
+  assert.notEqual(fresh.inspectionJobId, old.inspectionJobId);
+  assert.equal(fresh.expiresAt, fresh.inspectedAt + 300_000);
+  assert.ok(fresh.inspectedAt >= old.expiresAt);
+  assert.deepEqual(fs.readFileSync(canonical), original);
+  assert.deepEqual(
+    validateCleanupResolutionForClose(f.directory, f.backend, f.runtime),
+    fresh,
+  );
+  const closed = await resumeCleanup(
+    f.backend,
+    path.join(f.directory, "report.json"),
+    f.ports,
+  );
+  assert.equal(closed.cleanup, "complete");
+  assert.equal(f.submissions(), 3);
+  assert.deepEqual(fs.readFileSync(canonical), original);
+});
+
+for (const bad of [
+  "unknown",
+  "pending",
+  "foreign-job",
+  "changed-source",
+  "accepted-close",
+  "reinspection-intent",
+  "accepted-next-request",
+] as const)
+  test(`expired successful inspection refuses ${bad} before a fresh SDK turn`, async (t) => {
+    const f = fixture(t);
+    const old = await resolveCleanupHold(f.backend, f.directory, f.ports);
+    t.mock.method(Date, "now", () => old.expiresAt + 1);
+    const raw = record(f.originals.get(old.inspectionRequestId));
+    if (bad === "unknown" || bad === "pending")
+      Object.assign(record(raw["execution"]), {
+        state: bad,
+        sdkSettled: false,
+      });
+    if (bad === "foreign-job") record(raw["job"])["id"] = randomUUID();
+    if (bad === "changed-source")
+      fs.appendFileSync(
+        path.join(f.directory, "request-2.py"),
+        "\nprint('foreign')\n",
+      );
+    if (bad === "accepted-close")
+      fs.writeFileSync(
+        path.join(f.directory, "supplemental-close.intent.json"),
+        "{}",
+      );
+    if (bad === "reinspection-intent")
+      fs.writeFileSync(
+        path.join(f.directory, "cleanup-hold-reinspection-intent.json"),
+        "{}",
+      );
+    if (bad === "accepted-next-request")
+      f.executions.set(f.report.owner.clientId + ":3", {
+        ...f.executions.get(old.inspectionRequestId)!,
+        requestId: f.report.owner.clientId + ":3",
+        state: "unknown",
+        sdkSettled: false,
+      });
+    await assert.rejects(resolveCleanupHold(f.backend, f.directory, f.ports));
+    assert.equal(f.submissions(), 1);
+  });
+
+test("a refreshed successful inspection keeps a finite TTL and cannot be reinspected twice", async (t) => {
+  const f = fixture(t);
+  const old = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  let now = old.expiresAt + 1;
+  t.mock.method(Date, "now", () => now);
+  const fresh = await resolveCleanupHold(f.backend, f.directory, f.ports);
+  now = fresh.expiresAt;
+  assert.deepEqual(
+    validateCleanupResolution(f.directory, f.backend, f.runtime),
+    fresh,
+  );
+  assert.throws(
+    () => validateCleanupResolutionForClose(f.directory, f.backend, f.runtime),
+    /stale/u,
+  );
+  await assert.rejects(
+    resolveCleanupHold(f.backend, f.directory, f.ports),
+    /Never repeat/u,
+  );
+  assert.equal(f.submissions(), 2);
+});
+
+for (const bad of [
+  "prior-hash",
+  "intent-hash",
+  "owner",
+  "sdk-unknown",
+  "foreign-job",
+] as const)
+  test(`refreshed inspection rejects tampered ${bad} evidence`, async (t) => {
+    const f = fixture(t);
+    const old = await resolveCleanupHold(f.backend, f.directory, f.ports);
+    t.mock.method(Date, "now", () => old.expiresAt + 1);
+    await resolveCleanupHold(f.backend, f.directory, f.ports);
+    const file = path.join(
+      f.directory,
+      "cleanup-hold-reinspection-resolution.json",
+    );
+    const d = record(JSON.parse(fs.readFileSync(file, "utf8")) as unknown);
+    if (bad === "prior-hash") d["priorResolutionHash"] = "0".repeat(64);
+    if (bad === "owner") record(d["owner"])["clientId"] = "foreign";
+    if (bad === "sdk-unknown")
+      record(record(record(d["inspection"])["raw"])["execution"])[
+        "sdkSettled"
+      ] = false;
+    if (bad === "foreign-job")
+      record(record(record(d["inspection"])["raw"])["job"])["id"] =
+        randomUUID();
+    if (bad === "intent-hash") {
+      const intentFile = path.join(
+        f.directory,
+        "cleanup-hold-reinspection-intent.json",
+      );
+      const intent = record(
+        JSON.parse(fs.readFileSync(intentFile, "utf8")) as unknown,
+      );
+      intent["priorResolutionHash"] = "0".repeat(64);
+      fs.writeFileSync(intentFile, JSON.stringify(intent));
+    } else fs.writeFileSync(file, JSON.stringify(d));
+    assert.throws(() =>
+      validateCleanupResolutionForClose(f.directory, f.backend, f.runtime),
+    );
+    assert.equal(f.submissions(), 2);
+  });
 
 test("historical adapter reads exact original report jobs even when a fresh backend has no lookup ledger", async (t) => {
   const f = fixture(t);
