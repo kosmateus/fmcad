@@ -17211,521 +17211,749 @@
     },
     {
       "source": "tests/live-normal-multidocument.ts",
-      "sha256": "e1abce411fc592c7c283773a0a91d0ff6d1093c050423341acedf40af7604da7",
+      "sha256": "9b6a4c426b42496b69bdf44d525ddb27b554be57446186d64884abd6c6880606",
       "assertions": [
         {
+          "id": "032f197b8582b854d7e6-1",
+          "line": 102,
+          "kind": "embedded-python",
+          "expression": "\nassert d.close(False)\nafter="
+        },
+        {
+          "id": "efac82419063e9199807-1",
+          "line": 104,
+          "kind": "embedded-python",
+          "expression": "\nassert after == [row for row in before if row['creationId'] != "
+        },
+        {
+          "id": "0e4a5b57ee1c96903fbc-1",
+          "line": 130,
+          "kind": "assertion",
+          "expression": "assert.ok(\n        document[\"fileId\"] === null ||\n          (typeof document[\"fileId\"] === \"string\" && document[\"fileId\"]),\n      )"
+        },
+        {
+          "id": "aa6cee4ab2da42aa2198-1",
+          "line": 136,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      new Set(entries.map((row) => row[\"id\"])).size,\n      entries.length,\n      \"Duplicate document identity\",\n    )"
+        },
+        {
+          "id": "aa49d41757b803d88db5-1",
+          "line": 147,
+          "kind": "helper",
+          "expression": "rows(beforeValue)"
+        },
+        {
+          "id": "80eebf85013e5d6efd27-1",
+          "line": 148,
+          "kind": "helper",
+          "expression": "rows(afterValue)"
+        },
+        {
+          "id": "94e84a9dba4109ef7f75-1",
+          "line": 150,
+          "kind": "assertion",
+          "expression": "assert.ok(\n    Number.isFinite(window.baselineFinishedAt) &&\n      Number.isFinite(window.restoreStartedAt) &&\n      window.baselineFinishedAt <= window.restoreStartedAt,\n  )"
+        },
+        {
+          "id": "bb428da55f1e126dd17b-1",
+          "line": 155,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    documents.length,\n    closeReceipts.length,\n    \"Every own document needs an exact close receipt\",\n  )"
+        },
+        {
+          "id": "89d792bf9769c125b6cd-1",
+          "line": 160,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    new Set(documents.map((d) => d.creationId)).size,\n    documents.length,\n  )"
+        },
+        {
+          "id": "d702e1b137d0e9b5394a-1",
+          "line": 166,
+          "kind": "assertion",
+          "expression": "assert.ok(receipt.requestId && receipt.clientId)"
+        },
+        {
+          "id": "e7d3b9e7d1a7cd5e6d6d-1",
+          "line": 167,
+          "kind": "assertion",
+          "expression": "assert.ok(knownSettlement([receipt.result]))"
+        },
+        {
+          "id": "fe6f366505bb43eaf764-1",
+          "line": 170,
+          "kind": "assertion",
+          "expression": "assert.equal(job[\"requestId\"], receipt.requestId)"
+        },
+        {
+          "id": "c96199465509cb3119d7-1",
+          "line": 171,
+          "kind": "assertion",
+          "expression": "assert.equal(job[\"clientId\"], receipt.clientId)"
+        },
+        {
+          "id": "a773bd55006e3d1a342b-1",
+          "line": 172,
+          "kind": "assertion",
+          "expression": "assert.equal(job[\"state\"], \"succeeded\")"
+        },
+        {
+          "id": "d00f09eb118dadccbf44-1",
+          "line": 173,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      typeof job[\"id\"] === \"string\" && job[\"id\"] && !jobs.has(job[\"id\"]),\n    )"
+        },
+        {
+          "id": "278c3dc62b6dfcef3966-1",
+          "line": 177,
+          "kind": "assertion",
+          "expression": "assert.equal(typeof result[\"stdout\"], \"string\")"
+        },
+        {
+          "id": "c4457f0d2183a5ac359a-1",
+          "line": 181,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      markers.length === 1 || markers.length === 2,\n      \"Own close output has ambiguous markers\",\n    )"
+        },
+        {
+          "id": "4d9e6d11dec4323fabc1-1",
+          "line": 186,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(parse(markers[1]!.slice(\"FMCAD_RESULT \".length)), {\n        success: true,\n        helperCallsOnly: [],\n      })"
+        },
+        {
+          "id": "3356d345d65fb2a84e91-1",
+          "line": 191,
+          "kind": "assertion",
+          "expression": "assert.equal(value[\"closed\"], true)"
+        },
+        {
+          "id": "509d07add2acf2baa7da-1",
+          "line": 195,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      document && !closed.has(document.creationId),\n      \"Close receipt is foreign or reused\",\n    )"
+        },
+        {
+          "id": "b843efc6ee3c5faed94f-1",
+          "line": 200,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      before.byId.has(document.creationId),\n      false,\n      \"Own fixture predates this run\",\n    )"
+        },
+        {
+          "id": "cb666ae2e34bf30c6a04-1",
+          "line": 205,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      after.byId.has(document.creationId),\n      false,\n      \"Own fixture remains open\",\n    )"
+        },
+        {
+          "id": "95ea1f80f41de88e888b-1",
+          "line": 212,
+          "kind": "assertion",
+          "expression": "assert.equal(fence[\"version\"], 1)"
+        },
+        {
+          "id": "d7171dd38d549854272e-1",
+          "line": 213,
+          "kind": "helper",
+          "expression": "assertFencedClosedDocumentInventory(\n        fence[\"before\"], fence[\"after\"], document,\n        \"Owned close changed a non-target document within its SDK turn\",\n      )"
+        },
+        {
+          "id": "35e1561e7cd802c597ca-1",
+          "line": 230,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(\n        current,\n        row,\n        \"Baseline document identity or state changed\",\n      )"
+        },
+        {
+          "id": "bab18d81b31fe2590332-1",
+          "line": 238,
+          "kind": "assertion",
+          "expression": "assert.equal(\n      proof?.state,\n      \"closed\",\n      \"Baseline document disappeared without a canonical close\",\n    )"
+        },
+        {
+          "id": "7a49575632e3e8c2a5bb-1",
+          "line": 244,
+          "kind": "assertion",
+          "expression": "assert.ok(proof && close, \"Missing time-bound close proof\")"
+        },
+        {
+          "id": "fa113caac0e09c9c1a0c-1",
+          "line": 245,
+          "kind": "assertion",
+          "expression": "assert.ok(\n      close.startedAt >= window.baselineFinishedAt &&\n        close.finishedAt <= window.restoreStartedAt &&\n        close.finishedAt >= close.startedAt,\n      \"Peer close is stale or outside this run\",\n    )"
+        },
+        {
+          "id": "5bd90c02369e3607b5a2-1",
+          "line": 251,
+          "kind": "assertion",
+          "expression": "assert.ok(!jobs.has(close.jobId), \"Close receipt was reused\")"
+        },
+        {
+          "id": "bd478ebbe3abe6d0df50-1",
+          "line": 253,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(proof.document, {\n      creationId: row[\"id\"],\n      name: row[\"name\"],\n    })"
+        },
+        {
+          "id": "8287fd73c278db9db1fb-1",
+          "line": 257,
+          "kind": "helper",
+          "expression": "assertFencedClosedDocumentInventory(\n      close.inventoryFence[\"before\"],\n      close.inventoryFence[\"after\"],\n      proof.document,\n      \"Peer close changed another document\",\n    )"
+        },
+        {
+          "id": "59c23dfa8388e189d77e-1",
+          "line": 263,
+          "kind": "assertion",
+          "expression": "assert.ok(Array.isArray(close.inventoryFence[\"before\"]))"
+        },
+        {
+          "id": "ee2f5eb9c076d571e7d9-1",
+          "line": 267,
+          "kind": "assertion",
+          "expression": "assert.ok(target)"
+        },
+        {
+          "id": "0886d89e4a6de58be228-1",
+          "line": 268,
+          "kind": "assertion",
+          "expression": "assert.deepEqual(\n      {\n        id: target[\"creationId\"],\n        name: target[\"name\"],\n        fileId: target[\"fileId\"],\n        saved: target[\"saved\"],\n        modified: target[\"modified\"],\n      },\n      row,\n      \"Peer target drifted since baseline\",\n    )"
+        },
+        {
+          "id": "82e7bd099f4eb04fe9be-1",
+          "line": 283,
+          "kind": "helper",
+          "expression": "assertReceiptBoundDocumentInventory(\n    canonicalRows(\n      before.entries.filter((row) => !closedBaseline.has(String(row[\"id\"]))),\n    ),\n    canonicalRows(after.entries),\n    visiblePeers,\n    \"A user row changed or a new document lacks authenticated visible-peer provenance\",\n  )"
+        },
+        {
+          "id": "b08184178ccff7206ba2-1",
+          "line": 291,
+          "kind": "assertion",
+          "expression": "assert.equal(\n    after.snapshot.active,\n    before.snapshot.active,\n    \"Original active document was not restored\",\n  )"
+        },
+        {
           "id": "4d9e4cb82cde1d875512-1",
-          "line": 39,
+          "line": 314,
           "kind": "assertion",
           "expression": "assert.ok(stat.isFile() && !stat.isSymbolicLink())"
         },
         {
           "id": "05d21ae604af83747a0a-1",
-          "line": 40,
+          "line": 315,
           "kind": "assertion",
           "expression": "assert.ok(stat.size <= 1024 * 1024, \"Multi-runner manifest is bounded\")"
         },
         {
           "id": "2fe4233085f4698b9483-1",
-          "line": 44,
+          "line": 319,
           "kind": "assertion",
           "expression": "assert.equal(value.version, 1)"
         },
         {
           "id": "ebe73d558ec9ae5eae30-1",
-          "line": 45,
+          "line": 320,
           "kind": "assertion",
           "expression": "assert.match(value.id, /^[a-f0-9-]{36}$/u)"
         },
         {
           "id": "ffb9a2fdc2b21ca8a7f6-1",
-          "line": 46,
+          "line": 321,
           "kind": "assertion",
           "expression": "assert.ok([1, 2, 10].includes(value.ownerCount))"
         },
         {
           "id": "5df2642caf84f6cc6563-1",
-          "line": 47,
+          "line": 322,
           "kind": "assertion",
           "expression": "assert.ok(Array.isArray(value.runners) && value.runners.length >= 2)"
         },
         {
           "id": "959e47302e1217e1442d-1",
-          "line": 48,
+          "line": 323,
           "kind": "assertion",
           "expression": "assert.equal(\n    new Set(value.runners.map((runner) => runner.id)).size,\n    value.runners.length,\n  )"
         },
         {
           "id": "36e14c9ba6a8df785b2e-1",
-          "line": 52,
+          "line": 327,
           "kind": "assertion",
           "expression": "assert.equal(\n    value.runners.some((runner) => runner.id === runId),\n    true,\n    \"Runner ID must be registered in the group manifest\",\n  )"
         },
         {
           "id": "9e8d1acde447718b60b3-1",
-          "line": 58,
+          "line": 333,
           "kind": "assertion",
           "expression": "assert.match(runner.id, /^[a-f0-9-]{36}$/u)"
         },
         {
           "id": "ef05932378fdbf9f3965-1",
-          "line": 59,
+          "line": 334,
           "kind": "assertion",
           "expression": "assert.equal(runner.documentNames.length, value.ownerCount)"
         },
         {
           "id": "051d11c9160ce329ddf7-1",
-          "line": 60,
+          "line": 335,
           "kind": "assertion",
           "expression": "assert.equal(\n      new Set(runner.documentNames).size,\n      runner.documentNames.length,\n    )"
         },
         {
           "id": "2e69062d26c7dedd001c-1",
-          "line": 64,
+          "line": 339,
           "kind": "assertion",
           "expression": "assert.ok(\n      runner.documentNames.every(\n        (name) => typeof name === \"string\" && name.startsWith(\"FMCAD_MULTI_\"),\n      ),\n    )"
         },
         {
           "id": "74d3ed1562d00ec517ff-1",
-          "line": 85,
+          "line": 360,
           "kind": "assertion",
           "expression": "assert.deepEqual(\n      currentById.get(document.id),\n      document,\n      \"Original document identity or state changed during independent runners\",\n    )"
         },
         {
           "id": "93c02ed1b2ec681c5c69-1",
-          "line": 94,
+          "line": 369,
           "kind": "assertion",
           "expression": "assert.ok(\n    extras.every((document) => allowedNames.has(document.name)),\n    \"Only registered multi-runner fixtures may exist beside the baseline\",\n  )"
         },
         {
           "id": "79da28fd702bece99ed9-1",
-          "line": 98,
+          "line": 373,
           "kind": "assertion",
           "expression": "assert.ok(\n    extras.every((document) => !ownNames.includes(document.name)),\n    \"This runner left one of its own documents open\",\n  )"
         },
         {
           "id": "1769b44c44902ab55215-1",
-          "line": 104,
+          "line": 379,
           "kind": "assertion",
           "expression": "assert.ok(\n      active && allowedNames.has(active.name),\n      \"Active document must be original or one of the registered live fixtures\",\n    )"
         },
         {
           "id": "79c7476cae34c626585c-1",
-          "line": 128,
+          "line": 403,
           "kind": "assertion",
           "expression": "assert.ok(\n    readyFile && startFile && abortFile,\n    \"Incomplete runner gate paths\",\n  )"
         },
         {
           "id": "82603a9ce56f92ad512e-1",
-          "line": 135,
+          "line": 410,
           "kind": "assertion",
           "expression": "assert.ok(\n      relative !== \"\" &&\n        !relative.startsWith(\"..\" + path.sep) &&\n        relative !== \"..\" &&\n        !path.isAbsolute(relative),\n      \"Runner gate files must remain under the group root\",\n    )"
         },
         {
           "id": "4d9e4cb82cde1d875512-2",
-          "line": 153,
+          "line": 428,
           "kind": "assertion",
           "expression": "assert.ok(stat.isFile() && !stat.isSymbolicLink())"
         },
         {
           "id": "e5cf23a5cc4f449925a4-1",
-          "line": 161,
+          "line": 436,
           "kind": "assertion",
           "expression": "assert.ok(process.argv.includes(\"--run\"), \"Explicit --run required\")"
         },
         {
           "id": "93450d092c71b609417f-1",
-          "line": 166,
+          "line": 441,
           "kind": "assertion",
           "expression": "assert.match(runId, /^[a-f0-9-]{36}$/u)"
         },
         {
           "id": "add763c63ecf19301f32-1",
-          "line": 167,
+          "line": 442,
           "kind": "assertion",
           "expression": "assert.ok(!groupFile || !resume, \"Grouped runs do not resume prior reports\")"
         },
         {
           "id": "2f49616c6b8c4417a494-1",
-          "line": 174,
+          "line": 449,
           "kind": "assertion",
           "expression": "assert.ok(\n    Number.isSafeInteger(ownerCount) && [1, 2, 10].includes(ownerCount),\n  )"
         },
         {
           "id": "458ecbff82d1ef2162ca-1",
-          "line": 179,
+          "line": 454,
           "kind": "helper",
           "expression": "readGroup(groupFile, runId)"
         },
         {
           "id": "d7e001015a9292c69722-1",
-          "line": 182,
+          "line": 457,
           "kind": "assertion",
           "expression": "assert.ok(groupRunner)"
         },
         {
           "id": "7744cce3f0059af50ca2-1",
-          "line": 183,
+          "line": 458,
           "kind": "assertion",
           "expression": "assert.equal(cfg.backend, group.protocol)"
         },
         {
           "id": "85557291fb09927239db-1",
-          "line": 184,
+          "line": 459,
           "kind": "assertion",
           "expression": "assert.equal(buildHash(), group.buildHash)"
         },
         {
           "id": "09ec931bbe2f7488e5eb-1",
-          "line": 185,
+          "line": 460,
           "kind": "assertion",
           "expression": "assert.equal(group.ownerCount, ownerCount)"
         },
         {
           "id": "a40d3dfdf5c9a51c5290-1",
-          "line": 186,
+          "line": 461,
           "kind": "assertion",
           "expression": "assert.ok(\n      group.baseline.active !== null,\n      \"Multi-process lifecycle proof requires an original active document that can be restored\",\n    )"
         },
         {
           "id": "1952be71084459e9f4b9-1",
-          "line": 192,
+          "line": 467,
           "kind": "assertion",
           "expression": "assert.ok(\n      relative !== \"\" &&\n        !relative.startsWith(\"..\" + path.sep) &&\n        relative !== \"..\" &&\n        !path.isAbsolute(relative),\n      \"Runner evidence must remain under its group directory\",\n    )"
         },
         {
           "id": "3b6a54ef5054da5c6181-1",
-          "line": 248,
+          "line": 540,
           "kind": "assertion",
           "expression": "assert.ok(\n          typeof count === \"number\" &&\n            Number.isSafeInteger(count) &&\n            count >= 0,\n        )"
         },
         {
           "id": "c74218979deba0c7e675-1",
-          "line": 269,
+          "line": 561,
           "kind": "assertion",
           "expression": "assert.ok(queue)"
         },
         {
+          "id": "f5096cef93f02d9429b2-1",
+          "line": 569,
+          "kind": "assertion",
+          "expression": "assert.ok(document)"
+        },
+        {
+          "id": "824f171727758bb16fb4-1",
+          "line": 628,
+          "kind": "assertion",
+          "expression": "assert.ok(acceptedJob)"
+        },
+        {
           "id": "849e23022697108c7012-1",
-          "line": 339,
+          "line": 649,
           "kind": "assertion",
           "expression": "assert.equal(result.job.state, \"succeeded\", JSON.stringify(result))"
         },
         {
           "id": "791d0f523c2cb50d61aa-1",
-          "line": 343,
+          "line": 657,
           "kind": "assertion",
           "expression": "assert.ok(marker, \"Missing native result marker: \" + result.stdout)"
         },
         {
-          "id": "1ee8dbe5c69394106fdd-1",
-          "line": 347,
+          "id": "2029f44f6bb45c5674dc-1",
+          "line": 661,
           "kind": "helper",
-          "expression": "script(\n      0,\n      phase,\n      `a=adsk.core.Application.get()\nprint('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,\n    documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d['id']))))`,\n    )"
+          "expression": "script(\n      0,\n      phase,\n      `a=adsk.core.Application.get()\nprint('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,\n    documents=${normalInventoryExpression(!!group)})))`,\n    )"
         },
         {
           "id": "c3faa95406473eebec99-1",
-          "line": 356,
+          "line": 670,
           "kind": "embedded-python",
           "expression": "]\nassert len(owned)==1 and owned[0].name=="
         },
         {
           "id": "02cf7a2b235ed94b0b2e-1",
-          "line": 357,
+          "line": 671,
           "kind": "embedded-python",
           "expression": " and not owned[0].isSaved\nd=owned[0]\ndesign=cast(adsk.fusion.Design, d.products.itemByProductType('DesignProductType'))\nassert design is not None"
         },
         {
           "id": "f7bfd3db7f614a142a80-1",
-          "line": 366,
+          "line": 680,
           "kind": "assertion",
           "expression": "assert.ok(first)"
         },
         {
           "id": "1828869d127ae3b63571-1",
-          "line": 368,
+          "line": 682,
           "kind": "assertion",
           "expression": "assert.equal(report.broker.buildHash, report.buildHash)"
         },
         {
           "id": "4d7b90527d70242d0213-1",
-          "line": 369,
+          "line": 683,
           "kind": "assertion",
           "expression": "assert.equal(report.broker.admissionScope, \"normal-multidocument\")"
         },
         {
           "id": "effd37a4e2af4448d0f6-1",
-          "line": 370,
+          "line": 684,
           "kind": "helper",
           "expression": "awaitGroupStart(groupFile!, runId, report.buildHash)"
         },
         {
           "id": "411d90a80062158fa80b-1",
-          "line": 374,
+          "line": 688,
           "kind": "assertion",
           "expression": "assert.equal(resume[\"buildHash\"], report.buildHash)"
         },
         {
           "id": "bb24452d0c813d4f68cc-1",
-          "line": 375,
+          "line": 689,
           "kind": "assertion",
           "expression": "assert.equal(\n        ownerCount,\n        2,\n        \"Historical recovery reports have two owners\",\n      )"
         },
         {
           "id": "44d0b35297442b33fa0f-1",
-          "line": 382,
+          "line": 696,
           "kind": "assertion",
           "expression": "assert.ok(\n        Array.isArray(documents) &&\n          documents.length === ownerCount &&\n          Array.isArray(receipts),\n      )"
         },
         {
           "id": "c74218979deba0c7e675-2",
-          "line": 389,
+          "line": 703,
           "kind": "assertion",
           "expression": "assert.ok(queue)"
         },
         {
           "id": "9bd103d2923cdb9c8228-1",
-          "line": 402,
+          "line": 716,
           "kind": "assertion",
           "expression": "assert.ok(created && write)"
         },
         {
           "id": "f611ed5b55a4751433fd-1",
-          "line": 411,
+          "line": 725,
           "kind": "assertion",
           "expression": "assert.equal(creation.job.state, \"succeeded\")"
         },
         {
           "id": "90163b31298bd4d5f743-1",
-          "line": 412,
+          "line": 726,
           "kind": "assertion",
           "expression": "assert.equal(creation.execution.sdkSettled, true)"
         },
         {
           "id": "d511e12089c618397b77-1",
-          "line": 413,
+          "line": 727,
           "kind": "assertion",
           "expression": "assert.equal(rejected.job.state, \"failed\")"
         },
         {
           "id": "8d2e6be1a9abcc9eefcd-1",
-          "line": 414,
+          "line": 728,
           "kind": "assertion",
           "expression": "assert.equal(rejected.job.code, \"LOCAL_EXECUTION_FAILED\")"
         },
         {
           "id": "cc4f55f5592ef9480c86-1",
-          "line": 415,
+          "line": 729,
           "kind": "assertion",
           "expression": "assert.equal(rejected.execution.mayHaveMutated, false)"
         },
         {
           "id": "12f72a2240947919796f-1",
-          "line": 416,
+          "line": 730,
           "kind": "assertion",
           "expression": "assert.equal(rejected.execution.sdkSettled, true)"
         },
         {
           "id": "5fd297efc8095dcdcc89-1",
-          "line": 417,
+          "line": 731,
           "kind": "assertion",
           "expression": "assert.equal(rejected.job.dispatch?.rpcCount || 0, 0)"
         },
         {
           "id": "23fc2996455bb65f5067-1",
-          "line": 419,
+          "line": 733,
           "kind": "assertion",
           "expression": "assert.ok(resumeFile)"
         },
         {
           "id": "f93e4d9f37f1a3efbb0b-1",
-          "line": 426,
+          "line": 740,
           "kind": "helper",
           "expression": "snapshot(\"baseline\")"
         },
         {
           "id": "487b39c9ca9b5f8e8cbd-1",
-          "line": 428,
+          "line": 748,
           "kind": "helper",
           "expression": "snapshot(\"group-before\")"
         },
         {
           "id": "d7e001015a9292c69722-2",
-          "line": 429,
+          "line": 749,
           "kind": "assertion",
           "expression": "assert.ok(groupRunner)"
         },
         {
           "id": "fb4c0884c7e2272b3c4b-1",
-          "line": 434,
+          "line": 754,
           "kind": "helper",
           "expression": "assertGroupSnapshot(\n          report.before,\n          observed,\n          expected,\n          groupRunner.documentNames,\n        )"
         },
         {
           "id": "9c95cee476b7bb985d19-1",
-          "line": 448,
+          "line": 768,
           "kind": "helper",
           "expression": "script(\n            index,\n            \"create\",\n            `a=adsk.core.Application.get()\nassert not any(d.name==${JSON.stringify(name)} for d in a.documents)\nd=a.documents.add(cast(adsk.core.DocumentTypes, adsk.core.DocumentTypes.FusionDesignDocumentType))\nd.name=${JSON.stringify(name)}\nprint('FMCAD_RESULT '+json.dumps(dict(name=d.name,creationId=d.creationId,saved=d.isSaved)))`,\n          )"
         },
         {
           "id": "a9cf34af63925341017b-1",
-          "line": 451,
+          "line": 771,
           "kind": "embedded-python",
           "expression": "a=adsk.core.Application.get()\nassert not any(d.name=="
         },
         {
           "id": "de74e7a8cac5996cbbc0-1",
-          "line": 467,
+          "line": 787,
           "kind": "assertion",
           "expression": "assert.equal(report.documents.length, ownerCount)"
         },
         {
           "id": "e6344e6e163a9c5896fd-1",
-          "line": 468,
+          "line": 788,
           "kind": "assertion",
           "expression": "assert.ok(report.documents.every((document) => document))"
         },
         {
           "id": "bcbc5c02e319b8151a7f-1",
-          "line": 469,
+          "line": 789,
           "kind": "assertion",
           "expression": "assert.equal(\n      new Set(report.documents.map((document) => document.creationId)).size,\n      ownerCount,\n    )"
         },
         {
           "id": "80b2a14f1bbeca8909a6-1",
-          "line": 475,
+          "line": 797,
           "kind": "helper",
           "expression": "script(\n          index,\n          \"write\",\n          `${guard(document)}\nassert design.userParameters.count==0\np=design.userParameters.add('OwnedCounter',adsk.core.ValueInput.createByString('${index + 2} mm'),'mm','multi-client regression')\nassert p is not None\nprint('FMCAD_RESULT '+json.dumps(dict(creationId=d.creationId,count=design.userParameters.count,value=p.value,started=started,finished=time.perf_counter())))`,\n          document,\n        )"
         },
         {
           "id": "4b6c341d89ea1e0c3793-1",
-          "line": 478,
+          "line": 800,
           "kind": "embedded-python",
           "expression": "\nassert design.userParameters.count==0\np=design.userParameters.add('OwnedCounter',adsk.core.ValueInput.createByString('"
         },
         {
           "id": "b1adb9264fd60991d395-1",
-          "line": 480,
+          "line": 802,
           "kind": "embedded-python",
           "expression": " mm'),'mm','multi-client regression')\nassert p is not None\nprint('FMCAD_RESULT '+json.dumps(dict(creationId=d.creationId,count=design.userParameters.count,value=p.value,started=started,finished=time.perf_counter())))"
         },
         {
           "id": "d0e50c301d9390c36d89-1",
-          "line": 489,
+          "line": 811,
           "kind": "helper",
           "expression": "script(\n          index,\n          \"read\",\n          `${guard(document)}\np=design.userParameters.itemByName('OwnedCounter')\nassert p is not None and design.userParameters.count==1 and abs(p.value-${(index + 2) / 10})<1e-9\nprint('FMCAD_RESULT '+json.dumps(dict(creationId=d.creationId,count=design.userParameters.count,value=p.value,started=started,finished=time.perf_counter())))`,\n          document,\n        )"
         },
         {
           "id": "4060af2c358e62d7d8bc-1",
-          "line": 492,
+          "line": 814,
           "kind": "embedded-python",
           "expression": "\np=design.userParameters.itemByName('OwnedCounter')\nassert p is not None and design.userParameters.count==1 and abs(p.value-"
         },
         {
           "id": "05813179f7d47a984545-1",
-          "line": 507,
+          "line": 829,
           "kind": "assertion",
           "expression": "assert.ok(typeof started === \"number\" && Number.isFinite(started))"
         },
         {
           "id": "a8a69dcbcc440799265a-1",
-          "line": 508,
+          "line": 830,
           "kind": "assertion",
           "expression": "assert.ok(\n          typeof finished === \"number\" &&\n            Number.isFinite(finished) &&\n            finished > started,\n        )"
         },
         {
           "id": "5a2521c8898fb2136aa1-1",
-          "line": 513,
+          "line": 835,
           "kind": "assertion",
           "expression": "assert.equal(typeof interval[\"creationId\"], \"string\")"
         },
         {
           "id": "84970b77f8eeb6525a9e-1",
-          "line": 535,
+          "line": 857,
           "kind": "assertion",
           "expression": "assert.equal(\n      maximum,\n      1,\n      \"Owned SDK script bodies overlapped in the same Fusion process\",\n    )"
         },
         {
           "id": "c95638494770cfbb17d2-1",
-          "line": 540,
+          "line": 862,
           "kind": "assertion",
           "expression": "assert.equal(concurrent, 0)"
         },
         {
           "id": "b94376baa64f8526c38a-1",
-          "line": 543,
+          "line": 866,
           "kind": "assertion",
           "expression": "assert.ok(report.before)"
         },
         {
-          "id": "f5096cef93f02d9429b2-1",
-          "line": 547,
+          "id": "f5096cef93f02d9429b2-2",
+          "line": 870,
           "kind": "assertion",
           "expression": "assert.ok(document)"
         },
         {
-          "id": "03cacd05a2d8930342bf-1",
-          "line": 549,
+          "id": "449791275bc34cc453f4-1",
+          "line": 872,
           "kind": "helper",
-          "expression": "script(\n          index,\n          \"close\",\n          group\n            ? `${guard(document)}\\n${ownedCleanupSource(document, report.before.active, \"FMCAD_RESULT \")}`\n            : `${guard(document)}\nassert d.close(False)\nprint('FMCAD_RESULT '+json.dumps(dict(closed=True,creationId=${JSON.stringify(document.creationId)})))`,\n          document,\n        )"
-        },
-        {
-          "id": "e718f410198698d77127-1",
-          "line": 554,
-          "kind": "embedded-python",
-          "expression": "\nassert d.close(False)\nprint('FMCAD_RESULT '+json.dumps(dict(closed=True,creationId="
+          "expression": "script(\n          index,\n          \"close\",\n          group\n            ? `${guard(document)}\\n${ownedCleanupSource(document, report.before.active, \"FMCAD_RESULT \")}`\n            : normalCloseSource(document, guard(document)),\n          document,\n        )"
         },
         {
           "id": "b94376baa64f8526c38a-2",
-          "line": 561,
+          "line": 882,
           "kind": "assertion",
           "expression": "assert.ok(report.before)"
         },
         {
-          "id": "5957462c947268639f9b-1",
-          "line": 563,
+          "id": "cc1f62191148ec12682e-1",
+          "line": 884,
           "kind": "helper",
-          "expression": "script(\n        0,\n        \"restore\",\n        `a=adsk.core.Application.get()\nprevious=[d for d in a.documents if d.creationId==${report.before.active === null ? \"None\" : JSON.stringify(report.before.active)}]\nif previous: assert previous[0].activate()\nprint('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,\n    documents=sorted([dict(id=d.creationId,name=d.name,saved=d.isSaved,modified=d.isModified) for d in a.documents],key=lambda d:d['id']))))`,\n      )"
+          "expression": "script(\n        0,\n        \"restore\",\n        `a=adsk.core.Application.get()\nprevious=[d for d in a.documents if d.creationId==${report.before.active === null ? \"None\" : JSON.stringify(report.before.active)}]\nif previous: assert previous[0].activate()\nprint('FMCAD_RESULT '+json.dumps(dict(active=a.activeDocument.creationId if a.activeDocument else None,\n    documents=${normalInventoryExpression(!!group)})))`,\n      )"
         },
         {
           "id": "d7e001015a9292c69722-3",
-          "line": 574,
+          "line": 895,
           "kind": "assertion",
           "expression": "assert.ok(groupRunner)"
         },
         {
           "id": "f3d3d619cfb1086018bf-1",
-          "line": 575,
+          "line": 896,
           "kind": "helper",
           "expression": "assertGroupSnapshot(\n        report.before,\n        report.after,\n        group.runners.flatMap((runner) => runner.documentNames),\n        groupRunner.documentNames,\n      )"
         },
         {
           "id": "163b2e2b95a15d56ebbd-1",
-          "line": 581,
+          "line": 902,
           "kind": "assertion",
           "expression": "assert.ok(\n        report.cleanup.every(\n          (receipt) =>\n            object(receipt)[\"closed\"] === true &&\n            (report.before!.active === null ||\n              object(receipt)[\"active\"] === report.before!.active),\n        ),\n        \"Every owned close receipt must restore the shared original active document\",\n      )"
         },
         {
-          "id": "b6a7a417b2100e9fb3f3-1",
-          "line": 590,
+          "id": "05d3cd10aad3a5a83615-1",
+          "line": 920,
           "kind": "assertion",
-          "expression": "assert.deepEqual(report.after, report.before)"
+          "expression": "assert.ok(\n        typeof baselineFinishedAt === \"number\" &&\n          typeof restoreStartedAt === \"number\",\n      )"
+        },
+        {
+          "id": "42f282ad8c267f7977e2-1",
+          "line": 933,
+          "kind": "helper",
+          "expression": "assertNormalFinalInventory(\n        report.before,\n        report.after,\n        report.documents,\n        report.receipts.filter((receipt) => receipt.phase === \"close\"),\n        peers,\n        { baselineFinishedAt, restoreStartedAt },\n        \"owned-lifecycle\",\n      )"
         },
         {
           "id": "f7bfd3db7f614a142a80-2",
-          "line": 643,
+          "line": 1006,
           "kind": "assertion",
           "expression": "assert.ok(first)"
         },
         {
           "id": "79f9cd8ff42255a0a901-1",
-          "line": 657,
+          "line": 1020,
           "kind": "helper",
           "expression": "script(\n                      index,\n                      \"failure-close\",\n                      ownedCleanupSource(\n                        document,\n                        report.before.active,\n                        \"FMCAD_RESULT \",\n                      ),\n                    )"
         },
         {
           "id": "2789c84e11e1313291ad-1",
-          "line": 731,
+          "line": 1102,
           "kind": "helper",
           "expression": "main()"
         }
@@ -18327,143 +18555,143 @@
     },
     {
       "source": "tests/live-recovery-ports.ts",
-      "sha256": "c8b17b2ab4c4541f555677bb4757c030cf08b3808a8781acbe1ca909b3720bd9",
+      "sha256": "c36965aa9110f5c9d893c1a41829cdd6437d7f1d62d7db5bff722e726f3c88df",
       "assertions": [
         {
           "id": "eeaf1df12460ae2bf403-1",
-          "line": 132,
+          "line": 135,
           "kind": "embedded-python",
           "expression": "]\nassert len(owned)<=1\nif owned:\n    d=owned[0]\n    assert d.name=="
         },
         {
           "id": "e2d94a0a4bfa23aeb3de-1",
-          "line": 136,
+          "line": 139,
           "kind": "embedded-python",
           "expression": " and not d.isSaved\n    assert d.close(False)\nprevious=[d for d in a.documents if d.creationId=="
         },
         {
           "id": "dd077fc11d730d1e3036-1",
-          "line": 159,
+          "line": 162,
           "kind": "assertion",
           "expression": "assert.ok(\n    value !== null && typeof value === \"object\" && !Array.isArray(value),\n    \"Expected JSON object\",\n  )"
         },
         {
           "id": "374e93893e58ec09d534-1",
-          "line": 167,
-          "kind": "helper",
-          "expression": "object(value)"
-        },
-        {
-          "id": "374e93893e58ec09d534-2",
           "line": 170,
           "kind": "helper",
           "expression": "object(value)"
         },
         {
+          "id": "374e93893e58ec09d534-2",
+          "line": 173,
+          "kind": "helper",
+          "expression": "object(value)"
+        },
+        {
           "id": "7a8162bcf1cd2e9c71ab-1",
-          "line": 171,
+          "line": 174,
           "kind": "assertion",
           "expression": "assert.equal(typeof data[\"name\"], \"string\")"
         },
         {
           "id": "fbb11bf45ddf666e3db0-1",
-          "line": 172,
+          "line": 175,
           "kind": "assertion",
           "expression": "assert.equal(typeof data[\"creationId\"], \"string\")"
         },
         {
           "id": "374e93893e58ec09d534-3",
-          "line": 182,
+          "line": 185,
           "kind": "helper",
           "expression": "object(value)"
         },
         {
           "id": "f8e7e8fb03e00798293e-1",
-          "line": 183,
+          "line": 186,
           "kind": "assertion",
           "expression": "assert.equal(typeof data[\"buildHash\"], \"string\")"
         },
         {
           "id": "a79cee6e22f1c061daa2-1",
-          "line": 184,
+          "line": 187,
           "kind": "assertion",
           "expression": "assert.equal(typeof data[\"admissionScope\"], \"string\")"
         },
         {
           "id": "374e93893e58ec09d534-4",
-          "line": 191,
+          "line": 194,
           "kind": "helper",
           "expression": "object(value)"
         },
         {
           "id": "b978b83f0c87b16296eb-1",
-          "line": 192,
+          "line": 195,
           "kind": "helper",
           "expression": "object(data[\"job\"])"
         },
         {
           "id": "1324aa03264fb47f4bc5-1",
-          "line": 194,
+          "line": 197,
           "kind": "assertion",
           "expression": "assert.equal(typeof job[key], \"string\")"
         },
         {
           "id": "99876222da2bfc272781-1",
-          "line": 195,
+          "line": 198,
           "kind": "assertion",
           "expression": "assert.equal(typeof data[\"stdout\"], \"string\")"
         },
         {
           "id": "ee789a9848c0e29a5c9d-1",
-          "line": 196,
+          "line": 199,
           "kind": "helper",
           "expression": "object(data[\"execution\"])"
         },
         {
           "id": "374e93893e58ec09d534-5",
-          "line": 200,
+          "line": 203,
           "kind": "helper",
           "expression": "object(value)"
         },
         {
           "id": "8ce0e113fc151e611c75-1",
-          "line": 201,
+          "line": 204,
           "kind": "assertion",
           "expression": "assert.ok(data[\"active\"] === null || typeof data[\"active\"] === \"string\")"
         },
         {
           "id": "80a3aebd4a06755f4354-1",
-          "line": 202,
+          "line": 205,
           "kind": "assertion",
           "expression": "assert.ok(Array.isArray(data[\"documents\"]))"
         },
         {
           "id": "2d8b4fd5cbd4c1709606-1",
-          "line": 204,
+          "line": 207,
           "kind": "helper",
           "expression": "object(item)"
         },
         {
           "id": "9878fe7203b03be028a8-1",
-          "line": 205,
+          "line": 208,
           "kind": "assertion",
           "expression": "assert.equal(typeof row[\"id\"], \"string\")"
         },
         {
           "id": "b973b44b858d57cf9236-1",
-          "line": 206,
+          "line": 209,
           "kind": "assertion",
           "expression": "assert.equal(typeof row[\"name\"], \"string\")"
         },
         {
           "id": "6625105e34308deefece-1",
-          "line": 207,
+          "line": 210,
           "kind": "assertion",
           "expression": "assert.equal(typeof row[\"saved\"], \"boolean\")"
         },
         {
           "id": "311fd7e189a89d819e08-1",
-          "line": 208,
+          "line": 211,
           "kind": "assertion",
           "expression": "assert.equal(typeof row[\"modified\"], \"boolean\")"
         }

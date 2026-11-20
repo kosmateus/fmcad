@@ -5430,7 +5430,7 @@
     {
       "source": "tests/live-normal-multidocument.ts",
       "assertionId": "79f9cd8ff42255a0a901-1",
-      "sourceLine": 657,
+      "sourceLine": 1020,
       "sourceKind": "helper",
       "disposition": "native-only",
       "scenario": "native-normal-multidocument-*",
@@ -5438,7 +5438,7 @@
       "evidence": "tests/live-normal-multidocument.ts",
       "evidenceAssertion": "script(\n                      index,\n                      \"failure-close\",\n                      ownedCleanupSource(\n                        document,\n                        report.before.active,\n                        \"FMCAD_RESULT \",\n                      ),\n                    )",
       "requiredObservation": "script(\n                      index,\n                      \"failure-close\",\n                      ownedCleanupSource(\n                        document,\n                        report.before.active,\n                        \"FMCAD_RESULT \",\n                      ),\n                    )",
-      "sourceSha256": "e1abce411fc592c7c283773a0a91d0ff6d1093c050423341acedf40af7604da7",
+      "sourceSha256": "9b6a4c426b42496b69bdf44d525ddb27b554be57446186d64884abd6c6880606",
       "reason": "Failure cleanup now visits all owner slots, accepts an absent slot only after an exact failed terminal owner/request/job receipt proves sdkSettled and mayHaveMutated=false, and defers otherwise. The previous document assertion is not equivalent for uncreated slots: its exact obligation is retained historically. The same ownedCleanupSource is still invoked for every known document; indentation changes its extracted helper ID. Cleanup errors continue only after exact settlement; uncertain close stops later cleanup.",
       "runnerSource": "tests/live-normal-multidocument.ts",
       "nativeObligation": "reviewed-source-drift:79f9cd8ff42255a0a901-1",
