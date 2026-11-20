@@ -6,8 +6,11 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import type { ObservationEvent } from "@fmcad/core";
 const { createReporter } = createRequire(__filename)(
-  path.join(process.cwd(), "src/opencode/presence.cjs"),
+  path.join(process.cwd(), "src/dist/composition/library-opencode-presence.js"),
 ) as typeof import("../src/composition/library-opencode-presence");
+const { dependencies } = createRequire(__filename)(
+  path.join(process.cwd(), "src/dist/composition/opencode.js"),
+) as typeof import("../src/composition/opencode");
 function object(value: unknown): Record<string, unknown> {
   assert(value !== null && typeof value === "object" && !Array.isArray(value));
   return value as Record<string, unknown>;
@@ -18,6 +21,29 @@ function sessions(value: Record<string, unknown>): Record<string, unknown>[] {
   return items.map(object);
 }
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("OpenCode composition lazily loads its emitted TypeScript presence module", async (t) => {
+  const root = await fs.mkdtemp(
+    path.join(os.tmpdir(), "opencode-presence-root-"),
+  );
+  const oldStateHome = process.env["XDG_STATE_HOME"];
+  process.env["XDG_STATE_HOME"] = root;
+  t.after(async () => {
+    if (oldStateHome === undefined) delete process.env["XDG_STATE_HOME"];
+    else process.env["XDG_STATE_HOME"] = oldStateHome;
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const presence = dependencies().presence(root);
+  assert(presence);
+  t.after(() => presence.close());
+  const directory = path.join(root, "fmcad", "diagnostic-presence");
+  presence.touch("session", { agent: "test" });
+  await sleep(160);
+  assert.equal((await fs.readdir(directory)).length, 1);
+  await presence.close();
+  assert.deepEqual(await fs.readdir(directory), []);
+});
 
 test("OpenCode reporter scopes host sessions to one process instance and closes only its own snapshot", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-presence-"));

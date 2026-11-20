@@ -92,7 +92,9 @@ function loadBoundary(
         "utf8",
       );
       assert.equal(
-        createHash("sha256").update(source).digest("hex"),
+        createHash("sha256")
+          .update(source.replace(/\r\n/g, "\n"))
+          .digest("hex"),
         provenance("src/opencode/presence.cjs"),
       );
     } else {
