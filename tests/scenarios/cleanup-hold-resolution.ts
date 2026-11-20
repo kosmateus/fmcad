@@ -63,12 +63,14 @@ export async function recordLegacyReadonlyCleanupResult(
     text(receipt["jobId"]),
   );
   const binding = {
-    version: 1,
+    version: /^native-import-\d+$/u.test(c.owner.scenarioId) ? 2 : 1,
     runtime,
     owner: c.owner,
     document: c.document,
     sources,
-    files: readonlyLegacyFiles(directory, c),
+    files: /^native-import-\d+$/u.test(c.owner.scenarioId)
+      ? rejectedImportFiles(directory, c, sources)
+      : readonlyLegacyFiles(directory, c),
     raw,
   };
   validateReadonlyLegacy(directory, c, binding);
@@ -77,6 +79,277 @@ export async function recordLegacyReadonlyCleanupResult(
   immutable(path.join(directory, legacyReadonlyBinding), binding);
 }
 const legacyReadonlyBinding = "cleanup-legacy-readonly-binding.json";
+function rejectedImportPaths(directory: string) {
+  const completion = json(path.join(directory, "legacy/completion.json"));
+  const reportFile = text(completion["reportPath"]);
+  assert.equal(path.basename(reportFile), "report.json");
+  assert.equal(
+    path.dirname(path.dirname(reportFile)),
+    path.join(directory, "legacy/artifacts"),
+  );
+  assert.match(
+    path.basename(path.dirname(reportFile)),
+    /^live-data-import-[A-Za-z0-9_-]+$/u,
+  );
+  const child = json(reportFile);
+  assert.ok(
+    Array.isArray(child["calls"]) && child["calls"].length === 1,
+    "Exactly one original import observation is supported",
+  );
+  const call = record(child["calls"][0]);
+  assert.ok(Array.isArray(call["args"]));
+  const args = call["args"];
+  const sourceFile = text(args[1]);
+  assert.equal(path.dirname(sourceFile), path.dirname(reportFile));
+  assert.match(path.basename(sourceFile), /^observation-[a-f0-9-]{36}\.py$/u);
+  return { reportFile, sourceFile, child, call, args };
+}
+function rejectedImportFiles(
+  directory: string,
+  c: ReturnType<typeof context>,
+  sources: { cwd: string; runtimeRoot: string },
+) {
+  const id = text(c.requests.at(-1)!["requestId"]).split(":").at(-1)!;
+  const original = rejectedImportPaths(directory);
+  for (const root of [sources.cwd, sources.runtimeRoot]) {
+    assert.ok(path.isAbsolute(root));
+    assert.equal(fs.realpathSync(root), root);
+  }
+  const files = [
+    "report.json",
+    "creation.json",
+    "../index.json",
+    "legacy/lease.json",
+    "legacy/launch.json",
+    "legacy/completion.json",
+    "legacy/stdout.log",
+    "legacy/stderr.log",
+    `legacy/intents/${id}.json`,
+    `legacy/queue-receipts/${id}.json`,
+    original.reportFile,
+    original.sourceFile,
+    path.join(sources.cwd, "tests/live-data-import.ts"),
+    path.join(sources.cwd, "dist/tests/live-data-import.js"),
+    path.join(sources.runtimeRoot, "dist/runtime-build.json"),
+  ];
+  return Object.fromEntries(
+    files.map((file) => [file, hash(read(path.resolve(directory, file)))]),
+  );
+}
+function validateRejectedImport(
+  directory: string,
+  c: ReturnType<typeof context>,
+  binding: Record<string, unknown>,
+) {
+  assert.match(c.owner.scenarioId, /^native-import-\d+$/u);
+  assert.equal(binding["version"], 2);
+  assert.deepEqual(binding["owner"], c.owner);
+  assert.deepEqual(binding["document"], c.document);
+  assert.equal(c.report["scope"], "exclusive-instance");
+  assert.equal(
+    c.hold["reason"],
+    "Native import child retained an uncertain outcome; inspect original requests",
+  );
+  const runtime = record(binding["runtime"]);
+  const sourceRecord = record(binding["sources"]);
+  const sources = {
+    cwd: text(sourceRecord["cwd"]),
+    runtimeRoot: text(sourceRecord["runtimeRoot"]),
+  };
+  runtimeBinding(
+    {
+      buildHash: text(runtime["buildHash"]),
+      instanceId: text(runtime["instanceId"]),
+    },
+    { identity: text(c.report["backendIdentity"]) },
+  );
+  assert.equal(
+    json(path.join(sources.runtimeRoot, "dist/runtime-build.json"))[
+      "fingerprint"
+    ],
+    runtime["buildHash"],
+  );
+  assert.deepEqual(
+    binding["files"],
+    rejectedImportFiles(directory, c, sources),
+    "Original rejected import evidence changed",
+  );
+  assert.deepEqual(
+    c.requests.map((row) => row["phase"]),
+    ["create", "export", "legacy-cli"],
+  );
+  for (const row of c.requests.slice(0, 2)) {
+    assert.equal(record(row["result"])["state"], "succeeded");
+    assert.equal(record(row["result"])["sdkSettled"], true);
+  }
+  const exportedSource = read(path.join(directory, "request-1.py"));
+  const exportMatch = /createFusionArchiveExportOptions\(([^\n]+)\)/u.exec(
+    exportedSource,
+  );
+  assert.ok(exportMatch);
+  const exportedFile = text(JSON.parse(exportMatch[1]!) as unknown);
+  assert.ok(
+    exportedFile === path.join(directory, "fixture.f3d") ||
+      exportedFile.endsWith(directory.replaceAll("/", "\\") + "\\fixture.f3d"),
+  );
+  assert.equal(exportedSource, programs.exportFile(c.document, exportedFile));
+  const row = c.requests[2]!,
+    requestId = text(row["requestId"]);
+  const id = requestId.split(":").at(-1)!;
+  assert.match(id, /^[a-f0-9-]{36}$/u);
+  assert.equal(requestId, c.owner.clientId + ":legacy:" + id);
+  assert.equal(c.hold["requestId"], requestId);
+  for (const subdir of ["intents", "queue-receipts"])
+    assert.deepEqual(fs.readdirSync(path.join(directory, "legacy", subdir)), [
+      id + ".json",
+    ]);
+  const lease = json(path.join(directory, "legacy/lease.json"));
+  const launch = json(path.join(directory, "legacy/launch.json"));
+  const completion = json(path.join(directory, "legacy/completion.json"));
+  const intent = json(path.join(directory, "legacy/intents", id + ".json"));
+  const receipt = json(
+    path.join(directory, "legacy/queue-receipts", id + ".json"),
+  );
+  for (const value of [lease, completion, intent, receipt])
+    assert.deepEqual(value["owner"], c.owner);
+  for (const value of [lease, completion])
+    assert.deepEqual(value["document"], c.document);
+  assert.equal(lease["version"], 1);
+  assert.equal(lease["directory"], directory);
+  assert.equal(lease["source"], "tests/live-data-import.ts");
+  assert.equal(lease["testCase"], "native-data-import");
+  assert.equal(lease["mode"], "owned-unsaved-script");
+  assert.equal(lease["protocol"], "addin");
+  assert.equal(launch["state"], "completed");
+  assert.equal(launch["code"], 1);
+  for (const producer of [launch, intent])
+    assert.equal(
+      childProcessIdentity.priorProcessAlive({
+        pid: Number(producer["pid"]),
+        birth: text(producer["birth"]),
+      }),
+      false,
+      "Original import producer may still submit work",
+    );
+  assert.equal(completion["status"], "failed");
+  assert.equal(completion["safeForCleanup"], false);
+  const original = rejectedImportPaths(directory);
+  assert.equal(original.child["suite"], "data-import");
+  assert.equal(original.child["status"], "failed");
+  assert.equal(original.child["owner"], c.owner.clientId);
+  assert.equal(original.child["name"], c.document.name);
+  assert.equal(
+    original.child["artifactRoot"],
+    path.dirname(original.reportFile),
+  );
+  assert.equal(original.child["runtimeRoot"], sources.runtimeRoot);
+  assert.equal(original.child["runtimeBuildHash"], runtime["buildHash"]);
+  assert.deepEqual(original.child["tests"], []);
+  assert.equal(original.call["label"], "owned observation");
+  assert.equal(original.call["exitCode"], 1);
+  assert.equal(original.call["signal"], null);
+  assert.equal(original.call["stdout"], "");
+  assert.equal(original.call["receiptStatus"], "execution-outcome-not-settled");
+  assert.deepEqual(original.args, [
+    "run",
+    original.sourceFile,
+    "--doc",
+    c.document.name,
+    "--doc-id",
+    c.document.creationId,
+    "--timeout",
+    "60000",
+  ]);
+  assert.equal(intent["version"], 1);
+  assert.equal(receipt["version"], 1);
+  assert.equal(intent["requestId"], requestId);
+  assert.equal(receipt["requestId"], requestId);
+  assert.equal(
+    intent["argvHash"],
+    hash(JSON.stringify([...original.args, "--request-id", requestId])),
+  );
+  assert.equal(intent["admissionRequested"], true);
+  assert.equal(intent["completed"], true);
+  assert.equal(intent["exitCode"], 1);
+  assert.equal(intent["settlementFailure"], undefined);
+  const raw = record(binding["raw"]),
+    job = record(raw["job"]),
+    execution = record(raw["execution"]);
+  assert.equal(receipt["jobId"], job["id"]);
+  assert.equal(job["requestId"], requestId);
+  assert.equal(job["clientId"], c.owner.clientId);
+  assert.equal(job["kind"], "command");
+  assert.deepEqual(intent["settlement"], {
+    requestId,
+    clientId: c.owner.clientId,
+    jobId: job["id"],
+    state: "failed",
+    sdkSettled: true,
+  });
+  for (const value of [job, execution]) {
+    assert.equal(value["state"], "failed");
+    assert.equal(value["code"], "PYTHON_CHECK_REJECTED");
+    assert.equal(value["executionOutcome"], "not_started");
+    assert.equal(value["userScriptSubmitted"], false);
+    assert.equal(value["mayHaveMutated"], false);
+  }
+  assert.equal(job["startedAt"], undefined);
+  if (job["physicalTurns"] !== undefined) assert.equal(job["physicalTurns"], 0);
+  if (job["dispatch"] !== undefined)
+    assert.equal(record(job["dispatch"])["rpcCount"], 0);
+  assert.equal(execution["sdkSettled"], true);
+  assert.equal(raw["stdout"], "");
+  assert.deepEqual(queueExecution(raw, c.owner, requestId), row["result"]);
+  const operation = record(job["operationResult"]);
+  assert.equal(operation["version"], 1);
+  assert.equal(operation["requestId"], requestId);
+  assert.equal(operation["jobId"], job["id"]);
+  assert.equal(operation["acceptance"], "accepted");
+  assert.equal(operation["code"], "PYTHON_CHECK_REJECTED");
+  assert.equal(operation["executionOutcome"], "not_started");
+  assert.equal(operation["mayHaveMutated"], false);
+  assert.equal(record(operation["validation"])["status"], "not_checked");
+  assert.ok(
+    Array.isArray(raw["pythonChecks"]) && raw["pythonChecks"].length === 1,
+  );
+  assert.equal(record(raw["pythonChecks"][0])["status"], "failed");
+  const provenance = record(raw["provenance"]);
+  assert.equal(provenance["status"], "available");
+  assert.match(text(provenance["inputIdentity"]), /^[a-f0-9]{64}$/u);
+  assert.ok(
+    Array.isArray(provenance["inputs"]) && provenance["inputs"].length === 1,
+  );
+  const source = read(original.sourceFile);
+  assert.deepEqual(record(provenance["inputs"][0]), {
+    ...(record(provenance["inputs"][0])["version"] === undefined
+      ? {}
+      : { version: 1 }),
+    kind: "source",
+    originalPath: original.sourceFile,
+    sha256: hash(source),
+    bytes: Buffer.byteLength(source),
+  });
+  const approved = `DOC_NAME = None
+import adsk.core, json
+def run(_context: str) -> None:
+    app = adsk.core.Application.get()
+    documents = [dict(creationId=d.creationId, name=d.name, saved=d.isSaved, modified=d.isModified,
+                      fileId=d.dataFile.id if d.isSaved and d.dataFile else None)
+                 for d in app.documents]
+    print(json.dumps(dict(documents=sorted(documents, key=lambda d: d['creationId']),
+                          activeCreationId=app.activeDocument.creationId if app.activeDocument else None)))
+`;
+  assert.ok(
+    [
+      approved,
+      approved.replace(
+        "lambda d: d['creationId']",
+        "lambda d: str(d['creationId'])",
+      ),
+    ].includes(source),
+    "Rejected import source is not the exact owned observation",
+  );
+}
 function readonlyLegacyFiles(directory: string, c: ReturnType<typeof context>) {
   const id = text(c.requests.at(-1)!["requestId"]).split(":").at(-1)!;
   assert.match(id, /^[a-f0-9-]{36}$/u);
@@ -104,6 +377,8 @@ function validateReadonlyLegacy(
   const binding = record(value),
     runtime = record(binding["runtime"]),
     sources = record(binding["sources"]);
+  if (binding["version"] === 2)
+    return validateRejectedImport(directory, c, binding);
   assert.equal(binding["version"], 1);
   assert.deepEqual(binding["owner"], c.owner);
   assert.deepEqual(binding["document"], c.document);
@@ -934,7 +1209,8 @@ function context(
   const ids = requests.map((row) => text(row["requestId"]));
   assert.equal(new Set(ids).size, ids.length);
   const legacyChild =
-    owner.scenarioId === "native-legacy-0" &&
+    (owner.scenarioId === "native-legacy-0" ||
+      /^native-import-\d+$/u.test(owner.scenarioId)) &&
     hold["reason"] ===
       "Native import child retained an uncertain outcome; inspect original requests";
   for (const [index, row] of requests.entries()) {
@@ -1310,6 +1586,7 @@ function admissionProof(c: ReturnType<typeof context>, source: string) {
   }
 }
 type HoldProof =
+  | { kind: "rejected-import-observation"; bindingHash: string }
   | { kind: "settled-legacy-doc-list"; bindingHash: string }
   | {
       kind: "accepted-terminal-legacy";
@@ -1443,7 +1720,10 @@ function holdProof(c: ReturnType<typeof context>, source: string): HoldProof {
       bindingFile = path.join(directory, legacyReadonlyBinding);
     validateReadonlyLegacy(directory, c, json(bindingFile));
     return {
-      kind: "settled-legacy-doc-list",
+      kind:
+        json(bindingFile)["version"] === 2
+          ? "rejected-import-observation"
+          : "settled-legacy-doc-list",
       bindingHash: hash(read(bindingFile)),
     };
   }
@@ -1710,6 +1990,7 @@ function holdModified(
   if (proof.kind === "native-result-binding") return true;
   if (proof.kind === "terminal-legacy-no-dispatch") return false;
   if (proof.kind === "rejected-batch") return false;
+  if (proof.kind === "rejected-import-observation") return false;
   const result = record(c.requests.at(-1)!["result"]);
   const observed =
     proof.kind === "admission-only"

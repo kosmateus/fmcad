@@ -328,7 +328,8 @@ export async function prepareSupplementalCloseProof(
       Math.max(
         ...origin.requests.flatMap((r) => {
           if (
-            origin.resolution?.holdKind === "settled-legacy-doc-list" &&
+            (origin.resolution?.holdKind === "settled-legacy-doc-list" ||
+              origin.resolution?.holdKind === "rejected-import-observation") &&
             r === origin.requests.at(-1) &&
             r["phase"] === "legacy-cli" &&
             r["requestId"] === record(origin.report["cleanupHold"])["requestId"]
@@ -832,7 +833,12 @@ function verifiedFixture(
         backend,
       );
       const resolution = validateCleanupResolution(directory, backend, runtime);
-      assert.equal(resolution.holdKind, "settled-legacy-doc-list");
+      assert.equal(
+        resolution.holdKind,
+        /^native-import-\d+$/u.test(scenarioId)
+          ? "rejected-import-observation"
+          : "settled-legacy-doc-list",
+      );
       assert.deepEqual(
         readCleanupRecoveryRequests(directory, backend, runtime),
         requests,

@@ -2286,7 +2286,8 @@ export async function resumeCleanup(
         !(
           index === requests.length - 1 &&
           r.phase === "legacy-cli" &&
-          owner.scenarioId === "native-legacy-0" &&
+          (owner.scenarioId === "native-legacy-0" ||
+            /^native-import-\d+$/u.test(owner.scenarioId)) &&
           raw["cleanupHold"] !== undefined &&
           record(raw["cleanupHold"])["requestId"] === r.requestId &&
           record(raw["cleanupHold"])["reason"] ===

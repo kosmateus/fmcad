@@ -1125,16 +1125,35 @@ for (const kind of [
   "extended",
   "rejected-batch",
   "expired",
+  "rejected-import",
 ])
   test(`the actual ${kind} resolution inspection passes the pinned production checker`, async (t) => {
     const f =
-      kind === "accepted-legacy"
-        ? await acceptedLegacyFixture(t)
-        : kind === "extended"
-          ? observationFixture(t)
-          : kind === "rejected-batch"
-            ? rejectedBatchFixture(t)
-            : fixture(t, kind === "pose");
+      kind === "rejected-import"
+        ? await (async () => {
+            const fixture = rejectedImportFixture(t);
+            await recordLegacyReadonlyCleanupResult(
+              fixture.backend,
+              fixture.directory,
+              fixture.ports,
+              fixture.sources,
+            );
+            return {
+              ...fixture,
+              ...createCleanupRecoveryAdapter(
+                fixture.backend,
+                fixture.directory,
+                fixture.ports,
+              ),
+            };
+          })()
+        : kind === "accepted-legacy"
+          ? await acceptedLegacyFixture(t)
+          : kind === "extended"
+            ? observationFixture(t)
+            : kind === "rejected-batch"
+              ? rejectedBatchFixture(t)
+              : fixture(t, kind === "pose");
     if (kind === "expired") {
       const prior = await resolveCleanupHold(f.backend, f.directory, f.ports);
       t.mock.method(Date, "now", () => prior.expiresAt + 1);
@@ -2115,6 +2134,411 @@ function terminalLegacyFixture(t: TestContext) {
   fs.writeFileSync(file, JSON.stringify(value));
   return { ...f, legacy, value, file };
 }
+function rejectedImportFixture(t: TestContext) {
+  const f = fixture(t, false, false, false, "native-import-0");
+  const legacy = path.join(f.directory, "legacy");
+  fs.mkdirSync(path.join(legacy, "intents"), { recursive: true });
+  fs.mkdirSync(path.join(legacy, "queue-receipts"));
+  const artifacts = path.join(legacy, "artifacts", "live-data-import-original");
+  fs.mkdirSync(artifacts, { recursive: true });
+  const exported = f.request(
+    1,
+    "export",
+    "",
+    programs.exportFile(f.document, path.join(f.directory, "fixture.f3d")),
+  );
+  f.report.requests.splice(1, 1, exported);
+  const sourceFile = path.join(
+    artifacts,
+    "observation-" + randomUUID() + ".py",
+  );
+  const source = `DOC_NAME = None
+import adsk.core, json
+def run(_context: str) -> None:
+    app = adsk.core.Application.get()
+    documents = [dict(creationId=d.creationId, name=d.name, saved=d.isSaved, modified=d.isModified,
+                      fileId=d.dataFile.id if d.isSaved and d.dataFile else None)
+                 for d in app.documents]
+    print(json.dumps(dict(documents=sorted(documents, key=lambda d: d['creationId']),
+                          activeCreationId=app.activeDocument.creationId if app.activeDocument else None)))
+`;
+  fs.writeFileSync(sourceFile, source);
+  const entry = f.request(2, "legacy-cli", "", "");
+  const oldId = entry.requestId;
+  const raw = record(f.originals.get(oldId));
+  const job = record(raw["job"]);
+  const operation = record(job["operationResult"]);
+  const execution = record(raw["execution"]);
+  const id = randomUUID(),
+    requestId = f.report.owner.clientId + ":legacy:" + id;
+  f.originals.delete(oldId);
+  f.executions.delete(oldId);
+  fs.unlinkSync(path.join(f.directory, "request-2.py"));
+  delete job["startedAt"];
+  Object.assign(job, {
+    requestId,
+    state: "failed",
+    code: "PYTHON_CHECK_REJECTED",
+    executionOutcome: "not_started",
+    userScriptSubmitted: false,
+    mayHaveMutated: false,
+  });
+  Object.assign(operation, {
+    requestId,
+    executionOutcome: "not_started",
+    code: "PYTHON_CHECK_REJECTED",
+    mayHaveMutated: false,
+    validation: { status: "not_checked", source: null, artifactId: null, measurements: {} },
+  });
+  Object.assign(execution, {
+    state: "failed",
+    code: "PYTHON_CHECK_REJECTED",
+    executionOutcome: "not_started",
+    userScriptSubmitted: false,
+    mayHaveMutated: false,
+    exitCode: 1,
+  });
+  raw["provenance"] = {
+    status: "available",
+    inputIdentity: "d".repeat(64),
+    inputs: [
+      {
+        kind: "source",
+        originalPath: sourceFile,
+        sha256: createHash("sha256").update(source).digest("hex"),
+        bytes: Buffer.byteLength(source),
+      },
+    ],
+  };
+  raw["pythonChecks"] = [
+    {
+      status: "failed",
+      diagnostics: [{ severity: "error", rule: "reportArgumentType" }],
+    },
+  ];
+  entry.requestId = requestId;
+  entry.result = queueExecution(raw, f.report.owner, requestId);
+  f.originals.set(requestId, raw);
+  f.executions.set(requestId, entry.result);
+  f.report.requests.push(entry);
+  f.report.cleanupHold = {
+    requestId,
+    reason:
+      "Native import child retained an uncertain outcome; inspect original requests",
+  };
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const write = (name: string, value: unknown) =>
+    fs.writeFileSync(path.join(legacy, name), JSON.stringify(value));
+  write("lease.json", {
+    version: 1,
+    owner: f.report.owner,
+    document: f.document,
+    directory: f.directory,
+    source: "tests/live-data-import.ts",
+    testCase: "native-data-import",
+    protocol: "addin",
+    mode: "owned-unsaved-script",
+  });
+  write("launch.json", {
+    state: "completed",
+    pid: 2_000_000_000,
+    birth: "dead:1",
+    code: 1,
+  });
+  const args = [
+    "run",
+    sourceFile,
+    "--doc",
+    f.document.name,
+    "--doc-id",
+    f.document.creationId,
+    "--timeout",
+    "60000",
+  ];
+  write("intents/" + id + ".json", {
+    version: 1,
+    owner: f.report.owner,
+    requestId,
+    admissionRequested: true,
+    completed: true,
+    pid: 2_000_000_000,
+    birth: "dead:1",
+    exitCode: 1,
+    argvHash: createHash("sha256")
+      .update(JSON.stringify([...args, "--request-id", requestId]))
+      .digest("hex"),
+    settlement: {
+      requestId,
+      clientId: f.report.owner.clientId,
+      jobId: job["id"],
+      state: "failed",
+      sdkSettled: true,
+    },
+  });
+  write("queue-receipts/" + id + ".json", {
+    version: 1,
+    owner: f.report.owner,
+    requestId,
+    jobId: job["id"],
+  });
+  const childReport = path.join(artifacts, "report.json");
+  const runtimeRoot = path.join(f.directory, "runtime");
+  fs.mkdirSync(path.join(runtimeRoot, "dist"), { recursive: true });
+  fs.writeFileSync(
+    path.join(runtimeRoot, "dist/runtime-build.json"),
+    JSON.stringify({ fingerprint: f.runtime.buildHash }),
+  );
+  fs.writeFileSync(
+    childReport,
+    JSON.stringify({
+      suite: "data-import",
+      status: "failed",
+      owner: f.report.owner.clientId,
+      name: f.document.name,
+      artifactRoot: artifacts,
+      runtimeRoot,
+      runtimeBuildHash: f.runtime.buildHash,
+      tests: [],
+      calls: [
+        {
+          label: "owned observation",
+          args,
+          exitCode: 1,
+          signal: null,
+          stdout: "",
+          stderr: "",
+          receiptStatus: "execution-outcome-not-settled",
+        },
+      ],
+    }),
+  );
+  write("completion.json", {
+    owner: f.report.owner,
+    document: f.document,
+    status: "failed",
+    safeForCleanup: false,
+    reportPath: childReport,
+  });
+  fs.writeFileSync(path.join(legacy, "stdout.log"), "");
+  fs.writeFileSync(
+    path.join(legacy, "stderr.log"),
+    "owned observation did not produce a known terminal execution outcome",
+  );
+  for (const prior of f.report.requests.slice(0, -1)) {
+    prior.result = queueExecution(
+      f.originals.get(prior.requestId),
+      f.report.owner,
+      prior.requestId,
+    );
+    f.executions.set(prior.requestId, prior.result);
+  }
+  fs.writeFileSync(
+    path.join(f.directory, "report.json"),
+    JSON.stringify(f.report),
+  );
+  const backend = {
+    ...f.backend,
+    async execute(input: Parameters<ScenarioBackend["execute"]>[0]) {
+      await f.backend.execute(input);
+      const result = queueExecution(
+        f.originals.get(input.requestId),
+        input.owner,
+        input.requestId,
+      );
+      f.executions.set(input.requestId, result);
+      return result;
+    },
+  };
+  const ports = {
+    readRuntimeBinding: f.ports.readRuntimeBinding,
+    readJobResult: async (_owner: unknown, key: string) => f.originals.get(key),
+  };
+  return {
+    ...f,
+    backend,
+    legacy,
+    sourceFile,
+    childReport,
+    raw,
+    requestId,
+    ports,
+    sources: { cwd: path.resolve(__dirname, "../../.."), runtimeRoot },
+  };
+}
+
+test("authoritative rejected first import observation binds existing guarded cleanup without changing the failed child", async (t) => {
+  const f = rejectedImportFixture(t);
+  const report = fs.readFileSync(path.join(f.directory, "report.json"));
+  const completion = fs.readFileSync(path.join(f.legacy, "completion.json"));
+  await recordLegacyReadonlyCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  const resolution = await resolveCleanupHold(
+    adapted.backend,
+    f.directory,
+    adapted.ports,
+  );
+  assert.equal(resolution.holdKind, "rejected-import-observation");
+  assert.equal(resolution.inspectedModified, false);
+  assert.equal(f.submissions(), 1);
+  const closed = await resumeCleanup(
+    adapted.backend,
+    path.join(f.directory, "report.json"),
+    adapted.ports,
+  );
+  assert.equal(closed.cleanup, "complete");
+  assert.equal(f.submissions(), 2);
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.directory, "report.json")),
+    report,
+  );
+  assert.deepEqual(
+    fs.readFileSync(path.join(f.legacy, "completion.json")),
+    completion,
+  );
+});
+
+for (const bad of [
+  "unknown",
+  "pending",
+  "foreign-owner",
+  "foreign-job",
+  "mutated",
+  "script-submitted",
+  "physical-turn",
+  "rpc-turn",
+  "sdk-start",
+  "missing-check",
+  "extra-intent",
+  "later-child-call",
+  "wrong-lease",
+  "changed-source",
+  "accepted-close",
+  "live-producer",
+] as const)
+  test(`rejected import cleanup refuses ${bad} before inspection`, async (t) => {
+    const f = rejectedImportFixture(t);
+    const job = record(f.raw["job"]),
+      execution = record(f.raw["execution"]);
+    if (bad === "unknown")
+      Object.assign(execution, { state: "unknown", sdkSettled: false });
+    if (bad === "pending") job["state"] = "preparing";
+    if (bad === "foreign-owner") job["clientId"] = "foreign";
+    if (bad === "foreign-job") job["id"] = randomUUID();
+    if (bad === "mutated") job["mayHaveMutated"] = true;
+    if (bad === "script-submitted") execution["userScriptSubmitted"] = true;
+    if (bad === "physical-turn") job["physicalTurns"] = 1;
+    if (bad === "rpc-turn") job["dispatch"] = { rpcCount: 1 };
+    if (bad === "sdk-start") job["startedAt"] = job["submittedAt"];
+    if (bad === "missing-check") f.raw["pythonChecks"] = [];
+    if (bad === "extra-intent")
+      fs.writeFileSync(
+        path.join(f.legacy, "intents", randomUUID() + ".json"),
+        "{}",
+      );
+    if (bad === "later-child-call") {
+      const d = record(
+        JSON.parse(fs.readFileSync(f.childReport, "utf8")) as unknown,
+      );
+      (d["calls"] as unknown[]).push({ label: "mutation" });
+      fs.writeFileSync(f.childReport, JSON.stringify(d));
+    }
+    if (bad === "wrong-lease") {
+      const file = path.join(f.legacy, "lease.json");
+      const d = record(JSON.parse(fs.readFileSync(file, "utf8")) as unknown);
+      d["source"] = "foreign.ts";
+      fs.writeFileSync(file, JSON.stringify(d));
+    }
+    if (bad === "changed-source")
+      fs.appendFileSync(f.sourceFile, "\nprint('unreviewed')\n");
+    if (bad === "accepted-close")
+      fs.writeFileSync(
+        path.join(f.directory, "supplemental-close.intent.json"),
+        "{}",
+      );
+    if (bad === "live-producer")
+      t.mock.method(childProcessIdentity, "priorProcessAlive", () => true);
+    await assert.rejects(
+      recordLegacyReadonlyCleanupResult(
+        f.backend,
+        f.directory,
+        f.ports,
+        f.sources,
+      ),
+    );
+    assert.equal(f.submissions(), 0);
+    assert.equal(
+      fs.existsSync(
+        path.join(f.directory, "cleanup-legacy-readonly-binding.json"),
+      ),
+      false,
+    );
+  });
+
+test("a bound rejected import cannot change its original source before a new inspection", async (t) => {
+  const f = rejectedImportFixture(t);
+  await recordLegacyReadonlyCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  fs.appendFileSync(f.sourceFile, "\nprint('changed')\n");
+  const adapted = createCleanupRecoveryAdapter(f.backend, f.directory, f.ports);
+  await assert.rejects(
+    resolveCleanupHold(adapted.backend, f.directory, adapted.ports),
+  );
+  assert.equal(f.submissions(), 0);
+});
+
+test("a rejected import still requires a fresh unsaved pristine inspection before any close", async (t) => {
+  const f = rejectedImportFixture(t);
+  await recordLegacyReadonlyCleanupResult(
+    f.backend,
+    f.directory,
+    f.ports,
+    f.sources,
+  );
+  const backend = {
+    ...f.backend,
+    async execute(input: Parameters<ScenarioBackend["execute"]>[0]) {
+      await f.backend.execute(input);
+      const raw = record(f.originals.get(input.requestId));
+      raw["stdout"] = String(raw["stdout"]).replace(
+        '"saved":false',
+        '"saved":true',
+      );
+      const result = queueExecution(raw, input.owner, input.requestId);
+      f.executions.set(input.requestId, result);
+      return result;
+    },
+  };
+  const adapted = createCleanupRecoveryAdapter(backend, f.directory, f.ports);
+  await assert.rejects(
+    resumeCleanup(
+      adapted.backend,
+      path.join(f.directory, "report.json"),
+      adapted.ports,
+    ),
+  );
+  assert.equal(f.submissions(), 1);
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "supplemental-close.intent.json")),
+    false,
+  );
+  assert.equal(
+    fs.existsSync(path.join(f.directory, "cleanup-hold-resolution.json")),
+    false,
+  );
+});
+
 function readonlyLegacyFixture(t: TestContext) {
   const f = terminalLegacyFixture(t);
   fs.unlinkSync(f.file);
