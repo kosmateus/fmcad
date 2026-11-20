@@ -17,6 +17,10 @@ function write(file: string, text: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, text);
 }
+const compiledRunner =
+  'const result = spawnSync(python, [], {\n    cwd: root,\n    stdio: "inherit",\n});\n';
+const registeredRunner =
+  'const result = spawnSync(python, [], {\n    cwd: root,\n    stdio: "inherit",\n},\n);\n';
 test("missing canonical output leaves every existing compatibility entry untouched", (t) => {
   const dir = fs.mkdtempSync(path.join(tmpdir(), "fmcad-compatibility-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -26,12 +30,48 @@ test("missing canonical output leaves every existing compatibility entry untouch
       write(path.join(dir, entry.emittedPath), "module.exports = {};\n");
     write(path.join(dir, entry.publicPath), "preserved previous build\n");
   }
+  write(
+    path.join(dir, "dist/scripts/devtools/run-python-tests.js"),
+    compiledRunner,
+  );
   assert.throws(() => stageCompatibility(dir));
   for (const entry of compatibilityModules)
     assert.equal(
       fs.readFileSync(path.join(dir, entry.publicPath), "utf8"),
       "preserved previous build\n",
     );
+});
+test("missing compiled Python runner leaves previous compatibility entries untouched", (t) => {
+  const dir = fs.mkdtempSync(path.join(tmpdir(), "fmcad-compatibility-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (const entry of compatibilityModules) {
+    write(path.join(dir, entry.emittedPath), "module.exports = {};\n");
+    write(path.join(dir, entry.publicPath), "preserved previous build\n");
+  }
+  const runnerPath = path.join(dir, "scripts/run-python-tests.cjs");
+  write(runnerPath, "preserved previous build\n");
+
+  assert.throws(
+    () => stageCompatibility(dir),
+    /Missing compiled Python test runner/,
+  );
+  write(
+    path.join(dir, "dist/scripts/devtools/run-python-tests.js"),
+    "not the audited wrapper form\n",
+  );
+  assert.throws(
+    () => stageCompatibility(dir),
+    /Compiled Python test runner lost its audited spawn form/,
+  );
+  for (const entry of compatibilityModules)
+    assert.equal(
+      fs.readFileSync(path.join(dir, entry.publicPath), "utf8"),
+      "preserved previous build\n",
+    );
+  assert.equal(
+    fs.readFileSync(runnerPath, "utf8"),
+    "preserved previous build\n",
+  );
 });
 test("clean and incremental compatibility staging preserve canonical export identity", (t) => {
   const dir = fs.mkdtempSync(path.join(tmpdir(), "fmcad-compatibility-"));
@@ -57,12 +97,28 @@ test("clean and incremental compatibility staging preserve canonical export iden
           : ""),
     );
   }
+  write(
+    path.join(dir, "dist/scripts/devtools/run-python-tests.js"),
+    compiledRunner,
+  );
   stageCompatibility(dir);
+  assert.equal(
+    fs.readFileSync(path.join(dir, "scripts/run-python-tests.cjs"), "utf8"),
+    registeredRunner,
+  );
   write(
     path.join(dir, compatibilityModules[0].publicPath),
     "throw new Error('stale handwritten copy');\n",
   );
+  write(
+    path.join(dir, "dist/scripts/devtools/run-python-tests.js"),
+    compiledRunner.replace("python", "python3"),
+  );
   stageCompatibility(dir);
+  assert.equal(
+    fs.readFileSync(path.join(dir, "scripts/run-python-tests.cjs"), "utf8"),
+    registeredRunner.replace("python", "python3"),
+  );
   const requireFixture = createRequire(path.join(dir, "package.json"));
   for (const entry of compatibilityModules) {
     const canonical: unknown = requireFixture(

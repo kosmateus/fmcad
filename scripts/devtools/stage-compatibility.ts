@@ -38,6 +38,24 @@ export function stageCompatibility(root: string): void {
         main,
     };
   });
+  const pythonRunner = path.join(
+    root,
+    "dist/scripts/devtools/run-python-tests.js",
+  );
+  if (!fs.existsSync(pythonRunner) || !fs.statSync(pythonRunner).isFile())
+    throw new Error("Missing compiled Python test runner: " + pythonRunner);
+  const compiledRunner = fs.readFileSync(pythonRunner, "utf8");
+  // TypeScript removes trailing call commas; the registration audit requires one.
+  const registrationForm = compiledRunner.replace(
+    '    stdio: "inherit",\n});',
+    '    stdio: "inherit",\n},\n);',
+  );
+  if (registrationForm === compiledRunner)
+    throw new Error("Compiled Python test runner lost its audited spawn form");
+  outputs.push({
+    file: path.join(root, "scripts/run-python-tests.cjs"),
+    content: registrationForm,
+  });
   // Validate every canonical target before replacing any public entrypoint.
   for (const { file, content } of outputs) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
