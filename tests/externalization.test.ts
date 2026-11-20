@@ -1952,7 +1952,9 @@ test("three-module grouped automatic and bounded scheduling have equal completed
 
 // Same failures against original and immediately preceding readers. These
 // snapshots use the current shared journal codec; only D's owner policy differs.
-const loadFileHistory = load("./fixtures/file-workflows/load.cjs") as (
+const loadFileHistory = load(
+  "../dist/tests/fixtures/file-workflows/load.cjs",
+) as (
   label: string,
   file: string,
   overrides?: Record<string, unknown>,
@@ -2160,33 +2162,31 @@ test("failed externalization admission preserves its original error alongside lo
     await fs.stat(path.join(data.reportPath, data.operationId, "run.lock")),
   );
 });
-test(
-  "production checker admits the extracted externalization planning through the shipped bundle",
-  { timeout: 0 },
-  async () => {
-    const { prepareCadBundle } =
-      load("../packages/node-adapters/dist/python/bundle") as typeof import("../packages/node-adapters/src/python/bundle");
-    const { createPythonChecker } =
-      load("../packages/node-adapters/dist/python/checker") as typeof import("../packages/node-adapters/src/python/checker");
-    const root = process.cwd();
-    const typingRoot = path.join(root, "dist/runtime/python/typing");
-    const artifact = prepareCadBundle(
-      root,
-      '\n\n_EXTERNAL_REQUEST: JsonObject = {"action": "inspect", "data": {}}\ndef run(_context: str) -> None:\n    _result = _external_refresh_internal(_EXTERNAL_REQUEST["action"], _EXTERNAL_REQUEST["data"])\n',
-    );
-    const checker = createPythonChecker({
-      typingRoot,
-      definitionsRoot: typingRoot,
-      pythonPlatform: "Windows",
-    });
-    const report = await checker.check({
-      artifact,
-      context: { kind: "bundle" },
-    });
-    assert.equal(report.status, "passed", JSON.stringify(report));
-    assert.equal(report.provenance.checker, "basedpyright");
-  },
-);
+test("production checker admits the extracted externalization planning through the shipped bundle", async () => {
+  const { prepareCadBundle } = load(
+    "../packages/node-adapters/dist/python/bundle",
+  ) as typeof import("../packages/node-adapters/src/python/bundle");
+  const { createPythonChecker } = load(
+    "../packages/node-adapters/dist/python/checker",
+  ) as typeof import("../packages/node-adapters/src/python/checker");
+  const root = process.cwd();
+  const typingRoot = path.join(root, "dist/runtime/python/typing");
+  const artifact = prepareCadBundle(
+    root,
+    '\n\n_EXTERNAL_REQUEST: JsonObject = {"action": "inspect", "data": {}}\ndef run(_context: str) -> None:\n    _result = _external_refresh_internal(_EXTERNAL_REQUEST["action"], _EXTERNAL_REQUEST["data"])\n',
+  );
+  const checker = createPythonChecker({
+    typingRoot,
+    definitionsRoot: typingRoot,
+    pythonPlatform: "Windows",
+  });
+  const report = await checker.check({
+    artifact,
+    context: { kind: "bundle" },
+  });
+  assert.equal(report.status, "passed", JSON.stringify(report));
+  assert.equal(report.provenance.checker, "basedpyright");
+});
 
 const inputVersions = [
   loadFileHistory("baseline", "src/externalization.js"),
