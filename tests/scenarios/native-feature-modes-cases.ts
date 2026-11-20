@@ -66,7 +66,7 @@ export function featureModePropertiesProbe(
 feature = cast(Callable[[object], adsk.fusion.Feature | None], adsk.fusion.Feature.cast)(FMCAD.resolve(cast('str | dict[str, _FeatureJsonValue]', ${py(feature)})))
 assert feature is not None, 'Expected the owned feature'
 r: dict[str, object] = dict(name=feature.name, type=feature.objectType, health=int(cast(int, feature.healthState)), message=feature.errorOrWarningMessage, token=feature.entityToken)
-mode = ${JSON.stringify(mode)}
+mode = str(${JSON.stringify(mode)})
 if mode == 'extrude':
     extrude = cast(Callable[[object], adsk.fusion.ExtrudeFeature | None], adsk.fusion.ExtrudeFeature.cast)(feature)
     assert extrude is not None

@@ -222,7 +222,12 @@ test("feature-mode scenario submits CAD through the existing command pipeline", 
 
 for (const [name, body] of [
   ["line", featureModeLineProbe(reference)],
-  ["feature-properties", featureModePropertiesProbe(reference, "extrude")],
+  ...(
+    ["extrude", "hole", "sweep", "sweepRail", "loft"] as const
+  ).map((mode) => [
+    `feature-properties-${mode}`,
+    featureModePropertiesProbe(reference, mode),
+  ] as const),
   ["hole-input", featureModeHoleInputProbe(reference, "OwnedComponent")],
 ] as const) {
   test(`feature-mode ${name} uses the public helper and passes final receipt admission`, async (t) => {
