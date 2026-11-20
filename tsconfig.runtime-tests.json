@@ -301,6 +301,7 @@
     "tests/manual-shapes.test.ts",
     "tests/manual-usability.test.ts",
     "tests/opencode-adapters.test.ts",
+    "tests/capture-png.ts",
     "tests/review-application.test.ts",
     "tests/review-pixels.test.ts",
     "tests/review.test.ts",

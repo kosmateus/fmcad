@@ -10,16 +10,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-const { capturePng } = runtimeRequire("./capture-png") as {
-  capturePng(
-    width: number,
-    height: number,
-    seed?: number,
-    blank?: boolean,
-    compressionLevel?: number,
-    variantDelta?: number,
-  ): Buffer;
-};
+import { capturePng } from "./capture-png";
 const { decodeReviewPng } = runtimeRequire(
   "../packages/node-adapters/dist/review/pixels",
 ) as typeof import("../packages/node-adapters/src/review/pixels");

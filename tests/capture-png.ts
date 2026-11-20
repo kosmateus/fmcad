@@ -1,8 +1,6 @@
-"use strict";
+import { deflateSync } from "node:zlib";
 
-const { deflateSync } = require("node:zlib");
-
-function crc32(bytes) {
+function crc32(bytes: Buffer): number {
   let crc = 0xffffffff;
   for (const byte of bytes) {
     crc ^= byte;
@@ -12,7 +10,7 @@ function crc32(bytes) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-function chunk(name, data) {
+function chunk(name: string, data: Buffer): Buffer {
   const type = Buffer.from(name, "ascii");
   const body = Buffer.concat([type, data]);
   const header = Buffer.alloc(4);
@@ -22,15 +20,15 @@ function chunk(name, data) {
   return Buffer.concat([header, body, checksum]);
 }
 
-function capturePng(
-  width,
-  height,
+export function capturePng(
+  width: number,
+  height: number,
   seed = 0,
   blank = false,
   compressionLevel = 6,
   variantDelta = 0,
-) {
-  const rows = [];
+): Buffer {
+  const rows: Buffer[] = [];
   for (let y = 0; y < height; y++) {
     const row = Buffer.alloc(1 + width * 4);
     for (let x = 0; x < width; x++) {
@@ -65,7 +63,7 @@ function capturePng(
         x === Math.floor(width / 2) &&
         y === Math.floor(height / 2)
       )
-        row[offset] = Math.min(255, row[offset] + variantDelta);
+        row[offset] = Math.min(255, row[offset]! + variantDelta);
     }
     rows.push(row);
   }
@@ -84,5 +82,3 @@ function capturePng(
     chunk("IEND", Buffer.alloc(0)),
   ]);
 }
-
-module.exports = { capturePng };

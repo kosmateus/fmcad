@@ -5,6 +5,7 @@ import type {
 import type { PreparedPythonArtifact } from "../packages/core/src/domain/python-artifact";
 import { createRequire } from "node:module";
 import { at, list, text } from "./integration/offline-cli";
+import { capturePng } from "./capture-png";
 const testRoot = process.cwd();
 const runtimeRequire = createRequire(
   testRoot + "/tests/review-application.test.js",
@@ -20,16 +21,6 @@ import os from "node:os";
 import path from "node:path";
 const Module = runtimeRequire("node:module");
 import { createHash } from "node:crypto";
-const { capturePng } = runtimeRequire("./capture-png") as {
-  capturePng(
-    width: number,
-    height: number,
-    seed?: number,
-    blank?: boolean,
-    compressionLevel?: number,
-    variantDelta?: number,
-  ): Buffer;
-};
 const { decodeReviewPng } = runtimeRequire(
   "../packages/node-adapters/dist/review/pixels",
 ) as typeof import("../packages/node-adapters/src/review/pixels");

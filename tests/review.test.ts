@@ -10,6 +10,7 @@ import type {
 import type { CliDependencies } from "../src/entrypoints/cli";
 import { createRequire } from "node:module";
 import type { TestContext } from "node:test";
+import { capturePng } from "./capture-png";
 import {
   at,
   record,
@@ -28,16 +29,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-const { capturePng } = runtimeRequire("./capture-png") as {
-  capturePng(
-    width: number,
-    height: number,
-    seed?: number,
-    blank?: boolean,
-    compressionLevel?: number,
-    variantDelta?: number,
-  ): Buffer;
-};
 const { decodeReviewPng } = runtimeRequire(
   "../packages/node-adapters/dist/review/pixels",
 ) as typeof import("../packages/node-adapters/src/review/pixels");
