@@ -110,14 +110,20 @@ export function exactScenarioRequestId(
   );
 }
 
-function readJson(filename: string): Record<string, unknown> {
+// Multi-request reports and aggregate indexes share the existing original-report
+// reader's 16 MiB budget. Small identity/receipt sidecars retain their 1 MiB cap.
+const scenarioReportMaxBytes = 16 * 1024 * 1024;
+function readJson(
+  filename: string,
+  maxBytes = 1024 * 1024,
+): Record<string, unknown> {
   const fd = fs.openSync(
     filename,
     fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0),
   );
   try {
     const stat = fs.fstatSync(fd);
-    if (!stat.isFile() || stat.size > 1024 * 1024)
+    if (!stat.isFile() || stat.size > maxBytes)
       throw new Error("Invalid scenario provenance record");
     return record(JSON.parse(fs.readFileSync(fd, "utf8")) as unknown);
   } finally {
@@ -176,7 +182,10 @@ function supplementalOrigin(
   >,
   runtime?: SupplementalRuntimeBinding,
 ) {
-  const report = readJson(path.join(directory, "report.json")),
+  const report = readJson(
+      path.join(directory, "report.json"),
+      scenarioReportMaxBytes,
+    ),
     owner = record(report["owner"]),
     document = record(report["document"]);
   assert.equal(
@@ -743,7 +752,10 @@ function verifiedFixture(
   try {
     const runId = path.basename(runRoot),
       directory = path.join(runRoot, scenarioId),
-      index = readJson(path.join(runRoot, "index.json"));
+      index = readJson(
+        path.join(runRoot, "index.json"),
+        scenarioReportMaxBytes,
+      );
     if (
       !/^[a-f0-9-]{36}$/u.test(runId) ||
       index["runId"] !== runId ||
@@ -756,7 +768,10 @@ function verifiedFixture(
     )
       return undefined;
 
-    const report = readJson(path.join(directory, "report.json")),
+    const report = readJson(
+        path.join(directory, "report.json"),
+        scenarioReportMaxBytes,
+      ),
       owner = record(report["owner"]),
       requests = report["requests"];
     if (
@@ -1196,7 +1211,10 @@ export function discoverOwnedUnsavedFixtureProofs(
     if (!runStat.isDirectory() || runStat.isSymbolicLink()) continue;
     let index: Record<string, unknown>;
     try {
-      index = readJson(path.join(runRoot, "index.json"));
+      index = readJson(
+        path.join(runRoot, "index.json"),
+        scenarioReportMaxBytes,
+      );
     } catch {
       continue;
     }

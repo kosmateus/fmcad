@@ -160,6 +160,45 @@ function terminalFixture(t: { after(fn: () => void): void }) {
   return f;
 }
 
+test("peer provenance admits bounded multi-request reports above one MiB", (t) => {
+  const f = terminalFixture(t);
+  for (const filename of [f.reportFile, f.indexFile]) {
+    const value = JSON.parse(fs.readFileSync(filename, "utf8"));
+    fs.writeFileSync(
+      filename,
+      JSON.stringify({ ...value, diagnostics: "x".repeat(1024 * 1024) }),
+    );
+  }
+  assert.equal(
+    discoverOwnedUnsavedFixtureProofs(f.root, backend).get(
+      f.document.creationId,
+    )?.state,
+    "retained",
+  );
+  const value = JSON.parse(fs.readFileSync(f.reportFile, "utf8"));
+  value.requests[0].result.brokerReceipt.clientId = "foreign";
+  fs.writeFileSync(f.reportFile, JSON.stringify(value));
+  assert.equal(discoverOwnedUnsavedFixtureProofs(f.root, backend).size, 0);
+});
+
+for (const kind of ["report", "index", "creation"] as const)
+  test(`peer provenance rejects oversized ${kind} records`, (t) => {
+    const f = terminalFixture(t);
+    const filename =
+      kind === "report"
+        ? f.reportFile
+        : kind === "index"
+          ? f.indexFile
+          : path.join(path.dirname(f.reportFile), "creation.json");
+    const limit = (kind === "creation" ? 1 : 16) * 1024 * 1024;
+    const original = fs.readFileSync(filename, "utf8");
+    fs.writeFileSync(
+      filename,
+      original + " ".repeat(limit + 1 - Buffer.byteLength(original)),
+    );
+    assert.equal(discoverOwnedUnsavedFixtureProofs(f.root, backend).size, 0);
+  });
+
 test("terminal settled peer retains inventory provenance without granting cleanup", (t) => {
   const f = terminalFixture(t);
   const proofs = discoverOwnedUnsavedFixtureProofs(f.root, backend);
