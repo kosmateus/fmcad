@@ -14,6 +14,7 @@ import {
   guardedFeatureModeProbeSource,
   nativeFeatureModesScenarios,
   nativeFeatureModesCapability,
+  assertFeatureProbeReadmission,
 } from "./native-feature-modes-cases";
 import { fixture } from "./test-support";
 import { runScenarios } from "./runner";
@@ -52,6 +53,60 @@ const reference = {
   token: "owned-entity-token",
   component: { kind: "component", name: "OwnedComponent" },
 };
+
+test("feature readmission requires the exact settled no-body receipt", () => {
+  const admission = {
+    status: "inventory-changed",
+    requestId: "original",
+    mutationStarted: false,
+    bodyCalls: 0,
+  };
+  const result = { creationId: "owned", admission };
+  const execution = {
+    requestId: "original",
+    state: "succeeded" as const,
+    sdkSettled: true,
+  };
+  assertFeatureProbeReadmission(result, "original", "owned", execution);
+  for (const changed of [
+    { ...admission, requestId: "foreign" },
+    { ...admission, mutationStarted: true },
+    { ...admission, bodyCalls: 1 },
+    { ...admission, status: "unknown" },
+  ])
+    assert.throws(() =>
+      assertFeatureProbeReadmission(
+        { ...result, admission: changed },
+        "original",
+        "owned",
+        execution,
+      ),
+    );
+  assert.throws(() =>
+    assertFeatureProbeReadmission(result, "original", "foreign", execution),
+  );
+  assert.throws(() =>
+    assertFeatureProbeReadmission(result, "original", "owned", undefined),
+  );
+  assert.throws(() =>
+    assertFeatureProbeReadmission(result, "original", "owned", {
+      ...execution,
+      requestId: "foreign",
+    }),
+  );
+  assert.throws(() =>
+    assertFeatureProbeReadmission(result, "original", "owned", {
+      ...execution,
+      sdkSettled: false,
+    }),
+  );
+  assert.throws(() =>
+    assertFeatureProbeReadmission(result, "original", "owned", {
+      ...execution,
+      state: "failed",
+    }),
+  );
+});
 
 test("feature probe binds the proven current inventory and rejects unproven or later changes", async () => {
   const identity = { name: "Owned", creationId: "own" };
@@ -146,6 +201,60 @@ run('')
     guardedFeatureModeProbeSource(identity, async () => undefined, "pass"),
     /verified current inventory/,
   );
+  const admission = {
+    requestId: "original-probe",
+    peers: [{ creationId: opened.creationId, name: opened.name }],
+  };
+  const peerAware = featureModeProbeSource(
+    identity,
+    [opened],
+    'print("BODY_EXECUTED")',
+    admission,
+  );
+  const changedPeer = execute(peerAware, [{ ...opened, modified: false }]);
+  assert.equal(changedPeer.status, 0, changedPeer.stderr);
+  assert.equal(changedPeer.stdout.trim(), "BODY_EXECUTED");
+  const newlyProvenPeer = execute(
+    featureModeProbeSource(identity, [], 'print("BODY_EXECUTED")', admission),
+    [opened],
+  );
+  assert.equal(newlyProvenPeer.status, 0, newlyProvenPeer.stderr);
+  for (const unproven of [
+    [],
+    [opened, closed],
+    [{ ...opened, name: "Renamed" }],
+    [{ ...opened, saved: true }],
+  ]) {
+    const declined = execute(peerAware, unproven);
+    assert.equal(declined.status, 0, declined.stderr);
+    assert.doesNotMatch(declined.stdout, /BODY_EXECUTED/u);
+    const output = JSON.parse(
+      declined.stdout.trim().slice("FMCAD_SCENARIO ".length),
+    );
+    assert.deepEqual(output, {
+      creationId: identity.creationId,
+      admission: {
+        status: "inventory-changed",
+        requestId: admission.requestId,
+        mutationStarted: false,
+        bodyCalls: 0,
+      },
+    });
+  }
+  const foreignMutation = execute(
+    featureModeProbeSource(
+      identity,
+      [opened],
+      "app.documents[1].isModified = False",
+      admission,
+    ),
+    [opened],
+  );
+  assert.notEqual(foreignMutation.status, 0);
+  assert.match(
+    foreignMutation.stderr,
+    /Other document state changed during feature probe/u,
+  );
   await assert.rejects(
     guardedFeatureModeProbeSource(
       identity,
@@ -222,12 +331,13 @@ test("feature-mode scenario submits CAD through the existing command pipeline", 
 
 for (const [name, body] of [
   ["line", featureModeLineProbe(reference)],
-  ...(
-    ["extrude", "hole", "sweep", "sweepRail", "loft"] as const
-  ).map((mode) => [
-    `feature-properties-${mode}`,
-    featureModePropertiesProbe(reference, mode),
-  ] as const),
+  ...(["extrude", "hole", "sweep", "sweepRail", "loft"] as const).map(
+    (mode) =>
+      [
+        `feature-properties-${mode}`,
+        featureModePropertiesProbe(reference, mode),
+      ] as const,
+  ),
   ["hole-input", featureModeHoleInputProbe(reference, "OwnedComponent")],
 ] as const) {
   test(`feature-mode ${name} uses the public helper and passes final receipt admission`, async (t) => {
@@ -238,10 +348,11 @@ for (const [name, body] of [
     const file = path.join(directory, "probe.py");
     fs.writeFileSync(
       file,
-      await guardedFeatureModeProbeSource(
+      featureModeProbeSource(
         { name: "OwnedFixture", creationId: "owned-creation" },
-        async () => ({ documents: [] }),
+        [],
         body,
+        { requestId: "feature-" + name, peers: [] },
       ),
     );
     const original = prepareRunScript(

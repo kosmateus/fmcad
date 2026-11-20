@@ -4,8 +4,10 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import type { Scenario } from "./runner";
 import { record, text } from "./contracts";
+import type { Execution } from "./contracts";
 import { concurrencyLimit } from "./scheduling";
 import { emit, program } from "./programs";
+import { discoverOwnedUnsavedFixtureProofs } from "./fixture-provenance";
 import {
   nativeModelingHarness,
   nativeResultUncertain,
@@ -14,14 +16,31 @@ import {
 export const nativeFeatureModesCapability = "native-feature-modes-addin";
 const py = (value: unknown): string =>
   `json.loads(${JSON.stringify(JSON.stringify(value))})`;
-export async function guardedFeatureModeProbeSource(
-  identity: { name: string; creationId: string },
-  guard: () => Promise<Record<string, unknown> | undefined>,
-  body: string,
-): Promise<string> {
-  const current = await guard();
-  assert.ok(current, "Feature probe requires a verified current inventory");
-  const foreign = values(current["documents"])
+interface FeatureProbeAdmission {
+  readonly requestId: string;
+  readonly peers: readonly { creationId: string; name: string }[];
+}
+export function assertFeatureProbeReadmission(
+  result: Record<string, unknown>,
+  requestId: string,
+  creationId: string,
+  execution: Pick<Execution, "requestId" | "state" | "sdkSettled"> | undefined,
+): void {
+  const admission = record(result["admission"]);
+  assert.equal(execution?.requestId, requestId);
+  assert.equal(execution?.sdkSettled, true);
+  assert.equal(execution?.state, "succeeded");
+  assert.equal(result["creationId"], creationId);
+  assert.equal(admission["requestId"], requestId);
+  assert.equal(admission["status"], "inventory-changed");
+  assert.equal(admission["mutationStarted"], false);
+  assert.equal(admission["bodyCalls"], 0);
+}
+function featureModeForeignInventory(
+  identity: { creationId: string },
+  current: Record<string, unknown>,
+) {
+  return values(current["documents"])
     .map(record)
     .filter((doc) => doc["creationId"] !== identity.creationId)
     .map((doc) => ({
@@ -31,13 +50,45 @@ export async function guardedFeatureModeProbeSource(
       modified: doc["modified"],
     }))
     .sort((a, b) => text(a.creationId).localeCompare(text(b.creationId)));
+}
+export async function guardedFeatureModeProbeSource(
+  identity: { name: string; creationId: string },
+  guard: () => Promise<Record<string, unknown> | undefined>,
+  body: string,
+): Promise<string> {
+  const current = await guard();
+  assert.ok(current, "Feature probe requires a verified current inventory");
+  const foreign = featureModeForeignInventory(identity, current);
   return featureModeProbeSource(identity, foreign, body);
 }
 export function featureModeProbeSource(
   identity: { name: string; creationId: string },
   foreign: readonly unknown[],
   body: string,
+  admission?: FeatureProbeAdmission,
 ): string {
+  const guard = admission
+    ? `from typing import cast
+_feature_peers = {p['creationId']: p['name'] for p in cast(list[dict[str, str]], ${py(admission.peers)})}
+_feature_before = [d for d in documents() if d['creationId'] != doc.creationId]
+_feature_expected = cast(list[dict[str, str | bool]], ${py(foreign)})
+_feature_peer_rows = [d for d in _feature_before if d['creationId'] in _feature_peers]
+if (
+    [d for d in _feature_before if d['creationId'] not in _feature_peers] != [d for d in _feature_expected if d['creationId'] not in _feature_peers]
+    or len(_feature_peer_rows) != len(_feature_peers)
+    or any(d['name'] != _feature_peers[cast(str, d['creationId'])] or d['saved'] for d in _feature_peer_rows)
+):
+    ${emit(`dict(creationId=doc.creationId, admission=dict(status='inventory-changed', requestId=${JSON.stringify(admission.requestId)}, mutationStarted=False, bodyCalls=0))`)}
+    return`
+    : `assert [d for d in documents() if d['creationId'] != doc.creationId] == ${py(foreign)}, 'Other document state changed'`;
+  const guardedBody = admission
+    ? `try:\n${body
+        .split("\n")
+        .map((line) => "    " + line)
+        .join(
+          "\n",
+        )}\nfinally:\n    assert [d for d in documents() if d['creationId'] != doc.creationId] == _feature_before, 'Other document state changed during feature probe'`
+    : body;
   return program(
     `import adsk.core, adsk.fusion, json, math
 app = adsk.core.Application.get()
@@ -46,8 +97,8 @@ def documents():
 matches = [d for d in app.documents if d.creationId == ${JSON.stringify(identity.creationId)} and d.name == ${JSON.stringify(identity.name)}]
 assert len(matches) == 1 and not matches[0].isSaved and matches[0].dataFile is None and app.activeDocument == matches[0], 'Owned active unsaved document guard failed'
 doc = matches[0]
-assert [d for d in documents() if d['creationId'] != doc.creationId] == ${py(foreign)}, 'Other document state changed'
-${body}`,
+${guard}
+${guardedBody}`,
     `from typing import TypeAlias
 _FeatureJsonValue: TypeAlias = None | bool | int | float | str | list['_FeatureJsonValue'] | dict[str, '_FeatureJsonValue']`,
   );
@@ -233,33 +284,74 @@ export function nativeFeatureModesScenarios(owners = 10): Scenario[] {
         body: string,
         options: ScriptOptions = {},
       ): Promise<unknown> {
-        const source = await guardedFeatureModeProbeSource(
-          identity,
-          harness.guard,
-          body,
-        );
-        const row: Record<string, unknown> = {
-          label,
-          test: current.name,
-          mutation: options.mutation ?? false,
-          request: options.request,
-          sourceSha256: createHash("sha256").update(source).digest("hex"),
-        };
-        report.probes.push(row);
-        persist();
-        const result = await session.execute(
-          "feature-mode-" + sequence++ + "-" + label,
-          source,
-          session.document,
-          options.cadBundle ? "cad-v1" : undefined,
-        );
-        if (nativeResultUncertain(result))
-          session.deferCleanup(
-            "Feature-mode probe returned unknown/pending; do not replay.",
+        // A changed inventory may only reprepare after a settled, request-bound
+        // receipt positively proves that this probe body never started.
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const inventory = await harness.guard();
+          assert.ok(inventory);
+          const peers = [
+            ...discoverOwnedUnsavedFixtureProofs(
+              path.dirname(path.dirname(session.directory)),
+              session.backend,
+            ).values(),
+          ]
+            .filter(
+              (proof) =>
+                proof.state === "open" &&
+                proof.document.creationId !== identity.creationId,
+            )
+            .map((proof) => proof.document);
+          const row: Record<string, unknown> = {
+            label,
+            test: current.name,
+            mutation: options.mutation ?? false,
+            request: options.request,
+            admissionAttempt: attempt,
+          };
+          report.probes.push(row);
+          let originalRequestId = "";
+          const result = await session.execute(
+            "feature-mode-" + sequence++ + "-" + label,
+            (requestId) => {
+              originalRequestId = requestId;
+              const source = featureModeProbeSource(
+                identity,
+                featureModeForeignInventory(identity, inventory),
+                body,
+                { requestId, peers },
+              );
+              row["sourceSha256"] = createHash("sha256")
+                .update(source)
+                .digest("hex");
+              row["requestId"] = requestId;
+              persist();
+              return source;
+            },
+            session.document,
+            options.cadBundle ? "cad-v1" : undefined,
           );
-        row["result"] = result["result"];
-        persist();
-        return result["result"];
+          if (nativeResultUncertain(result))
+            session.deferCleanup(
+              "Feature-mode probe returned unknown/pending; do not replay.",
+            );
+          row["result"] = result["result"];
+          if (result["admission"] !== undefined)
+            row["admission"] = result["admission"];
+          persist();
+          if (result["admission"] === undefined) return result["result"];
+          const original = session.report.requests.find(
+            (entry) => entry.requestId === originalRequestId,
+          );
+          assertFeatureProbeReadmission(
+            result,
+            originalRequestId,
+            identity.creationId,
+            original?.result,
+          );
+        }
+        throw new Error(
+          "Feature probe admission changed twice; no probe body executed",
+        );
       }
       async function cad(
         operation: string,
