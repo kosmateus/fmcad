@@ -2,10 +2,14 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import * as fs from "node:fs";
+import path from "node:path";
 import { fixture } from "./test-support";
 import { runScenarios, type ScenarioSession } from "./runner";
 import type { ScenarioBackend, Execution } from "./contracts";
+import { record } from "./contracts";
 import { cliSettlementTimeoutMs } from "./legacy-handoff";
+import { program, emit } from "./programs";
 
 async function exercise(
   t: TestContext,
@@ -16,6 +20,11 @@ async function exercise(
     | "mutation"
     | "abort"
     | "deadline"
+    | "retained"
+    | "retained-no-progress"
+    | "retained-existing-receipt"
+    | "ordinary-peer-receipt"
+    | "retained-rebound-receipt"
     | "no-progress" = "success",
 ) {
   const f = await fixture(t);
@@ -39,7 +48,61 @@ async function exercise(
         request.owner.scenarioId === "subject" &&
         request.helpers === "cad-v1"
       ) {
-        if (mode === "no-progress" && turns === 1) {
+        if (
+          turns === 1 &&
+          (mode === "retained" ||
+            mode === "retained-no-progress" ||
+            mode === "retained-existing-receipt" ||
+            mode === "ordinary-peer-receipt" ||
+            mode === "retained-rebound-receipt")
+        ) {
+          const peer = peers[1]!;
+          if (
+            mode !== "retained-existing-receipt" &&
+            mode !== "retained-rebound-receipt"
+          )
+            await peer.observe(
+              "observe-terminal-peer",
+              program(
+                "import json\n" +
+                  emit(
+                    `{"creationId": ${JSON.stringify(peer.document.creationId)}}`,
+                  ),
+              ),
+            );
+          if (mode !== "ordinary-peer-receipt") {
+            assert.throws(
+              () =>
+                peer.deferCleanup(
+                  "Retain a fully settled failed peer for inspection",
+                ),
+              /Retain a fully settled failed peer/u,
+            );
+            peer.report.status = "failed";
+            if (mode === "retained-rebound-receipt") {
+              const receipt = record(
+                peer.report.requests.at(-1)!.result!.brokerReceipt,
+              );
+              const jobId = randomUUID();
+              receipt["jobId"] = jobId;
+              record(receipt["operationResult"])["jobId"] = jobId;
+            }
+            fs.writeFileSync(
+              path.join(peer.directory, "report.json"),
+              JSON.stringify(peer.report),
+            );
+          }
+        }
+        if (
+          (mode === "no-progress" && turns === 1) ||
+          ((mode === "retained" ||
+            mode === "retained-no-progress" ||
+            mode === "retained-existing-receipt" ||
+            mode === "ordinary-peer-receipt" ||
+            mode === "retained-rebound-receipt") &&
+            turns === 1) ||
+          (mode === "retained-no-progress" && turns === 2)
+        ) {
           assert.ok(firstAdmission);
           turns++;
           const stdout = firstAdmission.stdout.replaceAll(
@@ -84,8 +147,10 @@ async function exercise(
           }
         }
         helperResults.push(result.stdout);
-        firstAdmission ??= result;
+        if (mode === "retained-no-progress") firstAdmission = result;
+        else firstAdmission ??= result;
       }
+      const jobId = randomUUID();
       return {
         ...result,
         brokerReceipt: {
@@ -94,9 +159,18 @@ async function exercise(
             mode === "foreign" && request.helpers === "cad-v1"
               ? "foreign-client"
               : request.owner.clientId,
-          jobId: randomUUID(),
+          jobId,
           state: result.state,
-          operationResult: null,
+          operationResult: request.owner.scenarioId.startsWith("peer-")
+            ? {
+                version: 1,
+                requestId: request.requestId,
+                jobId,
+                acceptance: "accepted",
+                executionOutcome: "succeeded",
+                mayHaveMutated: result.mayHaveMutated,
+              }
+            : null,
         },
       };
     },
@@ -155,6 +229,78 @@ test("a repeated no-helper marker without new lifecycle evidence cannot extend t
   assert.equal(subject.status, "failed");
   assert.equal(subject.cleanup, "deferred");
   assert.match(subject.error!, /without new lifecycle evidence/u);
+  assert.equal(turns, 2);
+});
+
+test("an exact retained peer terminal receipt permits one finite readmission without closing that peer", async (t) => {
+  const { reports, turns, helperResults } = await exercise(t, "retained");
+  const subject = reports.find(
+    (report) => report.owner.scenarioId === "subject",
+  )!;
+  const peer = reports.find(
+    (report) => report.owner.scenarioId === "peer-two",
+  )!;
+  assert.equal(subject.status, "passed", subject.error);
+  assert.equal(subject.cleanup, "complete");
+  assert.equal(peer.status, "failed");
+  assert.equal(peer.cleanup, "deferred");
+  assert.equal(turns, 3);
+  assert.deepEqual(
+    helperResults.map((stdout) => {
+      const line = stdout
+        .split(/\r?\n/u)
+        .find((row) => row.startsWith("FMCAD_RESULT "))!;
+      const output = JSON.parse(line.slice("FMCAD_RESULT ".length)) as {
+        helperCallsOnly: unknown[];
+      };
+      return output.helperCallsOnly.length;
+    }),
+    [0, 0, 1],
+  );
+});
+
+test("the same retained peer terminal receipt cannot extend readmission again", async (t) => {
+  const { reports, turns } = await exercise(t, "retained-no-progress");
+  const subject = reports.find(
+    (report) => report.owner.scenarioId === "subject",
+  )!;
+  assert.equal(subject.status, "failed");
+  assert.equal(subject.cleanup, "deferred");
+  assert.match(
+    subject.error!,
+    /without new lifecycle evidence|no new terminal receipt/u,
+  );
+  assert.equal(turns, 3);
+});
+
+test("changing report status with an already observed settled receipt gives no terminal progress", async (t) => {
+  const { reports, turns } = await exercise(t, "retained-existing-receipt");
+  const subject = reports.find(
+    (report) => report.owner.scenarioId === "subject",
+  )!;
+  assert.equal(subject.status, "failed");
+  assert.equal(subject.cleanup, "deferred");
+  assert.match(subject.error!, /no new terminal receipt/u);
+  assert.equal(turns, 2);
+});
+
+test("a new ordinary peer result does not count as new lifecycle evidence", async (t) => {
+  const { reports, turns } = await exercise(t, "ordinary-peer-receipt");
+  const subject = reports.find(
+    (report) => report.owner.scenarioId === "subject",
+  )!;
+  assert.equal(subject.status, "failed");
+  assert.match(subject.error!, /without new lifecycle evidence/u);
+  assert.equal(turns, 2);
+});
+
+test("terminal peer provenance cannot rebind an observed request to a new job", async (t) => {
+  const { reports, turns } = await exercise(t, "retained-rebound-receipt");
+  const subject = reports.find(
+    (report) => report.owner.scenarioId === "subject",
+  )!;
+  assert.equal(subject.status, "failed");
+  assert.match(subject.error!, /changed its original job identity/u);
   assert.equal(turns, 2);
 });
 

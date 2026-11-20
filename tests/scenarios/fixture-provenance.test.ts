@@ -106,6 +106,192 @@ function reportFixture(t: { after(fn: () => void): void }) {
   return { root, runRoot, indexFile, reportFile, document, report, identity };
 }
 
+function terminalFixture(t: { after(fn: () => void): void }) {
+  const f = reportFixture(t);
+  const create = f.report.requests[0]!;
+  const requestId = f.report.owner.clientId + ":1";
+  const jobId = randomUUID();
+  Object.assign(create.result.brokerReceipt, {
+    operationResult: {
+      version: 1,
+      requestId: create.requestId,
+      jobId: create.result.brokerReceipt.jobId,
+      acceptance: "accepted",
+      executionOutcome: "succeeded",
+      mayHaveMutated: true,
+    },
+  });
+  f.report.requests.push({
+    requestId,
+    phase: "cad-batch-reference",
+    intent: { kind: "cad" },
+    result: {
+      requestId,
+      state: "failed",
+      sdkSettled: true,
+      mayHaveMutated: false,
+      stdout: "",
+      brokerReceipt: Object.assign(
+        {
+          requestId,
+          clientId: f.report.owner.clientId,
+          jobId,
+          state: "failed",
+        },
+        {
+          operationResult: {
+            version: 1,
+            requestId,
+            jobId,
+            acceptance: "accepted",
+            executionOutcome: "not_started",
+            mayHaveMutated: false,
+          },
+        },
+      ),
+    },
+  });
+  Object.assign(f.report, {
+    status: "failed",
+    cleanup: "deferred",
+    cleanupHold: { requestId, reason: "Retain the original failed fixture" },
+  });
+  fs.writeFileSync(f.reportFile, JSON.stringify(f.report));
+  return f;
+}
+
+test("terminal settled peer retains inventory provenance without granting cleanup", (t) => {
+  const f = terminalFixture(t);
+  const proofs = discoverOwnedUnsavedFixtureProofs(f.root, backend);
+  assert.equal(proofs.get(f.document.creationId)?.state, "retained");
+  assertReceiptBoundDocumentInventory(
+    [],
+    [{ ...f.document, saved: false, fileId: null, modified: false }],
+    proofs,
+    "A settled failed peer remains an exact visible identity",
+  );
+  assert.throws(() =>
+    assertReceiptBoundDocumentInventory(
+      [],
+      [],
+      proofs,
+      "Retained never means closed",
+    ),
+  );
+  assert.throws(
+    () =>
+      assertFencedDocumentInventory(
+        [{ ...f.document, saved: false, fileId: null, modified: false }],
+        [{ ...f.document, saved: false, fileId: null, modified: false }],
+        f.document,
+        [],
+        proofs,
+        "Retained is not a live own target",
+      ),
+    /Owned target lacks live open provenance/u,
+  );
+});
+
+test("retained provenance does not assert that settled failed work was nonmutating", (t) => {
+  const f = terminalFixture(t);
+  const row = f.report.requests.at(-1)!;
+  row.result.mayHaveMutated = true;
+  Object.assign(row.result.brokerReceipt, {
+    operationResult: {
+      version: 1,
+      requestId: row.requestId,
+      jobId: row.result.brokerReceipt.jobId,
+      acceptance: "accepted",
+      executionOutcome: "failed",
+      mayHaveMutated: true,
+    },
+  });
+  fs.writeFileSync(f.reportFile, JSON.stringify(f.report));
+  const proofs = discoverOwnedUnsavedFixtureProofs(f.root, backend);
+  assert.equal(proofs.get(f.document.creationId)?.state, "retained");
+  const target = { creationId: randomUUID(), name: "Other owned target" };
+  const peer = { ...f.document, saved: false, fileId: null, modified: false };
+  const own = { ...target, saved: false, fileId: null, modified: false };
+  assert.throws(() =>
+    assertFencedDocumentInventory(
+      [peer, own],
+      [{ ...peer, modified: true }, own],
+      target,
+      [],
+      proofs,
+      "A retained peer may not change inside another owner's SDK turn",
+    ),
+  );
+});
+
+for (const failure of [
+  "missing",
+  "foreign",
+  "unknown",
+  "pending",
+  "job",
+  "outcome",
+  "mutation",
+  "save",
+  "cleanup",
+  "legacy",
+  "gap",
+  "missing-operation",
+  "hold",
+] as const) {
+  test(`terminal peer does not gain retained provenance with ${failure} evidence`, (t) => {
+    const f = terminalFixture(t);
+    const row = f.report.requests.at(-1)!;
+    const receipt = row.result.brokerReceipt;
+    const value = JSON.parse(JSON.stringify(f.report)) as Record<
+      string,
+      unknown
+    >;
+    if (failure === "foreign") receipt.clientId = "foreign";
+    if (failure === "unknown") row.result.state = "unknown";
+    if (failure === "pending") row.result.sdkSettled = false;
+    if (failure === "job")
+      Object.assign(receipt, { operationResult: { jobId: "foreign" } });
+    if (failure === "outcome")
+      Object.assign(receipt, {
+        operationResult: { executionOutcome: "unknown" },
+      });
+    if (failure === "mutation")
+      Object.assign(receipt, { operationResult: { mayHaveMutated: true } });
+    if (failure === "save") row.phase = "save";
+    if (failure === "cleanup") row.phase = "cleanup";
+    if (failure === "legacy") row.intent.kind = "legacy-cli";
+    if (failure === "missing-operation")
+      Object.assign(receipt, { operationResult: undefined });
+    if (failure === "hold")
+      Object.assign(f.report, {
+        cleanupHold: { requestId: "foreign", reason: "unbound hold" },
+      });
+    // Serialize the deliberately invalid evidence without changing production types.
+    if (failure === "missing") {
+      const requests = value["requests"] as Record<string, unknown>[];
+      delete (requests.at(-1)!["result"] as Record<string, unknown>)[
+        "brokerReceipt"
+      ];
+      fs.writeFileSync(f.reportFile, JSON.stringify(value));
+    } else if (failure === "gap") {
+      fs.writeFileSync(
+        f.reportFile,
+        JSON.stringify(f.report).replaceAll(
+          f.report.owner.clientId + ":1",
+          f.report.owner.clientId + ":2",
+        ),
+      );
+    } else fs.writeFileSync(f.reportFile, JSON.stringify(f.report));
+    assert.notEqual(
+      discoverOwnedUnsavedFixtureProofs(f.root, backend).get(
+        f.document.creationId,
+      )?.state,
+      "retained",
+    );
+  });
+}
+
 for (const failure of [
   "no-binding",
   "no-resolution",
@@ -129,7 +315,7 @@ for (const failure of [
         brokerReceipt: {
           ...create.result.brokerReceipt,
           requestId,
-            jobId: randomUUID(),
+          jobId: randomUUID(),
         },
       },
     };

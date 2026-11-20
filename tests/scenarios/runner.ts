@@ -542,13 +542,14 @@ export class ScenarioSession {
       assert.deepEqual(existingTarget.document, this.document);
     if (
       existingTarget?.state === "unsettled" ||
+      existingTarget?.state === "retained" ||
       existingTarget?.state === "closed" ||
       existingTarget?.state === "saved"
     )
       throw new Error("Owned target lacks a live settled creation receipt");
     peerFixtures.delete(this.document.creationId);
     const openPeers = [...peerFixtures.values()]
-        .filter((proof) => proof.state === "open")
+        .filter((proof) => proof.state === "open" || proof.state === "retained")
         .map((proof) => proof.document),
       closedPeerIds = [...peerFixtures]
         .filter(([, proof]) => proof.state === "closed")
@@ -647,6 +648,17 @@ export class ScenarioSession {
             "A previously admitted peer lost its exact lifecycle proof",
           );
           assert.deepEqual(current.document, previous.document);
+          if (
+            previous.state === "open" &&
+            current.state === "retained" &&
+            previous.lastSettledReceipt?.requestId ===
+              current.terminalReceipt.requestId
+          )
+            assert.equal(
+              current.terminalReceipt.jobId,
+              previous.lastSettledReceipt.jobId,
+              "A previously observed request changed its original job identity",
+            );
           if (previous.state === "saved") {
             assert.equal(
               current.state,
@@ -687,9 +699,17 @@ export class ScenarioSession {
           snapshotProofs,
           "Inventory re-admission lacks exact peer lifecycle receipts",
         );
+        // A new ordinary peer result is not itself a lifecycle transition.
+        const lifecycleProofs = (values: typeof snapshotProofs) =>
+          [...values].map(([id, proof]) => [
+            id,
+            proof.state === "open"
+              ? { document: proof.document, state: proof.state }
+              : proof,
+          ]);
         assert.notDeepEqual(
-          [...snapshotProofs],
-          [...peerFixtures],
+          lifecycleProofs(snapshotProofs),
+          lifecycleProofs(peerFixtures),
           "Inventory changed without new lifecycle evidence",
         );
         const remainingClosures = new Set(admissionBudget.remainingClosures);
@@ -698,7 +718,16 @@ export class ScenarioSession {
           const previous = peerFixtures.get(id),
             current = snapshotProofs.get(id);
           if (
-            (previous?.state === "open" && current?.state === "closed") ||
+            (previous?.state === "open" &&
+              (current?.state === "closed" ||
+                (current?.state === "retained" &&
+                  (!previous.lastSettledReceipt ||
+                    Number(
+                      current.terminalReceipt.requestId.split(":").at(-1),
+                    ) >
+                      Number(
+                        previous.lastSettledReceipt.requestId.split(":").at(-1),
+                      ))))) ||
             (previous?.state === "saved" &&
               previous.savedState === "open" &&
               current?.state === "saved" &&
@@ -709,7 +738,8 @@ export class ScenarioSession {
           }
         }
         // Keep the original single refresh for a new lifecycle proof. Further
-        // turns must consume a distinct, initially admitted peer's exact close;
+        // turns must consume a distinct, initially admitted peer's exact close
+        // or fully settled retained terminal receipt;
         // the finite set and one shared deadline cannot grow during retries.
         if (admissionBudget.attempts > 0 && !terminalProgress)
           throw new Error(

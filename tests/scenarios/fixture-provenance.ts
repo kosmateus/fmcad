@@ -63,8 +63,23 @@ export interface PreparedSupplementalClose {
 export type OwnedUnsavedFixtureProof =
   | {
       readonly document: Document;
+      /** Visible peer only: neither a live target nor cleanup authority. */
+      readonly state: "retained";
+      readonly supplementalClose?: never;
+      readonly terminalReceipt: {
+        readonly requestId: string;
+        readonly jobId: string;
+      };
+    }
+  | {
+      readonly document: Document;
       readonly state: FixtureState;
       readonly supplementalClose?: SupplementalCloseReceipt;
+      /** Admission frontier only; never authorizes a close or a mutation. */
+      readonly lastSettledReceipt?: {
+        readonly requestId: string;
+        readonly jobId: string;
+      };
     }
   | {
       readonly document: Document;
@@ -647,6 +662,76 @@ function activeProcess(index: Record<string, unknown>): boolean {
   );
 }
 
+function retainedPeerReceipt(
+  report: Record<string, unknown>,
+  owner: Record<string, unknown>,
+  requests: Record<string, unknown>[],
+): { requestId: string; jobId: string } | undefined {
+  try {
+    if (
+      report["status"] !== "failed" ||
+      report["cleanup"] !== "deferred" ||
+      report["cleanupHold"] === undefined
+    )
+      return undefined;
+    const last = requests.at(-1);
+    if (
+      !last ||
+      record(report["cleanupHold"])["requestId"] !== last["requestId"]
+    )
+      return undefined;
+    const jobs = new Set<string>();
+    let previousSequence = -1;
+    let terminal;
+    for (const entry of requests) {
+      if (
+        ["save", "cleanup"].includes(text(entry["phase"])) ||
+        !["script", "cad", "cad-fenced"].includes(
+          text(record(entry["intent"])["kind"]),
+        )
+      )
+        return undefined;
+      const requestId = text(entry["requestId"]),
+        sequence = Number(requestId.slice(text(owner["clientId"]).length + 1)),
+        result = record(entry["result"]),
+        receipt = record(result["brokerReceipt"]),
+        operation = record(receipt["operationResult"]),
+        jobId = text(receipt["jobId"]),
+        state = result["state"],
+        outcome = operation["executionOutcome"];
+      if (
+        !exactScenarioRequestId(requestId, text(owner["clientId"])) ||
+        sequence !== previousSequence + 1 ||
+        result["requestId"] !== requestId ||
+        !["succeeded", "failed"].includes(String(state)) ||
+        result["sdkSettled"] !== true ||
+        typeof result["mayHaveMutated"] !== "boolean" ||
+        receipt["requestId"] !== requestId ||
+        receipt["clientId"] !== owner["clientId"] ||
+        receipt["state"] !== state ||
+        !jobId ||
+        jobs.has(jobId) ||
+        operation["version"] !== 1 ||
+        operation["requestId"] !== requestId ||
+        operation["jobId"] !== jobId ||
+        operation["acceptance"] !== "accepted" ||
+        operation["mayHaveMutated"] !== result["mayHaveMutated"] ||
+        (state === "succeeded"
+          ? outcome !== "succeeded"
+          : !["failed", "not_started"].includes(String(outcome))) ||
+        (outcome === "not_started" && result["mayHaveMutated"] !== false)
+      )
+        return undefined;
+      jobs.add(jobId);
+      previousSequence = sequence;
+      terminal = { requestId, jobId };
+    }
+    return terminal;
+  } catch {
+    return undefined;
+  }
+}
+
 function verifiedFixture(
   runRoot: string,
   scenarioId: string,
@@ -895,9 +980,41 @@ function verifiedFixture(
     ) {
       state = "open";
     } else {
+      const terminalReceipt = retainedPeerReceipt(
+        report,
+        owner,
+        requests.map(record),
+      );
+      if (terminalReceipt)
+        return Object.freeze({
+          document: Object.freeze(document),
+          state: "retained",
+          terminalReceipt: Object.freeze(terminalReceipt),
+        });
       state = "unsettled";
     }
-    return Object.freeze({ document: Object.freeze(document), state });
+    const last = requests.at(-1),
+      lastResult = last?.["result"],
+      lastReceipt =
+        lastResult && record(lastResult)["sdkSettled"] === true
+          ? record(lastResult)["brokerReceipt"]
+          : undefined;
+    const lastSettledReceipt =
+      state === "open" &&
+      lastReceipt &&
+      record(lastReceipt)["requestId"] === last?.["requestId"] &&
+      record(lastReceipt)["clientId"] === owner["clientId"] &&
+      ["succeeded", "failed"].includes(String(record(lastReceipt)["state"]))
+        ? Object.freeze({
+            requestId: text(record(lastReceipt)["requestId"]),
+            jobId: text(record(lastReceipt)["jobId"]),
+          })
+        : undefined;
+    return Object.freeze({
+      document: Object.freeze(document),
+      state,
+      ...(lastSettledReceipt ? { lastSettledReceipt } : {}),
+    });
   } catch {
     return undefined;
   }
@@ -1205,7 +1322,11 @@ export function assertFencedDocumentInventory(
       target,
       "Owned target conflicts with peer receipt",
     );
-    assert.equal(peerTarget.state, "open", "Owned target has a close receipt");
+    assert.equal(
+      peerTarget.state,
+      "open",
+      "Owned target lacks live open provenance",
+    );
   }
   proofs.set(target.creationId, { document: target, state: "open" });
   assertOwnedUnsavedDocument(before, target);
@@ -1320,7 +1441,12 @@ export function assertReceiptBoundDocumentInventory(
       admittedPeers.add(creationId);
       continue;
     }
-    if (proof.state !== "open" && proof.state !== "closed") continue;
+    if (
+      proof.state !== "open" &&
+      proof.state !== "closed" &&
+      proof.state !== "retained"
+    )
+      continue;
     admittedPeers.add(creationId);
     const matches = current.filter(
       (document) => document["creationId"] === creationId,
