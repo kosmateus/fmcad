@@ -3824,7 +3824,9 @@
                 "expression": "cad('report', { checks: [{ measurement: { operation: 'measure.volume', data: { ref: body, units: 'mm3' } },\n      min: '5999 mm3' }], metadata: { reviewer: 'coverage-test' } })"
               }
             ],
-            "addedIds": ["29ed03f8241389e7cc45-1"]
+            "addedIds": [
+              "29ed03f8241389e7cc45-1"
+            ]
           }
         }
       ]
@@ -4789,7 +4791,10 @@
             "expression": "assert.equal(installedBuild.fingerprint, expectedBuildHash, 'Runtime fingerprint differs from the selected build.')"
           }
         ],
-        "addedIds": ["17996022ae23b8d067a3-1", "daacc81b75794491d40b-1"]
+        "addedIds": [
+          "17996022ae23b8d067a3-1",
+          "daacc81b75794491d40b-1"
+        ]
       },
       "workingTreeReview": {
         "historicalAfterSha256": "48e1d8ae8b2c993dfbb758d93b6302ddaff75b249b56bd05dd673d6fd1f1882f",
@@ -5369,7 +5374,9 @@
           "2789c84e11e1313291ad-1"
         ],
         "removed": [],
-        "addedIds": ["31f07b3b96b5008df227-1"]
+        "addedIds": [
+          "31f07b3b96b5008df227-1"
+        ]
       },
       "workingTreeReview": {
         "historicalAfterSha256": "1658a35b75bdb3cdd6a3078a192922a92691d68780113641f111b3338d075486",
@@ -5901,7 +5908,10 @@
             "expression": "assert.ok(process.argv.includes('--run') && process.argv.includes('--after-styles'),\n    'Live disabled. Primary must run exclusively, sequentially after styles with --run --after-styles.')"
           }
         ],
-        "addedIds": ["9c9a2704c4e6beb29018-1", "6dc04eb0fab9c1c1d532-1"]
+        "addedIds": [
+          "9c9a2704c4e6beb29018-1",
+          "6dc04eb0fab9c1c1d532-1"
+        ]
       }
     },
     {
@@ -6419,7 +6429,10 @@
                 "expression": "script(\n          index,\n          \"close\",\n          `${guard(document)}\nassert d.close(False)\nprint('FMCAD_RESULT '+json.dumps(dict(closed=True,creationId=${JSON.stringify(document.creationId)})))`,\n          document,\n        )"
               }
             ],
-            "addedIds": ["03cacd05a2d8930342bf-1", "b94376baa64f8526c38a-2"]
+            "addedIds": [
+              "03cacd05a2d8930342bf-1",
+              "b94376baa64f8526c38a-2"
+            ]
           }
         },
         {
@@ -6649,7 +6662,9 @@
                 "expression": "script(\n                  index,\n                  \"failure-close\",\n                  ownedCleanupSource(\n                    document,\n                    report.before.active,\n                    \"FMCAD_RESULT \",\n                  ),\n                )"
               }
             ],
-            "addedIds": ["79f9cd8ff42255a0a901-1"]
+            "addedIds": [
+              "79f9cd8ff42255a0a901-1"
+            ]
           }
         },
         {
@@ -7092,7 +7107,10 @@
                 "expression": "assert.equal(markers.length, 1)"
               }
             ],
-            "addedIds": ["c4457f0d2183a5ac359a-1", "4d9e6d11dec4323fabc1-1"]
+            "addedIds": [
+              "c4457f0d2183a5ac359a-1",
+              "4d9e6d11dec4323fabc1-1"
+            ]
           }
         },
         {
@@ -7232,7 +7250,9 @@
               "2789c84e11e1313291ad-1"
             ],
             "removed": [],
-            "addedIds": ["f5096cef93f02d9429b2-2"]
+            "addedIds": [
+              "f5096cef93f02d9429b2-2"
+            ]
           }
         },
         {
@@ -7379,7 +7399,9 @@
                 "expression": "assert.ok(\n      before.byId.has(row[\"id\"]),\n      \"Unexpected document appeared during the run\",\n    )"
               }
             ],
-            "addedIds": ["08d6cab746769a23b850-1"]
+            "addedIds": [
+              "08d6cab746769a23b850-1"
+            ]
           }
         },
         {
@@ -7520,7 +7542,9 @@
               "2789c84e11e1313291ad-1"
             ],
             "removed": [],
-            "addedIds": ["824f171727758bb16fb4-1"]
+            "addedIds": [
+              "824f171727758bb16fb4-1"
+            ]
           }
         },
         {
@@ -7668,7 +7692,9 @@
                 "expression": "assertReceiptBoundDocumentInventory(\n    canonicalRows(\n      before.entries.filter((row) => !closedBaseline.has(String(row[\"id\"]))),\n    ),\n    canonicalRows(after.entries),\n    openPeers,\n    \"A user row changed or a new document lacks authenticated OPEN-peer provenance\",\n  )"
               }
             ],
-            "addedIds": ["82e7bd099f4eb04fe9be-1"]
+            "addedIds": [
+              "82e7bd099f4eb04fe9be-1"
+            ]
           }
         },
         {
@@ -7996,7 +8022,10 @@
           "311fd7e189a89d819e08-1"
         ],
         "removed": [],
-        "addedIds": ["eeaf1df12460ae2bf403-1", "e2d94a0a4bfa23aeb3de-1"]
+        "addedIds": [
+          "eeaf1df12460ae2bf403-1",
+          "e2d94a0a4bfa23aeb3de-1"
+        ]
       },
       "transitions": [
         {
@@ -8309,6 +8338,82 @@
               }
             ],
             "addedIds": []
+          }
+        },
+        {
+          "commit": "c94c7317a1f1ab604ca639478486078941432928",
+          "predecessor": "dde0b8d043815b5465277a14454a5e43a43c911d",
+          "introduced": false,
+          "comparison": {
+            "before": {
+              "source": "tests/live-response-recovery.ts",
+              "sha256": "484579264f3b8b56363c380216da51800cbc4329ef94ffec104841daac7fa5f7",
+              "count": 34
+            },
+            "after": {
+              "source": "tests/live-response-recovery.ts",
+              "sha256": "0a82541c62b550533441b8cb5f1bdd14d625dbe0b64a9fca47c3e1c468c4c646",
+              "count": 35
+            },
+            "retainedIds": [
+              "e5cf23a5cc4f449925a4-1",
+              "c57fb11e2d9a4c2f8d6d-1",
+              "b4a68947697a6a268a65-1",
+              "f08ceed0bcea58c33851-1",
+              "8a1ac10539b3827592fb-1",
+              "8a7dc0c59b7ea681a470-1",
+              "9dd958b800d1f3252fbd-1",
+              "657e601da1120512c27e-1",
+              "147450512f744990098f-1",
+              "849e23022697108c7012-1",
+              "8d8b42a9983f80d0ce44-1",
+              "1faf87391ea42c1bb1dc-1",
+              "560a9cfea44a6a7b1009-1",
+              "62fbae66ab80ef8e2b79-1",
+              "0b73e31c1044e9849249-1",
+              "5fab71e7da67d085ff88-1",
+              "13a5aacc0587493e514e-1",
+              "c3faa95406473eebec99-1",
+              "02cf7a2b235ed94b0b2e-1",
+              "121e8ca253f8f9f119c5-1",
+              "38d0a3f04a057a84bd17-1",
+              "474e7260f747533e9d5c-1",
+              "4c18da2bcc9cc3f13c4f-1",
+              "ec4c21812e035a5bb7a1-1",
+              "ee38ace9b5ad24f24aa0-1",
+              "0b73e31c1044e9849249-2",
+              "b86c1d84079778511ed6-1",
+              "4a5aff334d366beef15d-1",
+              "17b724937bbbf556bb05-1",
+              "425655f27b02bb8f7497-1",
+              "2789c84e11e1313291ad-1"
+            ],
+            "removed": [
+              {
+                "id": "661e0c7460683afeab12-1",
+                "line": 338,
+                "kind": "helper",
+                "expression": "script(`${ownedGuard}\nassert d.close(False)\nprevious=[item for item in a.documents if item.creationId==${report.identity.previous ? JSON.stringify(report.identity.previous) : \"None\"}]\nif previous: assert previous[0].activate()\nprint(json.dumps(dict(closed=True,active=a.activeDocument.creationId if a.activeDocument else None)))`)"
+              },
+              {
+                "id": "a3a4db805be6be29465e-1",
+                "line": 344,
+                "kind": "assertion",
+                "expression": "assert.deepEqual(\n      report.after,\n      report.before,\n      \"Foreign document state changed\",\n    )"
+              },
+              {
+                "id": "5513af1f1fe30657c282-1",
+                "line": 349,
+                "kind": "assertion",
+                "expression": "assert.equal(\n      report.cleanup[\"active\"],\n      report.identity.previous,\n      \"Active document restore failed\",\n    )"
+              }
+            ],
+            "addedIds": [
+              "5f609c30b7c308e3acde-1",
+              "31135510b7f002214f10-1",
+              "984d2e751ce3c1d63e0e-1",
+              "f079c95355150ae408ca-1"
+            ]
           }
         }
       ]
