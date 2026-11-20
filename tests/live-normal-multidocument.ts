@@ -192,14 +192,16 @@ export function assertNormalFinalInventory(
       "Own fixture remains open",
     );
   }
-  const openPeers = new Map(
-    [...proofs].filter(([, proof]) => proof.state === "open"),
+  const visiblePeers = new Map(
+    [...proofs].filter(
+      ([, proof]) => proof.state === "open" || proof.state === "retained",
+    ),
   );
   const closedBaseline = new Set<string>();
   for (const row of before.entries) {
     const current = after.byId.get(row["id"]);
     if (current) {
-      if (openPeers.has(String(row["id"]))) continue;
+      if (visiblePeers.has(String(row["id"]))) continue;
       assert.deepEqual(
         current,
         row,
@@ -258,8 +260,8 @@ export function assertNormalFinalInventory(
       before.entries.filter((row) => !closedBaseline.has(String(row["id"]))),
     ),
     canonicalRows(after.entries),
-    openPeers,
-    "A user row changed or a new document lacks authenticated OPEN-peer provenance",
+    visiblePeers,
+    "A user row changed or a new document lacks authenticated visible-peer provenance",
   );
   assert.equal(
     after.snapshot.active,
