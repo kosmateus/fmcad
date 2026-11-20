@@ -200,7 +200,7 @@ export function createQueueInstance(
     }
   }
 
-  function reclaim(dir: string) {
+  function reclaim(dir: string, recoverCurrent?: () => void) {
     const file = path.join(dir, "broker.lock");
     const marker = readJson(file) as ProcessIdentity & { nonce?: string };
     if (
@@ -233,6 +233,10 @@ export function createQueueInstance(
       const current = readJson(file);
       if (JSON.stringify(current) !== JSON.stringify(marker))
         fail("LOCK_CHANGED", "Broker ownership changed during recovery");
+      // The broker composition may classify interrupted current-epoch work.
+      // Keep both ownership markers until that durable recovery has completed,
+      // so no new broker can observe or race a partially recovered snapshot.
+      recoverCurrent?.();
       const reclaimedFile = path.join(dir, `reclaimed-${randomUUID()}.json`);
       durable(reclaimedFile, marker, true);
       const lifecycleFile = path.join(

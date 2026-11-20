@@ -344,15 +344,23 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
     directory(dir);
     if (fs.realpathSync(dir) !== dir)
       fail("EPOCH_PROOF_INVALID", "Epoch data directory is not canonical");
-    // A lost physical epoch is metadata-only. Do not rewrite in-flight states
-    // while merely restoring access to their original receipts.
+    // Verify authenticated process continuation against the untouched snapshot
+    // before allowing startup recovery to classify interrupted current work.
+    const snapshot = new QueueState(dir, { ...stateOptions, recover: false });
+    const processIdentity =
+      stateOptions.recover !== false &&
+      admissionMode(p) === "normal-multidocument"
+        ? normalProcessIdentity(p, snapshot.data)
+        : p.currentInstance;
+    // A lost physical epoch is metadata-only. Explicit inspection and historical
+    // queues must not rewrite in-flight states or claim a terminal outcome.
     const unavailable =
       priorProcessAlive(p.originalInstance) !== false ||
-      priorProcessAlive(p.currentInstance) !== true;
-    current = new QueueState(
-      dir,
-      unavailable ? { ...stateOptions, recover: false } : stateOptions,
-    );
+      priorProcessAlive(processIdentity) !== true;
+    current =
+      stateOptions.recover === false || unavailable
+        ? snapshot
+        : new QueueState(dir, stateOptions);
     pointer = p;
     oldRequests.clear();
     retired.clear();
@@ -384,7 +392,7 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
     isolatedEpochDirectory(root);
     activate(pointer);
   }
-  function admissionMode(): string {
+  function admissionMode(epoch = pointer): string {
     const port = runtimeRequire(
       "./dist/node-adapters/broker-ipc/normal-admission",
     ) as {
@@ -394,7 +402,7 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
         verify: (file: string) => void,
       ): string;
     };
-    return port.readAdmissionMode(pointer?.root, read, (file) =>
+    return port.readAdmissionMode(epoch?.root, read, (file) =>
       (
         runtimeRequire("./queue-closed-epoch-proof") as {
           closedEpochProof(
@@ -403,11 +411,37 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
             reference: Reference,
           ): unknown;
         }
-      ).closedEpochProof(root, pointer, {
+      ).closedEpochProof(root, epoch, {
         path: file,
         sha256: fileHash(file).sha256,
       }),
     );
+  }
+  function normalProcessIdentity(
+    epoch: Pointer,
+    snapshot: QueueSnapshot,
+  ): ProcessIdentity {
+    const backendScope = (
+      runtimeRequire("./queue-backend-transition") as {
+        resolveBackendHead(
+          root: string,
+          readState: () => { epoch: Pointer },
+        ): {
+          current: { identity: Identity } | null;
+        };
+      }
+    ).resolveBackendHead(root, () => ({ epoch }));
+    return (backendScope.current?.identity.instance ??
+      (
+        runtimeRequire(
+          "./dist/node-adapters/broker-ipc/normal-restart",
+        ) as typeof import("../packages/node-adapters/src/broker-ipc/normal-restart")
+      ).normalRestartInstance(
+        root,
+        epoch,
+        read(path.join(epoch.root, "instance.json")),
+        snapshot,
+      )) as ProcessIdentity;
   }
   const facade = new Proxy(
     {},
@@ -428,27 +462,7 @@ function openIsolatedEpoch(root: string, options: StateOptions = {}): Facade {
             validate(pointer!);
             let processIdentity = pointer!.currentInstance;
             if (normal && admissionMode() === "normal-multidocument") {
-              const backendScope = (
-                runtimeRequire("./queue-backend-transition") as {
-                  resolveBackendHead(
-                    root: string,
-                    readState: () => { epoch: Pointer | null },
-                  ): {
-                    current: { identity: Identity } | null;
-                  };
-                }
-              ).resolveBackendHead(root, () => ({ epoch: pointer }));
-              processIdentity = (backendScope.current?.identity.instance ??
-                (
-                  runtimeRequire(
-                    "./dist/node-adapters/broker-ipc/normal-restart",
-                  ) as typeof import("../packages/node-adapters/src/broker-ipc/normal-restart")
-                ).normalRestartInstance(
-                  root,
-                  pointer!,
-                  read(path.join(pointer!.root, "instance.json")),
-                  current.data,
-                )) as ProcessIdentity;
+              processIdentity = normalProcessIdentity(pointer!, current.data);
             }
             if (
               priorProcessAlive(pointer!.originalInstance) !== false ||

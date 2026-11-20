@@ -523,6 +523,61 @@ for (const mode of ["new-pid", "reused-sdk-pid", "two-independent-clients"]) {
       )
         await new Promise((resolve) => setTimeout(resolve, 20));
       assert.equal(fs.existsSync(path.join(f.dir, "broker.lock")), false);
+      // Simulate losing the next broker after dispatch. The qualified pointer
+      // still names the old SDK, but the authenticated restart names this one.
+      const interrupted = new QueueState(epochRoot, { recover: false });
+      const pending = interrupted.submit({
+        kind: "rpc",
+        requestId: randomUUID(),
+        clientId: f.clientId,
+        timeoutMs: 1000,
+        payload: { jsonrpc: "2.0", id: randomUUID(), method: "ping" },
+      });
+      interrupted.next();
+      interrupted.markDispatch(String(pending["id"]), {
+        rpcCount: 1,
+        completedCount: 0,
+      });
+      const { openIsolatedEpoch } = load(
+        "../src/queue-isolated-epoch",
+      ) as typeof import("../src/queue-isolated-epoch");
+      const interruptedBytes = fs.readFileSync(
+        path.join(epochRoot, "queue-state.json"),
+      );
+      const inspection = openIsolatedEpoch(f.dir, { recover: false });
+      assert.equal(
+        inspection.status(String(pending["id"]))["state"],
+        "sending",
+      );
+      assert.deepEqual(
+        fs.readFileSync(path.join(epochRoot, "queue-state.json")),
+        interruptedBytes,
+      );
+      if (mode === "new-pid") {
+        qi.durable(path.join(f.dir, "broker.lock"), {
+          pid: 2147483646,
+          birth: "dead:interrupted-broker",
+          nonce: randomUUID(),
+        });
+        const { reclaim } = load(
+          "../src/queue-broker",
+        ) as typeof import("../src/queue-broker");
+        reclaim(f.dir);
+        assert.equal(fs.existsSync(path.join(f.dir, "broker.lock")), false);
+      }
+      const reopened = openIsolatedEpoch(
+        f.dir,
+        mode === "new-pid" ? { recover: false } : {},
+      );
+      assert.equal(
+        reopened.status(String(pending["id"]))["state"],
+        "needs_reconciliation",
+        "A live authenticated replacement must recover interrupted current work without replay",
+      );
+      assert.deepEqual(
+        fs.readFileSync(path.join(f.dir, "queue-state.json")),
+        historicalBytes,
+      );
       passed = true;
     },
   );

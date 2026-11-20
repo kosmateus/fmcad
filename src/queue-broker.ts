@@ -102,7 +102,7 @@ const {
   readJson,
   processBirth,
   priorProcessAlive,
-  reclaim,
+  reclaim: reclaimOwner,
   buildHash,
   brokerConfigHash,
   probe,
@@ -7924,6 +7924,13 @@ def run(_context: str) -> dict[str, object]:
     buildHash: codeHash,
     status: () => ({ ...state.status(), held, stopping, buildHash: codeHash }),
   };
+}
+
+function reclaim(dir: string) {
+  return reclaimOwner(dir, () => {
+    if (fs.existsSync(path.join(dir, "isolated-admission-epoch.json")))
+      openIsolatedEpoch(dir);
+  });
 }
 
 export { reclaim, brokerConfigHash };

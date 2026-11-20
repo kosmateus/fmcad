@@ -616,6 +616,44 @@ for (const mode of [
   });
 }
 
+test("reclaim retains exclusive ownership until current-state recovery succeeds", (t) => {
+  const f = fixture(t);
+  const lock = path.join(f.root, "broker.lock");
+  const claim = path.join(f.root, "recovery.lock");
+  f.write(lock, { pid: process.pid, birth: qi.processBirth() });
+  let liveCallback = false;
+  assert.throws(
+    () =>
+      qi.reclaim(f.root, () => {
+        liveCallback = true;
+      }),
+    { code: "BROKER_ALIVE" },
+  );
+  assert.equal(liveCallback, false);
+  f.write(lock, f.owner);
+  const marker = fs.readFileSync(lock);
+  assert.throws(
+    () =>
+      qi.reclaim(f.root, () => {
+        assert.equal(fs.existsSync(lock), true);
+        assert.equal(fs.existsSync(claim), true);
+        throw new Error("Synthetic recovery rejection");
+      }),
+    /Synthetic recovery rejection/,
+  );
+  assert.deepEqual(fs.readFileSync(lock), marker);
+  assert.equal(fs.existsSync(claim), false);
+  let recovered = false;
+  qi.reclaim(f.root, () => {
+    assert.equal(fs.existsSync(lock), true);
+    assert.equal(fs.existsSync(claim), true);
+    recovered = true;
+  });
+  assert.equal(recovered, true);
+  assert.equal(fs.existsSync(lock), false);
+  assert.equal(fs.existsSync(claim), false);
+});
+
 test("bounded local restart rejection preserves the actual reclaimed SDK owner", (t) => {
   const f = fixture(t);
   f.write(path.join(f.root, "broker.lock"), f.owner);
