@@ -15,8 +15,15 @@ import {
   object,
   ownedCleanupSource,
   knownSettlement,
+  runtimeRequire,
 } from "./live-recovery-ports";
-import type { OwnedDocument, LiveReport } from "./live-recovery-ports";
+import type {
+  OwnedDocument,
+  LiveReport,
+  Queue,
+  Job,
+  Result,
+} from "./live-recovery-ports";
 import {
   discoverOwnedUnsavedFixtureProofs,
   assertFencedClosedDocumentInventory,
@@ -28,6 +35,55 @@ import { NormalFixtureProducer } from "./scenarios/normal-fixture-producer";
 const { QueueClient, inputFiles } = clientModule;
 const { loadConfig } = config;
 const { buildHash, processBirth } = identity;
+
+export type NormalTraceRuntime = Pick<
+  typeof import("../packages/node-adapters/src/telemetry/diagnostic-log"),
+  "createDebugTraceContext" | "flushDebugTrace" | "readDebugTrace"
+>;
+
+export async function submitNormalCommand(
+  queue: Queue,
+  input: Record<string, unknown>,
+  accepted: (job: Job) => void,
+  directory: string,
+  telemetry?: NormalTraceRuntime,
+): Promise<Result> {
+  let context: ReturnType<NormalTraceRuntime["createDebugTraceContext"]>;
+  if (process.env["FMCAD_DEBUG_TRACE"] === "1") {
+    try {
+      telemetry ??= runtimeRequire(
+        "./dist/node-adapters/telemetry/diagnostic-log",
+      ) as NormalTraceRuntime;
+      context = telemetry.createDebugTraceContext(
+        String(input["requestId"]),
+        queue.auth.clientId,
+        "cli",
+      );
+    } catch {
+      // Optional diagnostics must not change command admission.
+    }
+  }
+  try {
+    const job = await queue.submit(
+      context ? { ...input, debugTrace: context } : input,
+    );
+    accepted(job);
+    return await queue.wait(job.id);
+  } finally {
+    if (context && telemetry) {
+      try {
+        await telemetry.flushDebugTrace();
+        fs.writeFileSync(
+          path.join(directory, `debug-trace-${context.traceId}.json`),
+          JSON.stringify(telemetry.readDebugTrace(context.traceId), null, 2),
+          { mode: 0o600 },
+        );
+      } catch {
+        // Retain the original success or failure even if trace export fails.
+      }
+    }
+  }
+}
 
 export function normalInventoryExpression(group: boolean): string {
   const fileId = group ? "" : ",fileId=d.dataFile.id if d.dataFile else None";
@@ -511,28 +567,37 @@ async function main() {
     ];
     report.receipts.push({ requestId, phase, clientId: queue.auth.clientId });
     persist();
-    const job = await queue.submit({
-      requestId,
-      kind: "command",
-      argv,
-      cwd: root,
-      timeoutMs: 180000,
-      backend: cfg.backend,
-      buildHash: report.buildHash,
-      inputFiles: inputFiles(argv, root),
-      description: "Owned multi-document native test: " + phase,
-    });
+    let acceptedJob: Job | undefined;
     const receiptIndex = report.receipts.findIndex(
       (row) => row.requestId === requestId,
     );
-    report.receipts[receiptIndex] = {
-      requestId,
-      phase,
-      clientId: queue.auth.clientId,
-      job,
-    };
-    persist();
-    const result = await queue.wait(job.id);
+    const result = await submitNormalCommand(
+      queue,
+      {
+        requestId,
+        kind: "command",
+        argv,
+        cwd: root,
+        timeoutMs: 180000,
+        backend: cfg.backend,
+        buildHash: report.buildHash,
+        inputFiles: inputFiles(argv, root),
+        description: "Owned multi-document native test: " + phase,
+      },
+      (job) => {
+        acceptedJob = job;
+        report.receipts[receiptIndex] = {
+          requestId,
+          phase,
+          clientId: queue.auth.clientId,
+          job,
+        };
+        persist();
+      },
+      root,
+    );
+    assert.ok(acceptedJob);
+    const job = acceptedJob;
     // Retain the original response even when recovery deliberately omits an
     // execution settlement envelope. Missing evidence never permits cleanup.
     report.receipts[receiptIndex] = {
