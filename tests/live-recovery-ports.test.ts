@@ -187,6 +187,19 @@ test("retained recovery parsers reject malformed JSON and preserve original iden
   assert.throws(() => result({ ...original, execution: [] }));
 });
 
+test("native response recovery uses terminal queue wait for its accepted mutation", () => {
+  const source = readFileSync(
+    path.resolve(__dirname, "../../tests/live-response-recovery.ts"),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /observer\.wait\(mutationJob\.id,\s*\{\s*signal:\s*AbortSignal\.timeout\(settlementTimeoutMs\)/u,
+  );
+  assert.doesNotMatch(source, /Date\.now\(\)\s*\+\s*300000/u);
+  assert.match(source, /if\s*\(!settled\)\s*report\.cleanupDeferredReason/u);
+});
+
 test("retained document inventory parser preserves active identity and rejects malformed rows", () => {
   const original = {
     active: "owned",

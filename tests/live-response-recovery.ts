@@ -25,9 +25,10 @@ import type {
   Job,
 } from "./live-recovery-ports";
 const clientModule = path.join(runtime, "src/queue-client.js");
-const { final, inputFiles } = installedClient;
+const { inputFiles } = installedClient;
 const { loadConfig } = config;
 const { buildHash } = identity;
+const settlementTimeoutMs = 10 * 60_000;
 
 interface Report {
   id: string;
@@ -117,19 +118,8 @@ async function main() {
   let armed = false,
     mutationJob: Job | undefined,
     settled: Result | undefined;
-  const observe = async (jobId: string): Promise<Result> => {
-    const deadline = Date.now() + 300000;
-    do {
-      const observed = object(await raw("result", { jobId }));
-      const job = object(observed["job"]);
-      assert.equal(typeof job["state"], "string");
-      if (final(String(job["state"]))) return result(observed);
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    } while (Date.now() < deadline);
-    throw new Error(
-      "Original mutation did not settle; retain fixture, never replay",
-    );
-  };
+  const observer = Object.create(queue) as typeof queue;
+  observer.call = raw;
   queue.call = async (action, values) => {
     const response = await raw(action, values);
     if (armed && action === "submit") {
@@ -140,7 +130,11 @@ async function main() {
       mutationJob = response as Job;
       report.mutationJob = mutationJob;
       persist();
-      settled = await observe(mutationJob.id);
+      settled = result(
+        await observer.wait(mutationJob.id, {
+          signal: AbortSignal.timeout(settlementTimeoutMs),
+        }),
+      );
       report.originalResult = settled;
       const intent = report.intents?.find(
         (row) =>

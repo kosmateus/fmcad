@@ -472,6 +472,9 @@ for (const fault of [
   "find-request",
   "persistent-result",
   "register",
+  "delayed-admission",
+  "delayed-terminal-failure",
+  "settlement-timeout",
 ] as const) {
   test(`real QueueClient identifies ${fault} reply timeout without replaying the original job`, async (t) => {
     if (fault === "persistent-result") {
@@ -530,6 +533,7 @@ for (const fault of [
       cfg: { routing: "queue", queue: { autoStart: false } },
     });
     const withheld = new Set<string>();
+    let delayedResultReads = 0;
     const server = net.createServer((socket) => {
       sockets.add(socket);
       socket.on("close", () => sockets.delete(socket));
@@ -560,12 +564,33 @@ for (const fault of [
           withheld.add(message.action);
           return;
         }
+        const observedJob =
+          (fault === "delayed-admission" ||
+            fault === "delayed-terminal-failure" ||
+            fault === "settlement-timeout") &&
+          message.action === "result"
+            ? {
+                ...job,
+                state:
+                  fault === "settlement-timeout"
+                    ? "preparing"
+                    : ++delayedResultReads < 4
+                      ? "preparing"
+                      : fault === "delayed-terminal-failure"
+                        ? "failed"
+                        : "succeeded",
+              }
+            : job;
         const result =
           message.action === "register"
             ? {}
             : message.action === "submit"
               ? job
-              : { job, requestMatched: true, stdout: "ORIGINAL_MARKER" };
+              : {
+                  job: observedJob,
+                  requestMatched: true,
+                  stdout: "ORIGINAL_MARKER",
+                };
         socket.end(JSON.stringify({ ok: true, result }) + "\n");
       });
     });
@@ -594,11 +619,32 @@ for (const fault of [
             assert.equal(failure["jobId"], job.id);
           return true;
         });
+      } else if (fault === "settlement-timeout") {
+        const submitted = await queue.submit(input);
+        assert.equal(submitted.id, job.id);
+        await assert.rejects(
+          queue.wait(submitted.id, { signal: AbortSignal.timeout(25) }),
+          (error: unknown) => {
+            assert.ok(error && typeof error === "object");
+            assert.equal(
+              (error as Record<string, unknown>)["code"],
+              "WAIT_ABORTED",
+            );
+            assert.equal((error as Record<string, unknown>)["jobId"], job.id);
+            return true;
+          },
+        );
+        assert.equal(actions.filter((action) => action === "submit").length, 1);
+        assert.deepEqual(actions, ["register", "submit", "result"]);
       } else {
         const submitted = await queue.submit(input);
         assert.equal(submitted.id, job.id);
         const result = await queue.wait(submitted.id);
         assert.equal(result.job.id, job.id);
+        assert.equal(
+          result.job.state,
+          fault === "delayed-terminal-failure" ? "failed" : "succeeded",
+        );
         assert.equal(result.stdout, "ORIGINAL_MARKER");
       }
       assert.deepEqual(
@@ -607,44 +653,66 @@ for (const fault of [
           ? ["register"]
           : fault === "persistent-result"
             ? ["register", "submit", "result", "result", "result"]
-            : fault === "find-request"
-              ? ["register", "submit", "find-request", "find-request", "result"]
-              : lostAction === "submit"
-                ? ["register", "submit", "find-request", "result"]
-                : ["register", "submit", "result", "result"],
+            : fault === "delayed-admission" ||
+                fault === "delayed-terminal-failure"
+              ? ["register", "submit", "result", "result", "result", "result"]
+              : fault === "settlement-timeout"
+                ? ["register", "submit", "result"]
+                : fault === "find-request"
+                  ? [
+                      "register",
+                      "submit",
+                      "find-request",
+                      "find-request",
+                      "result",
+                    ]
+                  : lostAction === "submit"
+                    ? ["register", "submit", "find-request", "result"]
+                    : ["register", "submit", "result", "result"],
       );
       const timeout = events.find(
         (event) =>
           event["ipcStage"] === "timeout" && event["action"] === lostAction,
       );
-      assert.ok(
-        timeout,
-        "the actual client timeout must retain its IPC action",
-      );
-      assert.equal(timeout["action"], lostAction);
-      assert.equal(timeout["requestId"], requestId);
-      if (lostAction === "result") assert.equal(timeout["jobId"], job.id);
-      assert.equal(
-        // Trace timestamps are serialized to 0.001 ms. Compare those exact
-        // integer microseconds, not the binary floating-point subtraction.
-        Math.round(Number(timeout["deadlineMonotonicMs"]) * 1000) -
-          Math.round(Number(timeout["monotonicStartMs"]) * 1000),
-        25_000,
-      );
-      assert.ok(Number(timeout["durationMs"]) >= 0);
-      assert.ok(
-        Number(timeout["monotonicEndMs"]) >=
-          Number(timeout["monotonicStartMs"]),
-      );
-      const output = JSON.stringify(events);
-      if (fault !== "register")
+      if (
+        fault === "delayed-admission" ||
+        fault === "delayed-terminal-failure"
+      ) {
+        assert.equal(timeout, undefined);
+        assert.equal(actions.filter((action) => action === "submit").length, 1);
+        assert.equal(delayedResultReads, 4);
+      } else if (fault === "settlement-timeout") {
+        assert.equal(timeout, undefined);
+      } else {
         assert.ok(
-          events.some((event) => event["ipcStage"] === "reply-received"),
+          timeout,
+          "the actual client timeout must retain its IPC action",
         );
-      assert.equal(output.includes(queue.auth.clientToken), false);
-      assert.equal(output.includes("PAYLOAD_MUST_NOT_APPEAR"), false);
-      assert.equal(output.includes("ORIGINAL_MARKER"), false);
-      t.diagnostic(JSON.stringify({ fault, timeout, actions }));
+        assert.equal(timeout["action"], lostAction);
+        assert.equal(timeout["requestId"], requestId);
+        if (lostAction === "result") assert.equal(timeout["jobId"], job.id);
+        assert.equal(
+          // Trace timestamps are serialized to 0.001 ms. Compare those exact
+          // integer microseconds, not the binary floating-point subtraction.
+          Math.round(Number(timeout["deadlineMonotonicMs"]) * 1000) -
+            Math.round(Number(timeout["monotonicStartMs"]) * 1000),
+          25_000,
+        );
+        assert.ok(Number(timeout["durationMs"]) >= 0);
+        assert.ok(
+          Number(timeout["monotonicEndMs"]) >=
+            Number(timeout["monotonicStartMs"]),
+        );
+        const output = JSON.stringify(events);
+        if (fault !== "register")
+          assert.ok(
+            events.some((event) => event["ipcStage"] === "reply-received"),
+          );
+        assert.equal(output.includes(queue.auth.clientToken), false);
+        assert.equal(output.includes("PAYLOAD_MUST_NOT_APPEAR"), false);
+        assert.equal(output.includes("ORIGINAL_MARKER"), false);
+        t.diagnostic(JSON.stringify({ fault, timeout, actions }));
+      }
     } finally {
       queue.dispose();
       for (const socket of sockets) socket.destroy();

@@ -23,7 +23,7 @@ export interface Queue {
   register(options: { autoStart: false }): Promise<unknown>;
   call(action: string, values?: Record<string, unknown>): Promise<unknown>;
   submit(input: Record<string, unknown>): Promise<Job>;
-  wait(id: string): Promise<Result>;
+  wait(id: string, options?: { signal?: AbortSignal }): Promise<Result>;
   dispose(): void;
 }
 export interface ClientModule {
