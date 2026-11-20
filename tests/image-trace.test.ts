@@ -85,6 +85,8 @@ function harness(code = 0) {
           '{"success":true,"operation":"image.trace","result":{"custom":1}}\n',
         );
         child.stderr.write("worker diagnostic\n");
+        child.exitCode = code;
+        child.emit("exit", code, null);
         child.emit("close", code, null);
       });
       return child;
@@ -453,6 +455,8 @@ function pipeChild(): ChildProcessWithoutNullStreams & {
     stdout = new PassThrough(),
     stderr = new PassThrough();
   return Object.assign(new ChildProcess(), {
+    // Never let an unspawned native handle signal the test runner's group.
+    kill: () => assert.fail("Synthetic worker has no operating-system process"),
     stdin,
     stdout,
     stderr,
