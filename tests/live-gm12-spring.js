@@ -8,7 +8,10 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { prepareNativeInvocation, observeNativeInvocation } = require('../dist/tests/live-import-receipts.js');
-const { assertFixedMethodResults, isExecutionUnknown } = require('./helpers/gm12-fixed-result');
+const {
+  assertFixedMethodResults,
+  isExecutionUnknown,
+} = require('../dist/tests/helpers/gm12-fixed-result.cjs');
 
 const root = path.resolve(__dirname, '..');
 process.env.FMCAD_LIVE_ROUTING = 'queue';

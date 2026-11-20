@@ -23,6 +23,7 @@ import * as path from "node:path";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
+import { isExecutionUnknown } from "./helpers/gm12-fixed-result.cjs";
 import {
   asRecord,
   parsePublicQueueJob,
@@ -120,16 +121,8 @@ interface FixedReport extends JsonRecord {
   blockedReason?: string;
   finishedAt?: string;
 }
-interface HelperModule {
-  isExecutionUnknown(value: unknown): boolean;
-}
-
 const root = path.resolve(__dirname, "..", "..");
 const runtimeRequire = createRequire(__filename);
-const helperModule = runtimeRequire(
-  path.join(root, "tests/helpers/gm12-fixed-result.js"),
-) as HelperModule;
-const isExecutionUnknown = helperModule.isExecutionUnknown;
 const fixtureId = "data-import-program-v1";
 const fixturePrefix = "NQGM07IMPORT01";
 // master advanced from the originally announced 0fc1d99 candidate. bb7b68a

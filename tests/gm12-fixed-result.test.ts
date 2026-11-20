@@ -3,6 +3,10 @@ import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import {
+  assertFixedMethodResults,
+  isExecutionUnknown,
+} from "./helpers/gm12-fixed-result.cjs";
 const load = createRequire(
   path.join(process.cwd(), "tests/gm12-fixed-result.test.ts"),
 );
@@ -20,16 +24,6 @@ const saved = load("./fixtures/gm12-fixed-result-classification.json") as {
     nativeGeometry: boolean;
     results: Record<string, { status: string; success: boolean }>;
   };
-};
-const { assertFixedMethodResults, isExecutionUnknown } = load(
-  "./helpers/gm12-fixed-result",
-) as {
-  assertFixedMethodResults(
-    payload: unknown,
-    operations: string[],
-    creationId: string,
-  ): void;
-  isExecutionUnknown(value: unknown): boolean;
 };
 
 const operations = [
