@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import Module, { createRequire } from "node:module";
 import { isolateRuntimeTestEnvironment } from "./runtime-test-environment.js";
+import "./autodesk-fusion-only.test";
 
 type HttpRpcParams = {
   name?: string;
@@ -187,7 +188,10 @@ function writeFakeReceipts(
   }
 }
 
-for (const { backend, externalSession } of ["mcp", "addin"].flatMap((backend) =>
+// Native MCP success paths are retired. autodesk-fusion-only.test above requires
+// their refusal before constructing a transport or claiming a queue instead.
+// Keep receipt binding and UNKNOWN/no-replay coverage on the supported backend.
+for (const { backend, externalSession } of ["addin"].flatMap((backend) =>
   [true, false].map((externalSession) => ({ backend, externalSession })),
 ))
   for (const disconnect of [false, true]) {

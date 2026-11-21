@@ -39,6 +39,9 @@ import {
 // Source and packaged launchers share the public facade's installation anchor.
 const runtimeAnchor = path.join(__dirname, "..", "queue-broker.js");
 const runtimeRequire = createRequire(runtimeAnchor);
+const { assertAutodeskFusionBackend } = runtimeRequire(
+  "./dist/core/domain/physical-backend",
+) as typeof import("../../packages/core/src/domain/physical-backend");
 const load = <K extends keyof BrokerModules>(name: K): BrokerModules[K] =>
   runtimeRequire(name) as BrokerModules[K];
 const { MAX_BROKER_IPC_BYTES: MAX } = runtimeRequire(
@@ -652,6 +655,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       "UNSUPPORTED_ROUTING",
       "routing=direct is no longer supported; start the shared fmcad broker with routing=queue",
     );
+  assertAutodeskFusionBackend(cfg);
   const metadataAdmission = provisionAddinMetadata(
     options.addinMetadataAdmission,
     cfg.backend,
