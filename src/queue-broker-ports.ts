@@ -135,7 +135,7 @@ export type State = Omit<
   status(id: string): PublicJob;
   status(): Omit<Snapshot, "jobs"> & { jobs: Record<string, PublicJob> };
   lookup(id: string): Job;
-  next(): Job | null;
+  next(options?: { grant?: boolean }): Job | null;
   submit(request: Request, preparedId?: string): PublicJob;
   assertEpoch(normal?: boolean): void;
   isHistorical(id: string): boolean;
@@ -507,6 +507,7 @@ export interface AtomicProof {
   rpcId: string;
 }
 export interface ObservationScope {
+  assertGrant(): void;
   targetJob: Job;
   observerJob: Job;
   clientId: string;

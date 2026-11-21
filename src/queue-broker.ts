@@ -9,6 +9,10 @@ import { randomUUID, randomBytes, timingSafeEqual } from "node:crypto";
 import { createRequire } from "node:module";
 import type * as P from "./queue-broker-ports";
 import type {
+  BrokerGrant,
+  BrokerHold,
+} from "../packages/core/src/application/broker-session";
+import type {
   BrokerModules,
   AuditPorts,
   AuditSnapshot,
@@ -1277,7 +1281,87 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     }
   }
   type ProductContext = P.Context & { productTurn?: TurnIdentity };
-  type ProductGrant = { context: ProductContext; turn: TurnIdentity };
+  type LaneContext = {
+    job: P.Job;
+    worker?: ProductContext;
+    postflight?: boolean;
+    executing: boolean;
+  };
+  type ProductGrant = BrokerGrant<LaneContext>;
+  const session = (
+    runtimeRequire(
+      "./dist/core/application/broker-session",
+    ) as typeof import("../packages/core/src/application/broker-session")
+  ).createBrokerSession<LaneContext>();
+  // Private capabilities retained by composition for IPC routing and recovery.
+  // Only the session owns or changes physical eligibility.
+  let turnGrant: ProductGrant | null = null;
+  let heldGrant: BrokerHold<LaneContext> | null = null;
+  let brokerFault: string | null = null;
+  let administrativeBusy = false;
+  function busy() {
+    return (
+      administrativeBusy ||
+      !!session.snapshot().active ||
+      !!heldGrant?.context?.executing
+    );
+  }
+  function activeContext() {
+    if (turnGrant?.context.postflight) return null;
+    return turnGrant?.context.worker ?? heldGrant?.context?.worker ?? null;
+  }
+  function heldReason() {
+    const local = state.data.localUnknown?.reason ?? state.data.blocked?.reason;
+    return (
+      brokerFault ??
+      session.snapshot().held?.reason ??
+      (typeof local === "string" ? local : null)
+    );
+  }
+  function setHold(reason: string | null) {
+    if (turnGrant) {
+      // A separate host fault does not settle or revoke an in-flight job.
+      brokerFault = reason;
+      return;
+    }
+    if (reason !== null) {
+      heldGrant = session.hold(heldGrant, reason);
+    } else {
+      if (heldGrant) session.settle(heldGrant, () => undefined);
+      heldGrant = null;
+      brokerFault = null;
+    }
+  }
+  function resolveHeld(
+    expected: BrokerHold<LaneContext> | null,
+    id: string,
+    details: Parameters<typeof state.resolve>[1],
+  ) {
+    if (expected !== heldGrant || turnGrant)
+      fail("STATE_CONFLICT", "Runtime hold changed before recovery settlement");
+    if (!expected) return state.resolve(id, details);
+    let result: ReturnType<typeof state.resolve> | undefined;
+    session.settle(expected, () => {
+      result = state.resolve(id, details);
+    });
+    heldGrant = null;
+    brokerFault = null;
+    scheduler.wakeup();
+    return required(result);
+  }
+  function settleTurn(grant: ProductGrant, commit: () => undefined) {
+    session.settle(grant, commit);
+    turnGrant = null;
+    scheduler.wakeup();
+  }
+  function finishTurn(
+    grant: ProductGrant,
+    details: Parameters<typeof state.finish>[1],
+  ) {
+    settleTurn(grant, () => {
+      state.finish(grant.jobId, details);
+    });
+  }
   const physicalGrant = new AsyncLocalStorage<ProductGrant>();
   const recoveryProbeScope = new AsyncLocalStorage<{
     assertCurrent(): void;
@@ -1564,9 +1648,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   let clients: Record<string, string> = {};
   const clientsFile = path.join(dir, "clients.json");
   if (fs.existsSync(clientsFile)) clients = readJson(clientsFile);
-  let active: ProductContext | null = null,
-    busy = false,
-    stopping = false,
+  let stopping = false,
     closed = false,
     instance: P.Instance;
   const debugDispatchStarted = new WeakMap<P.Prepared, number>();
@@ -1580,7 +1662,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     closeTask: Promise<void> | null = null,
     closeResolve: () => void,
     closeReject: (error: unknown) => void;
-  let held: string | null = null;
   let epochProcessUnavailable = false;
   let recovery: P.Recovery | null = null,
     lastRecoveryCheck = 0;
@@ -1710,21 +1791,23 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         );
       if (successorRuntime) epochProcessUnavailable = true;
       instance = oldIdentity.instance;
-      held = epochProcessUnavailable
-        ? "Qualified isolated scratch process is unavailable; metadata only, no SDK or replacement authority"
-        : normalAdmission
-          ? null
-          : closedEpoch
-            ? "Qualified isolated scratch is closed; historical unknown work remains quarantined"
-            : fs.existsSync(
-                  path.join(
-                    epochControlDirectory(dir, epoch),
-                    "isolated-scratch-close",
-                    "intent.json",
-                  ),
-                )
-              ? "Isolated scratch cleanup remains pending or uncertain"
-              : null;
+      setHold(
+        epochProcessUnavailable
+          ? "Qualified isolated scratch process is unavailable; metadata only, no SDK or replacement authority"
+          : normalAdmission
+            ? null
+            : closedEpoch
+              ? "Qualified isolated scratch is closed; historical unknown work remains quarantined"
+              : fs.existsSync(
+                    path.join(
+                      epochControlDirectory(dir, epoch),
+                      "isolated-scratch-close",
+                      "intent.json",
+                    ),
+                  )
+                ? "Isolated scratch cleanup remains pending or uncertain"
+                : null,
+      );
     } else if (state.summary().blocked || state.data.controlBlocked) {
       // No Fusion traffic at all until receipt evidence proves the old dispatch ended.
       instance = oldIdentity?.instance as P.Instance;
@@ -1752,9 +1835,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         // broker that accepts one exact typed atomic_status observer.
         atomicObservationOnly = true;
       }
-      held = atomicObservationOnly
-        ? "Read-only atomic holder observation only; all other admission remains blocked"
-        : "Restored unfinished job; matching remote terminal receipts are required before any probe";
+      setHold(
+        atomicObservationOnly
+          ? "Read-only atomic holder observation only; all other admission remains blocked"
+          : "Restored unfinished job; matching remote terminal receipts are required before any probe",
+      );
     } else {
       // A completed busy observation is not an unfinished RPC. Keep the control
       // plane available; modeling workflows still require idle in preflight.
@@ -2050,13 +2135,16 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     properties: clientProperties,
     spawnWorker: options.spawnWorker,
     onFault(error) {
-      held = errorInfo(error).code || "LOCAL_WORKER_STORAGE_FAILED";
+      setHold(errorInfo(error).code || "LOCAL_WORKER_STORAGE_FAILED");
       diagnostics();
     },
     onUnknown(job, reason) {
-      held = reason;
-      if (state.data.active === job.id) hold(job, reason);
-      else state.blockLocal(job.id, reason);
+      if (turnGrant?.jobId === job.id && state.data.active === job.id)
+        hold(turnGrant, reason);
+      else {
+        state.blockLocal(job.id, reason);
+        if (!turnGrant && !heldGrant) setHold(reason);
+      }
       diagnostics();
     },
   });
@@ -2070,7 +2158,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       durable,
       () => ({
         buildHash: codeHash,
-        held,
+        held: heldReason(),
         recovery,
         activeJobId: state.summary().active,
       }),
@@ -2081,15 +2169,19 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         queued: Object.values(state.data.jobs).filter(
           (job) => job.state === "queued",
         ).length,
-        held: !!held,
+        held: !!heldReason(),
         buildHash: codeHash,
       }),
     );
   }
-  function hold(job: Pick<P.Job, "id">, reason: string) {
-    held = reason;
-    if (state.status(job.id).state !== "needs_reconciliation")
-      state.block(job.id, reason);
+  function hold(grant: ProductGrant, reason: string) {
+    // Repeated error callbacks for the already-held turn are harmless; never
+    // let them change the new turn's hold or durable state.
+    if (turnGrant !== grant) return;
+    heldGrant = session.hold(grant, reason);
+    turnGrant = null;
+    if (state.status(grant.jobId).state !== "needs_reconciliation")
+      state.block(grant.jobId, reason);
     diagnostics();
   }
   function nativeActivity(context: P.Context) {
@@ -2104,7 +2196,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     delete context.nativeActivityId;
     diagnostics();
   }
-  async function settleNative(context: P.Context) {
+  async function settleNative(context: P.Context, grant: ProductGrant) {
     const declared = context.turnRpcs.filter((item) =>
       nativeReceipts.start(item.record),
     );
@@ -2115,6 +2207,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     )
       return;
     for (;;) {
+      if (turnGrant !== grant) return;
       let waiting = false;
       for (const item of declared) {
         const proof = nativeReceipts.completion(item.record);
@@ -2144,6 +2237,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   }
   gate.changed = diagnostics;
   async function checkInstance(probeOptions: P.ProbeOptions) {
+    const active = activeContext();
     if (buildHash() !== codeHash)
       throw Object.assign(
         new Error(
@@ -2256,6 +2350,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "Original worker spawn has no durable process identity",
       );
     }
+    const active = activeContext();
     if (
       active?.job?.id === job.id &&
       (active.pending?.size || (active.child && !active.workerClosed))
@@ -2394,7 +2489,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         delete d.controlBlocked;
         return null;
       });
-      held = null;
+      setHold(null);
     }
     const rpcId = randomUUID();
     const binding = {
@@ -2454,13 +2549,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     marker,
     buildHash: codeHash,
     getContext: () => ({
-      active,
-      busy: busy || rawPreparations > 0,
+      active: activeContext(),
+      busy: busy() || rawPreparations > 0,
       stopping,
-      held,
+      held: heldReason(),
     }),
     setBusy: (value) => {
-      busy = value;
+      administrativeBusy = value;
     },
     resumeCheck,
     close,
@@ -2473,7 +2568,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         path.join(dir, "control-resume.json"),
       );
       const receipt = remoteReceipt(record, false);
-      held = null;
+      setHold(null);
       return receipt;
     },
   });
@@ -2489,7 +2584,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     diagnostics,
     canResume() {
       if (
-        (held && !state.data.controlBlocked) ||
+        (heldReason() && !state.data.controlBlocked) ||
         state.summary().blocked ||
         state.data.localUnknown
       ) {
@@ -2514,6 +2609,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     scope: P.ObservationScope,
     inFlight: boolean,
   ) {
+    scope.assertGrant();
     if (!scope.prepared.atomicRuntimeAbi)
       fail(
         "BUILD_CHANGED",
@@ -2553,7 +2649,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       resuming: gate.resuming,
       adminTransition: gate.adminTransition,
     });
-    if (stopping || closed || !busy)
+    if (stopping || closed || !busy())
       fail("BROKER_STOPPING", "Broker is not available for scoped observation");
   }
 
@@ -2719,6 +2815,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         );
       },
       settle(prepared, response: P.Response) {
+        scope.assertGrant();
         const reply = matching(client, response, prepared.outgoing);
         const failed = !!(reply?.error || object(reply?.result)["isError"]);
         const receipt = remoteReceipt(prepared.record, false);
@@ -2796,10 +2893,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       unknown(error) {
         const observer = scope.observerContext;
         if (observer) observer.unknown = true;
-        hold(
-          scope.observerJob,
-          "Atomic status observation reply is unknown; no second observation will be sent",
-        );
+        if (turnGrant && turnGrant.context.worker === observer)
+          hold(
+            turnGrant,
+            "Atomic status observation reply is unknown; no second observation will be sent",
+          );
         try {
           durable(
             path.join(
@@ -3079,12 +3177,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     if (administrative || !grant) {
       if (
         ready?.kind === "owned" ||
-        (!administrative && active?.productTurn)
+        (!administrative && activeContext()?.productTurn)
       )
         fail("PREPARED_RPC_UNAVAILABLE", "No active grant for the prepared RPC");
       return unownedPost(payload, sessionId, requestOptions, ready?.checked);
     }
-    const { context } = grant;
+    const context = required(grant.context.worker);
     const tracePreflight = context.job.kind === "rpc";
     const startedAt = Date.now();
     if (tracePreflight)
@@ -3127,21 +3225,20 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       throw error;
     }
     return brokerExecution.executeTurn(grant, turn, {
-      assertCurrentGrant({ context: owner, turn }) {
+      assertCurrentGrant(current) {
+        session.assertCurrentGrant(current);
         if (
-          active !== owner ||
-          owner.productTurn !== turn ||
-          turn.jobId !== owner.job.id ||
-          state.data.active !== owner.job.id ||
-          owner.workerClosed ||
-          owner.unknown ||
+          current.context.worker !== context ||
+          state.data.active !== current.jobId ||
+          context.workerClosed ||
+          context.unknown ||
           state.summary().blocked
         )
           fail(
             "RECONCILIATION_REQUIRED",
             "Original SDK ownership changed before send",
           );
-        if (owner.timedOut)
+        if (context.timedOut)
           fail("RUN_TIMEOUT", "Worker execution deadline expired before send");
       },
       check(prepared) {
@@ -3316,6 +3413,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         }
       },
       settle(prepared, response: P.Response) {
+        session.assertCurrentGrant(grant);
         const { outgoing, record, rpcId, journal } = prepared;
         const trace = debugTraceContext(
           context.job.request,
@@ -3527,7 +3625,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             stdoutObservation: "not_observed",
           });
         hold(
-          context.job,
+          grant,
           "Physical RPC outcome is unknown; observe the durable receipt without replay",
         );
         retainDispatchFailure(context, error, failure);
@@ -3621,9 +3719,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     message: P.WorkerMessage,
     preparedSend?: P.Send,
   ): Promise<{ value: unknown; properties: Record<string, unknown> }> {
-    const context = active;
+    const grant = turnGrant;
+    const context = grant?.context.worker;
     if (
+      !grant ||
       !context ||
+      grant.context.postflight ||
       !context.productTurn ||
       message.jobId !== context.job.id ||
       !equal(message.workerToken, context.token) ||
@@ -3657,12 +3758,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const operation = withRequest({ timeoutMs: timeout }, async () => {
       context.rpcDeadline = Date.now() + timeout;
       try {
-        const value: unknown = await physicalGrant.run(
-          { context, turn: required(context.productTurn) },
-          () =>
-            preparedSend
-              ? preparedSend()
-              : Reflect.apply(client[message.method], client, message.args),
+        const value: unknown = await physicalGrant.run(grant, () =>
+          preparedSend
+            ? preparedSend()
+            : Reflect.apply(client[message.method], client, message.args),
         );
         if (
           message.method === "listTools"
@@ -3686,7 +3785,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             );
           }
         }
-        await settleNative(context);
+        await settleNative(context, grant);
         const properties = clientProperties();
         if (
           Buffer.byteLength(JSON.stringify({ value, properties })) >
@@ -3701,6 +3800,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         return { value, properties };
       } catch (cause) {
         const error = errorInfo(cause);
+        if (turnGrant !== grant) throw error;
         const newDispatch =
           (state.status(context.job.id).dispatch?.rpcCount || 0) >
           initialRpcCount;
@@ -3732,7 +3832,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             reason: "Adapter could not validate the physical response",
           });
           hold(
-            context.job,
+            grant,
             "Physical adapter outcome is unknown; generic synchronous receipts cannot certify its result",
           );
         }
@@ -3750,7 +3850,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       context.timedOut = true;
       if (context.dispatched)
         hold(
-          context.job,
+          grant,
           "Worker backend RPC exceeded its deadline; completion remains unknown",
         );
       rejectDeadline(
@@ -4081,6 +4181,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       };
     },
     fence(value, inFlight) {
+      const active = activeContext();
       assertResetSubmissionOpen(dir);
       load("./queue-atomic-migration-runtime").assertMigrationAdmission(
         dir,
@@ -4091,7 +4192,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         stopping ||
         closed ||
         gate.resuming ||
-        (busy && !recoveryAuditBusy) ||
+        (busy() && !recoveryAuditBusy) ||
         (gate.adminTransition &&
           gate.adminTransition !== "atomic-recovery-audit") ||
         gate.active.size !== (inFlight ? 1 : 0) ||
@@ -4128,13 +4229,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         );
     },
     begin() {
-      if (busy || gate.adminTransition)
+      if (busy() || gate.adminTransition)
         fail("BROKER_BUSY", "Another operation owns the broker");
-      busy = recoveryAuditBusy = true;
+      administrativeBusy = recoveryAuditBusy = true;
       gate.adminTransition = "atomic-recovery-audit";
     },
     end() {
-      recoveryAuditBusy = busy = false;
+      recoveryAuditBusy = administrativeBusy = false;
       gate.adminTransition = null;
       diagnostics();
     },
@@ -4239,10 +4340,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       stopping ||
       closed ||
       gate.resuming ||
-      (busy && !recoveryAuditBusy) ||
+      (busy() && !recoveryAuditBusy) ||
       (gate.adminTransition && !allowedAdmin) ||
       gate.active.size !== (inFlight ? 1 : 0) ||
-      active ||
+      activeContext() ||
       state.data.lease ||
       state.data.localUnknown ||
       state.data.controlBlocked ||
@@ -4282,20 +4383,20 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       instance = identity.instance;
       atomicObservationOnly = false;
       epochProcessUnavailable = false;
-      held = null;
-      active = null;
+      setHold(null);
       diagnostics();
     },
     closed(epoch) {
       if (state.admissionMode === "normal-multidocument") {
-        held = null;
+        setHold(null);
         diagnostics();
         return;
       }
       if (!state.data.paused)
         state.pause(true, "isolated-scratch-closed:" + epoch.epochId);
-      held =
-        "Qualified isolated scratch is closed; historical unknown work remains quarantined";
+      setHold(
+        "Qualified isolated scratch is closed; historical unknown work remains quarantined",
+      );
       diagnostics();
     },
   });
@@ -4312,8 +4413,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     closed(epoch) {
       if (!state.data.paused)
         state.pause(true, "saved-fixture-retained:" + epoch.epochId);
-      held =
-        "New test DataFile retained; owned saved UI document closed; historical unknown work remains quarantined";
+      setHold(
+        "New test DataFile retained; owned saved UI document closed; historical unknown work remains quarantined",
+      );
       diagnostics();
     },
   });
@@ -4345,8 +4447,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           stopping ||
           closed ||
           gate.resuming ||
-          (busy && !recoveryAuditBusy) ||
-          active ||
+          (busy() && !recoveryAuditBusy) ||
+          activeContext() ||
           (gate.adminTransition &&
             gate.adminTransition !== "atomic-recovery-audit") ||
           gate.active.size !== (inFlight ? 1 : 0) ||
@@ -4363,8 +4465,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         instance = identity.instance;
         atomicObservationOnly = false;
         epochProcessUnavailable = false;
-        held = null;
-        active = null;
+        setHold(null);
         diagnostics();
       },
     });
@@ -4416,6 +4517,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     clientId: string,
     acceptedOutcome: string,
   ) {
+    const expectedHold = heldGrant;
+    const active = activeContext();
     if (!["committed", "aborted"].includes(acceptedOutcome))
       fail(
         "INVALID_ACCEPTED_OUTCOME",
@@ -4585,7 +4688,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           "WORKFLOW_REPORT_CHANGED",
           "Atomic report changed since owner acceptance was durably recorded",
         );
-      const result = state.resolve(target.id, {
+      const result = resolveHeld(expectedHold, target.id, {
         state: priorAcceptance.resolvedState,
         code:
           acceptedOutcome === "committed"
@@ -4603,8 +4706,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         rollbackVerification: "not_performed",
       });
       endNativeActivity(active?.job?.id === target.id ? active : null);
-      active = null;
-      held = null;
       recovery = {
         jobId: id,
         observationJobId: priorAcceptance.observerJobId,
@@ -4904,7 +5005,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "Report or queue fences changed during owner acceptance; unresolved blocker is retained",
       );
     durable(acceptancePath, acceptance, true);
-    const result = state.resolve(target.id, {
+    const result = resolveHeld(expectedHold, target.id, {
       state: resolvedState,
       code:
         acceptedOutcome === "committed"
@@ -4924,8 +5025,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       rollbackVerification: "not_performed",
     });
     endNativeActivity(active?.job?.id === target.id ? active : null);
-    active = null;
-    held = null;
     recovery = {
       jobId: target.id,
       observationJobId: observer.id,
@@ -4939,6 +5038,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   function readRecoveryFence(id: string): RecoveryFence | null {
     const data = state.data;
     const job = data.jobs[id];
+    const active = activeContext();
     if (
       !job ||
       closed ||
@@ -4996,12 +5096,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const recoveryEvaluator = createBrokerRecovery(
     createBrokerRecoveryEvidence(executionRecords.evidence, {
       readFence: readRecoveryFence,
-      workerContext: () =>
-        !active
+      workerContext: () => {
+        const active = activeContext();
+        return !active
           ? "absent"
           : active.pending.size || (active.child && !active.workerClosed)
             ? "pending"
-            : "closed",
+            : "closed";
+      },
       processBirth,
       workflowNonterminal,
       nativeReceipts,
@@ -5017,6 +5119,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   );
 
   async function reconcile(id: string, clientId: string) {
+    const expectedHold = heldGrant;
     if (owned(id, clientId).state !== "needs_reconciliation")
       fail("NOT_BLOCKED", "Job does not require reconciliation");
     if (!instance)
@@ -5029,8 +5132,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       fail("STATE_CONFLICT", "Recovery owner or local fence is unavailable");
     const job = state.lookup(id);
     const directory = privateDirectory(jobDir(id));
-    const assertCurrentFence = () =>
+    const assertCurrentFence = () => {
+      if (heldGrant !== expectedHold || turnGrant)
+        fail("STATE_CONFLICT", "Runtime hold changed before recovery");
       recoveryEvaluator.assertCurrentFence(expected);
+    };
     let decision = recoveryEvaluator.reconcile(job, expected);
     if (decision.kind === "settled" && !decision.dispatched) {
       const observation = decision.preflight;
@@ -5047,13 +5153,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       assertCurrentFence();
       durable(path.join(directory, "outcome.json"), outcome);
       assertCurrentFence();
-      const result = state.resolve(id, outcome);
-      held = null;
-      active = null;
+      const result = resolveHeld(expectedHold, id, outcome);
       diagnostics();
       return result; // No new probe is needed to settle a product request never sent.
     }
-    const context = active;
+    const context = activeContext();
     if (decision.kind === "waitingForEvidence") {
       if (!decision.observation) fail(decision.code, decision.message);
       const previous = decision.observation.priorFailed;
@@ -5199,10 +5303,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     assertCurrentFence();
     durable(path.join(directory, "outcome.json"), details);
     assertCurrentFence();
-    const result = state.resolve(id, details);
+    const result = resolveHeld(expectedHold, id, details);
     endNativeActivity(context);
-    held = null;
-    active = null;
     diagnostics();
     return result;
   }
@@ -5285,6 +5387,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       return backend(workerMessage);
     }
     if (message.action === "worker-status") {
+      const active = activeContext();
       if (
         !active ||
         message.jobId !== active.job.id ||
@@ -5405,8 +5508,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               if (
                 stopping ||
                 closed ||
-                busy ||
-                active ||
+                busy() ||
+                activeContext() ||
                 gate.resuming ||
                 gate.adminTransition ||
                 gate.active.size ||
@@ -5443,8 +5546,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 fs.existsSync(path.join(dir, "atomic-migration.lock")) ||
                 stopping ||
                 closed ||
-                busy ||
-                active ||
+                busy() ||
+                activeContext() ||
                 gate.resuming ||
                 gate.adminTransition ||
                 gate.active.size ||
@@ -5608,12 +5711,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             active: state.data.active,
             lease: state.data.lease ? structuredClone(state.data.lease) : null,
           };
+          const active = activeContext();
           const originalActiveIds =
             active?.nativeActivityId && gate.active.has(active.nativeActivityId)
               ? [active.nativeActivityId]
               : [];
           if (
-            busy ||
+            busy() ||
             gate.resuming ||
             gate.adminTransition ||
             (active && active.job?.id !== blockedJob.id) ||
@@ -5698,10 +5802,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           );
           validateAtomicReconcileInvocation(invocation, prepared);
           assertResetSubmissionOpen(dir);
+          const currentContext = activeContext();
           if (
-            busy ||
+            busy() ||
             gate.resuming ||
-            (active && active.job?.id !== blockedJob.id) ||
+            (currentContext && currentContext.job.id !== blockedJob.id) ||
             gate.adminTransition ||
             !same(
               [...gate.active.keys()].sort(),
@@ -5964,7 +6069,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               ),
           ).length,
           control: gate.snapshot(),
-          held,
+          held: heldReason(),
           stopping,
           recovery,
           buildHash: codeHash,
@@ -6045,7 +6150,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           : {
               ...state.status(),
               control: gate.snapshot(),
-              held,
+              held: heldReason(),
               stopping,
               recovery,
               buildHash: codeHash,
@@ -6086,7 +6191,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         if (!message.jobId)
           return {
             ...state.status(),
-            held,
+            held: heldReason(),
             stopping,
             recovery,
             buildHash: codeHash,
@@ -6158,8 +6263,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       case "release":
         return state.release(required(message.sequenceId), clientId);
       case "reconcile":
-        if (busy) fail("BROKER_BUSY", "Original execution has not settled");
-        busy = true;
+        if (busy()) fail("BROKER_BUSY", "Original execution has not settled");
+        administrativeBusy = true;
         try {
           return own(message, "acceptedOutcome")
             ? await acceptAtomicObservation(
@@ -6171,7 +6276,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 reconcile(required(message.jobId), clientId),
               );
         } finally {
-          busy = false;
+          administrativeBusy = false;
           diagnostics();
           if (stopping) setImmediate(drain);
         }
@@ -6183,9 +6288,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           )
             fail("STATE_CONFLICT", "Broker changed before idle reload");
           if (
-            held ||
-            active ||
-            busy ||
+            heldReason() ||
+            activeContext() ||
+            busy() ||
             rawPreparations ||
             gate.active.size ||
             gate.resuming ||
@@ -6204,7 +6309,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               "Idle-only reload cannot stop active, queued, processing, leased or unknown work",
             );
         }
-        if (held || state.summary().blocked || active?.unknown)
+        if (heldReason() || state.summary().blocked || activeContext()?.unknown)
           fail(
             "RECONCILIATION_REQUIRED",
             "Cannot stop an unknown/blocked queue",
@@ -6213,7 +6318,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         setImmediate(() =>
           close().catch((error) => {
             stopping = false;
-            held ||= error.code || "CLOSE_FAILED";
+            if (!heldReason()) setHold(error.code || "CLOSE_FAILED");
           }),
         );
         return { stopping: true, draining: !!state.summary().active };
@@ -6222,7 +6327,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     }
   }
 
-  async function executeAtomicObservation(observerJob: P.Job) {
+  async function executeAtomicObservation(
+    observerJob: P.Job,
+    grant: ProductGrant,
+  ) {
     const marker = observerJob.workflowObservation;
     const targetJob = marker && state.data.jobs[marker.targetJobId];
     const payload = observerJob.request.payload;
@@ -6332,7 +6440,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       );
     }
 
-    const originalContext = active;
+    const originalContext = heldGrant?.context?.worker ?? null;
     if (
       originalContext &&
       (originalContext.job?.id !== targetJob.id ||
@@ -6371,6 +6479,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       );
     const observerDirectory = privateDirectory(jobDir(observerJob.id));
     const scope: P.ObservationScope = {
+      assertGrant: () => session.assertCurrentGrant(grant),
       targetJob,
       observerJob,
       clientId: observerJob.clientId,
@@ -6409,7 +6518,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       workflowObservation: scope,
     };
     scope.observerContext = context;
-    active = context;
+    grant.context.worker = context;
     try {
       await atomicObservationScope.run(scope, () =>
         client.callTool(
@@ -6502,14 +6611,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         observationProof: path.relative(dir, scope.resultPath),
       };
       durable(path.join(observerDirectory, "outcome.json"), details);
-      state.finish(observerJob.id, details);
+      finishTurn(grant, details);
       recovery = {
         jobId: targetJob.id,
         observationJobId: observerJob.id,
         status: "atomic_status_observed",
         at: Date.now(),
       };
-      active = originalContext;
       diagnostics();
     } catch (cause) {
       const error = errorInfo(cause);
@@ -6519,10 +6627,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       ) {
         if (state.status(observerJob.id).state !== "needs_reconciliation")
           hold(
-            observerJob,
+            grant,
             "Atomic status observation outcome is unknown; no replay",
           );
-        active = context;
       } else if (state.status(observerJob.id).state === "running") {
         const details = {
           state: "failed",
@@ -6535,15 +6642,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           ...(error.pythonCheck ? { pythonCheck: error.pythonCheck } : {}),
         };
         durable(path.join(observerDirectory, "outcome.json"), details);
-        state.finish(observerJob.id, details);
-        active = originalContext;
+        finishTurn(grant, details);
       }
       diagnostics();
       throw error;
     }
   }
 
-  async function execute(job: P.Job) {
+  async function execute(job: P.Job, grant: ProductGrant) {
     const directory = privateDirectory(jobDir(job.id));
     const plan = localPlans.get(job.id);
     localPlans.delete(job.id);
@@ -6591,13 +6697,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           ...(error.pythonCheck ? { pythonCheck: error.pythonCheck } : {}),
         };
         durable(path.join(directory, "outcome.json"), details);
-        state.finish(job.id, details);
+        finishTurn(grant, details);
         if (job.request.phased)
           phased.reject(job.id, Object.assign(error, { notStarted: true }));
         return;
       }
     }
-    if (job.workflowObservation) return executeAtomicObservation(job);
+    if (job.workflowObservation) return executeAtomicObservation(job, grant);
     const notStartedDetails = {
       executionOutcome: job.physicalTurns
         ? "previous_turns_complete_current_not_started"
@@ -6658,7 +6764,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ...notStartedDetails,
       };
       durable(path.join(directory, "outcome.json"), details);
-      state.finish(job.id, details);
+      finishTurn(grant, details);
       if (job.request.phased)
         phased.reject(
           job.id,
@@ -6746,7 +6852,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           preflightCompleted: false,
         };
         durable(path.join(directory, "outcome.json"), outcome);
-        state.finish(job.id, outcome);
+        finishTurn(grant, outcome);
         if (job.request.phased)
           phased.reject(
             job.id,
@@ -6771,7 +6877,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         activeCommand: required(error.observation).activeCommand,
       };
       durable(path.join(directory, "outcome.json"), outcome);
-      state.finish(job.id, outcome);
+      finishTurn(grant, outcome);
       if (job.request.phased)
         phased.reject(
           job.id,
@@ -6848,7 +6954,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           JSON.stringify(refresh) + "\n",
           { flag: job.request.phased ? "a" : "wx", mode: 0o600 },
         );
-        state.finish(job.id, {
+        finishTurn(grant, {
           state: "failed",
           code,
           ...notStartedDetails,
@@ -6867,10 +6973,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     }
     const context: ProductContext = {
       job,
-      productTurn:
-        plan?.kind === "raw"
-          ? plan.turn.turn
-          : plan?.turn ?? brokerExecution.createTurnIdentity(job.id),
+      productTurn: grant.turn,
       token: job.request.phased
         ? required(phased.token(job.id))
         : randomBytes(32).toString("hex"),
@@ -6896,7 +6999,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         context.timedOut = true;
         if (context.dispatched)
           hold(
-            job,
+            grant,
             "Execution budget expired; remote operation is not cancelled",
           );
         context.child?.kill("SIGKILL");
@@ -6907,7 +7010,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         );
       },
     );
-    active = context;
+    grant.context.worker = context;
     let code: number | undefined,
       publicationError = false,
       adapted:
@@ -6960,7 +7063,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           ),
         );
         const operation = physicalGrant.run(
-          { context, turn: required(context.productTurn) },
+          grant,
           async () => {
             const sessionId = openSession
               ? await client._openSession()
@@ -7111,7 +7214,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             publicationError = true;
             if (!["ENOENT", "ESRCH"].includes(error.code ?? "")) {
               if (context.dispatched)
-                hold(job, "Local worker identity could not be persisted");
+                hold(grant, "Local worker identity could not be persisted");
               child.kill("SIGKILL");
             }
           }
@@ -7137,16 +7240,16 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     return load("./dist/core/application/execution").completeSdkTurn({
       async settle() {
         try {
-          await settleNative(context);
+          await settleNative(context, grant);
         } catch (cause) {
           const error = errorInfo(cause);
           context.unknown = true;
-          hold(job, error.code || "NATIVE_RECEIPT_UNAVAILABLE");
+          hold(grant, error.code || "NATIVE_RECEIPT_UNAVAILABLE");
         }
         required(context.budget).close();
         if (context.pending.size) {
           hold(
-            job,
+            grant,
             "Worker exited while a broker RPC is still pending; no postflight sent",
           );
           if (job.request.phased)
@@ -7176,7 +7279,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             nonterminal: true,
           });
           hold(
-            job,
+            grant,
             "Typed workflow result is unknown/nonterminal; a synchronous script receipt is insufficient",
           );
           if (job.request.phased)
@@ -7213,7 +7316,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           (!worker?.terminal || worker.jobId !== job.id)
         ) {
           hold(
-            job,
+            grant,
             "Worker exited after dispatch without its own durable terminal result",
           );
           return;
@@ -7229,7 +7332,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       },
       async postflight(settled) {
         if (!settled) return false;
-        active = null;
+        grant.context.postflight = true;
         const postRpcId = flights?.postflight.binding.rpcId || randomUUID();
         const postBinding = flights?.postflight.binding || {
           jobId: job.id,
@@ -7264,7 +7367,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           );
         } catch (cause) {
           const error = errorInfo(cause);
-          active = context;
+          grant.context.postflight = false;
           if (
             error.code === "BUILD_CHANGED" &&
             error.probeNotSubmitted === true &&
@@ -7304,8 +7407,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               recoveryEvaluator.assertCurrentFence(expected);
               durable(path.join(directory, "outcome.json"), details);
               recoveryEvaluator.assertCurrentFence(expected);
-              state.finish(job.id, details);
-              active = null;
+              finishTurn(grant, details);
               if (job.request.phased)
                 phased.reject(
                   job.id,
@@ -7319,7 +7421,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               return false;
             }
           }
-          hold(job, error.code || "POSTFLIGHT_FAILED");
+          hold(grant, error.code || "POSTFLIGHT_FAILED");
           if (job.request.phased) phased.reject(job.id, error);
           return false;
         }
@@ -7334,11 +7436,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             sdkSettled: true,
           };
           durable(path.join(directory, "outcome.json"), details);
-          state.releaseTurn(
-            job.id,
-            Math.max(0, Math.floor(required(context.budget).remaining())),
-          );
-          active = null;
+          settleTurn(grant, () => {
+            state.releaseTurn(
+              job.id,
+              Math.max(0, Math.floor(required(context.budget).remaining())),
+            );
+          });
         }
       },
       finalize() {
@@ -7374,135 +7477,127 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           exitCode: code,
         };
         durable(path.join(directory, "outcome.json"), details);
-        state.finish(job.id, details);
-        active = null;
+        finishTurn(grant, details);
       },
     });
   }
 
-  async function tick() {
-    // Retire only unused local plans for terminal jobs. This never settles,
-    // cancels or releases an active/unknown physical operation.
-    for (const id of localPlans.keys()) {
-      const job = state.data.jobs[id];
-      if (
-        job &&
-        !["succeeded", "failed", "cancelled", "expired"].includes(job.state)
-      )
-        continue;
-      localPlans.delete(id);
-    }
-    if (busy || closed || stopping || epochProcessUnavailable) return;
-    if (held) {
-      // Queue deadlines continue to expire while a blocked job holds the physical instance.
-      if (state.summary().blocked) {
-        let observationJob;
-        try {
-          observationJob = state.next();
-        } catch {
-          /* The held storage fault is already visible to callers. */
-        }
-        if (observationJob?.workflowObservation) {
-          busy = true;
-          try {
-            await execute(observationJob);
-          } catch (cause) {
-            const error = errorInfo(cause);
-            const current = state.status(observationJob.id);
-            if (current.state === "running") {
-              if ((current.dispatch?.rpcCount || 0) > 0)
-                hold(
-                  observationJob,
-                  error.code || "ATOMIC_OBSERVATION_UNKNOWN",
-                );
-              else {
-                state.finish(observationJob.id, {
-                  state: "failed",
-                  code: error.code || "ATOMIC_OBSERVATION_NOT_STARTED",
-                  executionOutcome: "not_started",
-                  mayHaveMutated: false,
-                  reason: error.message,
-                });
-              }
-            }
-          } finally {
-            busy = false;
-            if (stopping) setImmediate(drain);
-          }
-          diagnostics();
-          return;
-        }
-        // Missing receipts/pending RPCs fail locally before any probe. Recheck
-        // promptly so a caller's short timeout does not add a 30-second queue
-        // stall after the original operation has demonstrably finished.
-        const block = state.summary().blocked;
-        const blockedJob = block && state.data.jobs[block.id];
-        const scopedAtomicCandidate =
-          blockedJob &&
-          isAtomicObservationCandidate(
-            blockedJob,
-            blockedJob.request.buildHash,
-            observationScopeConfig,
-          );
-        if (
-          !atomicObservationOnly &&
-          !scopedAtomicCandidate &&
-          options.autoReconcile === true &&
-          Date.now() - lastRecoveryCheck >= 1000
-        ) {
-          lastRecoveryCheck = Date.now();
-          busy = true;
-          const id = required(state.summary().blocked).id;
-          try {
-            await gate.administrative(() =>
-              reconcile(id, state.status(id).clientId),
-            );
-            recovery = { jobId: id, status: "resolved", at: Date.now() };
-          } catch (cause) {
-            const error = errorInfo(cause);
-            recovery = {
-              jobId: id,
-              status: "waiting_for_evidence",
-              code: error.code || "RECOVERY_ERROR",
-              at: Date.now(),
-            };
-          } finally {
-            busy = false;
-          }
-          diagnostics();
-        }
-      }
+  async function maybeRecover(id: string) {
+    const blockedJob = state.data.jobs[id];
+    if (
+      busy() ||
+      atomicObservationOnly ||
+      options.autoReconcile !== true ||
+      Date.now() - lastRecoveryCheck < 1000 ||
+      (blockedJob &&
+        isAtomicObservationCandidate(
+          blockedJob,
+          blockedJob.request.buildHash,
+          observationScopeConfig,
+        ))
+    )
       return;
-    }
-    busy = true;
-    let job;
+    lastRecoveryCheck = Date.now();
+    administrativeBusy = true;
     try {
-      job = state.next();
-      if (job) await execute(job);
+      await gate.administrative(() => reconcile(id, state.status(id).clientId));
+      recovery = { jobId: id, status: "resolved", at: Date.now() };
     } catch (cause) {
-      const error = errorInfo(cause);
-      if (
-        job?.workflowObservation &&
-        (state.status(job.id).dispatch?.rpcCount || 0) === 0 &&
-        state.status(job.id).state === "running"
-      ) {
-        state.finish(job.id, {
-          state: "failed",
-          code: error.code || "ATOMIC_OBSERVATION_NOT_STARTED",
-          executionOutcome: "not_started",
-          mayHaveMutated: false,
-          reason: error.message,
-        });
-      } else if (job) {
-        hold(job, error.code || "BROKER_EXECUTION_FAILED");
-        if (job.request.phased) phased.reject(job.id, error);
-      } else held = error.code || "BROKER_STORAGE_FAILED";
-      diagnostics();
+      recovery = {
+        jobId: id,
+        status: "waiting_for_evidence",
+        code: errorInfo(cause).code || "RECOVERY_ERROR",
+        at: Date.now(),
+      };
     } finally {
-      busy = false;
-      if (stopping) setImmediate(drain);
+      administrativeBusy = false;
+      diagnostics();
     }
   }
+
+  const schedulingOpen = () => !closed && !stopping && !epochProcessUnavailable;
+  const canSelect = () =>
+    schedulingOpen() && !busy() && (!heldReason() || !!state.data.blocked);
+  const scheduler = (
+    runtimeRequire(
+      "./dist/core/application/broker-scheduler",
+    ) as typeof import("../packages/core/src/application/broker-scheduler")
+  ).createBrokerScheduler<P.Job>({
+      maintain() {
+        if (!schedulingOpen()) return;
+        if (!canSelect()) state.next({ grant: false });
+        // Only outstanding prepared plans, never retained terminal history.
+        for (const id of localPlans.keys()) {
+          const job = state.data.jobs[id];
+          if (
+            !job ||
+            ["succeeded", "failed", "cancelled", "expired"].includes(job.state)
+          )
+            localPlans.delete(id);
+        }
+      },
+      canSelect,
+      select() {
+        const blocked = state.data.blocked;
+        if (blocked && !heldGrant)
+          setHold(heldReason() || "Original work requires reconciliation");
+        const job = state.next();
+        if (!job && blocked) void maybeRecover(blocked.id);
+        return job;
+      },
+      async start(job) {
+        const plan = localPlans.get(job.id);
+        const turn =
+          plan?.kind === "raw"
+            ? plan.turn.turn
+            : plan?.turn ?? brokerExecution.createTurnIdentity(job.id);
+        const grant = session.acquire(
+          { job, executing: true },
+          turn,
+          job.workflowObservation ? heldGrant ?? undefined : undefined,
+        );
+        turnGrant = grant;
+        try {
+          await execute(job, grant);
+        } catch (cause) {
+          const error = errorInfo(cause);
+          if (turnGrant !== grant) return; // Already held/settled; never affect a successor.
+          if (
+            job.workflowObservation &&
+            (state.status(job.id).dispatch?.rpcCount || 0) === 0 &&
+            state.status(job.id).state === "running"
+          ) {
+            finishTurn(grant, {
+              state: "failed",
+              code: error.code || "ATOMIC_OBSERVATION_NOT_STARTED",
+              executionOutcome: "not_started",
+              mayHaveMutated: false,
+              reason: error.message,
+            });
+          } else {
+            hold(grant, error.code || "BROKER_EXECUTION_FAILED");
+            if (job.request.phased) phased.reject(job.id, error);
+          }
+          diagnostics();
+        } finally {
+          grant.context.executing = false;
+          if (stopping) setImmediate(drain);
+        }
+      },
+      defer: setImmediate,
+      onFailure(cause, job) {
+        const reason = errorInfo(cause).code || "BROKER_STORAGE_FAILED";
+        if (!job || (!turnGrant && !heldGrant)) setHold(reason);
+        else if (turnGrant?.context.job === job) {
+          try {
+            hold(turnGrant, reason);
+          } catch {
+            // An uncertain store stays held in the runtime session.
+          }
+        }
+        diagnostics();
+      },
+    });
 
   const socket = queueSocket(dir);
   // A stale Unix socket may be removed only after exclusive lock ownership was acquired.
@@ -7524,18 +7619,18 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     throw error;
   }
   transport.onError(() => {
-    held = "IPC_SERVER_ERROR";
+    setHold("IPC_SERVER_ERROR");
   });
   diagnostics();
-  const timer = setInterval(tick, options.pollMs || 100);
+  const timer = setInterval(() => void scheduler.tick(), options.pollMs || 100);
 
   async function close() {
     if (closed) return;
     if (
-      held ||
+      heldReason() ||
       state.summary().blocked ||
       state.data.controlBlocked ||
-      active?.unknown
+      activeContext()?.unknown
     )
       fail(
         "RECONCILIATION_REQUIRED",
@@ -7554,7 +7649,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   }
   async function drain() {
     if (!stopping || closed || closing || !closeTask) return;
-    if (held || state.summary().blocked || active?.unknown) {
+    if (heldReason() || state.summary().blocked || activeContext()?.unknown) {
       stopping = false;
       closeReject(
         Object.assign(
@@ -7568,8 +7663,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       return;
     }
     if (
-      busy ||
-      active ||
+      busy() ||
+      activeContext() ||
       rawPreparations ||
       state.summary().active ||
       gate.active.size ||
@@ -7605,7 +7700,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       closeResolve();
     } catch (cause) {
       const error = errorInfo(cause);
-      held = error.code || "CLOSE_FAILED";
+      setHold(error.code || "CLOSE_FAILED");
       closeReject(error);
     }
   }
@@ -7614,7 +7709,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     dir,
     socket,
     buildHash: codeHash,
-    status: () => ({ ...state.status(), held, stopping, buildHash: codeHash }),
+    status: () => ({
+      ...state.status(),
+      held: heldReason(),
+      stopping,
+      buildHash: codeHash,
+    }),
   };
 }
 
