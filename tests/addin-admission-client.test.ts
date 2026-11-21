@@ -4,6 +4,8 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import test from "node:test";
 import { createAddinAdmission } from "../packages/node-adapters/src/execution/addin-admission-client";
+import { postAddinAdmission } from "../packages/node-adapters/src/execution/broker-physical";
+import { BrokerMcpClient } from "../packages/node-adapters/src/fusion-transport/mcp";
 
 const identity = {
   owner: "owner",
@@ -15,6 +17,218 @@ const identity = {
   document: '{"creationId":"doc","fileId":"file","version":3}',
 };
 const token = "fixture-token-".repeat(4);
+
+test("physical admission rejects malformed results and retains binding after lost response", async () => {
+  const outgoing = {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: {
+      name: "get_open_document_metadata",
+      arguments: { fileId: "file", version: 1 },
+    },
+  };
+  const inputHash = createHash("sha256")
+    .update(JSON.stringify(outgoing))
+    .digest("hex");
+  let requests = 0;
+  let disconnect = false;
+  let terminalResult: unknown = null;
+  let raw = "";
+  const server = createServer(async (req, res) => {
+    requests++;
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const message = JSON.parse(body);
+    if (disconnect) {
+      req.socket.destroy();
+      return;
+    }
+    raw = JSON.stringify({
+      version: 1,
+      binding: message.binding,
+      record: { state: "terminal", result: terminalResult },
+    });
+    res.end(raw);
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const address = server.address();
+    assert(address && typeof address !== "string");
+    const scope = {
+      endpoint: `http://127.0.0.1:${address.port}/admission/v1`,
+      token,
+      identity,
+    };
+    for (const lost of [false, true]) {
+      disconnect = lost;
+      await assert.rejects(
+        postAddinAdmission(scope, outgoing, 1000),
+        (error: unknown) => {
+          assert(error instanceof Error);
+          assert.equal(Reflect.get(error, "code"), "ADDIN_ADMISSION_UNCERTAIN");
+          assert.deepEqual(Reflect.get(error, "admissionBinding"), {
+            ...identity,
+            version: 1,
+            inputHash,
+          });
+          if (!lost) assert.equal(Reflect.get(error, "rawResponse"), raw);
+          return true;
+        },
+      );
+    }
+    assert.equal(requests, 2);
+    for (const content of [
+      { type: "image", mimeType: "image/png", data: "not base64!" },
+      { type: "audio", mimeType: "audio/wav", data: "AB==" },
+      { type: "resource", resource: { uri: "file:///owned", blob: "bad!" } },
+      {
+        type: "resource",
+        resource: { uri: "file:///owned", text: "ok", blob: "bad!" },
+      },
+    ]) {
+      disconnect = false;
+      terminalResult = { content: [content] };
+      await assert.rejects(
+        postAddinAdmission(scope, outgoing, 1000),
+        (error: unknown) => {
+          assert(error instanceof Error);
+          assert.equal(Reflect.get(error, "code"), "ADDIN_ADMISSION_UNCERTAIN");
+          assert.equal(Reflect.get(error, "rawResponse"), raw);
+          assert.deepEqual(Reflect.get(error, "admissionBinding"), {
+            ...identity,
+            version: 1,
+            inputHash,
+          });
+          return true;
+        },
+      );
+    }
+    for (const content of [
+      { type: "image", mimeType: "image/png", data: "AA==" },
+      { type: "audio", mimeType: "audio/wav", data: "AAA=" },
+      { type: "resource", resource: { uri: "file:///owned", blob: "AAAA" } },
+    ]) {
+      terminalResult = { content: [content] };
+      const response = await postAddinAdmission(scope, outgoing, 1000);
+      assert.equal(response.raw, raw);
+      assert.deepEqual(response.toolResponse, {
+        jsonrpc: "2.0",
+        id: 2,
+        result: terminalResult,
+      });
+    }
+    assert.equal(requests, 9);
+    for (const invalid of [
+      { jsonrpc: "2.0", id: 2, method: "tools/call" },
+      { ...outgoing, id: null },
+      { ...outgoing, params: { name: "", arguments: {} } },
+      { ...outgoing, params: { name: "tool", arguments: [] } },
+    ])
+      await assert.rejects(postAddinAdmission(scope, invalid, 1000));
+    assert.equal(requests, 9);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("physical admission preserves original evidence and final transformed bytes", async () => {
+  let requests = 0;
+  let raw = "";
+  let terminal = true;
+  const outgoing = {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: {
+      name: "execute_python",
+      arguments: { code: 'guard()\nuser_code()\nrun("")\n' },
+    },
+  };
+  const server = createServer(async (req, res) => {
+    requests++;
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const message = JSON.parse(body);
+    assert.deepEqual(JSON.parse(message.payloadJson), outgoing);
+    assert.equal(
+      message.binding.inputHash,
+      createHash("sha256").update(message.payloadJson).digest("hex"),
+    );
+    raw = JSON.stringify(
+      {
+        version: 1,
+        binding: message.binding,
+        record: terminal
+          ? {
+              state: "terminal",
+              result: { content: [{ type: "text", text: "result" }] },
+            }
+          : { state: "unknown" },
+      },
+      null,
+      2,
+    );
+    res.end(raw);
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const address = server.address();
+    assert(address && typeof address !== "string");
+    const scope = {
+      endpoint: `http://127.0.0.1:${address.port}/admission/v1`,
+      token,
+      identity,
+    };
+    const result = await postAddinAdmission(scope, outgoing, 1000);
+    assert.equal(result.raw, raw);
+    assert.deepEqual(result.toolResponse, {
+      jsonrpc: "2.0",
+      id: 2,
+      result: { content: [{ type: "text", text: "result" }] },
+    });
+    class EvidenceTransport extends BrokerMcpClient {
+      override async _openSession() {
+        return undefined;
+      }
+      override async _post() {
+        return result;
+      }
+    }
+    const transport = new EvidenceTransport(
+      { url: scope.endpoint, backend: "addin" },
+      { version: "test", bridgeSource: () => "", requestTimeout: () => 1000 },
+    );
+    const tool = await transport.callTool(
+      outgoing.params.arguments,
+      outgoing.params.name,
+    );
+    assert.equal(tool.text, "result");
+    assert.equal(Reflect.get(tool, "rawResponse"), raw);
+    assert.equal(requests, 1);
+    terminal = false;
+    await assert.rejects(
+      postAddinAdmission(scope, outgoing, 1000),
+      (error: unknown) => {
+        assert(error instanceof Error);
+        assert.equal(Reflect.get(error, "code"), "ADDIN_ADMISSION_UNCERTAIN");
+        assert.equal(Reflect.get(error, "rawResponse"), raw);
+        return true;
+      },
+    );
+    assert.equal(requests, 2);
+    await assert.rejects(
+      postAddinAdmission(scope, { method: "initialize" }, 1000),
+    );
+    assert.equal(requests, 2);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
 
 test("payload serialization cannot retarget the captured identity", () => {
   const mutableIdentity = { ...identity };

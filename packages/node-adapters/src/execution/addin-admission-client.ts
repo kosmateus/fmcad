@@ -92,6 +92,7 @@ export function createAddinAdmission(
   async function call(operation: "admit" | "status" | "withdraw") {
     let response: Response;
     let decoded: unknown;
+    let raw: string;
     try {
       response = await fetch(endpoint, {
         method: "POST",
@@ -110,11 +111,10 @@ export function createAddinAdmission(
       });
       if (response.status !== 200)
         throw failure(`Admission HTTP ${response.status}; do not resubmit`);
-      decoded = decodeAdmissionJson(
-        new TextDecoder("utf-8", { fatal: true }).decode(
-          await response.arrayBuffer(),
-        ),
+      raw = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+        await response.arrayBuffer(),
       );
+      decoded = decodeAdmissionJson(raw);
     } catch {
       // Do not leak credentials or interpret transport failure as no effect.
       throw failure("Admission outcome unavailable; inspect the original key");
@@ -133,7 +133,7 @@ export function createAddinAdmission(
     )
       throw failure("Admission response identity mismatch");
     const record = decoded["record"];
-    if (record === null && operation === "status") return null;
+    if (record === null && operation === "status") return { record: null, raw };
     if (!object(record)) throw failure("Missing admission record");
     if (operation === "withdraw" && record["state"] !== "withdrawn")
       throw failure("Withdrawal was not confirmed");
@@ -142,20 +142,21 @@ export function createAddinAdmission(
       Object.hasOwn(record, "result") &&
       Object.keys(record).length === 2
     )
-      return record as AdmissionRecord;
+      return { record: record as AdmissionRecord, raw };
     if (
       typeof record["state"] === "string" &&
       ["accepted", "withdrawn", "unknown"].includes(record["state"]) &&
       Object.keys(record).length === 1
     )
-      return record as AdmissionRecord;
+      return { record: record as AdmissionRecord, raw };
     throw failure("Invalid admission record");
   }
 
   return Object.freeze({
     binding,
-    admit: () => call("admit"),
-    status: () => call("status"),
-    withdraw: () => call("withdraw"),
+    admit: () => call("admit").then(({ record }) => record),
+    status: () => call("status").then(({ record }) => record),
+    withdraw: () => call("withdraw").then(({ record }) => record),
+    admitEvidence: () => call("admit"),
   });
 }
