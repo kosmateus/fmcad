@@ -248,8 +248,9 @@ test("native handoff bundles the surface module and availability gates", () => {
 
   const loftScript = buildCadScript(
     "model.loft",
-    catalog["model.loft"]!.example,
+    { ...catalog["model.loft"]!.example, solid: false },
     { doc: "GM08" },
   );
-  assert.ok(loftScript.includes("_surface_model_preflight"));
+  assert.ok(loftScript.includes("def _surface_model_preflight("));
+  assert.ok(!loftScript.includes("'surface.check': _surface_check"));
 });

@@ -14,11 +14,22 @@ test("GM04 public descriptors and bundled routes are executable offline", () => 
     validateCad(op, catalog[op]!.example);
     const script = buildCadScript(op, catalog[op]!.example, { doc: "GM04" });
     const handler = {
-      "datum.transform": "'datum.transform': _datum_transform",
-      "datum.plane-on-path": "'datum.plane-on-path': _datum_plane_on_path",
-      "joint.frame": "'joint.frame': _datum_joint_frame",
+      "datum.transform": {
+        registration: "'datum.transform': _datum_transform",
+        definition: "def _datum_transform(",
+      },
+      "datum.plane-on-path": {
+        registration: "'datum.plane-on-path': _datum_plane_on_path",
+        definition: "def _datum_plane_on_path(",
+      },
+      "joint.frame": {
+        registration: "'joint.frame': _datum_joint_frame",
+        definition: "def _datum_joint_frame(",
+      },
     }[op];
-    assert.ok(handler && script.includes(handler), `${op} handler is bundled`);
+    assert.ok(handler, `${op} handler is known`);
+    assert.ok(script.includes(handler.registration), `${op} is registered`);
+    assert.ok(script.includes(handler.definition), `${op} is defined`);
   }
   const python = spawnSync(
     "python3",
@@ -27,12 +38,7 @@ test("GM04 public descriptors and bundled routes are executable offline", () => 
       encoding: "utf8",
       env: {
         ...process.env,
-        PYTHONPATH: [
-          path.join(process.cwd(), "runtime/python"),
-          process.env["PYTHONPATH"],
-        ]
-          .filter((value): value is string => Boolean(value))
-          .join(path.delimiter),
+        PYTHONPATH: path.join(process.cwd(), "runtime/python"),
       },
     },
   );
