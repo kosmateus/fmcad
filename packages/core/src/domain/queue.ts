@@ -25,6 +25,14 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 function fail(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
 }
+function isSnapshotCapacityRefusal(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    error.code === "SNAPSHOT_TOO_LARGE"
+  );
+}
 const identifier = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0 && value.length <= 256;
 const integer = (value: unknown): value is number =>
@@ -302,7 +310,22 @@ export class QueueDomain {
       }
     }
     this._promoteLocalUnknown(d);
-    this._commit(() => null);
+    try {
+      this._commit(() => null);
+    } catch (error) {
+      if (
+        !isSnapshotCapacityRefusal(error) ||
+        !this.data.active ||
+        !this.data.blocked
+      )
+        throw error;
+      // The durable unfinished snapshot deterministically derives UNKNOWN on
+      // every restart. Keep the blocked recovery projection in memory without
+      // claiming that its larger representation was persisted.
+      this._waiting = Object.values(this.data.jobs).filter(
+        (job) => job.state === "queued",
+      );
+    }
   }
 
   _time() {
@@ -330,7 +353,7 @@ export class QueueDomain {
       try {
         this.commit?.(draft);
       } catch (error) {
-        this._fault = error;
+        if (!isSnapshotCapacityRefusal(error)) this._fault = error;
         throw error;
       }
       this.data = draft;

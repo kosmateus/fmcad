@@ -343,6 +343,13 @@ test("cancelled admission history stays reopenable when the next admission excee
   } catch (error) {
     admissionError = error;
   }
+  let pauseResult: unknown;
+  let pauseError: unknown;
+  try {
+    pauseResult = state.pause(true);
+  } catch (error) {
+    pauseError = error;
+  }
   let reopened: InstanceType<typeof QueueState> | undefined;
   let restoreError: unknown;
   try {
@@ -356,10 +363,18 @@ test("cancelled admission history stays reopenable when the next admission excee
     "SNAPSHOT_TOO_LARGE",
     `admission error=${String(admissionError)}; restore error=${String(restoreError)}`,
   );
+  assert.equal(
+    pauseError,
+    undefined,
+    `known capacity refusal poisoned the live queue: ${String(pauseError)}`,
+  );
+  assert.equal(field(pauseResult, "paused"), true);
   assert.equal(restoreError, undefined);
   assert.ok(reopened);
+  const restoredJobs = object(field(reopened.status(), "jobs"));
+  assert.equal(field(reopened.status(), "paused"), true);
   assert.deepEqual(
-    Object.keys(reopened.data.jobs).sort(),
+    Object.keys(restoredJobs).sort(),
     history.map(({ id }) => id).sort(),
     "the last rejected admission must not replace or prune prior history",
   );
@@ -368,4 +383,105 @@ test("cancelled admission history stays reopenable when the next admission excee
     assert.equal(field(job, "requestId"), requestId);
     assert.equal(field(job, "state"), "cancelled");
   }
+});
+
+test("an exact-limit running snapshot reopens with its unknown state intact", (t) => {
+  const f = fixture(t),
+    now = () => 1_700_000_000_000,
+    state = new QueueState(f.dir, { now }),
+    payload = { data: "x".repeat(15 * 1024 * 1024) };
+
+  for (let index = 0; index < 8; index++) {
+    const job = state.submit({
+      clientId: "owner",
+      requestId: `history-${index}`,
+      kind: "rpc",
+      timeoutMs: 1000,
+      payload,
+    });
+    state.cancel(string(field(job, "id")), "owner");
+  }
+
+  const active = state.submit({
+    clientId: "owner",
+    requestId: "active",
+    kind: "rpc",
+    timeoutMs: 1000,
+    payload: {},
+  });
+  const calibrationDir = path.join(f.root, "calibration");
+  fs.mkdirSync(calibrationDir);
+  fs.copyFileSync(
+    state.file,
+    path.join(calibrationDir, path.basename(state.file)),
+  );
+  const calibration = new QueueState(calibrationDir, { now });
+  const turn = state.next();
+  const calibrationTurn = calibration.next();
+  assert.equal(field(turn, "id"), field(active, "id"));
+  assert.equal(field(turn, "state"), "running");
+  assert.equal(field(calibrationTurn, "id"), field(active, "id"));
+
+  const snapshotLimit = 128 * 1024 * 1024;
+  const beforePadding = fs.statSync(state.file).size;
+  assert.equal(fs.statSync(calibration.file).size, beforePadding);
+  calibration.submit({
+    clientId: "owner",
+    requestId: "edge-padding",
+    kind: "rpc",
+    timeoutMs: 1000,
+    payload: { data: "" },
+  });
+  const emptyPayloadOverhead =
+    fs.statSync(calibration.file).size - beforePadding;
+  const paddingBytes = snapshotLimit - beforePadding - emptyPayloadOverhead;
+  assert.ok(paddingBytes > 0);
+
+  let paddingError: unknown;
+  let paddingJob: unknown;
+  try {
+    paddingJob = state.submit({
+      clientId: "owner",
+      requestId: "edge-padding",
+      kind: "rpc",
+      timeoutMs: 1000,
+      payload: { data: "x".repeat(paddingBytes) },
+    });
+  } catch (error) {
+    paddingError = error;
+  }
+  const durableBytes = fs.statSync(path.join(f.dir, "queue-state.json")).size;
+  assert.equal(
+    paddingError,
+    undefined,
+    `padding error=${String(paddingError)}; durable bytes=${durableBytes}`,
+  );
+  assert.equal(durableBytes, snapshotLimit);
+  const snapshotHash = createHash("sha256")
+    .update(fs.readFileSync(state.file))
+    .digest("hex");
+
+  let reopened: InstanceType<typeof QueueState> | undefined;
+  let reopenError: unknown;
+  try {
+    reopened = new QueueState(f.dir);
+  } catch (error) {
+    reopenError = error;
+  }
+  assert.equal(reopenError, undefined, String(reopenError));
+  assert.ok(reopened);
+  assert.equal(
+    createHash("sha256").update(fs.readFileSync(state.file)).digest("hex"),
+    snapshotHash,
+    "capacity-limited recovery must not rewrite the last durable snapshot",
+  );
+  assert.equal(
+    field(reopened.status(string(field(active, "id"))), "state"),
+    "needs_reconciliation",
+  );
+  assert.equal(
+    field(reopened.status(string(field(paddingJob, "id"))), "state"),
+    "queued",
+  );
+  assert.equal(reopened.next(), null);
 });
