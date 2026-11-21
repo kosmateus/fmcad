@@ -1,0 +1,308 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import test from "node:test";
+import {
+  createTurnIdentity as turn,
+  executeTurn,
+  prepare,
+} from "../packages/core/src/application/broker-execution";
+import { createBrokerScheduler } from "../packages/core/src/application/broker-scheduler";
+import { createBrokerSession } from "../packages/core/src/application/broker-session";
+import { completeSdkTurn } from "../packages/core/src/application/execution";
+import { QueueDomain } from "../packages/core/src/domain/queue";
+import type { QueueJob } from "../packages/core/src/domain/queue-model";
+
+const context = (id: string) => ({ job: { id } });
+const publish = () => undefined;
+const stale = { code: "RECONCILIATION_REQUIRED" };
+const busy = { code: "BROKER_SESSION_BUSY" };
+
+function latch() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
+
+test("only the minted grant owns a physical turn, even for the same job", () => {
+  const session = createBrokerSession<ReturnType<typeof context>>();
+  const job = context("job");
+  const firstTurn = turn("job");
+  const first = session.acquire(job, firstTurn);
+  assert.equal(first.turn, firstTurn);
+  assert.equal(first.context, job);
+  session.assertCurrentGrant(first);
+  assert.throws(() => session.assertCurrentGrant({ ...first }), stale);
+  const other = createBrokerSession<ReturnType<typeof context>>();
+  const foreign = other.acquire(job, firstTurn);
+  assert.deepEqual(foreign, first);
+  assert.throws(() => session.settle(foreign, publish), stale);
+  assert.throws(() => session.acquire(job, turn("job")), busy);
+
+  const finished: number[] = [];
+  const lateCallback = () =>
+    session.settle(first, () => {
+      finished.push(first.generation);
+    });
+  lateCallback();
+  assert.throws(() => session.acquire(job, firstTurn), {
+    code: "PREPARED_RPC_UNAVAILABLE",
+  });
+  assert.throws(() => session.acquire(job, turn("wrong job")), {
+    code: "PREPARED_RPC_UNAVAILABLE",
+  });
+  const second = session.acquire(job, turn("job"));
+  assert.ok(second.generation > first.generation);
+  assert.throws(lateCallback, stale);
+  assert.throws(() => session.hold(first, "old timeout"), stale);
+  assert.deepEqual(finished, [first.generation]);
+  assert.equal(session.snapshot().active, second);
+  session.assertCurrentGrant(second);
+});
+
+test("holding fences dispatch; only authorized scoped work can borrow the slot", () => {
+  const session = createBrokerSession<ReturnType<typeof context>>();
+  const owner = session.acquire(context("owner"), turn("owner"));
+  const blocked = session.hold(owner, "remote outcome unknown", () => {
+    assert.throws(() => session.assertCurrentGrant(owner), busy);
+    assert.equal(session.snapshot().active, null);
+  });
+  const observer = context("observer");
+  assert.equal(blocked.context, owner.context);
+  assert.throws(() => session.settle(owner, publish), stale);
+  assert.throws(() => session.acquire(observer, turn("observer")), busy);
+  assert.throws(
+    () => session.acquire(observer, turn("observer"), { ...blocked }),
+    busy,
+  );
+  const scoped = session.acquire(observer, turn("observer"), blocked);
+  assert.throws(() => session.settle(blocked, publish), stale);
+  session.settle(scoped, publish);
+  assert.equal(session.snapshot().held, blocked);
+  session.settle(blocked, publish);
+  assert.equal(session.snapshot().held, null);
+  assert.throws(
+    () => session.acquire(observer, turn("observer"), blocked),
+    busy,
+  );
+});
+
+test("a refused durable transition does not reopen the physical slot", () => {
+  const session = createBrokerSession<ReturnType<typeof context>>();
+  const job = context("job");
+  const grant = session.acquire(job, turn("job"));
+  const diskFault = () => {
+    throw new Error("storage unavailable");
+  };
+  assert.throws(() => session.settle(grant, diskFault), /storage unavailable/);
+  assert.equal(session.snapshot().active, grant);
+  assert.throws(() => session.hold(grant, "storage unavailable", diskFault));
+  assert.throws(() => session.assertCurrentGrant(grant), stale);
+  assert.throws(() => session.acquire(job, turn("job")), busy);
+  assert.equal(session.snapshot().held?.reason, "storage unavailable");
+});
+
+test("late admission cannot send with the old grant of the same job", async () => {
+  const session = createBrokerSession<ReturnType<typeof context>>();
+  const job = context("job");
+  const logicalTurn = turn("job");
+  const prepared = await prepare(logicalTurn, () => "exact checked wire bytes");
+  const original = session.acquire(job, logicalTurn);
+  const atAdmission = latch();
+  const resumeAdmission = latch();
+  const sends: string[] = [];
+  const result = executeTurn(original, prepared, {
+    check() {},
+    async admit(send) {
+      atAdmission.release();
+      await resumeAdmission.promise;
+      return send();
+    },
+    assertCurrentGrant: session.assertCurrentGrant,
+    fence: publish,
+    async send(bytes) {
+      sends.push(bytes);
+    },
+    settle: publish,
+    unknown(error) {
+      assert.fail(`must fail before send: ${String(error)}`);
+    },
+  });
+  await atAdmission.promise;
+  session.settle(original, publish);
+  const replacement = session.acquire(job, turn("job"));
+  resumeAdmission.release();
+  await assert.rejects(result, stale);
+  assert.deepEqual(sends, []);
+  assert.equal(session.snapshot().active, replacement);
+});
+
+test("an in-flight turn does not lock local preparation, expiry, or wakeups", async () => {
+  let now = 0;
+  let id = 0;
+  const domain = new QueueDomain({
+    now: () => now,
+    newId: () => `job-${++id}`,
+    hash: (input) => createHash("sha256").update(input).digest("hex"),
+  });
+  const submit = (
+    requestId: string,
+    clientId: string,
+    queueTimeoutMs?: number,
+  ) =>
+    String(
+      domain.submit({
+        requestId,
+        clientId,
+        kind: "command",
+        argv: ["fixture"],
+        cwd: "/fixture",
+        timeoutMs: 100,
+        queueTimeoutMs: queueTimeoutMs ?? 1000,
+      })["id"],
+    );
+  const phased = String(
+    domain.submit({
+      requestId: "between-turns",
+      clientId: "B",
+      kind: "command",
+      argv: ["fixture"],
+      cwd: "/fixture",
+      phased: true,
+      timeoutMs: 70,
+      queueTimeoutMs: 100,
+    })["id"],
+  );
+  const first = submit("first", "A");
+  const sameOwner = submit("same-owner", "A");
+  const expiring = submit("expiring", "C", 10);
+  const session = createBrokerSession<{ job: QueueJob }>();
+  const starts: string[] = [];
+  const deferred: (() => void)[] = [];
+  const firstIdle = latch();
+  let localPrepared = false;
+  const scheduler = createBrokerScheduler({
+    maintain() {
+      if (!session.snapshot().active) return;
+      // With a normal durable turn active, the domain can expire jobs without
+      // granting another turn. Local readiness is independent of that slot.
+      assert.equal(domain.next(), null);
+      if (!localPrepared) {
+        localPrepared = true;
+        domain.readyTurn(phased);
+      }
+    },
+    canSelect: () => !session.snapshot().active,
+    select: () => domain.next(),
+    async start(job) {
+      const grant = session.acquire({ job }, turn(job.id));
+      starts.push(job.id);
+      if (job.id === first) await firstIdle.promise;
+      if (job.id === phased) {
+        assert.equal(job.runDeadline, now + 70);
+        session.settle(grant, () => {
+          domain.releaseTurn(job.id, 55);
+        });
+      } else {
+        session.settle(grant, () => {
+          domain.finish(job.id);
+        });
+      }
+    },
+    defer(wake) {
+      deferred.push(wake);
+    },
+    onFailure(error) {
+      assert.fail(String(error));
+    },
+  });
+
+  const executing = scheduler.tick();
+  assert.deepEqual(starts, [first]);
+  now = 11;
+  await scheduler.tick();
+  assert.deepEqual(starts, [first]);
+  assert.equal(domain.status(expiring)["state"], "expired");
+  assert.equal(domain.status(phased)["state"], "queued");
+  firstIdle.release();
+  await executing;
+  scheduler.wakeup();
+  assert.equal(deferred.length, 1);
+  deferred.shift()?.();
+  assert.deepEqual(starts, [first, phased]); // Domain fairness chooses owner B.
+  // Local phase can process and make its next turn ready before owner A runs.
+  assert.equal(domain.status(phased)["state"], "processing");
+  assert.equal(domain.status(phased)["sdkRemainingMs"], 55);
+  await scheduler.tick();
+  assert.deepEqual(starts, [first, phased, sameOwner]);
+});
+
+test("a hold blocks ordinary selection without suspending maintenance", async () => {
+  const session = createBrokerSession<ReturnType<typeof context>>();
+  const hold = session.hold(null, "startup awaits evidence");
+  let maintained = 0;
+  const scheduler = createBrokerScheduler({
+    maintain() {
+      maintained++;
+    },
+    canSelect: () => !session.snapshot().held,
+    select: () => assert.fail("an unscoped selector must not run under a hold"),
+    start: () => assert.fail("no work is authorized"),
+    defer: () => assert.fail("an idle tick must not spin"),
+    onFailure: (error) => assert.fail(String(error)),
+  });
+  await scheduler.tick();
+  await scheduler.tick();
+  assert.equal(maintained, 2);
+  assert.equal(session.snapshot().held, hold);
+});
+
+test("the next turn can start before the previous local finalizer returns", async () => {
+  const session = createBrokerSession<ReturnType<typeof context>>();
+  const jobs = ["first", "second"];
+  const finalizing = latch();
+  const finalized = latch();
+  const calls: string[] = [];
+  const scheduled: (() => void)[] = [];
+  const scheduler = createBrokerScheduler({
+    maintain() {},
+    canSelect: () => !session.snapshot().active,
+    select: () => jobs.shift() ?? null,
+    async start(job) {
+      const grant = session.acquire(context(job), turn(job));
+      await completeSdkTurn({
+        async settle() {},
+        async postflight() {
+          calls.push(`${job}: SDK settled`);
+        },
+        release() {
+          session.settle(grant, publish);
+          scheduler.wakeup();
+        },
+        async finalize() {
+          if (job === "first") {
+            finalizing.release();
+            await finalized.promise;
+          }
+          calls.push(`${job}: finalized`);
+        },
+      });
+    },
+    defer: (wake) => scheduled.push(wake),
+    onFailure: (error) => assert.fail(String(error)),
+  });
+  const first = scheduler.tick();
+  await finalizing.promise;
+  assert.deepEqual(calls, ["first: SDK settled"]);
+  assert.equal(scheduled.length, 1);
+  await scheduler.tick();
+  assert.deepEqual(calls, [
+    "first: SDK settled",
+    "second: SDK settled",
+    "second: finalized",
+  ]);
+  finalized.release();
+  await first;
+  assert.equal(calls.at(-1), "first: finalized");
+});
