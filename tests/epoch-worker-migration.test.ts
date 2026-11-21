@@ -5,6 +5,9 @@ import path from "node:path";
 import vm from "node:vm";
 import { createHash } from "node:crypto";
 import ts from "typescript";
+import * as crypto from "node:crypto";
+import * as util from "node:util";
+import "./successor-private-provisioning.test";
 const root = process.cwd();
 interface Entry {
   sourcePath: string;
@@ -97,6 +100,8 @@ async function run(source: string, name: string, failure: boolean | "claim") {
   const requirePort = Object.assign(
     (id: string): unknown => {
       if (id === "node:path") return path;
+      if (id === "node:crypto") return crypto;
+      if (id === "node:util") return util;
       if (id === "node:fs")
         return {
           readFileSync: () => JSON.stringify(input),
