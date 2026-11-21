@@ -391,8 +391,9 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(self.query(filters={'name':'short','length':'0 cm'})['count'],0)
 
     def test_shared_reference_queries_execute_measure_check_and_assign_handlers(self):
-        for filename in ('measure.py','io.py'):
-            exec(compile((ROOT/'assets/cad'/filename).read_text(), filename, 'exec'), self.core.__dict__)
+        with patch.object(sys, 'path', [str(ROOT / 'runtime/python'), *sys.path]):
+            for filename in ('measure.py','io.py'):
+                exec(compile((ROOT/'assets/cad'/filename).read_text(), filename, 'exec'), self.core.__dict__)
         self.e1.attributes.add('fixture.roles', 'measurement', 'short')
         reference = {'query':{'kind':'edge','filters':{'length':{'max':'0.1 mm'},
             'attributes':[{'group':'fixture.roles','name':'measurement','value':'short','owner':'native'}]}}}

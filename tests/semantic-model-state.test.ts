@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -40,9 +39,9 @@ const { validateCad } = load(
 const { preparePythonArtifact, pythonValue } = load(
   "../src/python",
 ) as typeof import("../packages/node-adapters/src/python/artifact");
-const { semanticModelStateModules } = load(
-  "../src/dist/python/semantic-model-state-manifest",
-) as typeof import("../packages/node-adapters/src/python/semantic-model-state-manifest");
+const { cadBundleUnits } = load(
+  "../packages/node-adapters/dist/python/bundle",
+) as typeof import("../packages/node-adapters/src/python/bundle");
 
 const context = { docId: "scratch-id", docFileId: "scratch-file" };
 const snapshot: SemanticModelSnapshot = {
@@ -63,13 +62,18 @@ const request: SemanticModelStateRequest = {
 };
 
 function prepare(req: { operation: string; data: CadData }, ctx: CadContext) {
-  const units: Parameters<typeof preparePythonArtifact>[0][number][] =
-    semanticModelStateModules.map((module) => ({
-      id: module.id,
-      filename: module.path,
+  const units: Parameters<typeof preparePythonArtifact>[0][number][] = [
+    {
+      id: "registry",
+      filename: "<semantic-test-registry>",
       role: "runtime",
-      source: fs.readFileSync(path.join(process.cwd(), module.path), "utf8"),
-    }));
+      source: "class Registry(dict): pass\nCAD_HANDLERS = Registry()",
+    },
+    ...cadBundleUnits(process.cwd()).filter(
+      (unit) =>
+        unit.id === "values" || unit.id.startsWith("semantic-model-state-"),
+    ),
+  ];
   units.push({
     id: "wrapper",
     filename: "<semantic-test>",
