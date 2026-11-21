@@ -12,15 +12,29 @@ import { spawnSync } from "node:child_process";
 test("GM04 public descriptors and bundled routes are executable offline", () => {
   for (const op of ["datum.transform", "datum.plane-on-path", "joint.frame"]) {
     validateCad(op, catalog[op]!.example);
-    assert.match(
-      buildCadScript(op, catalog[op]!.example, { doc: "GM04" }),
-      /def _datum_transform/,
-    );
+    const script = buildCadScript(op, catalog[op]!.example, { doc: "GM04" });
+    const handler = {
+      "datum.transform": "'datum.transform': _datum_transform",
+      "datum.plane-on-path": "'datum.plane-on-path': _datum_plane_on_path",
+      "joint.frame": "'joint.frame': _datum_joint_frame",
+    }[op];
+    assert.ok(handler && script.includes(handler), `${op} handler is bundled`);
   }
   const python = spawnSync(
     "python3",
     ["-B", "-m", "unittest", "discover", "-s", "tests", "-p", "datum_test.py"],
-    { encoding: "utf8" },
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PYTHONPATH: [
+          path.join(process.cwd(), "runtime/python"),
+          process.env["PYTHONPATH"],
+        ]
+          .filter((value): value is string => Boolean(value))
+          .join(path.delimiter),
+      },
+    },
   );
   assert.equal(python.status, 0, python.stdout + python.stderr);
 });
