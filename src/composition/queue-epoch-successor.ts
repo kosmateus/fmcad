@@ -625,7 +625,7 @@ export function inspectSuccessor(
     if (!effectiveBackend)
       fail("FROZEN_METADATA_FENCE_CHANGED", "A pinned physical predecessor head is required");
     assertFrozenMetadataConnection(effectiveBackend.head.nextConfig, cfg);
-    const work = inspectFrozenMetadataWork(root, pointer.root);
+    const work = inspectFrozenMetadataWork(root, pointer.root, approval.frozenMetadata.inlineObserverProof);
     value.frozenMetadataFacts = {
       ownerClientId: value.clientId,
       registeredOwnerMatches: value.registeredTokenHash === value.ownerTokenHash,
@@ -642,6 +642,9 @@ export function inspectSuccessor(
       unresolved: work.unresolved,
       // This binding must also be matched to the private stdin DTO by the worker.
       provisioning: approval.frozenMetadata.provisioning,
+      ...(approval.frozenMetadata.inlineObserverProof
+        ? { inlineObserverProof: approval.frozenMetadata.inlineObserverProof }
+        : {}),
     };
   }
   assertSuccessorApproval(value, approval);
@@ -725,7 +728,7 @@ export function assertCurrentPredecessor(
     (load("./dist/composition/queue-normal-cold-successor") as typeof import("./queue-normal-cold-successor")).assertNormalCurrentPredecessor(root, value);
   if (a["frozenMetadata"] !== undefined) {
     const profile = a["frozenMetadata"] as import("./queue-frozen-metadata-profile").FrozenMetadataProfile;
-    const observed = inspectFrozenMetadataWork(root, value.pointer.root);
+    const observed = inspectFrozenMetadataWork(root, value.pointer.root, profile.inlineObserverProof);
     assertFrozenMetadataProfile(profile, {
       ownerClientId: a.clientId,
       registeredOwnerMatches: true, // Reconstructed from clients.json above.
@@ -742,6 +745,7 @@ export function assertCurrentPredecessor(
       queuedNeverStarted: observed.queuedNeverStarted,
       unresolved: observed.unresolved,
       provisioning: profile.provisioning,
+      ...(profile.inlineObserverProof ? { inlineObserverProof: profile.inlineObserverProof } : {}),
     });
   }
   return value;
