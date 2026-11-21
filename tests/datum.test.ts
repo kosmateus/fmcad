@@ -33,7 +33,17 @@ test("GM04 public descriptors and bundled routes are executable offline", () => 
   }
   const python = spawnSync(
     "python3",
-    ["-B", "-m", "unittest", "discover", "-s", "tests", "-p", "datum_test.py"],
+    [
+      "-B",
+      "-S",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "datum_test.py",
+    ],
     {
       encoding: "utf8",
       env: {
