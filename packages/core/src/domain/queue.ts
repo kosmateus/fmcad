@@ -808,8 +808,8 @@ export class QueueDomain {
       time = this._time();
     if (d.controlBlocked || d.localUnknown) return null;
     if (d.blocked) {
-      const observers = Object.values(d.jobs).filter(
-        (job) => job.state === "queued" && workflowObservationFor(d, job.id)?.targetJobId === d.blocked?.id,
+      const observers = this._waiting.filter(
+        (job) => workflowObservationFor(d, job.id)?.targetJobId === d.blocked?.id,
       );
       if (observers.length > 1)
         fail("WORKFLOW_OBSERVATION_AMBIGUOUS", "More than one scoped observer is queued for the blocked atomic job");

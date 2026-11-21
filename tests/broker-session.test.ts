@@ -10,7 +10,10 @@ import { createBrokerScheduler } from "../packages/core/src/application/broker-s
 import { createBrokerSession } from "../packages/core/src/application/broker-session";
 import { completeSdkTurn } from "../packages/core/src/application/execution";
 import { QueueDomain } from "../packages/core/src/domain/queue";
-import type { QueueJob } from "../packages/core/src/domain/queue-model";
+import type {
+  AtomicWorkflowObservation,
+  QueueJob,
+} from "../packages/core/src/domain/queue-model";
 
 const context = (id: string) => ({ job: { id } });
 const publish = () => undefined;
@@ -305,4 +308,83 @@ test("the next turn can start before the previous local finalizer returns", asyn
   finalized.release();
   await first;
   assert.equal(calls.at(-1), "first: finalized");
+});
+
+test("a restored block still selects exactly its armed observer and expires ordinary work", () => {
+  let now = 10;
+  let id = 0;
+  const options = {
+    now: () => now,
+    newId: () => `id-${++id}`,
+    hash: (input: string) => createHash("sha256").update(input).digest("hex"),
+  };
+  const queue = new QueueDomain(options);
+  const command = {
+    clientId: "owner",
+    kind: "command",
+    cwd: "/fixture",
+    argv: ["cad"],
+    timeoutMs: 100,
+    buildHash: "fixture-build",
+  };
+  queue.submit({ ...command, requestId: "original" });
+  const original = queue.next();
+  assert.ok(original);
+  queue.block(original.id, "remote outcome unknown");
+
+  const data = {
+    reportPath: "/fixture/report.json",
+    blockedJobId: original.id,
+    commandId: `fmcad_atomic_${"c".repeat(32)}`,
+    sessionNonce: "d".repeat(32),
+  };
+  const observation = {
+    ...command,
+    payload: {
+      kind: "cad",
+      operation: "batch.reconcile",
+      data,
+      docId: "original-document",
+    },
+  };
+  const ordinary = String(
+    queue.submit({
+      ...observation,
+      requestId: "unarmed-observer-lookalike",
+      queueTimeoutMs: 20,
+    })["id"],
+  );
+  const observerId = String(
+    queue.submit({ ...observation, requestId: "armed-observer" })["id"],
+  );
+  const marker: AtomicWorkflowObservation = {
+    version: 1,
+    kind: "atomic-holder-status",
+    targetJobId: original.id,
+    targetRequestId: original.requestId,
+    targetClientId: original.clientId,
+    targetJobHash: original.hash,
+    observerJobHash: queue.data.jobs[observerId]!.hash,
+    targetBuildHash: command.buildHash,
+    observerBuildHash: command.buildHash,
+    projectDirectory: command.cwd,
+    paused: false,
+    controlGeneration: 0,
+    contextEpoch: 0,
+    reportPath: data.reportPath,
+    reportFingerprint: "e".repeat(64),
+    commandId: data.commandId,
+    sessionNonce: data.sessionNonce,
+    docId: observation.payload.docId,
+  };
+  queue.armWorkflowObservation(observerId, marker);
+  const restored = new QueueDomain({ ...options, snapshot: queue.data });
+  now = 30;
+  assert.equal(restored.next()?.id, observerId);
+  assert.equal(restored.status(ordinary)["state"], "queued");
+  restored.finish(observerId);
+  assert.equal(restored.next(), null);
+  assert.equal(restored.status(ordinary)["state"], "expired");
+  assert.equal(restored.summary().active, original.id);
+  assert.equal(restored.summary().blocked?.id, original.id);
 });
