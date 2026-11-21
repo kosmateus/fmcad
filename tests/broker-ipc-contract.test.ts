@@ -684,6 +684,7 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
   let saved = true;
   let inventory = true;
   let duplicate = false;
+  let missingVersion = false;
   let mode: "terminal" | "accepted" = "terminal";
   let broker: Broker | undefined;
   const server = createServer(async (req, res) => {
@@ -715,7 +716,8 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
   const address = server.address();
   assert.ok(address && typeof address !== "string");
 
-  const { nativeReceipts } = load("./tests/fixtures/native-source-envelope.cjs") as {
+  const { decodeNativeProgram, nativeReceipts } = load("./tests/fixtures/native-source-envelope.cjs") as {
+    decodeNativeProgram(script: string): string;
     nativeReceipts(script: string, dir: string, observation: unknown): Array<{
       file: string;
       value: unknown;
@@ -745,8 +747,10 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
           ...instance,
           documents: inventory
             ? [
-                { id: metadata.creationId, fileId: metadata.fileId, isSaved: saved, isModified: false },
-                { id: metadata.creationId, fileId: duplicate ? metadata.fileId : "other-file", isSaved: true, isModified: false },
+                { id: metadata.creationId, fileId: metadata.fileId, isSaved: saved, isModified: false,
+                  ...(missingVersion ? {} : { version: observedVersion }) },
+                { id: metadata.creationId, fileId: "other-file", version: 2, isSaved: true, isModified: false },
+                { id: metadata.creationId, fileId: metadata.fileId, version: duplicate ? 2 : 1, isSaved: true, isModified: false },
               ]
             : [],
           documentState: {
@@ -754,7 +758,15 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
             state: { identity: { ...metadata, version: observedVersion, isSaved: saved } },
           },
         };
-        for (const entry of nativeReceipts(args.object.script, dir, observation))
+        const receipts = nativeReceipts(args.object.script, dir, observation);
+        const envelope = decodeNativeProgram(args.object.script);
+        const embedded = envelope.match(/exec\(compile\(("(?:\\.|[^"\\])*")/);
+        const source = embedded?.[1] ? String(JSON.parse(embedded[1])) : envelope;
+        const withVersion = /_row\['version'\] = _data\.versionNumber/;
+        if (receipts.some(({ file }) => /(?:preflight|postflight)-/.test(path.basename(file))))
+          assert.match(source, withVersion);
+        else assert.doesNotMatch(source, withVersion);
+        for (const entry of receipts)
           fs.writeFileSync(entry.file, JSON.stringify(entry.value), { flag: "wx" });
         return { failed: false, text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(observation) };
       },
@@ -812,11 +824,13 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
     { version: 2, saved: false, documents: false },
     { version: 2, saved: true, documents: false },
     { version: 2, saved: true, documents: true, duplicate: true },
+    { version: 2, saved: true, documents: true, missingVersion: true },
   ]) {
     observedVersion = missing.version;
     saved = missing.saved;
     inventory = missing.documents;
     duplicate = !!missing.duplicate;
+    missingVersion = !!missing.missingVersion;
     const wrong = String(successful(await exchange(dir, request()))["id"]);
     const refused = record((await readResult(wrong, "failed"))["job"]);
     assert.equal(refused["code"], "DOCUMENT_ADMISSION_UNPROVEN");
@@ -827,6 +841,7 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
   saved = true;
   inventory = true;
   duplicate = false;
+  missingVersion = false;
   const valid = String(successful(await exchange(dir, request()))["id"]);
   const output = await readResult(valid, "succeeded");
   const caller = record(JSON.parse(String(record(output["rpc"])["raw"])));

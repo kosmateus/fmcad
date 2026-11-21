@@ -118,9 +118,10 @@ export function provisionAddinMetadata(
       const { fileId, version } = wire.params.arguments;
       const target = fields(observed?.documentState?.state?.identity);
       const creationId = target["creationId"];
-      const inventory = observed?.documents?.map(fields).filter(
+      const lineage = observed?.documents?.map(fields).filter(
         (entry) => entry["id"] === creationId && entry["fileId"] === fileId,
       );
+      const inventory = lineage?.filter((entry) => entry["version"] === version);
       const entry = inventory?.length === 1 ? inventory[0] : undefined;
       if (
         observed?.pid !== pid ||
@@ -133,9 +134,14 @@ export function provisionAddinMetadata(
         target["fileId"] !== fileId ||
         target["version"] !== version ||
         target["isSaved"] !== true ||
+        lineage?.some((row) =>
+          typeof row["version"] !== "number" ||
+          !Number.isSafeInteger(row["version"]) ||
+          row["version"] < 1 ||
+          row["dataFileError"] !== undefined,
+        ) ||
         !entry ||
-        entry["isSaved"] !== true ||
-        entry["dataFileError"] !== undefined
+        entry["isSaved"] !== true
       )
         refuse("DOCUMENT_ADMISSION_UNPROVEN", "Preflight did not prove the provisioned saved document");
 

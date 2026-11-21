@@ -331,7 +331,7 @@ def _qi_identity() -> dict[str, object]:
             'activeCommand':_app.userInterface.activeCommand}
 `;
 
-  const probeScript = `${identityPython}
+  const probeScript = (metadata: boolean) => `${identityPython}
 import json as _qi_json
 def run(_context: str) -> dict[str, object]:
     _value = _qi_identity()
@@ -343,7 +343,7 @@ def run(_context: str) -> dict[str, object]:
         _row: dict[str, object] = {'id':_doc.creationId, 'fileId':None,
             'isSaved':_doc.isSaved, 'isModified':_doc.isModified}
         _data, _error = _document_data_file(_doc)
-        _row['fileId'] = _data.id if _data else None
+        _row['fileId'] = _data.id if _data else None${metadata ? "\n        _row['version'] = _data.versionNumber if _data else None" : ""}
         if _error:
             _row['dataFileError'] = _error
         _documents.append(_row)
@@ -543,13 +543,17 @@ def run(_context: str) -> dict[str, object]:
       const documentCode = queueDocumentSnapshotSource(
         resolveRuntimePaths({ anchor: anchor }).runtime,
       );
+      const identitySource = probeScript(
+        isRecord(documentSelector) &&
+          documentSelector["kind"] === "saved-document-metadata",
+      );
       const wrapper =
         documentSelector !== undefined
-          ? probeScript.replace(
+          ? identitySource.replace(
               "    print('FMCAD_QUEUE_INSTANCE '",
               `    _value['documentState'] = _qd_capture(_app, _qi_cast(dict[str, object] | None, _qi_json.loads(${JSON.stringify(JSON.stringify(documentSelector))})))\n    print('FMCAD_QUEUE_INSTANCE '`,
             )
-          : probeScript;
+          : identitySource;
       const code = documentCode + "\n" + wrapper;
       const prepared = receiptPath
         ? prepareReceiptScript(code, true, receiptPath, binding, {
