@@ -122,8 +122,11 @@ function bytes(file: string): Buffer {
     fail();
   return fs.readFileSync(file);
 }
-function json(file: string): Data {
-  return object(JSON.parse(bytes(file).toString("utf8")));
+/** Private byte-to-record boundary, not an authority or substitute for fences. */
+export function readPinnedInlineRecord(file: string, sha256: string): Data {
+  const verified = bytes(file);
+  equal(digest(verified), sha256);
+  return object(JSON.parse(verified.toString("utf8")));
 }
 export function isInlineObserverProofRef(
   value: unknown,
@@ -380,6 +383,7 @@ export function verifyFrozenInlineObserver(
     );
     const archive = object(manifest["archiveFingerprint"])["archive"];
     if (typeof archive !== "string" || !path.isAbsolute(archive)) fail();
+    const archivePath = archive;
     const refs = manifest["sourceRefs"];
     if (!Array.isArray(refs) || refs.length !== 6) fail();
     for (const [name, sha256] of Object.entries(sources)) {
@@ -398,7 +402,11 @@ export function verifyFrozenInlineObserver(
     equal(api().buildHash(archive), p.observerBuild);
     equal(digest(bytes(path.join(root, "queue-state.json"))), p.rootHash);
     const sealedJob = object(
-      object(json(path.join(root, "queue-state.json"))["jobs"])[p.jobId],
+      object(
+        readPinnedInlineRecord(path.join(root, "queue-state.json"), p.rootHash)[
+          "jobs"
+        ],
+      )[p.jobId],
     );
     equal(job, sealedJob);
     const evidence = manifest["evidenceRefs"];
@@ -443,15 +451,25 @@ export function verifyFrozenInlineObserver(
       equal(fs.readdirSync(directory).sort(), expected);
       for (const [file, hash] of Object.entries(pinned))
         equal(digest(bytes(file)), hash);
+      for (const [name, hash] of Object.entries(sources))
+        equal(digest(bytes(path.join(archivePath, name))), hash);
+      equal(api().buildHash(archivePath), p.observerBuild);
+      equal(digest(bytes(deathFile)), p.sdkDeathHash);
       equal(digest(bytes(ref.path)), ref.sha256);
       equal(digest(bytes(path.join(root, "queue-state.json"))), p.rootHash);
     }
     fenceFiles();
-    const start = json(path.join(directory, "atomic-observation-start.json"));
-    const proof = json(path.join(directory, "atomic-observation-proof.json"));
-    const rpc = json(path.join(directory, `rpc-${p.rpcId}.json`));
-    const receipt = json(
-      path.join(directory, `atomic-observation-${p.rpcId}.receipt.json`),
+    function record(name: string): Data {
+      const file = path.join(root, name);
+      const hash = pinned[file];
+      if (typeof hash !== "string") fail();
+      return readPinnedInlineRecord(file, hash);
+    }
+    const start = record(`jobs/${p.jobId}/atomic-observation-start.json`);
+    const proof = record(`jobs/${p.jobId}/atomic-observation-proof.json`);
+    const rpc = record(`jobs/${p.jobId}/rpc-${p.rpcId}.json`);
+    const receipt = record(
+      `jobs/${p.jobId}/atomic-observation-${p.rpcId}.receipt.json`,
     );
     const receiptPath = path.join(
       directory,
@@ -464,8 +482,8 @@ export function verifyFrozenInlineObserver(
       proof,
       rpc,
       receipt,
-      lifecycle: json(path.join(root, `broker-lifecycle-${broker.nonce}.json`)),
-      sdkDeath: json(deathFile),
+      lifecycle: record(`broker-lifecycle-${broker.nonce}.json`),
+      sdkDeath: readPinnedInlineRecord(deathFile, p.sdkDeathHash),
     });
     fenceFiles();
     return producer;

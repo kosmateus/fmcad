@@ -394,6 +394,51 @@ test("full wrapper refuses bad references and a changed proof before accepting a
   );
 });
 
+test("each parsed record uses one verified buffer even when later reads alternate A/B/A", (t) => {
+  const file = proofFixture(t);
+  const a = Buffer.from('{"timeoutMs":30}');
+  const b = Buffer.from('{"timeoutMs":999}');
+  fs.writeFileSync(file, a);
+  const pin = createHash("sha256").update(a).digest("hex");
+  const originalRead = fs.readFileSync;
+  const originalParse = JSON.parse;
+  let reads = 0;
+  let parsedA = 0;
+  let parsedB = 0;
+  t.mock.method(fs, "readFileSync", ((
+    name: fs.PathOrFileDescriptor,
+    ...options: unknown[]
+  ) => {
+    if (String(name) === file) {
+      reads++;
+      return reads === 2 ? b : a;
+    }
+    return Reflect.apply(originalRead, fs, [name, ...options]);
+  }) as typeof fs.readFileSync);
+  t.mock.method(JSON, "parse", (text: string, ...options: unknown[]) => {
+    if (text === a.toString("utf8")) parsedA++;
+    if (text === b.toString("utf8")) parsedB++;
+    return Reflect.apply(originalParse, JSON, [text, ...options]);
+  });
+  assert.deepEqual(subject.readPinnedInlineRecord(file, pin), {
+    timeoutMs: 30,
+  });
+  assert.equal(
+    reads,
+    1,
+    "a record parse must not take a second unverified read",
+  );
+  assert.throws(() => subject.readPinnedInlineRecord(file, pin), refusal);
+  assert.equal(reads, 2);
+  assert.equal(parsedB, 0, "mismatching bytes must never reach JSON.parse");
+  assert.deepEqual(subject.readPinnedInlineRecord(file, pin), {
+    timeoutMs: 30,
+  });
+  assert.equal(parsedA, 2);
+  // These counts concern three record reads, not a global one-read restriction:
+  // independent final fences are required to re-read the underlying files.
+});
+
 for (const mode of ["tampered-source", "missing-archive"] as const) {
   test(`full wrapper refuses ${mode} at the actual source-file boundary`, (t) => {
     const proof = proofFixture(t);
