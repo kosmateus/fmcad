@@ -307,6 +307,17 @@ if (process.argv[2] === "--lost-process-child") {
       "serve",
     ]);
     assert.equal(facade.serve, composition.serve);
+    const original = facade.serve;
+    // The backend/version transition adapters replace the public CommonJS
+    // serve function; direct ES re-exports emit a getter instead.
+    try {
+      const replacement = () => undefined;
+      facade.serve = replacement;
+      assert.equal(facade.serve, replacement);
+      assert.equal(composition.serve, original);
+    } finally {
+      facade.serve = original;
+    }
   });
 
   test("unknown transport DTOs preserve ordinary broker reply identity and result semantics", () => {
