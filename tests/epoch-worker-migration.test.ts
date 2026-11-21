@@ -104,7 +104,10 @@ async function run(source: string, name: string, failure: boolean | "claim") {
       if (id === "node:util") return util;
       if (id === "node:fs")
         return {
-          readFileSync: () => JSON.stringify(input),
+          readFileSync: (file: string) =>
+            file.endsWith("authority.json")
+              ? Buffer.from("{}")
+              : JSON.stringify(input),
           realpathSync: (file: string) => file,
         };
       if (id === "node:module") return { createRequire: () => requirePort };

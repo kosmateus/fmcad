@@ -40,8 +40,10 @@ function metadataProvision(
   };
   const authorityFile = path.join(audit, "authority.json");
   let authority: Record<string, unknown>;
+  let authorityBytes: Buffer;
   try {
-    authority = object(api.readJson(authorityFile));
+    authorityBytes = fs.readFileSync(authorityFile);
+    authority = object(JSON.parse(authorityBytes.toString("utf8")) as unknown);
   } catch {
     if (input === undefined && !fs.existsSync(authorityFile)) return undefined;
     return refuse();
@@ -82,6 +84,7 @@ function metadataProvision(
     const endpoint = new URL(dto["endpoint"] as string);
     if (
       endpoint.protocol !== "http:" ||
+      endpoint.port !== "8765" ||
       !["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname) ||
       endpoint.pathname !== "/admission/v1" ||
       endpoint.username ||
@@ -98,9 +101,7 @@ function metadataProvision(
     );
     const expectedRef = {
       path: authorityFile,
-      sha256: createHash("sha256")
-        .update(fs.readFileSync(authorityFile))
-        .digest("hex"),
+      sha256: createHash("sha256").update(authorityBytes).digest("hex"),
     };
     const expectedGuard = {
       kind: "dead-epoch-successor",
@@ -144,6 +145,16 @@ function metadataProvision(
     return refuse();
   }
 }
+function containsSecret(value: unknown, secret: string): boolean {
+  if (typeof value === "string") return value.includes(secret);
+  if (Array.isArray(value))
+    return value.some((item) => containsSecret(item, secret));
+  if (value && typeof value === "object")
+    return Object.entries(value).some(
+      ([key, item]) => key.includes(secret) || containsSecret(item, secret),
+    );
+  return false;
+}
 async function main(): Promise<void> {
   let text = "";
   for await (const chunk of process.stdin) {
@@ -179,9 +190,11 @@ async function main(): Promise<void> {
   );
   if (
     provisioning &&
-    JSON.stringify({ ...parsed, addinMetadataAdmission: undefined }).includes(
-      provisioning.token,
-    )
+    (workerJournal !== undefined ||
+      containsSecret(
+        { ...parsed, addinMetadataAdmission: undefined },
+        provisioning.token,
+      ))
   )
     throw new Error("INVALID_SUCCESSOR_PROVISIONING");
   const owner = { pid: process.pid, birth: api.processBirth(), nonce };
@@ -205,12 +218,8 @@ async function main(): Promise<void> {
       process.on(signal, () => {
         broker
           .close()
-          .catch((error) =>
-            process.stderr.write(
-              "Broker remains reserved: " +
-                String(errorCode(error) || "CLOSE_REFUSED") +
-                "\n",
-            ),
+          .catch(() =>
+            process.stderr.write("Broker remains reserved: CLOSE_REFUSED\n"),
           );
       });
   } catch (error) {

@@ -16,7 +16,7 @@ const worker = ts.transpileModule(
     },
   },
 ).outputText;
-const token = "synthetic-private-token-do-not-persist-".repeat(2);
+const token = 'synthetic-private-"quoted"\\token-do-not-persist-'.repeat(2);
 const dto = {
   capability: "get_open_document_metadata",
   owner: "beneficiary",
@@ -109,16 +109,24 @@ exports.serve=async(cfg,options)=>{
  }));
  if(cfg.fail)throw Object.assign(Error(p.token),{code:p.token});
  fs.writeFileSync(path.join(options.dir,"broker.lock"),JSON.stringify({pid:process.pid}));
- return {buildHash:"runtime",close:async()=>{}};
+ if(cfg.closeFailure)process.nextTick(()=>process.emit("SIGTERM"));
+ return {buildHash:"runtime",close:async()=>{if(cfg.closeFailure)throw Object.assign(Error(p.token),{code:p.token});}};
 };
 `,
   );
-  function run(raw = JSON.stringify(input)) {
-    return spawnSync(process.execPath, [path.join(root, "worker.cjs")], {
-      input: raw,
-      encoding: "utf8",
-      timeout: 10000,
-    });
+  function run(raw = JSON.stringify(input), preload?: string) {
+    return spawnSync(
+      process.execPath,
+      [
+        ...(preload ? ["--require", preload] : []),
+        path.join(root, "worker.cjs"),
+      ],
+      {
+        input: raw,
+        encoding: "utf8",
+        timeout: 10000,
+      },
+    );
   }
   function noLeaks(output: { stdout: string; stderr: string }) {
     assert.ok(!output.stdout.includes(token));
@@ -127,8 +135,18 @@ exports.serve=async(cfg,options)=>{
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const p = path.join(dir, e.name);
         if (e.isDirectory()) visit(p);
-        else if (!p.endsWith(".js") && !p.endsWith(".cjs"))
+        else if (!p.endsWith(".js") && !p.endsWith(".cjs")) {
           assert.ok(!fs.readFileSync(p, "utf8").includes(token), p);
+          const inspect = (value: unknown): void => {
+            if (typeof value === "string") assert.ok(!value.includes(token), p);
+            else if (value && typeof value === "object")
+              for (const [key, child] of Object.entries(value)) {
+                assert.ok(!key.includes(token), p);
+                inspect(child);
+              }
+          };
+          inspect(JSON.parse(fs.readFileSync(p, "utf8")));
+        }
       }
     };
     visit(root);
@@ -172,6 +190,8 @@ for (const problem of [
   "legacy-with-dto",
   "cfg-token",
   "invalid-endpoint",
+  "wrong-port",
+  "worker-journal",
 ]) {
   test(`private worker refuses ${problem} before claim or serve`, (t) => {
     const f = fixture(t);
@@ -181,6 +201,20 @@ for (const problem of [
     if (problem === "pin") value.source = "foreign";
     if (problem === "token") value.token = "bad\n" + token;
     if (problem === "cfg-token") f.input["cfg"] = { token };
+    if (problem === "worker-journal")
+      f.input["workerJournal"] = path.join(
+        f.audit,
+        "retained-evaluator-handoff",
+      );
+    if (problem === "wrong-port") {
+      value.endpoint = "http://127.0.0.1:27182/admission/v1";
+      (f.authority["frozenMetadata"] as Record<string, unknown>)[
+        "provisioning"
+      ] = {
+        ...f.binding,
+        endpoint: value.endpoint,
+      };
+    }
     if (problem === "invalid-endpoint") {
       value.endpoint = "https://remote.invalid/admission/v1";
       (f.authority["frozenMetadata"] as Record<string, unknown>)[
@@ -254,5 +288,76 @@ test("malformed private stdin never echoes JSON excerpts or creates a claim", (t
   assert.equal(result.status, 1);
   assert.equal(result.stderr.trim(), "INVALID_SUCCESSOR_STARTUP_JSON");
   assert.ok(!fs.existsSync(path.join(f.audit, "worker-claim.json")));
+  f.noLeaks(result);
+});
+
+test("authority hashing uses the exact bytes parsed despite a changing read source", (t) => {
+  const f = fixture(t);
+  const preload = path.join(f.root, "race.cjs");
+  fs.writeFileSync(
+    preload,
+    `
+const fs=require("fs"), original=fs.readFileSync;
+let reads=0;
+fs.readFileSync=function(file,...args){
+ const bytes=original.call(this,file,...args);
+ if(String(file)===${JSON.stringify(path.join(f.audit, "authority.json"))}){
+  reads++;
+  fs.writeFileSync(${JSON.stringify(path.join(f.root, "read-count.json"))},JSON.stringify(reads));
+  if(reads===1){
+   const authority=JSON.parse(bytes.toString());
+   authority.frozenMetadata.metadataRequestId="swapped-request";
+   const changed=Buffer.from(JSON.stringify(authority));
+   return args[0]==="utf8"?changed.toString():changed;
+  }
+ }
+ return bytes;
+};
+`,
+  );
+  const result = f.run(JSON.stringify(f.input), preload);
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr.trim(), "INVALID_SUCCESSOR_PROVISIONING");
+  assert.equal(
+    JSON.parse(fs.readFileSync(path.join(f.root, "read-count.json"), "utf8")),
+    1,
+  );
+  assert.ok(!fs.existsSync(path.join(f.audit, "worker-claim.json")));
+  assert.ok(!fs.existsSync(path.join(f.root, "served.json")));
+  f.noLeaks(result);
+});
+
+test("metadata close failure cannot expose an untrusted error code", (t) => {
+  const f = fixture(t);
+  f.input["cfg"] = { closeFailure: true };
+  const result = f.run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stderr.trim(), "Broker remains reserved: CLOSE_REFUSED");
+  f.noLeaks(result);
+});
+
+test("a second frozen worker cannot escape its existing claim via another journal", (t) => {
+  const f = fixture(t);
+  assert.equal(f.run().status, 0);
+  const claim = fs.readFileSync(
+    path.join(f.audit, "worker-claim.json"),
+    "utf8",
+  );
+  const served = fs.readFileSync(path.join(f.root, "served.json"), "utf8");
+  const alternate = path.join(f.audit, "retained-evaluator-handoff");
+  fs.mkdirSync(alternate);
+  f.input["workerJournal"] = alternate;
+  const result = f.run();
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr.trim(), "INVALID_SUCCESSOR_PROVISIONING");
+  assert.deepEqual(fs.readdirSync(alternate), []);
+  assert.equal(
+    fs.readFileSync(path.join(f.audit, "worker-claim.json"), "utf8"),
+    claim,
+  );
+  assert.equal(
+    fs.readFileSync(path.join(f.root, "served.json"), "utf8"),
+    served,
+  );
   f.noLeaks(result);
 });
