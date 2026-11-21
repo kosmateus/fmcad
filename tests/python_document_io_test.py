@@ -123,6 +123,16 @@ class RuntimeInventoryTests(unittest.TestCase):
             ('def _qd_capture(',
              'def _qd_has_creation_id(value):\n    return True\n\n\ndef _qd_capture('),
             ("'state': metadata_state}", "'state': state}"),
+            ('def _qd_capture(',
+             '_qd_has_creation_id = lambda value: True\n\n\ndef _qd_capture('),
+            ('def _qd_capture(',
+             'if True:\n    _qd_has_creation_id = bool\n\n\ndef _qd_capture('),
+            ('def _qd_capture(',
+             'class _qd_has_creation_id:\n    pass\n\n\ndef _qd_capture('),
+            ('def _qd_capture(',
+             'import builtins as _qd_has_creation_id\n\n\ndef _qd_capture('),
+            ('def _qd_capture(',
+             'from builtins import bool as _qd_has_creation_id\n\n\ndef _qd_capture('),
         )
         for before, after in mutations:
             with self.subTest(mutation=after):
@@ -312,6 +322,51 @@ data = _cad_cast("_ReferencesInput", payload)
                                if isinstance(n, ast.FunctionDef) and
                                n.name == '_qd_has_creation_id']
                     self.assertEqual(len(helpers), 1)
+                    bindings = []
+
+                    class CreationIdBindings(ast.NodeVisitor):
+                        def visit_Name(self, name):
+                            if (name.id == '_qd_has_creation_id' and
+                                    isinstance(name.ctx, (ast.Store, ast.Del))):
+                                bindings.append(name)
+
+                        def visit_FunctionDef(self, definition):
+                            if definition.name == '_qd_has_creation_id':
+                                bindings.append(definition)
+                            # Defaults/decorators execute in the enclosing scope.
+                            for expression in (*definition.decorator_list,
+                                               *definition.args.defaults,
+                                               *definition.args.kw_defaults):
+                                if expression is not None:
+                                    self.visit(expression)
+
+                        visit_AsyncFunctionDef = visit_FunctionDef
+
+                        def visit_ClassDef(self, definition):
+                            if definition.name == '_qd_has_creation_id':
+                                bindings.append(definition)
+                            for expression in (*definition.decorator_list,
+                                               *definition.bases, *definition.keywords):
+                                self.visit(expression)
+
+                        def visit_Lambda(self, expression):
+                            for default in (*expression.args.defaults,
+                                            *expression.args.kw_defaults):
+                                if default is not None:
+                                    self.visit(default)
+
+                        def visit_Import(self, statement):
+                            for alias in statement.names:
+                                if (alias.asname or alias.name.split('.')[0]) == '_qd_has_creation_id':
+                                    bindings.append(statement)
+
+                        def visit_ImportFrom(self, statement):
+                            for alias in statement.names:
+                                if (alias.asname or alias.name) in {'_qd_has_creation_id', '*'}:
+                                    bindings.append(statement)
+
+                    CreationIdBindings().visit(ast.parse(family_source(family)))
+                    self.assertEqual(len(bindings), 1, 'Creation ID predicate must not be rebound')
                     expected = ast.parse(
                         'def _qd_has_creation_id(value):\n'
                         '    return isinstance(value, str) and bool(value)\n').body[0]
