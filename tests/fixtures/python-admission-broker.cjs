@@ -63,9 +63,15 @@ module.exports = async function fixture(t, {typedService = false} = {}) {
   t.after(async()=>{
     for(const client of clients) client.dispose();
     fs.rmSync(path.join(dir,'fusion-reset.lock'),{force:true});
-    await broker?.close();
-    process.chdir(oldCwd);
-    if(oldState===undefined) delete process.env.XDG_STATE_HOME;else process.env.XDG_STATE_HOME=oldState;
+    try {
+      await broker?.close();
+    } catch (error) {
+      t.diagnostic(`Admission fixture retained after close refusal: ${home}`);
+      throw error;
+    } finally {
+      process.chdir(oldCwd);
+      if(oldState===undefined) delete process.env.XDG_STATE_HOME;else process.env.XDG_STATE_HOME=oldState;
+    }
     fs.rmSync(home,{recursive:true,force:true});
   });
   broker=await serve(cfg,{dir,confirmOwnership:true,pollMs:5,createBackend:()=>physical,

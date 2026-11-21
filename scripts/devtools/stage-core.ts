@@ -239,12 +239,12 @@ export function stageCore(root: string, identityOnly = false): void {
     for (const file of fs.readdirSync(source)) {
       if (!/\.(js|d\.ts)$/.test(file)) continue;
       const emitted = fs.readFileSync(path.join(source, file), "utf8");
-      // Composition is copied one level deeper; the broker DTO stays at src/.
+      // These modules are copied one level deeper; the broker DTO stays at src/.
       const relocated =
-        name === "composition" && file.endsWith(".d.ts")
+        file.endsWith(".d.ts")
           ? emitted.replace(
-              /"\.\.\/queue-broker-ports(\.js)?"/g,
-              '"../../queue-broker-ports$1"',
+              /"\.\.\/(queue-broker-ports|queue-backend-transition)(\.js)?"/g,
+              '"../../$1$2"',
             )
           : emitted;
       fs.writeFileSync(

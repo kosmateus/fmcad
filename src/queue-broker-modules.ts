@@ -100,8 +100,8 @@ export function provisionAddinMetadata(
     config.pid <= 0
   )
     refuse("INVALID_ADMISSION_PROVISIONING", "Expected a provisioned ADDIN metadata capability");
-  const { endpoint, token, pid, birth, instance, epoch, source, build } = config;
-  if ([endpoint, token, birth, instance, epoch, source, build].some(
+  const { endpoint, token, pid, birth, instance, epoch, source, build, owner: provisionedOwner } = config;
+  if ([endpoint, token, birth, instance, epoch, source, build, provisionedOwner].some(
     (pin) => typeof pin !== "string" || !pin.trim(),
   ))
     refuse("INVALID_ADMISSION_PROVISIONING", "ADDIN metadata provisioning is incomplete");
@@ -115,6 +115,8 @@ export function provisionAddinMetadata(
       request: string,
       timeoutMs: number,
     ) {
+      if (owner !== provisionedOwner)
+        refuse("ADMISSION_OWNER_MISMATCH", "Client does not match the provisioned ADDIN owner");
       const { fileId, version } = wire.params.arguments;
       const target = fields(observed?.documentState?.state?.identity);
       const creationId = target["creationId"];
