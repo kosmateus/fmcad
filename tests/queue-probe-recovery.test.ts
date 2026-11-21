@@ -302,16 +302,18 @@ for (const lostReply of [false, true]) {
       const fixture: { broker?: Awaited<ReturnType<typeof serve>> } = {};
       let preparations = 0,
         sends = 0,
-        intentAtSend = false;
+        intentAtSend = false,
+        lostScript: string | undefined;
       t.after(async () => {
         release();
         try {
           await fixture.broker?.close();
         } catch (error) {
           // A RED candidate deliberately leaves the disposable fixture held.
-          assert.partialDeepStrictEqual(error, {
-            code: "RECONCILIATION_REQUIRED",
-          });
+          assert.equal(
+            error instanceof Error && "code" in error && error.code,
+            "RECONCILIATION_REQUIRED",
+          );
         } finally {
           fs.rmSync(dir, { recursive: true, force: true });
         }
@@ -342,7 +344,10 @@ for (const lostReply of [false, true]) {
             return Object.assign(
               async () => {
                 if (lostReply) {
-                  if (++sends === 1) intentAtSend = fs.existsSync(probeIntent);
+                  if (++sends === 1) {
+                    intentAtSend = fs.existsSync(probeIntent);
+                    lostScript = object.script;
+                  }
                   throw Object.assign(new Error("Lost probe reply"), {
                     code: "EPIPE",
                   });
@@ -376,6 +381,12 @@ for (const lostReply of [false, true]) {
           [journal, receipt].map((file) => fs.readFileSync(file)),
           originals,
         );
+        // The fake receiver later supplies its original proof. This can clear
+        // the hold for teardown, but it must not invoke a second transport.
+        assert.ok(lostScript);
+        runBoundInstanceProbe(lostScript, instance);
+        assert.partialDeepStrictEqual(await reconcile(), { state: "succeeded" });
+        assert.equal(sends, 1);
         return;
       }
       const rejected = assert.rejects(reconcile(), { code: "STATE_CONFLICT" });
