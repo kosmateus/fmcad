@@ -275,9 +275,17 @@ export function inspectFrozenMetadataWork(
         let start: Record<string, unknown> | undefined;
         if (files.includes("worker-start.json")) {
           start = read(path.join(jobDirectory, "worker-start.json"));
-          keys(start, ["jobId", "buildHash", "at"]);
+          // The phased-worker emitter adds exactly this preparation phase.
+          const phased = Object.hasOwn(start, "phase");
+          keys(start, [
+            "jobId",
+            "buildHash",
+            "at",
+            ...(phased ? ["phase"] : []),
+          ]);
           if (
             start["jobId"] !== id ||
+            (phased && start["phase"] !== "offline_prepare") ||
             typeof start["buildHash"] !== "string" ||
             !/^[a-f0-9]{64}$/.test(start["buildHash"]) ||
             !Number.isSafeInteger(start["at"]) ||

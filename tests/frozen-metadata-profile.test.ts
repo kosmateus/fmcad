@@ -213,6 +213,19 @@ test("worker evidence must bind to the same job using the actual start/identity 
   }
 });
 
+test("phased worker start accepts only the actual offline_prepare emitter schema", (t) => {
+  const f = inspectionFixture(t);
+  const file = path.join(f.root, "jobs", "root-unknown", "worker-start.json");
+  const start = JSON.parse(fs.readFileSync(file, "utf8"));
+  fs.writeFileSync(
+    file,
+    JSON.stringify({ ...start, phase: "offline_prepare" }),
+  );
+  assert.doesNotThrow(f.qualify);
+  fs.writeFileSync(file, JSON.stringify({ ...start, phase: "unknown-phase" }));
+  assert.throws(f.qualify, { code: "FROZEN_METADATA_FENCE_CHANGED" });
+});
+
 test("legacy epoch evidence cannot hide or contradict the canonical job namespace", (t) => {
   const f = inspectionFixture(t);
   f.worker("export-unknown", f.epoch, 202);
