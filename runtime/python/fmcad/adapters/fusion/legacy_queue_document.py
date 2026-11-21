@@ -21,6 +21,10 @@ def _qd_items(collection: _qd_Collection[_qd_T]) -> list[_qd_T]:
     return [collection.item(i) for i in range(collection.count)]
 
 
+def _qd_has_creation_id(value: object) -> bool:
+    return isinstance(value, str) and bool(value)
+
+
 def _qd_identity(doc: '_qd_core.Document') -> dict[str, object]:
     data, error = _document_data_file(doc)
     result: dict[str, object] = {'creationId': doc.creationId, 'name': doc.name,
@@ -117,7 +121,7 @@ def _qd_capture(app: '_qd_core.Application', selector: dict[str, object] | None)
             if len(candidates) != 1:
                 return {'status': 'target-unavailable', 'matches': len(candidates), 'selector': selector}
             creation_id = candidates[0].creationId
-            if not isinstance(creation_id, str) or not creation_id:
+            if not _qd_has_creation_id(creation_id):
                 raise RuntimeError('Saved document has no stable identity')
             metadata_state: dict[str, object] = {'identity': {
                 'creationId': creation_id, 'fileId': file_id, 'version': version, 'isSaved': True}}

@@ -17,6 +17,7 @@ import {
   matchRetainedMetadataEvidence,
   prepareMetadataWire,
   provisionAddinMetadata,
+  usesRetainedMetadataEvidence,
 } from "../queue-broker-modules";
 import type {
   BrokerModules,
@@ -4798,8 +4799,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     if (!record.request || record.request.method !== record.method)
       fail("RECEIPT_MISMATCH", "Terminal RPC has no original reply identity");
     const wire = record.wireRequest || record.request;
-    const binding = record.binding["addinAdmission"];
-    if (binding !== undefined) {
+    if (usesRetainedMetadataEvidence(record)) {
       const { jobId, rpcId } = record.binding;
       const original = executionRecords.evidence.readReceivedResponse(jobId, rpcId);
       return matchRetainedMetadataEvidence(record, original, decodeAdmissionJson);

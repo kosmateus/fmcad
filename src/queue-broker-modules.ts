@@ -119,7 +119,7 @@ export function provisionAddinMetadata(
       const target = fields(observed?.documentState?.state?.identity);
       const creationId = target["creationId"];
       const inventory = observed?.documents?.map(fields).filter(
-        (entry) => entry["id"] === creationId,
+        (entry) => entry["id"] === creationId && entry["fileId"] === fileId,
       );
       const entry = inventory?.length === 1 ? inventory[0] : undefined;
       if (
@@ -134,7 +134,6 @@ export function provisionAddinMetadata(
         target["version"] !== version ||
         target["isSaved"] !== true ||
         !entry ||
-        entry["fileId"] !== fileId ||
         entry["isSaved"] !== true ||
         entry["dataFileError"] !== undefined
       )
@@ -232,6 +231,18 @@ export function matchRetainedMetadataEvidence(
       code: "RECEIPT_MISMATCH",
     });
   return matchMetadataEvidence(response, binding["addinAdmission"], binding.rpcId, wireRequest.id, decode);
+}
+
+export function usesRetainedMetadataEvidence(
+  record: Pick<P.RecordEvidence, "binding" | "dispatchClass">,
+) {
+  const metadata = record.dispatchClass === "addin-metadata";
+  const binding = Object.hasOwn(record.binding, "addinAdmission");
+  if (metadata !== binding || (metadata && !record.binding["addinAdmission"]))
+    throw Object.assign(new Error("ADDIN metadata dispatch is missing its exact binding"), {
+      code: "RECEIPT_MISMATCH",
+    });
+  return metadata;
 }
 
 type Grant = BrokerGrant<P.LaneContext>;

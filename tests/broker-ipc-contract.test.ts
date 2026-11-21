@@ -126,9 +126,9 @@ const other: Auth = { clientId: "ipc-owner-b", clientToken: "ipc-token-b" };
 const createFakeBackend = load(
   "./tests/fixtures/broker-ipc/fake-backend.cjs",
 ) as () => FakeBackend;
-const { matchRetainedMetadataEvidence } = load("./src/queue-broker-modules") as Pick<
+const { matchRetainedMetadataEvidence, usesRetainedMetadataEvidence } = load("./src/queue-broker-modules") as Pick<
   typeof import("../src/queue-broker-modules"),
-  "matchRetainedMetadataEvidence"
+  "matchRetainedMetadataEvidence" | "usesRetainedMetadataEvidence"
 >;
 const { decodeAdmissionJson } = load("./src/dist/node-adapters/execution/admission-json") as
   typeof import("../packages/node-adapters/src/execution/admission-json");
@@ -606,6 +606,19 @@ test("retained ADDIN metadata rejects a copied original response or another admi
   };
   const a = make("a");
   const b = make("b");
+  const { addinAdmission: omitted, ...unbound } = b.record.binding;
+  const legacyLooking = {
+    ...b.record,
+    dispatchClass: "addin-metadata",
+    binding: unbound,
+    response: {
+      status: 200,
+      raw: JSON.stringify({ jsonrpc: "2.0", id: "fmcad:b", result: {} }),
+    },
+  };
+  assert.ok(omitted);
+  assert.throws(() => usesRetainedMetadataEvidence(legacyLooking), { code: "RECEIPT_MISMATCH" });
+  assert.throws(() => usesRetainedMetadataEvidence(b.record), { code: "RECEIPT_MISMATCH" });
   for (const candidate of [a, b])
     assert.equal(
       matchRetainedMetadataEvidence(candidate.record, candidate.original, decodeAdmissionJson).id,
@@ -670,6 +683,7 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
   let observedVersion = 2;
   let saved = true;
   let inventory = true;
+  let duplicate = false;
   let mode: "terminal" | "accepted" = "terminal";
   let broker: Broker | undefined;
   const server = createServer(async (req, res) => {
@@ -730,7 +744,10 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
         const observation = {
           ...instance,
           documents: inventory
-            ? [{ id: metadata.creationId, fileId: metadata.fileId, isSaved: saved, isModified: false }]
+            ? [
+                { id: metadata.creationId, fileId: metadata.fileId, isSaved: saved, isModified: false },
+                { id: metadata.creationId, fileId: duplicate ? metadata.fileId : "other-file", isSaved: true, isModified: false },
+              ]
             : [],
           documentState: {
             status: "complete",
@@ -794,10 +811,12 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
     { version: 3, saved: true, documents: true },
     { version: 2, saved: false, documents: false },
     { version: 2, saved: true, documents: false },
+    { version: 2, saved: true, documents: true, duplicate: true },
   ]) {
     observedVersion = missing.version;
     saved = missing.saved;
     inventory = missing.documents;
+    duplicate = !!missing.duplicate;
     const wrong = String(successful(await exchange(dir, request()))["id"]);
     const refused = record((await readResult(wrong, "failed"))["job"]);
     assert.equal(refused["code"], "DOCUMENT_ADMISSION_UNPROVEN");
@@ -807,6 +826,7 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
   observedVersion = 2;
   saved = true;
   inventory = true;
+  duplicate = false;
   const valid = String(successful(await exchange(dir, request()))["id"]);
   const output = await readResult(valid, "succeeded");
   const caller = record(JSON.parse(String(record(output["rpc"])["raw"])));
