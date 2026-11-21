@@ -33,6 +33,7 @@ test("physical admission rejects malformed results and retains binding after los
     .digest("hex");
   let requests = 0;
   let disconnect = false;
+  let terminalResult: unknown = null;
   let raw = "";
   const server = createServer(async (req, res) => {
     requests++;
@@ -46,7 +47,7 @@ test("physical admission rejects malformed results and retains binding after los
     raw = JSON.stringify({
       version: 1,
       binding: message.binding,
-      record: { state: "terminal", result: null },
+      record: { state: "terminal", result: terminalResult },
     });
     res.end(raw);
   });
@@ -78,6 +79,47 @@ test("physical admission rejects malformed results and retains binding after los
       );
     }
     assert.equal(requests, 2);
+    for (const content of [
+      { type: "image", mimeType: "image/png", data: "not base64!" },
+      { type: "audio", mimeType: "audio/wav", data: "AB==" },
+      { type: "resource", resource: { uri: "file:///owned", blob: "bad!" } },
+      {
+        type: "resource",
+        resource: { uri: "file:///owned", text: "ok", blob: "bad!" },
+      },
+    ]) {
+      disconnect = false;
+      terminalResult = { content: [content] };
+      await assert.rejects(
+        postAddinAdmission(scope, outgoing, 1000),
+        (error: unknown) => {
+          assert(error instanceof Error);
+          assert.equal(Reflect.get(error, "code"), "ADDIN_ADMISSION_UNCERTAIN");
+          assert.equal(Reflect.get(error, "rawResponse"), raw);
+          assert.deepEqual(Reflect.get(error, "admissionBinding"), {
+            ...identity,
+            version: 1,
+            inputHash,
+          });
+          return true;
+        },
+      );
+    }
+    for (const content of [
+      { type: "image", mimeType: "image/png", data: "AA==" },
+      { type: "audio", mimeType: "audio/wav", data: "AAA=" },
+      { type: "resource", resource: { uri: "file:///owned", blob: "AAAA" } },
+    ]) {
+      terminalResult = { content: [content] };
+      const response = await postAddinAdmission(scope, outgoing, 1000);
+      assert.equal(response.raw, raw);
+      assert.deepEqual(response.toolResponse, {
+        jsonrpc: "2.0",
+        id: 2,
+        result: terminalResult,
+      });
+    }
+    assert.equal(requests, 9);
     for (const invalid of [
       { jsonrpc: "2.0", id: 2, method: "tools/call" },
       { ...outgoing, id: null },
@@ -85,7 +127,7 @@ test("physical admission rejects malformed results and retains binding after los
       { ...outgoing, params: { name: "tool", arguments: [] } },
     ])
       await assert.rejects(postAddinAdmission(scope, invalid, 1000));
-    assert.equal(requests, 2);
+    assert.equal(requests, 9);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));

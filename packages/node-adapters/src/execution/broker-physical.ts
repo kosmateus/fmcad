@@ -19,6 +19,16 @@ function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function base64(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
+      value,
+    ) &&
+    Buffer.from(value, "base64").toString("base64") === value
+  );
+}
+
 function toolResult(value: unknown): boolean {
   if (!object(value) || !Array.isArray(value["content"])) return false;
   if (Object.hasOwn(value, "isError") && typeof value["isError"] !== "boolean")
@@ -35,10 +45,7 @@ function toolResult(value: unknown): boolean {
         return typeof item["text"] === "string";
       case "image":
       case "audio":
-        return (
-          typeof item["data"] === "string" &&
-          typeof item["mimeType"] === "string"
-        );
+        return base64(item["data"]) && typeof item["mimeType"] === "string";
       case "resource_link":
         return (
           typeof item["uri"] === "string" && typeof item["name"] === "string"
@@ -48,8 +55,8 @@ function toolResult(value: unknown): boolean {
         return (
           object(resource) &&
           typeof resource["uri"] === "string" &&
-          (typeof resource["text"] === "string" ||
-            typeof resource["blob"] === "string")
+          (typeof resource["text"] === "string" || base64(resource["blob"])) &&
+          (!Object.hasOwn(resource, "blob") || base64(resource["blob"]))
         );
       }
       default:
