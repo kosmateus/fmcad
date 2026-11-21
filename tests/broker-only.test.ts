@@ -278,18 +278,21 @@ test(
     );
     const configPath = path.join(home, "config.json");
     const config = {
-      backend: "mcp",
+      backend: "addin",
       routing: "queue",
       url: `http://127.0.0.1:${address(server).port}/mcp`,
       headers: {},
       timeoutMs: 1000,
-      tool: "fusion_mcp_execute",
+      tool: "execute_python",
       transport: "node",
       protocolVersion: "2025-06-18",
       queue: { autoStart: false, autoRecover: false },
       controlCenter: { port: 4748 },
     } as const;
-    fs.writeFileSync(configPath, JSON.stringify(config));
+    const { backend, routing, queue, controlCenter, ...addin } = config;
+    fs.writeFileSync(configPath, JSON.stringify({
+      backend, routing, queue, controlCenter, backends: { addin },
+    }));
     const envKeys = [
       "XDG_STATE_HOME",
       "FMCAD_CONFIG",
