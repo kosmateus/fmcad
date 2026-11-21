@@ -3,12 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 // Actual post-transition mismatch shape, synthetic files/processes only.
-module.exports = function fixture(base, repo) {
-  const f = require('./dead-epoch-successor.cjs')(base, repo, { inFlight: true });
+module.exports = function fixture(base, repo, { effectiveConfig, sourceConfig, historicalBuildHash } = {}) {
+  const f = require('./dead-epoch-successor.cjs')(base, repo, { inFlight: true, sourceConfig, historicalBuildHash });
   const api = require(repo + '/src/queue-instance');
   const lineage = require(repo + '/src/queue-epoch-lineage');
   const pointer = f.inspection.pointer;
-  const cfg = { ...f.cfg, backend: 'mcp', url: 'http://127.0.0.1:1/never-called', tool: 'fixture' };
+  const cfg = { ...f.cfg, ...(effectiveConfig || { backend: 'mcp', url: 'http://127.0.0.1:1/never-called', tool: 'fixture' }) };
   const transition = path.join(f.dir, 'physical-backend-transitions', 'synthetic-to-mcp');
   fs.mkdirSync(transition, { recursive: true });
   const identity = { ...f.inspection.identity, configHash: api.brokerConfigHash(cfg), buildHash: 'c'.repeat(64) };

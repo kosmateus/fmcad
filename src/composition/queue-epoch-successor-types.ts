@@ -100,6 +100,12 @@ interface ApprovalFields {
 export type Approval = ApprovalFields & (
   | { purpose: "dead-isolated-epoch-successor-v1"; normalCurrentStore?: never; priorNormalCurrentFactsRetry?: never }
   | { purpose: "dead-normal-currentstore-successor-v1"; normalCurrentStore: import("./queue-normal-cold-successor").NormalCurrentStoreApproval; priorNormalCurrentFactsRetry?: Reference }
+  | {
+      purpose: "dead-frozen-predecessor-metadata-v1";
+      frozenMetadata: import("./queue-frozen-metadata-profile").FrozenMetadataProfile;
+      normalCurrentStore?: never;
+      priorNormalCurrentFactsRetry?: never;
+    }
 );
 export interface Qualification {
   passed?: boolean;
@@ -112,8 +118,10 @@ export interface Qualification {
   deadEpochSuccessorRestoreQualified?: boolean;
   normalCurrentStoreSuccessorQualified?: boolean;
   normalCurrentFactsRetryQualified?: boolean;
+  frozenPredecessorMetadataQualified?: boolean;
 }
 export interface Inspection {
+  frozenMetadataFacts?: import("./queue-frozen-metadata-profile").FrozenMetadataFacts;
   root: string;
   runtime: string;
   audit: string;
@@ -260,6 +268,8 @@ export interface Ready {
   sdkRequestsSent: number;
 }
 export interface BootstrapOptions {
+  /** Private operator input; never populated from public IPC or persisted. */
+  addinMetadataAdmission?: import("../queue-broker-ports").TrustedAddinMetadataAdmission;
   approval: string;
   requestId: string;
   preflight?: boolean;

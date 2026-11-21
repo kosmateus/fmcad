@@ -4,9 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
-module.exports = function fixture(t, repo) {
+module.exports = function fixture(t, repo, supplied) {
   const api = require(repo + '/src/queue-instance');
-  const f = require('./saved-first-save.cjs')(t, repo), grant = f.grant(), origin = f.state.epoch.document;
+  const f = require('./saved-first-save.cjs')(t, repo, supplied), grant = f.grant(), origin = f.state.epoch.document;
   const accepted = f.state.submit({ ...f.request(), ownerToken: f.clients.native, timeoutMs: 1000, cwd: f.base });
   f.state.next();
   f.state.data.jobs[accepted.id].dispatch = { rpcCount: 1, completedCount: 1 };

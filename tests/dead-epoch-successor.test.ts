@@ -1,12 +1,22 @@
 import test from "node:test";
+import "./frozen-metadata-profile.test";
+import {
+  inspectFrozenMetadataWork,
+  type FrozenMetadataProfile,
+} from "../src/composition/queue-frozen-metadata-profile";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import childProcess from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import type { TestContext } from "node:test";
 import type { DeadEpochFixture } from "./fixtures/epoch-fixture-types";
+import { record, text } from "./integration/offline-cli";
+import type { EvidenceFixture } from "./saved-fixture-test-support";
+import { createServer } from "node:http";
+import { once } from "node:events";
 const repository = process.cwd();
 const load = createRequire(
   path.join(repository, "tests", "dead-epoch-successor.test.js"),
@@ -24,7 +34,7 @@ const { openIsolatedEpoch, isolatedEpochDirectory } = load(
 const { assertSuccessorApproval, assertCurrentPredecessor } = load(
   "../src/queue-epoch-successor",
 ) as typeof import("../src/composition/queue-epoch-successor");
-const { inspectSuccessor } = load(
+const { inspectSuccessor, bootstrapSuccessor } = load(
   "../src/queue-epoch-successor",
 ) as typeof import("../src/composition/queue-epoch-successor");
 
@@ -34,14 +44,26 @@ type PublishedBackend = {
   identity: DeadEpochFixture["identity"];
   authority: DeadEpochFixture["authority"];
 };
-function backendFixture(t: TestContext) {
+function backendFixture(
+  t: TestContext,
+  effectiveConfig?: Record<string, unknown>,
+  sourceConfig?: Record<string, unknown>,
+  baseDirectory?: string,
+  historicalBuildHash?: string,
+) {
   t.after((load("./fixtures/fake-wsl-platform.cjs") as () => () => void)());
-  const base = fs.mkdtempSync("/tmp/opencode/backend-successor-");
+  const base =
+    baseDirectory || fs.mkdtempSync("/tmp/opencode/backend-successor-");
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   return (
     load("./fixtures/backend-successor.cjs") as (
       base: string,
       repo: string,
+      options?: {
+        effectiveConfig?: Record<string, unknown> | undefined;
+        sourceConfig?: Record<string, unknown> | undefined;
+        historicalBuildHash?: string | undefined;
+      },
     ) => DeadEpochFixture & {
       client: Parameters<typeof inspectSuccessor>[0];
       approvalFile: string;
@@ -75,7 +97,7 @@ function backendFixture(t: TestContext) {
         authority: DeadEpochFixture["authority"];
       };
     }
-  )(base, repository);
+  )(base, repository, { effectiveConfig, sourceConfig, historicalBuildHash });
 }
 
 function changeBackendHead(
@@ -123,6 +145,669 @@ test("FAKE backend succession: verified effective head permits cold inspection w
     "running",
   );
 });
+
+function frozenBackendFixture(t: TestContext, baseDirectory?: string) {
+  const f = backendFixture(
+    t,
+    {
+      backend: "addin",
+      url: "http://127.0.0.1:8765/mcp",
+      tool: "execute_python",
+    },
+    {
+      backend: "mcp",
+      url: "http://never-send.invalid",
+      headers: {},
+      tool: "execute_python",
+      transport: "node",
+      protocolVersion: "2025-06-18",
+      timeoutMs: 180000,
+      routing: "queue",
+      queue: {},
+    },
+    baseDirectory,
+    "4".repeat(64),
+  );
+  const previous = openIsolatedEpoch(f.dir, { recover: false });
+  previous.submit({
+    kind: "rpc",
+    clientId: f.clientId,
+    requestId: "frozen-peer-request",
+    timeoutMs: 1000,
+    payload: { jsonrpc: "2.0", id: "frozen-peer", method: "ping" },
+  });
+  const stateFile = path.join(f.inspection.pointer.root, "queue-state.json");
+  const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+  state.jobs[f.priorJob.id].state = "needs_reconciliation";
+  state.active = null;
+  state.lease = null;
+  api.durable(stateFile, state);
+  let workerIndex = 0;
+  for (const file of [path.join(f.dir, "queue-state.json"), stateFile]) {
+    const snapshot = record(JSON.parse(fs.readFileSync(file, "utf8")));
+    for (const job of Object.values(record(snapshot["jobs"]))) {
+      const value = record(job);
+      if (value["state"] !== "needs_reconciliation") continue;
+      const id = text(value["id"]);
+      const directory = path.join(f.dir, "jobs", id);
+      fs.mkdirSync(directory, { recursive: true });
+      api.durable(path.join(directory, "worker-start.json"), {
+        jobId: id,
+        buildHash: record(value["request"])["buildHash"] ?? api.buildHash(),
+        at: 1,
+      });
+      api.durable(path.join(directory, "worker-identity.json"), {
+        pid: 2147483600 + workerIndex++,
+        birth: "dead:frozen-fixture",
+      });
+    }
+  }
+  const frozen = inspectFrozenMetadataWork(f.dir, f.inspection.pointer.root);
+  const profile: FrozenMetadataProfile = {
+    version: 1,
+    purpose: "dead-frozen-predecessor-metadata-v1",
+    ownerClientId: f.clientId,
+    beneficiary: "fresh-metadata-beneficiary",
+    metadataRequestId: "fresh-metadata-once",
+    previousConfigHash: api.brokerConfigHash(f.cfg),
+    successorConfigHash: api.brokerConfigHash(f.cfg),
+    sourceCommit: f.approval.sourceCommit,
+    buildHash: f.approval.buildHash,
+    expectedProcess: f.approval.expectedProcess,
+    provisioning: {
+      capability: "get_open_document_metadata",
+      owner: "fresh-metadata-beneficiary",
+      endpoint: "http://127.0.0.1:8765/admission/v1",
+      ...f.approval.expectedProcess,
+      instance: "fresh-instance",
+      epoch: "fresh-runtime",
+      source: "a".repeat(40),
+      build: "b".repeat(64),
+    },
+    unresolved: frozen.unresolved,
+  };
+  const qualification = api.readJson(f.approval.qualification.path) as object;
+  api.durable(f.approval.qualification.path, {
+    ...qualification,
+    frozenPredecessorMetadataQualified: true,
+  });
+  const snapshot = lineage.predecessorSnapshot(f.dir, f.audit);
+  const approval = {
+    ...f.approval,
+    purpose: profile.purpose,
+    frozenMetadata: profile,
+    stateHash: snapshot.state.sha256,
+    qualification: lineage.reference(f.approval.qualification.path),
+  };
+  api.durable(f.approvalFile, approval);
+  return { ...f, profile, frozen, stateFile };
+}
+
+test("FAKE frozen metadata: exact two-store UNKNOWN and queued topology is inspected without dispatch", (t) => {
+  const f = frozenBackendFixture(t);
+  const { frozen, stateFile } = f;
+  const protectedFiles = [
+    stateFile,
+    path.join(f.dir, "queue-state.json"),
+    f.headFile,
+  ];
+  const before = protectedFiles.map((file) => fs.readFileSync(file));
+  const inspected = inspectSuccessor(
+    f.client,
+    f.cfg,
+    f.approvalFile,
+    f.requestId,
+  );
+  assert.equal(inspected.frozenMetadataFacts?.queuedNeverStarted, true);
+  assert.deepEqual(
+    inspected.frozenMetadataFacts?.unresolved,
+    frozen.unresolved,
+  );
+  assert.throws(
+    () =>
+      inspectSuccessor(
+        f.client,
+        { ...f.cfg, timeoutMs: 1 },
+        f.approvalFile,
+        f.requestId,
+      ),
+    { code: "FROZEN_METADATA_FENCE_CHANGED" },
+  );
+  for (const [index, file] of protectedFiles.entries())
+    assert.deepEqual(fs.readFileSync(file), before[index]);
+});
+
+test("FAKE frozen metadata: public bootstrap refuses missing or foreign private input before any claim", async (t) => {
+  const f = frozenBackendFixture(t);
+  const names = fs.readdirSync(f.audit).sort();
+  const before = names
+    .filter((name) => fs.statSync(path.join(f.audit, name)).isFile())
+    .map((name) => ({
+      name,
+      bytes: fs.readFileSync(path.join(f.audit, name)),
+    }));
+  const base = {
+    approval: f.approvalFile,
+    requestId: f.requestId,
+    preflight: true,
+  };
+  await assert.rejects(bootstrapSuccessor(f.client, f.cfg, base), {
+    code: "FROZEN_METADATA_FENCE_CHANGED",
+  });
+  await assert.rejects(
+    bootstrapSuccessor(f.client, f.cfg, {
+      ...base,
+      addinMetadataAdmission: {
+        ...f.profile.provisioning,
+        token: "a".repeat(64),
+        owner: "foreign",
+      },
+    }),
+    { code: "FROZEN_METADATA_FENCE_CHANGED" },
+  );
+  const result = await bootstrapSuccessor(f.client, f.cfg, {
+    ...base,
+    addinMetadataAdmission: {
+      ...f.profile.provisioning,
+      token: "a".repeat(64),
+    },
+  });
+  assert.equal("sdkRequestsSent" in result && result.sdkRequestsSent, 0);
+  assert.deepEqual(fs.readdirSync(f.audit).sort(), names);
+  for (const entry of before)
+    assert.deepEqual(
+      fs.readFileSync(path.join(f.audit, entry.name)),
+      entry.bytes,
+    );
+  assert.equal(fs.existsSync(path.join(f.audit, "worker-claim.json")), false);
+  assert.equal(fs.existsSync(path.join(f.audit, "launch-intent.json")), false);
+});
+
+test("FAKE frozen metadata: uncertain launch is observed as pending and never spawned again", async (t) => {
+  const f = frozenBackendFixture(t);
+  const inspected = inspectSuccessor(
+    f.client,
+    f.cfg,
+    f.approvalFile,
+    f.requestId,
+  );
+  const authority = {
+    ...f.authority,
+    predecessor: lineage.predecessorSnapshot(f.dir, f.audit, true),
+    configHash: api.brokerConfigHash(f.cfg),
+    qualification: lineage.reference(f.approval.qualification.path),
+    backendTransition: inspected.backendTransition,
+    frozenMetadata: f.profile,
+  };
+  api.durable(f.authorityEntry.path, authority);
+  const entry = lineage.reference(f.authorityEntry.path);
+  api.durable(
+    path.join(f.audit, "intent.json"),
+    {
+      version: 1,
+      requestId: f.requestId,
+      clientId: f.clientId,
+      ownerTokenHash: api.hash(f.token),
+      nonce: f.nonce,
+      approval: lineage.reference(f.approvalFile),
+      previousOwner: f.previousOwner,
+    },
+    true,
+  );
+  const launch = path.join(f.audit, "launch-intent.json");
+  api.durable(launch, { nonce: f.nonce, authority: entry }, true);
+  const before = fs.readFileSync(launch);
+  t.mock.method(childProcess, "spawn", () => {
+    assert.fail("An uncertain launch must not spawn another worker");
+  });
+  const now = Date.now;
+  let elapsed = 0;
+  t.mock.method(Date, "now", () => now() + (elapsed += 120000));
+  const result = await bootstrapSuccessor(f.client, f.cfg, {
+    approval: f.approvalFile,
+    requestId: f.requestId,
+    confirmOwnership: true,
+    addinMetadataAdmission: {
+      ...f.profile.provisioning,
+      token: "private-launch-token-".repeat(4),
+    },
+  });
+  assert.ok("state" in result);
+  assert.equal(result.state, "pending");
+  assert.equal(result.noReplay, true);
+  assert.deepEqual(fs.readFileSync(launch), before);
+  assert.equal(fs.existsSync(path.join(f.audit, "worker-claim.json")), false);
+  assert.equal(fs.existsSync(path.join(f.audit, "worker.stdout.log")), false);
+});
+
+test("FAKE frozen metadata: real worker receives private stdin once while both predecessor stores remain frozen", async (t) => {
+  const temporary = fs.mkdtempSync("/tmp/opencode/frozen-worker-");
+  const base = path.join(temporary, "state", "fmcad");
+  fs.mkdirSync(base, { recursive: true });
+  const keys = [
+    "HOME",
+    "XDG_STATE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_DATA_HOME",
+  ];
+  const env = new Map(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) process.env[key] = path.join(temporary, key);
+  process.env["XDG_STATE_HOME"] = path.join(temporary, "state");
+  let worker: { pid: number; birth: string } | undefined;
+  let workerExit: Promise<void> | undefined;
+  let workerChild: childProcess.ChildProcess | undefined;
+  t.after(async () => {
+    workerChild?.ref(); // Bootstrap detaches it; cleanup must keep the exit event alive on Node22.
+    if (worker && api.priorProcessAlive(worker) === true) {
+      assert.equal(
+        fs.realpathSync(`/proc/${worker.pid}/cwd`),
+        path.join(base, "queue"),
+      );
+      process.kill(worker.pid, "SIGKILL"); // Only this test's synthetic worker.
+    }
+    await workerExit;
+    for (const [key, value] of env) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const f = frozenBackendFixture(t, base);
+  t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  fs.unlinkSync(f.authorityEntry.path);
+  fs.rmSync(path.join(f.audit, "isolated-scratch-qualification"), {
+    recursive: true,
+    force: true,
+  });
+  const files = [f.stateFile, path.join(f.dir, "queue-state.json"), f.headFile];
+  const before = files.map((file) => fs.readFileSync(file));
+  const spawn = childProcess.spawn;
+  let launches = 0;
+  t.mock.method(
+    childProcess,
+    "spawn",
+    (
+      executable: string,
+      args: readonly string[],
+      options: childProcess.SpawnOptions,
+    ) => {
+      assert.equal(path.basename(args[0]!), "queue-epoch-successor-worker.js");
+      launches++;
+      const child = spawn(
+        executable,
+        ["--require", load.resolve("./fixtures/fake-wsl-preload.cjs"), ...args],
+        options,
+      );
+      workerChild = child;
+      assert.ok(child.pid);
+      worker = { pid: child.pid, birth: api.processBirth(child.pid) };
+      workerExit = new Promise<void>((resolve) =>
+        child.once("exit", () => resolve()),
+      );
+      return child;
+    },
+  );
+  const token = "private-worker-token-".repeat(4);
+  const options = {
+    approval: f.approvalFile,
+    requestId: f.requestId,
+    confirmOwnership: true,
+    addinMetadataAdmission: { ...f.profile.provisioning, token },
+  };
+  const results = await Promise.all([
+    bootstrapSuccessor(f.client, f.cfg, options),
+    bootstrapSuccessor(f.client, f.cfg, options),
+  ]);
+  for (const result of results)
+    assert.equal("sdkRequestsSent" in result && result.sdkRequestsSent, 0);
+  assert.equal(launches, 1);
+  const connection = load("../src/queue-connection") as {
+    request(dir: string, message: Record<string, unknown>): Promise<unknown>;
+  };
+  await assert.rejects(
+    connection.request(f.dir, {
+      action: "submit",
+      auth: f.client.auth,
+      request: {
+        kind: "rpc",
+        requestId: "foreign-fresh-request",
+        timeoutMs: 1000,
+        payload: { jsonrpc: "2.0", id: "refused", method: "ping" },
+      },
+    }),
+    // Before a fresh namespace is qualified, the existing lost-epoch guard wins.
+    { code: "EPOCH_PROCESS_UNAVAILABLE" },
+  );
+  for (const [index, file] of files.entries())
+    assert.deepEqual(fs.readFileSync(file), before[index]);
+  for (const name of fs.readdirSync(f.audit)) {
+    const file = path.join(f.audit, name);
+    if (fs.statSync(file).isFile())
+      assert.equal(fs.readFileSync(file, "utf8").includes(token), false, name);
+  }
+});
+
+for (const scenario of [
+  "fresh",
+  "reopened",
+  "substituted creation",
+  "changed endpoint",
+  "changed source",
+  "changed epoch",
+])
+  test(`FAKE frozen metadata: public IPC reads only the authority-created published document, including after reopen (${scenario})`, async (t) => {
+    const swappedCreation = scenario === "substituted creation";
+    const brokerApi = load(
+      "../src/queue-broker",
+    ) as typeof import("../src/composition/queue-broker");
+    let broker: Awaited<ReturnType<typeof brokerApi.serve>> | undefined;
+    let posts = 0;
+    let redirected = 0;
+    let redirectServer: ReturnType<typeof createServer> | undefined;
+    const token = "frozen-publication-token-".repeat(3);
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(Buffer.from(chunk));
+      assert.equal(req.headers.authorization, `Bearer ${token}`);
+      const body = record(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      posts++;
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify({
+          version: 1,
+          binding: body["binding"],
+          record: {
+            state: "terminal",
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: text(record(body["binding"])["document"]),
+                },
+              ],
+            },
+          },
+        }),
+      );
+    });
+    t.after(async () => {
+      try {
+        await broker?.close();
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        if (redirectServer) {
+          redirectServer.closeAllConnections();
+          await new Promise<void>((resolve) =>
+            redirectServer!.close(() => resolve()),
+          );
+        }
+      }
+    });
+    server.listen(8765, "127.0.0.1");
+    await once(server, "listening");
+    const f = frozenBackendFixture(t);
+    const profile = {
+      ...f.profile,
+      beneficiary: "native",
+      provisioning: { ...f.profile.provisioning, owner: "native" },
+    };
+    const inspected = inspectSuccessor(
+      f.client,
+      f.cfg,
+      f.approvalFile,
+      f.requestId,
+    );
+    const authority = {
+      ...f.authority,
+      predecessor: lineage.predecessorSnapshot(f.dir, f.audit, true),
+      configHash: api.brokerConfigHash(f.cfg),
+      qualification: lineage.reference(f.approval.qualification.path),
+      backendTransition: inspected.backendTransition,
+      frozenMetadata: profile,
+    };
+    api.durable(f.authorityEntry.path, authority);
+    const entry = lineage.reference(f.authorityEntry.path);
+    const pointer = { ...f.pointer, succession: entry };
+    const identity = { ...f.identity, configHash: api.brokerConfigHash(f.cfg) };
+    const state = openIsolatedEpoch(f.dir, { recover: false });
+    state.installEpoch(pointer, identity, f.initialization);
+    assert.deepEqual(
+      api.readJson(path.join(f.dir, "broker.lock")),
+      f.previousOwner,
+    );
+    fs.unlinkSync(path.join(f.dir, "broker.lock")); // Synthetic predecessor already retired.
+    const clientToken = "1".repeat(64);
+    const supplied = {
+      ...f,
+      base: path.dirname(f.dir),
+      pointer,
+      identity,
+      nativeClientTokenHash: api.hash(clientToken),
+    };
+    const first = (
+      load("./fixtures/saved-first-save-evidence.cjs") as (
+        t: TestContext,
+        repo: string,
+        input: typeof supplied,
+      ) => EvidenceFixture
+    )(t, repository, supplied);
+    (
+      load("./fixtures/publish-saved-fixture.cjs") as (
+        fixture: EvidenceFixture,
+        repo: string,
+      ) => unknown
+    )(first, repository);
+    api.durable(path.join(f.dir, "clients.json"), first.clients);
+    first.state.pause(false, "metadata-fixture-ready");
+    const target = first.observed;
+    assert.equal(typeof target.fileId, "string");
+    const { nativeReceipts } = load(
+      "./fixtures/native-source-envelope.cjs",
+    ) as {
+      nativeReceipts(
+        script: string,
+        dir: string,
+        instance: unknown,
+      ): Array<{ file: string; value: unknown }>;
+    };
+    const instance = {
+      ...pointer.currentInstance,
+      activeCommand: "SelectCommand",
+      documents: [
+        {
+          id: swappedCreation ? "substituted-creation" : target.creationId,
+          fileId: target.fileId,
+          version: 1,
+          isSaved: true,
+          isModified: false,
+        },
+      ],
+      documentState: {
+        status: "complete",
+        state: {
+          identity: {
+            creationId: swappedCreation
+              ? "substituted-creation"
+              : target.creationId,
+            fileId: target.fileId,
+            version: 1,
+            isSaved: true,
+          },
+        },
+      },
+    };
+    const opts = {
+      dir: f.dir,
+      confirmOwnership: true,
+      pollMs: 5,
+      nativePath: (file: string) => file,
+      addinMetadataAdmission: { ...profile.provisioning, token },
+      createBackend: () => ({
+        server: f.cfg,
+        _parse: JSON.parse,
+        _post: () => assert.fail("No legacy metadata POST"),
+        _openSession: () => assert.fail("No legacy metadata session"),
+        listTools: () => assert.fail("Metadata must not discover legacy tools"),
+        executeUiGuardedScript: () => assert.fail("No UI mutation is admitted"),
+        async callTool(args: { object: { script: string } }) {
+          for (const result of nativeReceipts(
+            args.object.script,
+            f.dir,
+            instance,
+          ))
+            fs.writeFileSync(result.file, JSON.stringify(result.value), {
+              flag: "wx",
+            });
+          return {
+            failed: false,
+            text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance),
+          };
+        },
+      }),
+    };
+    broker = await brokerApi.serve(f.cfg, opts);
+    const connection = load("../src/queue-connection") as {
+      request(dir: string, message: Record<string, unknown>): Promise<unknown>;
+    };
+    const auth = { clientId: "native", clientToken };
+    const submit = (
+      fileId = target.fileId,
+      version = 1,
+      requestId = profile.metadataRequestId,
+    ) =>
+      connection.request(f.dir, {
+        action: "submit",
+        auth,
+        request: {
+          kind: "rpc",
+          requestId,
+          timeoutMs: 5000,
+          payload: {
+            jsonrpc: "2.0",
+            id: "frozen-caller",
+            method: "tools/call",
+            params: {
+              name: "get_open_document_metadata",
+              arguments: { fileId, version },
+            },
+          },
+        },
+      });
+    await assert.rejects(submit("another-saved-file"), {
+      code: "FROZEN_METADATA_DOCUMENT_UNPROVEN",
+    });
+    await assert.rejects(submit(target.fileId, 2), {
+      code: "FROZEN_METADATA_DOCUMENT_UNPROVEN",
+    });
+    await assert.rejects(submit(target.fileId, 1, "another-request"), {
+      code: "FROZEN_METADATA_FENCE_CHANGED",
+    });
+    await assert.rejects(
+      connection.request(f.dir, {
+        action: "submit",
+        auth,
+        request: {
+          ...first.request({ docFileId: target.fileId }),
+          requestId: "mutating-existing-file",
+          timeoutMs: 5000,
+          cwd: first.base,
+        },
+      }),
+      { code: "SAVED_FIRST_SAVE_SCOPE_REQUIRED" },
+    );
+    assert.equal(posts, 0);
+    if (scenario.startsWith("changed ")) {
+      redirectServer = createServer((req, res) => {
+        redirected++;
+        req.resume();
+        res.end("{}");
+      });
+      redirectServer.listen(0, "127.0.0.1");
+      await once(redirectServer, "listening");
+      const address = redirectServer.address();
+      assert.ok(address && typeof address !== "string");
+      await broker.close();
+      broker = undefined;
+      const changed = {
+        ...opts,
+        addinMetadataAdmission: {
+          ...opts.addinMetadataAdmission,
+          endpoint:
+            scenario === "changed endpoint"
+              ? `http://127.0.0.1:${address.port}/admission/v1`
+              : profile.provisioning.endpoint,
+          source:
+            scenario === "changed source"
+              ? "e".repeat(40)
+              : profile.provisioning.source,
+          epoch:
+            scenario === "changed epoch"
+              ? "substituted-epoch"
+              : profile.provisioning.epoch,
+        },
+      };
+      await assert.rejects(brokerApi.serve(f.cfg, changed), {
+        code: "FROZEN_METADATA_PROVISIONING_CHANGED",
+      });
+      assert.equal(posts, 0);
+      assert.equal(redirected, 0, "No bearer may reach a substituted endpoint");
+      assert.equal(
+        fs.existsSync(path.join(f.dir, "broker.lock")),
+        false,
+        "Rejected private configuration must not reserve the broker",
+      );
+      broker = await brokerApi.serve(f.cfg, opts);
+      return;
+    }
+    if (scenario !== "fresh") {
+      await broker.close();
+      broker = await brokerApi.serve(f.cfg, opts);
+    }
+    const submitted = record(await submit());
+    const id = text(record(submitted["job"] ?? submitted)["id"]);
+    const deadline = Date.now() + 10000;
+    for (;;) {
+      const result = record(
+        await connection.request(f.dir, { action: "result", auth, jobId: id }),
+      );
+      const job = record(result["job"]);
+      if (swappedCreation && job["state"] === "failed") {
+        assert.equal(
+          posts,
+          0,
+          "A substituted creation must never send metadata",
+        );
+        assert.match(
+          JSON.stringify(result),
+          /FROZEN_METADATA_DOCUMENT_UNPROVEN|authority-created/,
+        );
+        return;
+      }
+      if (job["state"] === "succeeded") break;
+      assert.ok(
+        !["failed", "expired", "needs_reconciliation"].includes(
+          text(job["state"]),
+        ),
+        JSON.stringify(result),
+      );
+      assert.ok(Date.now() < deadline, "Metadata did not settle");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(posts, 1);
+    await broker.close();
+    broker = await brokerApi.serve(f.cfg, opts);
+    await submit();
+    assert.equal(
+      posts,
+      1,
+      "Reopening must not replay the one admitted metadata request",
+    );
+    await assert.rejects(submit("another-saved-file"), {
+      code: "FROZEN_METADATA_DOCUMENT_UNPROVEN",
+    });
+    assert.equal(posts, 1);
+  });
 
 test("FAKE backend succession: published lineage reopens against archived pointer and preserves old SDK/history", (t) => {
   const f = backendFixture(t);
@@ -533,8 +1218,9 @@ test("FAKE backend succession: another cold scope without a current transition v
 test("a normal read-attempt link cannot authorize an isolated or atomic successor", (t) => {
   const f = backendFixture(t);
   for (const link of [null, false, {}, f.approval.qualification]) {
-    const untrusted = JSON.parse(JSON.stringify({ ...f.approval,
-      priorNormalCurrentFactsRetry: link }));
+    const untrusted = JSON.parse(
+      JSON.stringify({ ...f.approval, priorNormalCurrentFactsRetry: link }),
+    );
     assert.throws(() => assertSuccessorApproval(f.inspection, untrusted), {
       code: "NORMAL_SUCCESSOR_UNPROVEN",
     });
@@ -544,40 +1230,115 @@ test("a normal read-attempt link cannot authorize an isolated or atomic successo
 test("fresh normal bootstrap keeps preserved creation identity separate from the retired read-worker lifecycle", (t) => {
   const base = fs.mkdtempSync("/tmp/opencode/normal-retry-bootstrap-");
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  const f = (load("./fixtures/dead-epoch-successor.cjs") as (base: string, repo: string) => DeadEpochFixture)(base, repository);
+  const f = (
+    load("./fixtures/dead-epoch-successor.cjs") as (
+      base: string,
+      repo: string,
+    ) => DeadEpochFixture
+  )(base, repository);
   assertSuccessorApproval(f.inspection, f.approval);
-  const normal = load("../src/dist/composition/queue-normal-cold-successor") as Record<string, unknown>;
+  const normal = load(
+    "../src/dist/composition/queue-normal-cold-successor",
+  ) as Record<string, unknown>;
   const original = normal["inspectNormalCurrentFactsRetry"];
-  t.after(() => { normal["inspectNormalCurrentFactsRetry"] = original; });
+  t.after(() => {
+    normal["inspectNormalCurrentFactsRetry"] = original;
+  });
   const priorFile = path.join(base, "previous-read-authority.json");
   const workerBuild = "e".repeat(64);
   api.durable(priorFile, { buildHash: workerBuild });
-  const normalStore = { kind: "normal-currentstore-v1", jobAuthorization: f.approval.qualification,
-    deathProof: f.approval.qualification, producerRetirement: f.approval.qualification };
-  const approval = JSON.parse(JSON.stringify({ ...f.approval, purpose: "dead-normal-currentstore-successor-v1",
-    normalCurrentStore: normalStore, priorNormalCurrentFactsRetry: f.approval.qualification }));
-  normal["inspectNormalCurrentFactsRetry"] = () => ({ previousAuthority: lineage.reference(priorFile),
-    originalNormalStore: normalStore, currentOwner: f.previousOwner, candidateRoot: f.approval.candidateRoot });
-  const inspection = { ...f.inspection, approval,
-    qualification: { ...f.inspection.qualification, normalCurrentStoreSuccessorQualified: true, normalCurrentFactsRetryQualified: true },
-    previousLifecycle: { ...f.inspection.previousLifecycle, buildHash: workerBuild } };
+  const normalStore = {
+    kind: "normal-currentstore-v1",
+    jobAuthorization: f.approval.qualification,
+    deathProof: f.approval.qualification,
+    producerRetirement: f.approval.qualification,
+  };
+  const approval = JSON.parse(
+    JSON.stringify({
+      ...f.approval,
+      purpose: "dead-normal-currentstore-successor-v1",
+      normalCurrentStore: normalStore,
+      priorNormalCurrentFactsRetry: f.approval.qualification,
+    }),
+  );
+  normal["inspectNormalCurrentFactsRetry"] = () => ({
+    previousAuthority: lineage.reference(priorFile),
+    originalNormalStore: normalStore,
+    currentOwner: f.previousOwner,
+    candidateRoot: f.approval.candidateRoot,
+  });
+  const inspection = {
+    ...f.inspection,
+    approval,
+    qualification: {
+      ...f.inspection.qualification,
+      normalCurrentStoreSuccessorQualified: true,
+      normalCurrentFactsRetryQualified: true,
+    },
+    previousLifecycle: {
+      ...f.inspection.previousLifecycle,
+      buildHash: workerBuild,
+    },
+  };
   assert.notEqual(workerBuild, inspection.identity.buildHash);
   assertSuccessorApproval(inspection, approval);
-  const legacyQualification = JSON.parse(JSON.stringify(inspection.qualification));
+  const legacyQualification = JSON.parse(
+    JSON.stringify(inspection.qualification),
+  );
   delete legacyQualification.normalCurrentFactsRetryQualified;
-  assert.throws(() => assertSuccessorApproval({ ...inspection, qualification: legacyQualification }, approval), {
-    code: "EPOCH_SUCCESSOR_UNQUALIFIED",
+  assert.throws(
+    () =>
+      assertSuccessorApproval(
+        { ...inspection, qualification: legacyQualification },
+        approval,
+      ),
+    {
+      code: "EPOCH_SUCCESSOR_UNQUALIFIED",
+    },
+  );
+  assert.throws(
+    () =>
+      assertSuccessorApproval(
+        { ...inspection, previousLifecycle: f.inspection.previousLifecycle },
+        approval,
+      ),
+    {
+      code: "EPOCH_SUCCESSOR_FENCE_CHANGED",
+    },
+  );
+  const wrongOwner = JSON.parse(
+    JSON.stringify({
+      ...approval,
+      previousOwner: { ...approval.previousOwner, nonce: "foreign" },
+    }),
+  );
+  assert.throws(() => assertSuccessorApproval(inspection, wrongOwner), {
+    code: "NORMAL_SUCCESSOR_UNPROVEN",
   });
-  assert.throws(() => assertSuccessorApproval({ ...inspection, previousLifecycle: f.inspection.previousLifecycle }, approval), {
-    code: "EPOCH_SUCCESSOR_FENCE_CHANGED",
+  const wrongScope = JSON.parse(
+    JSON.stringify({
+      ...approval,
+      normalCurrentStore: {
+        ...normalStore,
+        jobAuthorization: {
+          ...normalStore.jobAuthorization,
+          sha256: "f".repeat(64),
+        },
+      },
+    }),
+  );
+  assert.throws(() => assertSuccessorApproval(inspection, wrongScope), {
+    code: "NORMAL_SUCCESSOR_UNPROVEN",
   });
-  const wrongOwner = JSON.parse(JSON.stringify({ ...approval, previousOwner: { ...approval.previousOwner, nonce: "foreign" } }));
-  assert.throws(() => assertSuccessorApproval(inspection, wrongOwner), { code: "NORMAL_SUCCESSOR_UNPROVEN" });
-  const wrongScope = JSON.parse(JSON.stringify({ ...approval, normalCurrentStore: { ...normalStore,
-    jobAuthorization: { ...normalStore.jobAuthorization, sha256: "f".repeat(64) } } }));
-  assert.throws(() => assertSuccessorApproval(inspection, wrongScope), { code: "NORMAL_SUCCESSOR_UNPROVEN" });
-  const wrongRuntime = JSON.parse(JSON.stringify({ ...approval, candidateRoot: path.join(base, "foreign-runtime") }));
-  assert.throws(() => assertSuccessorApproval(inspection, wrongRuntime), { code: "NORMAL_SUCCESSOR_UNPROVEN" });
+  const wrongRuntime = JSON.parse(
+    JSON.stringify({
+      ...approval,
+      candidateRoot: path.join(base, "foreign-runtime"),
+    }),
+  );
+  assert.throws(() => assertSuccessorApproval(inspection, wrongRuntime), {
+    code: "NORMAL_SUCCESSOR_UNPROVEN",
+  });
 });
 
 test("FAKE normal runtime upgrade binds creation to the original authorized normal pair, not the historical quarantine pair", (t) => {
