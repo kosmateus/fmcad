@@ -27,6 +27,7 @@ for (const [group, modules] of Object.entries({
     "catalog-execution",
     "execution-request",
     "stage-dependencies",
+    "queue-broker",
   ],
 }))
   test(`staged ${group} declarations resolve without workspace package types`, (t) => {

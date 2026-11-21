@@ -238,10 +238,18 @@ export function stageCore(root: string, identityOnly = false): void {
     fs.mkdirSync(target, { recursive: true });
     for (const file of fs.readdirSync(source)) {
       if (!/\.(js|d\.ts)$/.test(file)) continue;
+      const emitted = fs.readFileSync(path.join(source, file), "utf8");
+      // Composition is copied one level deeper; the broker DTO stays at src/.
+      const relocated =
+        name === "composition" && file.endsWith(".d.ts")
+          ? emitted.replace(
+              /"\.\.\/queue-broker-ports(\.js)?"/g,
+              '"../../queue-broker-ports$1"',
+            )
+          : emitted;
       fs.writeFileSync(
         path.join(target, file),
-        fs
-          .readFileSync(path.join(source, file), "utf8")
+        relocated
           .replaceAll("../../packages/core/src", "../core")
           .replaceAll('"@fmcad/core"', '"../core"')
           .replaceAll("../../packages/control-center/src", "../control-center")
