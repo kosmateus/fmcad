@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { ExecutionSnapshotStore } from "../../../core/src/ports/execution-store";
 
 const MAX_SNAPSHOT_BYTES = 128 * 1024 * 1024;
+export const MAX_JSON_RECORD_BYTES = 16 * 1024 * 1024;
 
 export function failure(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
@@ -125,7 +126,7 @@ export function readBytes(
 
 export function readJson(
   file: string,
-  maxBytes = 16 * 1024 * 1024,
+  maxBytes = MAX_JSON_RECORD_BYTES,
   io = fs,
   expectedPath?: string,
 ): unknown {

@@ -193,6 +193,18 @@ test("retained transport response is not terminal proof; only the original remot
     () =>
       store.recordRpcTerminal(jobId, {
         ...final,
+        request: {
+          id: intent.request.id,
+          method: intent.request.method,
+          jsonrpc: intent.request.jsonrpc,
+        },
+      }),
+    { code: "RECEIPT_MISMATCH" },
+  );
+  assert.throws(
+    () =>
+      store.recordRpcTerminal(jobId, {
+        ...final,
         request: { ...intent.request, id: 2 },
       }),
     {
@@ -224,6 +236,60 @@ test("retained transport response is not terminal proof; only the original remot
     JSON.stringify(remoteReceipt) + "\n",
   );
   assert.equal(fs.readFileSync(journal, "utf8"), JSON.stringify(completion));
+});
+
+test("an ordinary terminal RPC must match the retained HTTP status and exact raw bytes", (t) => {
+  const f = fixture(t);
+  const { receipt: _receipt, ...intent } = f.intent;
+  const journal = f.store.createRpcIntent(jobId, intent);
+  const final = { ...intent, terminal: true, response };
+  f.store.recordReceivedResponse(jobId, {
+    version: 1,
+    kind: "owned-rpc-received-response-v1",
+    binding,
+    wireId: wireRequest.id,
+    response,
+  });
+  for (const other of [
+    {
+      ...response,
+      raw: '{"jsonrpc":"2.0","id":"fmcad:rpc-1","error":{"message":"wrong evidence"}}',
+    },
+    { ...response, status: 202 },
+    { ...response, raw: `${response.raw}\n` },
+  ]) {
+    assert.throws(
+      () => f.store.recordRpcTerminal(jobId, { ...final, response: other }),
+      { code: "RECEIPT_MISMATCH" },
+    );
+    assert.equal(fs.readFileSync(journal, "utf8"), JSON.stringify(intent));
+  }
+  f.store.recordRpcTerminal(jobId, final);
+  assert.equal(fs.readFileSync(journal, "utf8"), JSON.stringify(final));
+});
+
+test("an atomic observation may store only its sanitized response and original remote receipt", (t) => {
+  const f = fixture(t);
+  const intent = {
+    ...f.intent,
+    binding: { ...binding, observationKind: "atomic_holder_status" },
+    receipt: f.file(`atomic-observation-${rpcId}.receipt.json`),
+  };
+  const journal = f.store.createRpcIntent(jobId, intent);
+  const remoteReceipt = {
+    ...intent.binding,
+    terminal: true,
+    outcome: "succeeded",
+    instance,
+  };
+  const final = { ...intent, terminal: true, response, remoteReceipt };
+  assert.throws(() => f.store.recordRpcTerminal(jobId, final), {
+    code: "RECEIPT_UNAVAILABLE",
+  });
+  fs.writeFileSync(intent.receipt, JSON.stringify(remoteReceipt));
+  f.store.recordRpcTerminal(jobId, final);
+  assert.equal(f.store.evidence.readReceivedResponse(jobId, rpcId), null);
+  assert.equal(fs.readFileSync(journal, "utf8"), JSON.stringify(final));
 });
 
 test("the evidence reader rejects swapped journals and receipts without rewriting them", (t) => {

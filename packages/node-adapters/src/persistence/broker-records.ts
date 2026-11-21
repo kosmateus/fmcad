@@ -3,7 +3,13 @@ import * as path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { QueueRequest } from "../../../core/src/domain/queue-model";
 import type { DocumentSnapshot } from "../../../core/src/domain/document";
-import { durable, durableBytes, failure, readJson } from "./records";
+import {
+  durable,
+  durableBytes,
+  failure,
+  MAX_JSON_RECORD_BYTES,
+  readJson,
+} from "./records";
 
 export type ProbeStage = "preflight" | "postflight" | "reconcile";
 type ReceiptStage = ProbeStage | "atomic-observation";
@@ -194,12 +200,16 @@ export function createBrokerRecords(directory: string, io = fs): BrokerRecords {
     }
     return dir;
   }
-  function read<T>(file: string): T {
-    return readJson(file, undefined, io, file) as T;
+  function read<T>(file: string, maxBytes?: number): T {
+    return readJson(file, maxBytes, io, file) as T;
   }
-  function optional<T>(jobId: string, name: string): T | null {
+  function optional<T>(
+    jobId: string,
+    name: string,
+    maxBytes?: number,
+  ): T | null {
     try {
-      const value = read<T>(path.join(jobDir(jobId), name));
+      const value = read<T>(path.join(jobDir(jobId), name), maxBytes);
       if (!value || typeof value !== "object" || Array.isArray(value))
         failure("CORRUPT_STATE", "Broker record must be an object");
       return value;
@@ -297,14 +307,56 @@ export function createBrokerRecords(directory: string, io = fs): BrokerRecords {
   function readReceivedResponse(
     jobId: string,
     rpcId: string,
+    maxBytes?: number,
   ): ReceivedResponse | null {
-    const response = optional<ReceivedResponse>(jobId, responseName(rpcId));
+    const response = optional<ReceivedResponse>(
+      jobId,
+      responseName(rpcId),
+      maxBytes,
+    );
     if (response) {
       assertJob(jobId, response.binding);
       if (response.binding.rpcId !== rpcId)
         mismatch("Received response belongs to a different RPC");
     }
     return response;
+  }
+  function assertOriginalResponse(
+    jobId: string,
+    record: RpcRecord,
+    response: WireResponse,
+  ): void {
+    const expected: ReceivedResponse = {
+      version: 1,
+      kind: "owned-rpc-received-response-v1",
+      binding: record.binding,
+      wireId: (record.wireRequest ?? record.request)?.id,
+      response,
+    };
+    // Retention and publication allow large responses. Bound this writer-side
+    // read by the candidate's serialized size without changing recovery limits.
+    const limit = Math.max(
+      MAX_JSON_RECORD_BYTES,
+      Buffer.byteLength(JSON.stringify(expected)),
+    );
+    const original = readReceivedResponse(jobId, record.binding.rpcId, limit);
+    if (!original)
+      failure(
+        "RECEIPT_UNAVAILABLE",
+        "The original transport response was not retained",
+      );
+    if (
+      original.version !== expected.version ||
+      original.kind !== expected.kind ||
+      !isDeepStrictEqual(original.binding, expected.binding) ||
+      original.wireId !== expected.wireId ||
+      !original.response ||
+      original.response.status !== response.status ||
+      original.response.raw !== response.raw
+    )
+      mismatch(
+        "Terminal response differs from the retained transport response",
+      );
   }
   function readProbeIntent(
     jobId: string,
@@ -343,30 +395,31 @@ export function createBrokerRecords(directory: string, io = fs): BrokerRecords {
     allowedChanges: readonly string[],
   ): void {
     const file = rpcFile(jobId, record);
-    const old = read<Record<string, unknown>>(file);
+    const text = JSON.stringify(record);
+    // A previous journal can be one byte longer when a false flag becomes true.
+    const limit = Math.max(MAX_JSON_RECORD_BYTES, Buffer.byteLength(text) + 1);
+    const old = read<Record<string, unknown>>(file, limit);
     if (old?.["terminal"] !== wasTerminal)
       mismatch("RPC journal is not in the expected state");
-    const text = JSON.stringify(record);
     const next = JSON.parse(text) as Record<string, unknown>;
     if (
       wasTerminal &&
       ((old["nativeCompletion"] !== undefined &&
-        !isDeepStrictEqual(
-          old["nativeCompletion"],
-          next["nativeCompletion"],
-        )) ||
+        JSON.stringify(old["nativeCompletion"]) !==
+          JSON.stringify(next["nativeCompletion"])) ||
         (old["failed"] === true && next["failed"] !== true))
     )
       mismatch("RPC journal update changed settled lifecycle evidence");
-    for (const key of new Set([...Object.keys(old), ...Object.keys(next)])) {
-      if (
-        !allowedChanges.includes(key) &&
-        !isDeepStrictEqual(old[key], next[key])
-      )
-        mismatch(
-          "RPC journal update changed the original dispatch or evidence",
-        );
-    }
+    const immutableFields = (value: Record<string, unknown>) =>
+      JSON.stringify(
+        Object.entries(value).filter(
+          ([name]) => !allowedChanges.includes(name),
+        ),
+      );
+    if (immutableFields(old) !== immutableFields(next))
+      mismatch(
+        "RPC journal update changed the original dispatch or evidence bytes",
+      );
     durableBytes(file, text, false, io);
   }
   function recordProbeTerminal(
@@ -414,7 +467,7 @@ export function createBrokerRecords(directory: string, io = fs): BrokerRecords {
       },
       readRemoteReceipt,
       findRemoteReceipt,
-      readReceivedResponse,
+      readReceivedResponse: (id, rpcId) => readReceivedResponse(id, rpcId),
       readWorkerResult: (id) => optional(id, "worker-result.json"),
       readWorkerIdentity: (id) => optional(id, "worker-identity.json"),
       readWorkerStart: (id) => optional(id, "worker-start.json"),
@@ -477,8 +530,13 @@ export function createBrokerRecords(directory: string, io = fs): BrokerRecords {
       } else if (record.remoteReceipt) {
         mismatch("Terminal RPC cannot attach an undeclared receipt");
       }
-      if (rpcReceiptStage(record) === "atomic-observation" && !record.receipt)
-        mismatch("Atomic observation requires its remote receipt");
+      if (rpcReceiptStage(record) === "atomic-observation") {
+        // The observation deliberately retains a sanitized response only.
+        if (!record.receipt)
+          mismatch("Atomic observation requires its remote receipt");
+      } else {
+        assertOriginalResponse(jobId, record, record.response);
+      }
       updateRpc(jobId, record, false, [
         "terminal",
         "response",
