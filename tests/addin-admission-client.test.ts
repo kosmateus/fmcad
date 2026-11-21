@@ -18,6 +18,80 @@ const identity = {
 };
 const token = "fixture-token-".repeat(4);
 
+test("physical admission rejects malformed results and retains binding after lost response", async () => {
+  const outgoing = {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: {
+      name: "get_open_document_metadata",
+      arguments: { fileId: "file", version: 1 },
+    },
+  };
+  const inputHash = createHash("sha256")
+    .update(JSON.stringify(outgoing))
+    .digest("hex");
+  let requests = 0;
+  let disconnect = false;
+  let raw = "";
+  const server = createServer(async (req, res) => {
+    requests++;
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const message = JSON.parse(body);
+    if (disconnect) {
+      req.socket.destroy();
+      return;
+    }
+    raw = JSON.stringify({
+      version: 1,
+      binding: message.binding,
+      record: { state: "terminal", result: null },
+    });
+    res.end(raw);
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const address = server.address();
+    assert(address && typeof address !== "string");
+    const scope = {
+      endpoint: `http://127.0.0.1:${address.port}/admission/v1`,
+      token,
+      identity,
+    };
+    for (const lost of [false, true]) {
+      disconnect = lost;
+      await assert.rejects(
+        postAddinAdmission(scope, outgoing, 1000),
+        (error: unknown) => {
+          assert(error instanceof Error);
+          assert.equal(Reflect.get(error, "code"), "ADDIN_ADMISSION_UNCERTAIN");
+          assert.deepEqual(Reflect.get(error, "admissionBinding"), {
+            ...identity,
+            version: 1,
+            inputHash,
+          });
+          if (!lost) assert.equal(Reflect.get(error, "rawResponse"), raw);
+          return true;
+        },
+      );
+    }
+    assert.equal(requests, 2);
+    for (const invalid of [
+      { jsonrpc: "2.0", id: 2, method: "tools/call" },
+      { ...outgoing, id: null },
+      { ...outgoing, params: { name: "", arguments: {} } },
+      { ...outgoing, params: { name: "tool", arguments: [] } },
+    ])
+      await assert.rejects(postAddinAdmission(scope, invalid, 1000));
+    assert.equal(requests, 2);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
 test("physical admission preserves original evidence and final transformed bytes", async () => {
   let requests = 0;
   let raw = "";
@@ -86,7 +160,10 @@ test("physical admission preserves original evidence and final transformed bytes
       { url: scope.endpoint, backend: "addin" },
       { version: "test", bridgeSource: () => "", requestTimeout: () => 1000 },
     );
-    const tool = await transport.callTool({}, "get_open_document_metadata");
+    const tool = await transport.callTool(
+      outgoing.params.arguments,
+      outgoing.params.name,
+    );
     assert.equal(tool.text, "result");
     assert.equal(Reflect.get(tool, "rawResponse"), raw);
     assert.equal(requests, 1);

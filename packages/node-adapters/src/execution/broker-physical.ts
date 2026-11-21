@@ -15,6 +15,49 @@ export type AddinAdmissionScope = Readonly<{
   identity: AdmissionIdentity;
 }>;
 
+function object(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function toolResult(value: unknown): boolean {
+  if (!object(value) || !Array.isArray(value["content"])) return false;
+  if (Object.hasOwn(value, "isError") && typeof value["isError"] !== "boolean")
+    return false;
+  if (
+    Object.hasOwn(value, "structuredContent") &&
+    !object(value["structuredContent"])
+  )
+    return false;
+  return value["content"].every((item: unknown) => {
+    if (!object(item)) return false;
+    switch (item["type"]) {
+      case "text":
+        return typeof item["text"] === "string";
+      case "image":
+      case "audio":
+        return (
+          typeof item["data"] === "string" &&
+          typeof item["mimeType"] === "string"
+        );
+      case "resource_link":
+        return (
+          typeof item["uri"] === "string" && typeof item["name"] === "string"
+        );
+      case "resource": {
+        const resource = item["resource"];
+        return (
+          object(resource) &&
+          typeof resource["uri"] === "string" &&
+          (typeof resource["text"] === "string" ||
+            typeof resource["blob"] === "string")
+        );
+      }
+      default:
+        return false;
+    }
+  });
+}
+
 /** Final tools/call only: preparation, UI guard and entrypoint bytes are already fixed. */
 export async function postAddinAdmission(
   scope: AddinAdmissionScope,
@@ -23,10 +66,19 @@ export async function postAddinAdmission(
 ): Promise<Response> {
   scope = admissionData(scope) as AddinAdmissionScope;
   outgoing = admissionData(outgoing) as Record<string, JsonValue>;
+  const id = outgoing["id"];
+  const params = outgoing["params"];
   if (
     outgoing["method"] !== "tools/call" ||
     outgoing["jsonrpc"] !== "2.0" ||
-    !Object.hasOwn(outgoing, "id")
+    !(
+      (typeof id === "string" && id.length > 0) ||
+      (typeof id === "number" && Number.isSafeInteger(id))
+    ) ||
+    !object(params) ||
+    typeof params["name"] !== "string" ||
+    !params["name"].trim() ||
+    !object(params["arguments"])
   )
     throw new Error("Admission only accepts the final tools/call envelope");
   const handle = createAddinAdmission(
@@ -34,8 +86,21 @@ export async function postAddinAdmission(
     scope.identity,
     outgoing,
   );
-  const evidence = await handle.admitEvidence();
-  if (evidence.record?.state !== "terminal")
+  let evidence: Awaited<ReturnType<typeof handle.admitEvidence>>;
+  try {
+    evidence = await handle.admitEvidence();
+  } catch (error) {
+    throw Object.assign(
+      error instanceof Error
+        ? error
+        : new Error("Admission outcome unavailable"),
+      { code: "ADDIN_ADMISSION_UNCERTAIN", admissionBinding: handle.binding },
+    );
+  }
+  if (
+    evidence.record?.state !== "terminal" ||
+    !toolResult(evidence.record.result)
+  )
     throw Object.assign(
       new Error("Admission has no terminal execution evidence; do not replay"),
       {
