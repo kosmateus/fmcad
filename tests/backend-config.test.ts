@@ -7,6 +7,9 @@ import { createRequire } from "node:module";
 const { loadConfig, initConfig, DEFAULTS } = createRequire(__filename)(
   path.join(process.cwd(), "src/config"),
 ) as typeof import("../src/composition/library-configuration");
+const { resolveFmcadConfiguration } = createRequire(__filename)(
+  path.join(process.cwd(), "src/dist/core"),
+) as typeof import("../packages/core/src");
 
 function fixture(t: TestContext, data: unknown = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-backend-"));
@@ -32,7 +35,7 @@ function fixture(t: TestContext, data: unknown = {}) {
   };
 }
 
-test("safe addin defaults and legacy MCP-only fields retain their contract", (t) => {
+test("safe addin defaults reject a newly configured native MCP backend", (t) => {
   const f = fixture(t);
   assert.deepEqual(f.load(), {
     backend: "addin",
@@ -51,75 +54,197 @@ test("safe addin defaults and legacy MCP-only fields retain their contract", (t)
       tool: "legacy",
     }),
   );
-  assert.deepEqual(f.load(), {
-    backend: "mcp",
-    url: "http://legacy.invalid/mcp",
-    headers: { Extra: "yes" },
-    timeoutMs: 42,
-    tool: "legacy",
-    transport: "node",
-    protocolVersion: "2024-11-05",
-    routing: "queue",
-    queue: {},
-    controlCenter: { port: 4748 },
+  assert.throws(() => f.load(), /backend "mcp" is no longer supported/);
+});
+
+test("native MCP profiles and port 27182 are rejected without addin fallback", (t) => {
+  const f = fixture(t, {
+    backend: "addin",
+    backends: {
+      mcp: { url: "http://127.0.0.1:27182/mcp" },
+    },
   });
+  assert.throws(() => f.load(), /backends\.mcp is no longer supported/);
+  fs.writeFileSync(
+    f.config,
+    JSON.stringify({
+      backend: "addin",
+      backends: { addin: { url: "http://127.0.0.1:27182/mcp" } },
+    }),
+  );
+  assert.throws(() => f.load(), /port 27182/);
+  assert.throws(
+    () => f.load({ url: "http://127.0.0.1:8765/mcp" }),
+    /port 27182/,
+  );
+  fs.writeFileSync(f.config, JSON.stringify({ backend: "addin" }));
+  assert.throws(
+    () => f.load({ url: "http://127.0.0.1:27182/mcp" }),
+    /port 27182/,
+  );
+});
+
+test("retired endpoints are checked before adapter URL precedence", (t) => {
+  const f = fixture(t, { backend: "addin" });
+  for (const endpoint of [
+    " http://127.0.0.1:27182/mcp",
+    "http://127.0.0.1:27182/mcp?query=has space",
+  ]) {
+    fs.writeFileSync(
+      f.config,
+      JSON.stringify({
+        backend: "addin",
+        backends: { addin: { endpoint } },
+      }),
+    );
+    assert.throws(
+      () => f.load({ url: "http://127.0.0.1:8765/mcp" }),
+      /backends\.addin\.endpoint/,
+    );
+  }
+  fs.writeFileSync(
+    f.config,
+    JSON.stringify({
+      backend: "addin",
+      backends: {
+        addin: { endpoint: "http://127.0.0.1:8765/mcp/27182?marker=27182" },
+      },
+    }),
+  );
+  assert.equal(
+    f.load({ url: "http://127.0.0.1:8765/mcp" }).url,
+    "http://127.0.0.1:8765/mcp",
+  );
+});
+
+test("explicit endpoint fields must be strings before source precedence", (t) => {
+  const f = fixture(t, {
+    backend: "addin",
+    backends: { addin: { url: "http://127.0.0.1:8766/mcp" } },
+  });
+  const values: unknown[] = [null, 42, false, {}, []];
+  const assertTypeError = (run: () => unknown, field: string) => {
+    assert.throws(run, (error: unknown) => {
+      assert(error instanceof Error);
+      assert.equal(error.message, `${field} must be a string URL`);
+      return true;
+    });
+  };
+  const resolveSources = (
+    adapter: Record<string, unknown>,
+    environment: Record<string, unknown>,
+    file: Record<string, unknown>,
+  ) =>
+    resolveFmcadConfiguration({
+      adapter,
+      environment,
+      file,
+      platformDefaults: {},
+      acceptedService: null,
+    });
+
+  for (const key of ["url", "endpoint"] as const) {
+    for (const value of values) {
+      assertTypeError(() => f.load({ [key]: value }), `adapter.${key}`);
+      assertTypeError(
+        () =>
+          resolveSources(
+            { url: "http://127.0.0.1:8765/mcp" },
+            { [key]: value },
+            { backend: "addin" },
+          ),
+        `environment.${key}`,
+      );
+      fs.writeFileSync(
+        f.config,
+        JSON.stringify({
+          backend: "addin",
+          backends: { addin: { [key]: value } },
+        }),
+      );
+      assertTypeError(
+        () => f.load({ url: "http://127.0.0.1:8765/mcp" }),
+        `backends.addin.${key}`,
+      );
+    }
+  }
+
+  assertTypeError(() => f.load({ url: undefined }), "adapter.url");
+  assertTypeError(
+    () =>
+      resolveSources(
+        { url: "http://127.0.0.1:8765/mcp" },
+        { endpoint: undefined },
+        { backend: "addin" },
+      ),
+    "environment.endpoint",
+  );
+  assertTypeError(
+    () =>
+      resolveSources(
+        { url: "http://127.0.0.1:8765/mcp" },
+        {},
+        { backend: "addin", backends: { addin: { endpoint: undefined } } },
+      ),
+    "backends.addin.endpoint",
+  );
+
+  fs.writeFileSync(f.config, JSON.stringify({ backend: "addin" }));
+  assert.equal(f.load().url, "http://127.0.0.1:8765/mcp");
+
+  process.env["FMCAD_URL"] = "http://127.0.0.1:27182/mcp";
+  assert.throws(
+    () => f.load({ url: "http://127.0.0.1:8765/mcp" }),
+    /environment\.url/,
+  );
+  delete process.env["FMCAD_URL"];
+  process.env["FMCAD_ENDPOINT"] = "http://127.0.0.1:27182/mcp";
+  assert.throws(
+    () => f.load({ url: "http://127.0.0.1:8765/mcp" }),
+    /environment\.endpoint/,
+  );
 });
 
 test("backend priority is adapter, environment, file, then safe default", (t) => {
   const f = fixture(t, {
     backend: "addin",
-    backends: { mcp: { url: "http://127.0.0.1:27183/mcp" } },
+    backends: { addin: { url: "http://127.0.0.1:8766/mcp" } },
   });
   assert.equal(f.load().backend, "addin");
   process.env["FMCAD_BACKEND"] = "mcp";
-  assert.equal(f.load().backend, "mcp");
-  assert.equal(f.load({ backend: "addin" }).backend, "addin");
-  assert.equal(loadConfig().cfg.backend, "mcp");
+  assert.throws(() => f.load(), /backend "mcp" is no longer supported/);
+  assert.throws(
+    () => f.load({ backend: "addin" }),
+    /backend "mcp" is no longer supported/,
+  );
+  assert.throws(() => loadConfig(), /backend "mcp" is no longer supported/);
 });
 
-test("addin never inherits legacy MCP URL, headers, or transport settings", (t) => {
+test("retired top-level MCP settings are rejected instead of falling back to addin", (t) => {
   const f = fixture(t, {
     backend: "addin",
-    url: "http://native.invalid",
-    headers: { Host: "native", Secret: "native" },
-    timeoutMs: 1,
-    tool: "native",
-    transport: "invalid",
-    curlPath: "/native",
-    protocolVersion: "native",
-    backends: {
-      mcp: {
-        url: "http://other-native.invalid/mcp",
-        headers: { Host: "other-native" },
-      },
-    },
   });
-  assert.deepEqual(f.load(), {
-    backend: "addin",
-    url: "http://127.0.0.1:8765/mcp",
-    headers: {},
-    timeoutMs: 180000,
-    tool: "execute_python",
-    protocolVersion: "2025-06-18",
-    transport: "node",
-    routing: "queue",
-    queue: {},
-    controlCenter: { port: 4748 },
-  });
+  for (const setting of [
+    { url: "http://native.invalid/mcp" },
+    { headers: { Host: "native" } },
+    { timeoutMs: 1 },
+    { tool: "native" },
+    { transport: "invalid" },
+    { curlPath: "/native" },
+    { protocolVersion: "native" },
+  ]) {
+    fs.writeFileSync(
+      f.config,
+      JSON.stringify({ backend: "addin", ...setting }),
+    );
+    assert.throws(() => f.load(), /retired native MCP setting/);
+  }
 });
 
-test("selected backend fields and explicit adapter values follow precedence", (t) => {
+test("addin fields and explicit adapter values follow precedence", (t) => {
   const f = fixture(t, {
-    backend: "mcp",
-    url: "http://legacy.invalid/mcp",
-    headers: { Legacy: "yes" },
+    backend: "addin",
     backends: {
-      mcp: {
-        url: "http://mcp.invalid/mcp",
-        headers: { Host: "selected" },
-        timeoutMs: 12,
-        tool: "mcp-tool",
-      },
       addin: {
         url: "http://127.0.0.1:8766/mcp",
         headers: { Selected: "yes" },
@@ -131,10 +256,10 @@ test("selected backend fields and explicit adapter values follow precedence", (t
       },
     },
   });
-  assert.equal(f.load().url, "http://mcp.invalid/mcp");
-  assert.equal(f.load().headers["Host"], "selected");
-  assert.equal(f.load().timeoutMs, 12);
-  assert.equal(f.load().tool, "mcp-tool");
+  assert.equal(f.load().url, "http://127.0.0.1:8766/mcp");
+  assert.equal(f.load().headers["Selected"], "yes");
+  assert.equal(f.load().timeoutMs, 34);
+  assert.equal(f.load().tool, "addin-tool");
   assert.deepEqual(
     f.load({
       backend: "addin",
@@ -169,7 +294,6 @@ test("selected backend fields and explicit adapter values follow precedence", (t
 test("WSL addin transport is automatic unless an explicit backend transport is selected", (t) => {
   const f = fixture(t, {
     backend: "addin",
-    backends: { mcp: { url: "http://127.0.0.1:27183/mcp" } },
   });
   process.env["WSL_DISTRO_NAME"] = "Test";
   const wsl = process.platform === "linux";
@@ -185,14 +309,16 @@ test("WSL addin transport is automatic unless an explicit backend transport is s
         backend: "addin",
         backends: {
           addin: { transport, curlPath: "/custom" },
-          mcp: { url: "http://127.0.0.1:27183/mcp" },
         },
       }),
     );
     assert.equal(f.load().transport, transport);
     assert.equal(f.load().curlPath, "/custom");
   }
-  assert.equal(f.load({ backend: "mcp" }).transport, "node");
+  assert.throws(
+    () => f.load({ backend: "mcp" }),
+    /backend "mcp" is no longer supported/,
+  );
 });
 
 test("invalid backend, transport, routing, and timeout fail during resolution", (t) => {
@@ -228,7 +354,7 @@ test("invalid backend, transport, routing, and timeout fail during resolution", 
   assert.throws(() => f.load({ backend: "addin" }), /timeoutMs/);
 });
 
-test("init writes safe addin defaults and an explicit MCP template", (t) => {
+test("init writes safe addin defaults and rejects native MCP templates", (t) => {
   const f = fixture(t);
   const config = path.join(f.dir, "init", "config.json");
   initConfig({ config });
@@ -240,20 +366,16 @@ test("init writes safe addin defaults and an explicit MCP template", (t) => {
   });
   assert.equal(loadConfig({ config }).cfg.tool, "execute_python");
   assert.throws(() => initConfig({ config }), /already exists/);
-  initConfig({ config, backend: "mcp", force: true });
-  const mcp = JSON.parse(fs.readFileSync(config, "utf8"));
-  assert.deepEqual(mcp, {
-    backend: "mcp",
-    routing: "queue",
-    controlCenter: {},
-    backends: { mcp: {} },
-  });
-  assert.throws(() => loadConfig({ config }), /backends\.mcp\.url/);
   const before = fs.readFileSync(config, "utf8");
+  assert.throws(
+    () => initConfig({ config, backend: "mcp", force: true }),
+    /backend "mcp" is no longer supported/,
+  );
+  assert.equal(fs.readFileSync(config, "utf8"), before);
   assert.throws(
     () =>
       initConfig({ config, backend: "addin", fromOpencode: true, force: true }),
-    /only compatible with the mcp backend/,
+    /--from-opencode is no longer supported/,
   );
   assert.throws(
     () => initConfig({ config, backend: "invalid", force: true }),
