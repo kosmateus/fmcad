@@ -36,7 +36,11 @@ test("CI executes every retained broker regression family and its historical com
   const files = command
     .split(/\s+/)
     .filter((token) => token.endsWith(".test.js"));
+  const runtimeTests = list(
+    record(json("tsconfig.runtime-tests.json"))["include"],
+  ).map(text);
   const required = [
+    "broker-ipc-contract",
     "broker-multiprocess-contract",
     "broker-restart-contract",
     "phased-workers-start-close-failures",
@@ -51,6 +55,7 @@ test("CI executes every retained broker regression family and its historical com
     "instance-loss-recovery",
     "queue-atomic-recovery-audit",
   ];
+  assert.ok(runtimeTests.includes("tests/broker-ipc-contract.test.ts"));
   for (const name of required) {
     const emitted = fs.existsSync(path.join(root, `tests/${name}.test.ts`));
     assert.ok(
