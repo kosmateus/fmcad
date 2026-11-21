@@ -1408,6 +1408,11 @@ test("failed native reconciliation preserves unavailable output after the observ
     fs.existsSync(path.join(f.dir, "jobs", a.id, "worker-result.json")),
     false,
   );
+  assert.equal(
+    fs.existsSync(path.join(f.dir, "jobs", a.id, "postflight-start.json")),
+    false,
+    "worker exit with a pending RPC cannot start postflight",
+  );
   const b = await f.submit(f.b, "fast.py");
   finishSdk();
   await until(
@@ -1416,6 +1421,10 @@ test("failed native reconciliation preserves unavailable output after the observ
   );
   f.finishNative(true);
   await f.complete(f.b, b.id);
+  assert.ok(
+    fs.existsSync(path.join(f.dir, "jobs", b.id, "postflight.json")),
+    "the next independently settled turn performs its own postflight",
+  );
   const result = await f.result(f.a, a.id);
   assert.equal(result.job.code, "RESULT_UNAVAILABLE");
   assert.equal(result.job.state, "failed");

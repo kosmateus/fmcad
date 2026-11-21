@@ -164,3 +164,94 @@ export async function runBrokerProductTurn<
   if (!ports.verifyDocument(localContextChanged)) return;
   return ports.executeAndComplete();
 }
+
+type WorkerExitDecision =
+  | { kind: "postflight"; missingPublication: boolean }
+  | {
+      kind: "hold";
+      reason: string;
+      rejection?: { code: string; message: string };
+      outcome?: {
+        state: "needs_reconciliation";
+        code: "WORKFLOW_NONTERMINAL";
+        workflowOutcome: unknown;
+        nonterminal: true;
+      };
+    }
+  | { kind: "alreadyHeld"; rejection: { code: string; message: string } };
+
+/** Decide from durable bound evidence, not the process's exit code alone. */
+export function decideBrokerWorkerExit(
+  facts: {
+    jobId: string;
+    kind: "command" | "rpc";
+    phased: boolean;
+    pending: boolean;
+    workflowUnknown: boolean;
+    unknown: boolean;
+    timedOut: boolean;
+    dispatched: boolean;
+    exitCode: number | undefined;
+  },
+  evidence: {
+    worker(): {
+      jobId: string;
+      terminal?: boolean;
+      nonterminal?: boolean;
+      workflowOutcome?: unknown;
+    } | null;
+    workflowNonterminal(value: unknown): boolean;
+    blocked(): boolean;
+  },
+): WorkerExitDecision {
+  if (facts.pending)
+    return {
+      kind: "hold",
+      reason: "Worker exited while a broker RPC is still pending; no postflight sent",
+      rejection: {
+        code: "RECONCILIATION_REQUIRED",
+        message: "SDK RPC remains pending; not cancelled or replayed",
+      },
+    };
+  const worker = evidence.worker();
+  if (
+    facts.workflowUnknown ||
+    (!facts.phased &&
+      (worker?.nonterminal || evidence.workflowNonterminal(worker?.workflowOutcome)))
+  )
+    return {
+      kind: "hold",
+      reason: "Typed workflow result is unknown/nonterminal; a synchronous script receipt is insufficient",
+      rejection: {
+        code: "WORKFLOW_NONTERMINAL",
+        message: "Typed SDK workflow remains unknown; no replay",
+      },
+      outcome: {
+        state: "needs_reconciliation",
+        code: "WORKFLOW_NONTERMINAL",
+        workflowOutcome: worker?.workflowOutcome || null,
+        nonterminal: true,
+      },
+    };
+  if (facts.unknown || (facts.timedOut && facts.dispatched) || evidence.blocked())
+    return {
+      kind: "alreadyHeld",
+      rejection: {
+        code: "RECONCILIATION_REQUIRED",
+        message: "SDK outcome requires reconciliation; not cancelled or replayed",
+      },
+    };
+  const needsWorkerResult =
+    facts.kind === "command" &&
+    !facts.phased &&
+    (!worker?.terminal || worker.jobId !== facts.jobId);
+  if (needsWorkerResult && facts.dispatched)
+    return {
+      kind: "hold",
+      reason: "Worker exited after dispatch without its own durable terminal result",
+    };
+  return {
+    kind: "postflight",
+    missingPublication: needsWorkerResult && facts.exitCode === 0,
+  };
+}

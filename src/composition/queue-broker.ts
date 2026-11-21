@@ -90,6 +90,9 @@ const { createBrokerRecords } = runtimeRequire(
 const { createBrokerRecovery } = runtimeRequire(
   "./dist/core/application/broker-recovery",
 ) as typeof import("../../packages/core/src/application/broker-recovery");
+const atomicAcceptance = runtimeRequire(
+  "./dist/core/application/broker-atomic-acceptance",
+) as typeof import("../../packages/core/src/application/broker-atomic-acceptance");
 const {
   createBrokerRecoveryEvidence,
   observeBrokerRecovery,
@@ -4505,11 +4508,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   ) {
     const hold = lane.captureRecovery();
     const active = activeContext();
-    if (!["committed", "aborted"].includes(acceptedOutcome))
-      fail(
-        "INVALID_ACCEPTED_OUTCOME",
-        "Owner acceptance must name the observed committed or aborted outcome",
-      );
+    const outcome = atomicAcceptance.atomicOwnerOutcome(acceptedOutcome);
     assertResetSubmissionOpen(dir);
     if (gate.adminTransition || gate.resuming)
       fail(
@@ -4523,11 +4522,27 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       );
     owned(id, clientId);
     const target = required(state.data.jobs[id]);
+    const ownerRequest = {
+      targetId: id,
+      requestId: target.requestId,
+      owner: clientId,
+      outcome,
+    };
+    const queueFacts = () => ({
+      paused: state.data.paused,
+      controlGeneration: state.data.controlGeneration || 0,
+      contextEpoch: state.data.contextEpoch || 0,
+      activeId: state.data.active,
+      blockedId: state.data.blocked?.id,
+      targetState: state.data.jobs[id]?.state,
+      leased: !!state.data.lease,
+    });
     const targetDir = privateDirectory(jobDir(id));
     const acceptancePath = path.join(
       targetDir,
       "atomic-reconciliation-acceptance.json",
     );
+    const relativeAcceptancePath = path.relative(dir, acceptancePath);
     let priorAcceptance = null;
     try {
       priorAcceptance =
@@ -4537,61 +4552,23 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       if (error.code !== "ENOENT") throw error;
     }
     if (priorAcceptance) {
-      if (
-        priorAcceptance.kind !== "atomic-workflow-owner-acceptance" ||
-        priorAcceptance.targetJobId !== id ||
-        priorAcceptance.targetRequestId !== target.requestId ||
-        priorAcceptance.clientId !== clientId ||
-        priorAcceptance.acceptedOutcome !== acceptedOutcome ||
-        priorAcceptance.resolvedState !==
-          (acceptedOutcome === "committed" ? "succeeded" : "failed")
-      )
-        fail(
-          "ACCEPTANCE_CONFLICT",
-          "A different owner outcome was already durably accepted for this job",
-        );
+      atomicAcceptance.requirePersistedOwnerAcceptance(priorAcceptance, ownerRequest);
       const priorObserver = state.data.jobs[priorAcceptance.observerJobId];
       const expectedProofPath = priorObserver
         ? path.join(jobDir(priorObserver.id), "atomic-observation-proof.json")
         : "";
-      if (
-        !priorObserver ||
-        priorObserver.state !== "succeeded" ||
-        priorObserver.workflowObservation?.targetJobId !== target.id ||
-        priorAcceptance.proofPath !== path.relative(dir, expectedProofPath)
-      )
-        fail(
-          "ACCEPTANCE_RECEIPT_MISMATCH",
-          "Persisted owner acceptance no longer binds the unique scoped observer",
-        );
+      atomicAcceptance.requirePersistedAtomicObserver(
+        priorAcceptance,
+        target.id,
+        priorObserver && {
+          state: priorObserver.state,
+          targetJobId: priorObserver.workflowObservation?.targetJobId,
+          expectedPath: path.relative(dir, expectedProofPath),
+        },
+      );
       const persistedProof = readAtomicProofRecord(expectedProofPath);
-      if (persistedProof.sha256 !== priorAcceptance.proofSha256)
-        fail(
-          "ACCEPTANCE_RECEIPT_MISMATCH",
-          "Scoped atomic proof changed after owner acceptance",
-        );
+      atomicAcceptance.requirePersistedAtomicProof(priorAcceptance, persistedProof);
       const priorProof = persistedProof.value;
-      if (
-        priorProof.version !== 1 ||
-        priorProof.kind !== "atomic_holder_status" ||
-        priorProof.targetJobId !== target.id ||
-        priorProof.observerJobId !== priorObserver.id ||
-        priorProof.identityMatches !== true ||
-        priorProof.readOnlyOperation !== "atomic_status" ||
-        priorProof.remoteOutcome !== "succeeded" ||
-        priorProof.toolFailed === true ||
-        priorProof.summary?.outcome !== acceptedOutcome ||
-        priorProof.summary?.destroyed !== true ||
-        priorProof.summary?.idle !== true ||
-        !same(priorAcceptance.identity, priorProof.identity) ||
-        priorAcceptance.reportFingerprint !== priorProof.reportFingerprint ||
-        (priorAcceptance.instance &&
-          !sameInstance(priorAcceptance.instance, priorProof.observerInstance))
-      )
-        fail(
-          "ACCEPTANCE_RECEIPT_MISMATCH",
-          "Scoped proof no longer matches the persisted owner acceptance",
-        );
       const priorRemote = remoteReceipt(
         {
           receipt: priorProof.receipt,
@@ -4600,62 +4577,33 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         },
         false,
       );
-      if (
-        priorRemote.outcome !== "succeeded" ||
-        priorProof.binding?.jobId !== priorObserver.id ||
-        priorProof.binding?.rpcId !== priorProof.rpcId ||
-        priorProof.binding?.buildHash !== priorAcceptance.observerBuildHash ||
-        priorProof.receipt !==
-          path.join(
-            jobDir(priorObserver.id),
+      const priorObserverId = priorAcceptance.observerJobId;
+      const persistedFacts = () => ({
+        ...queueFacts(),
+        otherNonterminal: atomicAcceptance.hasOtherNonterminal(
+          Object.values(state.data.jobs).map(({ id, state }) => ({ id, state })),
+          target.id,
+          priorObserverId,
+        ),
+      });
+      const decision = atomicAcceptance.decidePersistedAtomicAcceptance(
+        priorAcceptance,
+        priorProof,
+        {
+          outcome: priorRemote.outcome,
+          expectedPath: path.join(
+            jobDir(priorAcceptance.observerJobId),
             `atomic-observation-${priorProof.rpcId}.receipt.json`,
-          )
-      )
-        fail(
-          "ACCEPTANCE_RECEIPT_MISMATCH",
-          "Original scoped transport receipt is no longer valid",
-        );
-      if (target.state === priorAcceptance.resolvedState)
-        return priorAcceptance;
-      if (
-        target.state !== "needs_reconciliation" ||
-        state.data.blocked?.id !== target.id ||
-        state.data.active !== target.id
-      )
-        fail(
-          "ACCEPTANCE_INCOMPLETE",
-          "Prior owner acceptance receipt cannot be applied to the current queue state",
-        );
-      if (
-        priorAcceptance.paused !== state.data.paused ||
-        priorAcceptance.controlGeneration !==
-          (state.data.controlGeneration || 0) ||
-        priorAcceptance.contextEpoch !== (state.data.contextEpoch || 0) ||
-        state.data.lease ||
-        Object.values(state.data.jobs).some(
-          (job) =>
-            job.id !== target.id &&
-            job.id !== priorObserver.id &&
-            !["succeeded", "failed", "cancelled", "expired"].includes(
-              job.state,
-            ),
-        )
-      )
-        fail(
-          "WORKFLOW_GATE_CHANGED",
-          "Queue changed since owner acceptance was durably recorded",
-        );
+          ),
+        },
+        persistedFacts(),
+      );
+      if (decision === "already-settled") return priorAcceptance;
       const currentIdentity = readJson<P.Identity>(identityFile);
-      if (
-        target.request.buildHash !== priorAcceptance.originalBuildHash ||
-        currentIdentity.buildHash !== priorAcceptance.originalBuildHash ||
-        !sameInstance(currentIdentity.instance, priorAcceptance.instance) ||
-        !originalFusionProcessAlive(currentIdentity.instance)
-      )
-        fail(
-          "INSTANCE_CHANGED",
-          "Original Fusion identity changed since owner acceptance was recorded",
-        );
+      atomicAcceptance.requirePersistedAtomicInstance(
+        priorAcceptance, currentIdentity, target.request.buildHash,
+        () => originalFusionProcessAlive(currentIdentity.instance),
+      );
       validateAtomicOriginalReceipts(
         target,
         priorAcceptance.originalBuildHash,
@@ -4665,32 +4613,19 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       const currentReport = await readCurrentAtomicObservationReport(
         priorAcceptance.reportPath,
       );
-      if (
-        currentReport.fingerprint !== priorAcceptance.reportFingerprint ||
-        !same(currentReport.identity, priorAcceptance.identity) ||
-        !snapshotStillCurrent(currentReport.snapshot)
-      )
-        fail(
-          "WORKFLOW_REPORT_CHANGED",
-          "Atomic report changed since owner acceptance was durably recorded",
-        );
-      const result = hold.settle(() => state.resolve(target.id, {
-        state: priorAcceptance.resolvedState,
-        code:
-          acceptedOutcome === "committed"
-            ? "OWNER_ACCEPTED_ATOMIC_COMMIT"
-            : "OWNER_ACCEPTED_ATOMIC_ABORT",
-        executionOutcome:
-          acceptedOutcome === "committed" ? "succeeded" : "failed",
-        mayHaveMutated: true,
-        sdkSettled: true,
-        publicationOutcome: "unavailable",
-        acceptanceReceipt: path.relative(dir, acceptancePath),
-        observationJobId: priorAcceptance.observerJobId,
-        nativeOutcome: acceptedOutcome,
-        modelValidation: "not_performed",
-        rollbackVerification: "not_performed",
-      }));
+      const resolution = atomicAcceptance.completePersistedAtomicAcceptance(
+        priorAcceptance,
+        ownerRequest,
+        {
+          fingerprint: currentReport.fingerprint,
+          identity: currentReport.identity,
+          isCurrent: () => snapshotStillCurrent(currentReport.snapshot),
+        },
+        relativeAcceptancePath,
+        persistedFacts(),
+      );
+      assertResetSubmissionOpen(dir);
+      const result = hold.settle(() => state.resolve(target.id, resolution));
       endNativeActivity(active?.job?.id === target.id ? active : null);
       recovery = {
         jobId: id,
@@ -4701,226 +4636,69 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       diagnostics();
       return { ...priorAcceptance, job: result };
     }
-    if (
-      !isAtomicObservationCandidate(
-        target,
-        target?.request?.buildHash,
-        observationScopeConfig,
-      )
-    )
-      fail(
-        "WORKFLOW_TYPE_NOT_ALLOWED",
-        "Owner outcome acceptance is restricted to the exact Fasteners atomic job",
-      );
-    if (
-      target.state !== "needs_reconciliation" ||
-      state.data.blocked?.id !== target.id ||
-      state.data.active !== target.id
-    )
-      fail(
-        "NOT_BLOCKED",
-        "The exact Fasteners atomic job is no longer the blocked queue owner",
-      );
-    if (state.data.lease)
-      fail(
-        "QUEUE_BUSY",
-        "An unresolved queue lease prevents atomic owner acceptance",
-      );
-    if (
-      active &&
-      (active.job?.id !== target.id ||
-        (!active.unknown && !active.workflowUnknown) ||
-        active.pending.size ||
-        (active.child && !active.workerClosed))
-    )
-      fail(
-        "WORKER_PENDING",
-        "Original worker or RPC is still pending; owner acceptance is unavailable",
-      );
-    const originalActivityId = active?.nativeActivityId;
-    const remainingActiveIds = [...gate.active.keys()].filter(
-      (id) => id !== originalActivityId,
-    );
-    if (remainingActiveIds.length)
-      fail(
-        "BROKER_BUSY",
-        "Another physical admission remains active; owner acceptance is deferred",
-      );
+    atomicAcceptance.requireFreshAtomicAdmission(target.id, {
+      candidate: isAtomicObservationCandidate(target, target.request.buildHash, observationScopeConfig),
+      fence: queueFacts(),
+      active: active && {
+        jobId: active.job?.id,
+        unknown: !!(active.unknown || active.workflowUnknown),
+        pending: !!active.pending.size,
+        childRunning: !!active.child && !active.workerClosed,
+      },
+      otherActivity: [...gate.active.keys()].some((key) => key !== active?.nativeActivityId),
+    });
     const identity = readJson<P.Identity>(identityFile);
-    if (
-      target.request.buildHash !== identity.buildHash ||
-      !sameInstance(instance, identity.instance)
-    )
-      fail(
-        "BUILD_CHANGED",
-        "Original target job/instance binding changed before acceptance",
-      );
-    if (!originalFusionProcessAlive(identity.instance))
-      fail(
-        "INSTANCE_CHANGED",
-        "The original Fusion PID/birth identity is no longer alive at owner acceptance",
-      );
+    atomicAcceptance.requireFreshAtomicInstance(
+      identity, instance, target.request.buildHash,
+      () => originalFusionProcessAlive(identity.instance),
+    );
 
-    const observers = Object.values(state.data.jobs).filter(
-      (job) =>
-        job.workflowObservation?.targetJobId === target.id &&
-        job.state === "succeeded",
-    );
-    if (observers.length !== 1)
-      fail(
-        "ATOMIC_OBSERVATION_REQUIRED",
-        "Exactly one successful scoped atomic status observation is required",
-      );
-    const observer = required(observers[0]);
-    const marker = observer.workflowObservation;
-    if (
-      !marker ||
-      marker.targetRequestId !== target.requestId ||
-      marker.targetClientId !== clientId ||
-      marker.targetJobHash !== target.hash ||
-      marker.targetBuildHash !== target.request.buildHash ||
-      marker.observerBuildHash !== codeHash ||
-      observer.request.buildHash !== codeHash ||
-      observer.request.cwd !== marker.projectDirectory ||
-      marker.projectDirectory !== target.request.cwd ||
-      state.data.paused !== marker.paused ||
-      (state.data.controlGeneration || 0) !== marker.controlGeneration ||
-      (state.data.contextEpoch || 0) !== marker.contextEpoch
-    ) {
-      fail(
-        "WORKFLOW_GATE_CHANGED",
-        "Owner, pause, context, job or build fence changed after the scoped observation",
-      );
-    }
-    const otherPendingJobs = Object.values(state.data.jobs).filter(
-      (job) =>
-        job.id !== target.id &&
-        job.id !== observer.id &&
-        !["succeeded", "failed", "cancelled", "expired"].includes(job.state),
-    );
-    if (otherPendingJobs.length)
-      fail(
-        "QUEUE_BUSY",
-        "Other queued/local jobs must remain held until the scoped owner acceptance is complete",
-      );
+    const { observer, marker } = atomicAcceptance.selectFreshAtomicObserver({
+      ...ownerRequest,
+      targetHash: target.hash,
+      targetBuildHash: target.request.buildHash,
+      targetDirectory: target.request.cwd,
+      build: codeHash,
+      fence: queueFacts(),
+      jobs: Object.values(state.data.jobs).map((job) => ({
+        id: job.id,
+        requestId: job.requestId,
+        state: job.state,
+        buildHash: job.request.buildHash,
+        projectDirectory: job.request.cwd,
+        marker: job.workflowObservation,
+      })),
+    });
     const proofFile = path.join(
       jobDir(observer.id),
       "atomic-observation-proof.json",
     );
     const { value: proof, sha256: proofHash } =
       readAtomicProofRecord(proofFile);
-    const proofEnvelopeMatches =
-      proof.version === 1 &&
-      proof.kind === "atomic_holder_status" &&
-      proof.targetJobId === target.id &&
-      proof.targetRequestId === target.requestId &&
-      proof.observerJobId === observer.id &&
-      proof.observerRequestId === observer.requestId &&
-      proof.clientId === clientId &&
-      proof.projectDirectory === marker.projectDirectory &&
-      proof.reportPath === marker.reportPath &&
-      proof.reportFingerprint === marker.reportFingerprint &&
-      proof.originalBuildHash === target.request.buildHash &&
-      proof.observerBuildHash === codeHash &&
-      proof.readOnlyOperation === "atomic_status" &&
-      proof.remoteOutcome === "succeeded" &&
-      proof.toolFailed !== true;
-    if (!proofEnvelopeMatches)
-      fail(
-        "RECEIPT_MISMATCH",
-        "Scoped proof envelope, owner, build or transport outcome differs from the authorized observation",
-      );
-    if (
-      proof.identityMatches !== true ||
-      !proof.summary ||
-      proof.summary.identityMatches === false ||
-      !same(proof.summary.identity, proof.identity)
-    )
-      fail(
-        "RECEIPT_MISMATCH",
-        "Atomic status summary identity does not exactly match the report-bound holder identity",
-      );
-    const proofIdentityMatches = same(proof.identity, {
-      commandId: marker.commandId,
-      runId: proof.identity?.runId,
-      requestHash: proof.identity?.requestHash,
-      backend: "addin",
-      sessionNonce: marker.sessionNonce,
-      documentIdentity: proof.identity?.documentIdentity,
-      resolvedIdentity: proof.identity?.documentIdentity?.resolved,
+    const summary = atomicAcceptance.requireFreshAtomicProof({
+      ...ownerRequest,
+      observer: { id: observer.id, requestId: observer.requestId },
+      marker,
+      expectedInstance: identity.instance,
+      proof,
+      build: codeHash,
     });
-    if (
-      !proofIdentityMatches ||
-      proof.identity?.documentIdentity?.expected?.creationId !== marker.docId ||
-      proof.identity?.documentIdentity?.resolved?.creationId !== marker.docId ||
-      proof.identity?.resolvedIdentity?.creationId !== marker.docId
-    )
-      fail(
-        "RECEIPT_MISMATCH",
-        "Scoped proof identity does not match the original command, session and document pin",
-      );
-    if (!sameInstance(proof.observerInstance, identity.instance))
-      fail(
-        "INSTANCE_CHANGED",
-        "Atomic status proof came from a different Fusion PID/birth/version",
-      );
-    if (
-      !proof.summary ||
-      proof.summary.outcome !== acceptedOutcome ||
-      proof.summary.destroyed !== true ||
-      proof.summary.idle !== true ||
-      (acceptedOutcome === "committed" &&
-        (proof.summary.status !== "completed" ||
-          proof.summary.completed !== true)) ||
-      (acceptedOutcome === "aborted" &&
-        (proof.summary.status !== "terminated" ||
-          proof.summary.completed !== false))
-    )
-      fail(
-        "OBSERVED_OUTCOME_MISMATCH",
-        "Atomic status does not show the exact owner-selected destroyed and idle terminal outcome",
-      );
     const report = await readCurrentAtomicObservationReport(marker.reportPath);
-    if (
-      report.fingerprint !== marker.reportFingerprint ||
-      report.fingerprint !== proof.reportFingerprint ||
-      report.commandId !== marker.commandId ||
-      report.sessionNonce !== marker.sessionNonce ||
-      report.docId !== marker.docId ||
-      !same(report.identity, proof.identity)
-    ) {
-      fail(
-        "WORKFLOW_REPORT_CHANGED",
-        "Atomic report identity/history changed after the holder observation",
-      );
-    }
+    atomicAcceptance.requireFreshAtomicReport(proof, marker, report);
     validateAtomicOriginalReceipts(
       target,
       identity.buildHash,
       identity.instance,
       report.identity,
     );
-    if (
-      !/^[a-f0-9-]{36}$/.test(proof.rpcId || "") ||
-      proof.receipt !==
-        path.join(
-          jobDir(observer.id),
-          `atomic-observation-${proof.rpcId}.receipt.json`,
-        ) ||
-      proof.binding?.jobId !== observer.id ||
-      proof.binding?.rpcId !== proof.rpcId ||
-      proof.binding?.buildHash !== codeHash ||
-      proof.binding?.observationKind !== "atomic_holder_status" ||
-      proof.binding?.observationTargetJobId !== target.id ||
-      proof.binding?.observationIdentityHash !==
-        atomicObservationIdentityHash(proof.identity) ||
-      !sameInstance(proof.observerInstance, identity.instance)
-    ) {
-      fail(
-        "RECEIPT_MISMATCH",
-        "Scoped atomic status transport receipt is not bound to the observed target/build/identity",
-      );
-    }
+    atomicAcceptance.requireFreshAtomicRemoteBinding(proof, {
+      instance: identity.instance,
+      receiptPath: path.join(jobDir(observer.id), `atomic-observation-${proof.rpcId}.receipt.json`),
+      observerId: observer.id,
+      targetId: target.id,
+      build: codeHash,
+      identityHash: atomicObservationIdentityHash(proof.identity),
+    });
     const remote = remoteReceipt(
       {
         receipt: proof.receipt,
@@ -4929,87 +4707,23 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       },
       false,
     );
-    if (remote.outcome !== "succeeded")
-      fail(
-        "RECEIPT_MISMATCH",
-        "Scoped atomic status transport receipt is not a successful terminal receipt",
-      );
-
-    const resolvedState =
-      acceptedOutcome === "committed" ? "succeeded" : "failed";
-    const acceptance = {
-      version: 1,
-      kind: "atomic-workflow-owner-acceptance",
-      targetJobId: target.id,
-      targetRequestId: target.requestId,
-      observerJobId: observer.id,
-      observerRequestId: observer.requestId,
-      clientId,
-      acceptedOutcome,
-      resolvedState,
-      projectDirectory: marker.projectDirectory,
-      reportPath: marker.reportPath,
-      reportFingerprint: marker.reportFingerprint,
-      identity: proof.identity,
-      instance: proof.observerInstance,
-      originalBuildHash: target.request.buildHash,
-      observerBuildHash: proof.observerBuildHash,
-      paused: marker.paused,
-      controlGeneration: marker.controlGeneration,
-      contextEpoch: marker.contextEpoch,
+    const { acceptance, resolution } = atomicAcceptance.completeFreshAtomicAcceptance({
+      ...ownerRequest,
+      proof,
+      summary,
+      marker,
+      remoteOutcome: remote.outcome,
       proofPath: path.relative(dir, proofFile),
       proofSha256: proofHash,
-      remoteReceipt: {
-        rpcId: proof.rpcId,
-        outcome: remote.outcome,
-        observerBuildHash: codeHash,
-      },
-      effects: {
-        nativeOutcome: acceptedOutcome,
-        destroyed: true,
-        idleAtObservation: true,
-        cleanupCompleted: proof.summary.cleanupCompleted === true,
-        definitionDeleted: proof.summary.definitionDeleted === true,
-        modelValidation: "not_performed",
-        rollbackVerification: "not_performed",
-        mayHaveMutated: true,
-      },
+      acceptancePath: relativeAcceptancePath,
       acceptedAt: new Date().toISOString(),
-    };
-    if (
-      !snapshotStillCurrent(report.snapshot) ||
-      state.data.blocked?.id !== target.id ||
-      state.data.active !== target.id ||
-      target.state !== "needs_reconciliation" ||
-      state.data.paused !== marker.paused ||
-      (state.data.controlGeneration || 0) !== marker.controlGeneration ||
-      (state.data.contextEpoch || 0) !== marker.contextEpoch ||
-      state.data.lease
-    )
-      fail(
-        "WORKFLOW_GATE_CHANGED",
-        "Report or queue fences changed during owner acceptance; unresolved blocker is retained",
-      );
+      reportCurrent: () => snapshotStillCurrent(report.snapshot),
+      fence: queueFacts(),
+    });
+    assertResetSubmissionOpen(dir);
+    hold.assertCurrent();
     durable(acceptancePath, acceptance, true);
-    const result = hold.settle(() => state.resolve(target.id, {
-      state: resolvedState,
-      code:
-        acceptedOutcome === "committed"
-          ? "OWNER_ACCEPTED_ATOMIC_COMMIT"
-          : "OWNER_ACCEPTED_ATOMIC_ABORT",
-      executionOutcome:
-        acceptedOutcome === "committed" ? "succeeded" : "failed",
-      mayHaveMutated: true,
-      sdkSettled: true,
-      publicationOutcome: "unavailable",
-      acceptanceReceipt: path.relative(dir, acceptancePath),
-      observationJobId: observer.id,
-      nativeOutcome: acceptedOutcome,
-      cleanupCompleted: acceptance.effects.cleanupCompleted,
-      definitionDeleted: acceptance.effects.definitionDeleted,
-      modelValidation: "not_performed",
-      rollbackVerification: "not_performed",
-    }));
+    const result = hold.settle(() => state.resolve(target.id, resolution));
     endNativeActivity(active?.job?.id === target.id ? active : null);
     recovery = {
       jobId: target.id,
@@ -7021,88 +6735,44 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           hold(grant, error.code || "NATIVE_RECEIPT_UNAVAILABLE");
         }
         required(context.budget).close();
-        if (context.pending.size) {
-          hold(
-            grant,
-            "Worker exited while a broker RPC is still pending; no postflight sent",
+        const decision = brokerExecution.decideBrokerWorkerExit(
+          {
+            jobId: job.id,
+            kind: job.kind,
+            phased: !!job.request.phased,
+            pending: !!context.pending.size,
+            workflowUnknown: !!context.workflowUnknown,
+            unknown: context.unknown,
+            timedOut: context.timedOut,
+            dispatched: context.dispatched,
+            exitCode: code,
+          },
+          {
+            worker() {
+              const file = path.join(directory, "worker-result.json");
+              return fs.existsSync(file) ? readJson<P.WorkerResult>(file) : null;
+            },
+            workflowNonterminal,
+            blocked: () => !!state.summary().blocked,
+          },
+        );
+        if (decision.kind === "postflight") {
+          publicationError ||= decision.missingPublication;
+          return true;
+        }
+        if (decision.kind === "hold") {
+          if (decision.outcome)
+            durable(path.join(directory, "outcome.json"), decision.outcome);
+          hold(grant, decision.reason);
+        }
+        if (job.request.phased && decision.rejection)
+          phased.reject(
+            job.id,
+            Object.assign(new Error(decision.rejection.message), {
+              code: decision.rejection.code,
+            }),
           );
-          if (job.request.phased)
-            phased.reject(
-              job.id,
-              Object.assign(
-                new Error("SDK RPC remains pending; not cancelled or replayed"),
-                { code: "RECONCILIATION_REQUIRED" },
-              ),
-            );
-          return;
-        }
-        const workerFile = path.join(directory, "worker-result.json");
-        const worker = fs.existsSync(workerFile)
-          ? readJson<P.WorkerResult>(workerFile)
-          : null;
-        if (
-          context.workflowUnknown ||
-          (!job.request.phased &&
-            (worker?.nonterminal ||
-              workflowNonterminal(worker?.workflowOutcome)))
-        ) {
-          durable(path.join(directory, "outcome.json"), {
-            state: "needs_reconciliation",
-            code: "WORKFLOW_NONTERMINAL",
-            workflowOutcome: worker?.workflowOutcome || null,
-            nonterminal: true,
-          });
-          hold(
-            grant,
-            "Typed workflow result is unknown/nonterminal; a synchronous script receipt is insufficient",
-          );
-          if (job.request.phased)
-            phased.reject(
-              job.id,
-              Object.assign(
-                new Error("Typed SDK workflow remains unknown; no replay"),
-                { code: "WORKFLOW_NONTERMINAL" },
-              ),
-            );
-          return;
-        }
-        if (
-          context.unknown ||
-          (context.timedOut && context.dispatched) ||
-          state.summary().blocked
-        ) {
-          if (job.request.phased)
-            phased.reject(
-              job.id,
-              Object.assign(
-                new Error(
-                  "SDK outcome requires reconciliation; not cancelled or replayed",
-                ),
-                { code: "RECONCILIATION_REQUIRED" },
-              ),
-            );
-          return;
-        }
-        if (
-          job.kind === "command" &&
-          !job.request.phased &&
-          context.dispatched &&
-          (!worker?.terminal || worker.jobId !== job.id)
-        ) {
-          hold(
-            grant,
-            "Worker exited after dispatch without its own durable terminal result",
-          );
-          return;
-        }
-        if (
-          job.kind === "command" &&
-          !job.request.phased &&
-          code === 0 &&
-          (!worker?.terminal || worker.jobId !== job.id)
-        )
-          publicationError = true;
-        return true;
+        return undefined;
       },
       async postflight(settled) {
         if (!settled) return false;

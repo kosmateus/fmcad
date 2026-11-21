@@ -1219,10 +1219,23 @@ test(
       assert.equal(acceptedQueue.paused, true, 'owner acceptance must preserve the existing manual pause');
       assert.equal(acceptedQueue.control.gateClosed, true);
       assert.equal(acceptedQueue.nonterminalJobCount, 0);
-      const repeatedAcceptance = await request(queueDir, { action: 'reconcile', auth, jobId: target.id,
-        acceptedOutcome: 'committed' });
-      assert.equal(repeatedAcceptance.kind, 'atomic-workflow-owner-acceptance', 'the terminal owner receipt is idempotently readable');
-      const originalAfter = JSON.parse(fs.readFileSync(path.join(queueDir, 'queue-state.json'), 'utf8')).jobs[target.id];
+       const repeatedAcceptance = await request(queueDir, { action: 'reconcile', auth, jobId: target.id,
+         acceptedOutcome: 'committed' });
+       assert.equal(repeatedAcceptance.kind, 'atomic-workflow-owner-acceptance', 'the terminal owner receipt is idempotently readable');
+       assert.equal(repeatedAcceptance.proofSha256, acceptance.proofSha256);
+       const acceptedProof = path.join(queueDir, acceptance.proofPath);
+       const originalProof = fs.readFileSync(acceptedProof);
+       try {
+         // Only the simulator-owned file is changed. Equal JSON with different
+         // bytes still cannot authorize retrieval of an already accepted outcome.
+         fs.appendFileSync(acceptedProof, ' ');
+         await assert.rejects(request(queueDir, { action: 'reconcile', auth, jobId: target.id,
+           acceptedOutcome: 'committed' }), { code: 'ACCEPTANCE_RECEIPT_MISMATCH' });
+         assert.equal(physicalCalls, 1, 'persisted evidence refusal does not replay or reobserve');
+       } finally {
+         fs.writeFileSync(acceptedProof, originalProof);
+       }
+       const originalAfter = JSON.parse(fs.readFileSync(path.join(queueDir, 'queue-state.json'), 'utf8')).jobs[target.id];
       assert.equal(originalAfter.hash, targetJob.hash);
       if (rawOrigin) assert.equal(Object.hasOwn(originalAfter.request, 'payload'), false,
         'original raw job identity remains raw; typed observer never edits its request');
