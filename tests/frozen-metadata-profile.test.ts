@@ -266,6 +266,122 @@ test("legacy epoch evidence cannot hide or contradict the canonical job namespac
   assert.throws(f.qualify, { code: "FROZEN_METADATA_FENCE_CHANGED" });
 });
 
+function auxiliaryTiming(id: string, hash?: string) {
+  return {
+    version: 1,
+    jobId: id,
+    ...(hash === undefined ? {} : { jobHash: hash }),
+    producerEpoch: "960842f4-036f-4892-b45f-047d3888345a",
+    observedAtMs: 1795242217073,
+    totals: { prepare: { durationMs: 202.4, intervals: 2, complete: true } },
+    queueWaitSamples: [],
+    active: { queue: null, local: null },
+  };
+}
+
+test("one legacy preparation timing is auxiliary only after canonical worker binding", (t) => {
+  const f = inspectionFixture(t);
+  const directory = path.join(f.epoch, "jobs", "export-unknown");
+  fs.mkdirSync(directory, { recursive: true });
+  const file = path.join(directory, "phase-timings.json");
+  for (const hash of [undefined, f.profile.unresolved[1]!.hash]) {
+    fs.writeFileSync(
+      file,
+      JSON.stringify(auxiliaryTiming("export-unknown", hash)),
+    );
+    assert.doesNotThrow(f.qualify);
+    const observed = inspectFrozenMetadataWork(f.root, f.epoch);
+    assert.deepEqual(observed.workers, [{ pid: 201, birth: "worker-201" }]);
+    assert.throws(
+      () =>
+        assertFrozenMetadataProfile(f.profile, {
+          ...f.facts,
+          unresolved: observed.unresolved,
+          producersDead: false,
+        }),
+      { code: "FROZEN_METADATA_FENCE_CHANGED" },
+    );
+  }
+});
+
+test("legacy preparation never supplies queued-never-started or a missing worker identity", (t) => {
+  for (const changed of ["queued", "identity", "start"]) {
+    const f = inspectionFixture(t);
+    const id = changed === "queued" ? "frozen-queued" : "export-unknown";
+    const directory = path.join(f.epoch, "jobs", id);
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(
+      path.join(directory, "phase-timings.json"),
+      JSON.stringify(auxiliaryTiming(id)),
+    );
+    if (changed !== "queued")
+      fs.unlinkSync(path.join(f.root, "jobs", id, `worker-${changed}.json`));
+    assert.throws(f.qualify, { code: "FROZEN_METADATA_FENCE_CHANGED" });
+  }
+});
+
+test("auxiliary legacy timing refuses every binding, shape and additional producer contradiction", (t) => {
+  const changes: ((timing: Record<string, unknown>) => void)[] = [
+    (value) => {
+      value["jobId"] = "foreign";
+    },
+    (value) => {
+      value["jobHash"] = null;
+    },
+    (value) => {
+      value["jobHash"] = "f".repeat(64);
+    },
+    (value) => {
+      value["jobHash"] = "invalid";
+    },
+    (value) => {
+      value["version"] = 2;
+    },
+    (value) => {
+      value["active"] = { queue: null, local: "prepare" };
+    },
+    (value) => {
+      value["active"] = { queue: "sdkActive", local: null };
+    },
+    (value) => {
+      value["totals"] = { sdkActive: {} };
+    },
+    (value) => {
+      value["extra"] = true;
+    },
+    (value) => {
+      value["queueWaitSamples"] = [{}];
+    },
+  ];
+  for (const change of changes) {
+    const f = inspectionFixture(t);
+    const directory = path.join(f.epoch, "jobs", "export-unknown");
+    fs.mkdirSync(directory, { recursive: true });
+    const timing: Record<string, unknown> = auxiliaryTiming("export-unknown");
+    change(timing);
+    fs.writeFileSync(
+      path.join(directory, "phase-timings.json"),
+      JSON.stringify(timing),
+    );
+    assert.throws(f.qualify, { code: "FROZEN_METADATA_FENCE_CHANGED" });
+  }
+  for (const extra of [
+    "worker-start.json",
+    "worker-identity.json",
+    "rpc-late.json",
+  ]) {
+    const f = inspectionFixture(t);
+    const directory = path.join(f.epoch, "jobs", "export-unknown");
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(
+      path.join(directory, "phase-timings.json"),
+      JSON.stringify(auxiliaryTiming("export-unknown")),
+    );
+    fs.writeFileSync(path.join(directory, extra), "{}");
+    assert.throws(f.qualify, { code: "FROZEN_METADATA_FENCE_CHANGED" });
+  }
+});
+
 test("legacy queued traces and dangling job-directory symlinks are not absence evidence", (t) => {
   for (const trace of ["legacy", "symlink"] as const) {
     const f = inspectionFixture(t);

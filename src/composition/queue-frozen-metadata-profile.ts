@@ -207,6 +207,71 @@ export function inspectFrozenMetadataWork(
       { code: "FROZEN_METADATA_FENCE_CHANGED" },
     );
   }
+  function auxiliaryPreparation(
+    timing: Record<string, unknown>,
+    id: string,
+    hash: string,
+  ): boolean {
+    const pinned = Object.hasOwn(timing, "jobHash");
+    const expected = [
+      "version",
+      "jobId",
+      "producerEpoch",
+      "observedAtMs",
+      "totals",
+      "queueWaitSamples",
+      "active",
+      ...(pinned ? ["jobHash"] : []),
+    ];
+    if (
+      Object.keys(timing).sort().join() !== expected.sort().join() ||
+      timing["version"] !== 1 ||
+      timing["jobId"] !== id ||
+      (pinned && timing["jobHash"] !== hash) ||
+      !text(timing["producerEpoch"]) ||
+      typeof timing["observedAtMs"] !== "number" ||
+      !Number.isFinite(timing["observedAtMs"]) ||
+      timing["observedAtMs"] < 0 ||
+      !Array.isArray(timing["queueWaitSamples"]) ||
+      timing["queueWaitSamples"].length !== 0
+    )
+      return false;
+    const active = timing["active"],
+      totals = timing["totals"];
+    if (
+      !active ||
+      typeof active !== "object" ||
+      Array.isArray(active) ||
+      Object.keys(active).sort().join() !== "local,queue" ||
+      !("local" in active) ||
+      active.local !== null ||
+      !("queue" in active) ||
+      active.queue !== null ||
+      !totals ||
+      typeof totals !== "object" ||
+      Array.isArray(totals) ||
+      Object.keys(totals).join() !== "prepare" ||
+      !("prepare" in totals)
+    )
+      return false;
+    const prepare = totals.prepare;
+    return (
+      !!prepare &&
+      typeof prepare === "object" &&
+      !Array.isArray(prepare) &&
+      Object.keys(prepare).sort().join() === "complete,durationMs,intervals" &&
+      "durationMs" in prepare &&
+      typeof prepare.durationMs === "number" &&
+      Number.isFinite(prepare.durationMs) &&
+      prepare.durationMs >= 0 &&
+      "intervals" in prepare &&
+      typeof prepare.intervals === "number" &&
+      Number.isSafeInteger(prepare.intervals) &&
+      prepare.intervals > 0 &&
+      "complete" in prepare &&
+      typeof prepare.complete === "boolean"
+    );
+  }
   for (const namespace of namespaces) entries(namespace);
   for (const [store, directory] of [
     ["root", root],
@@ -278,6 +343,7 @@ export function inspectFrozenMetadataWork(
         const jobDirectory = path.join(namespace, id);
         const files = entries(jobDirectory);
         const canonical = namespace === path.join(root, "jobs");
+        let auxiliary = false;
         if (
           job.state === "queued" &&
           files.some((name) => name !== "phase-timings.json")
@@ -285,7 +351,20 @@ export function inspectFrozenMetadataWork(
           queuedNeverStarted = false;
         if (files.includes("phase-timings.json")) {
           const timing = read(path.join(jobDirectory, "phase-timings.json"));
-          if (timing["jobId"] !== id || timing["jobHash"] !== job.hash)
+          // Reviewed auxiliary-only schema: it never establishes worker death,
+          // and is never accepted as evidence that queued work did not start.
+          auxiliary =
+            store === "epoch" &&
+            job.state === "needs_reconciliation" &&
+            namespace === path.join(epochRoot, "jobs") &&
+            !canonical &&
+            canonicalWorker !== undefined &&
+            files.length === 1 &&
+            auxiliaryPreparation(timing, id, job.hash);
+          if (
+            timing["jobId"] !== id ||
+            (!auxiliary && timing["jobHash"] !== job.hash)
+          )
             throw Object.assign(
               new Error(`Unbound frozen phase timing for ${store}:${id}`),
               { code: "FROZEN_METADATA_FENCE_CHANGED" },
@@ -352,7 +431,8 @@ export function inspectFrozenMetadataWork(
             workers.push(worker);
         } else if (
           job.state === "needs_reconciliation" &&
-          (canonical || files.length > 0)
+          (canonical || files.length > 0) &&
+          !auxiliary
         ) {
           if (canonical && store === "root" && proofRef !== undefined) {
             // This is the exact expired inline broker, not a missing worker
