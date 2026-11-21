@@ -292,13 +292,13 @@ test("a fence lost during recovery probe preparation leaves no sent intent", asy
   const released = new Promise<void>((resolve) => {
     release = resolve;
   });
-  let broker: Awaited<ReturnType<typeof serve>> | undefined;
+  const fixture: { broker?: Awaited<ReturnType<typeof serve>> } = {};
   let preparations = 0,
     sends = 0;
   t.after(async () => {
     release();
     try {
-      await broker?.close();
+      await fixture.broker?.close();
     } catch (error) {
       // A RED candidate deliberately leaves the disposable fixture held.
       assert.partialDeepStrictEqual(error, { code: "RECONCILIATION_REQUIRED" });
@@ -306,7 +306,7 @@ test("a fence lost during recovery probe preparation leaves no sent intent", asy
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-  broker = await serve(cfg, {
+  fixture.broker = await serve(cfg, {
     dir,
     confirmOwnership: true,
     nativePath: (file) => file,
