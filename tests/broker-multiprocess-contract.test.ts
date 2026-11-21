@@ -407,18 +407,44 @@ test(
       `lifecycle-control-${createHash("sha256").update(requestId).digest("hex")}.json`,
     );
     const persisted = fs.readFileSync(receipt);
+    const controlRecords = () =>
+      fs
+        .readdirSync(dir)
+        .filter((file) => file.startsWith("lifecycle-control-"))
+        .sort();
+    const originalRecords = controlRecords();
     const inFlight = await server.call("counts");
     assert.deepEqual(await a.call("stop"), { stopping: true, draining: true });
     assert.deepEqual(await a.call("resume", { control }), original);
     await assert.rejects(b.call("resume", { control }), {
       code: "REQUEST_CONFLICT",
     });
+    // Reject reserved fields as malformed; neither marker belongs to a client.
+    for (const field of ["clientId", "owner"]) {
+      await assert.rejects(
+        b.call("resume", {
+          control: { ...control, [field]: "untrusted-fixture-value" },
+        }),
+        { code: "INVALID_REQUEST" },
+      );
+    }
     await assert.rejects(
       a.call("resume", { control, resetOwnerNonce: "different-owner-binding" }),
       {
         code: "REQUEST_CONFLICT",
       },
     );
+    assert.deepEqual(
+      await a.call("resume", {
+        control: {
+          requestId,
+          expectedGeneration: control.expectedGeneration,
+          instanceId: control.instanceId,
+        },
+      }),
+      original,
+    );
+    assert.deepEqual(controlRecords(), originalRecords);
     assert.deepEqual(fs.readFileSync(receipt), persisted);
     assert.deepEqual(await server.call("counts"), inFlight);
 
