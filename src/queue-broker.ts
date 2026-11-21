@@ -1078,6 +1078,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       "Backend must expose server and the physical McpClient _post/_parse boundary",
     );
   const originalPost = client._post.bind(client);
+  // The private transport calls back at _post after session setup. Explicit
+  // injected tool ports may instead perform the transport at their own entry.
+  const probeUsesWirePost =
+    !options.createBackend || typeof client.preparePost === "function";
   const runtime = resolveRuntimePaths({ anchor: __filename }).runtime;
   const queueAdmission = createProductionQueueAdmission(runtime);
   const pythonAdmission = queueAdmission.admission;
@@ -1279,7 +1283,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   type ProductContext = P.Context & { productTurn?: TurnIdentity };
   type ProductGrant = { context: ProductContext; turn: TurnIdentity };
   const physicalGrant = new AsyncLocalStorage<ProductGrant>();
-  const recoveryProbeFence = new AsyncLocalStorage<() => void>();
+  const recoveryProbeScope = new AsyncLocalStorage<{
+    assertCurrent(): void;
+    start(): void;
+  }>();
   const preparingJob = new AsyncLocalStorage<
     { job: P.Job; turn: TurnIdentity } | false
   >();
@@ -1427,7 +1434,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       // after a pause. Product operations retain their own epoch fence below;
       // an observation is never permission to execute a stale product request.
       certificate.fence(outgoing);
-      recoveryProbeFence.getStore()?.();
+      const recoveryProbe = recoveryProbeScope.getStore();
+      if (recoveryProbe) {
+        if (probeUsesWirePost && outgoing.method === "tools/call")
+          recoveryProbe.start();
+        else recoveryProbe.assertCurrent();
+      }
       return originalPost(outgoing, sessionId, requestOptions);
     });
   }
@@ -1451,21 +1463,30 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       prepareCallTool?: (...args: unknown[]) => Promise<P.Send>;
     } = {
       server,
-      callTool: (...args) => {
-        recoveryProbeFence.getStore()?.();
-        return withRequest({ timeoutMs: server.timeoutMs }, () =>
-          client.callTool(...args),
-        );
-      },
+      callTool: (...args) =>
+        withRequest({ timeoutMs: server.timeoutMs }, () => {
+          // Without a prepared wire call, entry to the injected tool port is
+          // the last boundary where the broker can prove the probe was unsent.
+          recoveryProbeScope.getStore()?.start();
+          return client.callTool(...args);
+        }),
     };
     if (client.prepareCallTool)
       port.prepareCallTool = async (...args) => {
         const send = await required(client.prepareCallTool).apply(client, args);
         return Object.assign(
-          () => {
-            recoveryProbeFence.getStore()?.();
-            return withRequest({ timeoutMs: server.timeoutMs }, send);
-          },
+          () =>
+            withRequest({ timeoutMs: server.timeoutMs }, () => {
+              const recoveryProbe = recoveryProbeScope.getStore();
+              if (recoveryProbe) {
+                if (probeUsesWirePost) recoveryProbe.assertCurrent();
+                else {
+                  send.fence();
+                  recoveryProbe.start();
+                }
+              }
+              return send();
+            }),
           { fence: () => send.fence() },
         );
       };
@@ -5029,16 +5050,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     if (decision.kind === "waitingForEvidence") {
       if (!decision.observation) fail(decision.code, decision.message);
       const previous = decision.observation.priorFailed;
-      if (previous) {
-        assertCurrentFence();
-        durable(
-          path.join(
-            directory,
-            `reconcile-probe-${previous.binding.rpcId}.json`,
-          ),
-          previous,
-        );
-      }
       const rpcId = randomUUID();
       const binding = {
         jobId: id,
@@ -5047,15 +5058,46 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         buildHash: codeHash,
       };
       const receipt = path.join(directory, `reconcile-${rpcId}.receipt.json`);
-      assertCurrentFence();
-      durable(path.join(directory, "reconcile-probe.json"), {
-        binding,
-        instance,
-        receipt,
-      });
-      active = null;
-      try {
-        await recoveryProbeFence.run(assertCurrentFence, () =>
+      let entered = false;
+      await recoveryProbeScope.run(
+        {
+          assertCurrent: assertCurrentFence,
+          start() {
+            if (entered)
+              fail("PREPARED_RPC_CONSUMED", "Recovery probe cannot be replayed");
+            entered = true;
+            const current = recoveryEvaluator.reconcile(job, expected);
+            if (current.kind === "waitingForEvidence" && !current.observation)
+              fail(current.code, current.message);
+            if (
+              current.kind !== "waitingForEvidence" ||
+              !current.observation ||
+              !same(current.observation.priorFailed, previous)
+            )
+              fail("STATE_CONFLICT", "Recovery evidence changed before send");
+            if (previous) {
+              const archived = path.join(
+                directory,
+                `reconcile-probe-${previous.binding.rpcId}.json`,
+              );
+              assertCurrentFence();
+              if (fs.lstatSync(archived, { throwIfNoEntry: false })) {
+                if (!same(readJson(archived), previous))
+                  fail("RECEIPT_MISMATCH", "Archived recovery intent differs");
+              } else durable(archived, previous, true);
+            }
+            assertCurrentFence();
+            // Preparation (including session setup) alone must not leave a
+            // journal that would imply an uncertain send. Once durable here,
+            // a lost reply can only be resolved from this attempt's evidence.
+            durable(
+              path.join(directory, "reconcile-probe.json"),
+              { binding, instance, receipt },
+              !previous,
+            );
+          },
+        },
+        () =>
           checkInstance({
             receiptPath: receipt,
             binding,
@@ -5064,10 +5106,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               `reconcile-${rpcId}.result.json`,
             ),
           }),
-        );
-      } finally {
-        active = context;
-      }
+      );
       // An awaited observation cannot authorize settlement. Recheck both the
       // original authority and the original durable evidence, without a send.
       assertCurrentFence();
