@@ -175,6 +175,15 @@ export async function requestCurlBytes(
   },
   spawnImpl: Spawn = spawn,
 ): Promise<ReturnType<typeof parseCurlBytes>> {
+  if (
+    request.method === "GET" &&
+    (request.url !== "http://127.0.0.1:8765/health" ||
+      request.body !== undefined ||
+      Object.keys(request.headers).length !== 0)
+  )
+    throw new Error(
+      "Private health GET requires the fixed endpoint without headers or body",
+    );
   const url = new URL(request.url);
   if (
     /[\x00-\x1f\x7f]/.test(request.url) ||
@@ -213,6 +222,8 @@ export async function requestCurlBytes(
     "--globoff",
     "--noproxy",
     "*",
+    "--proxy",
+    "",
     "--max-time",
     String(timeoutMs / 1000),
     "--request",

@@ -1,5 +1,6 @@
 import { requestCurlBytes } from "../fusion-transport/curl";
 import type { Spawn } from "../fusion-transport/contracts";
+import { Agent } from "undici";
 
 /** Private process-local dependency. Never put this capability in admission DTOs. */
 export type AdmissionRequest = (request: {
@@ -50,7 +51,10 @@ export function createAdmissionRequest(
   }
   const fetchOnce = dependencies.fetch ?? globalThis.fetch;
   return async ({ endpoint, token, body, timeoutMs }) => {
-    const response = await fetchOnce(endpoint, {
+    // An explicit plain Agent bypasses both env proxy selection and the global
+    // dispatcher. Its lifetime is one operation, including errors and aborts.
+    const dispatcher = new Agent({ connections: 1, pipelining: 1 });
+    const init = {
       method: "POST",
       redirect: "error",
       headers: {
@@ -59,10 +63,24 @@ export function createAdmissionRequest(
       },
       body: Buffer.from(body),
       signal: AbortSignal.timeout(timeoutMs),
-    });
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.byteLength > maxBuffer)
-      throw new Error("Admission response too large");
-    return { status: response.status, body: bytes };
+      // Node's declarations name the bundled undici version. The dispatcher
+      // protocol is shared with pinned undici 6; real Node22/24 tests qualify
+      // this one private inter-version boundary, not a global dispatcher.
+      dispatcher,
+    } satisfies Omit<RequestInit, "dispatcher"> & { dispatcher: Agent };
+    try {
+      // Some build targets use DOM RequestInit (no dispatcher), others use
+      // Node's bundled undici types. Keep that version bridge at the call.
+      const response = await fetchOnce(
+        endpoint,
+        init as unknown as RequestInit,
+      );
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.byteLength > maxBuffer)
+        throw new Error("Admission response too large");
+      return { status: response.status, body: bytes };
+    } finally {
+      await dispatcher.destroy();
+    }
   };
 }
