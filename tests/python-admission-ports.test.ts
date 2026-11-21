@@ -1,6 +1,7 @@
 import nodeTest from "node:test";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -9,6 +10,7 @@ import { createRequire } from "node:module";
 const load = createRequire(__filename);
 const executeFile = promisify(execFile);
 const isolatedCase = process.env["FMCAD_ADMISSION_PORTS_CHILD"];
+let selectedCaseRegistered = false;
 
 // A refused close must fail the test, not keep the whole shard alive through
 // the broker's intentionally retained ownership timer. Each case owns its
@@ -18,7 +20,10 @@ function test(
   run: (t: import("node:test").TestContext) => Promise<void>,
 ) {
   if (isolatedCase) {
-    if (isolatedCase === name) nodeTest(name, run);
+    if (isolatedCase === name) {
+      selectedCaseRegistered = true;
+      nodeTest(name, run);
+    }
     return;
   }
   nodeTest(name, async (t) => {
@@ -48,6 +53,8 @@ function test(
       assert.match(stdout, /^# tests 1$/m);
       assert.match(stdout, /^# pass 1$/m);
       assert.match(stdout, /^# fail 0$/m);
+      const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      assert.match(stdout, new RegExp(`^ok 1 - ${escapedName}$`, "m"));
       fs.rmSync(home, { recursive: true, force: true });
     } catch (error) {
       t.diagnostic(`Isolated admission process evidence retained: ${home}`);
@@ -101,6 +108,24 @@ if (!isolatedCase) {
           assert.match(String(stdout), /RECONCILIATION_REQUIRED/);
           assert.match(String(stdout), /^# fail 1$/m);
           assert.match(String(stdout), /^# tests 1$/m);
+          const marker = /^# RETAINED_BINDING (.+)$/m.exec(String(stdout));
+          assert(marker);
+          const binding = JSON.parse(marker[1]!) as {
+            dir: string;
+            jobId: string;
+            lockHash: string;
+          };
+          const lock = fs.readFileSync(path.join(binding.dir, "broker.lock"));
+          assert.equal(
+            createHash("sha256").update(lock).digest("hex"),
+            binding.lockHash,
+          );
+          const state = JSON.parse(
+            fs.readFileSync(path.join(binding.dir, "queue-state.json"), "utf8"),
+          );
+          assert.equal(state.jobs[binding.jobId].state, "needs_reconciliation");
+          assert.equal(state.jobs[binding.jobId].requestId, "isolated-unknown");
+          assert.equal(state.blocked.id, binding.jobId);
           t.diagnostic(String(stdout));
           return true;
         },
@@ -426,6 +451,32 @@ test("actual prepared typed service keeps input/reset/document drift fences and 
       inputFiles: inputFiles(argv, f.home),
       ...extra,
     });
+    nodeTest(
+      "isolated admission rejects an unknown case selector",
+      async () => {
+        const env: NodeJS.ProcessEnv = {
+          ...process.env,
+          FMCAD_ADMISSION_PORTS_CHILD: "no-such-case",
+        };
+        delete env["NODE_TEST_CONTEXT"];
+        await assert.rejects(
+          executeFile(
+            process.execPath,
+            ["--test", "--test-reporter=tap", "--test-force-exit", __filename],
+            { env, timeout: 10_000 },
+          ),
+          (error: unknown) => {
+            assert(error instanceof Error);
+            assert.equal(Reflect.get(error, "code"), 1);
+            assert.match(
+              String(Reflect.get(error, "stdout")),
+              /Unknown admission case selector/,
+            );
+            return true;
+          },
+        );
+      },
+    );
   }
   let started!: () => void, finish!: () => void, checkedPeer!: () => void;
   let firstResult: AdmissionResult;
@@ -696,6 +747,10 @@ test("offline raw preparation cannot publish accepted work after broker ownershi
     f.observe(async () => {});
   }
 });
+
+if (isolatedCase && !selectedCaseRegistered) {
+  throw new Error(`Unknown admission case selector: ${isolatedCase}`);
+}
 
 interface AdmissionCheck {
   status: string;

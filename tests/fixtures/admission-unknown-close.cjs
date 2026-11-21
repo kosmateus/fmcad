@@ -1,6 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const {createHash} = require('node:crypto');
+const fs = require('node:fs');
 const root = process.env.FMCAD_ADMISSION_CONSUMER_PACKAGE || path.resolve(__dirname, '../..');
 const fixture = require(path.join(__dirname, 'python-admission-broker.cjs'));
 const {inputFiles} = require(path.join(root, 'dist/src/queue-client'));
@@ -29,6 +31,8 @@ test('unknown close remains a failure with retained evidence', async t => {
   const result = await client.wait(accepted.id);
   assert.equal(result.job.state, 'needs_reconciliation');
   assert.equal(result.job.operationResult.executionOutcome, 'unknown');
+  const lockHash = createHash('sha256').update(fs.readFileSync(path.join(f.dir, 'broker.lock'))).digest('hex');
+  console.log('RETAINED_BINDING', JSON.stringify({dir:f.dir, jobId:accepted.id, lockHash}));
   await assert.rejects(f.close(), {code:'RECONCILIATION_REQUIRED'});
   console.log('VERIFIED_UNKNOWN_REFUSAL');
 });
