@@ -125,15 +125,15 @@ if (process.argv[2] === "--lost-process-child") {
     },
   );
 } else {
-  const { prepare, executeTurn } = runtimeRequire(
+  const { createTurnIdentity, prepare, executeTurn } = runtimeRequire(
     path.join(root, "src/dist/core/application/broker-execution.js"),
   ) as typeof import("../packages/core/src/application/broker-execution");
 
   test("prepared turns retain exact bytes and dispatch in the grant's synchronous turn", async () => {
-    const grant = { job: { id: "owned-job" } };
+    const grant = { turn: createTurnIdentity("owned-job") };
     const source = { script: "print('checked once')\n" };
     const checked = Buffer.from(source.script);
-    const prepared = await prepare(grant.job.id, () =>
+    const prepared = await prepare(grant.turn, () =>
       Buffer.from(source.script),
     );
     source.script = "print('edited later')\n";
@@ -174,8 +174,9 @@ if (process.argv[2] === "--lost-process-child") {
     assert.equal(sends, 1);
   });
 
-  test("a wrong job, revoked grant, or lost reply cannot reuse a prepared turn", async () => {
-    const owner = { job: { id: "same-job" } };
+  test("a new turn of the same job, revoked grant, or lost reply cannot reuse a prepared turn", async () => {
+    const previousTurn = createTurnIdentity("same-job");
+    const owner = { turn: createTurnIdentity(previousTurn.jobId) };
     const lost = Object.assign(new Error("transport lost"), { code: "EPIPE" });
     const expired = Object.assign(new Error("grant expired"), {
       code: "RECONCILIATION_REQUIRED",
@@ -203,17 +204,20 @@ if (process.argv[2] === "--lost-process-child") {
         failures.push(["not started", failure.submitted]);
       },
     };
-    const wrong = await prepare("different-job", () => "original");
+    gate.current = owner;
+    const wrong = await prepare(previousTurn, () => "first turn's bytes");
     await assert.rejects(executeTurn(owner, wrong, ports), {
       code: "PREPARED_RPC_UNAVAILABLE",
     });
-    const stale = await prepare(owner.job.id, () => "original");
+    assert.equal(sends, 0, "a current grant cannot use a previous turn's bytes");
+    delete gate.current;
+    const stale = await prepare(owner.turn, () => "original");
     await assert.rejects(executeTurn(owner, stale, ports), expired);
     gate.current = owner;
     await assert.rejects(executeTurn(owner, stale, ports), {
       code: "PREPARED_RPC_CONSUMED",
     });
-    const lostTurn = await prepare(owner.job.id, () => "original");
+    const lostTurn = await prepare(owner.turn, () => "original");
     await assert.rejects(executeTurn(owner, lostTurn, ports), lost);
     await assert.rejects(executeTurn(owner, lostTurn, ports), {
       code: "PREPARED_RPC_CONSUMED",
@@ -227,6 +231,44 @@ if (process.argv[2] === "--lost-process-child") {
       ["not started", false],
     ]);
   });
+
+  for (const lostReply of [false, true]) {
+    test(`one admission callback cannot send twice (${lostReply ? "lost reply" : "success"})`, async () => {
+      const grant = { turn: createTurnIdentity("owned-job") };
+      const prepared = await prepare(grant.turn, () => "checked bytes");
+      const lost = new Error("transport lost");
+      let sends = 0;
+      const observedUnknown: unknown[] = [];
+      const execution = executeTurn(grant, prepared, {
+        check() {},
+        assertCurrentGrant() {},
+        fence() {},
+        async admit(send) {
+          try {
+            return await send();
+          } finally {
+            await assert.rejects(send(), { code: "PREPARED_RPC_CONSUMED" });
+          }
+        },
+        async send(bytes) {
+          assert.equal(bytes, "checked bytes");
+          sends++;
+          if (lostReply) throw lost;
+          return "reply";
+        },
+        settle: (_bytes, reply) => reply,
+        unknown(error, failure) {
+          assert.equal(failure.submitted, true);
+          assert.equal(failure.phase, "send");
+          observedUnknown.push(error);
+        },
+      });
+      if (lostReply) await assert.rejects(execution, lost);
+      else assert.equal(await execution, "reply");
+      assert.equal(sends, 1);
+      assert.deepEqual(observedUnknown, lostReply ? [lost] : []);
+    });
+  }
 
   const { matching } = runtimeRequire(
     path.join(root, "src/queue-broker.js"),

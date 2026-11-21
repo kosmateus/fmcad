@@ -15,7 +15,10 @@ import type {
 } from "./queue-broker-modules";
 import type { BrokerControlFence } from "../packages/core/src/application/broker-control";
 import type { DispatchFailure } from "../packages/core/src/application/execution";
-import type { PreparedTurn } from "../packages/core/src/application/broker-execution";
+import type {
+  PreparedTurn,
+  TurnIdentity,
+} from "../packages/core/src/application/broker-execution";
 import {
   resolveBackendHead,
   prepareBackendTransition,
@@ -1266,7 +1269,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         );
     }
   }
-  const preparingJob = new AsyncLocalStorage<P.Job | false>();
+  type ProductContext = P.Context & { productTurn?: TurnIdentity };
+  type ProductGrant = { context: ProductContext; turn: TurnIdentity };
+  const physicalGrant = new AsyncLocalStorage<ProductGrant>();
+  const preparingJob = new AsyncLocalStorage<
+    { job: P.Job; turn: TurnIdentity } | false
+  >();
   const preparingSignal = new AsyncLocalStorage<AbortSignal>();
   function localCheckOptions() {
     const signal = preparingSignal.getStore();
@@ -1279,7 +1287,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     | { kind: "unowned"; checked: P.PreparedPost };
   type LocalPlan = { flights: Flights | null } & (
     | { kind: "raw"; turn: OwnedTurn; callerPayloadHash: string }
-    | { kind: "worker"; message: P.WorkerMessage; send: P.Send }
+    | {
+        kind: "worker";
+        turn: TurnIdentity;
+        message: P.WorkerMessage;
+        send: P.Send;
+      }
   );
   const localPlans = new Map<string, LocalPlan>();
   let postPrepared = (
@@ -1297,11 +1310,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     try {
       const outgoing = structuredClone(payload);
       const contextEpoch = state.data.contextEpoch || 0;
-      const localJob = preparingJob.getStore();
-      const job =
-        localJob !== undefined
-          ? localJob
-          : !gate.scope.getStore()?.administrative && active?.job;
+      const localPreparation = preparingJob.getStore();
+      const grant = physicalGrant.getStore();
+      const owned =
+        localPreparation ??
+        (!gate.scope.getStore()?.administrative &&
+          grant && { job: grant.context.job, turn: grant.turn });
+      const job = owned ? owned.job : undefined;
       const classification =
         origin && !job ? classifyPythonRpc(outgoing) : null;
       const unownedArtifact =
@@ -1311,8 +1326,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               required(origin),
             )
           : undefined;
-      const ready: PostPreparation = job
-        ? { kind: "owned", turn: await prepareOwnedTurn(outgoing, job, origin) }
+      const ready: PostPreparation = owned
+        ? {
+            kind: "owned",
+            turn: await prepareOwnedTurn(outgoing, owned.job, owned.turn, origin),
+          }
         : {
             kind: "unowned",
             checked: {
@@ -1504,7 +1522,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   let clients: Record<string, string> = {};
   const clientsFile = path.join(dir, "clients.json");
   if (fs.existsSync(clientsFile)) clients = readJson(clientsFile);
-  let active: P.Context | null = null,
+  let active: ProductContext | null = null,
     busy = false,
     stopping = false,
     closed = false,
@@ -1913,6 +1931,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     },
     async checkSdkRequest(message, signal) {
       const job = required(state.data.jobs[message.jobId]);
+      const turn = brokerExecution.createTurnIdentity(job.id);
       const prepare =
         message.method === "callTool"
           ? client.prepareCallTool
@@ -1920,7 +1939,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             ? client.prepareUiGuardedScript
             : client.prepareListTools;
       if (prepare) {
-        const send = await preparingJob.run(job, () =>
+        const send = await preparingJob.run({ job, turn }, () =>
           preparingSignal.run(signal, () =>
             prepare.apply(client, message.args),
           ),
@@ -1937,7 +1956,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             "WORKER_CLOSED",
             "Local worker closed during final artifact preparation",
           );
-        localPlans.set(job.id, { kind: "worker", message, send, flights });
+        localPlans.set(job.id, { kind: "worker", turn, message, send, flights });
         return;
       }
       // Injected test clients have no native prepare methods. Snapshot once for
@@ -1974,6 +1993,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       const fence = () => certificate.fence(payload);
       localPlans.set(job.id, {
         kind: "worker",
+        turn,
         message,
         flights: null,
         send: Object.assign(
@@ -2880,9 +2900,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   function prepareOwnedTurn(
     payload: P.Rpc,
     job: Parameters<typeof prepareOwnedPost>[1],
+    turn: TurnIdentity,
     origin?: P.Origin,
   ) {
-    return brokerExecution.prepare(job.id, () =>
+    return brokerExecution.prepare(turn, () =>
       prepareOwnedPost(payload, job, origin),
     );
   }
@@ -3011,12 +3032,17 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const atomicObservation = atomicObservationScope.getStore();
     if (atomicObservation)
       return scopedAtomicObservationPost(payload, sessionId, atomicObservation);
-    const context = active;
-    if (gate.scope.getStore()?.administrative || !context) {
-      if (ready?.kind === "owned")
+    const grant = physicalGrant.getStore();
+    const administrative = gate.scope.getStore()?.administrative === true;
+    if (administrative || !grant) {
+      if (
+        ready?.kind === "owned" ||
+        (!administrative && active?.productTurn)
+      )
         fail("PREPARED_RPC_UNAVAILABLE", "No active grant for the prepared RPC");
       return unownedPost(payload, sessionId, requestOptions, ready?.checked);
     }
+    const { context } = grant;
     const tracePreflight = context.job.kind === "rpc";
     const startedAt = Date.now();
     if (tracePreflight)
@@ -3034,7 +3060,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           "PREPARED_RPC_UNAVAILABLE",
           "Owned RPC lost its original prepared record",
         );
-      turn = ready?.turn ?? (await prepareOwnedTurn(payload, context.job));
+      turn =
+        ready?.turn ??
+        (await prepareOwnedTurn(payload, context.job, grant.turn));
       if (tracePreflight)
         turn.inspect((prepared) =>
           debugPreflightStarted.set(prepared, startedAt),
@@ -3056,20 +3084,22 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       });
       throw error;
     }
-    return brokerExecution.executeTurn(context, turn, {
-      assertCurrentGrant(grant) {
+    return brokerExecution.executeTurn(grant, turn, {
+      assertCurrentGrant({ context: owner, turn }) {
         if (
-          active !== grant ||
-          state.data.active !== grant.job.id ||
-          grant.workerClosed ||
-          grant.unknown ||
+          active !== owner ||
+          owner.productTurn !== turn ||
+          turn.jobId !== owner.job.id ||
+          state.data.active !== owner.job.id ||
+          owner.workerClosed ||
+          owner.unknown ||
           state.summary().blocked
         )
           fail(
             "RECONCILIATION_REQUIRED",
             "Original SDK ownership changed before send",
           );
-        if (grant.timedOut)
+        if (owner.timedOut)
           fail("RUN_TIMEOUT", "Worker execution deadline expired before send");
       },
       check(prepared) {
@@ -3552,6 +3582,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const context = active;
     if (
       !context ||
+      !context.productTurn ||
       message.jobId !== context.job.id ||
       !equal(message.workerToken, context.token) ||
       !["running", "sending"].includes(state.status(context.job.id).state)
@@ -3584,9 +3615,13 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const operation = withRequest({ timeoutMs: timeout }, async () => {
       context.rpcDeadline = Date.now() + timeout;
       try {
-        const value: unknown = preparedSend
-          ? await preparedSend()
-          : await Reflect.apply(client[message.method], client, message.args);
+        const value: unknown = await physicalGrant.run(
+          { context, turn: required(context.productTurn) },
+          () =>
+            preparedSend
+              ? preparedSend()
+              : Reflect.apply(client[message.method], client, message.args),
+        );
         if (
           message.method === "listTools"
             ? !Array.isArray(value) ||
@@ -5886,9 +5921,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             rawPreparations++;
             const rawPayload = rpcPayload(request.payload);
             const callerPayloadHash = hash(canonical(rawPayload));
-            const turn = await prepareOwnedTurn(rawPayload, {
-              id: preparedId,
-            });
+            const turn = await prepareOwnedTurn(
+              rawPayload,
+              { id: preparedId },
+              brokerExecution.createTurnIdentity(preparedId),
+            );
             resetFence();
             const flights = await prepareJobFlights({
               id: preparedId,
@@ -6913,8 +6950,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         return;
       }
     }
-    const context: P.Context = {
+    const context: ProductContext = {
       job,
+      productTurn:
+        plan?.kind === "raw"
+          ? plan.turn.turn
+          : plan?.turn ?? brokerExecution.createTurnIdentity(job.id),
       token: job.request.phased
         ? required(phased.token(job.id))
         : randomBytes(32).toString("hex"),
@@ -7003,23 +7044,27 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             ([name]) => name.toLowerCase() !== "mcp-protocol-version",
           ),
         );
-        const operation = (async () => {
-          const sessionId = openSession
-            ? await client._openSession()
-            : job.request.sessionId;
-          const protocolVersion = openSession
-            ? client.negotiatedProtocolVersion
-            : job.request.protocolVersion;
-          if (protocolVersion)
-            headers["MCP-Protocol-Version"] = protocolVersion;
-          return withRequest(
-            { headers, timeoutMs: job.timeoutMs, protocolVersion },
-            () => postPrepared(rawPayload, sessionId, undefined, {
-              kind: "owned",
-              turn: plan.turn,
-            }),
-          );
-        })();
+        const operation = physicalGrant.run(
+          { context, turn: required(context.productTurn) },
+          async () => {
+            const sessionId = openSession
+              ? await client._openSession()
+              : job.request.sessionId;
+            const protocolVersion = openSession
+              ? client.negotiatedProtocolVersion
+              : job.request.protocolVersion;
+            if (protocolVersion)
+              headers["MCP-Protocol-Version"] = protocolVersion;
+            return withRequest(
+              { headers, timeoutMs: job.timeoutMs, protocolVersion },
+              () =>
+                postPrepared(rawPayload, sessionId, undefined, {
+                  kind: "owned",
+                  turn: plan.turn,
+                }),
+            );
+          },
+        );
         context.pending.add(operation);
         operation.then(
           () => context.pending.delete(operation),

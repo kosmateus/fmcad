@@ -2,27 +2,40 @@ import { dispatchPrepared, type DispatchPorts } from "./execution";
 
 const consume = Symbol("consume prepared broker turn");
 
+/** A job may receive several grants. Allocate a fresh identity before each
+ * logical turn is prepared, and carry that same object into its grant. */
+export interface TurnIdentity {
+  readonly jobId: string;
+}
+
+export function createTurnIdentity(jobId: string): TurnIdentity {
+  return Object.freeze({ jobId });
+}
+
+function alreadyConsumed() {
+  return Object.assign(new Error("A prepared RPC cannot be replayed"), {
+    code: "PREPARED_RPC_CONSUMED",
+  });
+}
+
 /** Local, process-bound authority. A prepared turn is never a recovery record. */
 export interface PreparedTurn<Ready> {
-  readonly jobId: string;
+  readonly turn: TurnIdentity;
   inspect(check: (ready: Ready) => void): void;
   [consume](): Ready;
 }
 
 export async function prepare<Ready>(
-  jobId: string,
+  turn: TurnIdentity,
   build: () => Ready | Promise<Ready>,
 ): Promise<PreparedTurn<Ready>> {
   let ready: { value: Ready } | undefined = { value: await build() };
   const current = () => {
-    if (!ready)
-      throw Object.assign(new Error("A prepared RPC cannot be replayed"), {
-        code: "PREPARED_RPC_CONSUMED",
-      });
+    if (!ready) throw alreadyConsumed();
     return ready.value;
   };
   return Object.freeze({
-    jobId,
+    turn,
     inspect(check: (value: Ready) => void) {
       check(current());
     },
@@ -35,7 +48,7 @@ export async function prepare<Ready>(
 }
 
 export function executeTurn<
-  Grant extends { job: { id: string } },
+  Grant extends { turn: TurnIdentity },
   Ready,
   Reply,
   Result,
@@ -52,10 +65,22 @@ export function executeTurn<
     // Consume before the pause gate or any later refusal. No second attempt
     // may use the same prepared bytes, even when this attempt never sent.
     prepare: () => prepared[consume](),
+    async admit(send) {
+      let available = true;
+      try {
+        return await ports.admit(() => {
+          if (!available) return Promise.reject(alreadyConsumed());
+          available = false;
+          return send();
+        });
+      } finally {
+        available = false;
+      }
+    },
     fence(ready) {
-      if (grant.job.id !== prepared.jobId)
+      if (grant.turn !== prepared.turn)
         throw Object.assign(
-          new Error("Prepared RPC belongs to a different job"),
+          new Error("Prepared RPC belongs to a different logical turn"),
           {
             code: "PREPARED_RPC_UNAVAILABLE",
           },
