@@ -27,7 +27,9 @@ comparison exports the given Git revision without changing the worktree and
 runs the real reference `QueueDomain` and snapshot store without any receiver.
 It measures the same synthetic submit/cancel pairs and module reopen, not
 whole-broker performance parity. The spike omits policy that would have to be
-retained in a production comparison.
+retained in a production comparison. As in `src/queue-state.ts`, the snapshot
+side serializes every domain commit callback but persists only changed bytes.
+The report counts skipped callbacks separately from writes.
 
 ## Durability boundaries
 

@@ -62,15 +62,23 @@ try {
 
   function openReference(dir, accounting) {
     const persistence = createSnapshotStore(dir);
-    const original = persistence.restore();
+    let serialized = persistence.restore();
     return new QueueDomain({
-      snapshot: original ? JSON.parse(original) : undefined,
+      snapshot: serialized === null ? undefined : JSON.parse(serialized),
       now: Date.now,
       newId: randomUUID,
       hash: digest,
       commit(snapshot) {
         const start = performance.now();
-        persistence.commit(JSON.stringify(snapshot));
+        const text = JSON.stringify(snapshot);
+        // Match src/queue-state.ts: a no-op domain commit still pays for
+        // serialization, but does not rewrite the snapshot or fsync.
+        if (text === serialized) {
+          accounting.unchangedCallbacks++;
+          return;
+        }
+        persistence.commit(text);
+        serialized = text;
         accounting.commits++;
         accounting.totalMs += performance.now() - start;
       },
@@ -118,6 +126,8 @@ try {
       eventLoop,
       writes: {
         commits: after.commits - before.commits,
+        unchangedSnapshotCallbacks:
+          (after.unchangedCallbacks ?? 0) - (before.unchangedCallbacks ?? 0),
         totalMs: after.totalMs - before.totalMs,
       },
       singleSameProcessReopenMs: performance.now() - begin,
@@ -127,7 +137,7 @@ try {
   const comparisons = [];
   for (const seed of [0, 512]) {
     const snapshotDir = join(f.dir, `snapshot-${seed}`);
-    const accounting = { commits: 0, totalMs: 0 };
+    const accounting = { commits: 0, unchangedCallbacks: 0, totalMs: 0 };
     comparisons.push(
       await measure("reference QueueDomain + snapshot", seed, () => {
         const queue = openReference(snapshotDir, accounting);
