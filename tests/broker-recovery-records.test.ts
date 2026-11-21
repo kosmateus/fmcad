@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
+import { EventEmitter, once } from "node:events";
 import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -19,9 +20,11 @@ import {
 const load = createRequire(
   path.join(process.cwd(), "tests/broker-recovery-records.test.js"),
 );
-const { matching } = load("../src/queue-broker") as Pick<
+const { matching, serve, brokerConfigHash } = load(
+  "../src/queue-broker",
+) as Pick<
   typeof import("../src/queue-broker"),
-  "matching"
+  "matching" | "serve" | "brokerConfigHash"
 >;
 
 test("recovery reads exact durable names, not a response or a different receipt", (t) => {
@@ -179,3 +182,182 @@ test("recovery reads exact durable names, not a response or a different receipt"
   assert.equal(mismatched.kind, "waitingForEvidence");
   assert.equal(mismatched.code, "RECEIPT_MISMATCH");
 });
+
+test(
+  "a late recovery probe cannot settle after the durable instance fence changes",
+  { timeout: 15_000 },
+  async (t) => {
+    const { QueueState } = load(
+      "../src/queue-state",
+    ) as typeof import("../src/queue-state");
+    const { request } = load(
+      "../src/queue-connection",
+    ) as typeof import("../src/entrypoints/queue-connection");
+    const { buildHash, durable } = load("../src/queue-instance") as ReturnType<
+      typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
+    >;
+    const { runBoundInstanceProbe } = load(
+      "./fixtures/bound-instance-probe.cjs",
+    ) as {
+      runBoundInstanceProbe(
+        script: string,
+        identity: import("../src/queue-broker-ports").Instance,
+      ): { text: string };
+    };
+
+    const dir = fs.mkdtempSync("/tmp/opencode/recovery-fence-");
+    const barrier = new EventEmitter();
+    const fixture: { broker?: Awaited<ReturnType<typeof serve>> } = {};
+    t.after(async () => {
+      barrier.emit("release");
+      try {
+        await fixture.broker?.close();
+      } finally {
+        fs.rmSync(dir, { force: true, recursive: true });
+      }
+    });
+    const cfg = { backend: "addin", timeoutMs: 1000 };
+    const instance = {
+      pid: 341,
+      birth: "fixture:original",
+      version: "fixture:version",
+      activeCommand: "SelectCommand",
+      documents: [],
+    };
+    const build = buildHash();
+    const auth = { clientId: randomUUID(), clientToken: randomUUID() };
+    const state = new QueueState(dir);
+    const jobId = state.submit({
+      kind: "command",
+      requestId: randomUUID(),
+      clientId: auth.clientId,
+      timeoutMs: 1000,
+      argv: ["run", "never-replay.py"],
+      cwd: dir,
+    })["id"];
+    assert.ok(typeof jobId === "string");
+    const rpcId = randomUUID();
+    state.next();
+    state.markDispatch(jobId, { rpcId, rpcCount: 1, completedCount: 1 });
+    state.block(jobId, "INSTANCE_UNAVAILABLE");
+    const jobDir = path.join(dir, "jobs", jobId);
+    fs.mkdirSync(jobDir, { recursive: true, mode: 0o700 });
+    const binding = {
+      jobId,
+      rpcId,
+      requestHash: "original-fixture",
+      buildHash: build,
+    };
+    const receipt = path.join(jobDir, `remote-${rpcId}.json`);
+    const journal = path.join(jobDir, `rpc-${rpcId}.json`);
+    const settled = {
+      ...binding,
+      instance,
+      terminal: true,
+      outcome: "succeeded",
+    };
+    const replyId = `fmcad:${rpcId}`;
+    durable(receipt, settled);
+    durable(journal, {
+      binding,
+      instance,
+      method: "tools/call",
+      terminal: true,
+      request: { jsonrpc: "2.0", method: "tools/call", id: 1 },
+      wireRequest: { jsonrpc: "2.0", method: "tools/call", id: replyId },
+      response: {
+        status: 200,
+        raw: JSON.stringify({ jsonrpc: "2.0", id: replyId, result: {} }),
+      },
+      receipt,
+      remoteReceipt: settled,
+    });
+    durable(path.join(jobDir, "worker-result.json"), {
+      jobId,
+      code: 0,
+      terminal: true,
+    });
+    const identityFile = path.join(dir, "instance.json");
+    const originalIdentity = {
+      configHash: brokerConfigHash(cfg),
+      buildHash: build,
+      instance,
+    };
+    durable(identityFile, originalIdentity);
+    const originals = [journal, receipt].map((file) => fs.readFileSync(file));
+
+    let sendAttempts = 0;
+    const unexpected = () =>
+      assert.fail("The original product must never be sent again");
+    fixture.broker = await serve(cfg, {
+      dir,
+      confirmOwnership: true,
+      nativePath: (file) => file,
+      createBackend: () => ({
+        server: cfg,
+        _parse: JSON.parse,
+        _post: unexpected,
+        _openSession: unexpected,
+        listTools: unexpected,
+        executeUiGuardedScript: unexpected,
+        async callTool({ object }) {
+          assert.equal(
+            ++sendAttempts,
+            1,
+            "count every send before proof or deduplication",
+          );
+          const script = object?.script;
+          assert.ok(typeof script === "string");
+          const release = once(barrier, "release");
+          barrier.emit("sent");
+          await release;
+          return {
+            failed: false,
+            text: runBoundInstanceProbe(script, instance).text,
+          };
+        },
+      }),
+    });
+    await request(dir, { action: "register", ...auth });
+    const reconcile = () => request(dir, { action: "reconcile", auth, jobId });
+    const sent = once(barrier, "sent");
+    const firstAttempt = reconcile();
+    const rejected = assert.rejects(firstAttempt, { code: "STATE_CONFLICT" });
+    try {
+      await Promise.race([
+        sent,
+        rejected.then(() =>
+          assert.fail("Fixture fence changed before the recovery send"),
+        ),
+      ]);
+      durable(identityFile, {
+        ...originalIdentity,
+        instance: { ...instance, birth: "fixture:replacement" },
+      });
+      barrier.emit("release");
+      await rejected;
+      const current = await request(dir, { action: "status", jobId, auth });
+      assert.partialDeepStrictEqual(current, { state: "needs_reconciliation" });
+      assert.equal(fs.existsSync(path.join(jobDir, "outcome.json")), false);
+      assert.equal(
+        fs.existsSync(path.join(jobDir, "reconcile-postflight.json")),
+        false,
+      );
+      assert.deepEqual(
+        [journal, receipt].map((file) => fs.readFileSync(file)),
+        originals,
+      );
+    } finally {
+      barrier.emit("release");
+      durable(identityFile, originalIdentity);
+    }
+
+    const secondAttempt = await reconcile();
+    assert.partialDeepStrictEqual(secondAttempt, { state: "succeeded" });
+    assert.equal(
+      sendAttempts,
+      1,
+      "the existing bound probe receipt was reused",
+    );
+  },
+);
