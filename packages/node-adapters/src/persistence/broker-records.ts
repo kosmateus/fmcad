@@ -116,6 +116,11 @@ export interface BrokerRecoveryEvidence {
     record: ReceiptReference,
     stage?: ReceiptStage,
   ): RemoteReceipt;
+  /** The optional copy may be absent for an already settled historical RPC. */
+  findRemoteReceipt(
+    record: ReceiptReference,
+    stage?: ReceiptStage,
+  ): RemoteReceipt | null;
   readReceivedResponse(jobId: string, rpcId: string): ReceivedResponse | null;
   readWorkerResult(jobId: string): {
     jobId: string;
@@ -247,17 +252,18 @@ export function createBrokerRecords(directory: string, io = fs): BrokerRecords {
       mismatch("Remote receipt path does not match the original record");
     return expected;
   }
-  function readRemoteReceipt(
+  function findRemoteReceipt(
     record: ReceiptReference,
     stage?: ReceiptStage,
-  ): RemoteReceipt {
+  ): RemoteReceipt | null {
     if (!record.receipt)
       failure("RECEIPT_UNAVAILABLE", "No remote terminal receipt was declared");
     const file = receiptPath(record, stage);
     let value: RemoteReceipt;
     try {
       value = read<RemoteReceipt>(file);
-    } catch {
+    } catch (error) {
+      if (missing(error)) return null;
       failure(
         "RECEIPT_UNAVAILABLE",
         "Remote terminal receipt is unavailable or unreadable",
@@ -278,6 +284,15 @@ export function createBrokerRecords(directory: string, io = fs): BrokerRecords {
         "Remote receipt is not terminal or bound to the original dispatch",
       );
     return value;
+  }
+  function readRemoteReceipt(
+    record: ReceiptReference,
+    stage?: ReceiptStage,
+  ): RemoteReceipt {
+    return (
+      findRemoteReceipt(record, stage) ??
+      failure("RECEIPT_UNAVAILABLE", "Remote terminal receipt is missing")
+    );
   }
   function readReceivedResponse(
     jobId: string,
@@ -398,6 +413,7 @@ export function createBrokerRecords(directory: string, io = fs): BrokerRecords {
           });
       },
       readRemoteReceipt,
+      findRemoteReceipt,
       readReceivedResponse,
       readWorkerResult: (id) => optional(id, "worker-result.json"),
       readWorkerIdentity: (id) => optional(id, "worker-identity.json"),

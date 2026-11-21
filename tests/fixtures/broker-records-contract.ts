@@ -175,6 +175,7 @@ test("retained transport response is not terminal proof; only the original remot
     response,
     remoteReceipt,
   };
+  assert.equal(store.evidence.findRemoteReceipt(intent), null);
   assert.throws(() => store.recordRpcTerminal(jobId, final), {
     code: "RECEIPT_UNAVAILABLE",
   });
@@ -249,6 +250,9 @@ test("the evidence reader rejects swapped journals and receipts without rewritin
   );
   fs.symlinkSync(other, f.intent.receipt);
   assert.throws(() => f.store.evidence.readRemoteReceipt(f.intent), {
+    code: "RECEIPT_UNAVAILABLE",
+  });
+  assert.throws(() => f.store.evidence.findRemoteReceipt(f.intent), {
     code: "RECEIPT_UNAVAILABLE",
   });
   fs.writeFileSync(f.file("worker-result.json"), "{");
