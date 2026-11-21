@@ -657,10 +657,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     );
   assertAutodeskFusionBackend(cfg);
   cfg = { ...cfg, backend: cfg.backend ?? "addin" };
+  const admissionCurlPath = cfg["curlPath"];
+  if (admissionCurlPath !== undefined && typeof admissionCurlPath !== "string")
+    fail("INVALID_CONFIG", "Admission curlPath must be a string when provided");
   const metadataAdmission = provisionAddinMetadata(
     options.addinMetadataAdmission,
     cfg.backend,
     createAddinAdmission,
+    { transport: cfg.transport, curlPath: admissionCurlPath },
   );
   if (!options.createBackend)
     assertPlatformCapability(detectPlatform(), "fusion");
@@ -3361,6 +3365,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 required(admission).scope,
                 prepared.metadataProof.wire,
                 required(prepared.dispatchRemaining),
+                required(admission),
               )
             : await withRequest(
                 { timeoutMs: required(prepared.dispatchRemaining) },

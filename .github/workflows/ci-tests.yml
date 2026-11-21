@@ -139,6 +139,7 @@ jobs:
       - run: npm run test:contracts
       - run: node --test dist/tests/autodesk-fusion-only.test.js
       - run: node --test dist/tests/successor-private-provisioning.test.js
+      - run: node --test dist/tests/frozen-metadata-profile.test.js
       - run: npm run test:python-domain-imports
 
   scenario-model:
