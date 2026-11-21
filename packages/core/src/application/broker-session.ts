@@ -5,19 +5,25 @@ type JobContext = { readonly job: { readonly id: string } };
 export type BrokerGrant<Context> = Readonly<{
   context: Context;
   turn: TurnIdentity;
+  jobId: string;
   /** Incarnation of this grant in the local session, not the broker epoch. */
   generation: number;
 }>;
 
 export type BrokerHold<Context> = Readonly<{
   context: Context | null;
+  jobId: string | null;
   reason: string;
   generation: number;
 }>;
 
-export type BrokerSessionSnapshot<Context> = Readonly<{
-  active: BrokerGrant<Context> | null;
-  held: BrokerHold<Context> | null;
+export type BrokerSessionSnapshot = Readonly<{
+  active: Readonly<{ jobId: string; generation: number }> | null;
+  held: Readonly<{
+    jobId: string | null;
+    reason: string;
+    generation: number;
+  }> | null;
   /** Local slot version only; never identifies the process lock or durable epoch. */
   generation: number;
 }>;
@@ -54,13 +60,34 @@ export function createBrokerSession<Context extends JobContext>() {
 
   function assertCurrentGrant(grant: unknown): undefined {
     assertNotPublishing();
-    if (active === null || grant !== active)
+    if (
+      active === null ||
+      grant !== active ||
+      active.context.job.id !== active.jobId ||
+      active.turn.jobId !== active.jobId
+    )
       deny("RECONCILIATION_REQUIRED", "Original SDK ownership changed");
   }
 
   return Object.freeze({
-    snapshot(): BrokerSessionSnapshot<Context> {
-      return Object.freeze({ active, held, generation });
+    /** A diagnostic/lifecycle view, never an ownership capability. */
+    snapshot(): BrokerSessionSnapshot {
+      return Object.freeze({
+        active:
+          active &&
+          Object.freeze({
+            jobId: active.jobId,
+            generation: active.generation,
+          }),
+        held:
+          held &&
+          Object.freeze({
+            jobId: held.jobId,
+            reason: held.reason,
+            generation: held.generation,
+          }),
+        generation,
+      });
     },
 
     // Only a caller that has authorized scoped work against the current hold
@@ -69,13 +96,19 @@ export function createBrokerSession<Context extends JobContext>() {
       assertNotPublishing();
       if (active || (scope ?? null) !== held)
         deny("BROKER_SESSION_BUSY", "The physical slot is already owned");
-      if (turn.jobId !== context.job.id || admitted.has(turn))
+      const jobId = turn.jobId;
+      if (jobId !== context.job.id || admitted.has(turn))
         deny(
           "PREPARED_RPC_UNAVAILABLE",
           "Invalid or already admitted logical turn",
         );
       admitted.add(turn);
-      active = Object.freeze({ context, turn, generation: ++generation });
+      active = Object.freeze({
+        context,
+        turn,
+        jobId,
+        generation: ++generation,
+      });
       return active;
     },
 
@@ -93,6 +126,7 @@ export function createBrokerSession<Context extends JobContext>() {
       active = null;
       held = Object.freeze({
         context: owner?.context ?? null,
+        jobId: owner?.jobId ?? null,
         reason,
         generation: ++generation,
       });
@@ -109,6 +143,7 @@ export function createBrokerSession<Context extends JobContext>() {
           "RECONCILIATION_REQUIRED",
           "Physical slot owner changed before settlement",
         );
+      if (active) assertCurrentGrant(owner);
       publish(commit);
       if (active) active = null;
       else held = null;

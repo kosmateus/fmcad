@@ -28,6 +28,60 @@ function latch() {
   return { promise, release };
 }
 
+test("an active snapshot cannot reveal or mutate live execution context", () => {
+  const session = createBrokerSession<ReturnType<typeof context>>();
+  const job = context("original");
+  const grant = session.acquire(job, turn("original"));
+  const view = session.snapshot().active;
+  assert.ok(view);
+  const exposed = Object.getOwnPropertyDescriptor(view, "context");
+  if (exposed) Reflect.set(exposed.value.job, "id", "other");
+  assert.equal(job.job.id, "original");
+  assert.equal(exposed, undefined);
+  assert.deepEqual(view, { jobId: "original", generation: grant.generation });
+  assert.ok(Object.isFrozen(view));
+  session.assertCurrentGrant(grant);
+});
+
+function assertNoAuthority(
+  session: ReturnType<typeof createBrokerSession<ReturnType<typeof context>>>,
+  handle: unknown,
+) {
+  assert.throws(
+    () => Reflect.apply(session.settle, undefined, [handle, publish]),
+    stale,
+  );
+  assert.throws(
+    () => Reflect.apply(session.hold, undefined, [handle, "forged hold"]),
+    stale,
+  );
+}
+
+test("an active snapshot cannot publish transitions", () => {
+  const session = createBrokerSession<ReturnType<typeof context>>();
+  const grant = session.acquire(context("job"), turn("job"));
+  const active = session.snapshot().active;
+  assert.ok(active);
+  assertNoAuthority(session, active);
+  session.assertCurrentGrant(grant);
+});
+
+test("a held snapshot cannot reveal context or publish transitions", () => {
+  const session = createBrokerSession<ReturnType<typeof context>>();
+  const grant = session.acquire(context("job"), turn("job"));
+  const hold = session.hold(grant, "unknown");
+  const held = session.snapshot().held;
+  assert.ok(held);
+  assert.ok(Object.isFrozen(held));
+  assertNoAuthority(session, held);
+  assert.deepEqual(held, {
+    jobId: "job",
+    reason: "unknown",
+    generation: hold.generation,
+  });
+  session.settle(hold, publish);
+});
+
 test("only the minted grant owns a physical turn, even for the same job", () => {
   const session = createBrokerSession<ReturnType<typeof context>>();
   const job = context("job");
@@ -60,8 +114,19 @@ test("only the minted grant owns a physical turn, even for the same job", () => 
   assert.throws(lateCallback, stale);
   assert.throws(() => session.hold(first, "old timeout"), stale);
   assert.deepEqual(finished, [first.generation]);
-  assert.equal(session.snapshot().active, second);
+  assert.equal(session.snapshot().active?.generation, second.generation);
   session.assertCurrentGrant(second);
+});
+
+test("a changed owner context cannot dispatch or settle the original turn", () => {
+  const session = createBrokerSession<ReturnType<typeof context>>();
+  const job = context("original");
+  const grant = session.acquire(job, turn("original"));
+  job.job.id = "different";
+  assert.throws(() => session.assertCurrentGrant(grant), stale);
+  assert.throws(() => session.settle(grant, publish), stale);
+  const hold = session.hold(grant, "owner context changed");
+  assert.equal(hold.jobId, "original");
 });
 
 test("holding fences dispatch; only authorized scoped work can borrow the slot", () => {
@@ -82,7 +147,7 @@ test("holding fences dispatch; only authorized scoped work can borrow the slot",
   const scoped = session.acquire(observer, turn("observer"), blocked);
   assert.throws(() => session.settle(blocked, publish), stale);
   session.settle(scoped, publish);
-  assert.equal(session.snapshot().held, blocked);
+  assert.equal(session.snapshot().held?.generation, blocked.generation);
   session.settle(blocked, publish);
   assert.equal(session.snapshot().held, null);
   assert.throws(
@@ -99,7 +164,7 @@ test("a refused durable transition does not reopen the physical slot", () => {
     throw new Error("storage unavailable");
   };
   assert.throws(() => session.settle(grant, diskFault), /storage unavailable/);
-  assert.equal(session.snapshot().active, grant);
+  session.assertCurrentGrant(grant);
   assert.throws(() => session.hold(grant, "storage unavailable", diskFault));
   assert.throws(() => session.assertCurrentGrant(grant), stale);
   assert.throws(() => session.acquire(job, turn("job")), busy);
@@ -138,7 +203,7 @@ test("late admission cannot send with the old grant of the same job", async () =
   resumeAdmission.release();
   await assert.rejects(result, stale);
   assert.deepEqual(sends, []);
-  assert.equal(session.snapshot().active, replacement);
+  session.assertCurrentGrant(replacement);
 });
 
 test("an in-flight turn does not lock local preparation, expiry, or wakeups", async () => {
@@ -258,7 +323,7 @@ test("a hold blocks ordinary selection without suspending maintenance", async ()
   await scheduler.tick();
   await scheduler.tick();
   assert.equal(maintained, 2);
-  assert.equal(session.snapshot().held, hold);
+  assert.equal(session.snapshot().held?.generation, hold.generation);
 });
 
 test("the next turn can start before the previous local finalizer returns", async () => {
