@@ -37,6 +37,9 @@ test("CI executes every retained broker regression family and its historical com
     .split(/\s+/)
     .filter((token) => token.endsWith(".test.js"));
   const required = [
+    "broker-multiprocess-contract",
+    "broker-restart-contract",
+    "phased-workers-start-close-failures",
     "queue-scheduling",
     "queue-cloud-save",
     "queue-document",
