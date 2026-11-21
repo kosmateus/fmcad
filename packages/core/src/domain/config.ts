@@ -574,7 +574,10 @@ function validateUrl(value: unknown, controlCenterPort: number): string {
 function rejectUnsupportedEndpoint(value: unknown, field: string): void {
   if (typeof value !== "string") return;
   const endpoint = parseEndpoint(value);
-  if (endpoint?.port === 27182) {
+  if (!endpoint) {
+    throw new Error(`${field} must be an absolute HTTP(S) URL`);
+  }
+  if (endpoint.port === 27182) {
     throw new Error(
       `${field} uses unsupported native Fusion MCP port 27182; configure autodesk-fusion-mcp at http://127.0.0.1:8765/mcp`,
     );

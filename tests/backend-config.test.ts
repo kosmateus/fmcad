@@ -81,6 +81,39 @@ test("native MCP profiles and port 27182 are rejected without addin fallback", (
   );
 });
 
+test("retired endpoints are checked before adapter URL precedence", (t) => {
+  const f = fixture(t, { backend: "addin" });
+  for (const endpoint of [
+    " http://127.0.0.1:27182/mcp",
+    "http://127.0.0.1:27182/mcp?query=has space",
+  ]) {
+    fs.writeFileSync(
+      f.config,
+      JSON.stringify({
+        backend: "addin",
+        backends: { addin: { endpoint } },
+      }),
+    );
+    assert.throws(
+      () => f.load({ url: "http://127.0.0.1:8765/mcp" }),
+      /backends\.addin\.endpoint/,
+    );
+  }
+  fs.writeFileSync(
+    f.config,
+    JSON.stringify({
+      backend: "addin",
+      backends: {
+        addin: { endpoint: "http://127.0.0.1:8765/mcp/27182?marker=27182" },
+      },
+    }),
+  );
+  assert.equal(
+    f.load({ url: "http://127.0.0.1:8765/mcp" }).url,
+    "http://127.0.0.1:8765/mcp",
+  );
+});
+
 test("backend priority is adapter, environment, file, then safe default", (t) => {
   const f = fixture(t, {
     backend: "addin",
