@@ -15,6 +15,7 @@ import type {
 } from "./queue-broker-modules";
 import type { BrokerControlFence } from "../packages/core/src/application/broker-control";
 import type { DispatchFailure } from "../packages/core/src/application/execution";
+import type { PreparedTurn } from "../packages/core/src/application/broker-execution";
 import {
   resolveBackendHead,
   prepareBackendTransition,
@@ -38,6 +39,21 @@ const { openIsolatedEpoch, epochAdmission } = load("./queue-isolated-epoch");
 const projectActivity = runtimeRequire(
   "./dist/node-adapters/persistence/project-history/activity",
 ) as typeof import("../packages/node-adapters/src/persistence/project-history/activity");
+const brokerExecution = runtimeRequire(
+  "./dist/core/application/broker-execution",
+) as typeof import("../packages/core/src/application/broker-execution");
+const { canonical } = runtimeRequire(
+  "./dist/core/domain/queue",
+) as typeof import("../packages/core/src/domain/queue");
+const { prepareBrokerFlights, prepareBrokerScript } = runtimeRequire(
+  "./dist/node-adapters/execution/broker-preparation",
+) as typeof import("../packages/node-adapters/src/execution/broker-preparation");
+const { fencePreparedWire } = runtimeRequire(
+  "./dist/node-adapters/execution/broker-physical",
+) as typeof import("../packages/node-adapters/src/execution/broker-physical");
+const { createBrokerRecords } = runtimeRequire(
+  "./dist/node-adapters/persistence/broker-records",
+) as typeof import("../packages/node-adapters/src/persistence/broker-records");
 const { epochControlDirectory } = load("./queue-epoch-lineage");
 const { QueueGate } = load("./queue-gate");
 const { PauseBudget } = load("./pause-budget");
@@ -86,7 +102,6 @@ function errorInfo(value: unknown): P.BrokerError {
   return value as P.BrokerError;
 }
 const {
-  verifyPythonArtifact,
   retainPythonOrigin,
   prepareWireArtifact,
   classifyPythonRpc,
@@ -926,6 +941,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ? successorRuntime.authority.predecessor.rootState.sha256
         : null;
   if (!migrationSnapshotHash) durable(lock, marker, true); // Never steal a lock, even if its PID looks stale.
+  const executionRecords = createBrokerRecords(dir);
   const currentAuditScopeFile = path.join(
     dir,
     `current-audit-instance-${marker.nonce}.json`,
@@ -1250,19 +1266,32 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         );
     }
   }
-  const preparedPosts = new WeakMap<P.Rpc, P.Prepared | P.PreparedPost>();
   const preparingJob = new AsyncLocalStorage<P.Job | false>();
   const preparingSignal = new AsyncLocalStorage<AbortSignal>();
   function localCheckOptions() {
     const signal = preparingSignal.getStore();
     return signal ? { signal } : {};
   }
-  const preparedCalls = new WeakMap<P.WorkerMessage, P.Send>();
-  const rawPreparedPosts = new Map<string, P.Prepared>();
-  const flightPlans = new Map<
-    string,
-    { preflight: P.Flight; postflight: P.Flight }
-  >();
+  type Flights = { preflight: P.Flight; postflight: P.Flight };
+  type OwnedTurn = PreparedTurn<P.Prepared>;
+  type PostPreparation =
+    | { kind: "owned"; turn: OwnedTurn }
+    | { kind: "unowned"; checked: P.PreparedPost };
+  type LocalPlan = { flights: Flights | null } & (
+    | { kind: "raw"; turn: OwnedTurn; callerPayloadHash: string }
+    | { kind: "worker"; message: P.WorkerMessage; send: P.Send }
+  );
+  const localPlans = new Map<string, LocalPlan>();
+  let postPrepared = (
+    payload: P.Rpc,
+    sessionId: string | undefined,
+    requestOptions: unknown,
+    ready: PostPreparation,
+  ) => {
+    if (ready.kind !== "unowned")
+      fail("PREPARED_RPC_UNAVAILABLE", "No active grant for the prepared RPC");
+    return unownedPost(payload, sessionId, requestOptions, ready.checked);
+  };
   let rawPreparations = 0;
   client.preparePost = async (payload, origin) => {
     try {
@@ -1282,53 +1311,59 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               required(origin),
             )
           : undefined;
-      const prepared: P.Prepared | P.PreparedPost = job
-        ? await prepareOwnedPost(outgoing, job, origin)
+      const ready: PostPreparation = job
+        ? { kind: "owned", turn: await prepareOwnedTurn(outgoing, job, origin) }
         : {
-            outgoing,
-            pythonCertificate: await pythonAdmission.check(
+            kind: "unowned",
+            checked: {
               outgoing,
-              unownedArtifact,
-              localCheckOptions(),
-            ),
-            contextEpoch,
+              pythonCertificate: await pythonAdmission.check(
+                outgoing,
+                unownedArtifact,
+                localCheckOptions(),
+              ),
+              contextEpoch,
+            },
           };
-      preparedPosts.set(outgoing, prepared);
+      const fence = (prepared: P.PreparedPost) => {
+        resetFence();
+        if (buildHash() !== codeHash)
+          fail("BUILD_CHANGED", "Executable changed after final preparation");
+        if (
+          job &&
+          !prepared.metadataOnly &&
+          prepared.contextEpoch !== (state.data.contextEpoch || 0)
+        )
+          fail("DOCUMENT_CHANGED", "Context changed after final preparation");
+        for (const input of (job && job.request.inputFiles) || []) {
+          if (
+            hash(
+              fs.readFileSync(
+                path.resolve(
+                  required(job ? job.request.cwd : undefined),
+                  input.path,
+                ),
+              ),
+            ) !== input.sha256
+          )
+            fail(
+              "INPUT_CHANGED",
+              "Pinned input changed after final preparation",
+            );
+        }
+        prepared.pythonCertificate.fence(prepared.outgoing);
+      };
       let consumed = false;
       return {
         fence() {
-          resetFence();
-          if (buildHash() !== codeHash)
-            fail("BUILD_CHANGED", "Executable changed after final preparation");
-          if (
-            job &&
-            !prepared.metadataOnly &&
-            prepared.contextEpoch !== (state.data.contextEpoch || 0)
-          )
-            fail("DOCUMENT_CHANGED", "Context changed after final preparation");
-          for (const input of (job && job.request.inputFiles) || []) {
-            if (
-              hash(
-                fs.readFileSync(
-                  path.resolve(
-                    required(job ? job.request.cwd : undefined),
-                    input.path,
-                  ),
-                ),
-              ) !== input.sha256
-            )
-              fail(
-                "INPUT_CHANGED",
-                "Pinned input changed after final preparation",
-              );
-          }
-          prepared.pythonCertificate.fence(prepared.outgoing);
+          if (ready.kind === "owned") ready.turn.inspect(fence);
+          else fence(ready.checked);
         },
         send: (sessionId) => {
           if (consumed)
             fail("PREPARED_RPC_CONSUMED", "A prepared RPC cannot be replayed");
           consumed = true;
-          return client._post(outgoing, sessionId);
+          return postPrepared(outgoing, sessionId, undefined, ready);
         },
       };
     } catch (cause) {
@@ -1343,9 +1378,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     payload: P.Rpc,
     sessionId?: string,
     requestOptions?: unknown,
+    prepared?: P.PreparedPost,
   ) {
-    const prepared = preparedPosts.get(payload);
-    preparedPosts.delete(payload);
     const outgoing = prepared?.outgoing || structuredClone(payload);
     let certificate;
     try {
@@ -1418,67 +1452,54 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       job.contextRefreshRequired
         ? documentSelector(job)
         : undefined;
-    const plan: Partial<Record<"preflight" | "postflight", P.Flight>> = {};
-    for (const stage of ["preflight", "postflight"] as const) {
-      if (stopping || closed || closing)
-        throw Object.assign(
-          new Error("Broker stopped accepting local preparation"),
-          { code: "BROKER_STOPPING", notStarted: true },
-        );
-      if (
-        expectedMessage &&
-        phased.pending(job.id)?.message !== expectedMessage
-      )
-        fail("WORKER_CLOSED", "Local worker closed during preparation");
-      const rpcId = randomUUID();
-      const binding = {
-        jobId: job.id,
-        rpcId,
-        requestHash: hash(stage + ":" + job.id + ":" + rpcId),
-        buildHash: codeHash,
-      };
-      const receipt = path.join(
-        jobDir(job.id),
-        stage + "-" + rpcId + ".receipt.json",
-      );
-      const server = { timeoutMs: Math.min(client.server.timeoutMs, 15000) };
-      const prepare = () =>
-        preparingJob.run(false, () =>
-          load("./queue-instance").prepareProbe(
-            {
-              server,
-              prepareCallTool: async (...args) => {
-                const send = await required(client.prepareCallTool).apply(
-                  client,
-                  args,
-                );
-                return Object.assign(
-                  () => withRequest({ timeoutMs: server.timeoutMs }, send),
-                  { fence: () => send.fence() },
-                );
+    return prepareBrokerFlights<P.Send<P.Instance>>({
+      jobId: job.id,
+      directory: jobDir(job.id),
+      buildHash: codeHash,
+      hash,
+      assertPreparing() {
+        if (stopping || closed || closing)
+          throw Object.assign(
+            new Error("Broker stopped accepting local preparation"),
+            { code: "BROKER_STOPPING", notStarted: true },
+          );
+        if (
+          expectedMessage &&
+          phased.pending(job.id)?.message !== expectedMessage
+        )
+          fail("WORKER_CLOSED", "Local worker closed during preparation");
+      },
+      prepare(binding, receiptPath, diagnosticPath) {
+        const server = { timeoutMs: Math.min(client.server.timeoutMs, 15000) };
+        const prepare = () =>
+          preparingJob.run(false, () =>
+            load("./queue-instance").prepareProbe(
+              {
+                server,
+                prepareCallTool: async (...args) => {
+                  const send = await required(client.prepareCallTool).apply(
+                    client,
+                    args,
+                  );
+                  return Object.assign(
+                    () => withRequest({ timeoutMs: server.timeoutMs }, send),
+                    { fence: () => send.fence() },
+                  );
+                },
               },
-            },
-            {
-              receiptPath: receipt,
-              binding,
-              requireIdle: false,
-              documentSelector: selector,
-              ...nativePaths,
-              diagnosticPath: path.join(jobDir(job.id), stage + "-result.json"),
-            },
-          ),
-        );
-      const send = await (signal
-        ? preparingSignal.run(signal, prepare)
-        : prepare());
-      if (
-        expectedMessage &&
-        phased.pending(job.id)?.message !== expectedMessage
-      )
-        fail("WORKER_CLOSED", "Local worker closed during preparation");
-      plan[stage] = { binding, receipt, send };
-    }
-    return plan as { preflight: P.Flight; postflight: P.Flight };
+              {
+                receiptPath,
+                binding,
+                requireIdle: false,
+                documentSelector: selector,
+                ...nativePaths,
+                diagnosticPath,
+              },
+            ),
+          );
+        return signal ? preparingSignal.run(signal, prepare) : prepare();
+      },
+    });
   }
   let clients: Record<string, string> = {};
   const clientsFile = path.join(dir, "clients.json");
@@ -1916,10 +1937,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             "WORKER_CLOSED",
             "Local worker closed during final artifact preparation",
           );
-        if (flights) flightPlans.set(job.id, flights);
-        preparedCalls.set(message, send);
+        localPlans.set(job.id, { kind: "worker", message, send, flights });
         return;
       }
+      // Injected test clients have no native prepare methods. Snapshot once for
+      // both checking and invocation, just as the production client does.
+      const args = structuredClone(message.args);
       const payload: P.Rpc = {
         jsonrpc: "2.0",
         method: "tools/call",
@@ -1927,23 +1950,40 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           name:
             message.method === "executeUiGuardedScript"
               ? "fusion_mcp_execute"
-              : (message.args[1] as string | undefined) ||
+              : (args[1] as string | undefined) ||
                 pinned.tool ||
                 "fusion_mcp_execute",
           arguments:
             message.method === "executeUiGuardedScript"
               ? {
                   featureType: "script",
-                  object: { script: message.args[0] as string },
+                  object: { script: args[0] as string },
                 }
-              : (message.args[0] as P.ToolArguments),
+              : (args[0] as P.ToolArguments),
         },
       };
       if (message.method === "listTools") {
         payload.method = "tools/list";
         delete payload.params;
       }
-      await pythonAdmission.check(payload, undefined, { signal });
+      const certificate = await pythonAdmission.check(payload, undefined, {
+        signal,
+      });
+      if (signal.aborted || phased.pending(job.id)?.message !== message)
+        fail("WORKER_CLOSED", "Local worker closed during preparation");
+      const fence = () => certificate.fence(payload);
+      localPlans.set(job.id, {
+        kind: "worker",
+        message,
+        flights: null,
+        send: Object.assign(
+          () => {
+            fence();
+            return Reflect.apply(client[message.method], client, args);
+          },
+          { fence },
+        ),
+      });
     },
     properties: clientProperties,
     spawnWorker: options.spawnWorker,
@@ -2025,7 +2065,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           item.record.failed = true;
           context.executionFailed = true;
         }
-        durable(item.journal, item.record);
+        executionRecords.recordRpcNativeCompletion(context.job.id, item.record);
       }
       if (!waiting) {
         // A completed native event is an execution fence, not model acceptance.
@@ -2769,86 +2809,42 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       ...(own(outgoing, "id") ? { id: outgoing.id } : {}),
     };
     if (payload.method === "tools/call") {
-      const args = outgoing.params?.arguments;
-      isolatedTool(outgoing.params?.name, args);
-      const python = outgoing.params?.name === "execute_python";
-      const official =
-        outgoing.params?.name === "fusion_mcp_execute" &&
-        args?.featureType === "script";
-      if (python || official) {
-        const scriptArgs = required(args);
-        const code = python ? scriptArgs.code : scriptArgs.object?.script;
-        if (typeof code !== "string")
-          fail("INVALID_SCRIPT", "Script source must be a string");
-        if (python && scriptArgs.persistent !== false)
-          fail(
-            "unsupported_queue_route",
-            "Queued low-level Python must use persistent:false",
+      isolatedTool(outgoing.params?.name, outgoing.params?.arguments);
+      pythonArtifact = prepareBrokerScript(outgoing, {
+        nativeMcp: cfg.backend === "mcp",
+        bindSource(source, nativePublicPython) {
+          record.receipt = path.join(jobDir(job.id), `remote-${rpcId}.json`);
+          binding.sourceHash = hash(source);
+          if (nativePublicPython)
+            binding["publicPythonResultSchema"] = "fmcad-public-python-result-v1";
+        },
+        wrap(executable, official, nativePublicPython) {
+          const prepared = prepareReceiptScript(
+            executable,
+            official,
+            required(record.receipt),
+            binding,
+            {
+              ...nativePaths,
+              ...(nativePublicPython ? { capturePublicPythonResult: true } : {}),
+            },
           );
-        record.receipt = path.join(jobDir(job.id), `remote-${rpcId}.json`);
-        // Receipt/instance/transport wrappers are bound BEFORE final bytes are
-        // prepared. No code substitution is allowed after this boundary.
-        binding.sourceHash = hash(code);
-        const nativePublicPython = python && cfg.backend === "mcp";
-        if (nativePublicPython)
-          binding["publicPythonResultSchema"] = "fmcad-public-python-result-v1";
-        // execute_python is our public compatibility API, not a native Fusion
-        // tool. Native Fusion invokes run(context) and consumes printed JSON.
-        // Adapt before receipt wrapping and final-byte admission, never at send.
-        const executable = nativePublicPython
-          ? `import contextlib as _qp_contextlib
-import io as _qp_io
-import json as _qp_json
-def run(_context: str) -> dict[str, object]:
-    _qp_out, _qp_err = _qp_io.StringIO(), _qp_io.StringIO()
-    try:
-        with _qp_contextlib.redirect_stdout(_qp_out), _qp_contextlib.redirect_stderr(_qp_err):
-            exec(compile(${JSON.stringify(code)}, '<fmcad-public-python>', 'exec'), {
-                '__name__': '__main__',
-                '__fmcad_native_lifecycle__': globals().get('__fmcad_native_lifecycle__')})
-    except BaseException as _qp_exception:
-        print(_qp_json.dumps({'success': False, 'stdout': _qp_out.getvalue(),
-              'stderr': _qp_err.getvalue(), 'error': str(_qp_exception)}))
-        raise
-    _qp_result: dict[str, object] = {'success': True, 'stdout': _qp_out.getvalue(), 'stderr': _qp_err.getvalue()}
-    print(_qp_json.dumps(_qp_result))
-    return _qp_result
-`
-          : code;
-        let prepared = prepareReceiptScript(
-          executable,
-          official || nativePublicPython,
-          record.receipt,
-          binding,
-          {
-            ...nativePaths,
-            ...(nativePublicPython ? { capturePublicPythonResult: true } : {}),
-          },
-        );
-        if (origin) prepared = retainPythonOrigin(prepared, origin);
-        verifyPythonArtifact(prepared);
-        pythonArtifact = prepared;
+          return origin ? retainPythonOrigin(prepared, origin) : prepared;
+        },
+      });
+      if (pythonArtifact) {
         record.pythonArtifact = {
-          version: prepared.version,
-          sha256: prepared.sha256,
-          artifactHash: prepared.artifactHash,
-          sourceMap: prepared.sourceMap,
-          units: prepared.units.map(({ id, filename, role, sha256 }) => ({
+          version: pythonArtifact.version,
+          sha256: pythonArtifact.sha256,
+          artifactHash: pythonArtifact.artifactHash,
+          sourceMap: pythonArtifact.sourceMap,
+          units: pythonArtifact.units.map(({ id, filename, role, sha256 }) => ({
             id,
             filename,
             role,
             sha256,
           })),
         };
-        if (nativePublicPython)
-          required(outgoing.params).name = "fusion_mcp_execute";
-        if (nativePublicPython)
-          required(outgoing.params).arguments = {
-            featureType: "script",
-            object: { script: prepared.script, readOnly: false },
-          };
-        else if (python) scriptArgs.code = prepared.script;
-        else required(scriptArgs.object).script = prepared.script;
       }
     }
     const metadataOnly = [
@@ -2879,6 +2875,16 @@ def run(_context: str) -> dict[str, object]:
     prepared.pythonCertificate.fence(prepared.outgoing);
     verifyPreparedJob(job, prepared.contextEpoch);
     return prepared;
+  }
+
+  function prepareOwnedTurn(
+    payload: P.Rpc,
+    job: Parameters<typeof prepareOwnedPost>[1],
+    origin?: P.Origin,
+  ) {
+    return brokerExecution.prepare(job.id, () =>
+      prepareOwnedPost(payload, job, origin),
+    );
   }
 
   function retainDispatchFailure(
@@ -2998,51 +3004,73 @@ def run(_context: str) -> dict[str, object]:
     payload: P.Rpc,
     sessionId?: string,
     requestOptions?: unknown,
+    ready?: PostPreparation,
   ) {
     const recoveryAudit = atomicRecoveryAuditScope.getStore();
     if (recoveryAudit) return recoveryAudit.post(payload, sessionId);
     const atomicObservation = atomicObservationScope.getStore();
     if (atomicObservation)
       return scopedAtomicObservationPost(payload, sessionId, atomicObservation);
-    if (gate.scope.getStore()?.administrative)
-      return unownedPost(payload, sessionId, requestOptions);
     const context = active;
-    if (!context) return unownedPost(payload, sessionId, requestOptions);
-    return load("./dist/core/application/execution").dispatchPrepared({
-      async prepare(): Promise<P.Prepared> {
-        const tracePreflight = context.job.kind === "rpc";
-        const startedAt = Date.now();
-        if (tracePreflight)
-          writeRequestTrace(context.job.request, context.job.clientId, {
-            stage: "preflight",
-            status: "started",
-            jobId: context.job.id,
-            buildHash: codeHash,
-            stdoutObservation: "not_observed",
-          });
-        try {
-          const prepared = preparedPosts.get(payload);
-          preparedPosts.delete(payload);
-          if (prepared && !("record" in prepared))
-            fail(
-              "PREPARED_RPC_UNAVAILABLE",
-              "Owned RPC lost its original prepared record",
-            );
-          const ready =
-            prepared || (await prepareOwnedPost(payload, context.job));
-          if (tracePreflight) debugPreflightStarted.set(ready, startedAt);
-          return ready;
-        } catch (error) {
-          if (tracePreflight)
-            writeRequestTrace(context.job.request, context.job.clientId, {
-              stage: "preflight",
-              status: "failed",
-              jobId: context.job.id,
-              buildHash: codeHash,
-              stdoutObservation: "not_observed",
-            });
-          throw error;
-        }
+    if (gate.scope.getStore()?.administrative || !context) {
+      if (ready?.kind === "owned")
+        fail("PREPARED_RPC_UNAVAILABLE", "No active grant for the prepared RPC");
+      return unownedPost(payload, sessionId, requestOptions, ready?.checked);
+    }
+    const tracePreflight = context.job.kind === "rpc";
+    const startedAt = Date.now();
+    if (tracePreflight)
+      writeRequestTrace(context.job.request, context.job.clientId, {
+        stage: "preflight",
+        status: "started",
+        jobId: context.job.id,
+        buildHash: codeHash,
+        stdoutObservation: "not_observed",
+      });
+    let turn: OwnedTurn;
+    try {
+      if (ready?.kind === "unowned")
+        fail(
+          "PREPARED_RPC_UNAVAILABLE",
+          "Owned RPC lost its original prepared record",
+        );
+      turn = ready?.turn ?? (await prepareOwnedTurn(payload, context.job));
+      if (tracePreflight)
+        turn.inspect((prepared) =>
+          debugPreflightStarted.set(prepared, startedAt),
+        );
+    } catch (error) {
+      if (tracePreflight)
+        writeRequestTrace(context.job.request, context.job.clientId, {
+          stage: "preflight",
+          status: "failed",
+          jobId: context.job.id,
+          buildHash: codeHash,
+          stdoutObservation: "not_observed",
+        });
+      required(context.localDispatchErrors).add(error);
+      retainDispatchFailure(context, error, {
+        phase: "prepare",
+        submitted: false,
+        prepared: undefined,
+      });
+      throw error;
+    }
+    return brokerExecution.executeTurn(context, turn, {
+      assertCurrentGrant(grant) {
+        if (
+          active !== grant ||
+          state.data.active !== grant.job.id ||
+          grant.workerClosed ||
+          grant.unknown ||
+          state.summary().blocked
+        )
+          fail(
+            "RECONCILIATION_REQUIRED",
+            "Original SDK ownership changed before send",
+          );
+        if (grant.timedOut)
+          fail("RUN_TIMEOUT", "Worker execution deadline expired before send");
       },
       check(prepared) {
         try {
@@ -3081,10 +3109,13 @@ def run(_context: str) -> dict[str, object]:
         try {
           assertResetSubmissionOpen(dir);
           if (state.epoch) epochAdmission(state, context.job.request, clients);
-          if (active !== context || context.unknown || state.summary().blocked)
+          if (
+            prepared.record.binding.jobId !== context.job.id ||
+            !sameInstance(prepared.record.instance, instance)
+          )
             fail(
               "RECONCILIATION_REQUIRED",
-              "Original SDK ownership changed before send",
+              "Prepared SDK binding changed before send",
             );
           if (context.contextEpoch !== (state.data.contextEpoch || 0))
             fail(
@@ -3111,20 +3142,7 @@ def run(_context: str) -> dict[str, object]:
             )
               fail("INPUT_CHANGED", "Pinned input changed before dispatch");
           }
-          prepared.pythonCertificate.fence(prepared.outgoing);
-          if (prepared.pythonArtifact) {
-            verifyPythonArtifact(prepared.pythonArtifact);
-            const args = prepared.outgoing.params?.arguments;
-            const wireScript =
-              prepared.outgoing.params?.name === "execute_python"
-                ? args?.code
-                : args?.object?.script;
-            if (wireScript !== prepared.pythonArtifact.script)
-              fail(
-                "INPUT_CHANGED",
-                "Final Python bytes changed after offline preparation",
-              );
-          }
+          fencePreparedWire(prepared);
           const { record, rpcId } = prepared;
           const dispatchRemaining = Math.ceil(
             Math.min(
@@ -3137,14 +3155,10 @@ def run(_context: str) -> dict[str, object]:
               "RUN_TIMEOUT",
               "Active execution budget expired during Python preparation; no RPC sent",
             );
-          const journal = path.join(
-            jobDir(context.job.id),
-            `rpc-${rpcId}.json`,
-          );
           const before = state.status(context.job.id).dispatch;
           const count = (before?.rpcCount || 0) + 1;
           record.dispatchIndex = count;
-          durable(journal, record, true);
+          const journal = executionRecords.createRpcIntent(context.job.id, record);
           context.turnRpcs.push({ record, journal });
           state.markDispatch(context.job.id, {
             rpcCount: count,
@@ -3243,20 +3257,13 @@ def run(_context: str) -> dict[str, object]:
         // Persist it before matching/receipt validation can throw; otherwise a
         // missing remote receipt discards the only original error response.
         try {
-          durable(
-            path.join(
-              jobDir(context.job.id),
-              `received-response-${rpcId}.json`,
-            ),
-            {
-              version: 1,
-              kind: "owned-rpc-received-response-v1",
-              binding: record.binding,
-              wireId: outgoing.id,
-              response,
-            },
-            true,
-          );
+          executionRecords.recordReceivedResponse(context.job.id, {
+            version: 1,
+            kind: "owned-rpc-received-response-v1",
+            binding: record.binding,
+            wireId: outgoing.id,
+            response,
+          });
         } catch (error) {
           if (trace)
             writeRequestTrace(context.job.request, context.job.clientId, {
@@ -3421,7 +3428,7 @@ def run(_context: str) -> dict[str, object]:
           ...(declaration ? { nativeDeclaration: declaration.native } : {}),
           ...(nativeEnd ? { nativeCompletion: nativeEnd.native.state } : {}),
         });
-        durable(required(journal), record);
+        executionRecords.recordRpcTerminal(context.job.id, record);
         const current = required(state.status(context.job.id).dispatch);
         state.markDispatch(context.job.id, {
           rpcCount: current.rpcCount,
@@ -3473,6 +3480,7 @@ def run(_context: str) -> dict[str, object]:
       },
     });
   };
+  postPrepared = physicalPost;
   client._post = (payload, sessionId, requestOptions) => {
     return physicalPost(payload, sessionId, requestOptions);
   };
@@ -3539,6 +3547,7 @@ def run(_context: str) -> dict[str, object]:
   });
   async function backend(
     message: P.WorkerMessage,
+    preparedSend?: P.Send,
   ): Promise<{ value: unknown; properties: Record<string, unknown> }> {
     const context = active;
     if (
@@ -3575,10 +3584,8 @@ def run(_context: str) -> dict[str, object]:
     const operation = withRequest({ timeoutMs: timeout }, async () => {
       context.rpcDeadline = Date.now() + timeout;
       try {
-        const send = preparedCalls.get(message);
-        preparedCalls.delete(message);
-        const value: unknown = send
-          ? await send()
+        const value: unknown = preparedSend
+          ? await preparedSend()
           : await Reflect.apply(client[message.method], client, message.args);
         if (
           message.method === "listTools"
@@ -3596,7 +3603,10 @@ def run(_context: str) -> dict[str, object]:
           context.workflowUnknown = true;
           if (context.lastRpc) {
             context.lastRpc.record.nonterminal = true;
-            durable(context.lastRpc.journal, context.lastRpc.record);
+            executionRecords.retainRpcWorkflowFence(
+              context.job.id,
+              context.lastRpc.record,
+            );
           }
         }
         await settleNative(context);
@@ -5868,23 +5878,25 @@ def run(_context: str) -> dict[str, object]:
         const existing = Object.values(state.data.jobs).some(
           (job) => job.requestId === request.requestId,
         );
-        let rawPrepared: P.Prepared | undefined;
+        let rawPlan: LocalPlan | undefined;
         let preparedId: string | undefined;
-        let flights: Awaited<ReturnType<typeof prepareJobFlights>>;
         try {
           if (!existing && request.kind === "rpc") {
             preparedId = randomUUID();
             rawPreparations++;
-            rawPrepared = await prepareOwnedPost(rpcPayload(request.payload), {
+            const rawPayload = rpcPayload(request.payload);
+            const callerPayloadHash = hash(canonical(rawPayload));
+            const turn = await prepareOwnedTurn(rawPayload, {
               id: preparedId,
             });
             resetFence();
-            flights = await prepareJobFlights({
+            const flights = await prepareJobFlights({
               id: preparedId,
               request,
               kind: "rpc",
               sequenceMode: request.sequence?.mode,
             });
+            rawPlan = { kind: "raw", turn, flights, callerPayloadHash };
           }
           // Offline raw preparation can outlive a stop/reset/build transition.
           // Recheck ownership before publishing an accepted job, not just at SDK send.
@@ -5929,10 +5941,8 @@ def run(_context: str) -> dict[str, object]:
               ).hash;
               state.armWorkflowObservation(job.id, workflowObservation);
             }
-            if (rawPrepared && job.id === preparedId)
-              rawPreparedPosts.set(job.id, rawPrepared);
-            if (flights && job.id === preparedId)
-              flightPlans.set(job.id, flights);
+            if (rawPlan && job.id === preparedId)
+              localPlans.set(job.id, rawPlan);
             if (request.phased && job.state === "preparing")
               phased.start(required(state.data.jobs[job.id]));
             return job;
@@ -6583,29 +6593,33 @@ def run(_context: str) -> dict[str, object]:
 
   async function execute(job: P.Job) {
     const directory = privateDirectory(jobDir(job.id));
-    const flights = flightPlans.get(job.id);
-    flightPlans.delete(job.id);
+    const plan = localPlans.get(job.id);
+    localPlans.delete(job.id);
+    const flights = plan?.flights;
     let localContextChanged = false;
     try {
       flights?.preflight.send.fence();
       flights?.postflight.send.fence();
       if (job.request.phased) {
-        const pending = phased.pending(job.id);
-        if (pending) preparedCalls.get(pending.message)?.fence();
+        if (
+          plan?.kind !== "worker" ||
+          phased.pending(job.id)?.message !== plan.message
+        )
+          fail("PREPARED_RPC_UNAVAILABLE", "The prepared worker turn is gone");
+        plan.send.fence();
       }
       if (job.kind === "rpc") {
-        const prepared = rawPreparedPosts.get(job.id);
-        rawPreparedPosts.delete(job.id);
-        if (!prepared)
+        if (plan?.kind !== "raw")
           fail(
             "PREPARED_RPC_UNAVAILABLE",
             "The original checked RPC is unavailable; it is never reconstructed for replay",
           );
-        prepared.pythonCertificate.fence(prepared.outgoing);
-        localContextChanged =
-          !prepared.metadataOnly &&
-          prepared.contextEpoch !== (state.data.contextEpoch || 0);
-        preparedPosts.set(rpcPayload(job.request.payload), prepared);
+        plan.turn.inspect((prepared) => {
+          prepared.pythonCertificate.fence(prepared.outgoing);
+          localContextChanged =
+            !prepared.metadataOnly &&
+            prepared.contextEpoch !== (state.data.contextEpoch || 0);
+        });
       }
     } catch (cause) {
       const error = errorInfo(cause);
@@ -6740,19 +6754,15 @@ def run(_context: str) -> dict[str, object]:
     const receipt =
       flights?.preflight.receipt ||
       path.join(directory, "preflight-" + rpcId + ".receipt.json");
-    durable(
-      path.join(directory, "preflight-start.json"),
-      {
-        version: 2,
-        jobId: job.id,
-        buildHash: codeHash,
-        instance,
-        at: Date.now(),
-        binding,
-        receipt,
-      },
-      true,
-    );
+    executionRecords.createProbeIntent(job.id, "preflight", {
+      version: 2,
+      jobId: job.id,
+      buildHash: codeHash,
+      instance,
+      at: Date.now(),
+      binding,
+      receipt,
+    });
     try {
       await checkInstance({
         prepared: flights?.preflight,
@@ -6763,19 +6773,15 @@ def run(_context: str) -> dict[str, object]:
         documentSelector: guardSelector,
         onObservation: (observation) => {
           observed = observation;
-          durable(
-            path.join(directory, "preflight.json"),
-            {
-              version: 2,
-              jobId: job.id,
-              buildHash: codeHash,
-              completed: true,
-              instance: observation,
-              idle: idle(observation),
-              requiresIdle: !allowsBusy,
-            },
-            true,
-          );
+          executionRecords.recordProbeTerminal(job.id, "preflight", {
+            version: 2,
+            jobId: job.id,
+            buildHash: codeHash,
+            completed: true,
+            instance: observation,
+            idle: idle(observation),
+            requiresIdle: !allowsBusy,
+          });
         },
       });
     } catch (cause) {
@@ -6952,13 +6958,13 @@ def run(_context: str) -> dict[str, object]:
         { value: unknown; properties: Record<string, unknown> } | undefined;
     if (job.request.phased) {
       const pending = phased.pending(job.id);
-      if (!pending)
+      if (!pending || plan?.kind !== "worker" || pending.message !== plan.message)
         fail(
           "WORKER_CLOSED",
           "No prepared SDK request exists for the admitted turn",
         );
       try {
-        adapted = await backend(pending.message);
+        adapted = await backend(pending.message, plan.send);
         code =
           (isToolResult(adapted.value) && adapted.value.failed) ||
           context.executionFailed
@@ -6973,7 +6979,14 @@ def run(_context: str) -> dict[str, object]:
       context.workerClosed = true;
     } else if (job.kind === "rpc") {
       try {
+        if (plan?.kind !== "raw")
+          fail("PREPARED_RPC_UNAVAILABLE", "The prepared raw turn is gone");
         const rawPayload = rpcPayload(job.request.payload);
+        // The queue canonicalizes JSON object keys at admission. Compare the
+        // logical caller payload without changing its original receipt hash
+        // or the checked transport bytes.
+        if (hash(canonical(rawPayload)) !== plan.callerPayloadHash)
+          fail("PREPARED_RPC_UNAVAILABLE", "Prepared raw input no longer matches");
         const physicalCatalogRead = [
           "resources/list",
           "resources/templates/list",
@@ -7001,7 +7014,10 @@ def run(_context: str) -> dict[str, object]:
             headers["MCP-Protocol-Version"] = protocolVersion;
           return withRequest(
             { headers, timeoutMs: job.timeoutMs, protocolVersion },
-            () => client._post(rawPayload, sessionId),
+            () => postPrepared(rawPayload, sessionId, undefined, {
+              kind: "owned",
+              turn: plan.turn,
+            }),
           );
         })();
         context.pending.add(operation);
@@ -7044,17 +7060,13 @@ def run(_context: str) -> dict[str, object]:
         url: "http://queue.invalid",
         headers: {},
       };
-      durable(
-        path.join(directory, "request.json"),
-        {
-          id: job.id,
-          request: job.request,
-          buildHash: codeHash,
-          properties: clientProperties(),
-          deadline: context.deadline,
-        },
-        true,
-      );
+      const requestFile = executionRecords.createIntent(job.id, {
+        id: job.id,
+        request: job.request,
+        buildHash: codeHash,
+        properties: clientProperties(),
+        deadline: context.deadline,
+      });
       const out = fs.openSync(
         load("./queue-response-files").responsePath(
           dir,
@@ -7116,7 +7128,7 @@ def run(_context: str) -> dict[str, object]:
               resolveRuntimePaths({ anchor: __filename }),
               "queue-worker",
             ),
-            path.join(directory, "request.json"),
+            requestFile,
           ],
           {
             cwd: job.request.cwd,
@@ -7268,22 +7280,19 @@ def run(_context: str) -> dict[str, object]:
         const postReceipt =
           flights?.postflight.receipt ||
           path.join(directory, "postflight-" + postRpcId + ".receipt.json");
-        durable(
-          path.join(directory, "postflight-start.json"),
-          {
-            version: 2,
-            jobId: job.id,
-            buildHash: codeHash,
-            instance,
-            at: Date.now(),
-            binding: postBinding,
-            receipt: postReceipt,
-          },
-          true,
-        );
+        executionRecords.createProbeIntent(job.id, "postflight", {
+          version: 2,
+          jobId: job.id,
+          buildHash: codeHash,
+          instance,
+          at: Date.now(),
+          binding: postBinding,
+          receipt: postReceipt,
+        });
         try {
-          durable(
-            path.join(directory, "postflight.json"),
+          executionRecords.recordProbeTerminal(
+            job.id,
+            "postflight",
             await checkInstance({
               prepared: flights?.postflight,
               requireIdle: !allowsBusyAfter,
@@ -7292,7 +7301,6 @@ def run(_context: str) -> dict[str, object]:
               diagnosticPath: path.join(directory, "postflight-result.json"),
               documentSelector: guardSelector,
             }),
-            true,
           );
         } catch (cause) {
           const error = errorInfo(cause);
@@ -7452,20 +7460,14 @@ def run(_context: str) -> dict[str, object]:
   async function tick() {
     // Retire only unused local plans for terminal jobs. This never settles,
     // cancels or releases an active/unknown physical operation.
-    for (const id of new Set([
-      ...rawPreparedPosts.keys(),
-      ...flightPlans.keys(),
-    ])) {
+    for (const id of localPlans.keys()) {
       const job = state.data.jobs[id];
       if (
         job &&
         !["succeeded", "failed", "cancelled", "expired"].includes(job.state)
       )
         continue;
-      rawPreparedPosts.delete(id);
-      flightPlans.delete(id);
-      const pending = phased.pending(id);
-      if (pending) preparedCalls.delete(pending.message);
+      localPlans.delete(id);
     }
     if (busy || closed || stopping || epochProcessUnavailable) return;
     if (held) {

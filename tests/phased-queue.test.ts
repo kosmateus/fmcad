@@ -6,7 +6,7 @@ import * as os from "node:os";
 import path from "node:path";
 import * as net from "node:net";
 import { spawn, type SpawnOptions } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import Module, { createRequire } from "node:module";
 import { isolateRuntimeTestEnvironment } from "./runtime-test-environment.js";
 
@@ -1769,27 +1769,28 @@ test("a mismatched or stale wire response is rejected rather than delivered to t
 
 test("raw MCP callers keep their original RPC IDs even when both clients submit the same ID", async (t) => {
   const f = await fixture(t);
+  // IPC arrival order intentionally differs from the queue's canonical order.
+  const payload = (tag: "A" | "B") => ({
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: {
+      name: "fusion_mcp_execute",
+      arguments: {
+        featureType: "script",
+        object: {
+          script: "# SDK_" + tag + "\ndef run(context: str) -> None: pass",
+        },
+      },
+    },
+  });
   const submit = (auth: ClientAuth, tag: "A" | "B") =>
     f.call(auth, "submit", {
       request: {
         kind: "rpc",
         requestId: randomUUID(),
         timeoutMs: 5000,
-        payload: {
-          jsonrpc: "2.0",
-          id: 2,
-          method: "tools/call",
-          params: {
-            name: "fusion_mcp_execute",
-            arguments: {
-              featureType: "script",
-              object: {
-                script:
-                  "# SDK_" + tag + "\ndef run(context: str) -> None: pass",
-              },
-            },
-          },
-        },
+        payload: payload(tag),
       },
     });
   const [a, b] = await Promise.all([submit(f.a, "A"), submit(f.b, "B")]);
@@ -1807,6 +1808,34 @@ test("raw MCP callers keep their original RPC IDs even when both clients submit 
   assert.equal(JSON.parse(second.result.content[0].text).tag, "B");
   assert.equal(new Set(f.wireIds).size, 2);
   assert.equal(f.maximum(), 1);
+  for (const [job, tag] of [
+    [a, "A"],
+    [b, "B"],
+  ] as const) {
+    const directory = path.join(f.dir, "jobs", job.id);
+    const journals = fs
+      .readdirSync(directory)
+      .filter(
+        (name) => /^rpc-.*\.json$/.test(name) && name !== "rpc-result.json",
+      );
+    assert.equal(journals.length, 1, "each caller's prepared RPC sent once");
+    const journal = JSON.parse(
+      fs.readFileSync(path.join(directory, journals[0]!), "utf8"),
+    );
+    assert.equal(journal.terminal, true);
+    assert.equal(
+      journal.binding.requestHash,
+      createHash("sha256")
+        .update(JSON.stringify(payload(tag)))
+        .digest("hex"),
+      "snapshot key ordering does not rewrite the receipt binding",
+    );
+    assert.equal(
+      journal.remoteReceipt.requestHash,
+      journal.binding.requestHash,
+    );
+    assert.equal(journal.remoteReceipt.rpcId, journal.binding.rpcId);
+  }
 });
 
 test("receipt reconciliation restores the caller ID when recovering a missing raw-result copy", async (t) => {

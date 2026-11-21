@@ -125,6 +125,109 @@ if (process.argv[2] === "--lost-process-child") {
     },
   );
 } else {
+  const { prepare, executeTurn } = runtimeRequire(
+    path.join(root, "src/dist/core/application/broker-execution.js"),
+  ) as typeof import("../packages/core/src/application/broker-execution");
+
+  test("prepared turns retain exact bytes and dispatch in the grant's synchronous turn", async () => {
+    const grant = { job: { id: "owned-job" } };
+    const source = { script: "print('checked once')\n" };
+    const checked = Buffer.from(source.script);
+    const prepared = await prepare(grant.job.id, () =>
+      Buffer.from(source.script),
+    );
+    source.script = "print('edited later')\n";
+    const order: string[] = [];
+    let current: typeof grant | undefined = grant;
+    let sends = 0;
+    const ports = {
+      check(bytes: Buffer) {
+        assert.deepEqual(bytes, checked);
+      },
+      admit: (send: () => Promise<string>) => send(),
+      assertCurrentGrant(actual: typeof grant): undefined {
+        assert.strictEqual(actual, current);
+      },
+      fence(): undefined {
+        order.push("final fence");
+        queueMicrotask(() => {
+          current = undefined;
+          order.push("grant lost");
+        });
+      },
+      async send(bytes: Buffer) {
+        assert.strictEqual(current, grant, "no async gap after final fence");
+        assert.deepEqual(bytes, checked);
+        sends++;
+        order.push("send");
+        return "reply";
+      },
+      settle: (_bytes: Buffer, reply: string) => reply,
+      unknown: () =>
+        assert.fail("successful transport must not become unknown"),
+    };
+    assert.equal(await executeTurn(grant, prepared, ports), "reply");
+    assert.deepEqual(order, ["final fence", "send", "grant lost"]);
+    await assert.rejects(executeTurn(grant, prepared, ports), {
+      code: "PREPARED_RPC_CONSUMED",
+    });
+    assert.equal(sends, 1);
+  });
+
+  test("a wrong job, revoked grant, or lost reply cannot reuse a prepared turn", async () => {
+    const owner = { job: { id: "same-job" } };
+    const lost = Object.assign(new Error("transport lost"), { code: "EPIPE" });
+    const expired = Object.assign(new Error("grant expired"), {
+      code: "RECONCILIATION_REQUIRED",
+    });
+    const failures: Array<[string, boolean]> = [];
+    let sends = 0;
+    const gate: { current?: typeof owner } = {};
+    const ports = {
+      check() {},
+      admit: (send: () => Promise<never>) => send(),
+      assertCurrentGrant(actual: typeof owner): undefined {
+        if (actual !== gate.current) throw expired;
+      },
+      fence(): undefined {},
+      async send(): Promise<never> {
+        sends++;
+        throw lost;
+      },
+      settle: () => assert.fail("no terminal reply"),
+      unknown(error: unknown, failure: { submitted: boolean }) {
+        assert.strictEqual(error, lost);
+        failures.push(["unknown", failure.submitted]);
+      },
+      notSubmitted(_error: unknown, failure: { submitted: boolean }) {
+        failures.push(["not started", failure.submitted]);
+      },
+    };
+    const wrong = await prepare("different-job", () => "original");
+    await assert.rejects(executeTurn(owner, wrong, ports), {
+      code: "PREPARED_RPC_UNAVAILABLE",
+    });
+    const stale = await prepare(owner.job.id, () => "original");
+    await assert.rejects(executeTurn(owner, stale, ports), expired);
+    gate.current = owner;
+    await assert.rejects(executeTurn(owner, stale, ports), {
+      code: "PREPARED_RPC_CONSUMED",
+    });
+    const lostTurn = await prepare(owner.job.id, () => "original");
+    await assert.rejects(executeTurn(owner, lostTurn, ports), lost);
+    await assert.rejects(executeTurn(owner, lostTurn, ports), {
+      code: "PREPARED_RPC_CONSUMED",
+    });
+    assert.equal(sends, 1);
+    assert.deepEqual(failures, [
+      ["not started", false],
+      ["not started", false],
+      ["not started", false],
+      ["unknown", true],
+      ["not started", false],
+    ]);
+  });
+
   const { matching } = runtimeRequire(
     path.join(root, "src/queue-broker.js"),
   ) as {
