@@ -8,7 +8,9 @@ import net from "node:net";
 import { once } from "node:events";
 import { randomUUID, createHash } from "node:crypto";
 import { createRequire } from "node:module";
+import { setTimeout as delay } from "node:timers/promises";
 import type { ChildProcess } from "node:child_process";
+import type { DebugTraceEvent } from "../packages/node-adapters/src/telemetry/diagnostic-log";
 const root = path.resolve(__dirname, "../..");
 const load = createRequire(path.join(root, "package.json"));
 const { request, queueDirectory, queueSocket } = load(
@@ -82,6 +84,167 @@ test.beforeEach((t) => {
   );
 });
 const auth = { clientId: "offline-owner", clientToken: "private-offline" };
+
+test("a trace sink failure preserves the reply and its correlated IPC timing", async (t) => {
+  const log = load(
+    "./src/dist/node-adapters/telemetry/diagnostic-log",
+  ) as typeof import("../packages/node-adapters/src/telemetry/diagnostic-log");
+  const { createBrokerIpcObserver } = load(
+    "./src/dist/node-adapters/telemetry/broker-observer",
+  ) as typeof import("../packages/node-adapters/src/telemetry/broker-observer");
+  const { listenBrokerIpc } = load(
+    "./src/dist/node-adapters/broker-ipc/server",
+  ) as typeof import("../packages/node-adapters/src/broker-ipc/server");
+  const requestId = "trace-request";
+  const job = {
+    requestId,
+    clientId: auth.clientId,
+    buildHash: "a".repeat(64),
+    debugTrace: log.createDebugTraceContext(
+      requestId,
+      auth.clientId,
+      "cli",
+      true,
+    ),
+  };
+  const events: DebugTraceEvent[] = [];
+  t.mock.method(
+    log,
+    "writeDebugTrace",
+    (_: unknown, event: DebugTraceEvent) => {
+      events.push(event);
+      throw new Error("Optional sink unavailable");
+    },
+  );
+  const observer = createBrokerIpcObserver((id) =>
+    id === "trace-job" ? job : undefined,
+  );
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-ipc-trace-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const transport = await listenBrokerIpc(
+    queueSocket(dir),
+    async (input) => {
+      observer.start(input);
+      assert.ok(input && typeof input === "object");
+      observer.accept(input, 1000);
+      return { terminal: true };
+    },
+    observer.reply,
+  );
+  t.after(() => transport.close());
+
+  assert.deepEqual(
+    await request(dir, {
+      action: "backend",
+      jobId: "trace-job",
+      debugTraceMessageId: "trace-message",
+      rpcTimeoutMs: 60_000,
+      workerToken: "private-worker-token",
+    }),
+    { terminal: true },
+  );
+  assert.deepEqual(
+    events.map(({ ipcStage, status }) => [ipcStage, status]),
+    [
+      ["handler-start", "started"],
+      ["request-accepted", "passed"],
+      ["reply-emitted", "passed"],
+    ],
+  );
+  const [started, accepted, replied] = events;
+  assert.ok(started && accepted && replied);
+  for (const event of events) {
+    assert.equal(event.jobId, "trace-job");
+    assert.equal(event.messageId, "trace-message");
+    assert.equal(event.monotonicStartMs, started.monotonicStartMs);
+  }
+  assert.ok(
+    number(accepted.deadlineMonotonicMs) < number(started.deadlineMonotonicMs),
+    "accepted timing uses the broker's shorter budget, not the request's budget",
+  );
+  assert.equal(replied.deadlineMonotonicMs, accepted.deadlineMonotonicMs);
+  assert.doesNotMatch(JSON.stringify(events), /private-worker-token/);
+});
+
+test(
+  "broker replaces a stale socket, protects a live owner's socket, and closes with diagnostics unavailable",
+  { skip: process.platform === "win32", timeout: 20_000 },
+  async (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-ipc-lc-"));
+    const children: Array<{ child: ChildProcess; exited: Promise<unknown[]> }> =
+      [];
+    t.after(async () => {
+      for (const { child, exited } of children) {
+        if (child.exitCode === null && child.signalCode === null) child.kill();
+        await exited;
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+    const socketPath = queueSocket(dir);
+    const lockPath = path.join(dir, "broker.lock");
+    const diagnosticPath = path.join(dir, "queue-diagnostics.json");
+    fs.writeFileSync(socketPath, "stale endpoint");
+    fs.mkdirSync(diagnosticPath); // Atomic publication cannot replace a directory.
+
+    function start() {
+      const child = fork(
+        path.join(root, "tests/fixtures/lifecycle-production.cjs"),
+        [dir, "--paused"],
+        {
+          stdio: ["ignore", "ignore", "pipe", "ipc"],
+        },
+      );
+      const exited = once(child, "exit");
+      children.push({ child, exited });
+      let errors = "";
+      assert.ok(child.stderr);
+      child.stderr.on("data", (chunk: Buffer) => (errors += chunk.toString()));
+      return { child, exited, stderr: () => errors };
+    }
+    const owner = start();
+    const [startup] = await Promise.race([
+      once(owner.child, "message"),
+      owner.exited.then(() => assert.fail(owner.stderr())),
+    ]);
+    assert.equal(record(startup)["ready"], true);
+    const lock = fs.readFileSync(lockPath, "utf8");
+    const nonce = text(readJson(lockPath)["nonce"]);
+    const lifecycle = path.join(dir, `broker-lifecycle-${nonce}.json`);
+    assert.equal(readJson(lifecycle)["stage"], "ready");
+    const socketStat = fs.statSync(socketPath);
+    assert.ok(socketStat.isSocket());
+    assert.equal(socketStat.mode & 0o777, 0o600);
+
+    const contender = start();
+    const [exitCode] = await contender.exited;
+    assert.equal(exitCode, 1, contender.stderr());
+    assert.equal(fs.readFileSync(lockPath, "utf8"), lock);
+    assert.equal(fs.statSync(socketPath).ino, socketStat.ino);
+    await request(dir, { action: "register", ...auth });
+    const status = record(
+      await request(dir, { action: "control-status", auth }),
+    );
+    assert.equal(status["phase"], "PAUSED");
+
+    const idle = net.createConnection(socketPath);
+    try {
+      const disconnected = once(idle, "close");
+      await once(idle, "connect");
+      idle.write('{"action"'); // An incomplete frame must not hold open a drained broker.
+      assert.deepEqual(await request(dir, { action: "stop", auth }), {
+        stopping: true,
+        draining: false,
+      });
+      assert.deepEqual(await disconnected, [false]);
+    } finally {
+      idle.destroy();
+    }
+    for (let i = 0; i < 200 && fs.existsSync(lockPath); i++) await delay(10);
+    assert.equal(fs.existsSync(lockPath), false);
+    assert.equal(fs.existsSync(socketPath), false);
+    assert.ok(fs.statSync(diagnosticPath).isDirectory());
+  },
+);
 
 async function fixture(t: TestContext, flags: string[] = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-lc-"));
