@@ -9,7 +9,14 @@ import { randomUUID, randomBytes, timingSafeEqual } from "node:crypto";
 import { createRequire } from "node:module";
 import type * as P from "../queue-broker-ports";
 import type { BrokerGrant } from "../../packages/core/src/application/broker-session";
-import { createBrokerLane } from "../queue-broker-modules";
+import {
+  addinMetadataSelector,
+  createBrokerLane,
+  isAddinMetadata,
+  matchMetadataEvidence,
+  prepareMetadataWire,
+  provisionAddinMetadata,
+} from "../queue-broker-modules";
 import type {
   BrokerModules,
   AuditPorts,
@@ -68,9 +75,15 @@ const {
 } = runtimeRequire(
   "./dist/node-adapters/execution/broker-preparation",
 ) as typeof import("../../packages/node-adapters/src/execution/broker-preparation");
-const { fencePreparedWire } = runtimeRequire(
+const { fencePreparedWire, postAddinAdmission } = runtimeRequire(
   "./dist/node-adapters/execution/broker-physical",
 ) as typeof import("../../packages/node-adapters/src/execution/broker-physical");
+const { createAddinAdmission } = runtimeRequire(
+  "./dist/node-adapters/execution/addin-admission-client",
+) as typeof import("../../packages/node-adapters/src/execution/addin-admission-client");
+const { decodeAdmissionJson } = runtimeRequire(
+  "./dist/node-adapters/execution/admission-json",
+) as typeof import("../../packages/node-adapters/src/execution/admission-json");
 const { createBrokerRecords } = runtimeRequire(
   "./dist/node-adapters/persistence/broker-records",
 ) as typeof import("../../packages/node-adapters/src/persistence/broker-records");
@@ -634,6 +647,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       "UNSUPPORTED_ROUTING",
       "routing=direct is no longer supported; start the shared fmcad broker with routing=queue",
     );
+  const metadataAdmission = provisionAddinMetadata(
+    options.addinMetadataAdmission,
+    cfg.backend,
+    createAddinAdmission,
+  );
   if (!options.createBackend)
     assertPlatformCapability(detectPlatform(), "fusion");
   const dir = privateDirectory(path.resolve(options.dir || queueDirectory()));
@@ -1292,9 +1310,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     return signal ? { signal } : {};
   }
   type Flights = { preflight: P.Flight; postflight: P.Flight };
-  type OwnedTurn = PreparedTurn<P.Prepared>;
+  type OwnedTurn = PreparedTurn<P.PreparedCall>;
   type PostPreparation =
-    | { kind: "owned"; turn: OwnedTurn }
+    | { kind: "owned"; turn: OwnedTurn; metadataObservation?: P.Instance | undefined }
     | { kind: "unowned"; checked: P.PreparedPost };
   type LocalPlan = { flights: Flights | null } & (
     | { kind: "raw"; turn: OwnedTurn; callerPayloadHash: string }
@@ -1354,7 +1372,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               contextEpoch,
             },
           };
-      const fence = (prepared: P.PreparedPost) => {
+      const fence = (prepared: P.PreparedPost | P.PreparedCall) => {
         resetFence();
         if (buildHash() !== codeHash)
           fail("BUILD_CHANGED", "Executable changed after final preparation");
@@ -1380,7 +1398,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               "Pinned input changed after final preparation",
             );
         }
-        prepared.pythonCertificate.fence(prepared.outgoing);
+        if ("metadataProof" in prepared && prepared.metadataProof)
+          prepared.metadataProof.fence(prepared.outgoing);
+        else required(prepared.pythonCertificate).fence(prepared.outgoing);
       };
       let consumed = false;
       return {
@@ -1494,10 +1514,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     signal?: AbortSignal,
   ) {
     if (!client.prepareCallTool) return null; // Explicit physical test port has no transport preparation.
-    const selector =
-      job.request.phased ||
-      job.sequenceMode === "automatic" ||
-      job.contextRefreshRequired
+    const raw = job.kind === "rpc" ? rpcPayload(job.request.payload) : null;
+    const selector = raw && isAddinMetadata(raw)
+      ? addinMetadataSelector(raw)
+      : job.request.phased ||
+        job.sequenceMode === "automatic" ||
+        job.contextRefreshRequired
         ? documentSelector(job)
         : undefined;
     return prepareBrokerFlights<P.Send<P.Instance>>({
@@ -2828,7 +2850,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     payload: P.Rpc,
     job: Pick<P.Job, "id"> & Partial<Pick<P.Job, "request">>,
     origin?: P.Origin,
-  ): Promise<P.Prepared> {
+    rawMetadata = false,
+  ): Promise<P.PreparedCall> {
     const epochPolicy = state.epoch
       ? epochAdmission(state, job.request, clientHashes())
       : null;
@@ -2916,26 +2939,35 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       "ping",
       "tools/list",
     ].includes(payload.method);
-    const pythonCertificate = await pythonAdmission.check(
-      outgoing,
-      pythonArtifact,
-      localCheckOptions(),
-    );
-    const prepared: P.Prepared = {
-      outgoing,
-      record,
-      rpcId,
-      pythonArtifact,
-      contextEpoch,
-      metadataOnly,
-      pythonCertificate,
-    };
-    if (prepared.pythonCertificate.report)
-      prepared.record.pythonCheck = prepared.pythonCertificate.report;
-    prepared.record.dispatchClass = prepared.pythonCertificate.kind;
+    let prepared: P.PreparedCall;
+    if (rawMetadata) {
+      if (!metadataAdmission)
+        fail("unsupported_queue_route", "ADDIN metadata admission is not provisioned");
+      const metadataProof = prepareMetadataWire(outgoing);
+      record.dispatchClass = "addin-metadata";
+      prepared = {
+        outgoing: metadataProof.wire,
+        record,
+        rpcId,
+        contextEpoch,
+        metadataOnly,
+        metadataProof,
+      };
+    } else {
+      const pythonCertificate = await pythonAdmission.check(
+        outgoing,
+        pythonArtifact,
+        localCheckOptions(),
+      );
+      if (pythonCertificate.report) record.pythonCheck = pythonCertificate.report;
+      record.dispatchClass = pythonCertificate.kind;
+      prepared = {
+        outgoing, record, rpcId, pythonArtifact, contextEpoch, metadataOnly, pythonCertificate,
+      };
+    }
     // Test observer may suspend local preparation, never replace checking.
-    await options.testCheckPrepared?.(prepared);
-    prepared.pythonCertificate.fence(prepared.outgoing);
+    if (!prepared.metadataProof) await options.testCheckPrepared?.(prepared);
+    (prepared.metadataProof ?? prepared.pythonCertificate).fence(prepared.outgoing);
     verifyPreparedJob(job, prepared.contextEpoch);
     return prepared;
   }
@@ -2945,16 +2977,17 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     job: Parameters<typeof prepareOwnedPost>[1],
     turn: TurnIdentity,
     origin?: P.Origin,
+    rawMetadata = false,
   ) {
     return brokerExecution.prepare(turn, () =>
-      prepareOwnedPost(payload, job, origin),
+      prepareOwnedPost(payload, job, origin, rawMetadata),
     );
   }
 
   function retainDispatchFailure(
     context: P.Context,
     error: unknown,
-    failure: DispatchFailure<P.Prepared>,
+    failure: DispatchFailure<P.PreparedCall>,
   ) {
     // Error messages, causes and child output may contain script/headers/tokens.
     // Read only own data fields and retain a closed vocabulary, never getters.
@@ -2995,6 +3028,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       "unsupported_queue_route",
       "INVALID_SCRIPT",
       "INVALID_REQUEST",
+      "ADDIN_ADMISSION_UNCERTAIN",
+      "DOCUMENT_ADMISSION_UNPROVEN",
+      "INVALID_ADMISSION_PROVISIONING",
     ]);
     try {
       const code = field("code"),
@@ -3086,6 +3122,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       return unownedPost(payload, sessionId, requestOptions, ready?.checked);
     }
     const context = required(grant.context.worker);
+    let admission: ReturnType<NonNullable<typeof metadataAdmission>["bind"]> | undefined;
+    let receivedAdmission: P.Response | undefined;
     const tracePreflight = context.job.kind === "rpc";
     const startedAt = Date.now();
     if (tracePreflight)
@@ -3146,7 +3184,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       },
       check(prepared) {
         try {
-          prepared.pythonCertificate.fence(prepared.outgoing);
+          (prepared.metadataProof ?? prepared.pythonCertificate).fence(prepared.outgoing);
         } catch (error) {
           if (context.job.kind === "rpc")
             writeRequestTrace(context.job.request, context.job.clientId, {
@@ -3214,7 +3252,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             )
               fail("INPUT_CHANGED", "Pinned input changed before dispatch");
           }
-          fencePreparedWire(prepared);
+          if (prepared.metadataProof)
+            prepared.metadataProof.fence(prepared.outgoing);
+          else fencePreparedWire(prepared);
           const { record, rpcId } = prepared;
           const dispatchRemaining = Math.ceil(
             Math.min(
@@ -3227,6 +3267,25 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               "RUN_TIMEOUT",
               "Active execution budget expired during Python preparation; no RPC sent",
             );
+          if (prepared.metadataProof) {
+            if (!metadataAdmission || ready?.kind !== "owned" || context.job.kind !== "rpc")
+              fail("PREPARED_RPC_UNAVAILABLE", "Missing owned ADDIN metadata route");
+            if (
+              record.binding.rpcId !== rpcId ||
+              record.wireRequest?.id !== `fmcad:${rpcId}` ||
+              prepared.metadataProof.wire.id !== record.wireRequest.id
+            )
+              fail("PREPARED_RPC_UNAVAILABLE", "ADDIN metadata identity changed before send");
+            admission = metadataAdmission.bind(
+              prepared.metadataProof.wire,
+              ready.metadataObservation,
+              record.instance,
+              context.job.clientId,
+              rpcId,
+              dispatchRemaining,
+            );
+            record.binding["addinAdmission"] = admission.binding;
+          }
           const before = state.status(context.job.id).dispatch;
           const count = (before?.rpcCount || 0) + 1;
           record.dispatchIndex = count;
@@ -3280,10 +3339,17 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           stdoutObservation: "not_observed",
         });
         try {
-          const response = await withRequest(
-            { timeoutMs: required(prepared.dispatchRemaining) },
-            () => originalPost(prepared.outgoing, sessionId, requestOptions),
-          );
+          const response = prepared.metadataProof
+            ? await postAddinAdmission(
+                required(admission).scope,
+                prepared.metadataProof.wire,
+                required(prepared.dispatchRemaining),
+              )
+            : await withRequest(
+                { timeoutMs: required(prepared.dispatchRemaining) },
+                () => originalPost(prepared.outgoing, sessionId, requestOptions),
+              );
+          if (prepared.metadataProof) receivedAdmission = response;
           writeRequestTrace(context.job.request, context.job.clientId, {
             stage: "sdk-dispatch",
             status: "passed",
@@ -3380,7 +3446,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           });
         let reply: P.Reply | null;
         try {
-          reply = matching(client, response, outgoing);
+          reply = prepared.metadataProof
+            ? matchMetadataEvidence(response, required(admission).binding, outgoing.id, decodeAdmissionJson)
+            : matching(client, response, outgoing);
         } catch (error) {
           if (trace)
             writeRequestTrace(context.job.request, context.job.clientId, {
@@ -3466,7 +3534,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             ? boundPublicPythonValue(record, receipt, payload, reply)
             : undefined;
         const returned = responseForCaller(
-          response,
+          prepared.metadataProof ? { status: response.status, raw: "" } : response,
           payload,
           reply,
           publicValue,
@@ -3514,6 +3582,31 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       unknown(error, failure) {
         context.unknown = true;
         const prepared = failure.prepared;
+        if (prepared?.metadataProof && admission) {
+          // Keep the original bytes, not a terminal outcome, if the grant
+          // was revoked or ADDIN returned nonterminal evidence.
+          try {
+            const rejected = object(error);
+            const raw = rejected["rawResponse"];
+            const response = receivedAdmission ??
+              (typeof raw === "string" && same(rejected["admissionBinding"], admission.binding)
+                ? { status: 200, raw }
+                : undefined);
+            if (
+              response &&
+              !executionRecords.evidence.readReceivedResponse(context.job.id, prepared.rpcId)
+            )
+              executionRecords.recordReceivedResponse(context.job.id, {
+                version: 1,
+                kind: "owned-rpc-received-response-v1",
+                binding: prepared.record.binding,
+                wireId: prepared.outgoing.id,
+                response,
+              });
+          } catch {
+            // The original immutable intent still prevents replay.
+          }
+        }
         if (prepared && !debugRawReceived.has(prepared))
           writeRequestTrace(context.job.request, context.job.clientId, {
             stage: "raw-received",
@@ -3536,6 +3629,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       notSubmitted(error, failure) {
         required(context.localDispatchErrors).add(error);
         const prepared = failure.prepared;
+        const code = object(error)["code"];
+        if (prepared?.metadataProof && typeof code === "string")
+          context.preconditionCode = code;
         if (prepared && !debugRawReceived.has(prepared))
           writeRequestTrace(context.job.request, context.job.clientId, {
             stage: "raw-received",
@@ -4983,6 +5079,19 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       return null;
     }
   }
+  function matchRecordedResponse(record: P.RecordEvidence) {
+    if (!record.request || record.request.method !== record.method)
+      fail("RECEIPT_MISMATCH", "Terminal RPC has no original reply identity");
+    const wire = record.wireRequest || record.request;
+    const binding = record.binding["addinAdmission"];
+    if (binding !== undefined) {
+      if (!record.response || !record.wireRequest)
+        fail("RECEIPT_MISMATCH", "ADDIN metadata has no original bound response");
+      return matchMetadataEvidence(record.response, binding, wire.id, decodeAdmissionJson);
+    }
+    return matching(client, record.response, wire);
+  }
+
   const recoveryEvaluator = createBrokerRecovery(
     createBrokerRecoveryEvidence(executionRecords.evidence, {
       readFence: readRecoveryFence,
@@ -4998,12 +5107,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       workflowNonterminal,
       nativeReceipts,
       validateTerminalResponse(record) {
-        if (!record.request || record.request.method !== record.method)
-          fail(
-            "RECEIPT_MISMATCH",
-            "Terminal RPC has no original reply identity",
-          );
-        matching(client, record.response, record.wireRequest || record.request);
+        matchRecordedResponse(record);
       },
     }),
   );
@@ -5057,9 +5161,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             const response = required(record.response);
             return record.wireRequest
               ? responseForCaller(
-                  response,
+                  record.binding["addinAdmission"] === undefined
+                    ? response
+                    : { status: response.status, raw: "" },
                   required(record.request),
-                  matching(client, response, record.wireRequest),
+                  matchRecordedResponse(record),
                 )
               : response;
           },
@@ -5594,7 +5700,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           request.sessionId = r.rpc?.sessionId ?? r.sessionId;
           delete request.rpc;
           if (request.sessionId === undefined) delete request.sessionId;
-          validateRaw(rpcPayload(request.payload));
+          const raw = rpcPayload(request.payload);
+          if (isAddinMetadata(raw)) {
+            if (!metadataAdmission)
+              fail("unsupported_queue_route", "ADDIN metadata admission is not provisioned");
+            addinMetadataSelector(raw);
+          } else validateRaw(raw);
         }
         if (
           request.inputFiles !== undefined &&
@@ -5644,6 +5755,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               rawPayload,
               { id: preparedId },
               brokerExecution.createTurnIdentity(preparedId),
+              undefined,
+              isAddinMetadata(rawPayload),
             );
             resetFence();
             const flights = await prepareJobFlights({
@@ -6376,7 +6489,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               "The original checked RPC is unavailable; it is never reconstructed for replay",
             );
           plan.turn.inspect((prepared) => {
-            prepared.pythonCertificate.fence(prepared.outgoing);
+            (prepared.metadataProof ?? prepared.pythonCertificate).fence(prepared.outgoing);
             localContextChanged =
               !prepared.metadataOnly &&
               prepared.contextEpoch !== (state.data.contextEpoch || 0);
@@ -6437,6 +6550,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       preflight() {
         const entry =
           job.kind === "command" ? commandEntry(required(job.request.argv)) : null;
+        const raw = job.kind === "rpc" ? rpcPayload(job.request.payload) : null;
         const protocolOnly =
           job.kind === "rpc"
             ? [
@@ -6444,19 +6558,20 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 "notifications/initialized",
                 "ping",
                 "tools/list",
-              ].includes(rpcPayload(job.request.payload).method)
+              ].includes(required(raw).method)
             : ["tools", "doctor"].includes(entry?.kind ?? "");
         const allowsBusy =
           protocolOnly ||
           ["ui.inspect", "ui.respond", "ui.resolve"].includes(entry?.target ?? "");
         allowsBusyAfter = protocolOnly || entry?.target === "ui.inspect";
-        guardSelector =
-          job.request.phased ||
-          job.sequenceMode === "automatic" ||
-          job.contextRefreshRequired ||
-          load("./composition/stage-dependencies").requiresPhysicalStageOwner(
-            job.request.payload,
-          )
+        guardSelector = raw && isAddinMetadata(raw)
+          ? addinMetadataSelector(raw)
+          : job.request.phased ||
+            job.sequenceMode === "automatic" ||
+            job.contextRefreshRequired ||
+            load("./composition/stage-dependencies").requiresPhysicalStageOwner(
+              job.request.payload,
+            )
             ? documentSelector(job)
             : undefined;
         // Record completion before applying idle policy. A lost response
@@ -6614,7 +6729,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         return true;
       },
       executeAndComplete: () =>
-        executePreparedProduct(job, grant, plan, directory, guardSelector, allowsBusyAfter),
+        executePreparedProduct(job, grant, plan, directory, guardSelector, allowsBusyAfter, observed),
     });
   }
 
@@ -6625,6 +6740,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     directory: string,
     guardSelector: ReturnType<typeof documentSelector> | undefined,
     allowsBusyAfter: boolean,
+    observed: P.Instance | undefined,
   ) {
     const flights = plan?.flights;
     const context: P.ProductContext = {
@@ -6709,10 +6825,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         // Local stdio initialization does not create an upstream HTTP session.
         // Raw calls without an explicit upstream session must negotiate their
         // own, just like broker-owned catalog reads and prepared tool calls.
-        const openSession =
+        const admissionRoute = isAddinMetadata(rawPayload);
+        const openSession = !admissionRoute && (
           physicalCatalogRead ||
-          (rawPayload.method === "tools/call" &&
-            job.request.sessionId === undefined);
+          (rawPayload.method === "tools/call" && job.request.sessionId === undefined)
+        );
         const headers = Object.fromEntries(
           Object.entries(client.server.headers || {}).filter(
             ([name]) => name.toLowerCase() !== "mcp-protocol-version",
@@ -6735,6 +6852,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 postPrepared(rawPayload, sessionId, undefined, {
                   kind: "owned",
                   turn: plan.turn,
+                  ...(admissionRoute ? { metadataObservation: observed } : {}),
                 }),
             );
           },

@@ -15,6 +15,185 @@ import type {
   createBrokerSession,
 } from "../packages/core/src/application/broker-session";
 import type { TurnIdentity } from "../packages/core/src/application/broker-execution";
+import type { createAddinAdmission } from "../packages/node-adapters/src/execution/addin-admission-client";
+import { isDeepStrictEqual } from "node:util";
+
+const metadataTool = "get_open_document_metadata";
+
+function refuse(code: string, message: string): never {
+  throw Object.assign(new Error(message), { code, notStarted: true });
+}
+
+export function isAddinMetadata(payload: P.Rpc) {
+  return payload.method === "tools/call" && payload.params?.name === metadataTool;
+}
+
+function metadataWire(payload: P.Rpc) {
+  const params = payload.params;
+  const args = params?.arguments;
+  const id = payload.id;
+  if (
+    !isAddinMetadata(payload) ||
+    payload.jsonrpc !== "2.0" ||
+    !((typeof id === "string" && id.length > 0) ||
+      (typeof id === "number" && Number.isSafeInteger(id))) ||
+    Object.keys(payload).length !== 4 ||
+    !["jsonrpc", "method", "id", "params"].every((key) => Object.hasOwn(payload, key)) ||
+    !params ||
+    Object.keys(params).length !== 2 ||
+    !Object.hasOwn(params, "name") ||
+    !Object.hasOwn(params, "arguments") ||
+    !args ||
+    Array.isArray(args) ||
+    Object.keys(args).length !== 2 ||
+    !Object.hasOwn(args, "fileId") ||
+    !Object.hasOwn(args, "version") ||
+    typeof args["fileId"] !== "string" ||
+    !args["fileId"].trim() ||
+    typeof args["version"] !== "number" ||
+    !Number.isSafeInteger(args["version"]) ||
+    args["version"] <= 0
+  )
+    refuse("INVALID_RPC", "Expected one exact saved-document metadata request");
+  return Object.freeze({
+    jsonrpc: "2.0",
+    method: "tools/call",
+    id,
+    params: Object.freeze({
+      name: metadataTool,
+      arguments: Object.freeze({ fileId: args["fileId"], version: args["version"] }),
+    }),
+  });
+}
+
+export function addinMetadataSelector(payload: P.Rpc) {
+  return { fileId: metadataWire(payload).params.arguments.fileId };
+}
+
+/** A capability-specific proof, separate from every Python certificate. */
+export function prepareMetadataWire(payload: P.Rpc): P.MetadataWireProof {
+  const wire = metadataWire(payload);
+  const bytes = JSON.stringify(wire);
+  return Object.freeze({
+    wire,
+    fence(current: P.Rpc) {
+      if (JSON.stringify(current) !== bytes)
+        refuse("INPUT_CHANGED", "Prepared ADDIN metadata bytes changed");
+    },
+  });
+}
+
+export function provisionAddinMetadata(
+  config: P.TrustedAddinMetadataAdmission | undefined,
+  backend: string | undefined,
+  prepare: typeof createAddinAdmission,
+) {
+  if (config === undefined) return null;
+  if (
+    !config ||
+    backend !== "addin" ||
+    config.capability !== metadataTool ||
+    !Number.isSafeInteger(config.pid) ||
+    config.pid <= 0
+  )
+    refuse("INVALID_ADMISSION_PROVISIONING", "Expected a provisioned ADDIN metadata capability");
+  const { endpoint, token, pid, birth, instance, epoch, source, build } = config;
+  if ([endpoint, token, birth, instance, epoch, source, build].some(
+    (pin) => typeof pin !== "string" || !pin.trim(),
+  ))
+    refuse("INVALID_ADMISSION_PROVISIONING", "ADDIN metadata provisioning is incomplete");
+
+  return {
+    bind(
+      wire: ReturnType<typeof metadataWire>,
+      observed: P.Instance | undefined,
+      pinned: P.Instance,
+      owner: string,
+      request: string,
+      timeoutMs: number,
+    ) {
+      const { fileId, version } = wire.params.arguments;
+      const target: unknown = observed?.documentState?.state?.identity;
+      if (
+        observed?.pid !== pid ||
+        observed.birth !== birth ||
+        pinned.pid !== pid ||
+        pinned.birth !== birth ||
+        observed.documentState?.status !== "complete" ||
+        !target ||
+        typeof target !== "object" ||
+        !("creationId" in target) ||
+        typeof target.creationId !== "string" ||
+        !target.creationId.trim() ||
+        !("fileId" in target) ||
+        target.fileId !== fileId ||
+        !("version" in target) ||
+        target.version !== version
+      )
+        refuse("DOCUMENT_ADMISSION_UNPROVEN", "Preflight did not prove the provisioned saved document");
+
+      const identity = Object.freeze({
+        owner,
+        request,
+        instance,
+        epoch,
+        source,
+        build,
+        document: JSON.stringify({ creationId: target.creationId, fileId, version }),
+      });
+      try {
+        // Construction is local. It validates the credentials, endpoint and
+        // exact bytes before a journal can imply that a send was possible.
+        const { binding } = prepare({ endpoint, token, timeoutMs }, identity, wire);
+        return { scope: Object.freeze({ endpoint, token, identity }), binding };
+      } catch {
+        refuse("INVALID_ADMISSION_PROVISIONING", "Invalid ADDIN admission provisioning");
+      }
+    },
+  };
+}
+
+function fields(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+export function matchMetadataEvidence(
+  response: P.Response,
+  binding: unknown,
+  wireId: P.Rpc["id"],
+  decode: (raw: string) => unknown,
+): P.Reply {
+  function invalid(): never {
+    throw Object.assign(new Error("Metadata response lacks original bound terminal evidence"), {
+      code: "RECEIPT_MISMATCH",
+    });
+  }
+  let envelope: Record<string, unknown>;
+  try {
+    envelope = fields(decode(response.raw));
+  } catch {
+    return invalid();
+  }
+  const terminal = fields(envelope["record"]);
+  const reply = fields(response.toolResponse);
+  if (
+    response.status !== 200 ||
+    !binding ||
+    envelope["version"] !== 1 ||
+    !isDeepStrictEqual(fields(envelope["binding"]), binding) ||
+    terminal["state"] !== "terminal" ||
+    Object.keys(terminal).length !== 2 ||
+    !Object.hasOwn(terminal, "result") ||
+    Object.keys(reply).length !== 3 ||
+    reply["jsonrpc"] !== "2.0" ||
+    reply["id"] !== wireId ||
+    !isDeepStrictEqual(reply["result"], terminal["result"])
+  )
+    return invalid();
+  return { jsonrpc: "2.0", id: wireId, result: reply["result"] };
+}
 
 type Grant = BrokerGrant<P.LaneContext>;
 type Hold = BrokerHold<P.LaneContext>;
