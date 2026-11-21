@@ -325,6 +325,33 @@ test("idle scheduling does not enumerate retained terminal history or persist", 
   for (let i = 0; i < 1000; i++) assert.equal(queue.next(), null);
 });
 
+test("idle scheduling under a block skips history but still expires due work", () => {
+  const { queue, submit, advance } = fixture();
+  for (let index = 0; index < 32; index++) {
+    const completed = submit();
+    assert.equal(queue.next()?.id, completed.id);
+    queue.finish(completed.id);
+  }
+  const held = submit();
+  assert.equal(queue.next()?.id, held.id);
+  queue.block(held.id, "unsettled");
+  const waiting = submit("b", { queueTimeoutMs: 10 });
+  const jobs = queue.data.jobs;
+  queue.data.jobs = new Proxy(jobs, {
+    ownKeys() {
+      throw Error("history scan while only waiting");
+    },
+  });
+  for (let i = 0; i < 1000; i++) assert.equal(queue.next(), null);
+  assert.equal(queue.status(waiting.id)["state"], "queued");
+  // An actual expiry may commit; only the idle path must avoid enumeration.
+  queue.data.jobs = jobs;
+  advance(10);
+  assert.equal(queue.next(), null);
+  assert.equal(queue.status(waiting.id)["state"], "expired");
+  assert.equal(queue.summary().blocked?.id, held.id);
+});
+
 test("document policy is parsed-intent only and ignores unrelated queue/document changes", () => {
   assert.deepEqual(
     selectDocument({

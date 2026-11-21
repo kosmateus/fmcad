@@ -15,6 +15,7 @@ import type {
 } from "./queue-broker-modules";
 import type { BrokerControlFence } from "../packages/core/src/application/broker-control";
 import type { DispatchFailure } from "../packages/core/src/application/execution";
+import type { RecoveryFence } from "../packages/core/src/application/broker-recovery";
 import type {
   PreparedTurn,
   TurnIdentity,
@@ -57,6 +58,12 @@ const { fencePreparedWire } = runtimeRequire(
 const { createBrokerRecords } = runtimeRequire(
   "./dist/node-adapters/persistence/broker-records",
 ) as typeof import("../packages/node-adapters/src/persistence/broker-records");
+const { createBrokerRecovery } = runtimeRequire(
+  "./dist/core/application/broker-recovery",
+) as typeof import("../packages/core/src/application/broker-recovery");
+const { createBrokerRecoveryEvidence } = runtimeRequire(
+  "./dist/node-adapters/execution/broker-recovery-evidence",
+) as typeof import("../packages/node-adapters/src/execution/broker-recovery-evidence");
 const { epochControlDirectory } = load("./queue-epoch-lineage");
 const { QueueGate } = load("./queue-gate");
 const { PauseBudget } = load("./pause-budget");
@@ -1272,6 +1279,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   type ProductContext = P.Context & { productTurn?: TurnIdentity };
   type ProductGrant = { context: ProductContext; turn: TurnIdentity };
   const physicalGrant = new AsyncLocalStorage<ProductGrant>();
+  const recoveryProbeScope = new AsyncLocalStorage<{
+    assertCurrent(): void;
+    start(): void;
+    dispatchBoundary?: P.Send["dispatchBoundary"];
+  }>();
   const preparingJob = new AsyncLocalStorage<
     { job: P.Job; turn: TurnIdentity } | false
   >();
@@ -1419,6 +1431,15 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       // after a pause. Product operations retain their own epoch fence below;
       // an observation is never permission to execute a stale product request.
       certificate.fence(outgoing);
+      const recoveryProbe = recoveryProbeScope.getStore();
+      if (recoveryProbe) {
+        if (
+          recoveryProbe.dispatchBoundary === "broker-post" &&
+          outgoing.method === "tools/call"
+        )
+          recoveryProbe.start();
+        else recoveryProbe.assertCurrent();
+      }
       return originalPost(outgoing, sessionId, requestOptions);
     });
   }
@@ -1443,15 +1464,36 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     } = {
       server,
       callTool: (...args) =>
-        withRequest({ timeoutMs: server.timeoutMs }, () =>
-          client.callTool(...args),
-        ),
+        withRequest({ timeoutMs: server.timeoutMs }, () => {
+          // Without a prepared wire call, entry to the injected tool port is
+          // the last boundary where the broker can prove the probe was unsent.
+          recoveryProbeScope.getStore()?.start();
+          return client.callTool(...args);
+        }),
     };
     if (client.prepareCallTool)
       port.prepareCallTool = async (...args) => {
         const send = await required(client.prepareCallTool).apply(client, args);
         return Object.assign(
-          () => withRequest({ timeoutMs: server.timeoutMs }, send),
+          () =>
+            withRequest({ timeoutMs: server.timeoutMs }, () => {
+              const recoveryProbe = recoveryProbeScope.getStore();
+              if (recoveryProbe) {
+                const { dispatchBoundary } = send;
+                if (dispatchBoundary === "broker-post") {
+                  recoveryProbe.assertCurrent();
+                  return recoveryProbeScope.run(
+                    { ...recoveryProbe, dispatchBoundary },
+                    send,
+                  );
+                }
+                // An unmarked prepared callback is itself the send boundary,
+                // even when its client separately exposes preparePost.
+                send.fence();
+                recoveryProbe.start();
+              }
+              return send();
+            }),
           { fence: () => send.fence() },
         );
       };
@@ -4894,184 +4936,104 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     return { ...acceptance, job: result };
   }
 
-  async function reconcile(id: string, clientId: string) {
-    const job = owned(id, clientId);
-    if (job.state !== "needs_reconciliation")
-      fail("NOT_BLOCKED", "Job does not require reconciliation");
+  function readRecoveryFence(id: string): RecoveryFence | null {
+    const data = state.data;
+    const job = data.jobs[id];
     if (
-      active &&
-      (active.pending.size || (active.child && !active.workerClosed))
+      !job ||
+      closed ||
+      epochProcessUnavailable ||
+      !instance ||
+      state._writing ||
+      state._fault ||
+      (active && active.job.id !== id)
     )
-      fail(
-        "WORKER_PENDING",
-        "Owned worker or broker RPC is still pending; no probe sent",
-      );
+      return null;
+    try {
+      assertResetSubmissionOpen(dir);
+      const epoch = state.epoch;
+      const normal = state.admissionMode === "normal-multidocument";
+      if (epoch) state.assertEpoch(normal);
+      if (
+        fs.lstatSync(
+          path.join(epoch?.root ?? dir, "queue-state.pending.json"),
+          { throwIfNoEntry: false },
+        ) ||
+        !same(readJson<P.Owner>(lock), marker)
+      )
+        return null;
+      const identity = readJson<P.Identity>(identityFile);
+      if (
+        identity.configHash !== configHash ||
+        identity.buildHash !== codeHash ||
+        !sameInstance(identity.instance, instance)
+      )
+        return null;
+      return {
+        jobId: id,
+        clientId: job.clientId,
+        requestId: job.requestId,
+        jobHash: job.hash,
+        state: job.state,
+        rpcCount: job.dispatch?.rpcCount || 0,
+        brokerInstanceId: marker.nonce,
+        instance: identity.instance,
+        buildHash: codeHash,
+        executableBuildHash: buildHash(),
+        epochId: epoch?.epochId ?? null,
+        receiptEpoch: normal ? undefined : epoch?.epochId,
+        revision: data.revision,
+        generation: data.controlGeneration || 0,
+        contextEpoch: data.contextEpoch || 0,
+        activeJobId: data.active,
+        blockedJobId: data.blocked?.id ?? null,
+      };
+    } catch {
+      // Unreadable durable ownership or state is not recovery authority.
+      return null;
+    }
+  }
+  const recoveryEvaluator = createBrokerRecovery(
+    createBrokerRecoveryEvidence(executionRecords.evidence, {
+      readFence: readRecoveryFence,
+      workerContext: () =>
+        !active
+          ? "absent"
+          : active.pending.size || (active.child && !active.workerClosed)
+            ? "pending"
+            : "closed",
+      processBirth,
+      workflowNonterminal,
+      nativeReceipts,
+      validateTerminalResponse(record) {
+        if (!record.request || record.request.method !== record.method)
+          fail(
+            "RECEIPT_MISMATCH",
+            "Terminal RPC has no original reply identity",
+          );
+        matching(client, record.response, record.wireRequest || record.request);
+      },
+    }),
+  );
+
+  async function reconcile(id: string, clientId: string) {
+    if (owned(id, clientId).state !== "needs_reconciliation")
+      fail("NOT_BLOCKED", "Job does not require reconciliation");
     if (!instance)
       fail(
         "INSTANCE_UNAVAILABLE",
         "Original pinned instance record unavailable; no probe sent",
       );
+    const expected = readRecoveryFence(id);
+    if (!expected)
+      fail("STATE_CONFLICT", "Recovery owner or local fence is unavailable");
+    const job = state.lookup(id);
     const directory = privateDirectory(jobDir(id));
-    const optional = <T>(name: string) =>
-      fs.existsSync(path.join(directory, name))
-        ? readJson<T>(path.join(directory, name))
-        : null;
-    const worker = optional<P.WorkerResult>("worker-result.json");
-    if (worker && worker.jobId !== id)
-      fail("RECEIPT_MISMATCH", "Worker result belongs to a different job");
-    if (worker?.nonterminal || workflowNonterminal(worker?.workflowOutcome)) {
-      fail(
-        "WORKFLOW_RECONCILIATION_REQUIRED",
-        "Typed workflow outcome is unknown/nonterminal; a generic synchronous script receipt does not prove workflow completion. No probe sent",
-      );
-    }
-    const adapter = optional<P.AdapterOutcome>("adapter-outcome.json");
-    if (adapter) {
-      if (adapter.jobId !== id || adapter.buildHash !== codeHash)
-        fail(
-          "RECEIPT_MISMATCH",
-          "Adapter evidence belongs to a different job/build",
-        );
-    }
-    const workerIdentityFile = path.join(directory, "worker-identity.json");
-    if (!active && fs.existsSync(workerIdentityFile)) {
-      const workerIdentity = readJson<{ pid: number; birth: string }>(
-        workerIdentityFile,
-      );
-      try {
-        if (processBirth(workerIdentity.pid) === workerIdentity.birth)
-          fail(
-            "WORKER_PENDING",
-            "Original local worker is still alive; no probe sent",
-          );
-      } catch (cause) {
-        const error = errorInfo(cause);
-        if (!["ENOENT", "ESRCH"].includes(error.code ?? "")) throw error;
-      }
-    } else if (!active && optional("worker-start.json")) {
-      fail(
-        "WORKER_IDENTITY_UNAVAILABLE",
-        "Worker spawn was prepared without a durable process identity; absence of a live worker is unproven",
-      );
-    }
-    const records = fs
-      .readdirSync(directory)
-      .filter(
-        (name) => /^rpc-.*\.json$/.test(name) && name !== "rpc-result.json",
-      )
-      .map((name) => readJson<P.RecordEvidence>(path.join(directory, name)));
-    if (
-      records.some(
-        (record) =>
-          record.binding?.jobId !== id ||
-          record.binding?.buildHash !== codeHash ||
-          !sameInstance(record.instance, instance),
-      )
-    ) {
-      fail(
-        "RECEIPT_MISMATCH",
-        "Dispatch journal belongs to a different job, build, or Fusion instance; no probe sent",
-      );
-    }
-    const count = job.dispatch?.rpcCount || 0;
-    const notDispatched = count === 0;
-    if (adapter?.unknown && (notDispatched || !adapter.rpcId)) {
-      fail(
-        "ADAPTER_RECONCILIATION_REQUIRED",
-        "Unbound adapter uncertainty cannot be certified by generic receipts. No probe sent",
-      );
-    }
-    const receipts = [];
-    const nativeEnds = [];
-    // Every new probe is itself a physical call. Earlier SDK turns being settled
-    // must never hide an unfinished probe of the current turn.
-    for (const stage of ["preflight", "postflight"]) {
-      const started = optional<P.ProbeRecord>(stage + "-start.json");
-      if (!started) continue; // Older settled jobs did not record postflight starts.
-      if (
-        started.jobId !== id ||
-        started.buildHash !== codeHash ||
-        !sameInstance(started.instance, instance) ||
-        started.binding?.jobId !== id ||
-        started.binding.buildHash !== codeHash ||
-        !/^[a-f0-9-]{36}$/.test(started.binding.rpcId || "") ||
-        started.binding.requestHash !==
-          hash(stage + ":" + id + ":" + started.binding.rpcId) ||
-        started.receipt !==
-          path.join(
-            directory,
-            stage + "-" + started.binding.rpcId + ".receipt.json",
-          )
-      ) {
-        fail(
-          "RECEIPT_MISMATCH",
-          stage + " probe binding/path mismatch; no new probe sent",
-        );
-      }
-      remoteReceipt(
-        {
-          receipt: started.receipt,
-          binding: started.binding,
-          instance: started.instance,
-        },
-        false,
-      );
-    }
-    if (notDispatched) {
-      if (records.some((record) => record.terminal))
-        fail(
-          "RECEIPT_MISMATCH",
-          "Terminal RPC journal conflicts with the undispatched state",
-        );
-      const started = optional<P.ProbeRecord>("preflight-start.json");
-      const completed = optional<P.ProbeRecord>("preflight.json");
-      for (const receipt of [started, completed].filter(
-        (value): value is P.ProbeRecord => value !== null,
-      )) {
-        if (
-          receipt.jobId !== id ||
-          receipt.buildHash !== codeHash ||
-          !sameInstance(receipt.instance, instance)
-        )
-          fail(
-            "RECEIPT_MISMATCH",
-            "Preflight evidence is not bound to this job/instance/build",
-          );
-      }
-      let observation =
-        completed?.completed === true ? completed.instance : null;
-      if (started && !observation && started.receipt && started.binding) {
-        if (
-          started.binding.jobId !== id ||
-          started.binding.buildHash !== codeHash ||
-          !/^[a-f0-9-]{36}$/.test(started.binding.rpcId || "") ||
-          started.binding.requestHash !==
-            hash("preflight:" + id + ":" + started.binding.rpcId) ||
-          started.receipt !==
-            path.join(
-              directory,
-              "preflight-" + started.binding.rpcId + ".receipt.json",
-            )
-        ) {
-          fail(
-            "RECEIPT_MISMATCH",
-            "Preflight probe binding/path mismatch; no new probe sent",
-          );
-        }
-        observation = remoteReceipt(
-          {
-            receipt: started.receipt,
-            binding: started.binding,
-            instance: started.instance,
-          },
-          false,
-        ).instance;
-      }
-      if (started && !observation)
-        fail(
-          "PREFLIGHT_PENDING",
-          "Previous preflight started but its completion is unproven; no probe sent",
-        );
+    const assertCurrentFence = () =>
+      recoveryEvaluator.assertCurrentFence(expected);
+    let decision = recoveryEvaluator.reconcile(job, expected);
+    if (decision.kind === "settled" && !decision.dispatched) {
+      const observation = decision.preflight;
       const outcome = {
         state: "failed",
         code:
@@ -5082,142 +5044,98 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         preflightCompleted: !!observation,
         source: "durable-preflight-evidence",
       };
+      assertCurrentFence();
       durable(path.join(directory, "outcome.json"), outcome);
+      assertCurrentFence();
       const result = state.resolve(id, outcome);
       held = null;
       active = null;
       diagnostics();
       return result; // No new probe is needed to settle a product request never sent.
-    } else {
-      if (records.length !== count)
-        fail(
-          "RECEIPT_UNAVAILABLE",
-          "Complete original dispatch journal is unavailable; no probe sent",
-        );
-      for (const record of records) {
-        const declared = nativeReceipts.start(record);
-        const ended = declared
-          ? nativeReceipts.completion(record, declared)
-          : null;
-        if (declared && !ended)
-          fail(
-            "NATIVE_WORKFLOW_PENDING",
-            "Declared native command has no matching terminal lifecycle receipt; no probe sent",
-          );
-        if (record.nonterminal && !ended)
-          fail(
-            "WORKFLOW_RECONCILIATION_REQUIRED",
-            "RPC returned a typed nonterminal workflow outcome; no generic reconciliation or probe",
-          );
-        if (ended) nativeEnds.push(ended);
-        if (record.terminal) {
-          if (!record.request || record.request.method !== record.method)
-            fail(
-              "RECEIPT_MISMATCH",
-              "Terminal RPC has no original reply identity",
-            );
-          matching(
-            client,
-            record.response,
-            record.wireRequest || record.request,
-          );
-          if (record.receipt) {
-            receipts.push(remoteReceipt(record, true, record.remoteReceipt));
-            if (record.remoteReceipt && fs.existsSync(record.receipt)) {
-              const current = remoteReceipt(record);
-              if (current.outcome !== record.remoteReceipt.outcome)
-                fail(
-                  "RECEIPT_MISMATCH",
-                  "Remote receipt changed after terminal publication",
-                );
-            }
-          }
-        } else {
-          if (!record.receipt)
-            fail(
-              "RECEIPT_UNAVAILABLE",
-              "Unsettled non-script RPC has no remote completion evidence; no probe sent",
-            );
-          receipts.push(remoteReceipt(record));
-        }
-      }
-      if (
-        optional<{ code: string }>("outcome.json")?.code ===
-          "WORKFLOW_NONTERMINAL" &&
-        !nativeEnds.length
-      ) {
-        fail(
-          "WORKFLOW_RECONCILIATION_REQUIRED",
-          "Persisted typed workflow fence cannot be cleared by a generic synchronous receipt",
-        );
-      }
-    }
-    if (
-      adapter?.unknown &&
-      !nativeEnds.some((proof) => proof.rpcId === adapter.rpcId)
-    ) {
-      fail(
-        "ADAPTER_RECONCILIATION_REQUIRED",
-        "Adapter result was malformed/unvalidated; generic RPC completion cannot certify it. No probe sent",
-      );
     }
     const context = active;
-    active = null;
-    try {
-      // A reset during the recovery probe must not cause stacked SDK probes.
-      // Its filesystem receipt proves completion even if the transport reply was lost.
-      let previous = optional<P.ProbeRecord>("reconcile-probe.json");
-      let actual;
-      if (previous) {
-        if (
-          previous.binding?.jobId !== id ||
-          previous.binding?.buildHash !== codeHash ||
-          !sameInstance(previous.instance, instance)
-        )
-          fail("RECEIPT_MISMATCH", "Recovery probe identity mismatch");
-        const receipt = remoteReceipt(previous);
-        if (receipt.outcome === "succeeded") actual = receipt.instance;
-        else {
-          // All original RPCs and this read-only probe have proven completion.
-          // Preserve the failed attempt, then permit a fresh *observation*, never
-          // a replay of the user's operation. Missing/mismatched/busy receipts
-          // still fail above and cannot reach this branch.
-          durable(
-            path.join(
-              directory,
-              `reconcile-probe-${previous.binding.rpcId}.json`,
-            ),
-            previous,
-          );
-          previous = null;
-        }
-      }
-      if (!previous) {
-        const rpcId = randomUUID();
-        const record = {
-          binding: {
-            jobId: id,
-            rpcId,
-            requestHash: hash("reconcile:" + id + ":" + rpcId),
-            buildHash: codeHash,
+    if (decision.kind === "waitingForEvidence") {
+      if (!decision.observation) fail(decision.code, decision.message);
+      const previous = decision.observation.priorFailed;
+      const rpcId = randomUUID();
+      const binding = {
+        jobId: id,
+        rpcId,
+        requestHash: hash("reconcile:" + id + ":" + rpcId),
+        buildHash: codeHash,
+      };
+      const receipt = path.join(directory, `reconcile-${rpcId}.receipt.json`);
+      let entered = false;
+      await recoveryProbeScope.run(
+        {
+          assertCurrent: assertCurrentFence,
+          start() {
+            if (entered)
+              fail("PREPARED_RPC_CONSUMED", "Recovery probe cannot be replayed");
+            entered = true;
+            const current = recoveryEvaluator.reconcile(job, expected);
+            if (current.kind === "waitingForEvidence" && !current.observation)
+              fail(current.code, current.message);
+            if (
+              current.kind !== "waitingForEvidence" ||
+              !current.observation ||
+              !same(current.observation.priorFailed, previous)
+            )
+              fail("STATE_CONFLICT", "Recovery evidence changed before send");
+            if (previous) {
+              const archived = path.join(
+                directory,
+                `reconcile-probe-${previous.binding.rpcId}.json`,
+              );
+              assertCurrentFence();
+              if (fs.lstatSync(archived, { throwIfNoEntry: false })) {
+                if (!same(readJson(archived), previous))
+                  fail("RECEIPT_MISMATCH", "Archived recovery intent differs");
+              } else durable(archived, previous, true);
+            }
+            assertCurrentFence();
+            // Preparation (including session setup) alone must not leave a
+            // journal that would imply an uncertain send. Once durable here,
+            // a lost reply can only be resolved from this attempt's evidence.
+            durable(
+              path.join(directory, "reconcile-probe.json"),
+              { binding, instance, receipt },
+              !previous,
+            );
           },
-          instance,
-          receipt: path.join(directory, `reconcile-${rpcId}.receipt.json`),
-        };
-        durable(path.join(directory, "reconcile-probe.json"), record);
-        actual = await checkInstance({
-          receiptPath: record.receipt,
-          binding: record.binding,
-          diagnosticPath: path.join(
-            directory,
-            `reconcile-${rpcId}.result.json`,
-          ),
-        });
-      }
-      durable(path.join(directory, "reconcile-postflight.json"), actual);
-    } finally {
-      active = context;
+        },
+        () =>
+          checkInstance({
+            receiptPath: receipt,
+            binding,
+            diagnosticPath: path.join(
+              directory,
+              `reconcile-${rpcId}.result.json`,
+            ),
+          }),
+      );
+      // An awaited observation cannot authorize settlement. Recheck both the
+      // original authority and the original durable evidence, without a send.
+      assertCurrentFence();
+      decision = recoveryEvaluator.reconcile(job, expected);
     }
+    if (decision.kind === "waitingForEvidence")
+      fail(decision.code, decision.message);
+    if (!decision.dispatched)
+      fail("STATE_CONFLICT", "Original dispatch changed during recovery");
+    const {
+      adapterUnknown,
+      nativeEnds,
+      records,
+      receipts,
+      workerSucceeded,
+      workerTerminal,
+    } = decision;
+    assertCurrentFence();
+    durable(
+      path.join(directory, "reconcile-postflight.json"),
+      decision.observation,
+    );
     let rawFile = load("./queue-response-files").responsePath(
       dir,
       job,
@@ -5243,32 +5161,27 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "rpc-result.json",
         true,
       );
+      assertCurrentFence();
       durable(rawFile, raw);
     }
     const rawReply = raw && object(client._parse(raw.raw));
     const successfulOutput =
-      !adapter?.unknown &&
+      !adapterUnknown &&
       (job.kind === "rpc"
         ? rawReply &&
           !rawReply["error"] &&
           !object(rawReply["result"])["isError"]
-        : worker?.terminal === true &&
-          worker.jobId === id &&
-          worker.code === 0);
+        : workerSucceeded);
     const details = {
       state: load("./dist/core/application/execution").reconciledExecution({
-        outputAvailable: !!successfulOutput && !notDispatched,
-        adapterUnknown: !!adapter?.unknown,
+        outputAvailable: !!successfulOutput,
+        adapterUnknown,
         receipts,
         records,
         nativeEnds,
       }),
-      code: notDispatched
-        ? "NOT_DISPATCHED"
-        : worker?.terminal || raw
-          ? "RECONCILED"
-          : "RESULT_UNAVAILABLE",
-      mayHaveMutated: !notDispatched,
+      code: workerTerminal || raw ? "RECONCILED" : "RESULT_UNAVAILABLE",
+      mayHaveMutated: true,
       sdkSettled: true,
       publicationOutcome: successfulOutput ? "published" : "unavailable",
       limitations:
@@ -5283,7 +5196,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           }
         : {}),
     };
+    assertCurrentFence();
     durable(path.join(directory, "outcome.json"), details);
+    assertCurrentFence();
     const result = state.resolve(id, details);
     endNativeActivity(context);
     held = null;
@@ -7356,54 +7271,15 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             !context.unknown &&
             !context.pending.size
           ) {
-            let settled = false;
-            try {
-              const records = fs
-                .readdirSync(directory)
-                .filter(
-                  (name) =>
-                    /^rpc-.*\.json$/.test(name) && name !== "rpc-result.json",
-                )
-                .map((name) =>
-                  readJson<P.RecordEvidence>(path.join(directory, name)),
-                );
-              const count = state.status(job.id).dispatch?.rpcCount || 0;
-              if (records.length !== count)
-                fail("RECEIPT_UNAVAILABLE", "Original SDK journals incomplete");
-              for (const record of records) {
-                if (
-                  !record.terminal ||
-                  record.nonterminal ||
-                  record.binding?.jobId !== job.id ||
-                  record.binding.buildHash !== codeHash ||
-                  !sameInstance(record.instance, instance)
-                )
-                  fail("RECEIPT_UNAVAILABLE", "SDK completion unproven");
-                matching(
-                  client,
-                  record.response,
-                  required(record.wireRequest || record.request),
-                );
-                if (record.receipt)
-                  remoteReceipt(record, true, record.remoteReceipt);
-                else if (
-                  ![
-                    "initialize",
-                    "notifications/initialized",
-                    "ping",
-                    "tools/list",
-                  ].includes(record.method)
-                )
-                  fail(
-                    "NATIVE_RECEIPT_REQUIRED",
-                    "Native idle completion needs a script receipt",
-                  );
-              }
-              settled = true;
-            } catch {
-              /* Incomplete evidence retains the original unknown hold. */
-            }
-            if (settled) {
+            const expected = readRecoveryFence(job.id);
+            if (
+              expected &&
+              recoveryEvaluator.verifyCompletedDispatch(
+                state.lookup(job.id),
+                expected,
+              ).kind === "settled"
+            ) {
+              recoveryEvaluator.assertCurrentFence(expected);
               durable(
                 path.join(directory, "postflight-not-submitted.json"),
                 {
@@ -7425,7 +7301,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 postflightSubmitted: false,
                 modelValidated: false,
               };
+              recoveryEvaluator.assertCurrentFence(expected);
               durable(path.join(directory, "outcome.json"), details);
+              recoveryEvaluator.assertCurrentFence(expected);
               state.finish(job.id, details);
               active = null;
               if (job.request.phased)
