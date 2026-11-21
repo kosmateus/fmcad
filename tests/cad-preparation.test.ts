@@ -203,11 +203,20 @@ test("exact component reference objects retain historical token/path/kind bytes 
     const newAnnotation =
       "component: _FMCADNotRequired[str | JsonObject | None]";
     assert.ok(before.wrapper.includes(oldAnnotation));
+    const historicalCall =
+      "    result = ctx.call(request['operation'], request['data'])";
+    const specializedCall =
+      "    result = ctx.call(\"shape.box\", request['data'])";
+    assert.equal(before.wrapper.split(historicalCall).length, 2);
     const wrapper = after.units.find((unit) => unit.id === "wrapper");
     assert.ok(wrapper);
     assert.equal(
       wrapper.source,
-      before.wrapper.replace(oldAnnotation, newAnnotation),
+      // This fixed request permits only the exact operation specialization.
+      // All other wrapper bytes, including identity guards, remain pinned.
+      before.wrapper
+        .replace(oldAnnotation, newAnnotation)
+        .replace(historicalCall, specializedCall),
     );
     assert.deepEqual(after.context, before.context);
     assert.deepEqual(after.context, context);
