@@ -4,7 +4,11 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
+const { createHash } = require("node:crypto");
 const { createRequire } = require("node:module");
+const { BrokerMcpClient } = require("../../packages/node-adapters/dist/fusion-transport/mcp.js");
+const { decodeNativeProgram } = require("./native-source-envelope.cjs");
+const { runBoundInstanceProbe } = require("./bound-instance-probe.cjs");
 
 const sandbox = fs.mkdtempSync(
   path.join(
@@ -40,6 +44,7 @@ const load = createRequire(path.join(runtime, "src/queue-broker.js"));
 const { dispatchPrepared } = load("./dist/core/application/execution");
 const { serve } = load("./queue-broker");
 const ipc = load("./queue-connection");
+const { buildHash } = load("./queue-instance");
 const secret = "Bearer-private-fixture-token";
 
 test("dispatch errors retain the exact phase without a second send", async () => {
@@ -112,51 +117,115 @@ async function scenario(t, fault, owner, metadata = "known") {
     documentState: { status: "metadata-only" },
   };
   let sends = 0;
-  const fake = {
-    server: { timeoutMs: 1000 },
-    _parse: JSON.parse,
-    async _post(payload) {
-      sends++;
-      if (fault === "send") {
-        const error = Object.assign(new Error(secret), {
-          code: "ECONNRESET",
-          stdout: secret,
-          stderr: secret,
-          headers: { Authorization: secret },
-        });
-        if (metadata === "getter") {
-          Object.defineProperty(error, "causeCode", {
-            get() {
-              assert.fail("Diagnostic must not invoke getters");
-            },
-          });
-          Object.defineProperty(error, "transportPhase", {
-            get() {
-              assert.fail("Diagnostic must not invoke getters");
-            },
-          });
-        } else
-          Object.assign(error, {
-            causeCode: metadata === "known" ? "ENOENT" : secret,
-            transportPhase: metadata === "known" ? "spawn" : secret,
-          });
-        throw error;
+  const preparedProbes = new Map();
+  const probeReceipts = [];
+  const fake = new BrokerMcpClient(
+    {
+      backend: "mcp",
+      url: "http://offline.invalid",
+      tool: "fusion_mcp_execute",
+      timeoutMs: 1000,
+    },
+    {
+      version: "offline",
+      bridgeSource: () => "",
+      requestTimeout: () => 1000,
+    },
+  );
+  const prepareCallTool = fake.prepareCallTool.bind(fake);
+  fake.prepareCallTool = async (args, tool, manifest) => {
+    const script = args?.object?.script;
+    if (
+      typeof script === "string" &&
+      decodeNativeProgram(script).includes("_qr_path = ")
+    ) {
+      assert.ok(manifest, "probe sends must retain their checked source manifest");
+      assert.equal(
+        manifest.sha256,
+        createHash("sha256").update(script, "utf8").digest("hex"),
+        "the manifest must bind the exact probe source sent to the backend",
+      );
+      preparedProbes.set(script, manifest);
+    }
+    return prepareCallTool(args, tool, manifest);
+  };
+  fake._post = async (payload) => {
+    if (payload.method === "initialize")
+      return {
+        status: 200,
+        raw: JSON.stringify({
+          jsonrpc: "2.0",
+          id: payload.id,
+          result: {
+            protocolVersion: "2024-11-05",
+            serverInfo: { name: "offline-fixture", version: "offline" },
+          },
+        }),
+      };
+    if (payload.method === "notifications/initialized")
+      return { status: 200, raw: "" };
+    const args = payload.params?.arguments;
+    const script = args?.object?.script;
+    if (
+      payload.method === "tools/call" &&
+      typeof script === "string" &&
+      preparedProbes.has(script)
+    ) {
+      const manifest = preparedProbes.get(script);
+      assert.ok(manifest, "MCP probes must pass through prepared admission");
+      const source = decodeNativeProgram(script);
+      assert.match(source, /FMCAD_QUEUE_INSTANCE /);
+      let text;
+      if (source.includes("_qr_path = ")) {
+        const probe = runBoundInstanceProbe(script, instance);
+        text = probe.text;
+        probeReceipts.push({ manifest, script, receipt: probe.receipt });
+      } else {
+        text = "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance);
       }
       return {
         status: 200,
         raw: JSON.stringify({
           jsonrpc: "2.0",
-          id: fault === "settle" ? "foreign-wire-id" : payload.id,
-          result: {},
+          id: payload.id,
+          result: { content: [{ type: "text", text }] },
         }),
       };
-    },
-    async callTool() {
-      return {
-        failed: false,
-        text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance),
-      };
-    },
+    }
+    sends++;
+    if (fault === "send") {
+      const error = Object.assign(new Error(secret), {
+        code: "ECONNRESET",
+        stdout: secret,
+        stderr: secret,
+        headers: { Authorization: secret },
+      });
+      if (metadata === "getter") {
+        Object.defineProperty(error, "causeCode", {
+          get() {
+            assert.fail("Diagnostic must not invoke getters");
+          },
+        });
+        Object.defineProperty(error, "transportPhase", {
+          get() {
+            assert.fail("Diagnostic must not invoke getters");
+          },
+        });
+      } else
+        Object.assign(error, {
+          causeCode: metadata === "known" ? "ENOENT" : secret,
+          transportPhase: metadata === "known" ? "spawn" : secret,
+        });
+      throw error;
+    }
+    return {
+      status: 200,
+      raw: JSON.stringify({
+        jsonrpc: "2.0",
+        id: fault === "settle" ? "foreign-wire-id" : payload.id,
+        result: {},
+      }),
+    };
   };
   const broker = await serve(
     { backend: "mcp", timeoutMs: 1000 },
@@ -180,6 +249,47 @@ async function scenario(t, fault, owner, metadata = "known") {
     },
   );
   try {
+    const startup = probeReceipts.find(
+      ({ receipt }) => receipt.stage === "startup",
+    );
+    assert.ok(startup, "startup must execute and persist its bound probe");
+    assert.equal(startup.receipt.stage, "startup");
+    assert.deepEqual(
+      startup.manifest.request,
+      Object.fromEntries(
+        Object.entries(startup.receipt).filter(
+          ([key]) =>
+            ![
+              "terminal",
+              "outcome",
+              "instance",
+              "probeObservation",
+            ].includes(key),
+        ),
+      ),
+      "the checked artifact must carry the exact binding persisted in its receipt",
+    );
+    assert.equal(
+      startup.manifest.sha256,
+      createHash("sha256").update(startup.script, "utf8").digest("hex"),
+    );
+    assert.match(startup.manifest.artifactHash, /^[a-f0-9]{64}$/);
+    assert.equal(startup.receipt.buildHash, buildHash());
+    assert.equal(startup.receipt.terminal, true);
+    assert.equal(startup.receipt.outcome, "succeeded");
+    assert.equal(startup.receipt.instance.pid, instance.pid);
+    assert.equal(startup.receipt.instance.birth, instance.birth);
+    assert.equal(startup.receipt.instance.version, instance.version);
+    assert.deepEqual(startup.receipt.probeObservation, {
+      schema: "fmcad-instance-probe-v1",
+      identity: {
+        pid: instance.pid,
+        birth: instance.birth,
+        version: instance.version,
+        activeCommand: instance.activeCommand,
+        documents: instance.documents,
+      },
+    });
     await ipc.request(queue, { action: "register", ...auth });
     if (fault === "prepare") {
       await assert.rejects(
