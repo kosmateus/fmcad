@@ -570,9 +570,11 @@ function text(value: unknown): string {
   return value;
 }
 
-const { createBrokerTransport } = load(
-  "../packages/node-adapters/dist/fusion-transport/broker.js",
-) as typeof import("../packages/node-adapters/src/fusion-transport/broker");
+// Raw wire/receipt compatibility is below physical backend selection. Keep
+// historical decoding coverage without selecting the retired public backend.
+const { BrokerMcpClient } = load(
+  "../packages/node-adapters/dist/fusion-transport/mcp.js",
+) as typeof import("../packages/node-adapters/src/fusion-transport/mcp");
 type ProbeClient =
   import("../packages/node-adapters/src/execution/queue-instance").ProbeClient;
 
@@ -622,9 +624,9 @@ async function mcpFixture(
   });
   const address = server.address();
   assert.ok(address && typeof address !== "string");
-  const physical = createBrokerTransport(
+  const physical = new BrokerMcpClient(
     {
-      backend: "mcp",
+      backend: "addin",
       transport: "http",
       url: `http://127.0.0.1:${address.port}/mcp`,
       tool: "fusion_mcp_execute",

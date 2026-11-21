@@ -272,12 +272,10 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
           finishPing = resolve;
         });
     }
-    let script: unknown = payload;
-    for (const key of ["params", "arguments", "object", "script"])
-      script =
-        script && typeof script === "object"
-          ? Reflect.get(script, key)
-          : undefined;
+    const script =
+      payload["method"] === "tools/call"
+        ? at(payload, "params", "arguments", "code")
+        : undefined;
     const decodedScript =
       typeof script === "string" ? decodeNativeProgram(script) : "";
     if (
@@ -295,6 +293,13 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
     const boundProbe = receipts.some(
       (receipt) => receipt.value["probeObservation"] !== undefined,
     );
+    const output = boundProbe
+      ? {
+          success: true,
+          stdout: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(identity),
+          stderr: "",
+        }
+      : { success: true, stdout: "", stderr: "" };
     return {
       status: 200,
       raw: JSON.stringify({
@@ -305,25 +310,27 @@ test("real broker control drains a physical RPC, keeps queued work and resumes t
               content: [
                 {
                   type: "text",
-                  text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(identity),
+                  text: JSON.stringify(output),
                 },
               ],
+              structuredContent: output,
             }
-          : script
+          : typeof script === "string"
             ? {
                 content: [
                   {
                     type: "text",
-                    text: JSON.stringify({ tag: "fixture" }),
+                    text: JSON.stringify(output),
                   },
                 ],
+                structuredContent: output,
               }
             : {},
       }),
     };
   };
   const broker = await serve(
-    { backend: "mcp", timeoutMs: 30000 },
+    { backend: "addin", timeoutMs: 30000 },
     {
       dir,
       confirmOwnership: true,

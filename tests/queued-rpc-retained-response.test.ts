@@ -5,48 +5,36 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { createHash, randomUUID } from "node:crypto";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 
 const load = createRequire(__filename);
-const { createBrokerTransport } = load(
-  "../src/dist/fusion-transport/broker",
-) as typeof import("../packages/node-adapters/src/fusion-transport/broker");
+const { BrokerMcpClient } = load("../src/dist/fusion-transport/mcp") as {
+  BrokerMcpClient: typeof import("../packages/node-adapters/src/fusion-transport/mcp").BrokerMcpClient;
+};
+type BrokerWireClient = InstanceType<
+  typeof import("../packages/node-adapters/src/fusion-transport/mcp").BrokerMcpClient
+>;
 type BrokerHost = {
   serve(
     cfg: Record<string, unknown>,
     options: Omit<
       import("../src/queue-broker-ports").Options,
       "createBackend"
-    > & { createBackend(): ReturnType<typeof createBrokerTransport> },
+    > & { createBackend(): BrokerWireClient },
   ): Promise<{ close(): Promise<void> }>;
 };
 const { request } = load("../src/queue-connection") as {
   request<T>(dir: string, message: Record<string, unknown>): Promise<T>;
 };
-const { createQueuePost, createForwarder } = load(
-  "../src/dist/composition/library-mcp-compat",
-) as typeof import("../src/composition/library-mcp-compat");
-const debugTraceRuntime = load(
-  "../../packages/node-adapters/dist/telemetry/diagnostic-log",
-) as {
-  createDebugTraceContext?: (
-    requestId: string,
-    clientId: string,
-    source: "cli" | "mcp",
-    enabled?: boolean,
-  ) => { traceId: string } | undefined;
-  flushDebugTrace?: () => Promise<void>;
-  readDebugTrace?: (
-    traceId: string,
-    options?: { directory?: string },
-  ) => Array<Record<string, unknown>>;
-};
 const object = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" && !Array.isArray(v)
     ? (v as Record<string, unknown>)
     : {};
-// Retention failures use an explicit checker fixture. The native compatibility
-// regression below additionally certifies the real final wire with production.
+// These cases pin raw MCP response retention and historical receipt decoding
+// below backend selection. The public factory's retired-backend refusal is
+// exercised separately by server-metadata.test.ts.
+// New response-retention failures use an explicit checker fixture. Historical
+// native results exercise the production decoder and held IPC reader, with no SDK.
 const admissionModule = load("../src/queue-admission") as {
   createProductionQueueAdmission(...args: unknown[]): {
     admission: {
@@ -170,6 +158,327 @@ test("RPC artifact selection binds the product despite terminal siblings and fil
   );
 });
 
+async function readArchivedNativeResult(
+  t: import("node:test").TestContext,
+  mode: string,
+) {
+  const qi = load("../src/queue-instance") as ReturnType<
+    typeof import("../packages/node-adapters/src/execution/queue-instance").createQueueInstance
+  >;
+  const { QueueState } = load(
+    "../src/queue-state",
+  ) as typeof import("../src/queue-state");
+  const { decodeBoundPublicPythonResponse } = load(
+    "../src/dist/composition/queue-public-python-result",
+  ) as typeof import("../src/composition/queue-public-python-result");
+  const fixture = path.resolve(
+    __dirname,
+    "../../tests/fixtures/unknown-public-python",
+  );
+  const capturedBytes = fs.readFileSync(
+    path.join(fixture, "received-response.json"),
+  );
+  const receiptBytes = fs.readFileSync(
+    path.join(fixture, "remote-receipt.json"),
+  );
+  const sha = (value: string | Uint8Array) =>
+    createHash("sha256").update(value).digest("hex");
+  assert.equal(
+    sha(capturedBytes),
+    "f76b023ab7843ce596f730d0b5f4a8df7216d05da728c21952dd5798ad707cda",
+  );
+  assert.equal(
+    sha(receiptBytes),
+    "0708bbfb4bb0303205c0b807e4c792b6219dceb8209b9a175d4681982d7f22c2",
+  );
+  const captured = JSON.parse(capturedBytes.toString());
+  const receipt = JSON.parse(receiptBytes.toString());
+  assert.equal(
+    sha(captured.response.raw),
+    "7682ddd6cbd1539d452a51e1dc0443756959adca780f0b74d2f7f9a3098a73d7",
+  );
+  const source = 'print("FUSION_ADDIN_STDIO_OK")';
+  assert.equal(captured.binding.sourceHash, sha(source));
+  for (const [key, value] of Object.entries(captured.binding))
+    assert.deepEqual(receipt[key], value, `archived binding ${key}`);
+  assert.equal(captured.wireId, `fmcad:${captured.binding.rpcId}`);
+  const instance = structuredClone(receipt.instance);
+  const originalRequest = {
+    jsonrpc: "2.0",
+    id: "archived-caller",
+    method: "tools/call",
+    params: {
+      name: "execute_python",
+      arguments: { code: source, persistent: false },
+    },
+  };
+  const reply = JSON.parse(captured.response.raw);
+  const publicValue = {
+    success: true,
+    stdout: "FUSION_ADDIN_STDIO_OK\n",
+    stderr: "",
+  };
+  if (mode === "native-legacy-python")
+    reply.result.content[0].text = JSON.stringify({
+      success: true,
+      message: JSON.stringify(publicValue) + "\n",
+    });
+  if (mode === "native-wire-conflict")
+    reply.result.content[0].text = JSON.stringify({
+      success: true,
+      message: JSON.stringify({ ...publicValue, stdout: "conflicting stdout" }),
+    });
+  if (mode === "native-structured-conflict")
+    reply.result.structuredContent = { stdout: "conflicting stdout" };
+  const response = {
+    status: captured.response.status,
+    raw:
+      mode === "native-authentic-empty-fixture-offline-adapter"
+        ? captured.response.raw
+        : JSON.stringify(reply),
+  };
+  if (mode === "native-missing-result") delete receipt.publicPythonResult;
+  if (mode === "native-partial-result")
+    receipt.publicPythonResult.value = { success: true };
+  if (mode === "native-extra-result")
+    receipt.publicPythonResult.value.extra = true;
+  if (mode === "native-wrong-schema")
+    receipt.publicPythonResult.schema = "foreign";
+  if (mode === "native-wrong-binding")
+    receipt.publicPythonResultSchema = "foreign";
+  if (mode === "native-wrong-instance") receipt.instance.birth = "foreign";
+  if (mode === "native-nonterminal-result") receipt.terminal = false;
+  if (mode === "native-extra-receipt") receipt.unexpected = true;
+  const record = {
+    backend: "mcp", // Archived provenance, never a selected physical backend.
+    binding: captured.binding,
+    instance,
+    request: originalRequest,
+    wireRequest: { jsonrpc: "2.0", id: captured.wireId, method: "tools/call" },
+    method: "tools/call",
+    terminal: receipt.terminal,
+    remoteReceipt: receipt,
+    response,
+  };
+  const beforeDecode = JSON.stringify({
+    record,
+    receipt,
+    originalRequest,
+    response,
+    reply,
+  });
+  const decode = () =>
+    decodeBoundPublicPythonResponse(
+      record,
+      receipt,
+      originalRequest,
+      response,
+      reply,
+    );
+  const succeeded = [
+    "native-legacy-python",
+    "native-wire-empty",
+    "native-authentic-empty-fixture-offline-adapter",
+  ].includes(mode);
+  let callerResponse: { status: number; raw: string } | undefined;
+  if (succeeded) {
+    callerResponse = decode();
+    const caller = JSON.parse(callerResponse.raw);
+    assert.equal(caller.id, originalRequest.id);
+    assert.equal(caller.result.isError, false);
+    assert.deepEqual(JSON.parse(caller.result.content[0].text), publicValue);
+    assert.throws(
+      () =>
+        decodeBoundPublicPythonResponse(
+          record,
+          receipt,
+          {
+            ...originalRequest,
+            params: {
+              ...originalRequest.params,
+              arguments: {
+                ...originalRequest.params.arguments,
+                code: source + "\n# foreign",
+              },
+            },
+          },
+          response,
+          reply,
+        ),
+      { code: "RECEIPT_MISMATCH" },
+      "A caller result must stay bound to the exact archived Python source",
+    );
+  } else {
+    assert.throws(decode, (error: unknown) =>
+      ["RECEIPT_MISMATCH", "UNKNOWN_RPC"].includes(
+        String(object(error)["code"]),
+      ),
+    );
+  }
+  assert.equal(
+    JSON.stringify({ record, receipt, originalRequest, response, reply }),
+    beforeDecode,
+  );
+
+  // The held broker serves old evidence only: even startup probes are forbidden.
+  const root = fs.mkdtempSync(
+    path.join(os.tmpdir(), "archived-native-result-"),
+  );
+  const dir = path.join(root, "queue");
+  fs.mkdirSync(dir);
+  const cfg = { backend: "addin", timeoutMs: 1000 };
+  const auth = {
+    clientId: "archive-owner",
+    clientToken: "private-archive-owner",
+  };
+  const state = new QueueState(dir);
+  const blocker = state.submit({
+    kind: "rpc",
+    requestId: randomUUID(),
+    clientId: auth.clientId,
+    timeoutMs: 1000,
+    payload: { jsonrpc: "2.0", id: "historical-unknown", method: "ping" },
+  });
+  state.next();
+  state.markDispatch(String(blocker["id"]), { rpcCount: 1, completedCount: 0 });
+  state.block(String(blocker["id"]), "Archived UNKNOWN; never replay");
+  const archived = state.submit({
+    kind: "rpc",
+    requestId: randomUUID(),
+    clientId: auth.clientId,
+    timeoutMs: 1000,
+    payload: originalRequest,
+  });
+  const snapshot = JSON.parse(
+    fs.readFileSync(path.join(dir, "queue-state.json"), "utf8"),
+  );
+  const persisted = snapshot.jobs[String(archived["id"])];
+  delete snapshot.jobs[String(archived["id"])];
+  const jobId = captured.binding.jobId;
+  snapshot.jobs[jobId] = {
+    ...persisted,
+    id: jobId,
+    state: succeeded ? "succeeded" : "needs_reconciliation",
+    dispatch: { rpcCount: 1, completedCount: succeeded ? 1 : 0 },
+  };
+  if (!succeeded) {
+    delete snapshot.jobs[String(blocker["id"])];
+    snapshot.active = jobId;
+    snapshot.blocked.id = jobId;
+  }
+  qi.durable(path.join(dir, "queue-state.json"), snapshot);
+  const directory = path.join(dir, "jobs", jobId);
+  fs.mkdirSync(directory, { recursive: true });
+  const artifacts = {
+    [`rpc-${captured.binding.rpcId}.json`]: record,
+    [`remote-${captured.binding.rpcId}.json`]: receipt,
+    [`received-response-${captured.binding.rpcId}.json`]: {
+      ...captured,
+      response,
+    },
+    "rpc-result.json": callerResponse ?? response,
+  };
+  for (const [name, value] of Object.entries(artifacts))
+    qi.durable(path.join(directory, name), value);
+  const immutable = Object.keys(artifacts).map(
+    (name) =>
+      [name, fs.readFileSync(path.join(directory, name), "utf8")] as const,
+  );
+  qi.durable(path.join(dir, "instance.json"), {
+    configHash: qi.brokerConfigHash(cfg),
+    buildHash: qi.buildHash(),
+    instance,
+  });
+  let sends = 0;
+  const never = (): never => {
+    sends++;
+    assert.fail(
+      "Historical result retrieval must never dispatch or initialize SDK",
+    );
+  };
+  const { serve } = load(
+    "../src/queue-broker",
+  ) as typeof import("../src/queue-broker");
+  await assert.rejects(
+    serve(
+      { backend: "mcp", timeoutMs: 1000 },
+      {
+        dir,
+        confirmOwnership: true,
+        createBackend: never,
+      },
+    ),
+    { code: "UNSUPPORTED_BACKEND" },
+  );
+  assert.equal(
+    sends,
+    0,
+    "Retired backend refusal precedes client construction",
+  );
+  const broker = await serve(cfg, {
+    dir,
+    confirmOwnership: true,
+    createBackend: () => ({
+      server: cfg,
+      _post: never,
+      _openSession: never,
+      callTool: never,
+      prepareCallTool: never,
+      listTools: never,
+      executeUiGuardedScript: never,
+      _parse: JSON.parse,
+    }),
+  });
+  t.after(async () => {
+    await assert.rejects(broker.close(), { code: "RECONCILIATION_REQUIRED" });
+    assert.equal(sends, 0);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  await request(dir, { action: "register", ...auth });
+  const stateBefore = fs.readFileSync(
+    path.join(dir, "queue-state.json"),
+    "utf8",
+  );
+  const result = await request<{
+    job: { state: string; operationResult: { executionOutcome: string } };
+    rpc: unknown;
+  }>(dir, { action: "result", auth, jobId });
+  assert.equal(
+    result.job.state,
+    succeeded ? "succeeded" : "needs_reconciliation",
+  );
+  if (!succeeded)
+    assert.equal(result.job.operationResult.executionOutcome, "unknown");
+  assert.deepEqual(result.rpc, callerResponse ?? response);
+  const foreign = { clientId: "foreign-owner", clientToken: "private-foreign" };
+  await request(dir, { action: "register", ...foreign });
+  await assert.rejects(
+    request(dir, { action: "result", auth: foreign, jobId }),
+    { code: "NOT_OWNER" },
+  );
+  await assert.rejects(
+    request(dir, { action: "reconcile", auth, jobId }),
+    { code: succeeded ? "NOT_BLOCKED" : "RECEIPT_MISMATCH" },
+    "Reading an archive does not grant reconciliation or replay authority",
+  );
+  assert.equal(sends, 0);
+  assert.equal(
+    fs.readFileSync(path.join(dir, "queue-state.json"), "utf8"),
+    stateBefore,
+  );
+  for (const [name, bytes] of immutable)
+    assert.equal(fs.readFileSync(path.join(directory, name), "utf8"), bytes);
+  return {
+    archived: true,
+    readerId: randomUUID(),
+    requestId: archived["requestId"],
+    jobId,
+    rpcId: captured.binding.rpcId,
+    sourceHash: captured.binding.sourceHash,
+    rawSha256: sha(response.raw),
+  };
+}
+
 for (const responseMode of [
   "missing-receipt",
   "foreign-jsonrpc",
@@ -190,7 +499,10 @@ for (const responseMode of [
   "native-extra-receipt",
 ]) {
   const nativePython = responseMode.startsWith("native-");
-  test(`owned RPC retains returned raw before settlement failure: ${responseMode}`, async (t) => {
+  const scenario = nativePython
+    ? "archived native result verifies binding and preserves owned evidence"
+    : "owned RPC retains returned raw before settlement failure";
+  test(`${scenario}: ${responseMode}`, async (t) => {
     if (!process.env["FMCAD_RETAINED_RPC_CHILD"]) {
       const env: NodeJS.ProcessEnv = {
         ...process.env,
@@ -249,53 +561,35 @@ for (const responseMode of [
           assert.ok(line, output);
           return JSON.parse(line.slice("PUBLIC_PYTHON_FIXTURE_RESULT ".length));
         });
-        assert.notEqual(results[0].requestId, results[1].requestId);
-        assert.notEqual(results[0].jobId, results[1].jobId);
-        assert.notEqual(results[0].rpcId, results[1].rpcId);
-        assert.notEqual(results[0].traceId, results[1].traceId);
+        assert.notEqual(results[0].readerId, results[1].readerId);
+        assert.equal(results[0].jobId, results[1].jobId);
+        assert.equal(results[0].rpcId, results[1].rpcId);
+        assert.equal(results[0].sourceHash, results[1].sourceHash);
+        assert.equal(results[0].rawSha256, results[1].rawSha256);
         console.log("PUBLIC_PYTHON_FIXTURE_RUNS " + JSON.stringify(results));
       }
       return;
     }
-    const originalAdmission = admissionModule.createProductionQueueAdmission;
-    let realChecks = 0;
     if (nativePython) {
-      admissionModule.createProductionQueueAdmission = (...args) => {
-        const production = originalAdmission(...args);
-        return {
-          ...production,
-          admission: {
-            ...production.admission,
-            async check(payload, ...rest: unknown[]) {
-              const certificate = await Reflect.apply(
-                production.admission.check,
-                production.admission,
-                [payload, ...rest],
-              );
-              if (certificate.kind === "python") {
-                assert.equal(certificate.report?.status, "passed");
-                realChecks++;
-              }
-              return certificate;
-            },
-          },
-        };
-      };
-    } else
-      admissionModule.createProductionQueueAdmission = () => ({
-        admission: {
-          async check() {
-            return { kind: "python", fence() {} };
-          },
+      const archived = await readArchivedNativeResult(t, responseMode);
+      console.log("PUBLIC_PYTHON_FIXTURE_RESULT " + JSON.stringify(archived));
+      return;
+    }
+    const originalAdmission = admissionModule.createProductionQueueAdmission;
+    admissionModule.createProductionQueueAdmission = () => ({
+      admission: {
+        async check() {
+          return { kind: "python", fence() {} };
         },
-        async checkPrepared() {
-          return {};
-        },
-        fencePrepared() {},
-        checkerFingerprint() {
-          return "explicit synthetic checker: response-retention test only";
-        },
-      });
+      },
+      async checkPrepared() {
+        return {};
+      },
+      fencePrepared() {},
+      checkerFingerprint() {
+        return "explicit synthetic checker: response-retention test only";
+      },
+    });
     t.after(() => {
       admissionModule.createProductionQueueAdmission = originalAdmission;
     });
@@ -310,12 +604,12 @@ for (const responseMode of [
       documents: [],
     };
     const cfg = {
-      backend: "mcp",
+      backend: "addin",
       routing: "queue",
       url: "http://synthetic.invalid",
       timeoutMs: 30000,
     };
-    const physical = createBrokerTransport(cfg, {
+    const physical = new BrokerMcpClient(cfg, {
       version: "synthetic",
       requestTimeout: () => 30000,
       bridgeSource: () => {
@@ -325,93 +619,9 @@ for (const responseMode of [
     let productCalls = 0;
     let productWireId: string | undefined;
     let originalRaw = "";
-    const sourceCode = nativePython
-      ? 'print("FUSION_ADDIN_STDIO_OK")'
-      : "def run(context: str) -> None:\n    print('synthetic owned write result')\n";
+    const sourceCode =
+      "def run(context: str) -> None:\n    print('synthetic owned write result')\n";
     const sourceHash = createHash("sha256").update(sourceCode).digest("hex");
-    const authenticFixture =
-      responseMode === "native-authentic-empty-fixture-offline-adapter";
-    const fixtureDirectory = path.resolve(
-      __dirname,
-      "../../tests/fixtures/unknown-public-python",
-    );
-    const capturedResponse = authenticFixture
-      ? JSON.parse(
-          fs.readFileSync(
-            path.join(fixtureDirectory, "received-response.json"),
-            "utf8",
-          ),
-        )
-      : undefined;
-    const capturedReceipt = authenticFixture
-      ? JSON.parse(
-          fs.readFileSync(
-            path.join(fixtureDirectory, "remote-receipt.json"),
-            "utf8",
-          ),
-        )
-      : undefined;
-    if (authenticFixture) {
-      assert.equal(
-        createHash("sha256")
-          .update(
-            fs.readFileSync(
-              path.join(fixtureDirectory, "received-response.json"),
-            ),
-          )
-          .digest("hex"),
-        "f76b023ab7843ce596f730d0b5f4a8df7216d05da728c21952dd5798ad707cda",
-      );
-      assert.equal(
-        createHash("sha256")
-          .update(
-            fs.readFileSync(path.join(fixtureDirectory, "remote-receipt.json")),
-          )
-          .digest("hex"),
-        "0708bbfb4bb0303205c0b807e4c792b6219dceb8209b9a175d4681982d7f22c2",
-      );
-      assert.equal(capturedResponse.binding.jobId, capturedReceipt.jobId);
-      assert.equal(capturedResponse.binding.rpcId, capturedReceipt.rpcId);
-      assert.equal(
-        capturedResponse.binding.requestHash,
-        capturedReceipt.requestHash,
-      );
-      assert.equal(
-        capturedResponse.binding.buildHash,
-        capturedReceipt.buildHash,
-      );
-      assert.equal(capturedResponse.binding.sourceHash, sourceHash);
-      assert.equal(
-        capturedResponse.binding.sourceHash,
-        capturedReceipt.sourceHash,
-      );
-      assert.equal(
-        capturedResponse.wireId,
-        `fmcad:${capturedResponse.binding.rpcId}`,
-      );
-      assert.equal(capturedResponse.response.status, 200);
-      assert.equal(
-        createHash("sha256")
-          .update(capturedResponse.response.raw)
-          .digest("hex"),
-        "7682ddd6cbd1539d452a51e1dc0443756959adca780f0b74d2f7f9a3098a73d7",
-      );
-      const fixtureEnvelope = JSON.parse(capturedResponse.response.raw);
-      const fixtureOuter = JSON.parse(fixtureEnvelope.result.content[0].text);
-      assert.equal(fixtureOuter.success, true);
-      assert.equal(fixtureOuter.message, "");
-      assert.equal(capturedReceipt.terminal, true);
-      assert.equal(capturedReceipt.outcome, "succeeded");
-      assert.equal(
-        capturedReceipt.publicPythonResult.schema,
-        "fmcad-public-python-result-v1",
-      );
-      assert.deepEqual(capturedReceipt.publicPythonResult.value, {
-        success: true,
-        stdout: "FUSION_ADDIN_STDIO_OK\n",
-        stderr: "",
-      });
-    }
     physical._post = async (payload) => {
       if (payload["method"] === "initialize")
         return {
@@ -480,147 +690,6 @@ for (const responseMode of [
         };
       }
       productCalls++;
-      if (nativePython) {
-        assert.equal(
-          object(payload["params"])["name"],
-          "fusion_mcp_execute",
-          "Native Fusion does not advertise the public execute_python tool",
-        );
-        assert.equal(args["featureType"], "script");
-        assert.equal(
-          object(args["object"])["readOnly"],
-          false,
-          "Arbitrary public Python must not claim native read-only authority",
-        );
-        assert.match(code, /def run\(_context: str\)/);
-        const publicEntry = inventory.units.find((unit) =>
-          unit.source.startsWith("import contextlib as _qp_contextlib\n"),
-        );
-        assert.ok(
-          publicEntry,
-          "Keep the public compatibility entrypoint in the checked source inventory",
-        );
-        const evaluated = spawnSync(
-          "python3",
-          [
-            "-I",
-            "-S",
-            "-c",
-            "import sys; ns = {}; exec(sys.stdin.read(), ns); ns['run']('')",
-          ],
-          { input: publicEntry.source, encoding: "utf8", timeout: 10000 },
-        );
-        assert.equal(evaluated.status, 0, evaluated.stderr);
-        assert.deepEqual(JSON.parse(evaluated.stdout), {
-          success: true,
-          stdout: "FUSION_ADDIN_STDIO_OK\n",
-          stderr: "",
-        });
-        const filename = /_qr_path = ("(?:\\.|[^"\\])*")/.exec(code);
-        const binding =
-          /_qr_binding_value = _qr_cast\(object, _qr_json.loads\(("(?:\\.|[^"\\])*")\)/.exec(
-            code,
-          );
-        assert.ok(
-          filename && binding,
-          "The transformed native script still requires its exact SDK receipt",
-        );
-        const receipt: Record<string, unknown> = {
-          ...JSON.parse(JSON.parse(binding[1]!)),
-          terminal: true,
-          outcome: "succeeded",
-          instance,
-          publicPythonResult: authenticFixture
-            ? capturedReceipt.publicPythonResult
-            : {
-                schema: "fmcad-public-python-result-v1",
-                value: {
-                  success: true,
-                  stdout: "FUSION_ADDIN_STDIO_OK\n",
-                  stderr: "",
-                },
-              },
-        };
-        if (responseMode === "native-missing-result")
-          delete receipt["publicPythonResult"];
-        if (responseMode === "native-partial-result")
-          receipt["publicPythonResult"] = {
-            schema: "fmcad-public-python-result-v1",
-            value: { success: true },
-          };
-        if (responseMode === "native-extra-result")
-          receipt["publicPythonResult"] = {
-            schema: "fmcad-public-python-result-v1",
-            value: {
-              success: true,
-              stdout: "FUSION_ADDIN_STDIO_OK\n",
-              stderr: "",
-              extra: true,
-            },
-          };
-        if (responseMode === "native-wrong-schema")
-          receipt["publicPythonResult"] = {
-            schema: "foreign",
-            value: { success: true, stdout: "x", stderr: "" },
-          };
-        if (responseMode === "native-wrong-binding")
-          receipt["publicPythonResultSchema"] = "foreign";
-        if (responseMode === "native-wrong-instance")
-          receipt["instance"] = { ...instance, birth: "foreign" };
-        if (responseMode === "native-nonterminal-result")
-          receipt["terminal"] = false;
-        if (responseMode === "native-extra-receipt")
-          receipt["unexpected"] = true;
-        fs.writeFileSync(JSON.parse(filename[1]!), JSON.stringify(receipt));
-        if (authenticFixture) {
-          const wireId = String(payload["id"]);
-          const oldId = `"id":${JSON.stringify(capturedResponse.wireId)}`;
-          const newId = `"id":${JSON.stringify(wireId)}`;
-          assert.equal(
-            capturedResponse.response.raw.split(oldId).length - 1,
-            1,
-          );
-          productWireId = wireId;
-          originalRaw = capturedResponse.response.raw.replace(oldId, newId);
-          assert.equal(
-            originalRaw.replace(newId, oldId),
-            capturedResponse.response.raw,
-          );
-          return { status: capturedResponse.response.status, raw: originalRaw };
-        }
-        originalRaw = JSON.stringify({
-          jsonrpc: "2.0",
-          id: payload["id"],
-          result: {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  message:
-                    responseMode === "native-legacy-python"
-                      ? JSON.stringify({
-                          success: true,
-                          stdout: "FUSION_ADDIN_STDIO_OK\n",
-                          stderr: "",
-                        }) + "\n"
-                      : responseMode === "native-wire-conflict"
-                        ? JSON.stringify({
-                            success: true,
-                            stdout: "conflicting stdout",
-                            stderr: "",
-                          })
-                        : "",
-                  success: true,
-                }),
-              },
-            ],
-            ...(responseMode === "native-structured-conflict"
-              ? { structuredContent: { stdout: "conflicting stdout" } }
-              : {}),
-          },
-        });
-        return { status: 200, raw: originalRaw };
-      }
       const wireId = payload["id"];
       assert.ok(typeof wireId === "string");
       productWireId = wireId;
@@ -665,283 +734,15 @@ for (const responseMode of [
       nativePath: (value: string) => value,
     });
     t.after(async () => {
-      if (
-        [
-          "native-legacy-python",
-          "native-wire-empty",
-          "native-authentic-empty-fixture-offline-adapter",
-        ].includes(responseMode)
-      )
-        await broker.close();
-      else
-        await assert.rejects(broker.close(), {
-          code: "RECONCILIATION_REQUIRED",
-        });
+      await assert.rejects(broker.close(), {
+        code: "RECONCILIATION_REQUIRED",
+      });
       fs.rmSync(root, { recursive: true, force: true });
     });
     const auth = {
       clientId: "owned-synthetic-client",
       clientToken: "synthetic-private-test-token",
     };
-    if (authenticFixture) {
-      const oldTmpDir = process.env["TMPDIR"];
-      const oldTraceSetting = process.env["FMCAD_DEBUG_TRACE"];
-      process.env["TMPDIR"] = root;
-      process.env["FMCAD_DEBUG_TRACE"] = "1";
-      t.after(() => {
-        if (oldTmpDir === undefined) delete process.env["TMPDIR"];
-        else process.env["TMPDIR"] = oldTmpDir;
-        if (oldTraceSetting === undefined)
-          delete process.env["FMCAD_DEBUG_TRACE"];
-        else process.env["FMCAD_DEBUG_TRACE"] = oldTraceSetting;
-      });
-      const requestId = randomUUID();
-      const expectedMode =
-        process.env["FMCAD_EXPECT_PUBLIC_PYTHON_RESULT"] ?? "fixed";
-      const expectTrace =
-        expectedMode !== "baseline" &&
-        process.env["FMCAD_EXPECT_DEBUG_TRACE"] !== "0";
-      if (expectTrace) {
-        assert.equal(
-          typeof debugTraceRuntime.createDebugTraceContext,
-          "function",
-        );
-        assert.equal(typeof debugTraceRuntime.flushDebugTrace, "function");
-        assert.equal(typeof debugTraceRuntime.readDebugTrace, "function");
-      }
-      const traceContext = expectTrace
-        ? debugTraceRuntime.createDebugTraceContext!(
-            requestId,
-            auth.clientId,
-            "mcp",
-            true,
-          )
-        : undefined;
-      if (expectTrace) assert.ok(traceContext);
-      const queueClient = {
-        dir,
-        auth,
-        async register() {
-          await request(dir, { action: "register", ...auth });
-        },
-        submit(input: Record<string, unknown>) {
-          return request<{ id: string }>(dir, {
-            action: "submit",
-            auth,
-            request: input,
-          });
-        },
-        async wait(jobId: string, options: { signal: AbortSignal }) {
-          while (!options.signal.aborted) {
-            const result = await request<{ job: { state: string } }>(dir, {
-              action: "result",
-              auth,
-              jobId,
-            });
-            if (
-              ["succeeded", "failed", "needs_reconciliation"].includes(
-                result.job.state,
-              )
-            )
-              return result;
-            await new Promise((resolve) => setTimeout(resolve, 10));
-          }
-          throw new Error("Offline queue wait was aborted");
-        },
-        call(action: string, args: Record<string, unknown> = {}) {
-          return request(dir, { action, auth, ...args });
-        },
-        async findRequest() {
-          return null;
-        },
-        persistRequestContext() {},
-        dispose() {},
-      };
-      const queuePost = createQueuePost(
-        queueClient as unknown as import("../src/composition/library-mcp-queue").McpQueueClient,
-        cfg,
-        undefined,
-        { clientId: auth.clientId, projectDirectory: root },
-      );
-      const frames: string[] = [];
-      const forward = createForwarder(
-        queuePost,
-        (_message, frame) => {
-          if (frame) frames.push(frame);
-        },
-        () => {},
-        cfg,
-      );
-      const callerId = randomUUID();
-      await forward(
-        JSON.stringify({
-          jsonrpc: "2.0",
-          id: callerId,
-          method: "tools/call",
-          params: {
-            name: "execute_python",
-            arguments: { code: sourceCode, persistent: false },
-            _meta: { fmcad: { requestId } },
-          },
-        }),
-      );
-      assert.equal(frames.length, 1);
-      const callerResponse = JSON.parse(frames[0]!);
-      assert.equal(callerResponse.id, callerId);
-      const publicResult = callerResponse.result;
-      const queueReceipt = publicResult._meta.fmcad;
-      const jobId = queueReceipt.jobId;
-      assert.equal(queueReceipt.requestId, requestId);
-      assert.equal(queueReceipt.state, "succeeded");
-      assert.equal(productCalls, 1);
-      assert.ok(realChecks >= 3);
-      const publicValue = JSON.parse(publicResult.content[0].text);
-      if (expectedMode === "baseline") {
-        assert.deepEqual(publicValue, { success: true, message: "" });
-      } else {
-        assert.deepEqual(publicValue, {
-          success: true,
-          stdout: "FUSION_ADDIN_STDIO_OK\n",
-          stderr: "",
-        });
-      }
-      const final = await request<{
-        job: { state: string };
-        rpc: { raw: string };
-      }>(dir, { action: "result", auth, jobId });
-      assert.equal(final.job.state, "succeeded");
-      const directory = path.join(dir, "jobs", jobId);
-      const rpcFiles = fs
-        .readdirSync(directory)
-        .filter((name) => /^rpc-.*\.json$/.test(name));
-      const product = rpcFiles
-        .map((name) =>
-          JSON.parse(fs.readFileSync(path.join(directory, name), "utf8")),
-        )
-        .find((record) => record.binding?.sourceHash === sourceHash);
-      assert.ok(product);
-      assert.equal(product.binding.jobId, jobId);
-      assert.equal(product.binding.sourceHash, sourceHash);
-      assert.equal(product.terminal, true);
-      assert.equal(product.remoteReceipt.outcome, "succeeded");
-      assert.deepEqual(
-        product.remoteReceipt.publicPythonResult,
-        capturedReceipt.publicPythonResult,
-      );
-      for (const [key, value] of Object.entries(product.binding))
-        assert.deepEqual(
-          product.remoteReceipt[key],
-          value,
-          `receipt binding ${key}`,
-        );
-      const retained = JSON.parse(
-        fs.readFileSync(
-          path.join(
-            directory,
-            `received-response-${product.binding.rpcId}.json`,
-          ),
-          "utf8",
-        ),
-      );
-      assert.equal(retained.response.raw, originalRaw);
-      assert.equal(retained.binding.jobId, jobId);
-      assert.equal(retained.binding.rpcId, product.binding.rpcId);
-      assert.equal(retained.binding.sourceHash, sourceHash);
-      assert.notEqual(retained.binding.jobId, capturedResponse.binding.jobId);
-      assert.notEqual(retained.binding.rpcId, capturedResponse.binding.rpcId);
-      assert.equal(
-        createHash("sha256").update(retained.response.raw).digest("hex"),
-        createHash("sha256").update(originalRaw).digest("hex"),
-      );
-      let traceStages: unknown[] = [];
-      if (expectTrace) {
-        assert.ok(traceContext);
-        await debugTraceRuntime.flushDebugTrace!();
-        const diagnosticDirectory = path.join(
-          root,
-          `fmcad-diagnostics-${process.getuid?.() ?? "user"}`,
-        );
-        const events = debugTraceRuntime.readDebugTrace!(traceContext.traceId, {
-          directory: diagnosticDirectory,
-        });
-        assert.ok(events.length >= 9);
-        assert.ok(
-          events.every(
-            (event) =>
-              event["schema"] === "fmcad-debug-trace-v1" &&
-              event["traceId"] === traceContext.traceId,
-          ),
-        );
-        const stages = events.map((event) => event["stage"]);
-        let previousStageIndex = -1;
-        for (const stage of [
-          "request-accepted",
-          "preflight",
-          "sdk-dispatch",
-          "raw-received",
-          "parsed",
-          "native-receipt",
-          "result-published",
-          "caller-received",
-          "stdout-written",
-        ]) {
-          const index = stages.indexOf(stage);
-          assert.ok(
-            index > previousStageIndex,
-            `Missing or out-of-order trace stage ${stage}`,
-          );
-          previousStageIndex = index;
-        }
-        const rawEvent = events.find(
-          (event) =>
-            event["stage"] === "raw-received" &&
-            event["rpcId"] === product.binding.rpcId,
-        );
-        assert.ok(rawEvent, "Missing raw response trace for product RPC");
-        assert.equal(rawEvent?.["jobId"], jobId);
-        assert.equal(rawEvent?.["requestId"], requestId);
-        assert.equal(rawEvent?.["rpcId"], product.binding.rpcId);
-        assert.equal(rawEvent?.["buildHash"], product.binding.buildHash);
-        assert.equal(rawEvent?.["sourceHash"], sourceHash);
-        assert.equal(
-          rawEvent?.["rawSha256"],
-          createHash("sha256").update(originalRaw).digest("hex"),
-        );
-        assert.equal(rawEvent?.["stdoutObservation"], "not_observed");
-        const writtenEvent = events.find(
-          (event) => event["stage"] === "stdout-written",
-        );
-        assert.equal(
-          writtenEvent?.["stdoutObservation"],
-          expectedMode === "baseline" ? "not_observed" : "observed_nonempty",
-        );
-        traceStages = stages;
-      } else {
-        assert.equal(traceContext, undefined);
-      }
-      process.stdout.write(
-        "PUBLIC_PYTHON_FIXTURE_RESULT " +
-          JSON.stringify({
-            requestId,
-            jobId,
-            rpcId: product.binding.rpcId,
-            traceId: traceContext?.traceId ?? null,
-            traceStages,
-            fixtureRawSha256:
-              "7682ddd6cbd1539d452a51e1dc0443756959adca780f0b74d2f7f9a3098a73d7",
-            currentRawSha256: createHash("sha256")
-              .update(originalRaw)
-              .digest("hex"),
-            receiptSource: "synthetic offline receipt bound to fresh test IDs",
-            publicOutput:
-              expectedMode === "baseline"
-                ? "empty native message"
-                : "22 captured stdout bytes",
-          }) +
-          "\n",
-      );
-      return;
-    }
     await request(dir, { action: "register", ...auth });
     const job = await request<{ id: string }>(dir, {
       action: "submit",
@@ -956,16 +757,14 @@ for (const responseMode of [
           id: "synthetic-caller",
           method: "tools/call",
           params: {
-            name: nativePython ? "execute_python" : "fusion_mcp_execute",
-            arguments: nativePython
-              ? { code: sourceCode, persistent: false }
-              : {
-                  featureType: "script",
-                  object: {
-                    script: sourceCode,
-                    readOnly: false,
-                  },
-                },
+            name: "fusion_mcp_execute",
+            arguments: {
+              featureType: "script",
+              object: {
+                script: sourceCode,
+                readOnly: false,
+              },
+            },
           },
         },
       },
@@ -982,87 +781,6 @@ for (const responseMode of [
         break;
       await new Promise((resolve) => setTimeout(resolve, 10));
     } while (Date.now() < deadline);
-    if (
-      nativePython &&
-      !["native-legacy-python", "native-wire-empty"].includes(responseMode)
-    ) {
-      assert.equal(
-        result.job.state,
-        "needs_reconciliation",
-        JSON.stringify(result),
-      );
-      assert.equal(productCalls, 1, "Never replay an untrusted public result");
-      const directory = path.join(dir, "jobs", job.id);
-      const received = fs
-        .readdirSync(directory)
-        .filter((name) => name.startsWith("received-response-"))
-        .map((name) =>
-          JSON.parse(fs.readFileSync(path.join(directory, name), "utf8")),
-        )
-        .find((value) => value.binding?.sourceHash === sourceHash);
-      assert.equal(
-        received.response.raw,
-        originalRaw,
-        "Keep the actual native response immutable",
-      );
-      return;
-    }
-    if (nativePython) {
-      assert.equal(result.job.state, "succeeded", JSON.stringify(result));
-      assert.equal(productCalls, 1);
-      assert.ok(
-        realChecks >= 3,
-        "The real checker must certify preflight, adapted public Python and postflight",
-      );
-      const files = fs
-        .readdirSync(path.join(dir, "jobs", job.id))
-        .filter((name) => /^rpc-.*\.json$/.test(name));
-      const records = files.map((name) =>
-        JSON.parse(
-          fs.readFileSync(path.join(dir, "jobs", job.id, name), "utf8"),
-        ),
-      );
-      assert.equal(
-        records.filter(
-          (record) =>
-            record.binding?.sourceHash === sourceHash &&
-            record.terminal === true,
-        ).length,
-        1,
-      );
-      const response = await request<{ rpc: { raw: string } }>(dir, {
-        action: "result",
-        auth,
-        jobId: job.id,
-      });
-      const publicResult = JSON.parse(response.rpc.raw).result;
-      assert.equal(publicResult.isError, false);
-      assert.deepEqual(JSON.parse(publicResult.content[0].text), {
-        success: true,
-        stdout: "FUSION_ADDIN_STDIO_OK\n",
-        stderr: "",
-      });
-      const product = records.find(
-        (record) => record.binding?.sourceHash === sourceHash,
-      );
-      const retained = JSON.parse(
-        fs.readFileSync(
-          path.join(
-            dir,
-            "jobs",
-            job.id,
-            `received-response-${product.binding.rpcId}.json`,
-          ),
-          "utf8",
-        ),
-      );
-      assert.equal(
-        JSON.parse(retained.response.raw).result.isError,
-        undefined,
-        "Do not rewrite native received-response evidence to match the public contract",
-      );
-      return;
-    }
     assert.equal(result.job.state, "needs_reconciliation");
     assert.equal(productCalls, 1, "No SDK request or response may be replayed");
     const directory = path.join(dir, "jobs", job.id);

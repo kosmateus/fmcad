@@ -144,7 +144,7 @@ test("a local build mismatch before sending preflight is terminal not_started, n
     path.join(runtime, "src/queue-broker"),
   ) as typeof import("../src/queue-broker.js");
   const broker = await serve(
-    { backend: "mcp", timeoutMs: 5000 },
+    { backend: "addin", timeoutMs: 5000 },
     {
       dir,
       confirmOwnership: true,
@@ -320,7 +320,7 @@ test("a build change after fully receipted idle SDK completion does not invent a
       path.join(runtime, "src/queue-broker"),
     ) as typeof import("../src/queue-broker.js")
   ).serve(
-    { backend: "mcp", timeoutMs: 5000 },
+    { backend: "addin", timeoutMs: 5000 },
     { dir, confirmOwnership: true, createBackend: () => physical, pollMs: 5 },
   );
   t.after(async () => {

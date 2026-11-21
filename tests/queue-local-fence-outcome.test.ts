@@ -99,7 +99,7 @@ test(
     broker = await (
       load("../src/queue-broker") as typeof import("../src/queue-broker")
     ).serve(
-      { backend: "mcp", timeoutMs: 1000 },
+      { backend: "addin", timeoutMs: 1000 },
       {
         dir,
         confirmOwnership: true,
