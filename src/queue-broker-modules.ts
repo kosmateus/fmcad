@@ -17,6 +17,12 @@ import type {
 import type { TurnIdentity } from "../packages/core/src/application/broker-execution";
 import type { createAddinAdmission } from "../packages/node-adapters/src/execution/addin-admission-client";
 import { isDeepStrictEqual } from "node:util";
+import type { AdmissionTransport } from "../packages/node-adapters/src/execution/admission-http";
+import { createRequire } from "node:module";
+
+const { createAdmissionRequest } = createRequire(__filename)(
+  "./dist/node-adapters/execution/admission-http",
+) as typeof import("../packages/node-adapters/src/execution/admission-http");
 
 const metadataTool = "get_open_document_metadata";
 
@@ -90,6 +96,7 @@ export function provisionAddinMetadata(
   config: P.TrustedAddinMetadataAdmission | undefined,
   backend: string | undefined,
   prepare: typeof createAddinAdmission,
+  transport?: AdmissionTransport,
 ) {
   if (config === undefined) return null;
   if (
@@ -105,6 +112,7 @@ export function provisionAddinMetadata(
     (pin) => typeof pin !== "string" || !pin.trim(),
   ))
     refuse("INVALID_ADMISSION_PROVISIONING", "ADDIN metadata provisioning is incomplete");
+  const requestPort = createAdmissionRequest(transport);
 
   return {
     bind(
@@ -159,8 +167,8 @@ export function provisionAddinMetadata(
       try {
         // Construction is local. It validates the credentials, endpoint and
         // exact bytes before a journal can imply that a send was possible.
-        const { binding } = prepare({ endpoint, token, timeoutMs }, identity, wire);
-        return { scope: Object.freeze({ endpoint, token, identity }), binding };
+        const { binding, admitEvidence } = prepare({ endpoint, token, timeoutMs }, identity, wire, requestPort);
+        return { scope: Object.freeze({ endpoint, token, identity }), binding, admitEvidence };
       } catch {
         refuse("INVALID_ADMISSION_PROVISIONING", "Invalid ADDIN admission provisioning");
       }
@@ -441,6 +449,7 @@ interface SuccessorRuntime {
   authority: {
     previousBuildHash: string;
     sourceCommit: string;
+    frozenMetadata?: { beneficiary: string; metadataRequestId: string };
     predecessor: { rootState: { sha256: string } };
   };
   authorityEntry: unknown;
