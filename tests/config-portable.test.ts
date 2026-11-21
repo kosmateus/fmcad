@@ -84,26 +84,26 @@ test("safe defaults use a local add-in endpoint, shared queue routing, and the c
 test("adapter settings override environment and the selected config file", (t) => {
   const directory = fixture(t);
   const file = writeConfig(directory, {
-    backend: "mcp",
+    backend: "addin",
     backends: {
-      mcp: {
-        url: "http://127.0.0.1:27183/mcp",
+      addin: {
+        url: "http://127.0.0.1:8766/mcp",
         timeoutMs: 100,
         headers: { "X-File": "file" },
       },
     },
   });
-  process.env["FMCAD_URL"] = "http://127.0.0.1:27184/mcp";
+  process.env["FMCAD_URL"] = "http://127.0.0.1:8767/mcp";
   process.env["FMCAD_TIMEOUT_MS"] = "200";
   process.env["FMCAD_HEADERS"] = '{"X-Environment":"environment"}';
   const { cfg } = loadConfig({
     config: file,
-    backend: "mcp",
-    url: "http://127.0.0.1:27185/mcp",
+    backend: "addin",
+    url: "http://127.0.0.1:8768/mcp",
     timeoutMs: "300",
     headers: { "X-Adapter": "adapter" },
   });
-  assert.equal(cfg.url, "http://127.0.0.1:27185/mcp");
+  assert.equal(cfg.url, "http://127.0.0.1:8768/mcp");
   assert.equal(cfg.timeoutMs, 300);
   assert.deepEqual(cfg.headers, {
     "X-File": "file",
@@ -122,12 +122,12 @@ test("environment and FMCAD_CONFIG override the user config path without dependi
   fs.mkdirSync(path.dirname(userFile), { recursive: true });
   fs.writeFileSync(userFile, JSON.stringify({ backend: "addin" }));
   const explicitFile = writeConfig(directory, {
-    backend: "mcp",
-    backends: { mcp: { url: "http://127.0.0.1:27183/mcp" } },
+    backend: "addin",
+    backends: { addin: { url: "http://127.0.0.1:8766/mcp" } },
   });
   process.env["FMCAD_CONFIG"] = explicitFile;
   assert.equal(loadConfig().path, explicitFile);
-  assert.equal(loadConfig().cfg.backend, "mcp");
+  assert.equal(loadConfig().cfg.backend, "addin");
   const selected = loadConfig({ config: userFile });
   assert.equal(selected.path, userFile);
   assert.equal(selected.cfg.backend, "addin");
@@ -144,10 +144,10 @@ test("CLI and MCP config resolution use the same explicit file outside OpenCode 
   fs.writeFileSync(
     file,
     JSON.stringify({
-      backend: "mcp",
+      backend: "addin",
       routing: "queue",
       controlCenter: { port: 4921 },
-      backends: { mcp: { url: "http://127.0.0.1:27183/mcp" } },
+      backends: { addin: { url: "http://127.0.0.1:8766/mcp" } },
     }),
   );
   const environmentConfig = path.relative(
@@ -179,7 +179,7 @@ test("CLI and MCP config resolution use the same explicit file outside OpenCode 
   assert.equal(mcp.status, 0, mcp.stderr);
   assert.deepEqual(JSON.parse(cli.stdout), JSON.parse(mcp.stdout));
   assert.equal(JSON.parse(cli.stdout).path, file);
-  assert.equal(JSON.parse(cli.stdout).cfg.url, "http://127.0.0.1:27183/mcp");
+  assert.equal(JSON.parse(cli.stdout).cfg.url, "http://127.0.0.1:8766/mcp");
   assert.equal(JSON.parse(cli.stdout).cfg.controlCenter.port, 4921);
 });
 
@@ -189,22 +189,29 @@ test("JSONC preserves URL slashes and accepts comments and trailing commas", (t)
     directory,
     `{
     // The URL is data, not a line comment.
-    "backend": "mcp",
+    "backend": "addin",
     "backends": {
-      "mcp": { "url": "http://127.0.0.1:27183/mcp", },
+      "addin": { "url": "http://127.0.0.1:8766/mcp", },
     },
     "controlCenter": { "port": 4748, },
   }`,
   );
   const { cfg } = loadConfig({ config: file });
-  assert.equal(cfg.url, "http://127.0.0.1:27183/mcp");
+  assert.equal(cfg.url, "http://127.0.0.1:8766/mcp");
   assert.equal(cfg.controlCenter.port, 4748);
 });
 
-test("explicit mcp backend requires its own endpoint and direct routing is rejected offline", (t) => {
+test("explicit native MCP and direct routing are rejected offline", (t) => {
   const directory = fixture(t);
   const mcp = writeConfig(directory, { backend: "mcp" });
-  assert.throws(() => loadConfig({ config: mcp }), /backends\.mcp\.url/);
+  assert.throws(
+    () => loadConfig({ config: mcp }),
+    /backend "mcp" is no longer supported/,
+  );
+  assert.throws(
+    () => loadConfig({ backend: "mcp" }),
+    /backend "mcp" is no longer supported/,
+  );
   const direct = writeConfig(directory, { routing: "direct" });
   assert.throws(
     () => loadConfig({ config: direct }),
@@ -301,13 +308,13 @@ test("backend URL validation rejects the Control Center, nonlocal add-ins, URL c
       backends: { addin: { url: "http://example.com:8765/mcp" } },
     },
     {
-      backend: "mcp",
-      backends: { mcp: { url: "http://user:password@127.0.0.1:27183/mcp" } },
+      backend: "addin",
+      backends: { addin: { url: "http://user:password@127.0.0.1:8765/mcp" } },
     },
     {
-      backend: "mcp",
+      backend: "addin",
       backends: {
-        mcp: { url: "http://127.0.0.1:27183/mcp?access_token=very-secret" },
+        addin: { url: "http://127.0.0.1:8765/mcp?access_token=very-secret" },
       },
     },
   ]) {
@@ -321,6 +328,24 @@ test("backend URL validation rejects the Control Center, nonlocal add-ins, URL c
       },
     );
   }
+  for (const config of [
+    {
+      backend: "addin",
+      backends: { addin: { url: "http://127.0.0.1:27182/mcp" } },
+    },
+    { backend: "addin", url: "http://127.0.0.1:27182/mcp" },
+  ]) {
+    assert.throws(
+      () => loadConfig({ config: writeConfig(directory, config) }),
+      /port 27182/,
+    );
+  }
+  assert.throws(
+    () => loadConfig({ url: "http://127.0.0.1:27182/mcp" }),
+    /port 27182/,
+  );
+  process.env["FMCAD_URL"] = "http://127.0.0.1:27182/mcp";
+  assert.throws(() => loadConfig(), /port 27182/);
 });
 
 test("shared service port must be an integer and conflicting settings refuse to resolve", (t) => {
@@ -363,8 +388,8 @@ test("verified service port is the fallback, and a new client cannot select a se
     () =>
       loadConfig({
         config: writeConfig(directory, {
-          backend: "mcp",
-          backends: { mcp: { url: "http://127.0.0.1:27183/mcp" } },
+          backend: "addin",
+          backends: { addin: { url: "http://127.0.0.1:8765/mcp" } },
           controlCenter: { port: 5391 },
         }),
         url: "http://127.0.0.1:5391/mcp",
@@ -373,7 +398,7 @@ test("verified service port is the fallback, and a new client cannot select a se
   );
 });
 
-test("ordinary loading never reads OpenCode config; explicit import maps remote aliases only", (t) => {
+test("ordinary loading ignores OpenCode config and explicit native import is rejected", (t) => {
   const directory = fixture(t);
   t.mock.method(os, "homedir", () => directory);
   const openCodeFile = path.join(directory, ".opencode", "opencode.jsonc");
@@ -386,16 +411,17 @@ test("ordinary loading never reads OpenCode config; explicit import maps remote 
   assert.equal(loadConfig({ config: ownFile }).cfg.backend, "addin");
 
   const destination = path.join(directory, "migrated.json");
-  const result = initConfig({ fromOpencode: true, config: destination });
-  assert.doesNotMatch(result.note, /private/);
-  const { cfg } = loadConfig({ config: destination });
-  assert.equal(cfg.backend, "mcp");
-  assert.equal(cfg.url, "http://127.0.0.1:27183/mcp");
-  assert.equal(cfg.timeoutMs, 90000);
-  assert.equal(cfg.transport, "node");
-  assert.equal(cfg.headers["Authorization"], "Bearer private");
+  assert.throws(
+    () => initConfig({ fromOpencode: true, config: destination }),
+    (error: unknown) => {
+      assert(error instanceof Error);
+      assert.match(error.message, /--from-opencode is no longer supported/);
+      assert.doesNotMatch(error.message, /private/);
+      return true;
+    },
+  );
+  assert.equal(fs.existsSync(destination), false);
   assert.equal(fs.readFileSync(openCodeFile, "utf8").includes("private"), true);
-  assert.equal(fs.statSync(destination).mode & 0o077, 0);
 });
 
 test("explicit migration rejects local OpenCode MCP and leaves the destination untouched", (t) => {
@@ -413,12 +439,12 @@ test("explicit migration rejects local OpenCode MCP and leaves the destination u
   fs.writeFileSync(destination, "existing");
   assert.throws(
     () => initConfig({ fromOpencode: true, force: true, config: destination }),
-    /local\/stdio MCP server/,
+    /--from-opencode is no longer supported/,
   );
   assert.equal(fs.readFileSync(destination, "utf8"), "existing");
 });
 
-test("explicit migration maps legacy transport and field aliases without conflating curl and Node", (t) => {
+test("explicit OpenCode migration refuses remote native MCP without writing", (t) => {
   const directory = fixture(t);
   t.mock.method(os, "homedir", () => directory);
   const source = path.join(directory, ".config", "opencode", "opencode.json");
@@ -438,12 +464,15 @@ test("explicit migration maps legacy transport and field aliases without conflat
     }),
   );
   const destination = path.join(directory, "migrated.json");
-  initConfig({ fromOpencode: true, config: destination });
-  const { cfg } = loadConfig({ config: destination });
-  assert.equal(cfg.url, "http://127.0.0.1:27183/mcp");
-  assert.equal(cfg.transport, "windows-curl");
-  assert.equal(cfg.curlPath, "/test/curl.exe");
-  assert.equal(cfg.timeoutMs, 45000);
+  assert.throws(
+    () => initConfig({ fromOpencode: true, config: destination }),
+    /--from-opencode is no longer supported/,
+  );
+  assert.equal(fs.existsSync(destination), false);
+  assert.equal(
+    JSON.parse(fs.readFileSync(source, "utf8")).mcp.fusion.url,
+    "http://127.0.0.1:27183/mcp",
+  );
 });
 
 test("JSONC diagnostics report only a location, never malformed secret fragments", (t) => {
