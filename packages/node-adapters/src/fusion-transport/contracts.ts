@@ -23,6 +23,8 @@ export interface PreparedPost {
   send(sessionId?: string): Promise<Response>;
 }
 export interface PreparedToolCall {
+  /** The tool send reaches the broker's _post hook after session negotiation. */
+  readonly dispatchBoundary: "broker-post";
   (): Promise<ToolResult>;
   fence(): void;
 }

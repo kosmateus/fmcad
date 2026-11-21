@@ -418,6 +418,9 @@ export class BrokerMcpClient extends McpDiscoveryClient {
       Object.defineProperty(toolResult, "rawResponse", { enumerable: false });
       return toolResult;
     };
-    return Object.assign(execute, { fence: () => prepared.fence() });
+    return Object.assign(execute, {
+      dispatchBoundary: "broker-post" as const,
+      fence: () => prepared.fence(),
+    });
   }
 }

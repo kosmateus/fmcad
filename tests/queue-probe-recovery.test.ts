@@ -217,157 +217,196 @@ test("failed terminal recovery probe can be replaced; unresolved, mismatched and
   assert.equal(record(qi.readJson(receipt))["outcome"], "failed");
 });
 
-test("a fence lost during recovery probe preparation leaves no sent intent", async (t) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "qp-preparation-fence-"));
-  const cfg = { backend: "addin", timeoutMs: 1000 };
-  const buildHash = qi.buildHash();
-  const instance = {
-    pid: 123,
-    birth: "test:original",
-    version: "test",
-    activeCommand: "SelectCommand",
-    documents: [],
-  };
-  const identityFile = path.join(dir, "instance.json");
-  const originalIdentity = {
-    configHash: brokerConfigHash(cfg),
-    buildHash,
-    instance,
-  };
-  qi.durable(identityFile, originalIdentity);
-  const auth = { clientId: "owner", clientToken: "secret" };
-  const state = new QueueState(dir);
-  const jobId = text(
-    state.submit({
-      kind: "command",
-      requestId: randomUUID(),
-      clientId: auth.clientId,
-      timeoutMs: 1000,
-      argv: ["run", "never-replay.py"],
-      cwd: dir,
-    })["id"],
-  );
-  state.next();
-  const rpcId = randomUUID();
-  state.markDispatch(jobId, { rpcId, rpcCount: 1, completedCount: 1 });
-  state.block(jobId, "INSTANCE_UNAVAILABLE");
-  const directory = path.join(dir, "jobs", jobId);
-  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const binding = { jobId, rpcId, buildHash, requestHash: "original" };
-  const receipt = path.join(directory, `remote-${rpcId}.json`);
-  const journal = path.join(directory, `rpc-${rpcId}.json`);
-  const completed = {
-    ...binding,
-    terminal: true,
-    outcome: "succeeded",
-    instance,
-  };
-  qi.durable(receipt, completed);
-  qi.durable(journal, {
-    binding,
-    instance,
-    terminal: true,
-    method: "tools/call",
-    receipt,
-    remoteReceipt: completed,
-    request: { method: "tools/call", id: 1 },
-    response: {
-      status: 200,
-      raw: JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }),
-    },
-  });
-  qi.durable(path.join(directory, "worker-result.json"), {
-    jobId,
-    code: 0,
-    terminal: true,
-  });
-  const originals = [journal, receipt].map((file) => fs.readFileSync(file));
-  const probeIntent = path.join(directory, "reconcile-probe.json");
-  const outcome = path.join(directory, "outcome.json");
-  let signalPreparing = () => {};
-  const preparing = new Promise<void>((resolve) => {
-    signalPreparing = resolve;
-  });
-  let release = () => {};
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const fixture: { broker?: Awaited<ReturnType<typeof serve>> } = {};
-  let preparations = 0,
-    sends = 0;
-  t.after(async () => {
-    release();
-    try {
-      await fixture.broker?.close();
-    } catch (error) {
-      // A RED candidate deliberately leaves the disposable fixture held.
-      assert.partialDeepStrictEqual(error, { code: "RECONCILIATION_REQUIRED" });
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-  });
-  fixture.broker = await serve(cfg, {
-    dir,
-    confirmOwnership: true,
-    nativePath: (file) => file,
-    createBackend: () => ({
-      server: cfg,
-      _parse: JSON.parse,
-      _post: () => assert.fail("No original product replay"),
-      callTool: () => assert.fail("Expected the prepared probe transport"),
-      async prepareCallTool({
-        object,
-      }: Parameters<ProbeOnlyClient["callTool"]>[0]) {
-        if (++preparations === 1) {
-          signalPreparing();
-          await released;
+for (const lostReply of [false, true]) {
+  test(
+    lostReply
+      ? "a directly sent recovery probe with a lost reply is never sent twice"
+      : "a fence lost during recovery probe preparation leaves no sent intent",
+    async (t) => {
+      const dir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "qp-preparation-fence-"),
+      );
+      const cfg = { backend: "addin", timeoutMs: 1000 };
+      const buildHash = qi.buildHash();
+      const instance = {
+        pid: 123,
+        birth: "test:original",
+        version: "test",
+        activeCommand: "SelectCommand",
+        documents: [],
+      };
+      const identityFile = path.join(dir, "instance.json");
+      const originalIdentity = {
+        configHash: brokerConfigHash(cfg),
+        buildHash,
+        instance,
+      };
+      qi.durable(identityFile, originalIdentity);
+      const auth = { clientId: "owner", clientToken: "secret" };
+      const state = new QueueState(dir);
+      const jobId = text(
+        state.submit({
+          kind: "command",
+          requestId: randomUUID(),
+          clientId: auth.clientId,
+          timeoutMs: 1000,
+          argv: ["run", "never-replay.py"],
+          cwd: dir,
+        })["id"],
+      );
+      state.next();
+      const rpcId = randomUUID();
+      state.markDispatch(jobId, { rpcId, rpcCount: 1, completedCount: 1 });
+      state.block(jobId, "INSTANCE_UNAVAILABLE");
+      const directory = path.join(dir, "jobs", jobId);
+      fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+      const binding = { jobId, rpcId, buildHash, requestHash: "original" };
+      const receipt = path.join(directory, `remote-${rpcId}.json`);
+      const journal = path.join(directory, `rpc-${rpcId}.json`);
+      const completed = {
+        ...binding,
+        terminal: true,
+        outcome: "succeeded",
+        instance,
+      };
+      qi.durable(receipt, completed);
+      qi.durable(journal, {
+        binding,
+        instance,
+        terminal: true,
+        method: "tools/call",
+        receipt,
+        remoteReceipt: completed,
+        request: { method: "tools/call", id: 1 },
+        response: {
+          status: 200,
+          raw: JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }),
+        },
+      });
+      qi.durable(path.join(directory, "worker-result.json"), {
+        jobId,
+        code: 0,
+        terminal: true,
+      });
+      const originals = [journal, receipt].map((file) => fs.readFileSync(file));
+      const probeIntent = path.join(directory, "reconcile-probe.json");
+      const outcome = path.join(directory, "outcome.json");
+      let signalPreparing = () => {};
+      const preparing = new Promise<void>((resolve) => {
+        signalPreparing = resolve;
+      });
+      let release = () => {};
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const fixture: { broker?: Awaited<ReturnType<typeof serve>> } = {};
+      let preparations = 0,
+        sends = 0,
+        intentAtSend = false;
+      t.after(async () => {
+        release();
+        try {
+          await fixture.broker?.close();
+        } catch (error) {
+          // A RED candidate deliberately leaves the disposable fixture held.
+          assert.partialDeepStrictEqual(error, {
+            code: "RECONCILIATION_REQUIRED",
+          });
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true });
         }
-        return Object.assign(
-          async () => {
-            assert.equal(++sends, 1);
-            assert.ok(
-              fs.existsSync(probeIntent),
-              "intent is durable at transport entry",
+      });
+      fixture.broker = await serve(cfg, {
+        dir,
+        confirmOwnership: true,
+        nativePath: (file) => file,
+        createBackend: () => ({
+          server: cfg,
+          _parse: JSON.parse,
+          _post: () => assert.fail("No original product replay"),
+          callTool: () => assert.fail("Expected the prepared probe transport"),
+          // This unrelated method says nothing about where prepareCallTool sends.
+          ...(lostReply
+            ? {
+                preparePost: () =>
+                  assert.fail("Direct tool does not use preparePost"),
+              }
+            : {}),
+          async prepareCallTool({
+            object,
+          }: Parameters<ProbeOnlyClient["callTool"]>[0]) {
+            if (++preparations === 1 && !lostReply) {
+              signalPreparing();
+              await released;
+            }
+            return Object.assign(
+              async () => {
+                if (lostReply) {
+                  if (++sends === 1) intentAtSend = fs.existsSync(probeIntent);
+                  throw Object.assign(new Error("Lost probe reply"), {
+                    code: "EPIPE",
+                  });
+                }
+                assert.equal(++sends, 1);
+                assert.ok(
+                  fs.existsSync(probeIntent),
+                  "intent is durable at transport entry",
+                );
+                return {
+                  failed: false,
+                  text: runBoundInstanceProbe(object.script, instance).text,
+                };
+              },
+              { fence() {} },
             );
-            return {
-              failed: false,
-              text: runBoundInstanceProbe(object.script, instance).text,
-            };
           },
-          { fence() {} },
+        }),
+      });
+      await request(dir, { action: "register", ...auth });
+      const reconcile = () =>
+        request(dir, { action: "reconcile", auth, jobId });
+      if (lostReply) {
+        await assert.rejects(reconcile(), { code: "EPIPE" });
+        await assert.rejects(reconcile(), { code: "RECEIPT_UNAVAILABLE" });
+        assert.equal(sends, 1);
+        assert.equal(preparations, 1);
+        assert.equal(intentAtSend, true);
+        assert.equal(fs.existsSync(outcome), false);
+        assert.deepEqual(
+          [journal, receipt].map((file) => fs.readFileSync(file)),
+          originals,
         );
-      },
-    }),
-  });
-  await request(dir, { action: "register", ...auth });
-  const reconcile = () => request(dir, { action: "reconcile", auth, jobId });
-  const rejected = assert.rejects(reconcile(), { code: "STATE_CONFLICT" });
-  try {
-    await Promise.race([
-      preparing,
-      rejected.then(() => assert.fail("Probe did not prepare")),
-    ]);
-    qi.durable(identityFile, {
-      ...originalIdentity,
-      instance: { ...instance, birth: "test:replacement" },
-    });
-    release();
-    await rejected;
-    assert.equal(sends, 0);
-    assert.equal(fs.existsSync(outcome), false);
-  } finally {
-    release();
-    qi.durable(identityFile, originalIdentity);
-  }
-  assert.partialDeepStrictEqual(await reconcile(), { state: "succeeded" });
-  assert.ok(fs.existsSync(probeIntent));
-  assert.equal(sends, 1);
-  assert.equal(preparations, 2);
-  assert.deepEqual(
-    [journal, receipt].map((file) => fs.readFileSync(file)),
-    originals,
+        return;
+      }
+      const rejected = assert.rejects(reconcile(), { code: "STATE_CONFLICT" });
+      try {
+        await Promise.race([
+          preparing,
+          rejected.then(() => assert.fail("Probe did not prepare")),
+        ]);
+        qi.durable(identityFile, {
+          ...originalIdentity,
+          instance: { ...instance, birth: "test:replacement" },
+        });
+        release();
+        await rejected;
+        assert.equal(sends, 0);
+        assert.equal(fs.existsSync(outcome), false);
+      } finally {
+        release();
+        qi.durable(identityFile, originalIdentity);
+      }
+      assert.partialDeepStrictEqual(await reconcile(), { state: "succeeded" });
+      assert.ok(fs.existsSync(probeIntent));
+      assert.equal(sends, 1);
+      assert.equal(preparations, 2);
+      assert.deepEqual(
+        [journal, receipt].map((file) => fs.readFileSync(file)),
+        originals,
+      );
+    },
   );
-});
+}
 
 test("probe diagnostics retain backend failure and restore timeout", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "qp-"));

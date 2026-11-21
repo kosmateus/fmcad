@@ -134,7 +134,10 @@ if _fmcad_guard_command not in ('', 'SelectCommand'):
         readOnlyEnforced: false,
       };
     };
-    return Object.assign(execute, { fence: () => send.fence() });
+    return Object.assign(execute, {
+      dispatchBoundary: send.dispatchBoundary,
+      fence: () => send.fence(),
+    });
   }
   executeUiGuardedScript(
     script: string,

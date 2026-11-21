@@ -157,6 +157,7 @@ for (const backend of ["mcp", "addin"])
         "def run(context: object) -> None:\n    import adsk.core\n    p = adsk.core.Point3D.create(0, 0, 0)\n    if p is not None:\n        print(p.x)",
       ),
     );
+    assert.equal(prepared.dispatchBoundary, "broker-post");
     assert.equal(admissions, 0);
     assert.deepEqual(requests, []);
     const result = await prepared();

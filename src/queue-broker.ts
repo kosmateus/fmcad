@@ -1078,10 +1078,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       "Backend must expose server and the physical McpClient _post/_parse boundary",
     );
   const originalPost = client._post.bind(client);
-  // The private transport calls back at _post after session setup. Explicit
-  // injected tool ports may instead perform the transport at their own entry.
-  const probeUsesWirePost =
-    !options.createBackend || typeof client.preparePost === "function";
   const runtime = resolveRuntimePaths({ anchor: __filename }).runtime;
   const queueAdmission = createProductionQueueAdmission(runtime);
   const pythonAdmission = queueAdmission.admission;
@@ -1286,6 +1282,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const recoveryProbeScope = new AsyncLocalStorage<{
     assertCurrent(): void;
     start(): void;
+    dispatchBoundary?: P.Send["dispatchBoundary"];
   }>();
   const preparingJob = new AsyncLocalStorage<
     { job: P.Job; turn: TurnIdentity } | false
@@ -1436,7 +1433,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       certificate.fence(outgoing);
       const recoveryProbe = recoveryProbeScope.getStore();
       if (recoveryProbe) {
-        if (probeUsesWirePost && outgoing.method === "tools/call")
+        if (
+          recoveryProbe.dispatchBoundary === "broker-post" &&
+          outgoing.method === "tools/call"
+        )
           recoveryProbe.start();
         else recoveryProbe.assertCurrent();
       }
@@ -1479,11 +1479,18 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             withRequest({ timeoutMs: server.timeoutMs }, () => {
               const recoveryProbe = recoveryProbeScope.getStore();
               if (recoveryProbe) {
-                if (probeUsesWirePost) recoveryProbe.assertCurrent();
-                else {
-                  send.fence();
-                  recoveryProbe.start();
+                const { dispatchBoundary } = send;
+                if (dispatchBoundary === "broker-post") {
+                  recoveryProbe.assertCurrent();
+                  return recoveryProbeScope.run(
+                    { ...recoveryProbe, dispatchBoundary },
+                    send,
+                  );
                 }
+                // An unmarked prepared callback is itself the send boundary,
+                // even when its client separately exposes preparePost.
+                send.fence();
+                recoveryProbe.start();
               }
               return send();
             }),
