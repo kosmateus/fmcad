@@ -612,8 +612,11 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
     const evidence = record(JSON.parse(fs.readFileSync(path.join(dir, "verified-unknown.json"), "utf8")));
     const job = String(evidence["job"]);
     const key = String(evidence["request"]);
+    const workerPid = Number(evidence["pid"]);
     assert.match(job, /^[0-9a-f-]{36}$/);
     assert.match(key, /^[0-9a-f-]{36}$/);
+    assert.ok(Number.isSafeInteger(workerPid) && workerPid > 0);
+    assert.throws(() => process.kill(workerPid, 0), { code: "ESRCH" });
     const saved = path.join(dir, "jobs", job, `received-response-${key}.json`);
     const response = record(record(JSON.parse(fs.readFileSync(saved, "utf8")))["response"]);
     assert.equal(record(record(JSON.parse(String(response["raw"])))["record"])["state"], "accepted");
@@ -786,6 +789,7 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
   fs.writeFileSync(path.join(dir, "verified-unknown.json"), JSON.stringify({
     job: uncertain,
     request: uncertainKey,
+    pid: process.pid,
   }), { flag: "wx" });
   t.diagnostic("METADATA_UNKNOWN_CLOSE_REFUSED_AND_RECEIPT_RETAINED");
 });
