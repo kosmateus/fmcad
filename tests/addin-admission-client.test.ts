@@ -43,6 +43,7 @@ test("refuses partial HTTP, false withdrawal and unsafe integer evidence", async
     "underflow",
     "duplicate",
     "rounded-decimal",
+    "invalid-utf8",
   ]) {
     let requests = 0;
     const server = createServer(async (req, res) => {
@@ -51,6 +52,28 @@ test("refuses partial HTTP, false withdrawal and unsafe integer evidence", async
       for await (const chunk of req) body += chunk;
       const message = JSON.parse(body);
       res.statusCode = mode === "partial" ? 206 : 200;
+      if (mode === "partial") {
+        res.end(
+          JSON.stringify({
+            version: 1,
+            binding: message.binding,
+            record: { state: "withdrawn" },
+          }),
+        );
+        return;
+      }
+      if (mode === "invalid-utf8") {
+        res.end(
+          Buffer.concat([
+            Buffer.from(
+              `{"version":1,"binding":${JSON.stringify(message.binding)},"record":{"state":"terminal","result":"`,
+            ),
+            Buffer.from([0xff]),
+            Buffer.from('"}}'),
+          ]),
+        );
+        return;
+      }
       res.end(
         `{"version":1,"binding":${JSON.stringify(message.binding)},` +
           `"record":{${mode === "duplicate" ? '"state":"unknown",' : ""}"state":"terminal","result":${mode === "unsafe-number" ? "9007199254740993" : mode === "underflow" ? "1e-400" : mode === "rounded-decimal" ? "1.00000000000000001" : "1"}}}`,
@@ -99,6 +122,36 @@ test("rejects lossy input serialization and nonlocal endpoints before dispatch",
       ),
     /loopback/,
   );
+});
+
+test("rejects proxies without traps and refuses coerced transport options", () => {
+  let traps = 0;
+  const proxy = new Proxy(
+    { value: "data" },
+    {
+      ownKeys() {
+        traps++;
+        return ["value"];
+      },
+    },
+  );
+  const options = { endpoint: "http://127.0.0.1:8765/admission/v1", token };
+  assert.throws(
+    () => createAddinAdmission(options, identity, { nested: proxy }),
+    /Proxy/,
+  );
+  assert.equal(traps, 0);
+  for (const key of ["token", "endpoint"] as const) {
+    const invalid = { ...options };
+    Object.defineProperty(invalid, key, {
+      value: [options[key]],
+      enumerable: true,
+    });
+    assert.throws(
+      () => createAddinAdmission(invalid, identity, {}),
+      /must be strings/,
+    );
+  }
 });
 
 test("binds exact Unicode and numeric input bytes and freezes input before send", async () => {

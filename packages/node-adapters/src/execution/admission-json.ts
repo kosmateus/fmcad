@@ -1,3 +1,5 @@
+import { types } from "node:util";
+
 /** Decode evidence without discarding duplicate keys or numeric information. */
 export function decodeAdmissionJson(text: string): unknown {
   let cursor = 0;
@@ -107,6 +109,8 @@ export function admissionData(
   value: unknown,
   seen = new Set<object>(),
 ): unknown {
+  if (types.isProxy(value))
+    throw new Error("Proxy admission input is forbidden");
   if (value === null || typeof value === "string" || typeof value === "boolean")
     return value;
   if (typeof value === "number" && Number.isFinite(value)) return value;

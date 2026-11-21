@@ -52,6 +52,8 @@ export function createAddinAdmission(
   options = admissionData(options) as typeof options;
   identity = admissionData(identity) as AdmissionIdentity;
   const token = options.token;
+  if (typeof options.endpoint !== "string" || typeof token !== "string")
+    throw new Error("Admission endpoint and credential must be strings");
   const endpoint = new URL(options.endpoint);
   if (
     endpoint.protocol !== "http:" ||
@@ -108,7 +110,11 @@ export function createAddinAdmission(
       });
       if (response.status !== 200)
         throw failure(`Admission HTTP ${response.status}; do not resubmit`);
-      decoded = decodeAdmissionJson(await response.text());
+      decoded = decodeAdmissionJson(
+        new TextDecoder("utf-8", { fatal: true }).decode(
+          await response.arrayBuffer(),
+        ),
+      );
     } catch {
       // Do not leak credentials or interpret transport failure as no effect.
       throw failure("Admission outcome unavailable; inspect the original key");
