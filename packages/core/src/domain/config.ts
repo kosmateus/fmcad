@@ -572,7 +572,9 @@ function validateUrl(value: unknown, controlCenterPort: number): string {
 }
 
 function rejectUnsupportedEndpoint(value: unknown, field: string): void {
-  if (typeof value !== "string") return;
+  if (typeof value !== "string") {
+    throw new Error(`${field} must be a string URL`);
+  }
   const endpoint = parseEndpoint(value);
   if (!endpoint) {
     throw new Error(`${field} must be an absolute HTTP(S) URL`);

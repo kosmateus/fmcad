@@ -7,6 +7,9 @@ import { createRequire } from "node:module";
 const { loadConfig, initConfig, DEFAULTS } = createRequire(__filename)(
   path.join(process.cwd(), "src/config"),
 ) as typeof import("../src/composition/library-configuration");
+const { resolveFmcadConfiguration } = createRequire(__filename)(
+  path.join(process.cwd(), "src/dist/core"),
+) as typeof import("../packages/core/src");
 
 function fixture(t: TestContext, data: unknown = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fmcad-backend-"));
@@ -111,6 +114,94 @@ test("retired endpoints are checked before adapter URL precedence", (t) => {
   assert.equal(
     f.load({ url: "http://127.0.0.1:8765/mcp" }).url,
     "http://127.0.0.1:8765/mcp",
+  );
+});
+
+test("explicit endpoint fields must be strings before source precedence", (t) => {
+  const f = fixture(t, {
+    backend: "addin",
+    backends: { addin: { url: "http://127.0.0.1:8766/mcp" } },
+  });
+  const values: unknown[] = [null, 42, false, {}, []];
+  const assertTypeError = (run: () => unknown, field: string) => {
+    assert.throws(run, (error: unknown) => {
+      assert(error instanceof Error);
+      assert.equal(error.message, `${field} must be a string URL`);
+      return true;
+    });
+  };
+  const resolveSources = (
+    adapter: Record<string, unknown>,
+    environment: Record<string, unknown>,
+    file: Record<string, unknown>,
+  ) =>
+    resolveFmcadConfiguration({
+      adapter,
+      environment,
+      file,
+      platformDefaults: {},
+      acceptedService: null,
+    });
+
+  for (const key of ["url", "endpoint"] as const) {
+    for (const value of values) {
+      assertTypeError(() => f.load({ [key]: value }), `adapter.${key}`);
+      assertTypeError(
+        () =>
+          resolveSources(
+            { url: "http://127.0.0.1:8765/mcp" },
+            { [key]: value },
+            { backend: "addin" },
+          ),
+        `environment.${key}`,
+      );
+      fs.writeFileSync(
+        f.config,
+        JSON.stringify({
+          backend: "addin",
+          backends: { addin: { [key]: value } },
+        }),
+      );
+      assertTypeError(
+        () => f.load({ url: "http://127.0.0.1:8765/mcp" }),
+        `backends.addin.${key}`,
+      );
+    }
+  }
+
+  assertTypeError(() => f.load({ url: undefined }), "adapter.url");
+  assertTypeError(
+    () =>
+      resolveSources(
+        { url: "http://127.0.0.1:8765/mcp" },
+        { endpoint: undefined },
+        { backend: "addin" },
+      ),
+    "environment.endpoint",
+  );
+  assertTypeError(
+    () =>
+      resolveSources(
+        { url: "http://127.0.0.1:8765/mcp" },
+        {},
+        { backend: "addin", backends: { addin: { endpoint: undefined } } },
+      ),
+    "backends.addin.endpoint",
+  );
+
+  fs.writeFileSync(f.config, JSON.stringify({ backend: "addin" }));
+  assert.equal(f.load().url, "http://127.0.0.1:8765/mcp");
+
+  process.env["FMCAD_URL"] = "http://127.0.0.1:27182/mcp";
+  assert.throws(
+    () => f.load({ url: "http://127.0.0.1:8765/mcp" }),
+    /environment\.url/,
+  );
+  delete process.env["FMCAD_URL"];
+  process.env["FMCAD_ENDPOINT"] = "http://127.0.0.1:27182/mcp";
+  assert.throws(
+    () => f.load({ url: "http://127.0.0.1:8765/mcp" }),
+    /environment\.endpoint/,
   );
 });
 
