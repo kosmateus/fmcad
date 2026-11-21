@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, "../..");
 const load = createRequire(path.join(root, "package.json"));
 import fs from "node:fs";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import type { AsyncLocalStorage } from "node:async_hooks";
 type RunApi = typeof import("../src/composition/run.js");
 type RunArguments = Parameters<RunApi["prepareRunScript"]>;
@@ -33,31 +34,120 @@ function assertSelectedProvenance(unit: SourceUnit, original: SourceUnit) {
     unit.source.endsWith(marker),
     `${unit.id}: original source binding`,
   );
-  // These user-script fixtures permit deletion, not generated-call specialization.
-  // Keep every retained source line byte-identical and in its original order.
-  const lines = original.source.split("\n");
-  let cursor = 0;
-  for (const line of unit.source.slice(0, -marker.length).split("\n")) {
-    if (!line.trim() || line.trim() === "pass") continue;
-    const found = lines.findIndex(
-      (originalLine, index) =>
-        index >= cursor &&
-        (originalLine === line ||
-          (/^\s*CAD_HANDLERS\.update\(\{.*\}\)\s*$/.test(line) &&
-            /^\s*CAD_HANDLERS\.update\(\{.*\}\)\s*$/.test(originalLine) &&
-            line.length === originalLine.length &&
-            line
-              .split("")
-              .every(
-                (character, column) =>
-                  character === " " || character === originalLine[column],
-              ))),
-    );
-    assert.ok(found >= cursor, `${unit.id}: changed retained line ${line}`);
-    cursor = found + 1;
-  }
+  // Only complete declarations and complete registry entries may disappear.
+  // Retained functions (including their guards) are compared as whole AST nodes.
+  const checked = spawnSync(
+    "python3",
+    [
+      "-I",
+      "-S",
+      "-c",
+      `
+import ast, json, sys
+original, selected = (ast.parse(s) for s in json.load(sys.stdin))
+def same(a, b):
+    return ast.dump(a, include_attributes=False) == ast.dump(b, include_attributes=False)
+def registry(node):
+    return (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Attribute) and node.value.func.attr == "update"
+        and isinstance(node.value.func.value, ast.Name) and node.value.func.value.id == "CAD_HANDLERS"
+        and len(node.value.args) == 1 and isinstance(node.value.args[0], ast.Dict)
+        and not node.value.keywords)
+def matches(a, b):
+    if same(a, b): return True
+    if isinstance(a, ast.If) and isinstance(b, ast.If) and same(a.test, b.test):
+        return body_matches(a.body, b.body) and body_matches(a.orelse, b.orelse)
+    if isinstance(a, ast.ClassDef) and isinstance(b, ast.ClassDef):
+        fields = [name for name in a._fields if name != "body"]
+        for name in fields:
+            left, right = getattr(a, name), getattr(b, name)
+            if isinstance(left, list):
+                if len(left) != len(right) or any(not same(x, y) for x, y in zip(left, right)): return False
+            elif isinstance(left, ast.AST):
+                if not same(left, right): return False
+            elif left != right: return False
+        return body_matches(a.body, b.body)
+    if registry(a) and registry(b):
+        left, right = a.value.args[0], b.value.args[0]
+        pairs = list(zip(left.keys, left.values))
+        cursor = 0
+        for key, value in zip(right.keys, right.values):
+            if key is None: return False
+            while cursor < len(pairs) and not (pairs[cursor][0] is not None and same(pairs[cursor][0], key) and same(pairs[cursor][1], value)):
+                cursor += 1
+            if cursor == len(pairs): return False
+            cursor += 1
+        return True
+    return False
+def body_matches(left, right):
+    left = [node for node in left if not isinstance(node, ast.Pass)]
+    right = [node for node in right if not isinstance(node, ast.Pass)]
+    cursor = 0
+    def removable(node):
+        return (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            or isinstance(node, ast.Assign) and all(isinstance(target, ast.Name) for target in node.targets)
+            or isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name))
+    for node in right:
+        while cursor < len(left) and not matches(left[cursor], node):
+            if not removable(left[cursor]): return False
+            cursor += 1
+        if cursor == len(left): return False
+        cursor += 1
+    return all(removable(node) for node in left[cursor:])
+assert body_matches(original.body, selected.body), "changed retained code"
+`,
+    ],
+    {
+      input: JSON.stringify([original.source, unit.source]),
+      encoding: "utf8",
+      timeout: 10000,
+    },
+  );
+  assert.equal(checked.status, 0, `${unit.id}: ${checked.stderr}`);
 }
 const current = load("./src/run.js") as RunApi;
+test("selected provenance rejects removed function guards and partial registry keys", () => {
+  const values = fs.readFileSync(
+    path.join(root, "runtime/python/fmcad/domain/values.py"),
+    "utf8",
+  );
+  const withoutGuard = values.replace(
+    "        if not _value_math.isfinite(value):\n            raise ValueError('Non-finite value cannot be serialized')\n",
+    "",
+  );
+  assert.notEqual(withoutGuard, values);
+  for (const [source, changed] of [
+    [values, withoutGuard],
+    [
+      "CAD_HANDLERS.update({'body.list': _body_list})\n",
+      "CAD_HANDLERS.update({' ody.list': _body_list})\n",
+    ],
+    ["CAD_HANDLERS.owner = 'owner'\n", "pass\n"],
+  ]) {
+    const original: SourceUnit = {
+      id: "review-reproducer",
+      filename: "review.py",
+      role: "runtime",
+      source: source!,
+      sha256: createHash("sha256").update(source!).digest("hex"),
+    };
+    const selected =
+      changed +
+      `\n# Automatic source selection; original-sha256=${original.sha256}\n`;
+    assert.throws(
+      () =>
+        assertSelectedProvenance(
+          {
+            ...original,
+            source: selected,
+            sha256: createHash("sha256").update(selected).digest("hex"),
+          },
+          original,
+        ),
+      /changed retained code/,
+    );
+  }
+});
 const historical = load("./tests/fixtures/historical-module.cjs") as (
   revision: string,
   source: string,
@@ -130,7 +220,7 @@ for (const [label, identity, helper, operations] of cases) {
         assert.ok(original, `Unknown source unit ${unit.id}`);
         assertSelectedProvenance(unit, original);
         if (unit.source !== original.source) {
-          const source = unit.source.replace(/^(\S[^\n]*)/m, "$1 # changed");
+          const source = "raise RuntimeError('tampered')\n" + unit.source;
           assert.notEqual(source, unit.source);
           assert.throws(
             () =>
@@ -142,7 +232,7 @@ for (const [label, identity, helper, operations] of cases) {
                 },
                 original,
               ),
-            /changed retained line/,
+            /changed retained code/,
           );
           assert.throws(() =>
             assertSelectedProvenance(
