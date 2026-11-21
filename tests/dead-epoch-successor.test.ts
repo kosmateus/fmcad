@@ -487,7 +487,14 @@ test("FAKE frozen metadata: real worker receives private stdin once while both p
   }
 });
 
-for (const scenario of ["fresh", "reopened", "substituted creation"])
+for (const scenario of [
+  "fresh",
+  "reopened",
+  "substituted creation",
+  "changed endpoint",
+  "changed source",
+  "changed epoch",
+])
   test(`FAKE frozen metadata: public IPC reads only the authority-created published document, including after reopen (${scenario})`, async (t) => {
     const swappedCreation = scenario === "substituted creation";
     const brokerApi = load(
@@ -495,6 +502,8 @@ for (const scenario of ["fresh", "reopened", "substituted creation"])
     ) as typeof import("../src/composition/queue-broker");
     let broker: Awaited<ReturnType<typeof brokerApi.serve>> | undefined;
     let posts = 0;
+    let redirected = 0;
+    let redirectServer: ReturnType<typeof createServer> | undefined;
     const token = "frozen-publication-token-".repeat(3);
     const server = createServer(async (req, res) => {
       const chunks: Buffer[] = [];
@@ -527,6 +536,12 @@ for (const scenario of ["fresh", "reopened", "substituted creation"])
       } finally {
         server.closeAllConnections();
         await new Promise<void>((resolve) => server.close(() => resolve()));
+        if (redirectServer) {
+          redirectServer.closeAllConnections();
+          await new Promise<void>((resolve) =>
+            redirectServer!.close(() => resolve()),
+          );
+        }
       }
     });
     server.listen(8765, "127.0.0.1");
@@ -702,6 +717,49 @@ for (const scenario of ["fresh", "reopened", "substituted creation"])
       { code: "SAVED_FIRST_SAVE_SCOPE_REQUIRED" },
     );
     assert.equal(posts, 0);
+    if (scenario.startsWith("changed ")) {
+      redirectServer = createServer((req, res) => {
+        redirected++;
+        req.resume();
+        res.end("{}");
+      });
+      redirectServer.listen(0, "127.0.0.1");
+      await once(redirectServer, "listening");
+      const address = redirectServer.address();
+      assert.ok(address && typeof address !== "string");
+      await broker.close();
+      broker = undefined;
+      const changed = {
+        ...opts,
+        addinMetadataAdmission: {
+          ...opts.addinMetadataAdmission,
+          endpoint:
+            scenario === "changed endpoint"
+              ? `http://127.0.0.1:${address.port}/admission/v1`
+              : profile.provisioning.endpoint,
+          source:
+            scenario === "changed source"
+              ? "e".repeat(40)
+              : profile.provisioning.source,
+          epoch:
+            scenario === "changed epoch"
+              ? "substituted-epoch"
+              : profile.provisioning.epoch,
+        },
+      };
+      await assert.rejects(brokerApi.serve(f.cfg, changed), {
+        code: "FROZEN_METADATA_PROVISIONING_CHANGED",
+      });
+      assert.equal(posts, 0);
+      assert.equal(redirected, 0, "No bearer may reach a substituted endpoint");
+      assert.equal(
+        fs.existsSync(path.join(f.dir, "broker.lock")),
+        false,
+        "Rejected private configuration must not reserve the broker",
+      );
+      broker = await brokerApi.serve(f.cfg, opts);
+      return;
+    }
     if (scenario !== "fresh") {
       await broker.close();
       broker = await brokerApi.serve(f.cfg, opts);

@@ -3,7 +3,10 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { isDeepStrictEqual as same } from "node:util";
 import type { Reference } from "./queue-epoch-successor-types";
-import type { Instance } from "../queue-broker-ports";
+import type {
+  Instance,
+  TrustedAddinMetadataAdmission,
+} from "../queue-broker-ports";
 import type { SavedRequest } from "../../packages/core/src/application/cad/saved-fixture-contracts";
 import { assertFrozenMetadataRequest } from "./queue-frozen-metadata-profile";
 
@@ -47,6 +50,57 @@ function object(value: unknown): Record<string, unknown> {
 function text(value: unknown): string {
   if (typeof value !== "string" || !value) fail();
   return value;
+}
+
+export function assertFrozenMetadataProvisioning(
+  profile: unknown,
+  input: TrustedAddinMetadataAdmission | undefined,
+): void {
+  if (profile === undefined) return;
+  const scope = object(profile);
+  function refuse(): never {
+    throw Object.assign(
+      new Error(
+        "The private metadata channel differs from its immutable authority",
+      ),
+      {
+        code: "FROZEN_METADATA_PROVISIONING_CHANGED",
+        notStarted: true,
+      },
+    );
+  }
+  if (!input) refuse();
+  const binding = Object.fromEntries(
+    Object.entries(input).filter(([key]) => key !== "token"),
+  );
+  if (!same(scope["provisioning"], binding)) refuse();
+}
+
+/** Refuse a substituted private channel before reserving a broker lifetime. */
+export function assertFrozenMetadataReopen(
+  root: string,
+  input: TrustedAddinMetadataAdmission | undefined,
+  nonce?: string,
+): void {
+  if (!fs.existsSync(path.join(root, "isolated-admission-epoch.json"))) return;
+  const state = openIsolatedEpoch(root, { recover: false });
+  let reference = state.epoch?.succession;
+  const activeFile = path.join(root, "active-epoch-succession.json");
+  if (nonce && fs.existsSync(activeFile)) {
+    const active = object(api.readJson(activeFile));
+    const value = object(active["authority"]);
+    reference = { path: text(value["path"]), sha256: text(value["sha256"]) };
+  }
+  if (!reference) return;
+  const authority = lineage.successionAuthority(root, reference).authority;
+  const profile = authority["frozenMetadata"];
+  if (
+    profile !== undefined &&
+    nonce !== undefined &&
+    authority["nonce"] !== nonce
+  )
+    fail();
+  assertFrozenMetadataProvisioning(profile, input);
 }
 
 /** Only the already-supported, receipt-bound first save may prepare the fixture. */

@@ -902,6 +902,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ? effectiveBackend.identity.buildHash
         : codeHash,
     );
+  (runtimeRequire("./dist/composition/queue-frozen-metadata-admission") as
+    typeof import("./queue-frozen-metadata-admission")).assertFrozenMetadataReopen(
+    dir, options.addinMetadataAdmission, options.deadEpochSuccessorNonce,
+  );
   const socket = queueSocket(dir);
   const startupClaims: {
     successorRuntime: ReturnType<
@@ -981,6 +985,11 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       : undefined);
   const frozenMetadataScope = metadataSuccessorAuthority && "frozenMetadata" in metadataSuccessorAuthority
     ? metadataSuccessorAuthority.frozenMetadata : undefined;
+  if (frozenMetadataScope !== undefined)
+    (runtimeRequire("./dist/composition/queue-frozen-metadata-admission") as
+      typeof import("./queue-frozen-metadata-admission")).assertFrozenMetadataProvisioning(
+      frozenMetadataScope, options.addinMetadataAdmission,
+    );
   const frozenMetadataAuthority = successorRuntime?.authorityEntry ?? state.epoch?.succession;
   function admitEpochRequest(request: P.Request | undefined) {
     if (!state.epoch) return null;
@@ -1014,6 +1023,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     if (!frozenMetadataAuthority)
       fail("FROZEN_METADATA_DOCUMENT_UNPROVEN", "The original metadata authority is required");
     const selector = addinMetadataSelector(wire);
+    (runtimeRequire("./dist/composition/queue-frozen-metadata-admission") as
+      typeof import("./queue-frozen-metadata-admission")).assertFrozenMetadataProvisioning(
+      frozenMetadataScope, options.addinMetadataAdmission,
+    );
     (runtimeRequire("./dist/composition/queue-frozen-metadata-admission") as
       typeof import("./queue-frozen-metadata-admission")).proveFrozenMetadataDocument(
       dir, frozenMetadataAuthority, {
