@@ -12,6 +12,16 @@ class Unknown(Exception):
     pass
 
 
+def tree_index(tree):
+    """Collect the same breadth-first order and parent links in one walk."""
+    nodes, parents = [tree], {}
+    for node in nodes:
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+            nodes.append(child)
+    return nodes, parents
+
+
 def constant(node, bindings):
     if isinstance(node, ast.Constant):
         return node.value
@@ -50,8 +60,8 @@ def registrations(tree, registry_names=('CAD_HANDLERS',), depth=0, functions=Non
     if functions is None:
         functions = {node.name: [node] for node in tree.body if isinstance(node, ast.FunctionDef)}
     seen = set()
-    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
-    for node in ast.walk(tree):
+    nodes, parents = tree_index(tree)
+    for node in nodes:
         if not isinstance(node, ast.Name) or node.id not in registry_names or not isinstance(node.ctx, ast.Load):
             continue
         parent = parents.get(node)
@@ -152,7 +162,7 @@ def registrations(tree, registry_names=('CAD_HANDLERS',), depth=0, functions=Non
                     and target.value.id in registry_names):
                 handlers[constant(target.slice, current)] = value
                 seen.add(id(target))
-    for node in ast.walk(tree):
+    for node in nodes:
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                 and isinstance(node.func.value, ast.Name) and node.func.value.id in registry_names
                 and node.func.attr in ('update', 'pop', 'setdefault', 'clear', '__setitem__', '__delitem__')
@@ -242,9 +252,9 @@ def facts(tree, filename, *, user=False, method=None, unit=None, casts=()):
                          'ValueError', 'TypeError', 'AssertionError', 'FMCAD'}
         if references - defines - safe_builtins:
             opaque = True
-    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    nodes, parents = tree_index(tree)
     annotations = set()
-    for node in ast.walk(tree):
+    for node in nodes:
         for field in ('annotation', 'returns'):
             annotation = getattr(node, field, None)
             if annotation is not None:
@@ -252,7 +262,7 @@ def facts(tree, filename, *, user=False, method=None, unit=None, casts=()):
         if (isinstance(node, ast.Call) and node.args and isinstance(node.func, ast.Name)
                 and node.func.id in casts):
             annotations.update(ast.walk(node.args[0]))
-    for node in ast.walk(tree):
+    for node in nodes:
         # Forward annotations and cast/type-alias arguments also need providers
         # in the real checker. Over-inclusion here is conservative.
         if node in annotations and isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -1098,8 +1108,10 @@ def typing_guard_modules(parsed):
     aliases = {alias.asname or alias.name for _, tree in parsed for node in tree.body
                if isinstance(node, ast.Import) for alias in node.names if alias.name == 'typing'}
     for _, tree in parsed:
-        parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
-        for node in ast.walk(tree):
+        if not aliases:
+            break
+        nodes, parents = tree_index(tree)
+        for node in nodes:
             if isinstance(node, ast.Name) and node.id in aliases:
                 parent = parents.get(node)
                 if not (isinstance(node.ctx, ast.Load) and isinstance(parent, ast.Attribute)
