@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 const root = resolve(process.cwd());
 const load = createRequire(
   resolve(root, "tests/contracts/refactor-baseline.test.ts"),
@@ -24,6 +25,127 @@ const baseline: unknown = JSON.parse(
   ),
 );
 assertSnapshot(baseline);
+
+test("added queue help entries resolve offline without starting a client", async () => {
+  const { main } = load("../../src/cli") as {
+    main(
+      argv: string[],
+      dependencies: Record<string, unknown>,
+    ): Promise<number>;
+  };
+  for (const command of [
+    "transition-backend",
+    "authorize-normal-successor",
+    "authorize-normal-currentfacts-retry",
+    "retire-normal-currentfacts-producer",
+    "record-normal-producers-retired",
+    "retire-normal-metadata-producer",
+  ]) {
+    let stdout = "";
+    let stderr = "";
+    const code = await main(["queue", command, "--help"], {
+      stdout: {
+        write: (text: string) => {
+          stdout += text;
+        },
+      },
+      stderr: {
+        write: (text: string) => {
+          stderr += text;
+        },
+      },
+      loadConfig: () => assert.fail("help must not load configuration"),
+      createFmcad: () => assert.fail("help must not create a client"),
+      setExitCode: () => {},
+    });
+    assert.equal(code, 0, command);
+    assert.equal(stderr, "", command);
+    assert.ok(stdout.includes(command), command);
+    assert.ok(stdout.includes("--confirm-ownership"), command);
+  }
+});
+
+test("prepared status preserves observation and identity guards after source selection", () => {
+  const { buildCadScript } = load("../../src/cad") as {
+    buildCadScript(
+      operation: string,
+      data: Record<string, unknown>,
+      context: Record<string, string>,
+    ): string;
+  };
+  const pins = {
+    doc: "Synthetic Model",
+    docId: "creation-fixture",
+    docFileId: "urn:fixture:file",
+    projectId: "project-fixture",
+  };
+  for (const [modified, override, error] of [
+    [false, {}, null],
+    [true, {}, null],
+    [false, { docId: "foreign-creation" }, "doc-id mismatch"],
+    [false, { docFileId: "urn:foreign:file" }, "doc-file-id mismatch"],
+    [false, { projectId: "foreign-project" }, "expected one match, found 0"],
+  ] as const) {
+    const script = buildCadScript("status", {}, { ...pins, ...override });
+    const child = spawnSync(
+      "python3",
+      ["-I", "-B", "tests/fixtures/refactor-baseline/status-observation.py"],
+      {
+        cwd: root,
+        input: JSON.stringify({ script, modified }),
+        encoding: "utf8",
+        timeout: 30_000,
+      },
+    );
+    assert.equal(child.status, 0, child.stderr);
+    const observation = data.record(JSON.parse(child.stdout));
+    assert.equal(observation["activeUnchanged"], true);
+    assert.equal(observation["additionalSaves"], 0);
+    assert.equal(observation["modified"], modified);
+    assert.equal(observation["documentCount"], 2);
+    if (error) {
+      assert.equal(data.record(observation["error"])["type"], "ValueError");
+      assert.ok(
+        data.text(data.record(observation["error"])["message"]).includes(error),
+      );
+      assert.equal(observation["stdout"], "");
+      continue;
+    }
+    assert.equal(observation["error"], null);
+    const lines = data.text(observation["stdout"]).trim().split("\n");
+    assert.equal(lines.length, 2);
+    assert.equal(
+      lines[0],
+      'FMCAD_PROGRESS {"operation": "status", "document": "Synthetic Model", "state": "started"}',
+    );
+    assert.ok(lines[1]!.startsWith("FMCAD_RESULT "));
+    assert.deepEqual(JSON.parse(lines[1]!.slice("FMCAD_RESULT ".length)), {
+      success: true,
+      operation: "status",
+      document: pins.doc,
+      created: [],
+      result: {
+        document: { name: pins.doc, isModified: modified },
+        counts: {
+          componentDefinitions: 1,
+          occurrences: 0,
+          bodyDefinitions: 0,
+          sketchDefinitions: 0,
+          featureDefinitions: 0,
+          parameters: 0,
+          timelineItems: 0,
+        },
+        issues: [],
+        observedHealth: "noReportedIssues",
+        acceptance: "notEvaluated",
+        limitations: [
+          "Pure observation; no activation or recompute. Cached health may be stale.",
+          "Definition counts are not assembly instance quantities. Snapshot is not full topology or a geometry equivalence proof.",
+        ],
+      },
+    });
+  }
+});
 
 test("real legacy fake-backend capture matches the frozen baseline", async () => {
   const candidate = await capture(root);
