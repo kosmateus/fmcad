@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import type { CliDependencies } from "../src/entrypoints/cli";
+import { createFmcad } from "../src/composition/library";
 import { at, list, record, text } from "./integration/offline-cli";
 const root = process.cwd();
 const load = createRequire(__filename);
@@ -46,7 +47,22 @@ function harness() {
       },
     },
     loadConfig: () => assert.fail("GM05 must not load backend config"),
-    createFmcad: () => assert.fail("GM05 must not connect to Fusion"),
+    createFmcad: (options) => {
+      // Construct the real lazy library: creation is not a backend connection.
+      // Keep local execute/dispose real while forbidding every broker boundary.
+      const services = createFmcad(options);
+      const forbidden = () => assert.fail("GM05 must not connect to Fusion");
+      return {
+        ...services,
+        start: forbidden,
+        query: {
+          ...services.query,
+          status: forbidden,
+          result: forbidden,
+          request: forbidden,
+        },
+      };
+    },
     setExitCode: () => {},
   };
   return h;

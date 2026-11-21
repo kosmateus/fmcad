@@ -112,6 +112,38 @@ class RuntimeInventoryTests(unittest.TestCase):
                 self.assertEqual(baseline_owners[operation], 'measure', operation)
                 self.assertIsNone(migrated[operation].__closure__, operation)
 
+    def test_creation_id_oracle_rejects_weakened_helper_and_guard(self):
+        source = family_source('legacy-queue_document')
+        mutations = (
+            ('isinstance(value, str) and bool(value)', 'isinstance(value, str)'),
+            ('isinstance(value, str) and bool(value)', 'bool(value)'),
+            ('if not _qd_has_creation_id(creation_id):', 'if False:'),
+            ('if not _qd_has_creation_id(creation_id):',
+             'if _qd_has_creation_id(creation_id):'),
+            ('def _qd_capture(',
+             'def _qd_has_creation_id(value):\n    return True\n\n\ndef _qd_capture('),
+            ("'state': metadata_state}", "'state': state}"),
+            ('def _qd_capture(',
+             '_qd_has_creation_id = lambda value: True\n\n\ndef _qd_capture('),
+            ('def _qd_capture(',
+             'if True:\n    _qd_has_creation_id = bool\n\n\ndef _qd_capture('),
+            ('def _qd_capture(',
+             'class _qd_has_creation_id:\n    pass\n\n\ndef _qd_capture('),
+            ('def _qd_capture(',
+             'import builtins as _qd_has_creation_id\n\n\ndef _qd_capture('),
+            ('def _qd_capture(',
+             'from builtins import bool as _qd_has_creation_id\n\n\ndef _qd_capture('),
+        )
+        for before, after in mutations:
+            with self.subTest(mutation=after):
+                self.assertEqual(source.count(before), 1)
+                with patch.dict(FAMILIES, {'legacy-queue_document':
+                                           FAMILIES['legacy-queue_document']}, clear=True):
+                    with patch(__name__ + '.family_source',
+                               return_value=source.replace(before, after)):
+                        with self.assertRaises(AssertionError):
+                            self.test_every_retained_definition_has_exactly_its_previous_count()
+
     def test_every_retained_definition_has_exactly_its_previous_count(self):
         for family, entry in FAMILIES.items():
             renamed = PRIVATE_HELPER_RENAMES.get(family, {})
@@ -135,7 +167,7 @@ class RuntimeInventoryTests(unittest.TestCase):
                 self.assertEqual(current.get(name), count, (family, name))
             # Type annotations are the intended migration change; preserve each
             # retained function's executable definition and decorator structure.
-            def behavior_dump(node):
+            def behavior_dump(node, *, current=False):
                 node = copy.deepcopy(node)
                 if node.name == '_references_refresh_internal' and node.args.args[-1].arg == 'payload':
                     # D's wire admission intentionally adds these exact guards.
@@ -282,11 +314,99 @@ data = _cad_cast("_ReferencesInput", payload)
                         return self.generic_visit(statement)
 
                 node = RemoveTypeOnlySyntax().visit(node)
+                if family == 'legacy-queue_document' and node.name == '_qd_capture':
+                    # d34b59f extracted the nonempty-string predicate for typing.
+                    # Verify its full implementation before normalizing only this
+                    # exact call site; keep the frozen body and every guard intact.
+                    helpers = [n for n in ast.parse(family_source(family)).body
+                               if isinstance(n, ast.FunctionDef) and
+                               n.name == '_qd_has_creation_id']
+                    self.assertEqual(len(helpers), 1)
+                    bindings = []
+
+                    class CreationIdBindings(ast.NodeVisitor):
+                        def visit_Name(self, name):
+                            if (name.id == '_qd_has_creation_id' and
+                                    isinstance(name.ctx, (ast.Store, ast.Del))):
+                                bindings.append(name)
+
+                        def visit_FunctionDef(self, definition):
+                            if definition.name == '_qd_has_creation_id':
+                                bindings.append(definition)
+                            # Defaults/decorators execute in the enclosing scope.
+                            for expression in (*definition.decorator_list,
+                                               *definition.args.defaults,
+                                               *definition.args.kw_defaults):
+                                if expression is not None:
+                                    self.visit(expression)
+
+                        visit_AsyncFunctionDef = visit_FunctionDef
+
+                        def visit_ClassDef(self, definition):
+                            if definition.name == '_qd_has_creation_id':
+                                bindings.append(definition)
+                            for expression in (*definition.decorator_list,
+                                               *definition.bases, *definition.keywords):
+                                self.visit(expression)
+
+                        def visit_Lambda(self, expression):
+                            for default in (*expression.args.defaults,
+                                            *expression.args.kw_defaults):
+                                if default is not None:
+                                    self.visit(default)
+
+                        def visit_Import(self, statement):
+                            for alias in statement.names:
+                                if (alias.asname or alias.name.split('.')[0]) == '_qd_has_creation_id':
+                                    bindings.append(statement)
+
+                        def visit_ImportFrom(self, statement):
+                            for alias in statement.names:
+                                if (alias.asname or alias.name) in {'_qd_has_creation_id', '*'}:
+                                    bindings.append(statement)
+
+                    CreationIdBindings().visit(ast.parse(family_source(family)))
+                    self.assertEqual(len(bindings), 1, 'Creation ID predicate must not be rebound')
+                    expected = ast.parse(
+                        'def _qd_has_creation_id(value):\n'
+                        '    return isinstance(value, str) and bool(value)\n').body[0]
+                    self.assertEqual(
+                        ast.dump(RemoveTypeOnlySyntax().visit(helpers[0])), ast.dump(expected))
+                    extracted = ast.dump(ast.parse(
+                        'not _qd_has_creation_id(creation_id)', mode='eval').body)
+
+                    class RenameFrozenMetadataLocals(ast.NodeTransformer):
+                        def visit_Name(self, name):
+                            name.id = {'state': 'metadata_state',
+                                       'canonical': 'metadata_json'}.get(name.id, name.id)
+                            return name
+
+                    if not current:
+                        # Rename only the frozen metadata branch into the runtime
+                        # vocabulary. Never normalize incorrect runtime reads of
+                        # the later (not yet initialized) state/canonical locals.
+                        branch_test = ast.dump(ast.parse(
+                            "selector.get('kind') == 'saved-document-metadata'",
+                            mode='eval').body)
+                        branches = [n for n in ast.walk(node) if isinstance(n, ast.If)
+                                    and ast.dump(n.test) == branch_test]
+                        self.assertEqual(len(branches), 1)
+                        RenameFrozenMetadataLocals().visit(branches[0])
+
+                    class RestoreCreationIdPredicate(ast.NodeTransformer):
+                        def visit_UnaryOp(self, expression):
+                            if ast.dump(expression) == extracted:
+                                return ast.parse(
+                                    'not isinstance(creation_id, str) or not creation_id',
+                                    mode='eval').body
+                            return self.generic_visit(expression)
+
+                    node = RestoreCreationIdPredicate().visit(node)
                 return ast.dump(node, include_attributes=False)
             original_nodes = {n.name: behavior_dump(n)
                               for n in ast.parse((ROOT / entry['compatibility']).read_text()).body
                               if isinstance(n, ast.FunctionDef)}
-            current_nodes = {canonical_name.get(n.name, n.name): behavior_dump(n)
+            current_nodes = {canonical_name.get(n.name, n.name): behavior_dump(n, current=True)
                              for n in ast.parse(family_source(family)).body
                              if isinstance(n, ast.FunctionDef)}
             for name in original_nodes:
