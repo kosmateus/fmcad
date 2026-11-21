@@ -8,6 +8,7 @@
     "sourceMap": false
   },
   "include": [
+    "tests/addin-admission-client.test.ts",
     "tests/python-source-codec.test.ts",
     "tests/python-public-source-selection.test.ts",
     "tests/scenarios/**/*.ts",
