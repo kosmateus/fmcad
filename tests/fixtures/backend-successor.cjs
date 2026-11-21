@@ -3,8 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 // Actual post-transition mismatch shape, synthetic files/processes only.
-module.exports = function fixture(base, repo, { effectiveConfig, sourceConfig } = {}) {
-  const f = require('./dead-epoch-successor.cjs')(base, repo, { inFlight: true, sourceConfig });
+module.exports = function fixture(base, repo, { effectiveConfig, sourceConfig, historicalBuildHash } = {}) {
+  const f = require('./dead-epoch-successor.cjs')(base, repo, { inFlight: true, sourceConfig, historicalBuildHash });
   const api = require(repo + '/src/queue-instance');
   const lineage = require(repo + '/src/queue-epoch-lineage');
   const pointer = f.inspection.pointer;

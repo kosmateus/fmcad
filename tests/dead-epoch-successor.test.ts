@@ -13,6 +13,10 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import type { TestContext } from "node:test";
 import type { DeadEpochFixture } from "./fixtures/epoch-fixture-types";
+import { record, text } from "./integration/offline-cli";
+import type { EvidenceFixture } from "./saved-fixture-test-support";
+import { createServer } from "node:http";
+import { once } from "node:events";
 const repository = process.cwd();
 const load = createRequire(
   path.join(repository, "tests", "dead-epoch-successor.test.js"),
@@ -45,6 +49,7 @@ function backendFixture(
   effectiveConfig?: Record<string, unknown>,
   sourceConfig?: Record<string, unknown>,
   baseDirectory?: string,
+  historicalBuildHash?: string,
 ) {
   t.after((load("./fixtures/fake-wsl-platform.cjs") as () => () => void)());
   const base =
@@ -57,6 +62,7 @@ function backendFixture(
       options?: {
         effectiveConfig?: Record<string, unknown> | undefined;
         sourceConfig?: Record<string, unknown> | undefined;
+        historicalBuildHash?: string | undefined;
       },
     ) => DeadEpochFixture & {
       client: Parameters<typeof inspectSuccessor>[0];
@@ -91,7 +97,7 @@ function backendFixture(
         authority: DeadEpochFixture["authority"];
       };
     }
-  )(base, repository, { effectiveConfig, sourceConfig });
+  )(base, repository, { effectiveConfig, sourceConfig, historicalBuildHash });
 }
 
 function changeBackendHead(
@@ -160,6 +166,7 @@ function frozenBackendFixture(t: TestContext, baseDirectory?: string) {
       queue: {},
     },
     baseDirectory,
+    "4".repeat(64),
   );
   const previous = openIsolatedEpoch(f.dir, { recover: false });
   previous.submit({
@@ -175,6 +182,26 @@ function frozenBackendFixture(t: TestContext, baseDirectory?: string) {
   state.active = null;
   state.lease = null;
   api.durable(stateFile, state);
+  let workerIndex = 0;
+  for (const file of [path.join(f.dir, "queue-state.json"), stateFile]) {
+    const snapshot = record(JSON.parse(fs.readFileSync(file, "utf8")));
+    for (const job of Object.values(record(snapshot["jobs"]))) {
+      const value = record(job);
+      if (value["state"] !== "needs_reconciliation") continue;
+      const id = text(value["id"]);
+      const directory = path.join(f.dir, "jobs", id);
+      fs.mkdirSync(directory, { recursive: true });
+      api.durable(path.join(directory, "worker-start.json"), {
+        jobId: id,
+        buildHash: record(value["request"])["buildHash"] ?? api.buildHash(),
+        at: 1,
+      });
+      api.durable(path.join(directory, "worker-identity.json"), {
+        pid: 2147483600 + workerIndex++,
+        birth: "dead:frozen-fixture",
+      });
+    }
+  }
   const frozen = inspectFrozenMetadataWork(f.dir, f.inspection.pointer.root);
   const profile: FrozenMetadataProfile = {
     version: 1,
@@ -459,6 +486,270 @@ test("FAKE frozen metadata: real worker receives private stdin once while both p
       assert.equal(fs.readFileSync(file, "utf8").includes(token), false, name);
   }
 });
+
+for (const scenario of ["fresh", "reopened", "substituted creation"])
+  test(`FAKE frozen metadata: public IPC reads only the authority-created published document, including after reopen (${scenario})`, async (t) => {
+    const swappedCreation = scenario === "substituted creation";
+    const brokerApi = load(
+      "../src/queue-broker",
+    ) as typeof import("../src/composition/queue-broker");
+    let broker: Awaited<ReturnType<typeof brokerApi.serve>> | undefined;
+    let posts = 0;
+    const token = "frozen-publication-token-".repeat(3);
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(Buffer.from(chunk));
+      assert.equal(req.headers.authorization, `Bearer ${token}`);
+      const body = record(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      posts++;
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify({
+          version: 1,
+          binding: body["binding"],
+          record: {
+            state: "terminal",
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: text(record(body["binding"])["document"]),
+                },
+              ],
+            },
+          },
+        }),
+      );
+    });
+    t.after(async () => {
+      try {
+        await broker?.close();
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+    server.listen(8765, "127.0.0.1");
+    await once(server, "listening");
+    const f = frozenBackendFixture(t);
+    const profile = {
+      ...f.profile,
+      beneficiary: "native",
+      provisioning: { ...f.profile.provisioning, owner: "native" },
+    };
+    const inspected = inspectSuccessor(
+      f.client,
+      f.cfg,
+      f.approvalFile,
+      f.requestId,
+    );
+    const authority = {
+      ...f.authority,
+      predecessor: lineage.predecessorSnapshot(f.dir, f.audit, true),
+      configHash: api.brokerConfigHash(f.cfg),
+      qualification: lineage.reference(f.approval.qualification.path),
+      backendTransition: inspected.backendTransition,
+      frozenMetadata: profile,
+    };
+    api.durable(f.authorityEntry.path, authority);
+    const entry = lineage.reference(f.authorityEntry.path);
+    const pointer = { ...f.pointer, succession: entry };
+    const identity = { ...f.identity, configHash: api.brokerConfigHash(f.cfg) };
+    const state = openIsolatedEpoch(f.dir, { recover: false });
+    state.installEpoch(pointer, identity, f.initialization);
+    assert.deepEqual(
+      api.readJson(path.join(f.dir, "broker.lock")),
+      f.previousOwner,
+    );
+    fs.unlinkSync(path.join(f.dir, "broker.lock")); // Synthetic predecessor already retired.
+    const clientToken = "1".repeat(64);
+    const supplied = {
+      ...f,
+      base: path.dirname(f.dir),
+      pointer,
+      identity,
+      nativeClientTokenHash: api.hash(clientToken),
+    };
+    const first = (
+      load("./fixtures/saved-first-save-evidence.cjs") as (
+        t: TestContext,
+        repo: string,
+        input: typeof supplied,
+      ) => EvidenceFixture
+    )(t, repository, supplied);
+    (
+      load("./fixtures/publish-saved-fixture.cjs") as (
+        fixture: EvidenceFixture,
+        repo: string,
+      ) => unknown
+    )(first, repository);
+    api.durable(path.join(f.dir, "clients.json"), first.clients);
+    first.state.pause(false, "metadata-fixture-ready");
+    const target = first.observed;
+    assert.equal(typeof target.fileId, "string");
+    const { nativeReceipts } = load(
+      "./fixtures/native-source-envelope.cjs",
+    ) as {
+      nativeReceipts(
+        script: string,
+        dir: string,
+        instance: unknown,
+      ): Array<{ file: string; value: unknown }>;
+    };
+    const instance = {
+      ...pointer.currentInstance,
+      activeCommand: "SelectCommand",
+      documents: [
+        {
+          id: swappedCreation ? "substituted-creation" : target.creationId,
+          fileId: target.fileId,
+          version: 1,
+          isSaved: true,
+          isModified: false,
+        },
+      ],
+      documentState: {
+        status: "complete",
+        state: {
+          identity: {
+            creationId: swappedCreation
+              ? "substituted-creation"
+              : target.creationId,
+            fileId: target.fileId,
+            version: 1,
+            isSaved: true,
+          },
+        },
+      },
+    };
+    const opts = {
+      dir: f.dir,
+      confirmOwnership: true,
+      pollMs: 5,
+      nativePath: (file: string) => file,
+      addinMetadataAdmission: { ...profile.provisioning, token },
+      createBackend: () => ({
+        server: f.cfg,
+        _parse: JSON.parse,
+        _post: () => assert.fail("No legacy metadata POST"),
+        _openSession: () => assert.fail("No legacy metadata session"),
+        listTools: () => assert.fail("Metadata must not discover legacy tools"),
+        executeUiGuardedScript: () => assert.fail("No UI mutation is admitted"),
+        async callTool(args: { object: { script: string } }) {
+          for (const result of nativeReceipts(
+            args.object.script,
+            f.dir,
+            instance,
+          ))
+            fs.writeFileSync(result.file, JSON.stringify(result.value), {
+              flag: "wx",
+            });
+          return {
+            failed: false,
+            text: "FMCAD_QUEUE_INSTANCE " + JSON.stringify(instance),
+          };
+        },
+      }),
+    };
+    broker = await brokerApi.serve(f.cfg, opts);
+    const connection = load("../src/queue-connection") as {
+      request(dir: string, message: Record<string, unknown>): Promise<unknown>;
+    };
+    const auth = { clientId: "native", clientToken };
+    const submit = (
+      fileId = target.fileId,
+      version = 1,
+      requestId = profile.metadataRequestId,
+    ) =>
+      connection.request(f.dir, {
+        action: "submit",
+        auth,
+        request: {
+          kind: "rpc",
+          requestId,
+          timeoutMs: 5000,
+          payload: {
+            jsonrpc: "2.0",
+            id: "frozen-caller",
+            method: "tools/call",
+            params: {
+              name: "get_open_document_metadata",
+              arguments: { fileId, version },
+            },
+          },
+        },
+      });
+    await assert.rejects(submit("another-saved-file"), {
+      code: "FROZEN_METADATA_DOCUMENT_UNPROVEN",
+    });
+    await assert.rejects(submit(target.fileId, 2), {
+      code: "FROZEN_METADATA_DOCUMENT_UNPROVEN",
+    });
+    await assert.rejects(submit(target.fileId, 1, "another-request"), {
+      code: "FROZEN_METADATA_FENCE_CHANGED",
+    });
+    await assert.rejects(
+      connection.request(f.dir, {
+        action: "submit",
+        auth,
+        request: {
+          ...first.request({ docFileId: target.fileId }),
+          requestId: "mutating-existing-file",
+          timeoutMs: 5000,
+          cwd: first.base,
+        },
+      }),
+      { code: "SAVED_FIRST_SAVE_SCOPE_REQUIRED" },
+    );
+    assert.equal(posts, 0);
+    if (scenario !== "fresh") {
+      await broker.close();
+      broker = await brokerApi.serve(f.cfg, opts);
+    }
+    const submitted = record(await submit());
+    const id = text(record(submitted["job"] ?? submitted)["id"]);
+    const deadline = Date.now() + 10000;
+    for (;;) {
+      const result = record(
+        await connection.request(f.dir, { action: "result", auth, jobId: id }),
+      );
+      const job = record(result["job"]);
+      if (swappedCreation && job["state"] === "failed") {
+        assert.equal(
+          posts,
+          0,
+          "A substituted creation must never send metadata",
+        );
+        assert.match(
+          JSON.stringify(result),
+          /FROZEN_METADATA_DOCUMENT_UNPROVEN|authority-created/,
+        );
+        return;
+      }
+      if (job["state"] === "succeeded") break;
+      assert.ok(
+        !["failed", "expired", "needs_reconciliation"].includes(
+          text(job["state"]),
+        ),
+        JSON.stringify(result),
+      );
+      assert.ok(Date.now() < deadline, "Metadata did not settle");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(posts, 1);
+    await broker.close();
+    broker = await brokerApi.serve(f.cfg, opts);
+    await submit();
+    assert.equal(
+      posts,
+      1,
+      "Reopening must not replay the one admitted metadata request",
+    );
+    await assert.rejects(submit("another-saved-file"), {
+      code: "FROZEN_METADATA_DOCUMENT_UNPROVEN",
+    });
+    assert.equal(posts, 1);
+  });
 
 test("FAKE backend succession: published lineage reopens against archived pointer and preserves old SDK/history", (t) => {
   const f = backendFixture(t);

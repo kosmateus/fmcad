@@ -3,16 +3,17 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-module.exports = function fixture(t, repo) {
+module.exports = function fixture(t, repo, supplied) {
   const api = require(repo + '/src/queue-instance');
   const { fileHash } = require(repo + '/src/queue-atomic-migration-files');
   const { openIsolatedEpoch } = require(repo + '/src/queue-isolated-epoch');
   const { grantSavedFirstSave } = require(repo + '/src/queue-saved-first-save');
-  const root = fs.mkdtempSync('/tmp/opencode/first-save-scope-');
+  const root = supplied ? supplied.base : fs.mkdtempSync('/tmp/opencode/first-save-scope-');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const f = require('./dead-epoch-successor.cjs')(root, repo);
-  const state = openIsolatedEpoch(f.dir, { recover: false }); state.installEpoch(f.pointer, f.identity, f.initialization);
-  const clients = { [f.clientId]: state.epoch.ownerTokenHash, native: api.hash('native-first-save-token') };
+  const f = supplied || require('./dead-epoch-successor.cjs')(root, repo);
+  const state = openIsolatedEpoch(f.dir, { recover: false });
+  if (!supplied) state.installEpoch(f.pointer, f.identity, f.initialization);
+  const clients = { [f.clientId]: state.epoch.ownerTokenHash, native: supplied?.nativeClientTokenHash || api.hash('native-first-save-token') };
   function write(name, value) { const file = path.join(root, name + '.json'); api.durable(file, value, true); return { path: file, sha256: fileHash(file).sha256 }; }
   const authority = { version: 1, purpose: 'new-saved-native-fixtures-in-user-confirmed-private-project',
     ownerClientId: f.clientId, privacyEvidence: 'explicit user confirmation in current conversation; not inferred from membership',

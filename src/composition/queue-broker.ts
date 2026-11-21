@@ -981,6 +981,47 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       : undefined);
   const frozenMetadataScope = metadataSuccessorAuthority && "frozenMetadata" in metadataSuccessorAuthority
     ? metadataSuccessorAuthority.frozenMetadata : undefined;
+  const frozenMetadataAuthority = successorRuntime?.authorityEntry ?? state.epoch?.succession;
+  function admitEpochRequest(request: P.Request | undefined) {
+    if (!state.epoch) return null;
+    if (frozenMetadataScope === undefined)
+      return epochAdmission(state, request, clientHashes());
+    if (!request || !frozenMetadataAuthority)
+      fail("FROZEN_METADATA_DOCUMENT_UNPROVEN", "A bound fresh fixture request is required");
+    const admission = runtimeRequire("./dist/composition/queue-frozen-metadata-admission") as
+      typeof import("./queue-frozen-metadata-admission");
+    if (request.kind === "command") {
+      admission.proveFrozenFirstSave(dir, frozenMetadataAuthority, request);
+      return epochAdmission(state, request, clientHashes());
+    }
+    const wire = rpcPayload(request.rpc?.payload || request.payload);
+    (runtimeRequire("./dist/composition/queue-frozen-metadata-profile") as
+      typeof import("./queue-frozen-metadata-profile")).assertFrozenMetadataRequest(
+      frozenMetadataScope, {
+        clientId: request.clientId, requestId: request.requestId, kind: request.kind,
+        metadata: isAddinMetadata(wire),
+      },
+    );
+    const selector = addinMetadataSelector(wire);
+    admission.proveFrozenMetadataDocument(dir, frozenMetadataAuthority, {
+      clientId: request.clientId, clientTokenHash: required(clientHashes()[request.clientId]),
+      requestId: request.requestId, fileId: selector.fileId, version: selector.version,
+    });
+    return null;
+  }
+  function assertFrozenMetadataObservation(request: P.Request, wire: P.Rpc, observed: P.Instance) {
+    if (frozenMetadataScope === undefined) return;
+    if (!frozenMetadataAuthority)
+      fail("FROZEN_METADATA_DOCUMENT_UNPROVEN", "The original metadata authority is required");
+    const selector = addinMetadataSelector(wire);
+    (runtimeRequire("./dist/composition/queue-frozen-metadata-admission") as
+      typeof import("./queue-frozen-metadata-admission")).proveFrozenMetadataDocument(
+      dir, frozenMetadataAuthority, {
+        clientId: request.clientId, clientTokenHash: required(clientHashes()[request.clientId]),
+        requestId: request.requestId, fileId: selector.fileId, version: selector.version,
+      }, observed,
+    );
+  }
   phaseTimings.queueCommitted(state.data, state.epoch?.root ?? dir);
   if (state.epoch) identityFile = path.join(state.epoch.root, "instance.json");
   if (successorRuntime?.effectiveIdentity) {
@@ -1260,7 +1301,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     expectedContextEpoch: number,
   ) {
     resetFence();
-    if (state.epoch && job) epochAdmission(state, job.request, clientHashes());
+    if (state.epoch && job) admitEpochRequest(job.request);
     if (buildHash() !== codeHash)
       fail("BUILD_CHANGED", "Executable changed during local preparation");
     if (job && expectedContextEpoch !== (state.data.contextEpoch || 0))
@@ -2874,7 +2915,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     rawMetadata = false,
   ): Promise<P.PreparedCall> {
     const epochPolicy = state.epoch
-      ? epochAdmission(state, job.request, clientHashes())
+      ? admitEpochRequest(job.request)
       : null;
     const contextEpoch = state.data.contextEpoch || 0;
     const rpcId = randomUUID();
@@ -3239,7 +3280,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       fence(prepared) {
         try {
           assertResetSubmissionOpen(dir);
-          if (state.epoch) epochAdmission(state, context.job.request, clientHashes());
+          if (state.epoch) admitEpochRequest(context.job.request);
           if (
             prepared.record.binding.jobId !== context.job.id ||
             !sameInstance(prepared.record.instance, instance)
@@ -3297,6 +3338,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               prepared.metadataProof.wire.id !== record.wireRequest.id
             )
               fail("PREPARED_RPC_UNAVAILABLE", "ADDIN metadata identity changed before send");
+            assertFrozenMetadataObservation(context.job.request, prepared.metadataProof.wire,
+              required(ready.metadataObservation));
             admission = metadataAdmission.bind(
               prepared.metadataProof.wire,
               ready.metadataObservation,
@@ -3360,6 +3403,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           stdoutObservation: "not_observed",
         });
         try {
+          if (prepared.metadataProof)
+            assertFrozenMetadataObservation(context.job.request, prepared.metadataProof.wire,
+              required(ready?.kind === "owned" ? ready.metadataObservation : undefined));
           const response = prepared.metadataProof
             ? await postAddinAdmission(
                 required(admission).scope,
@@ -5151,7 +5197,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           );
         decodeRequest(r);
         const request = { ...r, clientId, ownerToken: clientHashes()[clientId] };
-        if (frozenMetadataScope !== undefined)
+        if (frozenMetadataScope !== undefined && request.kind !== "command")
           (runtimeRequire("./dist/composition/queue-frozen-metadata-profile") as
           typeof import("./queue-frozen-metadata-profile")).assertFrozenMetadataRequest(
           frozenMetadataScope,
@@ -5172,7 +5218,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               "HISTORICAL_REQUEST_QUARANTINED",
               "Historical request IDs cannot be reused in a new epoch",
             );
-          epochAdmission(state, request, clientHashes());
+          admitEpochRequest(request);
           request.isolatedEpoch = state.epoch.epochId;
         }
         if (
@@ -5494,7 +5540,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             const callerPayloadHash = hash(canonical(rawPayload));
             const turn = await prepareOwnedTurn(
               rawPayload,
-              { id: preparedId },
+              { id: preparedId, request },
               brokerExecution.createTurnIdentity(preparedId),
               undefined,
               isAddinMetadata(rawPayload),
@@ -5531,7 +5577,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           verifyAcceptance();
           const accept = () => {
             verifyAcceptance();
-            if (state.epoch) epochAdmission(state, request, clientHashes());
+            if (state.epoch) admitEpochRequest(request);
             if (!existing)
               load(
                 "./dist/node-adapters/persistence/accepted-inputs",

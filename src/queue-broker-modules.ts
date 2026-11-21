@@ -452,7 +452,7 @@ interface SuccessorRuntime {
     frozenMetadata?: { beneficiary: string; metadataRequestId: string };
     predecessor: { rootState: { sha256: string } };
   };
-  authorityEntry: unknown;
+  authorityEntry: P.Reference;
   audit: string;
 }
 interface AtomicWire extends ScopedPrepared {
