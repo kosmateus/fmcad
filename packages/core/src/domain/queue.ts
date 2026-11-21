@@ -258,6 +258,7 @@ export class QueueDomain {
       ["running", "sending", "needs_reconciliation"].includes(j.state),
     );
     const activeObservation = d.active ? workflowObservationFor(d, d.active) : null;
+    let recoveryChanged = false;
     if (activeObservation) {
       const observer = d.jobs[d.active!]!;
       const original = d.jobs[activeObservation.targetJobId]!;
@@ -274,6 +275,12 @@ export class QueueDomain {
     }
     if (uncertain.length && !activeObservation) {
       const job = uncertain[0]!;
+      recoveryChanged =
+        job.state !== "needs_reconciliation" ||
+        job.sequenceState !==
+          (job.sequenceId ? "needs_reconciliation" : null) ||
+        d.active !== job.id ||
+        !d.blocked;
       job.state = "needs_reconciliation";
       job.sequenceState = job.sequenceId ? "needs_reconciliation" : null;
       d.active = job.id;
@@ -283,6 +290,7 @@ export class QueueDomain {
         at: this._time(),
       };
     } else if (activeObservation && ["running", "sending"].includes(d.jobs[d.active!]!.state)) {
+      recoveryChanged = true;
       const observer = d.jobs[d.active!]!;
       observer.state = "needs_reconciliation";
       observer.code = "ATOMIC_OBSERVATION_INTERRUPTED";
@@ -300,6 +308,7 @@ export class QueueDomain {
         job.id !== d.localUnknown?.id &&
         ["preparing", "processing", "queued"].includes(job.state)
       ) {
+        recoveryChanged = true;
         Object.assign(job, {
           state: "failed",
           code: "LOCAL_WORKER_INTERRUPTED",
@@ -309,19 +318,15 @@ export class QueueDomain {
         if (d.lease?.clientId === job.clientId) d.lease = null;
       }
     }
+    if (d.localUnknown && !d.active && !d.blocked) recoveryChanged = true;
     this._promoteLocalUnknown(d);
     try {
       this._commit(() => null);
     } catch (error) {
-      if (
-        !isSnapshotCapacityRefusal(error) ||
-        !this.data.active ||
-        !this.data.blocked
-      )
-        throw error;
-      // The durable unfinished snapshot deterministically derives UNKNOWN on
-      // every restart. Keep the blocked recovery projection in memory without
-      // claiming that its larger representation was persisted.
+      if (!isSnapshotCapacityRefusal(error) || !recoveryChanged) throw error;
+      // The durable snapshot retains the pre-recovery states. Derive local
+      // failures without replay and keep physically unfinished jobs blocked
+      // as UNKNOWN, without claiming this projection was persisted.
       this._waiting = Object.values(this.data.jobs).filter(
         (job) => job.state === "queued",
       );

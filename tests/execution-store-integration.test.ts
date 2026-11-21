@@ -485,3 +485,116 @@ test("an exact-limit running snapshot reopens with its unknown state intact", (t
   );
   assert.equal(reopened.next(), null);
 });
+
+test("an exact-limit snapshot recovers every local phased state without replay or a durable claim", (t) => {
+  const f = fixture(t),
+    now = () => 1_700_000_000_000,
+    state = new QueueState(f.dir, { now }),
+    historyPayload = { data: "x".repeat(15 * 1024 * 1024) };
+
+  for (let index = 0; index < 8; index++) {
+    const job = state.submit({
+      clientId: "owner",
+      requestId: `history-${index}`,
+      kind: "rpc",
+      timeoutMs: 1000,
+      payload: historyPayload,
+    });
+    state.cancel(string(field(job, "id")), "owner");
+  }
+
+  const submitPhased = (requestId: string) =>
+    state.submit({
+      clientId: "owner",
+      requestId,
+      kind: "command",
+      timeoutMs: 1000,
+      phased: true,
+      argv: ["offline-worker"],
+      cwd: f.project,
+    });
+  const processing = submitPhased("processing");
+  state.readyTurn(string(field(processing, "id")));
+  assert.equal(field(state.next(), "id"), field(processing, "id"));
+  state.releaseTurn(string(field(processing, "id")), 1000);
+  assert.equal(
+    field(state.status(string(field(processing, "id"))), "state"),
+    "processing",
+  );
+
+  const queued = submitPhased("queued");
+  state.readyTurn(string(field(queued, "id")));
+  const preparing = submitPhased("preparing");
+  assert.equal(
+    field(state.status(string(field(preparing, "id"))), "state"),
+    "preparing",
+  );
+  assert.equal(
+    field(state.status(string(field(queued, "id"))), "state"),
+    "queued",
+  );
+
+  const calibrationDir = path.join(f.root, "calibration");
+  fs.mkdirSync(calibrationDir);
+  fs.copyFileSync(
+    state.file,
+    path.join(calibrationDir, path.basename(state.file)),
+  );
+  const calibration = new QueueState(calibrationDir, { now, recover: false });
+  const snapshotLimit = 128 * 1024 * 1024;
+  const beforePadding = fs.statSync(state.file).size;
+  calibration.submit({
+    clientId: "owner",
+    requestId: "edge-padding",
+    kind: "rpc",
+    timeoutMs: 1000,
+    payload: { data: "" },
+  });
+  const emptyPayloadOverhead =
+    fs.statSync(calibration.file).size - beforePadding;
+  const paddingBytes = snapshotLimit - beforePadding - emptyPayloadOverhead;
+  assert.ok(paddingBytes > 0 && paddingBytes < 16 * 1024 * 1024);
+
+  const padding = state.submit({
+    clientId: "owner",
+    requestId: "edge-padding",
+    kind: "rpc",
+    timeoutMs: 1000,
+    payload: { data: "x".repeat(paddingBytes) },
+  });
+  assert.equal(fs.statSync(state.file).size, snapshotLimit);
+  const snapshotHash = createHash("sha256")
+    .update(fs.readFileSync(state.file))
+    .digest("hex");
+
+  let reopenCommits = 0;
+  const reopened = new QueueState(f.dir, {
+    onCommittedSnapshot: () => {
+      reopenCommits++;
+    },
+  });
+  assert.equal(reopenCommits, 0);
+  assert.equal(
+    createHash("sha256").update(fs.readFileSync(state.file)).digest("hex"),
+    snapshotHash,
+  );
+  for (const job of [preparing, processing, queued]) {
+    const restored = reopened.status(string(field(job, "id")));
+    assert.equal(field(restored, "state"), "failed");
+    assert.equal(field(restored, "code"), "LOCAL_WORKER_INTERRUPTED");
+  }
+  assert.equal(
+    field(reopened.status(string(field(padding, "id"))), "state"),
+    "queued",
+  );
+  assert.throws(() => reopened.next(), { code: "SNAPSHOT_TOO_LARGE" });
+  assert.equal(
+    field(reopened.status(string(field(padding, "id"))), "state"),
+    "queued",
+  );
+  assert.equal(reopenCommits, 0);
+  assert.equal(
+    createHash("sha256").update(fs.readFileSync(state.file)).digest("hex"),
+    snapshotHash,
+  );
+});
