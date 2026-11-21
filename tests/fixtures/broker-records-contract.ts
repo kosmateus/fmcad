@@ -240,7 +240,14 @@ test("retained transport response is not terminal proof; only the original remot
 
 test("an ordinary terminal RPC must match the retained HTTP status and exact raw bytes", (t) => {
   const f = fixture(t);
-  const { receipt: _receipt, ...intent } = f.intent;
+  const intent = {
+    binding,
+    instance,
+    request: f.intent.request,
+    wireRequest,
+    terminal: false,
+    method: wireRequest.method,
+  };
   const journal = f.store.createRpcIntent(jobId, intent);
   const final = { ...intent, terminal: true, response };
   f.store.recordReceivedResponse(jobId, {

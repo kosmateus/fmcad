@@ -178,8 +178,9 @@ export function createBrokerRecords(directory: string, io = fs): BrokerRecords {
   const jobs = path.join(io.realpathSync(directory), "jobs");
   const missing = (error: unknown) =>
     (error as NodeJS.ErrnoException).code === "ENOENT";
-  const mismatch = (message: string): never =>
+  function mismatch(message: string): never {
     failure("RECEIPT_MISMATCH", message);
+  }
   function segment(id: string): string {
     if (typeof id !== "string" || !/^[a-zA-Z0-9_-]+$/.test(id))
       mismatch("Invalid job or RPC record identity");
