@@ -76,6 +76,31 @@ test("omitting the backend selects only autodesk-fusion-mcp", () => {
   }
 });
 
+test("physical admission rejects URL objects and other non-string endpoints", () => {
+  for (const url of [
+    new URL("http://127.0.0.1:27182/mcp"),
+    { toJSON: () => "http://127.0.0.1:27182/mcp" },
+    null,
+    42,
+  ]) {
+    const server = { backend: "addin", url };
+    assert.throws(() => createBackend(server), { code: "UNSUPPORTED_BACKEND" });
+    // Exercise malformed runtime input without weakening the typed contract.
+    assert.throws(
+      () =>
+        Reflect.apply(createBrokerTransport, undefined, [
+          server,
+          {
+            version: "test",
+            requestTimeout: () => 1000,
+            bridgeSource: () => assert.fail("No bridge may be prepared"),
+          },
+        ]),
+      { code: "UNSUPPORTED_BACKEND" },
+    );
+  }
+});
+
 test("broker refuses a retired physical endpoint before claiming a queue", async () => {
   const { serve } = load(path.join(root, "src/queue-broker.js")) as {
     serve(config: unknown, options: unknown): Promise<unknown>;
@@ -84,6 +109,7 @@ test("broker refuses a retired physical endpoint before claiming a queue", async
     { backend: "mcp", url: "http://127.0.0.1:8765" },
     { backend: "addin", url: "http://127.0.0.1:27182/mcp" },
     { backend: "addin", url: " http://127.0.0.1:27182/mcp" },
+    { backend: "addin", url: new URL("http://127.0.0.1:27182/mcp") },
   ]) {
     const dir = path.join(os.tmpdir(), `fmcad-native-refused-${randomUUID()}`);
     await assert.rejects(

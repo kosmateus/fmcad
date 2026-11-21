@@ -10,6 +10,11 @@ export function assertAutodeskFusionBackend(server: {
       ),
       { code: "UNSUPPORTED_BACKEND" },
     );
+  if (server.url !== undefined && typeof server.url !== "string")
+    throw Object.assign(
+      new Error("autodesk-fusion-mcp endpoint must be a string"),
+      { code: "UNSUPPORTED_BACKEND" },
+    );
   if (typeof server.url === "string") {
     if (
       /[\u0000-\u0020\u007f\\]/.test(server.url) ||
