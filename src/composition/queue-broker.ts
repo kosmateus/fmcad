@@ -1613,9 +1613,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   );
   const { dispatch, clientHashes } = ipcDispatch;
   let instance: P.Instance;
-  const debugDispatchStarted = new WeakMap<P.Prepared, number>();
-  const debugPreflightStarted = new WeakMap<P.Prepared, number>();
-  const debugRawReceived = new WeakSet<P.Prepared>();
+  const debugDispatchStarted = new WeakMap<P.PreparedCall, number>();
+  const debugPreflightStarted = new WeakMap<P.PreparedCall, number>();
+  const debugRawReceived = new WeakSet<P.PreparedCall>();
   const debugResultPublished = new Set<string>();
   const atomicObservationScope = new AsyncLocalStorage<P.ObservationScope>();
   const atomicRecoveryAuditScope = new AsyncLocalStorage<P.ScriptScope>();

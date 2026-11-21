@@ -590,11 +590,29 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
     t.diagnostic(`Retained offline metadata evidence: ${dir}`);
     // Unknown work refuses orderly close. Exit the isolated test process only
     // after verifying the retained evidence and that expected refusal.
-    await promisify(execFile)(
+    const { stdout } = await promisify(execFile)(
       process.execPath,
-      ["--test", "--test-force-exit", "--test-name-pattern=raw ADDIN metadata", __filename],
+      [
+        "--test",
+        "--test-force-exit",
+        "--test-reporter=tap",
+        "--test-name-pattern=raw ADDIN metadata",
+        __filename,
+      ],
       { env: { ...process.env, FMCAD_METADATA_OFFLINE_CHILD_DIR: dir }, timeout: 30000 },
     );
+    assert.match(stdout, /^1\.\.1$/m);
+    assert.match(stdout, /^# pass 1$/m);
+    assert.match(stdout, /^# fail 0$/m);
+    assert.match(stdout, /# METADATA_UNKNOWN_CLOSE_REFUSED_AND_RECEIPT_RETAINED\b/);
+    const evidence = record(JSON.parse(fs.readFileSync(path.join(dir, "verified-unknown.json"), "utf8")));
+    const job = String(evidence["job"]);
+    const key = String(evidence["request"]);
+    assert.match(job, /^[0-9a-f-]{36}$/);
+    assert.match(key, /^[0-9a-f-]{36}$/);
+    const saved = path.join(dir, "jobs", job, `received-response-${key}.json`);
+    const response = record(record(JSON.parse(fs.readFileSync(saved, "utf8")))["response"]);
+    assert.equal(record(record(JSON.parse(String(response["raw"])))["record"])["state"], "accepted");
     return;
   }
   const dir = childDir;
@@ -761,6 +779,11 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
   assert.equal(record(record(JSON.parse(fs.readFileSync(uncertainResponse, "utf8")))["response"])["raw"], raws[1]);
   await assert.rejects(broker.close(), { code: "RECONCILIATION_REQUIRED" });
   broker = undefined;
+  fs.writeFileSync(path.join(dir, "verified-unknown.json"), JSON.stringify({
+    job: uncertain,
+    request: uncertainKey,
+  }), { flag: "wx" });
+  t.diagnostic("METADATA_UNKNOWN_CLOSE_REFUSED_AND_RECEIPT_RETAINED");
 });
 
 test("real serve frames fragmented UTF-8 and keeps lookup owner-scoped without replay", async (t) => {
