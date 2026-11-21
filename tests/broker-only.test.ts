@@ -45,6 +45,11 @@ function assertPhysicalTransportBoundary(name: string, source: string) {
       /const \{ parseCurlResponse \} = require\(["']\.\/dist\/fusion-transport\/curl["']\);/,
       "",
     );
+  } else if (name === "dist/node-adapters/execution/admission-http.js") {
+    // Only the broker's private admission byte port may consume raw curl.
+    const rawCurl = /require\(["']\.\.\/\.\.\/fusion-transport\/curl["']\)/g;
+    assert.equal(source.match(rawCurl)?.length ?? 0, 1, name);
+    source = source.replace(rawCurl, "");
   }
   assert.doesNotMatch(source, physicalTransport, name);
 }
@@ -93,6 +98,22 @@ test("only the broker bootstrap imports the private physical transport", () => {
     JSON.stringify(manifest["exports"]),
     /fusion-transport|queue-broker|src\/client/,
   );
+});
+
+test("private admission port alone may import raw curl once, never another physical transport", () => {
+  const name = "dist/node-adapters/execution/admission-http.js";
+  const rawCurl = 'require("../../fusion-transport/curl");';
+  assert.doesNotThrow(() => assertPhysicalTransportBoundary(name, rawCurl));
+  assert.throws(() => assertPhysicalTransportBoundary(name, ""));
+  assert.throws(() => assertPhysicalTransportBoundary(name, rawCurl.repeat(2)));
+  for (const consumer of ["composition/library.js", "entrypoints/cli.js"]) {
+    assert.throws(() => assertPhysicalTransportBoundary(consumer, rawCurl));
+  }
+  for (const module of ["broker", "http", "mcp", "addin", "curl-client"]) {
+    assert.throws(() => assertPhysicalTransportBoundary(
+      name, rawCurl + `require("../../fusion-transport/${module}");`,
+    ));
+  }
 });
 
 test("transport boundary detects a missing owner, duplicate construction and forbidden consumers", () => {
@@ -257,18 +278,21 @@ test(
     );
     const configPath = path.join(home, "config.json");
     const config = {
-      backend: "mcp",
+      backend: "addin",
       routing: "queue",
       url: `http://127.0.0.1:${address(server).port}/mcp`,
       headers: {},
       timeoutMs: 1000,
-      tool: "fusion_mcp_execute",
+      tool: "execute_python",
       transport: "node",
       protocolVersion: "2025-06-18",
       queue: { autoStart: false, autoRecover: false },
       controlCenter: { port: 4748 },
     } as const;
-    fs.writeFileSync(configPath, JSON.stringify(config));
+    const { backend, routing, queue, controlCenter, ...addin } = config;
+    fs.writeFileSync(configPath, JSON.stringify({
+      backend, routing, queue, controlCenter, backends: { addin },
+    }));
     const envKeys = [
       "XDG_STATE_HOME",
       "FMCAD_CONFIG",

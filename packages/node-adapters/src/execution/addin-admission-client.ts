@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { admissionData, decodeAdmissionJson } from "./admission-json";
 import type { JsonValue } from "../../../core/src/domain/contracts";
+import {
+  createAdmissionRequest,
+  type AdmissionRequest,
+} from "./admission-http";
 
 export type AdmissionIdentity = Readonly<{
   owner: string;
@@ -48,6 +52,7 @@ export function createAddinAdmission(
   options: { endpoint: string; token: string; timeoutMs?: number },
   identity: AdmissionIdentity,
   payload: Record<string, JsonValue>,
+  request: AdmissionRequest = createAdmissionRequest(),
 ) {
   options = admissionData(options) as typeof options;
   identity = admissionData(identity) as AdmissionIdentity;
@@ -57,6 +62,7 @@ export function createAddinAdmission(
   const endpoint = new URL(options.endpoint);
   if (
     endpoint.protocol !== "http:" ||
+    endpoint.port === "27182" ||
     !["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname) ||
     endpoint.pathname !== "/admission/v1" ||
     endpoint.username ||
@@ -89,30 +95,33 @@ export function createAddinAdmission(
     inputHash: createHash("sha256").update(payloadJson, "utf8").digest("hex"),
   });
 
-  async function call(operation: "admit" | "status" | "withdraw") {
-    let response: Response;
+  async function call(
+    operation: "admit" | "status" | "withdraw",
+    budgetMs = timeoutMs,
+  ) {
+    if (!Number.isFinite(budgetMs) || budgetMs <= 0 || budgetMs > timeoutMs)
+      throw new Error("Invalid admission dispatch budget");
     let decoded: unknown;
     let raw: string;
     try {
-      response = await fetch(endpoint, {
-        method: "POST",
-        redirect: "error",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          version: 1,
-          operation,
-          binding,
-          ...(operation === "admit" ? { payloadJson } : {}),
-        }),
-        signal: AbortSignal.timeout(timeoutMs),
+      const response = await request({
+        endpoint: endpoint.href,
+        token,
+        body: Buffer.from(
+          JSON.stringify({
+            version: 1,
+            operation,
+            binding,
+            ...(operation === "admit" ? { payloadJson } : {}),
+          }),
+          "utf8",
+        ),
+        timeoutMs: budgetMs,
       });
       if (response.status !== 200)
         throw failure(`Admission HTTP ${response.status}; do not resubmit`);
       raw = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
-        await response.arrayBuffer(),
+        response.body,
       );
       decoded = decodeAdmissionJson(raw);
     } catch {
@@ -157,6 +166,6 @@ export function createAddinAdmission(
     admit: () => call("admit").then(({ record }) => record),
     status: () => call("status").then(({ record }) => record),
     withdraw: () => call("withdraw").then(({ record }) => record),
-    admitEvidence: () => call("admit"),
+    admitEvidence: (budgetMs?: number) => call("admit", budgetMs),
   });
 }

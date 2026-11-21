@@ -8,6 +8,7 @@ import {
 } from "./addin-admission-client";
 import type { Response } from "../fusion-transport/contracts";
 import { admissionData } from "./admission-json";
+import { createHash } from "node:crypto";
 
 export type AddinAdmissionScope = Readonly<{
   endpoint: string;
@@ -70,6 +71,10 @@ export async function postAddinAdmission(
   scope: AddinAdmissionScope,
   outgoing: Record<string, JsonValue>,
   timeoutMs: number,
+  prepared?: Pick<
+    ReturnType<typeof createAddinAdmission>,
+    "binding" | "admitEvidence"
+  >,
 ): Promise<Response> {
   scope = admissionData(scope) as AddinAdmissionScope;
   outgoing = admissionData(outgoing) as Record<string, JsonValue>;
@@ -88,14 +93,34 @@ export async function postAddinAdmission(
     !object(params["arguments"])
   )
     throw new Error("Admission only accepts the final tools/call envelope");
-  const handle = createAddinAdmission(
-    { endpoint: scope.endpoint, token: scope.token, timeoutMs },
-    scope.identity,
-    outgoing,
-  );
+  const handle =
+    prepared ??
+    createAddinAdmission(
+      { endpoint: scope.endpoint, token: scope.token, timeoutMs },
+      scope.identity,
+      outgoing,
+    );
+  if (
+    prepared &&
+    (Object.keys(scope.identity).length !== 7 ||
+      Object.keys(handle.binding).length !== 9 ||
+      handle.binding.version !== 1 ||
+      handle.binding.inputHash !==
+        createHash("sha256")
+          .update(JSON.stringify(outgoing), "utf8")
+          .digest("hex") ||
+      Object.keys(scope.identity).some(
+        (key) =>
+          Reflect.get(handle.binding, key) !== Reflect.get(scope.identity, key),
+      ))
+  )
+    throw Object.assign(new Error("Prepared admission binding changed"), {
+      code: "INPUT_CHANGED",
+      notStarted: true,
+    });
   let evidence: Awaited<ReturnType<typeof handle.admitEvidence>>;
   try {
-    evidence = await handle.admitEvidence();
+    evidence = await handle.admitEvidence(timeoutMs);
   } catch (error) {
     throw Object.assign(
       error instanceof Error

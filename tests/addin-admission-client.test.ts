@@ -6,6 +6,19 @@ import test from "node:test";
 import { createAddinAdmission } from "../packages/node-adapters/src/execution/addin-admission-client";
 import { postAddinAdmission } from "../packages/node-adapters/src/execution/broker-physical";
 import { BrokerMcpClient } from "../packages/node-adapters/src/fusion-transport/mcp";
+import { createAdmissionRequest } from "../packages/node-adapters/src/execution/admission-http";
+import { requestCurlBytes } from "../packages/node-adapters/src/fusion-transport/curl";
+import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
+import type { Spawn } from "../packages/node-adapters/src/fusion-transport/contracts";
+import {
+  provisionAddinMetadata,
+  prepareMetadataWire,
+} from "../src/queue-broker-modules";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { Agent } from "undici";
 
 const identity = {
   owner: "owner",
@@ -17,6 +30,643 @@ const identity = {
   document: '{"creationId":"doc","fileId":"file","version":3}',
 };
 const token = "fixture-token-".repeat(4);
+
+test("both staged broker layouts resolve the private byte transport without workspace source modules", () => {
+  const root = path.resolve(__dirname, "../..");
+  const load = createRequire(path.join(root, "package.json"));
+  for (const prefix of ["./src", "./dist/src"]) {
+    const modules = load(
+      `${prefix}/queue-broker-modules`,
+    ) as typeof import("../src/queue-broker-modules");
+    assert.equal(typeof modules.provisionAddinMetadata, "function");
+    const adapter = load(
+      `${prefix}/dist/node-adapters/execution/admission-http`,
+    ) as typeof import("../packages/node-adapters/src/execution/admission-http");
+    assert.equal(
+      typeof adapter.createAdmissionRequest({ transport: "windows-curl" }),
+      "function",
+    );
+  }
+});
+
+test("provisioning binds one private Windows handle after owner/document checks and physical send keeps its identity", async (t) => {
+  let sends = 0;
+  let preparations = 0;
+  let fetches = 0;
+  const localSpawn = spawn;
+  const nativeChildProcess = createRequire(__filename)(
+    "node:child_process",
+  ) as typeof import("node:child_process");
+  t.mock.method(nativeChildProcess, "spawn", ((_file, args, options) => {
+    sends++;
+    assert.equal(_file, "/mnt/c/Windows/System32/curl.exe");
+    assert(!JSON.stringify({ args, options }).includes(token));
+    return localSpawn("curl", args, options);
+  }) satisfies Spawn);
+  // Capture the original function before replacing the public property.
+  t.mock.method(globalThis, "fetch", async () => {
+    fetches++;
+    throw new Error("Linux namespace unavailable");
+  });
+  const outgoing = {
+    jsonrpc: "2.0",
+    id: "fmcad:request",
+    method: "tools/call",
+    params: {
+      name: "get_open_document_metadata",
+      arguments: { fileId: "file", version: 3 },
+    },
+  };
+  const wire = prepareMetadataWire(outgoing).wire;
+  const creationId = "doc";
+  const observed = {
+    pid: 123,
+    birth: "birth",
+    version: "v",
+    documentState: {
+      status: "complete",
+      state: {
+        identity: {
+          creationId,
+          fileId: "file",
+          version: 3,
+          isSaved: true,
+        },
+      },
+    },
+    documents: [
+      { id: creationId, creationId, fileId: "file", version: 3, isSaved: true },
+    ],
+  };
+  const endpoint = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    const message = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    res.end(
+      JSON.stringify({
+        version: 1,
+        binding: message.binding,
+        record: {
+          state: "terminal",
+          result: { content: [{ type: "text", text: "metadata" }] },
+        },
+      }),
+    );
+  });
+  endpoint.listen(0, "127.0.0.1");
+  await once(endpoint, "listening");
+  try {
+    const address = endpoint.address();
+    assert(address && typeof address !== "string");
+    const provision = provisionAddinMetadata(
+      {
+        capability: "get_open_document_metadata",
+        endpoint: `http://127.0.0.1:${address.port}/admission/v1`,
+        token,
+        ...identity,
+        pid: 123,
+        birth: "birth",
+      },
+      "addin",
+      (...args) => {
+        preparations++;
+        return createAddinAdmission(...args);
+      },
+      { transport: "windows-curl" },
+    );
+    assert(provision);
+    assert.throws(() =>
+      provision.bind(
+        wire,
+        observed,
+        observed,
+        "foreign",
+        identity.request,
+        1000,
+      ),
+    );
+    assert.throws(() =>
+      provision.bind(
+        wire,
+        { ...observed, birth: "foreign" },
+        observed,
+        identity.owner,
+        identity.request,
+        1000,
+      ),
+    );
+    assert.equal(preparations, 0);
+    const prepared = provision.bind(
+      wire,
+      observed,
+      observed,
+      identity.owner,
+      identity.request,
+      1000,
+    );
+    assert.equal(preparations, 1);
+    assert.equal(sends, 0, "bind is local");
+    await assert.rejects(
+      postAddinAdmission(
+        prepared.scope,
+        {
+          ...wire,
+          id: "foreign",
+        },
+        1000,
+        prepared,
+      ),
+      { code: "INPUT_CHANGED" },
+    );
+    assert.equal(sends, 0);
+    const response = await postAddinAdmission(
+      prepared.scope,
+      wire,
+      1000,
+      prepared,
+    );
+    assert.equal(response.status, 200);
+    assert.equal(preparations, 1);
+    assert.equal(sends, 1);
+    assert.equal(fetches, 0);
+    assert(
+      !JSON.stringify({ binding: prepared.binding, response }).includes(token),
+    );
+  } finally {
+    endpoint.closeAllConnections();
+    await new Promise<void>((resolve) => endpoint.close(() => resolve()));
+  }
+});
+
+class AdmissionCurlChild extends EventEmitter {
+  stdin = new PassThrough();
+  stdout = new PassThrough();
+  stderr = new PassThrough();
+  kill() {
+    return true;
+  }
+}
+
+test("Windows admission sends exact Unicode bytes with credentials only on stdin for all explicit operations", async () => {
+  const outgoing = { text: 'zażółć 🧭 "\\\n\r\t', value: 42 };
+  const payloadJson = JSON.stringify(outgoing);
+  const bodies: Buffer[] = [];
+  const port = createAdmissionRequest(
+    { transport: "windows-curl" },
+    {
+      fetch: async () => {
+        assert.fail("Windows must never use fetch");
+      },
+      spawn: (executable, args, options) => {
+        assert.equal(executable, "/mnt/c/Windows/System32/curl.exe");
+        assert.deepEqual(options, {
+          shell: false,
+          windowsHide: true,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        assert.equal(args[0], "--disable");
+        assert.deepEqual(args.slice(-2), ["--config", "-"]);
+        assert.equal(args[args.indexOf("--noproxy") + 1], "*");
+        assert.equal(args[args.indexOf("--proxy") + 1], "");
+        assert(!args.includes("--location"));
+        assert(!JSON.stringify({ executable, args, options }).includes(token));
+        // Only this test seam substitutes local curl for the trusted Windows path.
+        const child = spawn("curl", args, options);
+        return child;
+      },
+    },
+  );
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    const body = Buffer.concat(chunks);
+    bodies.push(body);
+    assert.equal(req.headers.authorization, `Bearer ${token}`);
+    assert.equal(req.headers["mcp-session-id"], undefined);
+    assert.equal(req.headers["mcp-protocol-version"], undefined);
+    const message = JSON.parse(body.toString("utf8"));
+    res.end(
+      JSON.stringify({
+        version: 1,
+        binding: message.binding,
+        record: {
+          state: message.operation === "withdraw" ? "withdrawn" : "accepted",
+        },
+      }),
+    );
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const address = server.address();
+    assert(address && typeof address !== "string");
+    const handle = createAddinAdmission(
+      {
+        endpoint: `http://127.0.0.1:${address.port}/admission/v1`,
+        token,
+      },
+      identity,
+      outgoing,
+      port,
+    );
+    assert.equal(
+      handle.binding.inputHash,
+      "d83dd4b790375fbcabfc31c49a9c336aa2a3d36348e0f1f7c81d5e993269519d",
+    );
+    assert.equal(bodies.length, 0, "construction must not do I/O");
+    await handle.admit();
+    await handle.status();
+    await handle.withdraw();
+    for (const [index, operation] of [
+      "admit",
+      "status",
+      "withdraw",
+    ].entries()) {
+      assert.deepEqual(
+        bodies[index],
+        Buffer.from(
+          JSON.stringify({
+            version: 1,
+            operation,
+            binding: handle.binding,
+            ...(operation === "admit" ? { payloadJson } : {}),
+          }),
+        ),
+      );
+    }
+    assert.equal(bodies.length, 3);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("Windows admission rejects redirects, corrupt UTF-8, foreign binding and disconnect without retry or token leaks", async () => {
+  for (const mode of ["redirect", "utf8", "foreign", "disconnect"] as const) {
+    let sends = 0;
+    const port = createAdmissionRequest(
+      { transport: "windows-curl" },
+      {
+        fetch: async () => {
+          assert.fail("No fallback");
+        },
+        spawn: (_file, args, options) => {
+          sends++;
+          assert(!JSON.stringify({ args, options }).includes(token));
+          const child = new AdmissionCurlChild();
+          child.stdin.on("data", (bytes: Buffer) => {
+            assert(
+              bytes.includes(Buffer.from(token)),
+              "token belongs only in stdin",
+            );
+          });
+          child.stdin.on("finish", () => {
+            queueMicrotask(() => {
+              if (mode === "disconnect") {
+                child.stderr.write(token);
+                child.emit("error", new Error(token));
+                return;
+              }
+              const body =
+                mode === "utf8"
+                  ? Buffer.from([0xc3, 0x28])
+                  : Buffer.from(
+                      JSON.stringify({
+                        version: 1,
+                        binding: { foreign: true },
+                        record: { state: "accepted" },
+                      }),
+                    );
+              child.stdout.write(
+                Buffer.concat([
+                  Buffer.from(
+                    `HTTP/1.1 ${mode === "redirect" ? 302 : 200} Test\r\nLocation: http://127.0.0.1:9999/\r\nContent-Length: ${body.length}\r\n\r\n`,
+                  ),
+                  body,
+                ]),
+              );
+              child.emit("close", 0, null);
+            });
+          });
+          return child as unknown as ReturnType<Spawn>;
+        },
+      },
+    );
+    const handle = createAddinAdmission(
+      {
+        endpoint: "http://127.0.0.1:8765/admission/v1",
+        token,
+      },
+      identity,
+      { text: "test" },
+      port,
+    );
+    await assert.rejects(handle.admit(), (error: unknown) => {
+      assert(error instanceof Error);
+      assert.equal(Reflect.get(error, "code"), "ADDIN_ADMISSION_UNCERTAIN");
+      assert(!String(error.stack).includes(token));
+      assert(!JSON.stringify(error).includes(token));
+      return true;
+    });
+    assert.equal(sends, 1, mode);
+  }
+});
+
+test("private byte transport preserves invalid UTF-8 instead of replacing it", async () => {
+  const bytes = Buffer.from([0xc3, 0x28]);
+  const result = await requestCurlBytes(
+    {
+      url: "http://127.0.0.1:8765/admission/v1",
+      body: Buffer.from("{}"),
+      headers: {},
+      timeoutMs: 1000,
+      maxBuffer: 1024,
+    },
+    () => {
+      const child = new AdmissionCurlChild();
+      child.stdin.on("finish", () => {
+        child.stdout.write(
+          Buffer.concat([Buffer.from("HTTP/1.1 200 OK\r\n\r\n"), bytes]),
+        );
+        child.emit("close", 0, null);
+      });
+      return child as unknown as ReturnType<Spawn>;
+    },
+  );
+  assert.deepEqual(result.body, bytes);
+});
+
+test("private byte health request is a single GET with no body or credentials", async () => {
+  let sends = 0;
+  const result = await requestCurlBytes(
+    {
+      method: "GET",
+      url: "http://127.0.0.1:8765/health",
+      headers: {},
+      timeoutMs: 1000,
+      maxBuffer: 1024,
+    },
+    (_file, args) => {
+      sends++;
+      assert.equal(args[args.indexOf("--request") + 1], "GET");
+      const child = new AdmissionCurlChild();
+      const config: Buffer[] = [];
+      child.stdin.on("data", (bytes: Buffer) => config.push(bytes));
+      child.stdin.on("finish", () => {
+        const stdin = Buffer.concat(config).toString("utf8");
+        assert.equal(stdin, 'url = "http://127.0.0.1:8765/health"\n');
+        child.stdout.write('HTTP/1.1 200 OK\r\n\r\n{"status":"ok"}');
+        child.emit("close", 0, null);
+      });
+      return child as unknown as ReturnType<Spawn>;
+    },
+  );
+  assert.equal(result.status, 200);
+  assert.equal(sends, 1);
+});
+
+test("real staged Node admission bypasses environment proxy and closes its sockets", async () => {
+  let targetRequests = 0;
+  let proxyRequests = 0;
+  const sockets = new Set<import("node:net").Socket>();
+  function serverFor(onRequest: () => void) {
+    const server = createServer(async (req, res) => {
+      onRequest();
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(Buffer.from(chunk));
+      const message = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      res.end(
+        JSON.stringify({
+          version: 1,
+          binding: message.binding,
+          record: { state: "accepted" },
+        }),
+      );
+    });
+    server.on("connection", (socket) => {
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
+    });
+    return server;
+  }
+  const target = serverFor(() => targetRequests++);
+  const proxy = serverFor(() => proxyRequests++);
+  proxy.on("connect", (_request, socket) => {
+    proxyRequests++;
+    socket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+  });
+  target.listen(0, "127.0.0.1");
+  proxy.listen(0, "127.0.0.1");
+  await Promise.all([once(target, "listening"), once(proxy, "listening")]);
+  try {
+    const address = target.address();
+    const proxyAddress = proxy.address();
+    assert(address && typeof address !== "string");
+    assert(proxyAddress && typeof proxyAddress !== "string");
+    const proxyUrl = `http://127.0.0.1:${proxyAddress.port}`;
+    const code = `
+const { createAddinAdmission } = require("./src/dist/node-adapters/execution/addin-admission-client");
+const { createAdmissionRequest } = require("./src/dist/node-adapters/execution/admission-http");
+const token = require("node:crypto").randomBytes(32).toString("hex");
+createAddinAdmission(
+  { endpoint: process.argv[1], token, timeoutMs: 2000 },
+  ${JSON.stringify(identity)}, { text: "proxy regression" },
+  createAdmissionRequest({ transport: "node" }),
+).admit().then(() => console.log("accepted")).catch(() => { console.log("uncertain"); process.exitCode = 1; });
+`;
+    const child = spawn(
+      process.execPath,
+      ["-e", code, `http://127.0.0.1:${address.port}/admission/v1`],
+      {
+        cwd: path.resolve(__dirname, "../.."),
+        env: {
+          ...process.env,
+          NODE_USE_ENV_PROXY: "1",
+          HTTP_PROXY: proxyUrl,
+          http_proxy: proxyUrl,
+          HTTPS_PROXY: proxyUrl,
+          https_proxy: proxyUrl,
+          ALL_PROXY: proxyUrl,
+          all_proxy: proxyUrl,
+          NO_PROXY: "",
+          no_proxy: "",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    const stdout: Buffer[] = [];
+    child.stdout.on("data", (bytes: Buffer) => stdout.push(bytes));
+    const deadline = setTimeout(() => child.kill("SIGKILL"), 5000);
+    const exited = once(child, "exit");
+    try {
+      await Promise.race([
+        once(child.stdout, "data"),
+        exited.then(() => {
+          throw new Error("child exited without a result");
+        }),
+      ]);
+      assert.equal(
+        proxyRequests,
+        0,
+        "the admission token must never go to a proxy",
+      );
+      assert.equal(targetRequests, 1);
+      assert.equal(Buffer.concat(stdout).toString("utf8").trim(), "accepted");
+      const [exit] = await exited;
+      assert.equal(
+        exit,
+        0,
+        "private client must settle and exit without hanging handles",
+      );
+    } finally {
+      clearTimeout(deadline);
+      if (child.exitCode === null) {
+        child.kill("SIGKILL");
+        await exited;
+      }
+    }
+    assert.equal(sockets.size, 0, "client must close its direct connections");
+  } finally {
+    target.closeAllConnections();
+    proxy.closeAllConnections();
+    await Promise.all(
+      [target, proxy].map(
+        (server) =>
+          new Promise<void>((resolve) => server.close(() => resolve())),
+      ),
+    );
+  }
+});
+
+test("private health GET rejects any other endpoint, headers or body before spawn", async () => {
+  let sends = 0;
+  const noSpawn: Spawn = () => {
+    sends++;
+    throw new Error("must not spawn");
+  };
+  const options = {
+    method: "GET" as const,
+    url: "http://127.0.0.1:8765/health",
+    headers: {},
+    timeoutMs: 1000,
+    maxBuffer: 1024,
+  };
+  for (const url of [
+    "http://example.invalid:8765/health",
+    "http://localhost:8765/health",
+    "http://127.0.0.1:8766/health",
+    "http://127.0.0.1:8765/other",
+    "http://127.0.0.1:8765/health?x=1",
+    "http://127.0.0.1:8765/health#fragment",
+  ])
+    await assert.rejects(requestCurlBytes({ ...options, url }, noSpawn));
+  for (const headers of [{ Authorization: "synthetic" }, { "X-Probe": "no" }])
+    await assert.rejects(requestCurlBytes({ ...options, headers }, noSpawn));
+  await assert.rejects(
+    requestCurlBytes({ ...options, body: Buffer.alloc(0) }, noSpawn),
+  );
+  assert.equal(sends, 0);
+});
+
+test("real Node admission destroys its private Agent after disconnect and timeout", async () => {
+  for (const mode of ["disconnect", "timeout"] as const) {
+    let requests = 0;
+    let dispatcher: unknown;
+    const server = createServer((req) => {
+      requests++;
+      if (mode === "disconnect") req.socket.destroy();
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const address = server.address();
+      assert(address && typeof address !== "string");
+      const port = createAdmissionRequest(
+        {},
+        {
+          fetch: (url, init) => {
+            dispatcher = Reflect.get(init ?? {}, "dispatcher");
+            return globalThis.fetch(url, init);
+          },
+        },
+      );
+      const handle = createAddinAdmission(
+        {
+          endpoint: `http://127.0.0.1:${address.port}/admission/v1`,
+          token,
+          timeoutMs: 100,
+        },
+        identity,
+        {},
+        port,
+      );
+      await assert.rejects(handle.admit(), {
+        code: "ADDIN_ADMISSION_UNCERTAIN",
+      });
+      assert(dispatcher instanceof Agent);
+      assert.equal(dispatcher.destroyed, true, mode);
+      assert.equal(requests, 1, mode);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+});
+
+test("untrusted executable, transport and unsupported endpoint fail before send", () => {
+  for (const config of [
+    { transport: "automatic" },
+    { transport: "windows-curl", curlPath: "/tmp/untrusted" },
+  ])
+    assert.throws(() => createAdmissionRequest(config));
+  assert.throws(() =>
+    createAddinAdmission(
+      {
+        endpoint: "http://127.0.0.1:27182/admission/v1",
+        token,
+      },
+      identity,
+      {},
+    ),
+  );
+});
+
+test("admission uses the bound byte request port instead of another fetch namespace", async () => {
+  const original = globalThis.fetch;
+  let fetches = 0;
+  let sends = 0;
+  globalThis.fetch = async () => {
+    fetches++;
+    throw new Error("fixture: Linux loopback refused");
+  };
+  try {
+    const port = async (request: { body: Uint8Array }) => {
+      sends++;
+      const message = JSON.parse(Buffer.from(request.body).toString("utf8"));
+      return {
+        status: 200,
+        body: Buffer.from(
+          JSON.stringify({
+            version: 1,
+            binding: message.binding,
+            record: { state: "accepted" },
+          }),
+        ),
+      };
+    };
+    const handle = Reflect.apply(createAddinAdmission, undefined, [
+      { endpoint: "http://127.0.0.1:8765/admission/v1", token },
+      identity,
+      { text: "zażółć 🧭" },
+      port,
+    ]) as ReturnType<typeof createAddinAdmission>;
+    assert.deepEqual(await handle.admit(), { state: "accepted" });
+    assert.equal(sends, 1);
+    assert.equal(fetches, 0);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
 
 test("physical admission rejects malformed results and retains binding after lost response", async () => {
   const outgoing = {
