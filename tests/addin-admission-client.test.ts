@@ -16,6 +16,67 @@ const identity = {
 };
 const token = "fixture-token-".repeat(4);
 
+test("payload serialization cannot retarget the captured identity", () => {
+  const mutableIdentity = { ...identity };
+  const payload = { nested: { value: "original" } };
+  Object.defineProperty(payload.nested, "toJSON", {
+    value: () => {
+      mutableIdentity.document = "retargeted";
+      return { value: "original" };
+    },
+  });
+  const handle = createAddinAdmission(
+    {
+      endpoint: "http://127.0.0.1:8765/admission/v1",
+      token,
+    },
+    mutableIdentity,
+    payload,
+  );
+  assert.equal(mutableIdentity.document, "retargeted");
+  assert.equal(handle.binding.document, identity.document);
+});
+
+test("refuses partial HTTP, false withdrawal and unsafe integer evidence", async () => {
+  for (const mode of ["partial", "withdraw-terminal", "unsafe-number"]) {
+    let requests = 0;
+    const server = createServer(async (req, res) => {
+      requests++;
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      const message = JSON.parse(body);
+      res.statusCode = mode === "partial" ? 206 : 200;
+      res.end(
+        `{"version":1,"binding":${JSON.stringify(message.binding)},` +
+          `"record":{"state":"terminal","result":${mode === "unsafe-number" ? "9007199254740993" : "1"}}}`,
+      );
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const address = server.address();
+      assert(address && typeof address !== "string");
+      const handle = createAddinAdmission(
+        {
+          endpoint: `http://127.0.0.1:${address.port}/admission/v1`,
+          token,
+        },
+        identity,
+        {},
+      );
+      await assert.rejects(
+        mode === "unsafe-number" ? handle.admit() : handle.withdraw(),
+        { code: "ADDIN_ADMISSION_UNCERTAIN" },
+        mode,
+      );
+      assert.equal(requests, 1);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+});
+
 test("rejects lossy input serialization and nonlocal endpoints before dispatch", () => {
   const options = { endpoint: "http://127.0.0.1:8765/admission/v1", token };
   assert.throws(

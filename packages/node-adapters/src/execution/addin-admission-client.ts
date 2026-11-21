@@ -64,10 +64,12 @@ export function createAddinAdmission(
   const timeoutMs = options.timeoutMs ?? 125_000;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
     throw new Error("Invalid admission timeout");
+  const identitySnapshot = { ...identity };
   if (
-    Object.keys(identity).length !== identityKeys.length ||
+    Object.keys(identitySnapshot).length !== identityKeys.length ||
     identityKeys.some(
-      (key) => typeof identity[key] !== "string" || !identity[key],
+      (key) =>
+        typeof identitySnapshot[key] !== "string" || !identitySnapshot[key],
     )
   )
     throw new Error("Exact admission identity required");
@@ -86,7 +88,7 @@ export function createAddinAdmission(
   if (!payloadJson || !object(JSON.parse(payloadJson)))
     throw new Error("Admission payload must be a JSON object");
   const binding: AdmissionBinding = Object.freeze({
-    ...identity,
+    ...identitySnapshot,
     version: 1,
     inputHash: createHash("sha256").update(payloadJson, "utf8").digest("hex"),
   });
@@ -111,9 +113,19 @@ export function createAddinAdmission(
         }),
         signal: AbortSignal.timeout(timeoutMs),
       });
-      if (!response.ok)
+      if (response.status !== 200)
         throw failure(`Admission HTTP ${response.status}; do not resubmit`);
-      decoded = await response.json();
+      decoded = JSON.parse(await response.text(), (_key, value: unknown) => {
+        if (
+          typeof value === "number" &&
+          (!Number.isFinite(value) ||
+            (Number.isInteger(value) && !Number.isSafeInteger(value)))
+        )
+          throw failure(
+            "Admission evidence cannot be represented without numeric loss",
+          );
+        return value;
+      });
     } catch {
       // Do not leak credentials or interpret transport failure as no effect.
       throw failure("Admission outcome unavailable; inspect the original key");
@@ -134,6 +146,8 @@ export function createAddinAdmission(
     const record = decoded["record"];
     if (record === null && operation === "status") return null;
     if (!object(record)) throw failure("Missing admission record");
+    if (operation === "withdraw" && record["state"] !== "withdrawn")
+      throw failure("Withdrawal was not confirmed");
     if (
       record["state"] === "terminal" &&
       Object.hasOwn(record, "result") &&
