@@ -1,13 +1,113 @@
-import test from "node:test";
+import nodeTest from "node:test";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { createRequire } from "node:module";
 const load = createRequire(__filename);
+const executeFile = promisify(execFile);
+const isolatedCase = process.env["FMCAD_ADMISSION_PORTS_CHILD"];
+
+// A refused close must fail the test, not keep the whole shard alive through
+// the broker's intentionally retained ownership timer. Each case owns its
+// process; the production close guard and durable UNKNOWN evidence stay intact.
+function test(
+  name: string,
+  run: (t: import("node:test").TestContext) => Promise<void>,
+) {
+  if (isolatedCase) {
+    if (isolatedCase === name) nodeTest(name, run);
+    return;
+  }
+  nodeTest(name, async (t) => {
+    const home = fs.mkdtempSync("/tmp/opencode/admission-ports-process-");
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      FMCAD_ADMISSION_PORTS_CHILD: name,
+    };
+    delete env["NODE_TEST_CONTEXT"];
+    for (const kind of ["CONFIG", "STATE", "CACHE", "DATA"]) {
+      const directory = path.join(home, kind.toLowerCase());
+      fs.mkdirSync(directory);
+      env[`XDG_${kind}_HOME`] = directory;
+    }
+    try {
+      const { stdout, stderr } = await executeFile(
+        process.execPath,
+        ["--test", "--test-reporter=tap", "--test-force-exit", __filename],
+        {
+          env,
+          timeout: 300_000,
+          maxBuffer: 10 * 1024 * 1024,
+        },
+      );
+      t.diagnostic(stdout);
+      if (stderr) t.diagnostic(stderr);
+      assert.match(stdout, /^# tests 1$/m);
+      assert.match(stdout, /^# pass 1$/m);
+      assert.match(stdout, /^# fail 0$/m);
+      fs.rmSync(home, { recursive: true, force: true });
+    } catch (error) {
+      t.diagnostic(`Isolated admission process evidence retained: ${home}`);
+      if (error && typeof error === "object") {
+        for (const field of ["stdout", "stderr"] as const) {
+          const output = Reflect.get(error, field);
+          if (typeof output === "string" && output) t.diagnostic(output);
+        }
+      }
+      throw error;
+    }
+  });
+}
 const fixtureRoot = process.env["FMCAD_ADMISSION_CONSUMER_PACKAGE"]
   ? __dirname
   : path.resolve(__dirname, "../../tests");
+if (!isolatedCase) {
+  nodeTest(
+    "refused admission cleanup fails promptly and retains UNKNOWN evidence",
+    async (t) => {
+      const home = fs.mkdtempSync(
+        "/tmp/opencode/admission-cleanup-regression-",
+      );
+      const env: NodeJS.ProcessEnv = { ...process.env };
+      delete env["NODE_TEST_CONTEXT"];
+      for (const kind of ["CONFIG", "STATE", "CACHE", "DATA"]) {
+        const directory = path.join(home, kind.toLowerCase());
+        fs.mkdirSync(directory);
+        env[`XDG_${kind}_HOME`] = directory;
+      }
+      t.diagnostic(`UNKNOWN regression evidence retained: ${home}`);
+      await assert.rejects(
+        executeFile(
+          process.execPath,
+          [
+            "--test",
+            "--test-reporter=tap",
+            "--test-force-exit",
+            path.join(fixtureRoot, "fixtures/admission-unknown-close.cjs"),
+          ],
+          { env, timeout: 60_000, maxBuffer: 10 * 1024 * 1024 },
+        ),
+        (error: unknown) => {
+          assert(error instanceof Error);
+          assert.equal(Reflect.get(error, "code"), 1);
+          assert.equal(Reflect.get(error, "killed"), false);
+          const stdout: unknown = Reflect.get(error, "stdout");
+          assert.equal(typeof stdout, "string");
+          assert.match(String(stdout), /VERIFIED_UNKNOWN_REFUSAL/);
+          assert.match(String(stdout), /RESTORED_CONTEXT_RETAINED_EVIDENCE/);
+          assert.match(String(stdout), /RECONCILIATION_REQUIRED/);
+          assert.match(String(stdout), /^# fail 1$/m);
+          assert.match(String(stdout), /^# tests 1$/m);
+          t.diagnostic(String(stdout));
+          return true;
+        },
+      );
+    },
+  );
+}
 const fixture = load(
   path.join(fixtureRoot, "fixtures/python-admission-broker.cjs"),
 ) as (
