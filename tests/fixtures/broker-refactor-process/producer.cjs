@@ -26,7 +26,11 @@ const input = {
   backend: "mcp",
 };
 respond(async (message) => {
-  if (message.action === "submit") return client.submit(input);
+  if (message.action === "submit")
+    return client.submit({
+      ...input,
+      requestId: message.requestId || input.requestId,
+    });
   if (message.action === "result")
     return client.call("result", { jobId: message.jobId });
   if (message.action === "complete") return client.wait(message.jobId);

@@ -194,6 +194,17 @@ for (const boundary of ["dispatch", "postflight"] as const) {
         0,
         "restart must not issue even a new observation before original evidence is complete",
       );
+      const queuedB = await f.b.call("submit", {
+        requestId: "request-B-after-restart",
+      });
+      await restarted.event("preparing", "B");
+      await restarted.call("release-prepare", { tag: "B" });
+      await restarted.event("requesting", "B");
+      assert.equal(
+        (await restarted.call("counts"))["calls"],
+        0,
+        "a new independent producer reaches its SDK request but cannot pass the restored hold",
+      );
       await assert.rejects(f.a.call("reconcile", { jobId: jobA["id"] }), {
         code: "RECEIPT_UNAVAILABLE",
       });
@@ -243,12 +254,23 @@ for (const boundary of ["dispatch", "postflight"] as const) {
         );
         assert.equal(settled["code"], "RESULT_UNAVAILABLE");
         assert.equal((await restarted.call("status"))["blocked"], null);
+        await restarted.event("physical", "B");
         assert.equal(
           (await restarted.call("counts"))["sends"],
-          0,
-          "settlement may observe the instance but must never replay either old mutation",
+          1,
+          "only the newly accepted B request may execute; neither old mutation is replayed",
         );
-        assert.equal((await restarted.call("counts"))["calls"], 1);
+        await restarted.call("release-physical", { tag: "B" });
+        await restarted.event("publishing", "B");
+        await restarted.call("release-publish", { tag: "B" });
+        const resultB = await f.b.call("complete", { jobId: queuedB["id"] });
+        assert.equal(
+          object(resultB["job"])["requestId"],
+          "request-B-after-restart",
+        );
+        assert.equal(object(resultB["job"])["state"], "succeeded");
+        assert.equal((await restarted.call("counts"))["maximum"], 1);
+        assert.equal((await restarted.call("counts"))["sends"], 1);
       }
     },
   );

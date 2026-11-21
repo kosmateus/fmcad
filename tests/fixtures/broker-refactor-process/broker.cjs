@@ -235,6 +235,7 @@ respond(async (message) => {
         child.on("message", (message) => {
           if (
             message.fixture === "preparing" ||
+            message.fixture === "requesting" ||
             message.fixture === "publishing"
           ) {
             workers.set(message.tag, child);
