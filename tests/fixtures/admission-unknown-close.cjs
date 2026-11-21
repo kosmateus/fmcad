@@ -26,7 +26,7 @@ test('unknown close remains a failure with retained evidence', async t => {
   f.observeProduct(async () => { reached(); await new Promise(() => {}); });
   const argv = ['run', source, '--doc', 'A'];
   const accepted = await client.submit({kind:'command', requestId:'isolated-unknown',
-    argv, cwd:f.home, backend:'mcp', timeoutMs:15000, inputFiles:inputFiles(argv,f.home)});
+    argv, cwd:f.home, backend:'addin', timeoutMs:15000, inputFiles:inputFiles(argv,f.home)});
   await started;
   const result = await client.wait(accepted.id);
   assert.equal(result.job.state, 'needs_reconciliation');

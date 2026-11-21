@@ -431,7 +431,7 @@ test("real CLI/worker, MCP and public API preserve the same owner report; reject
         kind: "rpc",
         requestId: name,
         timeoutMs: 120000,
-        backend: "mcp",
+        backend: "addin",
         payload: {
           jsonrpc: "2.0",
           id: 1,
@@ -469,7 +469,7 @@ test("actual prepared typed service keeps input/reset/document drift fences and 
       requestId: id,
       argv,
       cwd: f.home,
-      backend: "mcp",
+      backend: "addin",
       timeoutMs: 120000,
       inputFiles: inputFiles(argv, f.home),
       ...extra,
@@ -697,7 +697,7 @@ test("offline raw preparation cannot publish accepted work after broker ownershi
       kind: "rpc",
       requestId: "pending-raw",
       timeoutMs: 120000,
-      backend: "mcp",
+      backend: "addin",
       payload: {
         jsonrpc: "2.0",
         id: 1,

@@ -84,7 +84,7 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
   const oldState=process.env.XDG_STATE_HOME, oldCwd=process.cwd();
   process.env.XDG_STATE_HOME=home;process.chdir(home);
   const dir=queueDirectory();
-  const cfg=resolveFmcadConfiguration({adapter:{backend:'mcp',url:'http://queue.invalid',timeoutMs:120000},
+  const cfg=resolveFmcadConfiguration({adapter:{backend:'addin',url:'http://127.0.0.1:8765/mcp',timeoutMs:120000},
     environment:{},file:{},platformDefaults:{},acceptedService:null});
   const instance={pid:991,birth:'synthetic:991',version:'fixture',activeCommand:'SelectCommand',documents:[]};
   const calls=[],clients=[];
@@ -110,7 +110,8 @@ module.exports = async function fixture(t, {typedService = false, slowPeerChecke
         if(probe) text='FMCAD_QUEUE_INSTANCE '+JSON.stringify(observation);
         else text='typed-result';
       }
-      return {status:200,raw:JSON.stringify({jsonrpc:'2.0',id:payload.id,result:{content:[{type:'text',text}]}})};
+      const execution={success:true,stdout:text,stderr:''};
+      return {status:200,raw:JSON.stringify({jsonrpc:'2.0',id:payload.id,result:{content:[{type:'text',text:JSON.stringify(execution)}]}})};
     } finally {active--;}
   };
   const worker=path.join(home,'typed-service.cjs');
