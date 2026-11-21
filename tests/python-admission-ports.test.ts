@@ -132,6 +132,29 @@ if (!isolatedCase) {
       );
     },
   );
+  nodeTest("isolated admission rejects an unknown case selector", async () => {
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      FMCAD_ADMISSION_PORTS_CHILD: "no-such-case",
+    };
+    delete env["NODE_TEST_CONTEXT"];
+    await assert.rejects(
+      executeFile(
+        process.execPath,
+        ["--test", "--test-reporter=tap", "--test-force-exit", __filename],
+        { env, timeout: 10_000 },
+      ),
+      (error: unknown) => {
+        assert(error instanceof Error);
+        assert.equal(Reflect.get(error, "code"), 1);
+        assert.match(
+          String(Reflect.get(error, "stdout")),
+          /Unknown admission case selector/,
+        );
+        return true;
+      },
+    );
+  });
 }
 const fixture = load(
   path.join(fixtureRoot, "fixtures/python-admission-broker.cjs"),
@@ -451,32 +474,6 @@ test("actual prepared typed service keeps input/reset/document drift fences and 
       inputFiles: inputFiles(argv, f.home),
       ...extra,
     });
-    nodeTest(
-      "isolated admission rejects an unknown case selector",
-      async () => {
-        const env: NodeJS.ProcessEnv = {
-          ...process.env,
-          FMCAD_ADMISSION_PORTS_CHILD: "no-such-case",
-        };
-        delete env["NODE_TEST_CONTEXT"];
-        await assert.rejects(
-          executeFile(
-            process.execPath,
-            ["--test", "--test-reporter=tap", "--test-force-exit", __filename],
-            { env, timeout: 10_000 },
-          ),
-          (error: unknown) => {
-            assert(error instanceof Error);
-            assert.equal(Reflect.get(error, "code"), 1);
-            assert.match(
-              String(Reflect.get(error, "stdout")),
-              /Unknown admission case selector/,
-            );
-            return true;
-          },
-        );
-      },
-    );
   }
   let started!: () => void, finish!: () => void, checkedPeer!: () => void;
   let firstResult: AdmissionResult;
