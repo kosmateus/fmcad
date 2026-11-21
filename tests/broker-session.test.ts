@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import {
   createTurnIdentity as turn,
+  decideBrokerPostflightFailure,
   executeTurn,
   prepare,
   runBrokerProductTurn,
@@ -20,6 +21,32 @@ const context = (id: string) => ({ job: { id } });
 const publish = () => undefined;
 const stale = { code: "RECONCILIATION_REQUIRED" };
 const busy = { code: "BROKER_SESSION_BUSY" };
+
+test("unsubmitted postflight after a build change settles only with original dispatch evidence", () => {
+  const error = { code: "BUILD_CHANGED", probeNotSubmitted: true };
+  const settled = { unknown: false, pending: false };
+  const fence = { jobId: "original" };
+  const unsupported = { kind: "hold", reason: "BUILD_CHANGED" };
+  assert.deepEqual(decideBrokerPostflightFailure(error, settled, () => undefined), unsupported);
+  for (const [failure, context] of [
+    [{ ...error, probeNotSubmitted: false }, settled],
+    [error, { ...settled, unknown: true }],
+    [error, { ...settled, pending: true }],
+  ] as const) {
+    assert.deepEqual(
+      decideBrokerPostflightFailure(failure, context, () =>
+        assert.fail("Cannot settle when the postflight or original dispatch may be pending"),
+      ),
+      unsupported,
+    );
+  }
+  const decision = decideBrokerPostflightFailure(error, settled, () => fence);
+  assert.equal(decision.kind, "settle");
+  assert.equal(decision.fence, fence);
+  assert.equal(decision.details.sdkSettled, true);
+  assert.equal(decision.details.postflightSubmitted, false);
+  assert.equal(decision.details.modelValidated, false);
+});
 
 function latch() {
   let release!: () => void;

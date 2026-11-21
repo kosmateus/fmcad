@@ -102,6 +102,37 @@ type RefusedPreflight =
   | { code: "BUILD_CHANGED_BEFORE_EXECUTION"; preflightCompleted: false }
   | { code: "FUSION_BUSY"; preflightCompleted: true };
 
+/** A local postflight refusal is not a remote receipt. Only independent
+ * evidence that the original dispatch settled permits releasing the turn. */
+export function decideBrokerPostflightFailure<Fence>(
+  error: TurnFailure,
+  context: { unknown: boolean; pending: boolean },
+  verifyCompletedDispatch: () => Fence | undefined,
+) {
+  if (
+    error.code === "BUILD_CHANGED" &&
+    error.probeNotSubmitted === true &&
+    !context.unknown &&
+    !context.pending
+  ) {
+    const fence = verifyCompletedDispatch();
+    if (fence !== undefined)
+      return {
+        kind: "settle",
+        fence,
+        details: {
+          state: "failed",
+          code: "SDK_COMPLETE_BUILD_CHANGED",
+          executionOutcome: "completed_postflight_not_submitted",
+          sdkSettled: true,
+          postflightSubmitted: false,
+          modelValidated: false,
+        },
+      } as const;
+  }
+  return { kind: "hold", reason: error.code || "POSTFLIGHT_FAILED" } as const;
+}
+
 interface ProductTurnPorts<Failure extends TurnFailure, Published> {
   inspectPrepared(): boolean;
   errorInfo(cause: unknown): Failure;

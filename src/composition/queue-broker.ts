@@ -6815,60 +6815,59 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           lane.assertCurrent(grant);
           const error = errorInfo(cause);
           grant.context.postflight = false;
-          if (
-            error.code === "BUILD_CHANGED" &&
-            error.probeNotSubmitted === true &&
-            !context.unknown &&
-            !context.pending.size
-          ) {
-            const expected = readRecoveryFence(job.id);
-            if (
-              expected &&
-              recoveryEvaluator.verifyCompletedDispatch(
-                state.lookup(job.id),
-                expected,
-              ).kind === "settled"
-            ) {
-              recoveryEvaluator.assertCurrentFence(expected);
-              durable(
-                path.join(directory, "postflight-not-submitted.json"),
-                {
-                  jobId: job.id,
-                  binding: postBinding,
-                  code: "LOCAL_BUILD_CHANGED",
-                  probeSubmitted: false,
-                  source: "local guard before probe; not a remote SDK receipt",
-                },
-                true,
-              );
-              const details = {
-                state: "failed",
-                code: "SDK_COMPLETE_BUILD_CHANGED",
-                executionOutcome: "completed_postflight_not_submitted",
-                userScriptSubmitted: !!state.status(job.id).dispatch?.rpcCount,
-                mayHaveMutated: !!state.status(job.id).dispatch?.rpcCount,
-                sdkSettled: true,
-                postflightSubmitted: false,
-                modelValidated: false,
-              };
-              recoveryEvaluator.assertCurrentFence(expected);
-              durable(path.join(directory, "outcome.json"), details);
-              recoveryEvaluator.assertCurrentFence(expected);
-              finishTurn(grant, details);
-              if (job.request.phased)
-                phased.reject(
-                  job.id,
-                  Object.assign(
-                    new Error(
-                      "Original SDK settled; local build changed before postflight. Inspect the result before further work.",
-                    ),
-                    { code: details.code },
+          const decision = brokerExecution.decideBrokerPostflightFailure(
+            error,
+            { unknown: context.unknown, pending: !!context.pending.size },
+            () => {
+              const expected = readRecoveryFence(job.id);
+              if (
+                expected &&
+                recoveryEvaluator.verifyCompletedDispatch(
+                  state.lookup(job.id),
+                  expected,
+                ).kind === "settled"
+              )
+                return expected;
+              return undefined;
+            },
+          );
+          if (decision.kind === "settle") {
+            const expected = decision.fence;
+            recoveryEvaluator.assertCurrentFence(expected);
+            durable(
+              path.join(directory, "postflight-not-submitted.json"),
+              {
+                jobId: job.id,
+                binding: postBinding,
+                code: "LOCAL_BUILD_CHANGED",
+                probeSubmitted: false,
+                source: "local guard before probe; not a remote SDK receipt",
+              },
+              true,
+            );
+            const dispatched = !!state.status(job.id).dispatch?.rpcCount;
+            const details = {
+              ...decision.details,
+              userScriptSubmitted: dispatched,
+              mayHaveMutated: dispatched,
+            };
+            recoveryEvaluator.assertCurrentFence(expected);
+            durable(path.join(directory, "outcome.json"), details);
+            recoveryEvaluator.assertCurrentFence(expected);
+            finishTurn(grant, details);
+            if (job.request.phased)
+              phased.reject(
+                job.id,
+                Object.assign(
+                  new Error(
+                    "Original SDK settled; local build changed before postflight. Inspect the result before further work.",
                   ),
-                );
-              return false;
-            }
+                  { code: details.code },
+                ),
+              );
+            return false;
           }
-          hold(grant, error.code || "POSTFLIGHT_FAILED");
+          hold(grant, decision.reason);
           if (job.request.phased) phased.reject(job.id, error);
           return false;
         }
