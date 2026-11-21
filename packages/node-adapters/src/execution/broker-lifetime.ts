@@ -19,6 +19,18 @@ type Owner = Readonly<{
   protocol: 2;
 }>;
 type InstancePin = Readonly<{ pid: number; birth: string; version: string }>;
+export interface BrokerStartup {
+  binding: Readonly<{
+    brokerNonce: string;
+    ownerPid: number;
+    ownerBirth: string;
+    buildHash: string;
+    stage: "startup";
+    auditExpectedInstance?: InstancePin;
+  }>;
+  receipt: string;
+  diagnosticPath: string;
+}
 
 /** A live read, not a second queue or session state machine. Blocked wins over
  * physical, which wins over pending. Pending work can settle without shutdown
@@ -170,18 +182,7 @@ export function claimBrokerLifetime({
       auditExpectedInstance?: InstancePin;
       startupQuiescent(): boolean;
     },
-    identify: (startup: {
-      binding: Readonly<{
-        brokerNonce: string;
-        ownerPid: number;
-        ownerBirth: string;
-        buildHash: string;
-        stage: "startup";
-        auditExpectedInstance?: InstancePin;
-      }>;
-      receipt: string;
-      diagnosticPath: string;
-    }) => T | Promise<T>,
+    identify: (startup: BrokerStartup) => T | Promise<T>,
   ): Promise<T> {
     if (phase !== "claimed")
       failure("BROKER_LIFETIME_STATE", "Broker startup may run only once");
@@ -312,14 +313,16 @@ export function claimBrokerLifetime({
     }
   }
 
-  async function close(): Promise<void> {
-    if (phase === "closed") return;
+  /** IPC stop may begin draining a live turn; direct close only accepts idle
+   * or local pending work. Neither may release physical or unknown work. */
+  function beginClose(drainPhysical: boolean): Promise<void> {
+    if (phase === "closed") return Promise.resolve();
     if (closing) return closing.task;
     if ((phase !== "ready" && phase !== "retained") || !ports)
       throw brokerError("BROKER_UNAVAILABLE", "Broker is not ready");
     const status = ports.inspectDrain();
     if (status === "blocked") throw blocked();
-    if (status === "physical")
+    if (status === "physical" && !drainPhysical)
       throw brokerError(
         "BROKER_BUSY",
         "An admitted physical operation is still active",
@@ -334,6 +337,10 @@ export function claimBrokerLifetime({
     closing = { task, resolve, reject };
     progress();
     return task;
+  }
+
+  async function close(): Promise<void> {
+    return beginClose(false);
   }
 
   function blocked() {
@@ -363,11 +370,15 @@ export function claimBrokerLifetime({
       closing = undefined;
       attempt.reject(error);
     };
+    let refusal: Error | undefined;
     const assertIdle = () => {
       const status = drainPorts.inspectDrain();
-      if (status === "blocked") throw blocked();
+      if (status === "blocked") throw (refusal = blocked());
       if (status !== "idle")
-        throw brokerError("BROKER_BUSY", "Broker work changed during shutdown");
+        throw (refusal = brokerError(
+          "BROKER_BUSY",
+          "Broker work changed during shutdown",
+        ));
     };
     let transportClosing = false;
     try {
@@ -406,6 +417,13 @@ export function claimBrokerLifetime({
       phase = "closed";
       attempt.resolve();
     } catch (error) {
+      if (transportClosing || error !== refusal) {
+        try {
+          ports.onShutdownError(error);
+        } catch {
+          // Reporting cannot replace the shutdown failure.
+        }
+      }
       if (!transportClosing && retirement) {
         try {
           assertOwner();
@@ -419,13 +437,7 @@ export function claimBrokerLifetime({
       }
       phase = "failed";
       clearInterval(timer);
-      try {
-        ports.onShutdownError(error);
-      } catch {
-        // Reporting cannot replace the shutdown failure.
-      } finally {
-        attempt.reject(error);
-      }
+      attempt.reject(error);
     }
   }
 
@@ -435,7 +447,11 @@ export function claimBrokerLifetime({
     initialize,
     listen,
     close,
+    requestStop: () => beginClose(true),
     progress,
+    get closed() {
+      return phase === "closed";
+    },
     /** Admission stays fenced after retirement, even with control IPC online. */
     get stopping() {
       return (

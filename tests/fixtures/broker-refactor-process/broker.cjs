@@ -16,6 +16,8 @@ const Module = require("node:module");
 const originalLoad = Module._load;
 let serverError;
 let delayProbeGate = false;
+let retirements = 0;
+let holdStatusReply = false;
 Module._load = function (name, parent, ...rest) {
   const loaded = originalLoad.call(this, name, parent, ...rest);
   if (
@@ -23,7 +25,11 @@ Module._load = function (name, parent, ...rest) {
     parent?.filename.endsWith("/src/queue-instance.js")
   )
     return { ...loaded, toWindowsPath: (file) => file };
-  if (name === "./dist/node-adapters/broker-ipc/server" && crash === "host-fault") {
+  if (
+    (name === "./dist/node-adapters/broker-ipc/server" ||
+      name === "../broker-ipc/server") &&
+    crash === "host-fault"
+  ) {
     return {
       ...loaded,
       async listenBrokerIpc(...args) {
@@ -35,6 +41,63 @@ Module._load = function (name, parent, ...rest) {
             server.onError(callback);
           },
         };
+      },
+    };
+  }
+  if (
+    name === "./dist/node-adapters/execution/phased-workers" &&
+    crash === "late-retirement"
+  ) {
+    return {
+      ...loaded,
+      PhasedWorkers: class extends loaded.PhasedWorkers {
+        constructor(ports) {
+          super({
+            ...ports,
+            readResult(file) {
+              const result = ports.readResult(file);
+              // Simulate an inconclusive view at worker close. The real,
+              // terminal original result stays immutable for recovery.
+              if (retirements === 1 && result?.terminal)
+                return { ...result, terminal: false, nonterminal: true };
+              return result;
+            },
+          });
+        }
+        async close() {
+          retirements++;
+          const retired = super.close();
+          emit("worker-retirement");
+          await retired;
+          emit("worker-retired");
+        }
+      },
+    };
+  }
+  if (
+    name === "./dist/node-adapters/execution/broker-lifetime" &&
+    crash === "late-retirement"
+  ) {
+    return {
+      ...loaded,
+      claimBrokerLifetime(...args) {
+        const lifetime = loaded.claimBrokerLifetime(...args);
+        const listen = lifetime.listen;
+        lifetime.listen = (ports) =>
+          listen({
+            ...ports,
+            async dispatch(message) {
+              if (!holdStatusReply || message?.action !== "status")
+                return ports.dispatch(message);
+              holdStatusReply = false;
+              const result = await ports.dispatch(message);
+              const pending = gate("status-reply");
+              emit("status-reply-waiting");
+              await pending;
+              return result;
+            },
+          });
+        return lifetime;
       },
     };
   }
@@ -247,8 +310,8 @@ const physical = {
 if (crash === "unsent-preflight") {
   physical.prepareCallTool = async function (value, toolName) {
     const source = decodeNativeProgram(value.object?.script || "");
-    const beforePreflight = source.includes("FMCAD_QUEUE_INSTANCE") &&
-      source.includes("preflight-");
+    const beforePreflight =
+      source.includes("FMCAD_QUEUE_INSTANCE") && source.includes("preflight-");
     return Object.assign(
       async () => {
         if (beforePreflight) delayProbeGate = true;
@@ -294,6 +357,11 @@ function waitForReadyTurn(jobId) {
   });
 }
 respond(async (message) => {
+  if (message.action === "hold-status-reply") {
+    holdStatusReply = true;
+    return true;
+  }
+  if (message.action === "retirements") return retirements;
   if (message.action === "wait-ready") return waitForReadyTurn(message.jobId);
   if (message.action === "release-prepare") {
     workers.get(message.tag).send({ release: message.tag });

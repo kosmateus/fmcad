@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 
 type RecordValue = Record<string, unknown>;
 interface ProcessPort {
@@ -243,7 +244,9 @@ test(
     const held = await server.call("status");
     assert.equal(held["stopping"], false);
     assert.equal(
-      (held["jobs"] as Record<string, RecordValue>)[String(job["id"])]?.["state"],
+      (held["jobs"] as Record<string, RecordValue>)[String(job["id"])]?.[
+        "state"
+      ],
       "needs_reconciliation",
     );
     const resolved = await a.call("reconcile", { jobId: job["id"] });
@@ -256,5 +259,72 @@ test(
     assert.equal(retried["draining"], false);
     assert.equal(await server.call("wait-unlocked"), true);
     assert.equal(fs.existsSync(lock), false);
+  },
+);
+
+test(
+  "public stop retains UNKNOWN recovery and flushes an accepted reply before unlocking",
+  { timeout: 30000 },
+  async (t) => {
+    const { dir, server, a, b } = await fixture(t, "late-retirement");
+    const job = await b.call("submit");
+    await server.event("preparing", "B");
+    await server.call("release-prepare", { tag: "B" });
+    await server.event("physical", "B");
+    await server.call("release-physical", { tag: "B" });
+    await server.event("publishing", "B");
+    const lock = path.join(dir, "broker.lock");
+    const owner = fs.readFileSync(lock);
+    assert.deepEqual(await a.call("stop"), { stopping: true, draining: false });
+    await server.event("worker-retirement");
+    await server.call("release-publish", { tag: "B" });
+    await server.event("worker-retired");
+
+    const held = await b.call("status");
+    assert.equal(held["stopping"], true);
+    assert.equal(
+      (held["jobs"] as Record<string, RecordValue>)[String(job["id"])]?.[
+        "state"
+      ],
+      "needs_reconciliation",
+    );
+    assert.deepEqual(fs.readFileSync(lock), owner);
+    await assert.rejects(a.call("stop"), { code: "RECONCILIATION_REQUIRED" });
+
+    const submitId = "new-request-while-stopping";
+    const resumeId = "resume-request-while-stopping";
+    await assert.rejects(a.call("submit", { requestId: submitId }), {
+      code: "BROKER_STOPPING",
+    });
+    assert.equal(
+      (await a.call("lookup", { requestId: submitId }))["job"],
+      null,
+    );
+    await assert.rejects(a.call("resume", { requestId: resumeId }), {
+      code: "BROKER_STOPPING",
+    });
+    const intent = `lifecycle-control-${createHash("sha256").update(resumeId).digest("hex")}.json`;
+    assert.equal(fs.existsSync(path.join(dir, intent)), false);
+
+    const resolved = await b.call("reconcile", { jobId: job["id"] });
+    assert.equal(resolved["id"], job["id"]);
+    assert.equal((await b.call("status"))["held"], null);
+    assert.equal((await server.call("counts"))["sends"], 1);
+    await assert.rejects(a.call("submit", { requestId: submitId }), {
+      code: "BROKER_STOPPING",
+    });
+
+    await server.call("hold-status-reply");
+    const reply = b.call("status");
+    await server.event("status-reply-waiting");
+    assert.deepEqual(await a.call("stop"), { stopping: true, draining: false });
+    assert.deepEqual(fs.readFileSync(lock), owner);
+    await server.call("release-probe", { stage: "status-reply" });
+    const delivered = await reply;
+    assert.equal(delivered["held"], null);
+    assert.equal(delivered["stopping"], true);
+    assert.equal(await server.call("wait-unlocked"), true);
+    assert.equal(fs.existsSync(lock), false);
+    assert.equal(await server.call("retirements"), 1);
   },
 );

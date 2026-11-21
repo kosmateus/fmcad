@@ -19,6 +19,7 @@ import type {
 } from "./queue-broker-modules";
 import type { BrokerControlFence } from "../packages/core/src/application/broker-control";
 import type { DispatchFailure } from "../packages/core/src/application/execution";
+import type { BrokerStartup } from "../packages/node-adapters/src/execution/broker-lifetime";
 import type { RecoveryFence } from "../packages/core/src/application/broker-recovery";
 import type {
   PreparedTurn,
@@ -31,9 +32,12 @@ import {
 const runtimeRequire = createRequire(__filename);
 const load = <K extends keyof BrokerModules>(name: K): BrokerModules[K] =>
   runtimeRequire(name) as BrokerModules[K];
-const { listenBrokerIpc, MAX_BROKER_IPC_BYTES: MAX } = runtimeRequire(
+const { MAX_BROKER_IPC_BYTES: MAX } = runtimeRequire(
   "./dist/node-adapters/broker-ipc/server",
 ) as typeof import("../packages/node-adapters/src/broker-ipc/server");
+const { claimBrokerLifetime } = runtimeRequire(
+  "./dist/node-adapters/execution/broker-lifetime",
+) as typeof import("../packages/node-adapters/src/execution/broker-lifetime");
 const {
   createBrokerIpcObserver,
   debugTraceContext,
@@ -920,41 +924,53 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         ? effectiveBackend.identity.buildHash
         : codeHash,
     );
-  const marker = {
-    pid: process.pid,
-    birth: processBirth(),
-    nonce: randomUUID(),
-    protocol: 2,
-  };
-  const lock = path.join(dir, "broker.lock");
-  const successorRuntime = options.deadEpochSuccessorNonce
-    ? load("./queue-epoch-successor").claimSuccessorBroker(
-        dir,
-        marker,
-        options.deadEpochSuccessorNonce,
-        codeHash,
-        pinned,
-      )
-    : null;
-  const migrationSnapshotHash = options.atomicMigrationNonce
-    ? load("./queue-atomic-migration-runtime").claimMigratedBroker(
-        dir,
-        marker,
-        options.atomicMigrationNonce,
-        codeHash,
-        observationScopeConfig,
-      )
-    : options.epochRuntimeUpgradeNonce
-      ? load("./queue-epoch-runtime-upgrade").claimEpochRuntimeBroker(
-          dir,
-          marker,
-          options.epochRuntimeUpgradeNonce,
-          codeHash,
-        )
-      : successorRuntime
-        ? successorRuntime.authority.predecessor.rootState.sha256
+  const socket = queueSocket(dir);
+  const startupClaims: {
+    successorRuntime: ReturnType<
+      BrokerModules["./queue-epoch-successor"]["claimSuccessorBroker"]
+    > | null;
+    migrationSnapshotHash: string | null;
+  } = { successorRuntime: null, migrationSnapshotHash: null };
+  let disposeClient = () => {};
+  const lifetime = claimBrokerLifetime({
+    dir,
+    socket,
+    buildHash: codeHash,
+    configHash,
+    processBirth,
+    disposeClient: () => disposeClient(),
+    claimAuthorizedOwner(marker) {
+      const successor = options.deadEpochSuccessorNonce
+        ? load("./queue-epoch-successor").claimSuccessorBroker(
+            dir,
+            marker,
+            options.deadEpochSuccessorNonce,
+            codeHash,
+            pinned,
+          )
         : null;
-  if (!migrationSnapshotHash) durable(lock, marker, true); // Never steal a lock, even if its PID looks stale.
+      startupClaims.successorRuntime = successor;
+      startupClaims.migrationSnapshotHash = options.atomicMigrationNonce
+        ? load("./queue-atomic-migration-runtime").claimMigratedBroker(
+            dir,
+            marker,
+            options.atomicMigrationNonce,
+            codeHash,
+            observationScopeConfig,
+          )
+        : options.epochRuntimeUpgradeNonce
+          ? load("./queue-epoch-runtime-upgrade").claimEpochRuntimeBroker(
+              dir,
+              marker,
+              options.epochRuntimeUpgradeNonce,
+              codeHash,
+            )
+          : (successor?.authority.predecessor.rootState.sha256 ?? null);
+      return !!startupClaims.migrationSnapshotHash;
+    },
+  });
+  const { owner: marker, lock, close } = lifetime;
+  const { successorRuntime, migrationSnapshotHash } = startupClaims;
   const executionRecords = createBrokerRecords(dir);
   const currentAuditScopeFile = path.join(
     dir,
@@ -1072,6 +1088,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       );
     });
   const client = factory(pinned);
+  disposeClient = () => client.reqOpts?.agent?.destroy();
   if (
     !client.server ||
     typeof client._post !== "function" ||
@@ -1595,7 +1612,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       buildHash: codeHash,
       hash,
       assertPreparing() {
-        if (stopping || closed || closing)
+        if (lifetime.stopping)
           throw Object.assign(
             new Error("Broker stopped accepting local preparation"),
             { code: "BROKER_STOPPING", notStarted: true },
@@ -1647,9 +1664,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   let clients: Record<string, string> = {};
   const clientsFile = path.join(dir, "clients.json");
   if (fs.existsSync(clientsFile)) clients = readJson(clientsFile);
-  let stopping = false,
-    closed = false,
-    instance: P.Instance;
+  let instance: P.Instance;
   const debugDispatchStarted = new WeakMap<P.Prepared, number>();
   const debugPreflightStarted = new WeakMap<P.Prepared, number>();
   const debugRawReceived = new WeakSet<P.Prepared>();
@@ -1657,51 +1672,52 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   const atomicObservationScope = new AsyncLocalStorage<P.ObservationScope>();
   const atomicRecoveryAuditScope = new AsyncLocalStorage<P.ScriptScope>();
   let atomicObservationOnly = false;
-  let closing = false,
-    closeTask: Promise<void> | null = null,
-    closeResolve: () => void,
-    closeReject: (error: unknown) => void;
   let epochProcessUnavailable = false;
   let recovery: P.Recovery | null = null,
     lastRecoveryCheck = 0;
-  const lifecycleFile = path.join(dir, `broker-lifecycle-${marker.nonce}.json`);
-  const startupReceipt = path.join(
-    dir,
-    `broker-startup-${marker.nonce}.receipt.json`,
-  );
-  const startupBinding = {
-    brokerNonce: marker.nonce,
-    ownerPid: marker.pid,
-    ownerBirth: marker.birth,
-    buildHash: codeHash,
-    stage: "startup",
-    ...(backendTransition && !backendTransition.deadPredecessor
-      ? {
-          auditExpectedInstance: {
-            pid: backendTransition.identity.instance.pid,
-            birth: backendTransition.identity.instance.birth,
-            version: backendTransition.identity.instance.version,
-          },
-        }
-      : {}),
-  };
-  const lifecycle = {
-    owner: marker,
-    buildHash: codeHash,
-    configHash,
-    stage: state.summary().blocked ? "recovery" : "starting",
-    receipt: startupReceipt,
-    binding: startupBinding,
-  };
-  durable(lifecycleFile, lifecycle, true);
   const normalRestartPort = load(
     "./dist/node-adapters/broker-ipc/normal-restart",
   ) as typeof import("../packages/node-adapters/src/broker-ipc/normal-restart");
-  let normalRestart: ReturnType<
-    typeof normalRestartPort.inspectSettledNormalRestart
-  >;
-  let normalRestartReference: P.Reference | undefined;
-  try {
+  await lifetime.initialize(
+    {
+      recovery: !!state.summary().blocked,
+      ...(backendTransition && !backendTransition.deadPredecessor
+        ? {
+            auditExpectedInstance: {
+              pid: backendTransition.identity.instance.pid,
+              birth: backendTransition.identity.instance.birth,
+              version: backendTransition.identity.instance.version,
+            },
+          }
+        : {}),
+      startupQuiescent() {
+        const { jobs, active, blocked, lease, localUnknown, controlBlocked } =
+          state.data;
+        return (
+          !active &&
+          !blocked &&
+          !lease &&
+          !localUnknown &&
+          !controlBlocked &&
+          Object.values(jobs).every((job) =>
+            ["succeeded", "failed", "cancelled", "expired"].includes(job.state),
+          )
+        );
+      },
+    },
+    identifyForStartup,
+  );
+  initializing = false;
+
+  async function identifyForStartup({
+    binding: startupBinding,
+    receipt: startupReceipt,
+    diagnosticPath,
+  }: BrokerStartup) {
+    let normalRestart: ReturnType<
+      typeof normalRestartPort.inspectSettledNormalRestart
+    >;
+    let normalRestartReference: P.Reference | undefined;
     oldIdentity = fs.existsSync(identityFile)
       ? readJson<P.Identity>(identityFile)
       : null;
@@ -1847,10 +1863,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           receiptPath: startupReceipt,
           binding: startupBinding,
           requireIdle: false,
-          diagnosticPath: path.join(
-            dir,
-            `broker-startup-${marker.nonce}.result.json`,
-          ),
+          diagnosticPath,
         }),
       );
       if (
@@ -1922,10 +1935,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         });
       }
       if (backendTransition) {
-        const diagnosticPath = path.join(
-          dir,
-          `broker-startup-${marker.nonce}.result.json`,
-        );
         const observationFiles = [diagnosticPath];
         const receipt = fs.existsSync(startupReceipt)
           ? readJson<Record<string, unknown>>(startupReceipt)
@@ -1972,68 +1981,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             : {}),
         });
     }
-  } catch (cause) {
-    const error = errorInfo(cause);
-    if (
-      error.code === "NORMAL_RESTART_UNPROVEN" &&
-      error.probeNotSubmitted === true
-    )
-      durable(lifecycleFile, {
-        ...lifecycle,
-        stage: "rejected",
-        safeToRecover:
-          !state.summary().blocked &&
-          !state.data.active &&
-          !state.data.lease &&
-          !state.data.controlBlocked &&
-          !state.data.localUnknown &&
-          Object.values(state.data.jobs).every((job) =>
-            ["succeeded", "failed", "cancelled", "expired"].includes(job.state),
-          ),
-        code: error.code,
-        message: error.message,
-        probeNotSubmitted: true,
-      });
-    // Only proven local/terminal startup rejections can release our own marker.
-    // Transport uncertainty, restored unknowns and storage faults retain it.
-    if (
-      ["CONFIG_CHANGED", "INSTANCE_CHANGED", "FUSION_BUSY"].includes(
-        error.code ?? "",
-      )
-    ) {
-      try {
-        const snapshot = state.status();
-        if (
-          !snapshot.active &&
-          !snapshot.blocked &&
-          !snapshot.lease &&
-          Object.values(snapshot.jobs).every((job) =>
-            ["succeeded", "failed", "cancelled", "expired"].includes(job.state),
-          ) &&
-          readJson<P.Owner>(lock).nonce === marker.nonce
-        ) {
-          durable(lifecycleFile, {
-            ...lifecycle,
-            stage: "rejected",
-            safeToRecover: true,
-            code: error.code,
-          });
-          client.reqOpts?.agent?.destroy();
-          fs.unlinkSync(lock);
-          const fd = fs.openSync(dir, "r");
-          try {
-            fs.fsyncSync(fd);
-          } finally {
-            fs.closeSync(fd);
-          }
-        }
-      } catch {
-        /* Uncertain cleanup never justifies removing another marker. */
-      }
-    }
-    throw error;
   }
-  initializing = false;
 
   function clientProperties() {
     const properties: Record<string, unknown> = {};
@@ -2574,7 +2522,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     getContext: () => ({
       active: activeContext(),
       busy: busy() || rawPreparations > 0,
-      stopping,
+      stopping: lifetime.stopping,
       held: heldReason(),
     }),
     setBusy: (value) => {
@@ -2672,7 +2620,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       resuming: gate.resuming,
       adminTransition: gate.adminTransition,
     });
-    if (stopping || closed || !busy())
+    if (lifetime.stopping || !busy())
       fail("BROKER_STOPPING", "Broker is not available for scoped observation");
   }
 
@@ -4212,8 +4160,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       );
       const ids = value.binding;
       if (
-        stopping ||
-        closed ||
+        lifetime.stopping ||
         gate.resuming ||
         (busy() && !recoveryAuditBusy) ||
         (gate.adminTransition &&
@@ -4360,8 +4307,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     );
     const allowedAdmin = gate.adminTransition === "atomic-recovery-audit";
     if (
-      stopping ||
-      closed ||
+      lifetime.stopping ||
       gate.resuming ||
       (busy() && !recoveryAuditBusy) ||
       (gate.adminTransition && !allowedAdmin) ||
@@ -4467,8 +4413,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         if (
           fs.existsSync(path.join(dir, "atomic-migration.lock")) ||
           fs.existsSync(path.join(dir, "recovery.lock")) ||
-          stopping ||
-          closed ||
+          lifetime.stopping ||
           gate.resuming ||
           (busy() && !recoveryAuditBusy) ||
           activeContext() ||
@@ -5064,7 +5009,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const active = activeContext();
     if (
       !job ||
-      closed ||
+      lifetime.closed ||
       epochProcessUnavailable ||
       !instance ||
       state._writing ||
@@ -5504,6 +5449,8 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         "INSTANCE_HISTORY_QUARANTINED",
         "Historical unknown work is immutable; no replay, acceptance or cleanup",
       );
+    if (message.action === "resume" && lifetime.stopping)
+      fail("BROKER_STOPPING", "Broker is stopping");
     if (lifecycleControl.accepts(message.action))
       return lifecycleControl.handle(message, clientId);
     switch (message.action) {
@@ -5529,8 +5476,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             fence() {
               assertResetSubmissionOpen(dir);
               if (
-                stopping ||
-                closed ||
+                lifetime.stopping ||
                 busy() ||
                 activeContext() ||
                 gate.resuming ||
@@ -5567,8 +5513,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               if (
                 fs.existsSync(path.join(dir, "recovery.lock")) ||
                 fs.existsSync(path.join(dir, "atomic-migration.lock")) ||
-                stopping ||
-                closed ||
+                lifetime.stopping ||
                 busy() ||
                 activeContext() ||
                 gate.resuming ||
@@ -5624,7 +5569,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       }
       case "submit": {
         assertResetSubmissionOpen(dir);
-        if (stopping) fail("BROKER_STOPPING", "Broker is stopping");
+        if (lifetime.stopping) fail("BROKER_STOPPING", "Broker is stopping");
         if (gate.adminTransition)
           fail("BROKER_BUSY", "An administrative transition is pending");
         const r = message.request;
@@ -5981,7 +5926,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           // Offline raw preparation can outlive a stop/reset/build transition.
           // Recheck ownership before publishing an accepted job, not just at SDK send.
           const verifyAcceptance = () => {
-            if (stopping || closed || closing)
+            if (lifetime.stopping)
               throw Object.assign(
                 new Error("Broker is stopping; request was not accepted"),
                 { code: "BROKER_STOPPING", notStarted: true },
@@ -6059,7 +6004,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           }
         } finally {
           if (preparedId) rawPreparations--;
-          if (stopping) setImmediate(drain);
+          lifetime.progress();
         }
       }
       case "control-status":
@@ -6093,7 +6038,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           ).length,
           control: gate.snapshot(),
           held: heldReason(),
-          stopping,
+          stopping: lifetime.stopping,
           recovery,
           buildHash: codeHash,
           features: {
@@ -6174,7 +6119,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               ...state.status(),
               control: gate.snapshot(),
               held: heldReason(),
-              stopping,
+              stopping: lifetime.stopping,
               recovery,
               buildHash: codeHash,
               ...(successorControl
@@ -6215,7 +6160,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           return {
             ...state.status(),
             held: heldReason(),
-            stopping,
+            stopping: lifetime.stopping,
             recovery,
             buildHash: codeHash,
           };
@@ -6301,7 +6246,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         } finally {
           administrativeBusy = false;
           diagnostics();
-          if (stopping) setImmediate(drain);
+          lifetime.progress();
         }
       case "stop":
         if (message.onlyIfQuiescent === true) {
@@ -6332,24 +6277,9 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
               "Idle-only reload cannot stop active, queued, processing, leased or unknown work",
             );
         }
-        if (heldReason() || state.summary().blocked || activeContext()?.unknown)
-          fail(
-            "RECONCILIATION_REQUIRED",
-            "Cannot stop an unknown/blocked queue",
-          );
-        stopping = true;
-        setImmediate(() =>
-          close().catch((error) => {
-            stopping = false;
-            // A busy or unresolved queue refuses this stop, not future ones.
-            // Actual shutdown/transport failures are recorded independently.
-            if (
-              error.code !== "BROKER_BUSY" &&
-              error.code !== "RECONCILIATION_REQUIRED"
-            )
-              brokerFault ??= error.code || "CLOSE_FAILED";
-          }),
-        );
+        // Latch admission before acknowledging; the accepted IPC reply is
+        // flushed by the transport even if shutdown wins the next turn.
+        void lifetime.requestStop().catch(() => diagnostics());
         return { stopping: true, draining: !!state.summary().active };
       default:
         fail("INVALID_ACTION", "Unknown broker action");
@@ -7556,7 +7486,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     }
   }
 
-  const schedulingOpen = () => !closed && !stopping && !epochProcessUnavailable;
+  const schedulingOpen = () => !lifetime.stopping && !epochProcessUnavailable;
   const canSelect = () =>
     schedulingOpen() &&
     !busy() &&
@@ -7625,7 +7555,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           diagnostics();
         } finally {
           grant.context.executing = false;
-          if (stopping) setImmediate(drain);
+          lifetime.progress();
         }
       },
       defer: setImmediate,
@@ -7643,81 +7573,31 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       },
     });
 
-  const socket = queueSocket(dir);
-  // A stale Unix socket may be removed only after exclusive lock ownership was acquired.
-  if (process.platform !== "win32" && fs.existsSync(socket))
-    fs.unlinkSync(socket);
-  const transport = await listenBrokerIpc(
-    socket,
-    (message) => {
+  await lifetime.listen({
+    dispatch(message) {
       ipcObserver.start(message);
       return dispatch(message);
     },
-    ipcObserver.reply,
-  );
-  try {
-    durable(lifecycleFile, { ...lifecycle, stage: "ready" });
-  } catch (error) {
-    transport.stopListening();
-    client.reqOpts?.agent?.destroy();
-    throw error;
-  }
-  transport.onError(() => {
-    brokerFault ??= "IPC_SERVER_ERROR";
-  });
-  diagnostics();
-  const timer = setInterval(() => void scheduler.tick(), options.pollMs || 100);
-
-  async function close() {
-    if (closed) return;
-    if (
-      heldReason() ||
-      state.summary().blocked ||
-      state.data.controlBlocked ||
-      activeContext()?.unknown
-    )
-      fail(
-        "RECONCILIATION_REQUIRED",
-        "Cannot release broker ownership with an unknown/blocked job",
-      );
-    if (gate.resuming || gate.active.size)
-      fail("BROKER_BUSY", "An admitted physical operation is still active");
-    stopping = true;
-    if (!closeTask)
-      closeTask = new Promise((resolve, reject) => {
-        closeResolve = resolve;
-        closeReject = reject;
-      });
-    setImmediate(drain);
-    return closeTask;
-  }
-  async function drain() {
-    if (!stopping || closed || closing || !closeTask) return;
-    if (heldReason() || state.summary().blocked || activeContext()?.unknown) {
-      stopping = false;
-      closeReject(
-        Object.assign(
-          new Error(
-            "Drain became unknown/blocked; broker ownership is retained",
-          ),
-          { code: "RECONCILIATION_REQUIRED" },
-        ),
-      );
-      closeTask = null;
-      return;
-    }
-    if (
-      busy() ||
-      activeContext() ||
-      rawPreparations ||
-      state.summary().active ||
-      gate.active.size ||
-      gate.resuming
-    )
-      return;
-    closing = true;
-    try {
-      await phased.close();
+    observeReply: ipcObserver.reply,
+    inspectDrain() {
+      const summary = state.summary();
+      const context = activeContext();
+      if (
+        heldReason() ||
+        summary.blocked ||
+        state.data.localUnknown ||
+        state.data.controlBlocked ||
+        context?.unknown ||
+        state._fault
+      )
+        return "blocked";
+      if (gate.resuming || gate.active.size) return "physical";
+      if (busy() || context || rawPreparations || summary.active)
+        return "pending";
+      return "idle";
+    },
+    retireWorkers: () => phased.close(),
+    releaseLease() {
       const lease = state.summary().lease;
       if (lease) {
         try {
@@ -7728,26 +7608,20 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             throw error;
         }
       }
-      clearInterval(timer);
-      await transport.close();
-      if (readJson<P.Owner>(lock).nonce !== marker.nonce)
-        fail("LOCK_CHANGED", "Broker ownership marker changed");
-      fs.unlinkSync(lock);
-      const fd = fs.openSync(dir, "r");
-      try {
-        fs.fsyncSync(fd);
-      } finally {
-        fs.closeSync(fd);
-      }
-      client.reqOpts?.agent?.destroy();
-      closed = true;
-      closeResolve();
-    } catch (cause) {
-      const error = errorInfo(cause);
-      brokerFault ??= error.code || "CLOSE_FAILED";
-      closeReject(error);
-    }
-  }
+    },
+    onTransportError() {
+      brokerFault ??= "IPC_SERVER_ERROR";
+    },
+    onShutdownError(cause) {
+      brokerFault ??= errorInfo(cause).code || "CLOSE_FAILED";
+    },
+    poll() {
+      lifetime.progress();
+      void scheduler.tick();
+    },
+    pollMs: options.pollMs || 100,
+  });
+  diagnostics();
   return {
     close,
     dir,
@@ -7756,7 +7630,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     status: () => ({
       ...state.status(),
       held: heldReason(),
-      stopping,
+      stopping: lifetime.stopping,
       buildHash: codeHash,
     }),
   };

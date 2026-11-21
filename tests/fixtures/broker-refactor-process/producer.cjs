@@ -38,8 +38,20 @@ respond(async (message) => {
     return client.call("result", { jobId: message.jobId });
   if (message.action === "complete") return client.wait(message.jobId);
   if (message.action === "lookup")
-    return client.call("find-request", { requestId: input.requestId });
+    return client.call("find-request", {
+      requestId: message.requestId || input.requestId,
+    });
   if (message.action === "status") return client.call("status");
+  if (message.action === "resume") {
+    const status = await client.call("control-status");
+    return client.call("resume", {
+      control: {
+        instanceId: status.instanceId,
+        expectedGeneration: status.generation,
+        requestId: message.requestId,
+      },
+    });
+  }
   if (message.action === "reconcile")
     return client.call("reconcile", { jobId: message.jobId });
   if (message.action === "stop") return client.call("stop");
