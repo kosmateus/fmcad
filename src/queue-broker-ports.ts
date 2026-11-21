@@ -420,6 +420,7 @@ export interface Flight {
   send: Send<Instance>;
 }
 export interface ProbeOptions {
+  assertCurrent?: () => void;
   mapPath?: (file: string) => string;
   receiptPath?: string;
   binding?: Binding | Record<string, unknown>;

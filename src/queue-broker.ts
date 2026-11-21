@@ -1319,17 +1319,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     );
   }
   function setHold(reason: string | null) {
-    if (turnGrant) {
-      // A separate host fault does not settle or revoke an in-flight job.
-      brokerFault = reason;
-      return;
-    }
+    if (turnGrant) return;
     if (reason !== null) {
       heldGrant = session.hold(heldGrant, reason);
     } else {
       if (heldGrant) session.settle(heldGrant, () => undefined);
       heldGrant = null;
-      brokerFault = null;
     }
   }
   function resolveHeld(
@@ -1345,7 +1340,6 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       result = state.resolve(id, details);
     });
     heldGrant = null;
-    brokerFault = null;
     scheduler.wakeup();
     return required(result);
   }
@@ -1363,11 +1357,21 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     });
   }
   const physicalGrant = new AsyncLocalStorage<ProductGrant>();
-  const recoveryProbeScope = new AsyncLocalStorage<{
+  const probeSendScope = new AsyncLocalStorage<{
     assertCurrent(): void;
     start(): void;
     dispatchBoundary?: P.Send["dispatchBoundary"];
   }>();
+  function sendProbe<T>(send: () => T, boundary?: P.Send["dispatchBoundary"]) {
+    const scope = probeSendScope.getStore();
+    if (!scope) return send();
+    if (boundary === "broker-post") {
+      scope.assertCurrent();
+      return probeSendScope.run({ ...scope, dispatchBoundary: boundary }, send);
+    }
+    scope.start();
+    return send();
+  }
   const preparingJob = new AsyncLocalStorage<
     { job: P.Job; turn: TurnIdentity } | false
   >();
@@ -1515,14 +1519,14 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       // after a pause. Product operations retain their own epoch fence below;
       // an observation is never permission to execute a stale product request.
       certificate.fence(outgoing);
-      const recoveryProbe = recoveryProbeScope.getStore();
-      if (recoveryProbe) {
+      const probe = probeSendScope.getStore();
+      if (probe) {
         if (
-          recoveryProbe.dispatchBoundary === "broker-post" &&
+          probe.dispatchBoundary === "broker-post" &&
           outgoing.method === "tools/call"
         )
-          recoveryProbe.start();
-        else recoveryProbe.assertCurrent();
+          probe.start();
+        else probe.assertCurrent();
       }
       return originalPost(outgoing, sessionId, requestOptions);
     });
@@ -1551,8 +1555,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         withRequest({ timeoutMs: server.timeoutMs }, () => {
           // Without a prepared wire call, entry to the injected tool port is
           // the last boundary where the broker can prove the probe was unsent.
-          recoveryProbeScope.getStore()?.start();
-          return client.callTool(...args);
+          return sendProbe(() => client.callTool(...args));
         }),
     };
     if (client.prepareCallTool)
@@ -1561,22 +1564,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         return Object.assign(
           () =>
             withRequest({ timeoutMs: server.timeoutMs }, () => {
-              const recoveryProbe = recoveryProbeScope.getStore();
-              if (recoveryProbe) {
-                const { dispatchBoundary } = send;
-                if (dispatchBoundary === "broker-post") {
-                  recoveryProbe.assertCurrent();
-                  return recoveryProbeScope.run(
-                    { ...recoveryProbe, dispatchBoundary },
-                    send,
-                  );
-                }
-                // An unmarked prepared callback is itself the send boundary,
-                // even when its client separately exposes preparePost.
+              if (
+                probeSendScope.getStore() &&
+                send.dispatchBoundary !== "broker-post"
+              )
                 send.fence();
-                recoveryProbe.start();
-              }
-              return send();
+              return sendProbe(send, send.dispatchBoundary);
             }),
           { fence: () => send.fence() },
         );
@@ -1626,7 +1619,12 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                     args,
                   );
                   return Object.assign(
-                    () => withRequest({ timeoutMs: server.timeoutMs }, send),
+                    () =>
+                      withRequest({ timeoutMs: server.timeoutMs }, () => {
+                        if (send.dispatchBoundary !== "broker-post")
+                          send.fence();
+                        return sendProbe(send, send.dispatchBoundary);
+                      }),
                     { fence: () => send.fence() },
                   );
                 },
@@ -1636,6 +1634,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
                 binding,
                 requireIdle: false,
                 documentSelector: selector,
+                assertCurrent: () => probeSendScope.getStore()?.assertCurrent(),
                 ...nativePaths,
                 diagnosticPath,
               },
@@ -2135,7 +2134,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     properties: clientProperties,
     spawnWorker: options.spawnWorker,
     onFault(error) {
-      setHold(errorInfo(error).code || "LOCAL_WORKER_STORAGE_FAILED");
+      brokerFault ??= errorInfo(error).code || "LOCAL_WORKER_STORAGE_FAILED";
       diagnostics();
     },
     onUnknown(job, reason) {
@@ -2237,6 +2236,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
   }
   gate.changed = diagnostics;
   async function checkInstance(probeOptions: P.ProbeOptions) {
+    probeOptions.assertCurrent?.();
     const active = activeContext();
     if (buildHash() !== codeHash)
       throw Object.assign(
@@ -2257,8 +2257,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
           ...probeOptions,
           requireIdle: false,
         });
+    probeOptions.assertCurrent?.();
     if (probeOptions?.prepared && probeOptions.onObservation)
       await probeOptions.onObservation(actual);
+    probeOptions.assertCurrent?.();
     if (!sameInstance(actual, instance))
       fail("INSTANCE_CHANGED", "Fusion PID/birth/build identity changed");
     if (probeOptions?.requireIdle !== false && !idle(actual))
@@ -2268,6 +2270,27 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         observation: actual,
       });
     return actual;
+  }
+  function checkTurnInstance(
+    grant: ProductGrant,
+    options: P.ProbeOptions,
+    writeIntent: () => void,
+  ) {
+    let sent = false;
+    const assertCurrent = () => session.assertCurrentGrant(grant);
+    return probeSendScope.run(
+      {
+        assertCurrent,
+        start() {
+          assertCurrent();
+          if (sent)
+            fail("PREPARED_RPC_CONSUMED", "An instance probe cannot be replayed");
+          sent = true;
+          writeIntent();
+        },
+      },
+      () => checkInstance({ ...options, assertCurrent }),
+    );
   }
   function remoteReceipt(
     record: { receipt?: string; binding: P.Binding; instance: P.Instance },
@@ -5170,7 +5193,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       };
       const receipt = path.join(directory, `reconcile-${rpcId}.receipt.json`);
       let entered = false;
-      await recoveryProbeScope.run(
+      await probeSendScope.run(
         {
           assertCurrent: assertCurrentFence,
           start() {
@@ -6318,7 +6341,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         setImmediate(() =>
           close().catch((error) => {
             stopping = false;
-            if (!heldReason()) setHold(error.code || "CLOSE_FAILED");
+            brokerFault ??= error.code || "CLOSE_FAILED";
           }),
         );
         return { stopping: true, draining: !!state.summary().active };
@@ -6812,37 +6835,44 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     const receipt =
       flights?.preflight.receipt ||
       path.join(directory, "preflight-" + rpcId + ".receipt.json");
-    executionRecords.createProbeIntent(job.id, "preflight", {
-      version: 2,
-      jobId: job.id,
-      buildHash: codeHash,
-      instance,
-      at: Date.now(),
-      binding,
-      receipt,
-    });
     try {
-      await checkInstance({
-        prepared: flights?.preflight,
-        receiptPath: receipt,
-        binding,
-        requireIdle: !allowsBusy,
-        diagnosticPath: path.join(directory, "preflight-result.json"),
-        documentSelector: guardSelector,
-        onObservation: (observation) => {
-          observed = observation;
-          executionRecords.recordProbeTerminal(job.id, "preflight", {
+      await checkTurnInstance(
+        grant,
+        {
+          prepared: flights?.preflight,
+          receiptPath: receipt,
+          binding,
+          requireIdle: !allowsBusy,
+          diagnosticPath: path.join(directory, "preflight-result.json"),
+          documentSelector: guardSelector,
+          onObservation: (observation) => {
+            session.assertCurrentGrant(grant);
+            observed = observation;
+            executionRecords.recordProbeTerminal(job.id, "preflight", {
+              version: 2,
+              jobId: job.id,
+              buildHash: codeHash,
+              completed: true,
+              instance: observation,
+              idle: idle(observation),
+              requiresIdle: !allowsBusy,
+            });
+          },
+        },
+        () =>
+          executionRecords.createProbeIntent(job.id, "preflight", {
             version: 2,
             jobId: job.id,
             buildHash: codeHash,
-            completed: true,
-            instance: observation,
-            idle: idle(observation),
-            requiresIdle: !allowsBusy,
-          });
-        },
-      });
+            instance,
+            at: Date.now(),
+            binding,
+            receipt,
+          }),
+      );
+      session.assertCurrentGrant(grant);
     } catch (cause) {
+      session.assertCurrentGrant(grant);
       const error = errorInfo(cause);
       if (error.code === "BUILD_CHANGED" && error.probeNotSubmitted === true) {
         const outcome = {
@@ -7343,29 +7373,32 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         const postReceipt =
           flights?.postflight.receipt ||
           path.join(directory, "postflight-" + postRpcId + ".receipt.json");
-        executionRecords.createProbeIntent(job.id, "postflight", {
-          version: 2,
-          jobId: job.id,
-          buildHash: codeHash,
-          instance,
-          at: Date.now(),
-          binding: postBinding,
-          receipt: postReceipt,
-        });
         try {
-          executionRecords.recordProbeTerminal(
-            job.id,
-            "postflight",
-            await checkInstance({
+          const observation = await checkTurnInstance(
+            grant,
+            {
               prepared: flights?.postflight,
               requireIdle: !allowsBusyAfter,
               receiptPath: postReceipt,
               binding: postBinding,
               diagnosticPath: path.join(directory, "postflight-result.json"),
               documentSelector: guardSelector,
-            }),
+            },
+            () =>
+              executionRecords.createProbeIntent(job.id, "postflight", {
+                version: 2,
+                jobId: job.id,
+                buildHash: codeHash,
+                instance,
+                at: Date.now(),
+                binding: postBinding,
+                receipt: postReceipt,
+              }),
           );
+          session.assertCurrentGrant(grant);
+          executionRecords.recordProbeTerminal(job.id, "postflight", observation);
         } catch (cause) {
+          session.assertCurrentGrant(grant);
           const error = errorInfo(cause);
           grant.context.postflight = false;
           if (
@@ -7428,6 +7461,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
         return;
       },
       release() {
+        session.assertCurrentGrant(grant);
         if (job.request.phased) {
           const details = {
             state: "processing",
@@ -7453,6 +7487,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
             });
           return;
         }
+        session.assertCurrentGrant(grant);
         const details = {
           state:
             code === 0 &&
@@ -7517,7 +7552,10 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
 
   const schedulingOpen = () => !closed && !stopping && !epochProcessUnavailable;
   const canSelect = () =>
-    schedulingOpen() && !busy() && (!heldReason() || !!state.data.blocked);
+    schedulingOpen() &&
+    !busy() &&
+    !brokerFault &&
+    (!heldReason() || !!state.data.blocked);
   const scheduler = (
     runtimeRequire(
       "./dist/core/application/broker-scheduler",
@@ -7587,7 +7625,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       defer: setImmediate,
       onFailure(cause, job) {
         const reason = errorInfo(cause).code || "BROKER_STORAGE_FAILED";
-        if (!job || (!turnGrant && !heldGrant)) setHold(reason);
+        if (!job || (!turnGrant && !heldGrant)) brokerFault ??= reason;
         else if (turnGrant?.context.job === job) {
           try {
             hold(turnGrant, reason);
@@ -7619,7 +7657,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
     throw error;
   }
   transport.onError(() => {
-    setHold("IPC_SERVER_ERROR");
+    brokerFault ??= "IPC_SERVER_ERROR";
   });
   diagnostics();
   const timer = setInterval(() => void scheduler.tick(), options.pollMs || 100);
@@ -7700,7 +7738,7 @@ export async function serve(cfg: P.Config, options: P.Options = {}) {
       closeResolve();
     } catch (cause) {
       const error = errorInfo(cause);
-      setHold(error.code || "CLOSE_FAILED");
+      brokerFault ??= error.code || "CLOSE_FAILED";
       closeReject(error);
     }
   }

@@ -30,6 +30,9 @@ respond(async (message) => {
     return client.submit({
       ...input,
       requestId: message.requestId || input.requestId,
+      ...(message.queueTimeoutMs === undefined
+        ? {}
+        : { queueTimeoutMs: message.queueTimeoutMs }),
     });
   if (message.action === "result")
     return client.call("result", { jobId: message.jobId });
@@ -39,6 +42,7 @@ respond(async (message) => {
   if (message.action === "status") return client.call("status");
   if (message.action === "reconcile")
     return client.call("reconcile", { jobId: message.jobId });
+  if (message.action === "stop") return client.call("stop");
   throw new Error("Unknown producer command");
 });
 client.register().then(

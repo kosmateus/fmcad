@@ -14,6 +14,8 @@ const {
 // always the fake below; no production fence or recovery guard is disabled.
 const Module = require("node:module");
 const originalLoad = Module._load;
+let serverError;
+let delayProbeGate = false;
 Module._load = function (name, parent, ...rest) {
   const loaded = originalLoad.call(this, name, parent, ...rest);
   if (
@@ -21,6 +23,40 @@ Module._load = function (name, parent, ...rest) {
     parent?.filename.endsWith("/src/queue-instance.js")
   )
     return { ...loaded, toWindowsPath: (file) => file };
+  if (name === "./dist/node-adapters/broker-ipc/server" && crash === "host-fault") {
+    return {
+      ...loaded,
+      async listenBrokerIpc(...args) {
+        const server = await loaded.listenBrokerIpc(...args);
+        return {
+          ...server,
+          onError(callback) {
+            serverError = callback;
+            server.onError(callback);
+          },
+        };
+      },
+    };
+  }
+  if (name === "./queue-gate" && crash === "unsent-preflight") {
+    return {
+      ...loaded,
+      QueueGate: class extends loaded.QueueGate {
+        run(send, options) {
+          if (!delayProbeGate) return super.run(send, options);
+          delayProbeGate = false;
+          // Stop after real gate admission, before running the broker's send
+          // closure. No gate policy, checker, or broker fence is bypassed.
+          return super.run(async () => {
+            const pending = gate("preflight");
+            emit("preflight-waiting");
+            await pending;
+            return send();
+          }, options);
+        }
+      },
+    };
+  }
   return loaded;
 };
 const admission = require(path.join(root, "src/queue-admission.js"));
@@ -120,6 +156,13 @@ const physical = {
   async _post(payload) {
     const script = payload.params?.arguments?.object?.script || "";
     const source = decodeNativeProgram(script);
+    if (source.includes("FMCAD_QUEUE_INSTANCE")) {
+      const value = await physical.callTool(payload.params.arguments);
+      return {
+        status: 200,
+        raw: JSON.stringify({ jsonrpc: "2.0", id: payload.id, result: value }),
+      };
+    }
     const tag = /PROCESS_([AB])/.exec(source)?.[1];
     if (!tag) throw new Error("Unexpected fake physical script");
     const documentId = payload.params.arguments.object.documentId;
@@ -171,7 +214,10 @@ const physical = {
       ++active;
       maximum = Math.max(maximum, active);
       try {
-        if (source.includes("postflight-") && crash === "postflight") {
+        if (
+          source.includes("postflight-") &&
+          ["postflight", "late-postflight", "host-fault"].includes(crash)
+        ) {
           const entries = nativeReceipts(script, dir, observation);
           const pending = gate("postflight");
           emit("postflight", { entries });
@@ -198,6 +244,26 @@ const physical = {
     };
   },
 };
+if (crash === "unsent-preflight") {
+  physical.prepareCallTool = async function (value, toolName) {
+    const source = decodeNativeProgram(value.object?.script || "");
+    const beforePreflight = source.includes("FMCAD_QUEUE_INSTANCE") &&
+      source.includes("preflight-");
+    return Object.assign(
+      async () => {
+        if (beforePreflight) delayProbeGate = true;
+        const reply = await this._post({
+          jsonrpc: "2.0",
+          id: ++rpc,
+          method: "tools/call",
+          params: { name: toolName, arguments: value },
+        });
+        return JSON.parse(reply.raw).result;
+      },
+      { fence() {}, dispatchBoundary: "broker-post" },
+    );
+  };
+}
 let broker;
 function waitForReadyTurn(jobId) {
   // Watch only to wake the observer. The evidence is the real broker's public
@@ -239,6 +305,25 @@ respond(async (message) => {
   }
   if (message.action === "release-physical") {
     gates.get("physical-" + message.tag)?.();
+    return true;
+  }
+  if (message.action === "release-probe") {
+    assert.ok(gates.get(message.stage));
+    gates.get(message.stage)();
+    await new Promise(setImmediate);
+    return true;
+  }
+  if (message.action === "kill-worker") {
+    const worker = workers.get(message.tag);
+    await new Promise((resolve) => {
+      worker.once("close", resolve);
+      assert.ok(worker.kill("SIGKILL"));
+    });
+    return true;
+  }
+  if (message.action === "ipc-fault") {
+    assert.ok(serverError);
+    serverError(new Error("Injected listener failure"));
     return true;
   }
   if (message.action === "counts") return { active, maximum, sends, calls };

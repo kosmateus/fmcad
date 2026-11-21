@@ -97,6 +97,7 @@ export interface ProbeClient {
   callTool(args: ProbeArguments, tool: string): Promise<ProbeOutput>;
 }
 export interface ProbeOptions {
+  assertCurrent?: () => void;
   receiptPath?: string;
   binding?: unknown;
   requireIdle?: boolean;
@@ -506,6 +507,7 @@ def run(_context: str) -> dict[str, object]:
       binding,
       requireIdle = true,
       onObservation,
+      assertCurrent,
       diagnosticPath,
       documentSelector,
       mapPath = fusionPath,
@@ -573,6 +575,7 @@ def run(_context: str) -> dict[str, object]:
         : () => client.callTool(args, "fusion_mcp_execute");
       let consumed = false;
       const execute = async () => {
+        assertCurrent?.();
         if (consumed)
           fail("PREPARED_RPC_CONSUMED", "An instance probe cannot be replayed");
         consumed = true;
@@ -580,6 +583,7 @@ def run(_context: str) -> dict[str, object]:
         try {
           output = await send();
         } catch (error) {
+          assertCurrent?.();
           if (diagnosticPath) {
             const details: Record<string, unknown> = {
               stage: "instance_probe",
@@ -602,10 +606,14 @@ def run(_context: str) -> dict[str, object]:
         } finally {
           client.server.timeoutMs = previousTimeout;
         }
+        // The original remote receipt, if any, is left untouched. A stale
+        // caller must not publish its reply as a local observation.
+        assertCurrent?.();
         return inspect(output);
       };
       return Object.assign(execute, { fence: () => send.fence?.() });
     } catch (error) {
+      assertCurrent?.();
       if (diagnosticPath && fs.existsSync(path.dirname(diagnosticPath)))
         durable(diagnosticPath, {
           stage: "instance_probe",
