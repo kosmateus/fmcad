@@ -52,7 +52,8 @@ for (const [group, modules] of Object.entries({
             `import * as journal${index} from ${JSON.stringify(file.replace(/\.d\.ts$/, ".js"))};\nvoid journal${index};`,
         )
         .join("\n") +
-        (group === "entrypoints" ? `
+        (group === "entrypoints"
+          ? `
 type Provision = NonNullable<journal0.BrokerCompositionOptions["addinMetadataAdmission"]>;
 const valid: Provision = {
   capability: "get_open_document_metadata",
@@ -64,7 +65,8 @@ const { owner, ...missingOwner } = valid;
 // @ts-expect-error A provision without an authenticated owner must not compile.
 const rejected: Provision = missingOwner;
 void owner; void rejected;
-` : ""),
+`
+          : ""),
     );
     const program = ts.createProgram([entry], {
       noEmit: true,
