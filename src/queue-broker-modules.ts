@@ -9,6 +9,110 @@ import type {
 import type { QueueGate } from "../packages/node-adapters/dist/execution/gate";
 import type { BrokerControlFence } from "../packages/core/src/application/broker-control";
 import type { PreparedPythonArtifact } from "../packages/core/src/domain/python-artifact";
+import type {
+  BrokerGrant,
+  BrokerHold,
+  createBrokerSession,
+} from "../packages/core/src/application/broker-session";
+import type { TurnIdentity } from "../packages/core/src/application/broker-execution";
+
+type Grant = BrokerGrant<P.LaneContext>;
+type Hold = BrokerHold<P.LaneContext>;
+
+/** Runtime routing for existing grant capabilities; the session still owns
+ * eligibility, and the caller owns durable domain/receipt transitions. */
+export function createBrokerLane(
+  session: ReturnType<typeof createBrokerSession<P.LaneContext>>,
+  ports: { durableHoldReason(): unknown; wakeup(): void },
+) {
+  let current: Grant | null = null;
+  let held: Hold | null = null;
+  let fault: string | null = null;
+  let administrative = false;
+
+  return {
+    snapshot: session.snapshot,
+    assertCurrent: session.assertCurrentGrant,
+    currentGrant: () => current,
+    hasHold: () => held !== null,
+    busy: () =>
+      administrative ||
+      session.snapshot().active !== null ||
+      !!held?.context?.executing,
+    activeWorker: () =>
+      current?.context.postflight
+        ? null
+        : current?.context.worker ?? held?.context?.worker ?? null,
+    heldWorker: () => held?.context?.worker ?? null,
+    heldReason() {
+      const reason = ports.durableHoldReason();
+      return (
+        fault ??
+        session.snapshot().held?.reason ??
+        (typeof reason === "string" ? reason : null)
+      );
+    },
+    recordFault(reason: string) {
+      fault ??= reason;
+    },
+    faulted: () => fault !== null,
+    setAdministrative(value: boolean) {
+      administrative = value;
+    },
+    begin(job: P.Job, turn: TurnIdentity, scoped: boolean) {
+      current = session.acquire(
+        { job, executing: true },
+        turn,
+        scoped ? held ?? undefined : undefined,
+      );
+      return current;
+    },
+    hold(grant: Grant, reason: string, commit: () => void) {
+      if (current !== grant) return false;
+      held = session.hold(grant, reason);
+      current = null;
+      commit();
+      return true;
+    },
+    setControlHold(reason: string | null) {
+      if (current) return;
+      if (reason !== null) held = session.hold(held, reason);
+      else {
+        if (held) session.settle(held, () => undefined);
+        held = null;
+      }
+    },
+    settle(grant: Grant, commit: () => undefined) {
+      session.settle(grant, commit);
+      current = null;
+      ports.wakeup();
+    },
+    captureRecovery() {
+      const expected = held;
+      function assertCurrent() {
+        if (expected !== held || current)
+          throw Object.assign(
+            new Error("Runtime hold changed before recovery settlement"),
+            { code: "STATE_CONFLICT" },
+          );
+      }
+      return {
+        assertCurrent,
+        settle<T>(commit: () => T): T {
+          assertCurrent();
+          if (!expected) return commit();
+          let result!: T;
+          session.settle(expected, () => {
+            result = commit();
+          });
+          held = null;
+          ports.wakeup();
+          return result;
+        },
+      };
+    },
+  };
+}
 
 interface Control {
   handle(message: P.Message, clientId: string): Promise<unknown>;
@@ -339,7 +443,7 @@ export interface BrokerModules {
       marker: P.Owner;
       buildHash: string;
       getContext(): {
-        active: P.Context | null;
+        active: boolean;
         busy: boolean;
         stopping: boolean;
         held: string | null;

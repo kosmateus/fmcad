@@ -280,12 +280,33 @@ if (process.argv[2] === "--lost-process-child") {
     ): unknown;
   };
 
-  test("emitted broker is byte-identical at source and installed staging seams", () => {
-    const compiled = fs.readFileSync(
-      path.join(root, "dist/library-build/src/queue-broker.js"),
+  test("facade and composition use identical compiler output at both runtime locations", () => {
+    for (const source of [
+      "queue-broker.js",
+      "composition/queue-broker.js",
+      "queue-broker-modules.js",
+    ]) {
+      const compiled = fs.readFileSync(
+        path.join(root, "dist/library-build/src", source),
+      );
+      for (const target of ["src", "dist/src"])
+        assert.deepEqual(
+          fs.readFileSync(path.join(root, target, source)),
+          compiled,
+        );
+    }
+    const facade = runtimeRequire(path.join(root, "src/queue-broker.js"));
+    const composition = runtimeRequire(
+      path.join(root, "src/composition/queue-broker.js"),
     );
-    for (const target of ["src/queue-broker.js", "dist/src/queue-broker.js"])
-      assert.deepEqual(fs.readFileSync(path.join(root, target)), compiled);
+    assert.deepEqual(Object.keys(facade).sort(), [
+      "assertResetSubmissionOpen",
+      "brokerConfigHash",
+      "matching",
+      "reclaim",
+      "serve",
+    ]);
+    assert.equal(facade.serve, composition.serve);
   });
 
   test("unknown transport DTOs preserve ordinary broker reply identity and result semantics", () => {
@@ -381,12 +402,15 @@ if (process.argv[2] === "--lost-process-child") {
         fs.existsSync(path.join(installed, "src/queue-broker.ts")),
         false,
       );
-      assert.deepEqual(
-        fs.readFileSync(path.join(installed, "src/queue-broker.js")),
-        fs.readFileSync(
-          path.join(root, "dist/library-build/src/queue-broker.js"),
-        ),
-      );
+      for (const source of [
+        "queue-broker.js",
+        "composition/queue-broker.js",
+        "queue-broker-modules.js",
+      ])
+        assert.deepEqual(
+          fs.readFileSync(path.join(installed, "src", source)),
+          fs.readFileSync(path.join(root, "dist/library-build/src", source)),
+        );
       const fixture = path.join(directory, "synthetic-owner-state");
       fs.mkdirSync(fixture);
       const child = spawnSync(

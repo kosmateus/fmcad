@@ -31,6 +31,8 @@ export const queueRuntimeModules = [
   "queue-epoch-runtime-upgrade",
 
   "queue-broker",
+  "queue-broker-modules",
+  "composition/queue-broker",
   "queue-backend-transition",
   "queue-client",
   "queue-closed-epoch-proof",
@@ -47,43 +49,53 @@ export function stageQueueRuntime(root: string): void {
   const source = path.join(root, "dist/library-build/src");
   const outputs = [path.join(root, "src"), path.join(root, "dist/src")];
   // Validate all inputs first so a missing compile does not partially stage.
+  function artifact(name: string, extension: string) {
+    const filename = name + extension;
+    const file = path.join(source, filename);
+    if (!fs.statSync(file).isFile())
+      throw new Error("Missing emitted queue module: " + file);
+    const emitted = fs.readFileSync(file);
+    const fromSource =
+      path.posix.relative(path.posix.dirname(name), ".") || ".";
+    const toWorkspace = fromSource === "." ? ".." : `${fromSource}/..`;
+    // Declarations must resolve without workspace packages. JS stays exact.
+    const bytes =
+      extension === ".d.ts"
+        ? Buffer.from(
+            emitted
+              .toString("utf8")
+              .replaceAll(
+                `${toWorkspace}/packages/core/src`,
+                `${fromSource}/dist/core`,
+              )
+              .replaceAll(
+                `${toWorkspace}/packages/node-adapters/src/python`,
+                `${fromSource}/dist/python`,
+              )
+              .replaceAll(
+                `${toWorkspace}/packages/node-adapters/src`,
+                `${fromSource}/dist/node-adapters`,
+              )
+              .replaceAll(
+                `${toWorkspace}/packages/node-adapters/dist`,
+                `${fromSource}/dist/node-adapters`,
+              ),
+          )
+        : emitted;
+    return { filename, bytes };
+  }
   const artifacts = queueRuntimeModules.flatMap((name) =>
-    [".js", ".d.ts"].map((extension) => {
-      const filename = name + extension;
-      const file = path.join(source, filename);
-      if (!fs.statSync(file).isFile())
-        throw new Error("Missing emitted queue module: " + file);
-      const emitted = fs.readFileSync(file);
-      // Admission declarations must resolve inside an installed runtime, where
-      // the source workspace packages are absent. Executable bytes stay exact.
-      const bytes =
-        extension === ".d.ts"
-          ? Buffer.from(
-              emitted
-                .toString("utf8")
-                .replaceAll("../packages/core/src", "./dist/core")
-                .replaceAll(
-                  "../packages/node-adapters/src/python",
-                  "./dist/python",
-                )
-                .replaceAll(
-                  "../packages/node-adapters/src",
-                  "./dist/node-adapters",
-                ),
-            )
-          : emitted;
-      return { filename, bytes };
-    }),
+    [".js", ".d.ts"].map((extension) => artifact(name, extension)),
   );
   // The broker's public declaration references its private DTO declarations.
-  artifacts.push({
-    filename: "queue-broker-ports.d.ts",
-    bytes: fs.readFileSync(path.join(source, "queue-broker-ports.d.ts")),
-  });
+  artifacts.push(artifact("queue-broker-ports", ".d.ts"));
   for (const target of outputs) {
     fs.mkdirSync(target, { recursive: true });
-    for (const artifact of artifacts)
-      fs.writeFileSync(path.join(target, artifact.filename), artifact.bytes);
+    for (const artifact of artifacts) {
+      const destination = path.join(target, artifact.filename);
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.writeFileSync(destination, artifact.bytes);
+    }
   }
 }
 

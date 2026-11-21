@@ -19,7 +19,6 @@ import type {
 } from "../packages/core/src/domain/document";
 import type { BrokerControlFence } from "../packages/core/src/application/broker-control";
 import type { QueueGate } from "../packages/node-adapters/dist/execution/gate";
-import type { PreparedToolCall } from "../packages/node-adapters/src/fusion-transport/contracts";
 
 export interface Instance {
   pid: number;
@@ -282,8 +281,8 @@ export interface Origin {
   readonly artifact?: unknown;
   readonly [key: string]: unknown;
 }
-export interface Send<Result = unknown>
-  extends Partial<Pick<PreparedToolCall, "dispatchBoundary">> {
+export interface Send<Result = unknown> {
+  readonly dispatchBoundary?: "broker-post";
   (): Promise<Result>;
   fence(): void;
 }
@@ -365,6 +364,17 @@ export interface Budget {
   resume(): void;
   close(): void;
 }
+export type ProductContext = Context & {
+  productTurn?: import("../packages/core/src/application/broker-execution").TurnIdentity;
+};
+
+export interface LaneContext {
+  job: Job;
+  worker?: ProductContext;
+  postflight?: boolean;
+  executing: boolean;
+}
+
 export interface Context {
   job: Job;
   token: string;
