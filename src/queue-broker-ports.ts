@@ -361,6 +361,7 @@ export interface Config {
 }
 export interface TrustedAddinMetadataAdmission {
   readonly capability: "get_open_document_metadata";
+  readonly owner: string;
   readonly endpoint: string;
   readonly token: string;
   readonly pid: number;

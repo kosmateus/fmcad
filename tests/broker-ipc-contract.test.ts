@@ -798,6 +798,7 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
   }, `${state} metadata result`);
   const provision = {
     capability: "get_open_document_metadata",
+    owner: owner.clientId,
     endpoint: `http://127.0.0.1:${address.port}/admission/v1`,
     token,
     pid: instance.pid,
@@ -813,6 +814,16 @@ test("raw ADDIN metadata uses only the provisioned port and retains the bound or
   const disabled = await exchange(dir, request());
   assert.equal(disabled.ok ? "unexpected success" : disabled.error.code, "unsupported_queue_route");
   assert.equal(sent.length, 0);
+  await broker.close();
+  broker = await serve(cfg, {
+    ...opts,
+    addinMetadataAdmission: { ...provision, owner: "different-provisioned-owner" },
+  });
+  const foreignOwnerJob = String(successful(await exchange(dir, request()))["id"]);
+  const foreignOwnerResult = record((await readResult(foreignOwnerJob, "failed"))["job"]);
+  assert.equal(foreignOwnerResult["code"], "ADMISSION_OWNER_MISMATCH");
+  assert.equal(sent.length, 0);
+  assert.ok(!fs.readdirSync(path.join(dir, "jobs", foreignOwnerJob)).some(name => name.startsWith("rpc-")));
   await broker.close();
   broker = await serve(cfg, { ...opts, addinMetadataAdmission: provision });
   const malformed = await exchange(dir, request({ fileId: metadata.fileId, version: 2, code: "extra" }));
