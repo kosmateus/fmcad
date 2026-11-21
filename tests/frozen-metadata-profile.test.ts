@@ -360,6 +360,24 @@ test("frozen metadata authority admits the exact owner, runtime and two-store fr
   assert.deepEqual({ profile, facts }, before);
 });
 
+test("inline proof reference is optional but exact and immutable across profile/facts", () => {
+  const { profile, facts } = fixture();
+  const ref = { path: "/fixture/inline-proof.json", sha256: "a".repeat(64) };
+  profile.inlineObserverProof = ref;
+  facts.inlineObserverProof = { ...ref };
+  assert.doesNotThrow(() => assertFrozenMetadataProfile(profile, facts));
+  facts.inlineObserverProof = { ...ref, sha256: "b".repeat(64) };
+  assert.throws(() => assertFrozenMetadataProfile(profile, facts), {
+    code: "FROZEN_METADATA_FENCE_CHANGED",
+  });
+  facts.inlineObserverProof = ref;
+  const extraFlag = { ...ref, accepted: true };
+  profile.inlineObserverProof = extraFlag;
+  assert.throws(() => assertFrozenMetadataProfile(profile, facts), {
+    code: "FROZEN_METADATA_FENCE_CHANGED",
+  });
+});
+
 test("two-store inspection preserves ledgers and distinguishes queue timing from dispatch evidence", (t) => {
   const { profile, root, epoch, ledgers: files, worker } = inspectionFixture(t);
   const before = files.map((file) => fs.readFileSync(file));

@@ -2,6 +2,11 @@ import { isDeepStrictEqual } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
 import type { TrustedAddinMetadataAdmission } from "../queue-broker-ports";
+import {
+  isInlineObserverProofRef,
+  verifyFrozenInlineObserver,
+  type InlineObserverProofRef,
+} from "./queue-frozen-inline-observer";
 
 type Process = { pid: number; birth: string };
 export type FrozenMetadataProvisioning = Omit<
@@ -17,6 +22,7 @@ export interface FrozenWork {
   hash: string;
 }
 export interface FrozenMetadataProfile {
+  inlineObserverProof?: InlineObserverProofRef;
   version: 1;
   purpose: "dead-frozen-predecessor-metadata-v1";
   ownerClientId: string;
@@ -32,6 +38,7 @@ export interface FrozenMetadataProfile {
 }
 /** Facts must be reconstructed from pinned files/process evidence, not approval. */
 export interface FrozenMetadataFacts {
+  inlineObserverProof?: InlineObserverProofRef;
   ownerClientId: string;
   registeredOwnerMatches: boolean | undefined;
   previousConfigHash: string;
@@ -161,6 +168,7 @@ function work(rows: FrozenWork[]): FrozenWork[] {
 export function inspectFrozenMetadataWork(
   root: string,
   epochRoot: string,
+  proofRef?: InlineObserverProofRef,
 ): {
   unresolved: FrozenWork[];
   queuedNeverStarted: boolean;
@@ -168,6 +176,8 @@ export function inspectFrozenMetadataWork(
 } {
   const unresolved: FrozenWork[] = [];
   const workers: Process[] = [];
+  if (proofRef !== undefined && !isInlineObserverProofRef(proofRef)) fail();
+  let inlineUsed = false;
   let queuedNeverStarted = true;
   const namespaces = [...new Set([root, epochRoot])].map((directory) =>
     path.join(directory, "jobs"),
@@ -275,7 +285,11 @@ export function inspectFrozenMetadataWork(
           queuedNeverStarted = false;
         if (files.includes("phase-timings.json")) {
           const timing = read(path.join(jobDirectory, "phase-timings.json"));
-          if (timing["jobId"] !== id || timing["jobHash"] !== job.hash) fail();
+          if (timing["jobId"] !== id || timing["jobHash"] !== job.hash)
+            throw Object.assign(
+              new Error(`Unbound frozen phase timing for ${store}:${id}`),
+              { code: "FROZEN_METADATA_FENCE_CHANGED" },
+            );
           const totals = timing["totals"];
           const active = timing["active"];
           if (
@@ -339,12 +353,19 @@ export function inspectFrozenMetadataWork(
         } else if (
           job.state === "needs_reconciliation" &&
           (canonical || files.length > 0)
-        )
-          missingWorker(store, id);
+        ) {
+          if (canonical && store === "root" && proofRef !== undefined) {
+            // This is the exact expired inline broker, not a missing worker
+            // identity synthesized from a flag or an owner's declaration.
+            workers.push(verifyFrozenInlineObserver(root, job, proofRef));
+            inlineUsed = true;
+          } else missingWorker(store, id);
+        }
       }
     }
   }
   if (workers.length === 0) fail();
+  if (proofRef !== undefined && !inlineUsed) fail();
   return { unresolved: work(unresolved), queuedNeverStarted, workers };
 }
 
@@ -366,7 +387,19 @@ export function assertFrozenMetadataProfile(
     "expectedProcess",
     "provisioning",
     "unresolved",
+    ...(Object.hasOwn(profile, "inlineObserverProof")
+      ? ["inlineObserverProof"]
+      : []),
   ]);
+  if (
+    Object.hasOwn(profile, "inlineObserverProof") &&
+    !isInlineObserverProofRef(profile.inlineObserverProof)
+  )
+    fail();
+  if (
+    !isDeepStrictEqual(profile.inlineObserverProof, facts.inlineObserverProof)
+  )
+    fail();
   process(profile.expectedProcess);
   keys(profile.provisioning, [
     "capability",

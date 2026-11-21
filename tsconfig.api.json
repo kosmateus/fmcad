@@ -69,6 +69,7 @@
     "src/composition/queue-epoch-successor-types.ts",
     "src/composition/queue-frozen-metadata-profile.ts",
     "src/composition/queue-frozen-metadata-admission.ts",
+    "src/composition/queue-frozen-inline-observer.ts",
     "src/composition/queue-normal-cold-successor.ts",
     "src/composition/queue-epoch-successor-retirement.ts",
     "src/composition/queue-epoch-successor-control.ts",
